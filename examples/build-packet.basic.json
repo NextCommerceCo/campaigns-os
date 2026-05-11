@@ -1,0 +1,68 @@
+{
+  "schema_version": "campaign-runtime-build-packet/v0",
+  "campaign": {
+    "public_route_slug": "runtime-packet-demo",
+    "campaign_directory": "runtime-packet-demo",
+    "live_url_path": "/runtime-packet-demo/",
+    "campaigns_app_url": null,
+    "api_key_source": "env:CAMPAIGNS_API_KEY",
+    "allowed_domains_confirmed": true
+  },
+  "spec": {
+    "map_id": "runtime-packet-demo-k9x2",
+    "spec_url": "https://campaign-map.nextcommerce.com/api/spec/runtime-packet-demo-k9x2",
+    "local_path": "campaignspec.v42.basic.json"
+  },
+  "source_html": {
+    "root": "source-html",
+    "pages": [
+      {
+        "page_id": "landing",
+        "path": "landing.html"
+      },
+      {
+        "page_id": "checkout",
+        "path": "checkout.html"
+      },
+      {
+        "page_id": "upsell",
+        "path": "upsell.html"
+      },
+      {
+        "page_id": "receipt",
+        "path": "receipt.html"
+      }
+    ]
+  },
+  "assembly": {
+    "implementation": "next-campaigns-build",
+    "target_repo": "target-page-kit",
+    "output_dir": "src/runtime-packet-demo",
+    "template_family": "olympus",
+    "template_decision_notes": "Golden-path fixture locks Olympus for shared dogfood; builders may choose Demeter or shop-single-step in alternate runs.",
+    "template_lock": {
+      "locked": true,
+      "locked_by": "fixture",
+      "confidence": "high",
+      "evidence": ["contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json"]
+    },
+    "commerce_catalog": {
+      "required": true,
+      "family": "olympus",
+      "version": "2",
+      "path": "../contracts/commerce-surface-catalog.json"
+    },
+    "compatible_outputs": ["static-html", "campaign-cart-sdk"]
+  },
+  "deploy": {
+    "target": "netlify",
+    "preview_url": null,
+    "production_url": null
+  },
+  "qa": {
+    "test_orders_allowed": false,
+    "sandbox_test_card_confirmed": false,
+    "test_order_policy_notes": "Backend test_card orders stay disabled until sandbox routing is confirmed."
+  },
+  "notes": "Public-safe v0 example. Values are synthetic and must be replaced with actual CampaignSpec/API values for a real campaign."
+}

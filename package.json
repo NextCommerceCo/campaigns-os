@@ -1,0 +1,33 @@
+{
+  "name": "@nextcommerce/campaigns-os",
+  "version": "0.1.0-alpha.0",
+  "private": true,
+  "description": "Public-safe Campaigns OS toolkit for agent-assisted NEXT campaign builds.",
+  "type": "module",
+  "bin": {
+    "campaigns-os": "./bin/campaigns-os.mjs"
+  },
+  "scripts": {
+    "campaigns-os": "node ./bin/campaigns-os.mjs",
+    "check": "node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs",
+    "check:fixtures": "node ./scripts/check-fixtures.mjs",
+    "check:private-strings": "node ./scripts/check-private-strings.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "agents",
+    "bin",
+    "contracts",
+    "docs",
+    "examples",
+    "prompts",
+    "schemas",
+    "scripts",
+    "skills",
+    "src",
+    "README.md",
+    "compatibility.json"
+  ]
+}

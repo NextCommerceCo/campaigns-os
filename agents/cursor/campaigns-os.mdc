@@ -1,0 +1,11 @@
+---
+description: Campaigns OS target campaign guidance
+globs:
+  - "campaign-runtime.build.json"
+  - ".campaign-runtime/**/*.json"
+alwaysApply: false
+---
+
+Read Campaigns OS artifacts before editing campaign pages. Treat CampaignSpec/API values as live commerce truth, starter-template contracts as SDK surface truth, and designed HTML/assets as visual/content intent.
+
+Do not carry over demo package, shipping, voucher, payment, tracking, footer, or SEO values. Preserve SDK-owned checkout/cart/upsell/receipt surfaces. For `shop-three-step`, shipping is dynamic via `window.next.getShippingMethods()`.

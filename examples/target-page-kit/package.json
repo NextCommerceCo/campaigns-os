@@ -1,0 +1,11 @@
+{
+  "name": "campaigns-os-target-page-kit-fixture",
+  "private": true,
+  "scripts": {
+    "build": "campaign-build",
+    "dev": "campaign-dev"
+  },
+  "devDependencies": {
+    "next-campaign-page-kit": "^0.1.1"
+  }
+}

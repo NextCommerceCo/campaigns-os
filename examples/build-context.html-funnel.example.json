@@ -1,0 +1,64 @@
+{
+  "schema_version": "campaign-runtime-build-context/v0",
+  "generated_at": "2026-05-10T00:00:00.000Z",
+  "source_adapter": "html_funnel",
+  "status": "prepared",
+  "packet_path": "campaign-runtime.build.json",
+  "report_path": ".campaign-runtime/assembly-report.json",
+  "spec": {
+    "path": "campaign-spec.json",
+    "hash": "example-spec-sha256",
+    "active_pages": [
+      { "id": "landing", "type": "landing", "label": "Landing", "page_url": "example-campaign/landing.html" },
+      { "id": "checkout", "type": "checkout", "label": "Checkout", "page_url": "example-campaign/checkout.html" }
+    ]
+  },
+  "source": {
+    "root": "design-export/example-campaign",
+    "html_files": [
+      { "path": "landing.html", "name": "landing.html", "basename": "landing", "bytes": 1000, "sha256": "example-html-sha256" },
+      { "path": "checkout.html", "name": "checkout.html", "basename": "checkout", "bytes": 2000, "sha256": "example-html-sha256" }
+    ]
+  },
+  "page_map": [
+    { "page_id": "landing", "source_path": "landing.html", "skip_reason": null, "output_path": "src/example-campaign/landing.html" },
+    { "page_id": "checkout", "source_path": "checkout.html", "skip_reason": null, "output_path": "src/example-campaign/checkout.html" }
+  ],
+  "scaffold": {
+    "mode": "fresh",
+    "required": true,
+    "target_repo": "/path/to/page-kit-repo",
+    "output_dir": "/path/to/page-kit-repo/src/example-campaign",
+    "handoff_skill": "next-campaigns-setup",
+    "handoff_artifact": ".campaign-runtime/setup-handoff.json",
+    "reason": "Target campaign output directory is missing; run Page Kit scaffold before build."
+  },
+  "template": {
+    "family": "undecided",
+    "locked": false,
+    "lock": { "locked": false, "locked_by": null, "confidence": "none", "evidence": [] },
+    "candidates": []
+  },
+  "commerce_zone_findings": [
+    {
+      "path": "checkout.html",
+      "zones": ["checkout", "payment"],
+      "sdk_attributes": [],
+      "action": "review_and_preserve_catalog_surfaces",
+      "note": "HTML source may express visual intent here, but catalog-owned runtime shapes must remain authoritative."
+    }
+  ],
+  "prompts_required": [],
+  "decisions": [
+    {
+      "id": "dec_page_map_checkout",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"checkout\" to source file \"checkout.html\"",
+      "confidence": "high",
+      "blast_radius": "routing",
+      "requires_ack": false,
+      "evidence": ["matched source filename against page keys: checkout"]
+    }
+  ]
+}

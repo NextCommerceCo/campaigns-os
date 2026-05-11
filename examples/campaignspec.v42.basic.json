@@ -1,0 +1,80 @@
+{
+  "schema_version": "4.2",
+  "builder_version": "0.2.2",
+  "generated_at": "2026-05-09T00:00:00.000Z",
+  "spec_identity": {
+    "map_id": "runtime-packet-demo-k9x2",
+    "spec_url": "https://campaign-map.nextcommerce.com/api/spec/runtime-packet-demo-k9x2",
+    "edit_url": "https://campaign-map.nextcommerce.com/?load=runtime-packet-demo-k9x2",
+    "public_route_slug": "runtime-packet-demo"
+  },
+  "campaign": {
+    "slug": "runtime-packet-demo",
+    "ref_id": 424242,
+    "payment_env_key": "CAMPAIGNS_API_KEY",
+    "name": "Runtime Packet Demo",
+    "currency": "USD",
+    "available_payment_methods": ["card"],
+    "available_shipping_countries": ["US"]
+  },
+  "global_config": {
+    "sdk_version": "0.4.18"
+  },
+  "funnels": [
+    {
+      "id": "main",
+      "name": "Main",
+      "hypothesis": "The default path should establish the build-packet handoff contract.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "landing",
+          "type": "landing",
+          "order": 1,
+          "label": "Landing",
+          "is_entry": true,
+          "page_url": "runtime-packet-demo/landing.html",
+          "next_page": "checkout"
+        },
+        {
+          "id": "checkout",
+          "type": "checkout",
+          "order": 2,
+          "label": "Checkout",
+          "page_url": "runtime-packet-demo/checkout.html",
+          "success_url": "upsell"
+        },
+        {
+          "id": "upsell",
+          "type": "upsell",
+          "order": 3,
+          "label": "Upsell",
+          "page_url": "runtime-packet-demo/upsell.html",
+          "packages": [
+            {
+              "ref_id": "1",
+              "name": "Demo Upsell",
+              "price": "19.00"
+            }
+          ],
+          "on_accept": "receipt",
+          "on_decline": "receipt"
+        },
+        {
+          "id": "receipt",
+          "type": "thankyou",
+          "order": 4,
+          "label": "Receipt",
+          "page_url": "runtime-packet-demo/receipt.html"
+        }
+      ]
+    }
+  ],
+  "shipping_methods": [
+    {
+      "ref_id": "1",
+      "name": "Standard Shipping"
+    }
+  ],
+  "offers": []
+}

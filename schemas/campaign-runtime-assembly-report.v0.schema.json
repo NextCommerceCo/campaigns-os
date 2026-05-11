@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaign-runtime-assembly-report.v0.schema.json",
+  "title": "Campaign Runtime Assembly Report v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "run_id",
+    "generated_at",
+    "status",
+    "identity",
+    "inputs",
+    "template_family",
+    "stages",
+    "decisions",
+    "evidence",
+    "blockers",
+    "warnings",
+    "next"
+  ],
+  "properties": {
+    "schema_version": { "const": "campaign-runtime-assembly-report/v0" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "identity": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["map_id", "public_route_slug", "campaign_directory", "live_url_path", "spec_hash"],
+      "properties": {
+        "map_id": { "type": "string", "minLength": 1 },
+        "public_route_slug": { "type": "string", "minLength": 1 },
+        "campaign_directory": { "type": "string", "minLength": 1 },
+        "live_url_path": { "type": "string", "minLength": 1 },
+        "spec_hash": { "type": "string", "minLength": 1 }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["packet_path", "context_path", "spec_path", "source", "target_repo"],
+      "properties": {
+        "packet_path": { "type": "string", "minLength": 1 },
+        "context_path": { "type": "string", "minLength": 1 },
+        "spec_path": { "type": "string", "minLength": 1 },
+        "source": {
+          "type": "object",
+          "required": ["kind", "root"],
+          "properties": {
+            "kind": { "enum": ["html_funnel", "figma_sections", "figma_freeform"] },
+            "root": { "type": "string", "minLength": 1 }
+          }
+        },
+        "target_repo": { "type": "string", "minLength": 1 }
+      }
+    },
+    "template_family": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["value", "locked"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1 },
+        "locked": { "type": "boolean" },
+        "locked_by": { "type": ["string", "null"] },
+        "commerce_catalog_version": { "type": ["string", "null"] },
+        "candidates": { "type": "array" }
+      }
+    },
+    "stages": {
+      "type": "object",
+      "required": ["prepare_build", "doctor", "setup", "assembly", "polish", "deploy", "qa"],
+      "properties": {
+        "prepare_build": { "$ref": "#/$defs/stage" },
+        "doctor": { "$ref": "#/$defs/stage" },
+        "setup": { "$ref": "#/$defs/stage" },
+        "assembly": { "$ref": "#/$defs/stage" },
+        "polish": { "$ref": "#/$defs/stage" },
+        "deploy": { "$ref": "#/$defs/stage" },
+        "qa": { "$ref": "#/$defs/stage" }
+      }
+    },
+    "checklists": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "polish": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "anchor_screenshots": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/evidenceCheck" }
+            },
+            "state_screenshots": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/evidenceCheck" }
+            },
+            "runtime_smoke": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/evidenceCheck" }
+            }
+          }
+        },
+        "template_family": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["family", "invariants"],
+          "properties": {
+            "family": { "type": "string", "minLength": 1 },
+            "invariants": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/invariant" }
+            }
+          }
+        }
+      }
+    },
+    "decisions": { "type": "array" },
+    "evidence": { "type": "array" },
+    "blockers": { "type": "array" },
+    "warnings": { "type": "array" },
+    "next": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["stage", "owner", "action"],
+      "properties": {
+        "stage": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "minLength": 1 },
+        "blocked_stages": { "type": "array" }
+      }
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["stage", "status", "inputs", "outputs", "commands", "blockers", "warnings"],
+      "properties": {
+        "stage": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "inputs": { "type": "array" },
+        "outputs": { "type": "array" },
+        "commands": { "type": "array" },
+        "blockers": { "type": "array" },
+        "warnings": { "type": "array" }
+      }
+    },
+    "evidenceCheck": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["page_type", "evidence"],
+      "properties": {
+        "page_type": { "type": "string", "minLength": 1 },
+        "anchor": { "type": "string" },
+        "state": { "type": "string" },
+        "viewports": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "status": { "type": "string" }
+      }
+    },
+    "invariant": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "status", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "blocked", "skipped"] },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "notes": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

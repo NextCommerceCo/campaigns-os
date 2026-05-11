@@ -1,0 +1,179 @@
+{
+  "campaign": {
+    "id": "fixture-shop-three-step",
+    "name": "Fixture Shop Three Step Dynamic Shipping",
+    "slug": "fixture-shop-three",
+    "currency": "USD",
+    "language": "en",
+    "payment_env_key": "fixture_payment_env_key",
+    "tracking": {
+      "status": "not_configured"
+    },
+    "footer_links": [
+      {
+        "label": "Privacy Policy",
+        "url": "https://example.com/privacy",
+        "required": true
+      },
+      {
+        "label": "Terms of Service",
+        "url": "https://example.com/terms",
+        "required": true
+      },
+      {
+        "label": "Contact Us",
+        "url": "https://example.com/contact",
+        "required": true
+      }
+    ],
+    "seo": {
+      "required": false,
+      "title": "Fixture Shop Three Step Dynamic Shipping",
+      "description": "Agent contract fixture. Replace with campaign-specific metadata when required."
+    }
+  },
+  "spec_identity": {
+    "map_id": "fixture-shop-three-step-map",
+    "source": "campaign-cart-starter-templates agent fixture"
+  },
+  "funnels": [
+    {
+      "id": "default",
+      "name": "Default",
+      "hypothesis": "Fixture only: demonstrate the template family contract for agent builds.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "information",
+          "type": "checkout",
+          "order": 1,
+          "label": "Information",
+          "template": "src/shop-three-step/information.html",
+          "page_url": "/information/",
+          "next_page": "shipping.html",
+          "packages": [
+            {
+              "role": "main",
+              "ref_id": 10,
+              "quantity": 1
+            }
+          ],
+          "sdk_hints": {
+            "template_family": "shop-three-step",
+            "frontmatter": {
+              "next_url": "shipping.html"
+            }
+          }
+        },
+        {
+          "id": "shipping",
+          "type": "checkout",
+          "order": 2,
+          "label": "Shipping",
+          "template": "src/shop-three-step/shipping.html",
+          "page_url": "/shipping/",
+          "next_page": "billing.html",
+          "shipping_methods": [
+            "standard",
+            "free"
+          ],
+          "sdk_hints": {
+            "template_family": "shop-three-step",
+            "frontmatter": {
+              "next_url": "billing.html",
+              "runtime_shipping_source": "window.next.getShippingMethods()"
+            }
+          }
+        },
+        {
+          "id": "billing",
+          "type": "checkout",
+          "order": 3,
+          "label": "Billing",
+          "template": "src/shop-three-step/billing.html",
+          "page_url": "/billing/",
+          "next_page": "upsell-bundle-stepper.html",
+          "sdk_hints": {
+            "template_family": "shop-three-step",
+            "frontmatter": {
+              "next_url": "upsell-bundle-stepper.html"
+            }
+          }
+        },
+        {
+          "id": "upsell-stepper",
+          "type": "upsell",
+          "order": 4,
+          "label": "Post-purchase upsell",
+          "template": "src/shop-three-step/upsell-bundle-stepper.html",
+          "page_url": "/upsell-stepper/",
+          "next_page": "receipt.html",
+          "on_accept": "receipt.html",
+          "on_decline": "receipt.html",
+          "packages": [
+            {
+              "role": "upsell",
+              "ref_id": 30,
+              "quantity": 1
+            }
+          ],
+          "offers": [
+            {
+              "code": "UP50",
+              "package_ref_id": 30
+            }
+          ],
+          "sdk_hints": {
+            "template_family": "shop-three-step",
+            "frontmatter": {
+              "upsell_offer.package_id": 30,
+              "upsell_offer.vouchers_json": "[\"UP50\"]",
+              "upsell_bundle_tiers[].items_json": "[{\"packageId\":30,\"quantity\":1}]"
+            }
+          }
+        },
+        {
+          "id": "receipt",
+          "type": "thankyou",
+          "order": 5,
+          "label": "Receipt",
+          "template": "src/shop-three-step/receipt.html",
+          "page_url": "/receipt/",
+          "sdk_hints": {
+            "template_family": "shop-three-step",
+            "frontmatter": {
+              "receipt_summary.title": "Order Summary",
+              "receipt_summary.mobile_item_template_id": "order-item-template-mobile",
+              "receipt_summary.desktop_item_template_id": "order-item-template-desktop"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "shipping_methods": [
+    {
+      "key": "standard",
+      "ref_id": 20,
+      "name": "Standard Shipping",
+      "price": "4.95"
+    },
+    {
+      "key": "free",
+      "ref_id": 21,
+      "name": "Free Shipping",
+      "price": "0.00"
+    }
+  ],
+  "offers": [
+    {
+      "code": "UP50",
+      "package_ref_id": 30,
+      "discount_type": "percent",
+      "value": 50,
+      "applies_to": [
+        "upsell"
+      ]
+    }
+  ]
+}

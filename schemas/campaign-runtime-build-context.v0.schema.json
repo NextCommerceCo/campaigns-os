@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaign-runtime-build-context.v0.schema.json",
+  "title": "Campaign Runtime Build Context v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "source_adapter", "status", "spec", "source", "page_map", "scaffold", "template", "prompts_required"],
+  "properties": {
+    "schema_version": { "const": "campaign-runtime-build-context/v0" },
+    "generated_at": { "type": "string" },
+    "source_adapter": { "enum": ["html_funnel", "figma_sections"] },
+    "status": { "enum": ["prepared", "blocked"] },
+    "packet_path": { "type": "string" },
+    "report_path": { "type": "string" },
+    "spec": {
+      "type": "object",
+      "required": ["path", "hash", "active_pages"],
+      "properties": {
+        "path": { "type": "string" },
+        "hash": { "type": "string" },
+        "active_pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": ["string", "null"] },
+              "label": { "type": ["string", "null"] },
+              "page_url": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "root": { "type": "string" },
+        "html_files": { "type": "array" },
+        "figma_manifest": { "type": ["object", "null"] }
+      }
+    },
+    "page_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["page_id"],
+        "properties": {
+          "page_id": { "type": "string" },
+          "source_path": { "type": ["string", "null"] },
+          "skip_reason": { "type": ["string", "null"] },
+          "output_path": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "scaffold": {
+      "type": "object",
+      "required": ["mode", "required", "target_repo", "output_dir", "handoff_skill", "handoff_artifact"],
+      "properties": {
+        "mode": { "enum": ["fresh", "existing", "blocked"] },
+        "required": { "type": "boolean" },
+        "target_repo": { "type": "string" },
+        "output_dir": { "type": "string" },
+        "handoff_skill": { "type": "string" },
+        "handoff_artifact": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    "template": {
+      "type": "object",
+      "required": ["family", "locked"],
+      "properties": {
+        "family": { "type": "string" },
+        "locked": { "type": "boolean" },
+        "lock": { "type": "object" },
+        "candidates": { "type": "array" }
+      }
+    },
+    "commerce_zone_findings": { "type": "array" },
+    "prompts_required": { "type": "array" },
+    "decisions": { "type": "array" }
+  }
+}
