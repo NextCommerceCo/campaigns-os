@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nextcommerce.com/schemas/campaign-runtime-assembly-report.v0.schema.json",
-  "title": "Campaign Runtime Assembly Report v0",
+  "title": "Campaigns OS Assembly Report v0",
   "type": "object",
   "additionalProperties": true,
   "required": [

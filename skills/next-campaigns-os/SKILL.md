@@ -3,7 +3,7 @@ name: next-campaigns-os
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA policy.
 ---
 
-# Next Campaigns OS
+# Campaigns OS
 
 Use this skill to orient a campaign build, run preflight, decide the next stage, and keep the lifecycle honest.
 
