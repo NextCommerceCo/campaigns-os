@@ -9,6 +9,7 @@
   },
   "scripts": {
     "campaigns-os": "node ./bin/campaigns-os.mjs",
+    "qa": "node ./bin/campaigns-os.mjs qa",
     "check": "node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
     "check:private-strings": "node ./scripts/check-private-strings.mjs"

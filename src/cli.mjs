@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runQaCli } from "./qa-node.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
@@ -49,6 +50,8 @@ Usage:
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next polish --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
+  campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
+  campaigns-os qa run --packet <json> [--base-url <url>] [--output-dir qa-output] [--json]
 
 Examples:
   npm run campaigns-os -- start \\
@@ -106,6 +109,11 @@ export async function main(argv) {
     if (!stage) throw new Error("Missing next stage: build, polish, or qa.");
     const result = nextStage(stage, args);
     writeResult(result, args, result.ok ? 0 : 2);
+    return;
+  }
+
+  if (command === "qa") {
+    await runQaCli(args);
     return;
   }
 
@@ -978,6 +986,8 @@ Map ID: ${packet.spec.map_id}
 Base URL: ${url}
 Build Packet: ${packetPath}
 Assembly Report: ${reportPath}
+Node QA command:
+campaigns-os qa run --packet ${packetPath} --base-url ${url}
 
 Do not place backend test orders unless test_orders_allowed=true and sandbox_test_card_confirmed=true. Summarize blockers, warnings, and remaining launch risks.`;
 }

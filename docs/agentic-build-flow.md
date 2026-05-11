@@ -9,7 +9,7 @@ The intended flow is:
 5. Agent preserves protected SDK commerce surfaces.
 6. Agent runs page-kit build and SDK/template lint.
 7. Agent hands off to polish.
-8. QA follows after deploy.
+8. QA follows after deploy through the Node/npm `campaigns-os qa` runner.
 
 The doctor and checkpoint wrappers exist because agents take shortcuts under ambiguity. If the packet is blocked, stop and resolve the named blocker instead of improvising.
 

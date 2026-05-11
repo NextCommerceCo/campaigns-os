@@ -24,4 +24,10 @@ execFileSync(process.execPath, [cli, "next", "build", "--packet", packet, "--jso
   env: { ...process.env, CAMPAIGNS_API_KEY: "fixture-key" },
 });
 
+execFileSync(process.execPath, [cli, "qa", "resolve", "--packet", packet, "--json"], {
+  cwd: root,
+  stdio: "pipe",
+  env: { ...process.env, CAMPAIGNS_API_KEY: "fixture-key" },
+});
+
 console.log("Fixture checks passed");

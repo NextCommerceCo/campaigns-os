@@ -48,5 +48,10 @@ Build is not launch readiness. A complete run still needs:
 - starter-template/SDK lint
 - formal polish pass
 - preview deploy
-- QA with Map ID and preview URL
+- Node/npm QA with Map ID and preview URL
 - explicit test-order policy
+
+```bash
+npm run campaigns-os -- qa resolve --packet path/to/page-kit-repo/campaign-runtime.build.json
+npm run campaigns-os -- qa run --packet path/to/page-kit-repo/campaign-runtime.build.json --base-url https://preview.example.com/campaign/
+```

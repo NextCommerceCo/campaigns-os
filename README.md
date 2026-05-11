@@ -53,6 +53,8 @@ npm run campaigns-os -- next setup --packet <page-kit-repo>/campaign-runtime.bui
 npm run campaigns-os -- next build --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-report.json>
 npm run campaigns-os -- next qa --packet <packet.json> --report <assembly-report.json>
+npm run campaigns-os -- qa resolve --packet <packet.json>
+npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url>
 ```
 
 ## Template Contracts
@@ -77,6 +79,7 @@ Special case: `shop-three-step` uses dynamic shipping through `window.next.getSh
 - [Agentic Build Flow](docs/agentic-build-flow.md)
 - [Source Adapters](docs/source-adapters.md)
 - [Dogfooding](docs/dogfooding.md)
+- [QA And Test Orders](docs/qa-and-test-orders.md)
 - [Versioning](docs/versioning.md)
 
 ## Status
