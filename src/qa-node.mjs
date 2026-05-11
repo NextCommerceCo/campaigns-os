@@ -16,7 +16,7 @@ Usage:
 
 Options:
   --packet <path>                 Read Map ID, local CampaignSpec, deploy URL, and QA policy from a Build Packet.
-  --spec <path>                   Local exported CampaignSpec JSON. Preferred for v0 dogfood.
+  --spec <path>                   Local exported CampaignSpec JSON. Preferred for the prepared-HTML flow.
   --proxy-base <url>              Campaign Map proxy base for fetching /api/spec/<map-id>.
   --base-url <url>                Deployed campaign root. Packet deploy URL is used when omitted.
   --output-dir <path>             Local verdict directory. Default: qa-output.

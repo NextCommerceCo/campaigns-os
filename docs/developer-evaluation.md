@@ -1,6 +1,6 @@
-# Dogfooding
+# Developer Evaluation
 
-The first dogfood run should use a shared golden scenario before assigning individual edge cases.
+Use a shared golden scenario before assigning individual edge cases.
 
 Recommended shared scenario:
 

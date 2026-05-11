@@ -10,4 +10,4 @@ This repo uses independent compatibility versions:
 - starter-template agent contract: `1`
 - commerce surface catalog: `2`
 
-Breaking packet semantics should create a new packet schema version. Non-breaking doctor warnings can ship in package patch/minor releases during dogfood.
+Breaking packet semantics should create a new packet schema version. Non-breaking doctor warnings can ship in package patch/minor releases during developer preview.

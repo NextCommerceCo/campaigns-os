@@ -13,5 +13,4 @@ Core rules:
 - Run build/lint checks, record evidence in the assembly report, then hand off to polish and QA.
 - Do not place backend test orders unless the packet has `test_orders_allowed=true` and `sandbox_test_card_confirmed=true`.
 
-Current v0 source adapter: prepared HTML/assets (`html_funnel`).
-Future Figma-led source adapters are not part of this v0 build path.
+Current source adapter: prepared HTML/assets (`html_funnel`).

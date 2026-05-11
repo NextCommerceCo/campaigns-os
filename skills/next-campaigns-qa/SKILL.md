@@ -22,7 +22,7 @@ Inputs:
 Rules:
 
 - Do not place backend test orders unless `test_orders_allowed=true` and `sandbox_test_card_confirmed=true`.
-- Use the public Node/npm `campaigns-os qa` commands for dogfood runs.
+- Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
 - Treat missing deploy URL, missing polish status, or unresolved doctor blockers as launch blockers.
 - Report blockers, warnings, and residual risks.
 - QA follows build and polish; it does not edit campaign code.

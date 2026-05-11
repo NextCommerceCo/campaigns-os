@@ -2,7 +2,7 @@
 
 Campaign developers should not need access to the private Campaigns OS runtime development repo.
 
-This repo is the public or partner-safe surface:
+This repo is the developer-facing surface:
 
 - docs
 - schemas
@@ -11,10 +11,10 @@ This repo is the public or partner-safe surface:
 - agent skills
 - Build Packet doctor
 - checkpoint wrappers
-- dogfood issue templates
+- issue templates
 
 Private platform/runtime development remains outside this repo. Do not copy private repo paths, client-specific examples, secrets, dashboard internals, or unpublished platform mutation procedures here.
 
 ## Distribution
 
-For the first dogfood round, this repo can be partner-access while remaining public-safe in content. The repo should be able to become public later without a cleanup scramble.
+This repo should stay suitable for public or partner access. Private runtime details, private repo paths, secrets, and client-specific implementation notes belong outside this surface.

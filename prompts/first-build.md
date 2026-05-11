@@ -1,6 +1,6 @@
 # First Build Prompt
 
-I am dogfooding the NEXT Campaigns OS workflow. Please help me build or evaluate a NEXT Campaign from the CampaignSpec, prepared HTML/assets, starter-template contract catalog, and Campaigns OS Build Packet in this repo.
+Please help me build or evaluate a NEXT Campaign from the CampaignSpec, prepared HTML/assets, starter-template contract catalog, and Campaigns OS Build Packet in this repo.
 
 Start by reading:
 

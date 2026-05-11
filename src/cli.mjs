@@ -37,7 +37,7 @@ const KNOWN_DEPLOY_TARGETS = new Set([
   "unknown",
 ]);
 
-const HELP = `Campaigns OS dogfood toolkit
+const HELP = `Campaigns OS toolkit
 
 Usage:
   campaigns-os help
@@ -359,7 +359,7 @@ function prepareBuild(args, options = {}) {
 
   const sourceKind = optionalString(args["source-kind"], "html_funnel");
   if (sourceKind !== "html_funnel") {
-    throw new Error(`Unsupported source adapter "${sourceKind}" in v0. Use html_funnel; Figma adapters are reserved for later.`);
+    throw new Error(`Unsupported source adapter "${sourceKind}". Use html_funnel for the current prepared-HTML flow.`);
   }
 
   const activePages = activeSpecPages(spec);
@@ -691,7 +691,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
   derived.spec_path = specPath;
   let spec = null;
   if (!packet.spec?.local_path) {
-    addIssue(warnings, "spec.local_path", "No local CampaignSpec path is present. V0 dogfood works best with a local exported spec.");
+    addIssue(warnings, "spec.local_path", "No local CampaignSpec path is present. The current prepared-HTML flow works best with a local exported spec.");
   } else if (!existsSync(specPath)) {
     addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${packet.spec.local_path}`);
   } else {
@@ -827,7 +827,7 @@ function validateContext(context, warnings, ready, derived) {
   if (context.schema_version !== CONTEXT_SCHEMA) addIssue(warnings, "context.schema_version", `Context schema should be ${CONTEXT_SCHEMA}.`);
   else ready.push(`Build context schema ${CONTEXT_SCHEMA}`);
   if (context.source_adapter !== "html_funnel") {
-    addIssue(warnings, "context.source_adapter", "Only html_funnel is supported in v0 dogfood.");
+    addIssue(warnings, "context.source_adapter", "Only html_funnel is supported in the current release.");
   }
   if (Array.isArray(context.prompts_required) && context.prompts_required.length > 0) {
     for (const prompt of context.prompts_required) {

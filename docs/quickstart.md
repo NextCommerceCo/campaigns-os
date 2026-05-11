@@ -10,7 +10,7 @@ You need:
 - Campaign Map exported as a local CampaignSpec JSON.
 - Prepared HTML/CSS/assets for the campaign pages.
 - A target `next-campaign-page-kit` repo or local directory.
-- A starter template family decision, usually `olympus` for the shared dogfood path.
+- A starter template family decision, usually `olympus` unless `demeter` or `shop-single-step` better matches the campaign shape.
 
 ## Create The Packet
 

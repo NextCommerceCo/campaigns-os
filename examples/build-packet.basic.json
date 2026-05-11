@@ -39,7 +39,7 @@
     "target_repo": "target-page-kit",
     "output_dir": "src/runtime-packet-demo",
     "template_family": "olympus",
-    "template_decision_notes": "Golden-path fixture locks Olympus for shared dogfood; builders may choose Demeter or shop-single-step in alternate runs.",
+    "template_decision_notes": "Golden-path fixture locks Olympus for the default prepared-HTML flow; builders may choose Demeter or shop-single-step when those families better match the campaign.",
     "template_lock": {
       "locked": true,
       "locked_by": "fixture",
@@ -64,5 +64,5 @@
     "sandbox_test_card_confirmed": false,
     "test_order_policy_notes": "Backend test_card orders stay disabled until sandbox routing is confirmed."
   },
-  "notes": "Public-safe v0 example. Values are synthetic and must be replaced with actual CampaignSpec/API values for a real campaign."
+  "notes": "Synthetic v0 example. Values must be replaced with actual CampaignSpec/API values for a real campaign."
 }

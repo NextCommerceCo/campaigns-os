@@ -1,8 +1,8 @@
 # Campaigns OS
 
-Campaigns OS is the public-safe toolkit for agent-assisted NEXT campaign builds.
+Campaigns OS is the developer toolkit for agent-assisted NEXT campaign builds.
 
-It gives campaign developers and AI agents a clean front door for the current dogfood path:
+It gives campaign developers and AI coding tools a clear path for assembling a campaign from prepared page files:
 
 1. Configure the campaign in Campaigns App.
 2. Create or review the Campaign Map.
@@ -13,11 +13,13 @@ It gives campaign developers and AI agents a clean front door for the current do
 7. Run build/lint, then `next-campaigns-polish`.
 8. Deploy a preview.
 9. Run `next-campaigns-qa`.
-10. Log friction and unresolved blockers.
+10. Record launch blockers and follow-up work.
 
-This is not full automated readiness. It is a contract-backed flow that helps agents avoid common mistakes like carrying over demo package IDs, copying shipping options from the wrong starter template shape, or editing SDK-owned checkout surfaces as plain HTML.
+The toolkit is contract-backed: starter templates describe which parts are reusable page structure, which parts are live commerce wiring, and which demo values must be replaced for a real campaign. That helps AI tools avoid common mistakes like carrying over sample package IDs, copying shipping options from the wrong template shape, or editing SDK-owned checkout surfaces as plain HTML.
 
 ## Quick Start
+
+Run these commands from a local checkout of this repo:
 
 ```bash
 npm install
@@ -38,11 +40,9 @@ The command writes these target-repo artifacts:
 
 Then ask your AI tool to continue from the emitted handoff. Fresh target repos usually start with `next-campaigns-setup`; existing campaign directories can move directly to `next-campaigns-build`.
 
-## Current Assumption
+## Source Files
 
-V0 assumes the developer brings prepared HTML/CSS/assets. The source adapter is `html_funnel`.
-
-Future Figma-led assembly should be added as a separate source adapter or design-export stage that emits page-kit-native pages, partials, assets, and refs before the same packet, doctor, build, polish, deploy, and QA gates.
+The current source adapter is `html_funnel`: bring prepared HTML/CSS/assets for the campaign pages, plus a local exported CampaignSpec from Campaign Map Builder.
 
 ## Important Commands
 
@@ -78,10 +78,10 @@ Special case: `shop-three-step` uses dynamic shipping through `window.next.getSh
 - [Build Packet](docs/build-packet.md)
 - [Agentic Build Flow](docs/agentic-build-flow.md)
 - [Source Adapters](docs/source-adapters.md)
-- [Dogfooding](docs/dogfooding.md)
+- [Developer Evaluation](docs/developer-evaluation.md)
 - [QA And Test Orders](docs/qa-and-test-orders.md)
 - [Versioning](docs/versioning.md)
 
 ## Status
 
-Dogfood alpha. Keep this repo public-safe, but do not treat it as a published SDK or package until the golden path has been tested by the first friendly developer cohort.
+Developer preview. Build output still needs the normal launch gates: build/lint evidence, polish, preview deploy, QA, and explicit test-order policy.

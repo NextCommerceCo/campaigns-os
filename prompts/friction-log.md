@@ -1,6 +1,6 @@
 # Friction Log
 
-Use this when filing a dogfood issue.
+Use this when filing a developer feedback issue.
 
 ## Context
 

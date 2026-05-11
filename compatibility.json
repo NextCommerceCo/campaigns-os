@@ -1,7 +1,7 @@
 {
   "package": "@nextcommerce/campaigns-os",
   "version": "0.1.0-alpha.0",
-  "status": "dogfood-alpha",
+  "status": "developer-preview",
   "contracts": {
     "campaign_spec": "4.2",
     "build_packet": "campaign-runtime-build-packet/v0",
@@ -11,8 +11,7 @@
     "commerce_surface_catalog": 2
   },
   "source_adapters": {
-    "current": ["html_funnel"],
-    "reserved_future": ["figma_sections", "page_kit_partial_export"]
+    "current": ["html_funnel"]
   },
   "runtime": {
     "node": ">=20",
@@ -20,7 +19,7 @@
     "campaign_cart_sdk": "0.4.x expected by current fixtures"
   },
   "notes": [
-    "This toolkit is an agent-assisted build surface, not full automated launch readiness.",
-    "The starter-template catalog snapshot should be refreshed from campaign-cart-starter-templates before each dogfood round."
+    "This toolkit is an agent-assisted build surface; launch still requires build, polish, deploy, and QA evidence.",
+    "The starter-template catalog snapshot should be refreshed from campaign-cart-starter-templates before toolkit releases."
   ]
 }
