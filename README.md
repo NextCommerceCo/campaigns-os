@@ -76,7 +76,7 @@ Special case: `shop-three-step` uses dynamic shipping through `window.next.getSh
 - [Quickstart](docs/quickstart.md)
 - [Access Model](docs/access-model.md)
 - [Build Packet](docs/build-packet.md)
-- [Agentic Build Flow](docs/agentic-build-flow.md)
+- [Campaigns OS Build Flow](docs/campaigns-os-build-flow.md)
 - [Source Adapters](docs/source-adapters.md)
 - [Developer Evaluation](docs/developer-evaluation.md)
 - [QA And Test Orders](docs/qa-and-test-orders.md)
