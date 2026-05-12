@@ -33,7 +33,7 @@
           "order": 1,
           "label": "Landing",
           "is_entry": true,
-          "page_url": "runtime-packet-demo/landing.html",
+          "page_url": "landing/",
           "next_page": "checkout"
         },
         {
@@ -41,7 +41,7 @@
           "type": "checkout",
           "order": 2,
           "label": "Checkout",
-          "page_url": "runtime-packet-demo/checkout.html",
+          "page_url": "checkout/",
           "success_url": "upsell"
         },
         {
@@ -49,7 +49,7 @@
           "type": "upsell",
           "order": 3,
           "label": "Upsell",
-          "page_url": "runtime-packet-demo/upsell.html",
+          "page_url": "upsell/",
           "packages": [
             {
               "ref_id": "1",
@@ -65,7 +65,7 @@
           "type": "thankyou",
           "order": 4,
           "label": "Receipt",
-          "page_url": "runtime-packet-demo/receipt.html"
+          "page_url": "receipt/"
         }
       ]
     }

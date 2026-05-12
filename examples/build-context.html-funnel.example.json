@@ -9,8 +9,8 @@
     "path": "campaign-spec.json",
     "hash": "example-spec-sha256",
     "active_pages": [
-      { "id": "landing", "type": "landing", "label": "Landing", "page_url": "example-campaign/landing.html" },
-      { "id": "checkout", "type": "checkout", "label": "Checkout", "page_url": "example-campaign/checkout.html" }
+      { "id": "landing", "type": "landing", "label": "Landing", "page_url": "landing/" },
+      { "id": "checkout", "type": "checkout", "label": "Checkout", "page_url": "checkout/" }
     ]
   },
   "source": {
