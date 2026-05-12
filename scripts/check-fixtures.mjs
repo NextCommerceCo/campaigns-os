@@ -140,4 +140,24 @@ execFileSync(process.execPath, [cli, "qa", "resolve", "--packet", packet, "--jso
   env: { ...process.env, CAMPAIGNS_API_KEY: "fixture-key" },
 });
 
+const resolvedQa = runCliJson(["qa", "resolve", "--packet", packet, "--base-url", "https://preview.example.com", "--json"], {
+  ...process.env,
+  CAMPAIGNS_API_KEY: "fixture-key",
+});
+const pages = resolvedQa.funnels?.[0]?.pages ?? [];
+const checkout = pages.find((page) => page.page_id === "checkout");
+const upsell = pages.find((page) => page.page_id === "upsell");
+if (resolvedQa.base_url !== "https://preview.example.com/runtime-packet-demo/") {
+  throw new Error(`QA base URL should resolve to campaign root, got ${resolvedQa.base_url}`);
+}
+if (checkout?.url !== "https://preview.example.com/runtime-packet-demo/checkout/") {
+  throw new Error(`QA checkout URL should include campaign slug, got ${checkout?.url}`);
+}
+if (checkout?.expected_meta_tags?.["next-success-url"] !== "/runtime-packet-demo/upsell/") {
+  throw new Error(`QA should expect runtime-rooted next-success-url, got ${checkout?.expected_meta_tags?.["next-success-url"]}`);
+}
+if (upsell?.expected_meta_tags?.["next-upsell-accept-url"] !== "/runtime-packet-demo/receipt/") {
+  throw new Error(`QA should expect runtime-rooted next-upsell-accept-url, got ${upsell?.expected_meta_tags?.["next-upsell-accept-url"]}`);
+}
+
 console.log("Fixture checks passed");
