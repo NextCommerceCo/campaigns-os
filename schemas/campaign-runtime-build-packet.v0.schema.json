@@ -12,7 +12,7 @@
     "campaign": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["public_route_slug", "api_key_source", "allowed_domains_confirmed"],
+      "required": ["public_route_slug", "allowed_domains_confirmed"],
       "properties": {
         "public_route_slug": {
           "type": "string",
@@ -32,11 +32,15 @@
         },
         "api_key_source": {
           "type": "string",
-          "description": "Doctor-verifiable builds should use env:<VAR>. Use provided-out-of-band only for drafts."
+          "description": "Optional fallback source, usually env:<VAR>, when the local CampaignSpec does not carry campaign.campaigns_api_key."
         },
         "api_key": {
           "type": ["string", "null"],
-          "description": "Direct/local value. Campaigns API keys are public-facing and domain-allowlisted, but env:<VAR> keeps examples and shared packets portable."
+          "description": "Legacy direct/local value. Prefer campaigns_api_key or the local CampaignSpec campaign.campaigns_api_key."
+        },
+        "campaigns_api_key": {
+          "type": ["string", "null"],
+          "description": "Direct/local Campaigns API key. Campaigns API keys are public-facing and domain-allowlisted; shared examples may still prefer spec or env sourcing."
         },
         "allowed_domains_confirmed": {
           "type": "boolean"

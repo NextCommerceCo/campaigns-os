@@ -12,6 +12,7 @@
     "slug": "runtime-packet-demo",
     "ref_id": 424242,
     "payment_env_key": "CAMPAIGNS_API_KEY",
+    "campaigns_api_key": "fixture-campaigns-key",
     "name": "Runtime Packet Demo",
     "currency": "USD",
     "available_payment_methods": ["card"],
