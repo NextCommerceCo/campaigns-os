@@ -158,6 +158,13 @@ function optionalString(value, fallback = null) {
   return isNonEmptyString(value) ? value.trim() : fallback;
 }
 
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (isNonEmptyString(value)) return value.trim();
+  }
+  return null;
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -666,7 +673,6 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
   else ready.push(`Build Packet schema ${PACKET_SCHEMA}`);
 
   requireString(packet, errors, "campaign.public_route_slug");
-  requireString(packet, errors, "campaign.api_key_source");
   requireBoolean(packet, errors, "campaign.allowed_domains_confirmed");
   requireString(packet, errors, "spec.map_id");
   requireString(packet, errors, "source_html.root");
@@ -686,14 +692,6 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
 
   if (packet.assembly?.template_family === "undecided" || packet.assembly?.template_lock?.locked !== true) {
     addIssue(errors, "assembly.template_lock", "Template family must be explicitly locked before commerce wiring.");
-  }
-
-  const apiSource = packet.campaign?.api_key_source;
-  if (isNonEmptyString(apiSource) && apiSource.startsWith("env:")) {
-    const envName = apiSource.slice(4);
-    if (!process.env[envName]) {
-      addIssue(warnings, "campaign.api_key_source", `Environment variable ${envName} is not set. Full commerce/API validation will be blocked until build time.`);
-    }
   }
 
   if (packet.campaign?.allowed_domains_confirmed !== true) {
@@ -753,6 +751,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready);
   }
 
+  validateCampaignsApiKey(packet, spec, warnings, ready);
   validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready);
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
@@ -764,6 +763,85 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
   if (!packet.qa?.test_orders_allowed) {
     addIssue(warnings, "qa.test_orders_allowed", "Backend test orders are disabled; QA must avoid live order mutations.");
   }
+}
+
+function validateCampaignsApiKey(packet, spec, warnings, ready) {
+  const apiKey = resolveCampaignsApiKey(packet, spec, process.env);
+  if (apiKey.present) {
+    ready.push(`Campaigns API key available via ${apiKey.source}`);
+    if (apiKey.warning) addIssue(warnings, "campaign.api_key_source", apiKey.warning);
+    return;
+  }
+
+  addIssue(
+    warnings,
+    "campaign.api_key_source",
+    apiKey.warning || "Campaigns API key was not found in the local CampaignSpec, packet, or declared env var. API-side package/shipping/offer confirmation is deferred."
+  );
+}
+
+function resolveCampaignsApiKey(packet, spec, env) {
+  const packetKey = firstNonEmptyString(
+    packet?.campaign?.campaigns_api_key,
+    packet?.campaign?.api_key
+  );
+  if (packetKey) {
+    return {
+      present: true,
+      source: packet?.campaign?.campaigns_api_key ? "packet.campaign.campaigns_api_key" : "packet.campaign.api_key",
+      warning: "Campaigns API key is stored directly in the Build Packet. This is allowed for local/public-client builds, but shared fixtures may prefer CampaignSpec or env sourcing.",
+    };
+  }
+
+  const specKey = firstNonEmptyString(
+    spec?.campaign?.campaigns_api_key,
+    spec?.campaigns_api_key,
+    spec?.campaign?.api_key
+  );
+  if (specKey) {
+    return {
+      present: true,
+      source: spec?.campaign?.campaigns_api_key
+        ? "CampaignSpec campaign.campaigns_api_key"
+        : spec?.campaigns_api_key
+          ? "CampaignSpec campaigns_api_key"
+          : "CampaignSpec campaign.api_key",
+    };
+  }
+
+  const source = packet?.campaign?.api_key_source;
+  if (!isNonEmptyString(source)) {
+    return {
+      present: false,
+      source: null,
+      warning: "No Campaigns API key source is declared, and the local CampaignSpec does not include campaign.campaigns_api_key. API-side package/shipping/offer confirmation is deferred.",
+    };
+  }
+
+  if (source.startsWith("env:")) {
+    const envName = source.slice("env:".length).trim();
+    return {
+      present: isNonEmptyString(env?.[envName]),
+      source,
+      warning: isNonEmptyString(env?.[envName])
+        ? null
+        : `Environment variable ${envName} is not set, and the local CampaignSpec does not include campaign.campaigns_api_key. API-side package/shipping/offer confirmation is deferred.`,
+    };
+  }
+
+  if (source === "provided-out-of-band") {
+    return {
+      present: false,
+      source,
+      warning: "API key source is declared out-of-band; doctor cannot confirm Campaigns API refs before build.",
+    };
+  }
+
+  return {
+    present: false,
+    source,
+    warning: `Unsupported API key source "${source}". Use CampaignSpec campaign.campaigns_api_key, packet campaign.campaigns_api_key, or env:<VAR>.`,
+  };
 }
 
 function routeLabel(route) {

@@ -12,6 +12,8 @@ You need:
 - A target `next-campaign-page-kit` repo or local directory.
 - A starter template family decision, usually `olympus` unless `demeter` or `shop-single-step` better matches the campaign shape.
 
+Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
+
 ## Create The Packet
 
 ```bash

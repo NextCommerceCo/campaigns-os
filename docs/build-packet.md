@@ -25,4 +25,4 @@ campaign-runtime.build.json
 .campaign-runtime/doctor-output.json
 ```
 
-Commit durable packet/context/report artifacts when they represent a real build handoff. Do not commit API keys, raw private API responses, or temporary media exports.
+Commit durable packet/context/report artifacts when they represent a real build handoff. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.

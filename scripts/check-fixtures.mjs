@@ -105,13 +105,28 @@ function validateCatalogFixtures() {
   }
 }
 
+function envWithout(...keys) {
+  const env = { ...process.env };
+  for (const key of keys) delete env[key];
+  return env;
+}
+
+function runCliJson(args, env = process.env) {
+  const output = execFileSync(process.execPath, [cli, ...args], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+    env,
+    encoding: "utf8",
+  });
+  return JSON.parse(output);
+}
+
 validateCatalogFixtures();
 
-execFileSync(process.execPath, [cli, "doctor", "--packet", packet, "--json"], {
-  cwd: root,
-  stdio: "pipe",
-  env: { ...process.env, CAMPAIGNS_API_KEY: "fixture-key" },
-});
+const doctor = runCliJson(["doctor", "--packet", packet, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+if (doctor.warnings?.some((issue) => issue.code === "campaign.api_key_source")) {
+  throw new Error("Doctor should accept CampaignSpec campaign.campaigns_api_key without requiring CAMPAIGNS_API_KEY.");
+}
 
 execFileSync(process.execPath, [cli, "next", "build", "--packet", packet, "--json"], {
   cwd: root,
