@@ -401,7 +401,7 @@ function resolvePageUrl(page, baseUrl) {
   if (typeof page.url === "string" && page.url.trim()) return page.url.trim();
   if (!baseUrl) return null;
   const route = typeof page.page_url === "string" && page.page_url.trim()
-    ? page.page_url.trim()
+    ? normalizePageKitRoute(page.page_url)
     : page.is_entry
       ? ""
       : defaultRouteForType(page.type);
@@ -419,13 +419,28 @@ function defaultRouteForType(type) {
   return `${type || "page"}/`;
 }
 
+function normalizePageKitRoute(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (isAbsoluteHttpUrl(raw)) return raw;
+
+  const clean = raw
+    .replace(/[?#].*$/, "")
+    .replace(/^\/+/, "")
+    .replace(/\/?index\.html$/i, "")
+    .replace(/\.html$/i, "")
+    .replace(/^\/+|\/+$/g, "");
+
+  return clean ? `${clean}/` : "";
+}
+
 function resolveSibling(pageById, urlById, ref, baseUrl) {
   if (typeof ref !== "string" || !ref.trim()) return undefined;
   if (urlById.has(ref)) return urlById.get(ref) || null;
   if (isAbsoluteHttpUrl(ref)) return ref;
   if (baseUrl && (ref.startsWith("/") || ref.includes(".") || ref.endsWith("/"))) {
     try {
-      return joinBaseUrl(baseUrl, ref);
+      return joinBaseUrl(baseUrl, normalizePageKitRoute(ref) || ref);
     } catch {
       return ref;
     }

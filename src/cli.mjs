@@ -185,7 +185,7 @@ function relFromFile(filePath, targetPath) {
 
 function resolveFromFile(filePath, targetPath) {
   if (!isNonEmptyString(targetPath)) return null;
-  if (/^https?:\/\//.test(targetPath)) return targetPath;
+  if (isAbsoluteHttpUrl(targetPath)) return targetPath;
   return resolve(dirname(resolve(filePath)), targetPath);
 }
 
@@ -215,6 +215,54 @@ function activeSpecPages(spec) {
     }
   }
   return pages;
+}
+
+function normalizePageKitRoute(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (isAbsoluteHttpUrl(raw)) return raw;
+
+  const clean = raw
+    .replace(/[?#].*$/, "")
+    .replace(/^\/+/, "")
+    .replace(/\/?index\.html$/i, "")
+    .replace(/\.html$/i, "")
+    .replace(/^\/+|\/+$/g, "");
+
+  return clean ? `${clean}/` : "";
+}
+
+function isAbsoluteHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function hasHtmlExtensionRoute(value) {
+  if (!isNonEmptyString(value)) return false;
+  const raw = value.trim();
+  try {
+    const url = new URL(raw);
+    return /\.html$/i.test(url.pathname);
+  } catch {
+    return /\.html$/i.test(raw.replace(/[?#].*$/, ""));
+  }
+}
+
+function defaultRouteForType(type) {
+  if (type === "thankyou") return "receipt/";
+  if (["presell", "landing", "checkout", "upsell", "downsell"].includes(type)) return `${type}/`;
+  return `${type || "page"}/`;
+}
+
+function publicRouteForPage(page) {
+  if (isNonEmptyString(page.page_url)) return normalizePageKitRoute(page.page_url);
+  if (isNonEmptyString(page.url)) return page.url.trim();
+  if (page.is_entry) return "";
+  return defaultRouteForType(page.type);
 }
 
 function collectHtmlFiles(root) {
@@ -441,7 +489,7 @@ function prepareBuild(args, options = {}) {
         id: page.id,
         type: page.type || null,
         label: page.label || null,
-        page_url: page.page_url || page.url || null,
+        page_url: publicRouteForPage(page),
       })),
     },
     source: {
@@ -701,6 +749,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
       addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
     }
     ready.push("Local CampaignSpec parsed");
+    validateSpecPublicRoutes(spec, errors, ready);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready);
   }
 
@@ -715,6 +764,42 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
   if (!packet.qa?.test_orders_allowed) {
     addIssue(warnings, "qa.test_orders_allowed", "Backend test orders are disabled; QA must avoid live order mutations.");
   }
+}
+
+function routeLabel(route) {
+  return route === "" ? "entry route (empty page_url)" : route;
+}
+
+function validateSpecPublicRoutes(spec, errors, ready) {
+  const pages = activeSpecPages(spec);
+  const routeMap = new Map();
+  let routeErrors = 0;
+
+  for (const page of pages) {
+    if (hasHtmlExtensionRoute(page.page_url)) {
+      routeErrors += 1;
+      addIssue(
+        errors,
+        "spec.page_url_html_extension",
+        `Page "${page.label || page.id}" declares page_url "${page.page_url}". CampaignSpec page_url is a Page Kit public route, not a source filename; use "${normalizePageKitRoute(page.page_url) || "(entry route)"}" instead.`
+      );
+    }
+
+    const route = publicRouteForPage(page);
+    const prior = routeMap.get(route);
+    if (prior) {
+      routeErrors += 1;
+      addIssue(
+        errors,
+        "spec.route_collision",
+        `Pages "${prior.label || prior.id}" and "${page.label || page.id}" both resolve to ${routeLabel(route)}. Set distinct page_url values before assembly.`
+      );
+    } else {
+      routeMap.set(route, page);
+    }
+  }
+
+  if (pages.length > 0 && routeErrors === 0) ready.push("CampaignSpec public page routes are Page Kit-compatible");
 }
 
 function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready) {
@@ -1003,6 +1088,12 @@ function buildNextStep(errors, warnings, derived) {
   if (codes.has("campaign.allowed_domains_confirmed")) blockedStages.push("runtime-sdk-verification");
   if (codes.has("qa.test_orders_allowed") || codes.has("qa.sandbox_test_card_confirmed")) blockedStages.push("test-orders");
   if (codes.has("assembly.template_lock")) actions.push("Lock a template family before commerce wiring.");
+  if (codes.has("spec.page_url_html_extension")) {
+    actions.push("Update CampaignSpec page_url values to Page Kit public routes such as landing/ or checkout/, not source filenames like landing.html.");
+  }
+  if (codes.has("spec.route_collision")) {
+    actions.push("Fix Campaign Map page_url values so every active page resolves to a unique Page Kit route.");
+  }
   if (codes.has("frontmatter.demoOnlyValues") || codes.has("frontmatter.replaceFromSpecOrApi")) {
     actions.push("Use the template agentContract to replace demo values from CampaignSpec/API.");
   }
