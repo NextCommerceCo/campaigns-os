@@ -136,6 +136,20 @@
       ],
       "agentRule": "Keep display tier and in-offer selector ids paired. Do not attach checkout shipping refs to upsell cards."
     },
+    "upsell_mv_tiers": {
+      "purpose": "Tiered post-purchase MV/configurable bundle upsell rows.",
+      "canonicalKeys": [
+        "id",
+        "quantity",
+        "vouchers_json",
+        "selected"
+      ],
+      "sourceOfTruth": [
+        "CampaignSpec MV upsell/downsell pages",
+        "Campaigns API configurable package refs and vouchers/offers"
+      ],
+      "agentRule": "Pair with upsell_offer.package_id. Keep quantity tier ids aligned with upsells-mv.js and the hidden bundle selector; do not attach checkout shipping refs to MV upsells."
+    },
     "receipt_summary": {
       "purpose": "Receipt order-item template ids and summary copy.",
       "canonicalKeys": [
@@ -166,7 +180,7 @@
     }
   },
   "campaignSpecFixturePolicy": {
-    "directory": "docs/fixtures/campaign-specs",
+    "directory": "contracts/fixtures/campaign-specs",
     "purpose": "Small CampaignSpec-shaped examples for agent contract reasoning. They are not live Campaigns App exports.",
     "requiredShape": [
       "campaign.id",
@@ -206,7 +220,9 @@
         "packages",
         "shipping_methods",
         "swiper_slides",
-        "swiper_thumbs"
+        "swiper_thumbs",
+        "upsell_offer",
+        "upsell_bundle_tiers"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -243,25 +259,35 @@
             "packages.prepurchase_2",
             "swiper_slides",
             "swiper_thumbs",
-            "payment_flags"
+            "payment_flags",
+            "upsell_offer",
+            "upsell_bundle_tiers"
           ],
           "demoOnlyValues": [
             "packages.main_package=1",
             "packages.prepurchase_1=7",
             "packages.prepurchase_2=9",
             "shipping_methods.standard=2",
-            "shipping_methods.free=1"
+            "shipping_methods.free=1",
+            "upsell_offer.package_id=3",
+            "upsell_offer.vouchers_json=[\"UP50\"]",
+            "upsell_bundle_tiers packageId=3"
           ],
           "replaceFromSpecOrApi": [
             "packages.*",
             "shipping_methods.*",
             "bundles[].shipping_method",
-            "order_bump.*.package_id"
+            "order_bump.*.package_id",
+            "upsell_offer.*",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json",
+            "matching inline upsell package/voucher refs until upsell includes are promoted"
           ],
           "removeWhenUnsupported": [
             "bundles[].shipping_method when no tier-specific shipping exists",
             "bump includes when prepurchase packages are absent",
-            "unsupported payment method rows"
+            "unsupported payment method rows",
+            "upsell pages not present in the funnel"
           ]
         },
         "surfaces": [
@@ -309,13 +335,31 @@
               "data-next-package-toggle",
               "data-next-toggle-card"
             ]
+          },
+          {
+            "name": "Olympus bundle upsell pages",
+            "partials": [
+              "upsell-bundle-stepper.html",
+              "upsell-bundle-tier-pills.html",
+              "upsell-bundle-tier-cards.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card"
+            ]
           }
         ],
         "fixtures": [
-          "docs/fixtures/campaign-specs/olympus-tiered-standard-free.json"
+          "contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json"
         ],
         "agentNotes": [
-          "Use this family only when the design really has the Olympus tiered checkout shape; do not default here from a generic checkout."
+          "Use this family only when the design really has the Olympus tiered checkout shape; do not default here from a generic checkout.",
+          "Olympus bundle upsell pages declare upsell frontmatter as mapping hints, but still render inline SDK package/voucher refs today; replace both until those pages are promoted to include-owned upsell partials."
         ]
       }
     },
@@ -465,7 +509,7 @@
           }
         ],
         "fixtures": [
-          "docs/fixtures/campaign-specs/limos-single-offer-quantity.json"
+          "contracts/fixtures/campaign-specs/limos-single-offer-quantity.json"
         ],
         "agentNotes": [
           "Limos is quantity-stepper first; do not force 1x/2x/3x visual tier cards into this family."
@@ -623,7 +667,7 @@
           }
         ],
         "fixtures": [
-          "docs/fixtures/campaign-specs/demeter-editorial-tiered.json"
+          "contracts/fixtures/campaign-specs/demeter-editorial-tiered.json"
         ],
         "agentNotes": [
           "Demeter text such as shipping labels is copy, not proof; validate actual free/standard shipping against spec/API before launch."
@@ -761,7 +805,7 @@
           }
         ],
         "fixtures": [
-          "docs/fixtures/campaign-specs/shop-single-step-upsell-receipt.json"
+          "contracts/fixtures/campaign-specs/shop-single-step-upsell-receipt.json"
         ],
         "agentNotes": [
           "Shop-single-step is a real family, not a generic fallback. Preserve its summary/payment template roots."
@@ -785,7 +829,7 @@
         "payment": "payment-methods",
         "expressCheckout": "express-checkout|express-checkout-inline",
         "orderBump": "bump-check01|bump-check02|bump-switch01",
-        "upsell": "upsell-mv",
+        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
         "receipt": "receipt-skeleton"
       },
       "frontmatterInputsNeeded": [
@@ -798,7 +842,10 @@
         "selector_id",
         "swiper_slides",
         "swiper_thumbs",
-        "variant_slots"
+        "variant_slots",
+        "upsell_offer",
+        "upsell_mv_tiers",
+        "upsell_bundle_tiers"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -833,21 +880,34 @@
             "shipping_methods.free",
             "swiper_slides",
             "swiper_thumbs",
-            "variant_slots[].label_text"
+            "variant_slots[].label_text",
+            "upsell_offer",
+            "upsell_mv_tiers",
+            "upsell_bundle_tiers"
           ],
           "demoOnlyValues": [
             "packages.main_package=1",
             "shipping_methods.standard=2",
-            "shipping_methods.free=1"
+            "shipping_methods.free=1",
+            "upsell_offer.package_id=1",
+            "upsell_offer.package_id=3",
+            "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
+            "upsell_bundle_tiers packageId=3",
+            "upsell_bundle_tiers vouchers_json=[\"UP50\"]"
           ],
           "replaceFromSpecOrApi": [
             "packages.main_package",
             "shipping_methods.*",
-            "variant_slots[].shipping_method"
+            "variant_slots[].shipping_method",
+            "upsell_offer.*",
+            "upsell_mv_tiers[].vouchers_json",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json"
           ],
           "removeWhenUnsupported": [
             "variant slot rows unsupported by the target spec/API",
-            "free shipping row if no free method exists"
+            "free shipping row if no free method exists",
+            "upsell pages not present in the funnel"
           ]
         },
         "surfaces": [
@@ -881,13 +941,34 @@
               "data-next-payment-method",
               "data-next-cart-summary"
             ]
+          },
+          {
+            "name": "MV upsell offers",
+            "partials": [
+              "upsell-mv-offer.html",
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_mv_tiers",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-bundle-slots-for"
+            ]
           }
         ],
         "fixtures": [
-          "docs/fixtures/campaign-specs/olympus-mv-single-step-configurable.json"
+          "contracts/fixtures/campaign-specs/olympus-mv-single-step-configurable.json"
         ],
         "agentNotes": [
-          "Keep slot ids aligned across selector rows, bundle slots, and JS."
+          "Keep slot ids aligned across selector rows, bundle slots, and JS.",
+          "MV upsell pages now use upsells-mv.js for configurable-slot upsells and upsells.js for the standard bundle upsell chain; replace both upsell_offer and tier voucher/package refs from the target spec/API."
         ]
       }
     },
@@ -908,7 +989,7 @@
         "orderSummary": "cart-summary03|cart-summary04",
         "payment": "payment-methods",
         "expressCheckout": "express-checkout|express-checkout-inline",
-        "upsell": "upsell-mv",
+        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
         "receipt": "receipt-skeleton"
       },
       "frontmatterInputsNeeded": [
@@ -921,7 +1002,10 @@
         "shipping_methods",
         "select_step",
         "selector_id",
-        "variant_slots"
+        "variant_slots",
+        "upsell_offer",
+        "upsell_mv_tiers",
+        "upsell_bundle_tiers"
       ],
       "agentContract": {
         "status": "agent-ready",
@@ -958,21 +1042,34 @@
             "shipping_methods.free",
             "checkout_step.selector_id",
             "swiper_slides",
-            "swiper_thumbs"
+            "swiper_thumbs",
+            "upsell_offer",
+            "upsell_mv_tiers",
+            "upsell_bundle_tiers"
           ],
           "demoOnlyValues": [
             "packages.main_package=1",
             "shipping_methods.standard=2",
-            "shipping_methods.free=1"
+            "shipping_methods.free=1",
+            "upsell_offer.package_id=1",
+            "upsell_offer.package_id=3",
+            "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
+            "upsell_bundle_tiers packageId=3",
+            "upsell_bundle_tiers vouchers_json=[\"UP50\"]"
           ],
           "replaceFromSpecOrApi": [
             "packages.main_package",
             "shipping_methods.*",
-            "variant_slots[].shipping_method"
+            "variant_slots[].shipping_method",
+            "upsell_offer.*",
+            "upsell_mv_tiers[].vouchers_json",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json"
           ],
           "removeWhenUnsupported": [
             "variant slot rows unsupported by the target spec/API",
-            "free shipping row if no free method exists"
+            "free shipping row if no free method exists",
+            "upsell pages not present in the funnel"
           ]
         },
         "surfaces": [
@@ -1020,13 +1117,34 @@
               "data-next-payment-method",
               "data-next-cart-summary"
             ]
+          },
+          {
+            "name": "MV upsell offers",
+            "partials": [
+              "upsell-mv-offer.html",
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_mv_tiers",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-bundle-slots-for"
+            ]
           }
         ],
         "fixtures": [
-          "docs/fixtures/campaign-specs/olympus-mv-two-step-configurable.json"
+          "contracts/fixtures/campaign-specs/olympus-mv-two-step-configurable.json"
         ],
         "agentNotes": [
-          "Select-step ids and checkout-step ids must remain synchronized; ask if a design blends one-step and two-step MV patterns."
+          "Select-step ids and checkout-step ids must remain synchronized; ask if a design blends one-step and two-step MV patterns.",
+          "MV upsell pages now use upsells-mv.js for configurable-slot upsells and upsells.js for the standard bundle upsell chain; replace both upsell_offer and tier voucher/package refs from the target spec/API."
         ]
       }
     },
@@ -1047,14 +1165,14 @@
         "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards"
       },
       "frontmatterInputsNeeded": [
-        "receipt_summary",
-        "upsell_offer",
-        "upsell_bundle_tiers"
+        "receipt_summary"
       ],
       "frontmatterInputsObserved": [
         "shipping_steps",
         "swiper_slides",
-        "swiper_thumbs"
+        "swiper_thumbs",
+        "upsell_offer",
+        "upsell_bundle_tiers"
       ],
       "agentContract": {
         "status": "partial-needs-promotion",
@@ -1092,11 +1210,17 @@
             "swiper_thumbs"
           ],
           "demoOnlyValues": [
+            "upsell_offer.package_id=3",
+            "upsell_offer.vouchers_json=[\"UP50\"]",
+            "upsell_bundle_tiers packageId=3",
             "inline upsell packageId=3",
             "inline upsell vouchers=[\"UP50\"]"
           ],
           "replaceFromSpecOrApi": [
-            "inline upsell package/voucher refs until promoted",
+            "upsell_offer.*",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json",
+            "matching inline upsell package/voucher refs until upsell includes are promoted",
             "payment method visibility",
             "receipt summary markup once promoted"
           ],
@@ -1148,10 +1272,11 @@
           }
         ],
         "fixtures": [
-          "docs/fixtures/campaign-specs/shop-three-step-dynamic-shipping.json"
+          "contracts/fixtures/campaign-specs/shop-three-step-dynamic-shipping.json"
         ],
         "agentNotes": [
-          "Do not add shipping_methods frontmatter here for checkout methods. The shipping step renders from the live SDK/API method list."
+          "Do not add shipping_methods frontmatter here for checkout methods. The shipping step renders from the live SDK/API method list.",
+          "Shop-three-step bundle upsell pages declare upsell frontmatter as mapping hints, but still render inline SDK package/voucher refs today; replace both until those pages are promoted to include-owned upsell partials."
         ]
       }
     }
