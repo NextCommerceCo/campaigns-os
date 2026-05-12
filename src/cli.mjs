@@ -37,6 +37,18 @@ const KNOWN_DEPLOY_TARGETS = new Set([
   "unknown",
 ]);
 
+const REQUIRED_STORE_PROFILE_FIELDS = [
+  "store_name",
+  "store_url",
+  "store_terms",
+  "store_privacy",
+  "store_contact",
+  "store_returns",
+  "store_shipping",
+  "store_phone",
+  "store_phone_tel",
+];
+
 const HELP = `Campaigns OS toolkit
 
 Usage:
@@ -748,6 +760,8 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
     }
     ready.push("Local CampaignSpec parsed");
     validateSpecPublicRoutes(spec, errors, ready);
+    validateSpecStoreProfile(spec, errors, ready);
+    validateSpecShippingCountries(spec, warnings, ready);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready);
   }
 
@@ -763,6 +777,37 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
   if (!packet.qa?.test_orders_allowed) {
     addIssue(warnings, "qa.test_orders_allowed", "Backend test orders are disabled; QA must avoid live order mutations.");
   }
+}
+
+function validateSpecStoreProfile(spec, errors, ready) {
+  const campaign = spec?.campaign || {};
+  const missing = REQUIRED_STORE_PROFILE_FIELDS.filter((field) => !isNonEmptyString(campaign[field]));
+  if (missing.length > 0) {
+    addIssue(
+      errors,
+      "spec.store_profile",
+      `CampaignSpec campaign is missing Store Profile fields required for page-kit campaigns.json: ${missing.join(", ")}.`
+    );
+    return;
+  }
+  ready.push("CampaignSpec Store Profile fields are present for page-kit campaigns.json");
+}
+
+function validateSpecShippingCountries(spec, warnings, ready) {
+  const countries = spec?.campaign?.available_shipping_countries;
+  if (countries === "all" || (Array.isArray(countries) && countries.length === 0)) {
+    ready.push("CampaignSpec shipping countries: all countries");
+    return;
+  }
+  if (Array.isArray(countries)) {
+    ready.push(`CampaignSpec shipping countries: ${countries.join(", ")}`);
+    return;
+  }
+  if (countries == null) {
+    ready.push("CampaignSpec shipping countries: all countries");
+    return;
+  }
+  addIssue(warnings, "spec.available_shipping_countries", 'CampaignSpec campaign.available_shipping_countries should be "all" or an array of country codes.');
 }
 
 function validateCampaignsApiKey(packet, spec, warnings, ready) {
