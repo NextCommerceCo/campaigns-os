@@ -14,6 +14,8 @@ It answers:
 
 The current schema is `schemas/campaign-runtime-build-packet.v0.schema.json`.
 
+Page-kit also needs Store Profile fields for `_data/campaigns.json`. These live in the local CampaignSpec under `campaign.store_*` because they are operator-entered storefront/legal metadata, not Campaigns API data.
+
 ## Artifact Locations
 
 By default `campaigns-os start` writes into the target repo:

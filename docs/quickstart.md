@@ -7,12 +7,14 @@ This path is optimized for a developer using Claude Code or another AI coding to
 You need:
 
 - Campaigns App setup with packages, offers, shipping methods, payment methods, and an API key.
-- Campaign Map exported as a local CampaignSpec JSON.
+- Campaign Map exported as a local CampaignSpec JSON, including Store Profile fields for page-kit `campaigns.json`.
 - Prepared HTML/CSS/assets for the campaign pages.
 - A target `next-campaign-page-kit` repo or local directory.
 - A starter template family decision, usually `olympus` unless `demeter` or `shop-single-step` better matches the campaign shape.
 
 Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
+
+The Store Profile is operator-entered campaign metadata, not Campaigns API data. `doctor` expects `campaign.store_name`, `store_url`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel`.
 
 ## Create The Packet
 
