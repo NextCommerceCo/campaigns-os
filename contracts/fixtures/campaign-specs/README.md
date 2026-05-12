@@ -1,6 +1,6 @@
 # CampaignSpec Agent Fixtures
 
-These JSON files are small CampaignSpec-shaped examples for agent reasoning and Sam review. They are not live Campaigns App exports and should not be used as production campaign data.
+These JSON files are small CampaignSpec-shaped examples for agent reasoning and human review. They are not live Campaigns App exports and should not be used as production campaign data.
 
 What they are for:
 
@@ -15,4 +15,4 @@ Fixture conventions:
 - Numeric `ref_id` values are illustrative. Replace them from the target Campaigns API.
 - `shipping_methods[].key` mirrors the starter frontmatter vocabulary, such as `standard` and `free`.
 
-Run `npm run lint:agent-contracts` after changing these fixtures or `docs/commerce-surface-catalog.json`.
+Run `npm run check` after changing these fixtures or `contracts/commerce-surface-catalog.json`.

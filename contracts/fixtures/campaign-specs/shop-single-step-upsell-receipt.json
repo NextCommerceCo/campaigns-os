@@ -1,0 +1,156 @@
+{
+  "campaign": {
+    "id": "fixture-shop-single-step",
+    "name": "Fixture Shop Single Step Upsell Receipt",
+    "slug": "fixture-shop-single",
+    "currency": "USD",
+    "language": "en",
+    "payment_env_key": "fixture_payment_env_key",
+    "tracking": {
+      "status": "not_configured"
+    },
+    "footer_links": [
+      {
+        "label": "Privacy Policy",
+        "url": "https://example.com/privacy",
+        "required": true
+      },
+      {
+        "label": "Terms of Service",
+        "url": "https://example.com/terms",
+        "required": true
+      },
+      {
+        "label": "Contact Us",
+        "url": "https://example.com/contact",
+        "required": true
+      }
+    ],
+    "seo": {
+      "required": false,
+      "title": "Fixture Shop Single Step Upsell Receipt",
+      "description": "Agent contract fixture. Replace with campaign-specific metadata when required."
+    }
+  },
+  "spec_identity": {
+    "map_id": "fixture-shop-single-step-map",
+    "source": "campaign-cart-starter-templates agent fixture"
+  },
+  "funnels": [
+    {
+      "id": "default",
+      "name": "Default",
+      "hypothesis": "Fixture only: demonstrate the template family contract for agent builds.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "checkout",
+          "type": "checkout",
+          "order": 1,
+          "label": "Checkout",
+          "template": "src/shop-single-step/checkout.html",
+          "page_url": "/checkout/",
+          "next_page": "upsell-bundle-stepper.html",
+          "packages": [
+            {
+              "role": "main",
+              "ref_id": 10,
+              "quantity": 1
+            },
+            {
+              "role": "order_bump",
+              "ref_id": 17,
+              "quantity": 1
+            }
+          ],
+          "shipping_methods": [
+            "standard",
+            "free"
+          ],
+          "sdk_hints": {
+            "template_family": "shop-single-step",
+            "frontmatter": {
+              "payment_flags.show_paypal": true,
+              "payment_flags.show_klarna": true,
+              "payment_flags.show_apple_pay": true,
+              "payment_flags.show_google_pay": true
+            }
+          }
+        },
+        {
+          "id": "upsell-stepper",
+          "type": "upsell",
+          "order": 2,
+          "label": "Post-purchase upsell",
+          "template": "src/shop-single-step/upsell-bundle-stepper.html",
+          "page_url": "/upsell-stepper/",
+          "next_page": "receipt.html",
+          "on_accept": "receipt.html",
+          "on_decline": "receipt.html",
+          "packages": [
+            {
+              "role": "upsell",
+              "ref_id": 30,
+              "quantity": 1
+            }
+          ],
+          "offers": [
+            {
+              "code": "UP50",
+              "package_ref_id": 30
+            }
+          ],
+          "sdk_hints": {
+            "template_family": "shop-single-step",
+            "frontmatter": {
+              "upsell_offer.package_id": 30,
+              "upsell_offer.vouchers_json": "[\"UP50\"]",
+              "upsell_bundle_tiers[].items_json": "[{\"packageId\":30,\"quantity\":1}]"
+            }
+          }
+        },
+        {
+          "id": "receipt",
+          "type": "thankyou",
+          "order": 3,
+          "label": "Receipt",
+          "template": "src/shop-single-step/receipt.html",
+          "page_url": "/receipt/",
+          "sdk_hints": {
+            "template_family": "shop-single-step",
+            "frontmatter": {
+              "receipt_summary.title": "Order Summary",
+              "receipt_summary.mobile_item_template_id": "order-item-template-mobile",
+              "receipt_summary.desktop_item_template_id": "order-item-template-desktop"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "shipping_methods": [
+    {
+      "key": "standard",
+      "ref_id": 20,
+      "name": "Standard Shipping",
+      "price": "4.95"
+    },
+    {
+      "key": "free",
+      "ref_id": 21,
+      "name": "Free Shipping",
+      "price": "0.00"
+    }
+  ],
+  "offers": [
+    {
+      "code": "UP50",
+      "package_ref_id": 30,
+      "discount_type": "percent",
+      "value": 50,
+      "applies_to": [
+        "upsell"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,324 @@
+{
+  "campaign": {
+    "id": "fixture-olympus-mv-two",
+    "name": "Fixture Olympus MV Two Step Configurable",
+    "slug": "fixture-olympus-mv-two",
+    "currency": "USD",
+    "language": "en",
+    "payment_env_key": "fixture_payment_env_key",
+    "tracking": {
+      "status": "not_configured"
+    },
+    "footer_links": [
+      {
+        "label": "Privacy Policy",
+        "url": "https://example.com/privacy",
+        "required": true
+      },
+      {
+        "label": "Terms of Service",
+        "url": "https://example.com/terms",
+        "required": true
+      },
+      {
+        "label": "Contact Us",
+        "url": "https://example.com/contact",
+        "required": true
+      }
+    ],
+    "seo": {
+      "required": false,
+      "title": "Fixture Olympus MV Two Step Configurable",
+      "description": "Agent contract fixture. Replace with campaign-specific metadata when required."
+    }
+  },
+  "spec_identity": {
+    "map_id": "fixture-olympus-mv-two-map",
+    "source": "campaign-cart-starter-templates agent fixture"
+  },
+  "funnels": [
+    {
+      "id": "default",
+      "name": "Default",
+      "hypothesis": "Fixture only: demonstrate the template family contract for agent builds.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "select",
+          "type": "product",
+          "order": 1,
+          "label": "Select bundle and variants",
+          "template": "src/olympus-mv-two-step/select.html",
+          "page_url": "/select/",
+          "next_page": "checkout.html",
+          "packages": [
+            {
+              "role": "main",
+              "ref_id": 10,
+              "quantity": 1,
+              "configurable": true
+            },
+            {
+              "role": "main",
+              "ref_id": 10,
+              "quantity": 2,
+              "configurable": true
+            },
+            {
+              "role": "main",
+              "ref_id": 10,
+              "quantity": 3,
+              "configurable": true
+            }
+          ],
+          "shipping_methods": [
+            "standard",
+            "free"
+          ],
+          "sdk_hints": {
+            "template_family": "olympus-mv-two-step",
+            "frontmatter": {
+              "packages.main_package": 10,
+              "shipping_methods.standard": 20,
+              "shipping_methods.free": 21,
+              "select_step.selector_id": "main",
+              "variant_slots": [
+                {
+                  "id": "buy1",
+                  "quantity": 1,
+                  "shipping_method": "standard",
+                  "selected": true
+                },
+                {
+                  "id": "buy2",
+                  "quantity": 2,
+                  "shipping_method": "standard"
+                },
+                {
+                  "id": "buy3",
+                  "quantity": 3,
+                  "shipping_method": "free"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "checkout",
+          "type": "checkout",
+          "order": 2,
+          "label": "Checkout",
+          "template": "src/olympus-mv-two-step/checkout.html",
+          "page_url": "/checkout/",
+          "next_page": "upsell-mv.html",
+          "sdk_hints": {
+            "template_family": "olympus-mv-two-step",
+            "frontmatter": {
+              "checkout_step.selector_id": "main"
+            }
+          }
+        },
+        {
+          "id": "upsell-mv",
+          "type": "upsell",
+          "order": 3,
+          "label": "MV configurable upsell",
+          "template": "src/olympus-mv-two-step/upsell-mv.html",
+          "page_url": "/upsell-mv/",
+          "next_page": "upsell-bundle-stepper.html",
+          "sdk_hints": {
+            "template_family": "olympus-mv-two-step",
+            "frontmatter": {
+              "upsell_offer.package_id": 10,
+              "upsell_offer.selector_id": "upsell-bundle",
+              "upsell_offer.display_selector_id": "upsell-bundle-1x",
+              "upsell_mv_tiers": [
+                {
+                  "id": "upsell-bundle-1x",
+                  "quantity": 1,
+                  "vouchers_json": "[\"UP80TSHIRT\"]",
+                  "selected": true
+                },
+                {
+                  "id": "upsell-bundle-2x",
+                  "quantity": 2,
+                  "vouchers_json": "[\"UP80TSHIRT\"]"
+                },
+                {
+                  "id": "upsell-bundle-3x",
+                  "quantity": 3,
+                  "vouchers_json": "[\"UP80TSHIRT\"]"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "order": 4,
+          "label": "Bundle stepper upsell",
+          "template": "src/olympus-mv-two-step/upsell-bundle-stepper.html",
+          "page_url": "/upsell-bundle-stepper/",
+          "next_page": "upsell-bundle-tier-pills.html",
+          "sdk_hints": {
+            "template_family": "olympus-mv-two-step",
+            "frontmatter": {
+              "upsell_offer.package_id": 30,
+              "upsell_offer.selector_id": "upsell-bundle",
+              "upsell_offer.bundle_id": "upsell-bundle-1x",
+              "upsell_offer.items_json": "[{\"packageId\":30,\"quantity\":1}]",
+              "upsell_offer.vouchers_json": "[\"UP50\"]"
+            }
+          }
+        },
+        {
+          "id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "order": 5,
+          "label": "Bundle tier pill upsell",
+          "template": "src/olympus-mv-two-step/upsell-bundle-tier-pills.html",
+          "page_url": "/upsell-bundle-tier-pills/",
+          "next_page": "upsell-bundle-tier-cards.html",
+          "sdk_hints": {
+            "template_family": "olympus-mv-two-step",
+            "frontmatter": {
+              "upsell_offer.package_id": 30,
+              "upsell_offer.selector_id": "upsell-bundle",
+              "upsell_bundle_tiers": [
+                {
+                  "id": "upsell-bundle-1x",
+                  "button_value": "1",
+                  "items_json": "[{\"packageId\":30,\"quantity\":1}]",
+                  "vouchers_json": "[\"UP50\"]",
+                  "selected": true
+                },
+                {
+                  "id": "upsell-bundle-2x",
+                  "button_value": "2",
+                  "items_json": "[{\"packageId\":30,\"quantity\":2}]",
+                  "vouchers_json": "[\"UP60\"]"
+                },
+                {
+                  "id": "upsell-bundle-3x",
+                  "button_value": "3",
+                  "items_json": "[{\"packageId\":30,\"quantity\":3}]",
+                  "vouchers_json": "[\"UP70\"]"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "order": 6,
+          "label": "Bundle tier card upsell",
+          "template": "src/olympus-mv-two-step/upsell-bundle-tier-cards.html",
+          "page_url": "/upsell-bundle-tier-cards/",
+          "next_page": "receipt.html",
+          "sdk_hints": {
+            "template_family": "olympus-mv-two-step",
+            "frontmatter": {
+              "upsell_offer.package_id": 30,
+              "upsell_offer.selector_id": "upsell-bundle",
+              "upsell_offer.header_discount_selector_id": "upsell-bundle-3x",
+              "upsell_bundle_tiers": [
+                {
+                  "id": "upsell-bundle-1x",
+                  "items_json": "[{\"packageId\":30,\"quantity\":1}]",
+                  "vouchers_json": "[\"UP50\"]",
+                  "selected": true,
+                  "label": "Buy 1",
+                  "hint": "1 unit"
+                },
+                {
+                  "id": "upsell-bundle-2x",
+                  "items_json": "[{\"packageId\":30,\"quantity\":2}]",
+                  "vouchers_json": "[\"UP60\"]",
+                  "label": "Buy 2",
+                  "hint": "2 units"
+                },
+                {
+                  "id": "upsell-bundle-3x",
+                  "items_json": "[{\"packageId\":30,\"quantity\":3}]",
+                  "vouchers_json": "[\"UP70\"]",
+                  "label": "Buy 3",
+                  "hint": "3 units"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "receipt",
+          "type": "thankyou",
+          "order": 7,
+          "label": "Receipt",
+          "template": "src/olympus-mv-two-step/receipt.html",
+          "page_url": "/receipt/",
+          "sdk_hints": {
+            "template_family": "olympus-mv-two-step",
+            "frontmatter": {
+              "receipt_summary.title": "Order Summary",
+              "receipt_summary.mobile_item_template_id": "order-item-template-mobile",
+              "receipt_summary.desktop_item_template_id": "order-item-template-desktop"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "shipping_methods": [
+    {
+      "key": "standard",
+      "ref_id": 20,
+      "name": "Standard Shipping",
+      "price": "4.95"
+    },
+    {
+      "key": "free",
+      "ref_id": 21,
+      "name": "Free Shipping",
+      "price": "0.00"
+    }
+  ],
+  "offers": [
+    {
+      "code": "UP80TSHIRT",
+      "package_ref_id": 10,
+      "discount_type": "percent",
+      "value": 80,
+      "applies_to": [
+        "upsell"
+      ]
+    },
+    {
+      "code": "UP50",
+      "package_ref_id": 30,
+      "discount_type": "percent",
+      "value": 50,
+      "applies_to": [
+        "upsell"
+      ]
+    },
+    {
+      "code": "UP60",
+      "package_ref_id": 30,
+      "discount_type": "percent",
+      "value": 60,
+      "applies_to": [
+        "upsell"
+      ]
+    },
+    {
+      "code": "UP70",
+      "package_ref_id": 30,
+      "discount_type": "percent",
+      "value": 70,
+      "applies_to": [
+        "upsell"
+      ]
+    }
+  ]
+}
