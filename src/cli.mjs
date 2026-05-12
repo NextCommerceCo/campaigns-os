@@ -202,6 +202,12 @@ function relFromFile(filePath, targetPath) {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+function relFromDir(dirPath, targetPath) {
+  const rel = relative(resolve(dirPath), resolve(targetPath));
+  if (!rel) return ".";
+  return rel.startsWith(".") ? rel : `./${rel}`;
+}
+
 function resolveFromFile(filePath, targetPath) {
   if (!isNonEmptyString(targetPath)) return null;
   if (isAbsoluteHttpUrl(targetPath)) return targetPath;
@@ -394,6 +400,13 @@ function campaignIdentity(spec, args) {
   return { mapId, publicRouteSlug };
 }
 
+function preferredTemplateFamily(spec) {
+  return optionalString(spec?.spec_identity?.preferred_template_family)
+    || optionalString(spec?.campaign?.preferred_template_family)
+    || optionalString(spec?.preferred_template_family)
+    || null;
+}
+
 function createStage(stage, status, extras = {}) {
   return {
     stage,
@@ -432,12 +445,18 @@ function prepareBuild(args, options = {}) {
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
   const matched = matchSourcePages(activePages, htmlFiles);
-  const templateFamily = optionalString(args["template-family"], "undecided");
-  const templateLocked = templateFamily !== "undecided" && templateFamily !== "auto";
+  const explicitTemplateFamily = optionalString(args["template-family"]);
+  const hintedTemplateFamily = preferredTemplateFamily(spec);
+  const templateFamily = explicitTemplateFamily || hintedTemplateFamily || "undecided";
+  const templateLocked = Boolean(explicitTemplateFamily) && templateFamily !== "undecided" && templateFamily !== "auto";
+  const templateCandidates = hintedTemplateFamily
+    ? [{ family: hintedTemplateFamily, source: "CampaignSpec preferred_template_family", confidence: "hint" }]
+    : [];
   const outputDir = optionalString(args["output-dir"], `src/${publicRouteSlug}`);
   const liveUrlPath = optionalString(args["live-url-path"], `/${publicRouteSlug}/`);
   const commerceCatalog = optionalString(args["commerce-catalog"], join(ROOT, "contracts/commerce-surface-catalog.json"));
   const blockers = matched.prompts.map((prompt) => ({ code: prompt.code, stage: prompt.stage, message: prompt.message }));
+  const portable = (path) => relFromDir(targetRepo, path);
 
   const packet = {
     schema_version: PACKET_SCHEMA,
@@ -465,7 +484,9 @@ function prepareBuild(args, options = {}) {
       template_family: templateFamily === "auto" ? "undecided" : templateFamily,
       template_decision_notes: templateLocked
         ? `Template family locked by prepare-build --template-family ${templateFamily}.`
-        : "Template family must be locked before commerce wiring.",
+        : hintedTemplateFamily
+          ? `CampaignSpec hints ${hintedTemplateFamily}; operator must still lock the template family before commerce wiring.`
+          : "Template family must be locked before commerce wiring.",
       template_lock: {
         locked: templateLocked,
         locked_by: templateLocked ? "operator_flag" : null,
@@ -499,10 +520,10 @@ function prepareBuild(args, options = {}) {
     generated_at: new Date().toISOString(),
     source_adapter: sourceKind,
     status: blockers.length ? "blocked" : "prepared",
-    packet_path: packetPath,
-    report_path: reportPath,
+    packet_path: portable(packetPath),
+    report_path: portable(reportPath),
     spec: {
-      path: specPath,
+      path: portable(specPath),
       hash: sha256File(specPath),
       active_pages: activePages.map((page) => ({
         id: page.id,
@@ -512,20 +533,20 @@ function prepareBuild(args, options = {}) {
       })),
     },
     source: {
-      root: sourceRoot,
+      root: portable(sourceRoot),
       html_files: htmlFiles,
     },
     page_map: matched.mappings.map((mapping) => ({
       page_id: mapping.page_id,
       source_path: mapping.path || null,
       skip_reason: mapping.skip_reason || null,
-      output_path: mapping.path ? join(outputDir, mapping.path) : null,
+      output_path: mapping.path ? portable(resolve(targetRepo, outputDir, mapping.path)) : null,
     })),
     scaffold: {
       mode: existsSync(resolve(targetRepo, outputDir)) ? "existing" : "fresh",
       required: !existsSync(resolve(targetRepo, outputDir)),
-      target_repo: targetRepo,
-      output_dir: resolve(targetRepo, outputDir),
+      target_repo: ".",
+      output_dir: portable(resolve(targetRepo, outputDir)),
       handoff_skill: existsSync(resolve(targetRepo, outputDir)) ? "next-campaigns-build" : "next-campaigns-setup",
       handoff_artifact: ".campaign-runtime/setup-handoff.json",
       reason: existsSync(resolve(targetRepo, outputDir))
@@ -536,7 +557,7 @@ function prepareBuild(args, options = {}) {
       family: packet.assembly.template_family,
       locked: templateLocked,
       lock: packet.assembly.template_lock,
-      candidates: [],
+      candidates: templateCandidates,
     },
     commerce_zone_findings: inspectCommerceZones(sourceRoot, htmlFiles),
     prompts_required: matched.prompts,
@@ -586,6 +607,7 @@ function inspectCommerceZones(sourceRoot, htmlFiles) {
 
 function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, sourceRoot, sourceKind, targetRepo, packet, context, blockers }) {
   const scaffoldRequired = context.scaffold.required;
+  const portable = (path) => relFromDir(targetRepo, path);
   return {
     schema_version: REPORT_SCHEMA,
     run_id: `asm_${Date.now()}`,
@@ -599,22 +621,22 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
       spec_hash: sha256File(specPath),
     },
     inputs: {
-      packet_path: packetPath,
-      context_path: contextPath,
-      spec_path: specPath,
-      source: { kind: sourceKind, root: sourceRoot },
-      target_repo: targetRepo,
+      packet_path: portable(packetPath),
+      context_path: portable(contextPath),
+      spec_path: portable(specPath),
+      source: { kind: sourceKind, root: portable(sourceRoot) },
+      target_repo: ".",
     },
     template_family: {
       value: packet.assembly.template_family,
       locked: packet.assembly.template_lock.locked,
       locked_by: packet.assembly.template_lock.locked_by,
       commerce_catalog_version: null,
-      candidates: [],
+      candidates: context.template.candidates,
     },
     stages: {
       prepare_build: createStage("prepare_build", blockers.length ? "blocked" : "completed", {
-        outputs: [packetPath, contextPath, reportPath],
+        outputs: [portable(packetPath), portable(contextPath), portable(reportPath)],
         blockers,
       }),
       doctor: createStage("doctor", "pending"),
@@ -1079,7 +1101,7 @@ function validateAssemblyReport(report) {
       }
       requireString(report, errors, `stages.${stage}.status`);
       for (const field of ["inputs", "outputs", "commands", "blockers", "warnings"]) {
-        if (!Array.isArray(stages[stage][field])) {
+        if (stages[stage][field] !== undefined && !Array.isArray(stages[stage][field])) {
           addIssue(errors, `stages.${stage}.${field}`, `stages.${stage}.${field} must be an array.`);
         }
       }
@@ -1158,6 +1180,10 @@ Rules:
 - Treat CampaignSpec/API as the source for package, shipping, voucher, payment, tracking, footer, and SEO values.
 - Read the selected template family's agentContract and sharedFrontmatterVocabulary before commerce wiring.
 - Preserve SDK-owned checkout/cart/upsell/receipt surfaces.
+- Preserve prepared source HTML for landing/presell pages when it is a real standalone design; use starter-template commerce surfaces for checkout/upsell/receipt.
+- Resolve SDK routing meta tags to campaign-root paths such as /${packet.campaign.public_route_slug}/upsell/, not source filenames or unrooted spec literals.
+- For one-time prepurchase/order-bump packages outside the main bundles, default package_sync=false and show_line_total_price=false unless the spec explicitly requires quantity sync.
+- Record spec-driven removals, especially unsupported payment methods, so polish does not reintroduce them.
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
 - Run page-kit build and SDK/template lint, then update the assembly report before polish.`;
 }
@@ -1183,7 +1209,7 @@ Read first:
 - Assembly Report: ${reportPath}
 - Template family: ${packet.assembly.template_family}
 
-Compare source against built page-kit output, patch only SDK-safe visual surfaces, capture desktop/mobile evidence, and record polish as completed, skipped, or blocked before QA.`;
+Compare source against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, capture desktop/mobile evidence, and record polish as completed, skipped, or blocked before QA.`;
 }
 
 function qaPrompt(packetPath, reportPath, packet) {

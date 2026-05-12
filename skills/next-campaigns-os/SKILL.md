@@ -23,3 +23,5 @@ Rules:
 - Starter-template `agentContract` owns reusable commerce structure and protected SDK surfaces.
 - Designed source owns visual composition and page-level content.
 - Do not copy demo refs or unsupported optional surfaces into the target campaign.
+- Build Packet, context, and assembly-report paths should be repo-relative when possible so handoff artifacts can be committed without machine-local absolute paths.
+- Store Profile fields are operator-entered storefront/legal metadata for page-kit `campaigns.json`; they do not come from the Campaigns API and should be collected in the CampaignSpec before build.

@@ -136,7 +136,7 @@
     "stage": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["stage", "status", "inputs", "outputs", "commands", "blockers", "warnings"],
+      "required": ["stage", "status"],
       "properties": {
         "stage": { "type": "string", "minLength": 1 },
         "status": { "type": "string", "minLength": 1 },

@@ -52,7 +52,13 @@
           "order": 2,
           "label": "Checkout",
           "page_url": "checkout/",
-          "success_url": "upsell"
+          "success_url": "upsell",
+          "sdk_hints": {
+            "meta_tags": {
+              "next-page-type": "checkout",
+              "next-success-url": "upsell/"
+            }
+          }
         },
         {
           "id": "upsell",
@@ -68,7 +74,14 @@
             }
           ],
           "on_accept": "receipt",
-          "on_decline": "receipt"
+          "on_decline": "receipt",
+          "sdk_hints": {
+            "meta_tags": {
+              "next-page-type": "upsell",
+              "next-upsell-accept-url": "receipt/",
+              "next-upsell-decline-url": "receipt/"
+            }
+          }
         },
         {
           "id": "receipt",
