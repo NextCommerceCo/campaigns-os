@@ -11,6 +11,7 @@ Core rules:
 - Preserve SDK-owned checkout, cart, upsell, receipt, payment, address, totals, and submit surfaces.
 - Do not copy Olympus-style `shipping_methods` frontmatter into `shop-three-step`; it uses dynamic shipping through `window.next.getShippingMethods()`.
 - Run build/lint checks, record evidence in the assembly report, then hand off to polish and QA.
-- Do not place backend test orders unless the packet has `test_orders_allowed=true` and `sandbox_test_card_confirmed=true`.
+- Test-order proof must use the deployed campaign and Campaign Cart SDK. On checkout pages, dispatch `document.dispatchEvent(new CustomEvent("next:test-mode-activated", { detail: { method: "konami" } }))` rather than creating hand-built backend API orders. Then click the rendered SDK upsell accept/decline controls and verify the resulting receipt/order evidence.
+- Do not fire SDK test orders unless the deployed domain is allowlisted for the campaign API key and `test_card` sandbox routing is confirmed for the merchant.
 
 Current source adapter: prepared HTML/assets (`html_funnel`).

@@ -23,11 +23,12 @@ Options:
   --post-verdict                  POST verdict JSON to <proxy-base>/api/qa/verdicts after writing the local copy.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --test-order <off|accept|decline|both>
-  --allow-test-orders             Required with --test-order other than off.
-  --sandbox-test-card-confirmed   Required with --test-order other than off.
-  --api-key <key>                 Campaigns API key for test orders. Env QA_CAMPAIGNS_API_KEY is also recognized.
-  --campaigns-api-base <url>      Campaigns API base URL for test orders. Env CAMPAIGNS_API_BASE is also recognized.
-  --cart <package-ref:qty,...>    Base cart for test orders.
+                                  Legacy direct API diagnostic mode only. Canonical QA test-order proof should use the deployed checkout page and Campaign Cart SDK.
+  --allow-test-orders             Required with legacy --test-order other than off.
+  --sandbox-test-card-confirmed   Required with legacy --test-order other than off.
+  --api-key <key>                 Campaigns API key for legacy direct API diagnostics. Env QA_CAMPAIGNS_API_KEY is also recognized.
+  --campaigns-api-base <url>      Campaigns API base URL for legacy direct API diagnostics. Env CAMPAIGNS_API_BASE is also recognized.
+  --cart <package-ref:qty,...>    Base cart for legacy direct API diagnostics.
 `;
 
 export async function runQaCli(args) {
@@ -263,11 +264,11 @@ async function maybeRunTestOrders({ args, resolved, runId, assertions }) {
     throw new Error("--test-order requires --allow-test-orders and --sandbox-test-card-confirmed.");
   }
   if (resolved.packet && (packetPolicy.test_orders_allowed !== true || packetPolicy.sandbox_test_card_confirmed !== true)) {
-    throw new Error("Build Packet QA policy does not allow backend test orders.");
+    throw new Error("Build Packet QA policy does not allow legacy direct API test orders.");
   }
   const apiKey = stringArg(args["api-key"]) || process.env.QA_CAMPAIGNS_API_KEY;
   const apiBase = stringArg(args["campaigns-api-base"]) || process.env.CAMPAIGNS_API_BASE;
-  if (!apiKey || !apiBase) throw new Error("Backend test orders require --api-key/QA_CAMPAIGNS_API_KEY and --campaigns-api-base/CAMPAIGNS_API_BASE.");
+  if (!apiKey || !apiBase) throw new Error("Legacy direct API test orders require --api-key/QA_CAMPAIGNS_API_KEY and --campaigns-api-base/CAMPAIGNS_API_BASE.");
   const cart = parseCart(args.cart);
   if (!cart.length) throw new Error("--test-order requires --cart package_id:quantity pairs.");
   const checkout = findPage(resolved.topologies, "checkout");

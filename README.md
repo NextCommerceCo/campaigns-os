@@ -84,4 +84,4 @@ Special case: `shop-three-step` uses dynamic shipping through `window.next.getSh
 
 ## Status
 
-Developer preview. Build output still needs the normal launch gates: build/lint evidence, polish, preview deploy, QA, and explicit test-order policy.
+Developer preview. Build output still needs the normal launch gates: build/lint evidence, polish, preview deploy, QA, and SDK-driven test-order proof when the deployed domain and `test_card` sandbox routing are confirmed.

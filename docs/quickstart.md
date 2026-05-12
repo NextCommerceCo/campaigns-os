@@ -53,7 +53,7 @@ Build is not launch readiness. A complete run still needs:
 - formal polish pass
 - preview deploy
 - Node/npm QA with Map ID and preview URL
-- explicit test-order policy
+- SDK-driven test-order proof when the deployed domain and `test_card` sandbox routing are confirmed
 
 ```bash
 npm run campaigns-os -- qa resolve --packet path/to/page-kit-repo/campaign-runtime.build.json

@@ -62,7 +62,7 @@
   "qa": {
     "test_orders_allowed": false,
     "sandbox_test_card_confirmed": false,
-    "test_order_policy_notes": "Backend test_card orders stay disabled until sandbox routing is confirmed."
+    "test_order_policy_notes": "SDK-driven test orders stay disabled until the deployed domain is allowlisted and test_card sandbox routing is confirmed."
   },
   "notes": "Synthetic v0 example. Values must be replaced with actual CampaignSpec/API values for a real campaign."
 }
