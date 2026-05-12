@@ -60,7 +60,7 @@ async function resolveQaInputs(args) {
   if (!mapId) throw new Error("QA requires a Map ID. Provide --packet or positional <map-id>.");
 
   const proxyBase = stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE;
-  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]) || packet?.deploy?.preview_url || packet?.deploy?.production_url || null);
+  const inputBaseUrl = normalizeBaseUrl(stringArg(args["base-url"]) || packet?.deploy?.preview_url || packet?.deploy?.production_url || null);
   const specPath = args.spec
     ? resolve(args.spec)
     : packetPath && packet?.spec?.local_path
@@ -78,6 +78,8 @@ async function resolveQaInputs(args) {
   }
 
   const normalized = normalizeSpec(rawSpec);
+  const publicRouteSlug = resolvePublicRouteSlug({ packet, spec: normalized, rawSpec });
+  const baseUrl = normalizeQaBaseUrl(inputBaseUrl, publicRouteSlug);
   const specHash = computeSpecHash(rawSpec);
   const topologies = extractTopologies(normalized, { baseUrl });
   return {
@@ -222,15 +224,16 @@ async function runPageChecks(page, args) {
   const actualMeta = extractMetaTags(html);
   for (const [name, expected] of Object.entries(expectedMeta)) {
     const actual = actualMeta[name] || null;
+    const matches = metaTagMatches(name, actual, expected);
     assertions.push(assertion({
       id: `meta:${page.page_id}:${name}`,
       family: "meta-tags",
       page,
-      status: actual === expected ? STATUS.PASS : STATUS.FAIL,
-      severity: actual === expected ? undefined : SEVERITY.BLOCKER,
+      status: matches ? STATUS.PASS : STATUS.FAIL,
+      severity: matches ? undefined : SEVERITY.BLOCKER,
       expected,
       actual,
-      evidence: actual === expected ? undefined : { expected, actual },
+      evidence: matches ? undefined : { expected, actual },
     }));
   }
 
@@ -240,7 +243,9 @@ async function runPageChecks(page, args) {
     ["decline", page.expected_decline_url],
   ]) {
     if (!expectedUrl) continue;
-    const found = html.includes(expectedUrl) || html.includes(stripOrigin(expectedUrl));
+    const staticFound = htmlIncludesRouteReference(html, expectedUrl);
+    const sdkAction = staticFound ? null : findSdkRouteAction(html, kind, page);
+    const found = staticFound || Boolean(sdkAction);
     assertions.push(assertion({
       id: `route-link:${page.page_id}:${kind}`,
       family: "funnel-flow",
@@ -248,8 +253,8 @@ async function runPageChecks(page, args) {
       status: found ? STATUS.PASS : STATUS.MANUAL_REVIEW,
       severity: found ? undefined : SEVERITY.WARN,
       expected: expectedUrl,
-      actual: found ? expectedUrl : "not found in static HTML",
-      evidence: found ? undefined : { expected: expectedUrl, note: "Route may be SDK/runtime-derived; verify manually if absent from static HTML." },
+      actual: staticFound ? expectedUrl : sdkAction || "not found in static HTML",
+      evidence: found ? (sdkAction ? { expected: expectedUrl, sdk_action: sdkAction } : undefined) : { expected: expectedUrl, note: "Route may be SDK/runtime-derived; verify manually if absent from static HTML." },
     }));
   }
 
@@ -389,7 +394,7 @@ function extractTopologies(spec, { baseUrl = null } = {}) {
         label: page.label || page.id,
         url: urlById.get(page.id) || null,
         is_entry: Boolean(page.is_entry),
-        expected_meta_tags: extractExpectedMetaTags(page),
+        expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById }),
         expected_next_url: resolveSibling(pageById, urlById, page.next_page || page.success_url, baseUrl),
         expected_accept_url: resolveSibling(pageById, urlById, page.on_accept, baseUrl),
         expected_decline_url: resolveSibling(pageById, urlById, page.on_decline, baseUrl),
@@ -460,12 +465,18 @@ function joinBaseUrl(baseUrl, route) {
   return new URL(normalizedRoute, base).toString();
 }
 
-function extractExpectedMetaTags(page) {
+function extractExpectedMetaTags(page, { baseUrl, pageById, urlById } = {}) {
   const source = page.sdk_hints?.meta_tags;
   if (!source || typeof source !== "object") return undefined;
   const out = {};
   for (const [key, value] of Object.entries(source)) {
-    if (typeof value === "string") out[key] = value;
+    if (typeof value !== "string") continue;
+    if (isRoutingMetaTag(key)) {
+      const resolved = resolveSibling(pageById || new Map(), urlById || new Map(), value, baseUrl);
+      out[key] = stripOrigin(resolved || value);
+    } else {
+      out[key] = value;
+    }
   }
   return Object.keys(out).length ? out : undefined;
 }
@@ -603,6 +614,40 @@ function normalizeBaseUrl(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function normalizeQaBaseUrl(value, publicRouteSlug) {
+  const baseUrl = normalizeBaseUrl(value);
+  if (!baseUrl) return null;
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
+  if (!slug) return ensureUrlTrailingSlash(baseUrl);
+  try {
+    const url = new URL(ensureUrlTrailingSlash(baseUrl));
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (segments.at(-1) === slug) return ensureUrlTrailingSlash(url.toString());
+    return new URL(`${slug}/`, url).toString();
+  } catch {
+    return ensureUrlTrailingSlash(baseUrl);
+  }
+}
+
+function resolvePublicRouteSlug({ packet, spec, rawSpec }) {
+  return stringArg(packet?.campaign?.public_route_slug)
+    || stringArg(packet?.deploy?.live_url_path)?.replace(/^\/+|\/+$/g, "")
+    || stringArg(spec?.spec_identity?.public_route_slug)
+    || stringArg(rawSpec?.spec_identity?.public_route_slug)
+    || stringArg(spec?.campaign?.slug)
+    || stringArg(rawSpec?.campaign?.slug)
+    || null;
+}
+
+function normalizePublicRouteSlug(value) {
+  if (!value) return "";
+  return String(value).trim().replace(/^\/+|\/+$/g, "");
+}
+
+function ensureUrlTrailingSlash(value) {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
 function isAbsoluteHttpUrl(value) {
   try {
     const url = new URL(value);
@@ -619,6 +664,61 @@ function stripOrigin(value) {
   } catch {
     return value;
   }
+}
+
+function isRoutingMetaTag(name) {
+  return [
+    "next-success-url",
+    "next-upsell-accept-url",
+    "next-upsell-decline-url",
+    "next-payment-failed-url",
+  ].includes(String(name || "").toLowerCase());
+}
+
+function metaTagMatches(name, actual, expected) {
+  if (actual === expected) return true;
+  if (!isRoutingMetaTag(name)) return false;
+  return comparableRoute(actual) === comparableRoute(expected);
+}
+
+function comparableRoute(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const raw = value.trim();
+  try {
+    const url = new URL(raw);
+    return normalizeRoutePath(`${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    return normalizeRoutePath(raw);
+  }
+}
+
+function normalizeRoutePath(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("/")) return normalizePathTrailingSlash(raw);
+  return normalizePathTrailingSlash(normalizePageKitRoute(raw) || raw);
+}
+
+function normalizePathTrailingSlash(value) {
+  if (!value || /[?#]/.test(value) || value.endsWith("/")) return value;
+  return `${value}/`;
+}
+
+function htmlIncludesRouteReference(html, expectedUrl) {
+  if (!expectedUrl) return false;
+  const path = stripOrigin(expectedUrl);
+  return html.includes(expectedUrl) || html.includes(path);
+}
+
+function findSdkRouteAction(html, kind, page) {
+  if (page.page_type !== "upsell") return null;
+  if (kind === "accept" && /\bdata-next-upsell-action\s*=\s*["']add["']/i.test(html)) {
+    return 'SDK upsell accept control: data-next-upsell-action="add"';
+  }
+  if (kind === "decline" && /\bdata-next-upsell-action\s*=\s*["']skip["']/i.test(html)) {
+    return 'SDK upsell decline control: data-next-upsell-action="skip"';
+  }
+  return null;
 }
 
 function decodeHtml(value) {

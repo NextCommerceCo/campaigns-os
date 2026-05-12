@@ -8,4 +8,4 @@ alwaysApply: false
 
 Read Campaigns OS artifacts before editing campaign pages. Treat CampaignSpec/API values as live commerce truth, starter-template contracts as SDK surface truth, and designed HTML/assets as visual/content intent.
 
-Do not carry over demo package, shipping, voucher, payment, tracking, footer, or SEO values. Preserve SDK-owned checkout/cart/upsell/receipt surfaces. For `shop-three-step`, shipping is dynamic via `window.next.getShippingMethods()`.
+Do not carry over demo package, shipping, voucher, payment, tracking, footer, or SEO values. Preserve prepared landing/presell source HTML when it is a real standalone design, but use starter-template commerce surfaces for checkout/upsell/receipt pages. Emit SDK routing meta tags as campaign-root paths such as `/campaign-slug/upsell/`. Preserve SDK-owned checkout/cart/upsell/receipt surfaces. For `shop-three-step`, shipping is dynamic via `window.next.getShippingMethods()`.

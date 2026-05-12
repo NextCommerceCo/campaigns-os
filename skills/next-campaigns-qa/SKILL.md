@@ -22,6 +22,9 @@ Inputs:
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
+- `qa resolve` accepts either the deploy host or the campaign-root URL; when a Build Packet carries `campaign.public_route_slug`, the runner resolves page URLs under that slug.
+- Routing meta tags must be checked in runtime form. `next-success-url`, `next-upsell-accept-url`, and `next-upsell-decline-url` should point at campaign-root paths such as `/campaign-slug/upsell/`, not source filenames or unrooted spec literals.
+- Upsell accept/decline routes may be SDK-bound controls rather than static `<a href>` links. Treat rendered `data-next-upsell-action="add"` and `data-next-upsell-action="skip"` controls as valid route evidence, then prove the path in the browser walkthrough.
 - Test orders must exercise the deployed campaign through the Campaign Cart SDK, not a hand-built backend API request.
 - Current SDK test-order automation uses the checkout page event `document.dispatchEvent(new CustomEvent("next:test-mode-activated", { detail: { method: "konami" } }))`. This fills test data, sets `paymentToken="test_card"`, calls the SDK checkout test-order path, emits `order:completed`, and redirects with `ref_id`.
 - Prefer dispatching that CustomEvent over simulating the 10-key Konami sequence; keyboard automation has proven unreliable. The `detail.method = "konami"` discriminator is required.
