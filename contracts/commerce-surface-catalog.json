@@ -21,6 +21,58 @@
       "class-name fingerprints"
     ]
   },
+  "copyReviewPolicy": {
+    "purpose": "Market-sensitive starter copy must be confirmed against the target campaign instead of blindly carried forward or automatically removed.",
+    "appliesWhen": [
+      "CampaignSpec declares additional currencies",
+      "CampaignSpec declares non-US shipping countries",
+      "CampaignSpec available_shipping_countries is all",
+      "builder records market mode as country-specific or multi-market"
+    ],
+    "reviewSurfaces": [
+      "landing and presell page copy",
+      "checkout trust and delivery copy",
+      "upsell shipping info blocks",
+      "receipt/support copy",
+      "visible carrier, warehouse, and manufacturing claims"
+    ],
+    "warnOnlyPatterns": [
+      {
+        "label": "US carrier or warehouse claim",
+        "examples": [
+          "USPS",
+          "ships from the USA",
+          "US warehouse",
+          "contiguous US"
+        ]
+      },
+      {
+        "label": "US shipping promise",
+        "examples": [
+          "All US orders ship free",
+          "USA only",
+          "United States only",
+          "free shipping on all US orders"
+        ]
+      },
+      {
+        "label": "US manufacturing or compliance claim",
+        "examples": [
+          "Made in USA",
+          "manufactured in the USA",
+          "FDA-registered US facility"
+        ]
+      },
+      {
+        "label": "US address-language assumption",
+        "examples": [
+          "State",
+          "ZIP Code"
+        ]
+      }
+    ],
+    "agentRule": "When a warn-only pattern appears in a country-specific or multi-market campaign, treat it as replace-or-confirm campaign copy. Preserve it only when the CampaignSpec, source design, or operator explicitly confirms the claim. Do not remove it automatically."
+  },
   "sharedFrontmatterVocabulary": {
     "packages": {
       "purpose": "Named Campaigns App package ref_ids used by checkout selectors, bumps, and display bindings.",

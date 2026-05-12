@@ -76,6 +76,11 @@ The intended QA order matrix is:
 4. Receipt/order verification from the resulting `ref_id`, including line items,
    selected packages, quantities, shipping method, vouchers, and upsell result.
 
+For multi-market campaigns, add at least one non-default currency/country path
+to the QA pass. Verify currency display, shipping method names and prices,
+available payment methods, and market-specific copy such as delivery promises,
+warehouse origin, carrier names, free-shipping claims, and manufacturing claims.
+
 Only fire SDK test orders when the campaign preview/production domain is
 allowlisted for the campaign API key and `test_card` sandbox routing is confirmed
 for that merchant. Test orders are QA evidence; they are not deleted as part of

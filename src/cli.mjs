@@ -49,6 +49,17 @@ const REQUIRED_STORE_PROFILE_FIELDS = [
   "store_phone_tel",
 ];
 
+const US_MARKET_COPY_PATTERNS = [
+  { label: "USPS", regex: /\bUSPS\b/i },
+  { label: "ships from the USA", regex: /\bships?\s+from\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
+  { label: "US warehouse", regex: /\b(?:US|U\.S\.|USA|United States)\s+warehouse\b/i },
+  { label: "contiguous US", regex: /\bcontiguous\s+(?:US|U\.S\.|USA|United States)\b/i },
+  { label: "US-only shipping", regex: /\b(?:US|U\.S\.|USA|United States)[ -]?only\b/i },
+  { label: "All US orders ship free", regex: /\bAll\s+(?:US|U\.S\.|USA|United States)\s+orders\s+ship\s+free\b/i },
+  { label: "Made in USA", regex: /\bMade\s+in\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
+  { label: "manufactured in the USA", regex: /\bmanufactur(?:ed|ing)\s+in\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
+];
+
 const HELP = `Campaigns OS toolkit
 
 Usage:
@@ -684,6 +695,7 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null } = {}
     template_family: packet?.assembly?.template_family || null,
     source_root: null,
     target_repo: null,
+    target_output_dir: null,
     spec_path: null,
     scaffold_required: false,
     scaffold_reason: null,
@@ -744,6 +756,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
     addIssue(errors, "assembly.target_repo", `Target repo does not exist: ${packet.assembly?.target_repo}`);
   } else {
     const outputDir = resolve(targetRepo, packet.assembly?.output_dir || "");
+    derived.target_output_dir = outputDir;
     derived.scaffold_required = !existsSync(outputDir);
     derived.scaffold_reason = derived.scaffold_required
       ? `Target output directory does not exist: ${packet.assembly?.output_dir}`
@@ -789,6 +802,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
 
   validateCampaignsApiKey(packet, spec, warnings, ready);
   validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready);
+  validateMarketSensitiveCopy(spec, warnings, ready, derived);
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
     addIssue(warnings, "deploy.preview_url", "No preview or production URL yet. QA remains blocked after build/polish.");
@@ -830,6 +844,91 @@ function validateSpecShippingCountries(spec, warnings, ready) {
     return;
   }
   addIssue(warnings, "spec.available_shipping_countries", 'CampaignSpec campaign.available_shipping_countries should be "all" or an array of country codes.');
+}
+
+function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
+  const scope = deriveMarketScope(spec);
+  if (!scope.needsCopyReview) return;
+
+  const scanRoots = [];
+  if (derived.source_root && existsSync(derived.source_root) && statSync(derived.source_root).isDirectory()) {
+    scanRoots.push({ label: "source", root: derived.source_root });
+  }
+  if (derived.target_output_dir && existsSync(derived.target_output_dir) && statSync(derived.target_output_dir).isDirectory()) {
+    scanRoots.push({ label: "target", root: derived.target_output_dir });
+  }
+
+  const matches = collectMarketCopyMatches(scanRoots);
+  if (!matches.length) {
+    ready.push(`Market-sensitive copy scan found no obvious US-only patterns (${scope.reasons.join(", ")}).`);
+    return;
+  }
+
+  const matchSummary = matches
+    .slice(0, 8)
+    .map((match) => `${match.label} in ${match.surface}:${match.path}`)
+    .join("; ");
+  const more = matches.length > 8 ? `; plus ${matches.length - 8} more` : "";
+  addIssue(
+    warnings,
+    "market_copy.us_specific_claims",
+    `Campaign market scope needs copy review (${scope.reasons.join(", ")}), and source/template files contain US-specific starter copy: ${matchSummary}${more}. Confirm or replace this copy; do not remove it automatically.`
+  );
+}
+
+function deriveMarketScope(spec) {
+  const campaign = spec?.campaign || {};
+  const defaultCurrency = normalizeCurrency(campaign.currency);
+  const currencies = [...new Set([
+    ...normalizeCurrencyList(campaign.available_currencies),
+    ...normalizeCurrencyList(campaign.additional_currencies),
+    ...normalizeCurrencyList(campaign.additionalCurrencies),
+    ...normalizeCurrencyList(campaign.currencies),
+  ])];
+  const additionalCurrencies = currencies.filter((currency) => currency && currency !== defaultCurrency);
+  const countries = campaign.available_shipping_countries;
+  const countryList = Array.isArray(countries) ? countries.map((country) => String(country).trim()).filter(Boolean) : [];
+  const nonUsCountries = countryList.filter((country) => !isUsCountryCode(country));
+  const marketMode = String(campaign.market_mode || campaign.marketMode || campaign.market_scope || spec?.market_mode || "").trim();
+  const reasons = [];
+
+  if (additionalCurrencies.length) reasons.push(`additional currencies: ${additionalCurrencies.join(", ")}`);
+  if (defaultCurrency && defaultCurrency !== "USD") reasons.push(`default currency: ${defaultCurrency}`);
+  if (countries === "all") reasons.push("available_shipping_countries=all");
+  if (nonUsCountries.length) reasons.push(`non-US shipping countries: ${nonUsCountries.join(", ")}`);
+  if (/country|multi/i.test(marketMode)) reasons.push(`market mode: ${marketMode}`);
+
+  return { needsCopyReview: reasons.length > 0, reasons };
+}
+
+function normalizeCurrency(value) {
+  return isNonEmptyString(value) ? value.trim().toUpperCase() : "";
+}
+
+function normalizeCurrencyList(value) {
+  if (Array.isArray(value)) return value.map(normalizeCurrency).filter(Boolean);
+  if (isNonEmptyString(value)) return value.split(",").map(normalizeCurrency).filter(Boolean);
+  return [];
+}
+
+function isUsCountryCode(value) {
+  const country = String(value).trim().toUpperCase();
+  return ["US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"].includes(country);
+}
+
+function collectMarketCopyMatches(scanRoots) {
+  const matches = [];
+  for (const { label: surface, root } of scanRoots) {
+    for (const file of collectHtmlFiles(root)) {
+      const content = readFileSync(join(root, file.path), "utf8");
+      for (const pattern of US_MARKET_COPY_PATTERNS) {
+        if (pattern.regex.test(content)) {
+          matches.push({ surface, path: file.path, label: pattern.label });
+        }
+      }
+    }
+  }
+  return matches;
 }
 
 function validateCampaignsApiKey(packet, spec, warnings, ready) {
@@ -1223,7 +1322,7 @@ Assembly Report: ${reportPath}
 Node QA command:
 campaigns-os qa run --packet ${packetPath} --base-url ${url}
 
-Test-order proof must exercise the deployed campaign through the Campaign Cart SDK. Do not create hand-built backend API orders as launch proof. Only fire SDK test orders when test_orders_allowed=true, sandbox_test_card_confirmed=true, and the deployed domain is allowlisted. On current checkout pages, the browser automation hook is document.dispatchEvent(new CustomEvent("next:test-mode-activated", { detail: { method: "konami" } })); then click the rendered SDK upsell accept/decline controls. Summarize blockers, warnings, and remaining launch risks.`;
+Test-order proof must exercise the deployed campaign through the Campaign Cart SDK. Do not create hand-built backend API orders as launch proof. Only fire SDK test orders when test_orders_allowed=true, sandbox_test_card_confirmed=true, and the deployed domain is allowlisted. On current checkout pages, the browser automation hook is document.dispatchEvent(new CustomEvent("next:test-mode-activated", { detail: { method: "konami" } })); then click the rendered SDK upsell accept/decline controls. For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, payment methods, and market-specific copy. Summarize blockers, warnings, and remaining launch risks.`;
 }
 
 function buildNextStep(errors, warnings, derived) {
