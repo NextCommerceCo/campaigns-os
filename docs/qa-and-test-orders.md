@@ -33,27 +33,43 @@ npm run campaigns-os -- qa run \
 
 ## Test Orders
 
-Backend test orders are opt-in and guarded. They require all of:
+Canonical test-order proof is SDK-driven. The QA agent should open the deployed
+campaign checkout, select the intended cart with the rendered Campaign Cart SDK
+controls, and let the SDK create the test order. A hand-built backend API order
+does not prove the deployed checkout/upsell surfaces.
 
-- Build Packet `qa.test_orders_allowed=true`
-- Build Packet `qa.sandbox_test_card_confirmed=true`
-- CLI `--allow-test-orders`
-- CLI `--sandbox-test-card-confirmed`
-- `--api-key` or `QA_CAMPAIGNS_API_KEY`
-- `--campaigns-api-base` or `CAMPAIGNS_API_BASE`
-- `--cart <package-ref:qty,...>`
+Current Campaign Cart SDK builds expose this internal browser automation hook on
+checkout pages:
 
-Example:
-
-```bash
-npm run campaigns-os -- qa run \
-  --packet campaign-runtime.build.json \
-  --base-url https://preview.example.com/campaign/ \
-  --test-order both \
-  --allow-test-orders \
-  --sandbox-test-card-confirmed \
-  --cart 123:1 \
-  --campaigns-api-base "$CAMPAIGNS_API_BASE"
+```js
+document.dispatchEvent(new CustomEvent("next:test-mode-activated", {
+  detail: { method: "konami" }
+}));
 ```
 
-Never run backend test orders against an unconfirmed production payment path.
+The checkout enhancer handles that event by filling test customer/address data,
+setting `paymentMethod=credit-card`, setting `paymentToken="test_card"`,
+selecting a shipping method from the current SDK state, creating the test order
+through the SDK checkout path, emitting `order:completed`, and redirecting with
+the returned `ref_id`.
+
+For browser automation, dispatch the CustomEvent directly instead of simulating
+the 10-key Konami sequence. Keyboard-event simulation has proven unreliable, and
+the `detail.method = "konami"` discriminator is required by the SDK handler.
+
+The intended QA order matrix is:
+
+1. Checkout path with the target bundle/cart selected.
+2. Upsell-decline path by clicking the rendered SDK decline/skip control.
+3. Upsell-accept path by clicking the rendered SDK accept/add control.
+4. Receipt/order verification from the resulting `ref_id`, including line items,
+   selected packages, quantities, shipping method, vouchers, and upsell result.
+
+Only fire SDK test orders when the campaign preview/production domain is
+allowlisted for the campaign API key and `test_card` sandbox routing is confirmed
+for that merchant. Test orders are QA evidence; they are not deleted as part of
+the automated flow.
+
+The older `campaigns-os qa --test-order` direct backend mode is legacy
+diagnostic behavior. Do not use it as canonical launch proof because it bypasses
+the deployed campaign page and the SDK checkout/upsell surfaces.
