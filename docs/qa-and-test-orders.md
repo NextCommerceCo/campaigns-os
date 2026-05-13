@@ -61,6 +61,10 @@ Routing meta tags are evaluated in runtime-resolved form. If the spec carries `n
 
 Upsell accept/decline route checks accept rendered SDK controls as static evidence when there is no `<a href>`: `data-next-upsell-action="add"` for accept and `data-next-upsell-action="skip"` for decline. The browser walkthrough still needs to click the actual controls.
 
+QA evidence redacts checkout request bodies and generated QA emails. Verdict artifacts
+keep method, URL, response summaries, order refs, line-item summaries, and card last4,
+but they should not contain full customer address/payment payloads.
+
 Add `--post-verdict` only when the operator intentionally wants to POST the verdict to the configured Campaign Map proxy:
 
 ```bash
@@ -128,6 +132,21 @@ If a static claim is intentionally preserved, wrap it in an element with
 Only fire test orders when the campaign preview/production domain is allowlisted
 for the campaign API key and sandbox card routing is confirmed for that merchant.
 Test orders are QA evidence; they are not deleted as part of the automated flow.
+
+Use `qa policy set` to record those confirmations in the Build Packet without
+editing JSON by hand:
+
+```bash
+npm run campaigns-os -- qa policy set \
+  --packet campaign-runtime.build.json \
+  --test-orders-allowed true \
+  --sandbox-test-card-confirmed true \
+  --allowed-domains-confirmed true
+```
+
+The accepted-upsell path passes only after the browser clicks the rendered SDK
+accept/add control and the final order evidence contains an upsell line, either
+via an explicit `is_upsell` line or an increased final line count.
 
 The older direct backend mode is available only as
 `--legacy-api-test-order <accept|decline|both>`. It is diagnostic behavior, not

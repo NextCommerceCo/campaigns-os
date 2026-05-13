@@ -12,6 +12,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 Usage:
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--json]
   campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--json]
+  campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
 
@@ -34,6 +35,12 @@ Options:
                                   Requires one-time setup: npm run qa:install-browser.
   --allow-test-orders             Required with --test-order other than off.
   --sandbox-test-card-confirmed   Required with --test-order other than off.
+  --test-orders-allowed <bool>    qa policy set: persist test-order permission in the Build Packet.
+  --allowed-domains-confirmed <bool>
+                                  qa policy set: persist deployed-domain allowlist confirmation.
+  --preview-url <url>             qa policy set: persist packet deploy.preview_url.
+  --production-url <url>          qa policy set: persist packet deploy.production_url.
+  --deploy-target <target>        qa policy set: persist packet deploy.target.
   --test-card <number>            Test card number for browser checkout. Default: Discover sandbox card 6011...1117.
   --test-cvv <cvv>                Test card CVV. Default: 123.
   --test-exp-month <mm>           Test card expiration month. Default: 12.
@@ -60,6 +67,12 @@ export async function runQaCli(args) {
     const result = await runQa(args);
     output(result, args);
     process.exitCode = result.verdict.disposition === "blocked" ? 4 : 0;
+    return;
+  }
+  if (subcommand === "policy") {
+    if (args._[2] !== "set") throw new Error("Unknown qa policy command. Use: campaigns-os qa policy set --packet <campaign-runtime.build.json>");
+    const result = updateQaPolicy(args);
+    output(result, args);
     return;
   }
   throw new Error(`Unknown qa command: ${subcommand}`);
@@ -126,6 +139,32 @@ function resolvePayload(resolved) {
       ref_id: resolved.spec.campaign?.ref_id || null,
     },
     funnels: resolved.topologies,
+  };
+}
+
+function updateQaPolicy(args) {
+  const packetPath = args.packet ? resolve(args.packet) : null;
+  if (!packetPath) throw new Error("qa policy set requires --packet <campaign-runtime.build.json>.");
+  const packet = readJson(packetPath);
+  packet.campaign ||= {};
+  packet.deploy ||= {};
+  packet.qa ||= {};
+
+  const changed = [];
+  setOptionalBoolean(packet.qa, "test_orders_allowed", args, "test-orders-allowed", changed);
+  setOptionalBoolean(packet.qa, "sandbox_test_card_confirmed", args, "sandbox-test-card-confirmed", changed);
+  setOptionalBoolean(packet.campaign, "allowed_domains_confirmed", args, "allowed-domains-confirmed", changed);
+  setOptionalString(packet.deploy, "preview_url", args, "preview-url", changed);
+  setOptionalString(packet.deploy, "production_url", args, "production-url", changed);
+  setOptionalString(packet.deploy, "target", args, "deploy-target", changed);
+
+  if (changed.length) writeJson(packetPath, packet);
+  return {
+    ok: true,
+    action: "qa-policy-set",
+    packet_path: packetPath,
+    changed,
+    policy: policySnapshot(packet),
   };
 }
 
@@ -577,6 +616,12 @@ function output(value, args) {
     console.log(JSON.stringify(value, null, 2));
     return;
   }
+  if (value.action === "qa-policy-set") {
+    console.log(`QA policy updated.`);
+    console.log(`Packet: ${value.packet_path}`);
+    console.log(`Changed: ${value.changed.length ? value.changed.join(", ") : "(none)"}`);
+    return;
+  }
   if (value.verdict) {
     console.log(`QA run complete.`);
     console.log(`Map ID: ${value.map_id}`);
@@ -643,8 +688,56 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function writeJson(path, value) {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
 function stringArg(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function setOptionalBoolean(target, property, args, key, changed) {
+  if (!(key in args)) return;
+  const value = booleanArg(args[key], key);
+  setIfChanged(target, property, value, changed);
+}
+
+function setOptionalString(target, property, args, key, changed) {
+  if (!(key in args)) return;
+  const value = stringArg(args[key]);
+  if (!value) throw new Error(`--${key} requires a value.`);
+  setIfChanged(target, property, value, changed);
+}
+
+function setIfChanged(target, property, value, changed) {
+  if (target[property] === value) return;
+  target[property] = value;
+  changed.push(property);
+}
+
+function booleanArg(value, key) {
+  if (value === true) return true;
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["true", "1", "yes", "y", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
+  throw new Error(`--${key} must be true or false.`);
+}
+
+function policySnapshot(packet) {
+  return {
+    campaign: {
+      allowed_domains_confirmed: packet.campaign?.allowed_domains_confirmed ?? null,
+    },
+    deploy: {
+      target: packet.deploy?.target ?? null,
+      preview_url: packet.deploy?.preview_url ?? null,
+      production_url: packet.deploy?.production_url ?? null,
+    },
+    qa: {
+      test_orders_allowed: packet.qa?.test_orders_allowed ?? null,
+      sandbox_test_card_confirmed: packet.qa?.sandbox_test_card_confirmed ?? null,
+    },
+  };
 }
 
 function normalizeBaseUrl(value) {
