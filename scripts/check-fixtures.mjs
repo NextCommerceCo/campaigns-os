@@ -45,6 +45,15 @@ function hasPath(obj, dotted) {
   return true;
 }
 
+function assertRelativePath(value, label) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${label} should be a non-empty string`);
+  }
+  if (/^(?:\/|[A-Za-z]:[\\/])/.test(value)) {
+    throw new Error(`${label} should be relative, got ${value}`);
+  }
+}
+
 function validateCatalogFixtures() {
   if (!existsSync(catalogPath)) {
     throw new Error(`Missing contract catalog: ${relative(root, catalogPath)}`);
@@ -127,6 +136,67 @@ function runCliJson(args, env = process.env) {
 }
 
 validateCatalogFixtures();
+
+const relativePathsTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-relative-paths-"));
+try {
+  const specDir = resolve(relativePathsTmp, "specs");
+  const sourceRoot = resolve(relativePathsTmp, "source-html");
+  const targetRepo = resolve(relativePathsTmp, "target-page-kit");
+  mkdirSync(specDir, { recursive: true });
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+  }
+
+  const specPath = resolve(specDir, "campaignspec.json");
+  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  runCliJson([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
+  const generatedPacket = readJson(packetPath);
+  assertRelativePath(generatedPacket.spec.local_path, "packet.spec.local_path");
+  assertRelativePath(generatedPacket.source_html.root, "packet.source_html.root");
+  assertRelativePath(generatedPacket.assembly.target_repo, "packet.assembly.target_repo");
+  assertRelativePath(generatedPacket.assembly.commerce_catalog.path, "packet.assembly.commerce_catalog.path");
+
+  const generatedContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
+  assertRelativePath(generatedContext.spec.path, "context.spec.path");
+  assertRelativePath(generatedContext.source.root, "context.source.root");
+
+  const generatedReport = readJson(resolve(targetRepo, ".campaign-runtime/assembly-report.json"));
+  assertRelativePath(generatedReport.inputs.spec_path, "report.inputs.spec_path");
+  assertRelativePath(generatedReport.inputs.source.root, "report.inputs.source.root");
+
+  const generatedDoctorOutput = readJson(resolve(targetRepo, ".campaign-runtime/doctor-output.json"));
+  assertRelativePath(generatedDoctorOutput.derived.packet_path, "doctor.derived.packet_path");
+  assertRelativePath(generatedDoctorOutput.derived.source_root, "doctor.derived.source_root");
+  assertRelativePath(generatedDoctorOutput.derived.target_repo, "doctor.derived.target_repo");
+  assertRelativePath(generatedDoctorOutput.derived.target_output_dir, "doctor.derived.target_output_dir");
+  assertRelativePath(generatedDoctorOutput.derived.spec_path, "doctor.derived.spec_path");
+  if (generatedDoctorOutput.next?.command?.includes(relativePathsTmp)) {
+    throw new Error("doctor.next.command should not leak the temp workspace absolute path.");
+  }
+
+  const generatedDoctor = runCliJson(["doctor", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (!generatedDoctor.ok) {
+    throw new Error("Doctor should accept generated relative packet paths.");
+  }
+
+  const strippedDoctor = runCliJson(["doctor", "--packet", packetPath, "--strip-paths", "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  assertRelativePath(strippedDoctor.derived.packet_path, "doctor --strip-paths derived.packet_path");
+  assertRelativePath(strippedDoctor.derived.source_root, "doctor --strip-paths derived.source_root");
+} finally {
+  rmSync(relativePathsTmp, { recursive: true, force: true });
+}
 
 const omittedStageArraysTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-report-defaults-"));
 try {

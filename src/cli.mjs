@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runQaCli } from "./qa-node.mjs";
 
@@ -76,7 +76,7 @@ Usage:
   campaigns-os help
   campaigns-os start --spec <json> --source <html-dir> --target <page-kit-dir> --template-family <family>
   campaigns-os prepare-build --spec <json> --source <html-dir> --target <page-kit-dir> --template-family <family>
-  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--json]
+  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
@@ -227,7 +227,6 @@ function relFromFile(filePath, targetPath) {
   const fromDir = dirname(resolve(filePath));
   const rel = relative(fromDir, resolve(targetPath));
   if (!rel) return ".";
-  if (rel.startsWith("..")) return resolve(targetPath);
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
@@ -235,6 +234,36 @@ function relFromDir(dirPath, targetPath) {
   const rel = relative(resolve(dirPath), resolve(targetPath));
   if (!rel) return ".";
   return rel.startsWith(".") ? rel : `./${rel}`;
+}
+
+function isLocalAbsolutePath(value) {
+  return isNonEmptyString(value) && !isAbsoluteHttpUrl(value) && isAbsolute(value);
+}
+
+function relativizeDoctorOutput(result, baseDir) {
+  const replacements = new Map();
+  for (const value of Object.values(result.derived || {})) {
+    if (isLocalAbsolutePath(value)) {
+      replacements.set(value, relFromDir(baseDir, value));
+    }
+  }
+  const sortedReplacements = [...replacements.entries()].sort((a, b) => b[0].length - a[0].length);
+
+  function visit(value) {
+    if (Array.isArray(value)) return value.map(visit);
+    if (isObject(value)) {
+      return Object.fromEntries(Object.entries(value).map(([key, entryValue]) => [key, visit(entryValue)]));
+    }
+    if (typeof value !== "string") return value;
+    if (isLocalAbsolutePath(value)) return relFromDir(baseDir, value);
+    let nextValue = value;
+    for (const [absolutePath, relativePath] of sortedReplacements) {
+      nextValue = nextValue.split(absolutePath).join(relativePath);
+    }
+    return nextValue;
+  }
+
+  return visit(result);
 }
 
 function resolveFromFile(filePath, targetPath) {
@@ -602,7 +631,7 @@ function prepareBuild(args, options = {}) {
   let doctor = null;
   if (options.installContext) installAgentContext(targetRepo, false);
   if (options.runDoctor) {
-    doctor = doctorPacket(packetPath, { contextPath, reportPath });
+    doctor = doctorPacket(packetPath, { contextPath, reportPath, outputBaseDir: targetRepo });
     writeJson(doctorOutPath, doctor);
   }
 
@@ -696,10 +725,11 @@ function doctorCommand(args) {
   return doctorPacket(packetPath, {
     contextPath: args.context ? resolve(args.context) : null,
     reportPath: args.report ? resolve(args.report) : null,
+    outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   });
 }
 
-function doctorPacket(packetPath, { contextPath = null, reportPath = null } = {}) {
+function doctorPacket(packetPath, { contextPath = null, reportPath = null, outputBaseDir = null } = {}) {
   const packet = readJson(packetPath);
   const context = readJsonIfExists(contextPath);
   const report = readJsonIfExists(reportPath);
@@ -725,7 +755,8 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null } = {}
 
   const next = buildNextStep(errors, warnings, derived);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
-  return { ok: errors.length === 0, status, errors, warnings, ready, derived, next };
+  const result = { ok: errors.length === 0, status, errors, warnings, ready, derived, next };
+  return outputBaseDir ? relativizeDoctorOutput(result, outputBaseDir) : result;
 }
 
 function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
