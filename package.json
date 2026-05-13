@@ -10,12 +10,16 @@
   "scripts": {
     "campaigns-os": "node ./bin/campaigns-os.mjs",
     "qa": "node ./bin/campaigns-os.mjs qa",
+    "qa:install-browser": "npx playwright install chromium",
     "check": "node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
     "check:private-strings": "node ./scripts/check-private-strings.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "^1.60.0"
   },
   "files": [
     "agents",

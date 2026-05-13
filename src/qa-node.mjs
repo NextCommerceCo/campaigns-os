@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { runBrowserChecks, runBrowserTestOrders } from "./qa-browser.mjs";
 import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
@@ -22,13 +23,24 @@ Options:
   --output-dir <path>             Local verdict directory. Default: qa-output.
   --post-verdict                  POST verdict JSON to <proxy-base>/api/qa/verdicts after writing the local copy.
   --auth-cookie <cookie>          Cookie header for protected previews.
-  --test-order <off|accept|decline|both>
-                                  Legacy direct API diagnostic mode only. Canonical QA test-order proof should use the deployed checkout page and Campaign Cart SDK.
-  --allow-test-orders             Required with legacy --test-order other than off.
-  --sandbox-test-card-confirmed   Required with legacy --test-order other than off.
+  --browser                       Run Playwright-rendered browser checks after static Node checks.
+  --headed                        Show the Playwright browser window when --browser is set.
+  --browser-width <px>            Browser viewport width. Default: 1440.
+  --browser-height <px>           Browser viewport height. Default: 1200.
+  --browser-timeout <ms>          Browser navigation timeout. Default: 30000.
+  --test-order <off|checkout|accept|decline|both>
+                                  Create canonical Playwright typed-card test orders through the deployed checkout page.
+  --allow-test-orders             Required with --test-order other than off.
+  --sandbox-test-card-confirmed   Required with --test-order other than off.
+  --test-card <number>            Test card number for browser checkout. Default: Discover sandbox card 6011...1117.
+  --test-cvv <cvv>                Test card CVV. Default: 123.
+  --test-exp-month <mm>           Test card expiration month. Default: 12.
+  --test-exp-year <yyyy>          Test card expiration year. Default: 2030.
+  --legacy-api-test-order <off|accept|decline|both>
+                                  Diagnostic-only direct Campaigns API order creation; bypasses deployed checkout.
   --api-key <key>                 Campaigns API key for legacy direct API diagnostics. Env QA_CAMPAIGNS_API_KEY is also recognized.
   --campaigns-api-base <url>      Campaigns API base URL for legacy direct API diagnostics. Env CAMPAIGNS_API_BASE is also recognized.
-  --cart <package-ref:qty,...>    Base cart for legacy direct API diagnostics.
+  --cart <package-ref:qty,...>    Optional target cart/package selector for browser or legacy diagnostics.
 `;
 
 export async function runQaCli(args) {
@@ -124,6 +136,9 @@ async function runQa(args) {
     for (const page of topology.pages) {
       assertions.push(...await runPageChecks(page, args));
     }
+  }
+  if (args.browser === true) {
+    assertions.push(...await runBrowserChecks(resolved.topologies, args));
   }
 
   const testOrders = await maybeRunTestOrders({ args, resolved, runId, assertions });
@@ -262,6 +277,26 @@ async function runPageChecks(page, args) {
 }
 
 async function maybeRunTestOrders({ args, resolved, runId, assertions }) {
+  const mode = String(args["test-order"] || "off").toLowerCase();
+  const legacyMode = String(args["legacy-api-test-order"] || "off").toLowerCase();
+  if ((!mode || mode === "off") && (!legacyMode || legacyMode === "off")) return [];
+  const packetPolicy = resolved.packet?.qa || {};
+  if (mode && mode !== "off") {
+    if (args["allow-test-orders"] !== true || args["sandbox-test-card-confirmed"] !== true) {
+      throw new Error("--test-order requires --allow-test-orders and --sandbox-test-card-confirmed.");
+    }
+    if (resolved.packet && (packetPolicy.test_orders_allowed !== true || packetPolicy.sandbox_test_card_confirmed !== true)) {
+      throw new Error("Build Packet QA policy does not allow browser test orders.");
+    }
+    const result = await runBrowserTestOrders(resolved.topologies, args, runId);
+    assertions.push(...result.assertions);
+    return result.orders;
+  }
+
+  return maybeRunLegacyApiTestOrders({ args: { ...args, "test-order": legacyMode }, resolved, runId, assertions });
+}
+
+async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }) {
   const mode = String(args["test-order"] || "off").toLowerCase();
   if (!mode || mode === "off") return [];
   const packetPolicy = resolved.packet?.qa || {};

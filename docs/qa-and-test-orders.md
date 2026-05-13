@@ -29,6 +29,23 @@ npm run campaigns-os -- qa run \
 
 The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags`, writes a local verdict JSON under `qa-output/<map-id>/<run-id>.json`, and returns exit code `4` when the verdict is blocked.
 
+Add `--browser` to run the first-party Playwright browser pass after the Node
+checks:
+
+```bash
+npm run qa:install-browser
+npm run campaigns-os -- qa run \
+  --packet campaign-runtime.build.json \
+  --base-url https://preview.example.com/campaign/ \
+  --browser
+```
+
+The browser pass renders each live page in Chromium, captures browser console
+errors, page errors, and failed requests, verifies rendered upsell controls, and
+inspects checkout payment field mounts. It is owned by this package through the
+`playwright` dependency; QA must not rely on external browser skills or local
+agent tooling.
+
 Routing meta tags are evaluated in runtime-resolved form. If the spec carries `next-success-url: upsell/`, the deployed page should emit a campaign-root path such as `/roadside-ready/upsell/` so the SDK does not resolve the redirect from the site root.
 
 Upsell accept/decline route checks accept rendered SDK controls as static evidence when there is no `<a href>`: `data-next-upsell-action="add"` for accept and `data-next-upsell-action="skip"` for decline. The browser walkthrough still needs to click the actual controls.
@@ -44,33 +61,44 @@ npm run campaigns-os -- qa run \
 
 ## Test Orders
 
-Canonical test-order proof is SDK-driven. The QA agent should open the deployed
-campaign checkout, select the intended cart with the rendered Campaign Cart SDK
-controls, and let the SDK create the test order. A hand-built backend API order
-does not prove the deployed checkout/upsell surfaces.
+Canonical test-order proof is typed-card, browser-driven checkout automation. The
+QA runner opens the deployed campaign checkout with Playwright, selects the
+intended cart with rendered campaign controls, fills the customer/shipping form,
+types the sandbox card into the active hosted payment iframes, and clicks the
+real checkout submit button. A hand-built backend API order does not prove the
+deployed checkout/upsell surfaces.
 
-Current Campaign Cart SDK builds expose this internal browser automation hook on
-checkout pages:
-
-```js
-document.dispatchEvent(new CustomEvent("next:test-mode-activated", {
-  detail: { method: "konami" }
-}));
+```bash
+npm run campaigns-os -- qa run \
+  --packet campaign-runtime.build.json \
+  --base-url https://preview.example.com/campaign/ \
+  --test-order checkout \
+  --allow-test-orders \
+  --sandbox-test-card-confirmed
 ```
 
-The checkout enhancer handles that event by filling test customer/address data,
-setting `paymentMethod=credit-card`, setting `paymentToken="test_card"`,
-selecting a shipping method from the current SDK state, creating the test order
-through the SDK checkout path, emitting `order:completed`, and redirecting with
-the returned `ref_id`.
+Supported modes are `checkout`, `decline`, `accept`, and `both`. `checkout`
+stops after the base order redirect. `decline` and `accept` click the rendered
+upsell controls after checkout, and `both` creates two fresh checkout orders so
+each upsell path starts from a clean order.
 
-For browser automation, dispatch the CustomEvent directly instead of simulating
-the 10-key Konami sequence. Keyboard-event simulation has proven unreliable, and
-the `detail.method = "konami"` discriminator is required by the SDK handler.
+The default card is the Discover sandbox card `6011 1111 1111 1117`, CVV `123`,
+expiration `12/2030`. Override with `--test-card`, `--test-cvv`,
+`--test-exp-month`, and `--test-exp-year` when a merchant/gateway requires a
+different sandbox card.
+
+The browser driver intentionally behaves like a user:
+
+- package selection uses rendered `[data-next-package-id]` controls when
+  `--cart <package-ref:qty,...>` is supplied
+- checkout is advanced through the visible cart/checkout button
+- address autocomplete is settled or closed before submit
+- Spreedly card and CVV iframes are filled with sequential keystrokes
+- the real submit button is clicked without fabricating SDK state
 
 The intended QA order matrix is:
 
-1. Checkout path with the target bundle/cart selected.
+1. Checkout path with the target bundle/cart selected and typed card accepted.
 2. Upsell-decline path by clicking the rendered SDK decline/skip control.
 3. Upsell-accept path by clicking the rendered SDK accept/add control.
 4. Receipt/order verification from the resulting `ref_id`, including line items,
@@ -86,11 +114,11 @@ and hardcoded phone numbers that differ from CampaignSpec `campaign.store_phone`
 If a static claim is intentionally preserved, wrap it in an element with
 `data-skip-market-lint="true"` and record why in the assembly report.
 
-Only fire SDK test orders when the campaign preview/production domain is
-allowlisted for the campaign API key and `test_card` sandbox routing is confirmed
-for that merchant. Test orders are QA evidence; they are not deleted as part of
-the automated flow.
+Only fire test orders when the campaign preview/production domain is allowlisted
+for the campaign API key and sandbox card routing is confirmed for that merchant.
+Test orders are QA evidence; they are not deleted as part of the automated flow.
 
-The older `campaigns-os qa --test-order` direct backend mode is legacy
-diagnostic behavior. Do not use it as canonical launch proof because it bypasses
-the deployed campaign page and the SDK checkout/upsell surfaces.
+The older direct backend mode is available only as
+`--legacy-api-test-order <accept|decline|both>`. It is diagnostic behavior, not
+canonical launch proof, because it bypasses the deployed campaign page and the
+SDK checkout/upsell surfaces.
