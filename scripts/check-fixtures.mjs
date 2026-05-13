@@ -218,6 +218,44 @@ try {
   rmSync(omittedStageArraysTmp, { recursive: true, force: true });
 }
 
+const qaPolicyTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-qa-policy-"));
+try {
+  const policyPacketPath = resolve(qaPolicyTmp, "campaign-runtime.build.json");
+  writeJson(policyPacketPath, readJson(packet));
+  const policy = runCliJson([
+    "qa", "policy", "set",
+    "--packet", policyPacketPath,
+    "--test-orders-allowed", "true",
+    "--sandbox-test-card-confirmed", "true",
+    "--allowed-domains-confirmed", "true",
+    "--preview-url", "https://deploy-preview.example.com/runtime-packet-demo/",
+    "--production-url", "https://preview.example.com/runtime-packet-demo/",
+    "--deploy-target", "netlify",
+    "--json",
+  ]);
+  if (!policy.ok || policy.action !== "qa-policy-set") {
+    throw new Error("qa policy set should return an ok qa-policy-set result.");
+  }
+  if (!policy.changed?.length) {
+    throw new Error("qa policy set should report changed fields.");
+  }
+  const updated = readJson(policyPacketPath);
+  if (updated.qa?.test_orders_allowed !== true || updated.qa?.sandbox_test_card_confirmed !== true) {
+    throw new Error("qa policy set should persist QA test-order flags.");
+  }
+  if (updated.campaign?.allowed_domains_confirmed !== true) {
+    throw new Error("qa policy set should persist campaign allowed-domain confirmation.");
+  }
+  if (updated.deploy?.preview_url !== "https://deploy-preview.example.com/runtime-packet-demo/") {
+    throw new Error("qa policy set should persist deploy preview URL updates.");
+  }
+  if (updated.deploy?.production_url !== "https://preview.example.com/runtime-packet-demo/" || updated.deploy?.target !== "netlify") {
+    throw new Error("qa policy set should persist deploy updates.");
+  }
+} finally {
+  rmSync(qaPolicyTmp, { recursive: true, force: true });
+}
+
 const doctor = runCliJson(["doctor", "--packet", packet, "--json"], envWithout("CAMPAIGNS_API_KEY"));
 if (doctor.warnings?.some((issue) => issue.code === "campaign.api_key_source")) {
   throw new Error("Doctor should accept CampaignSpec campaign.campaigns_api_key without requiring CAMPAIGNS_API_KEY.");

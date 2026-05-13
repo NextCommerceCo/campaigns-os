@@ -220,14 +220,28 @@ async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runI
     await waitForCheckoutResult(page);
 
     const order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
+    const initialLineCount = order.receipt_line_items.length;
     if (order.ok && path !== "checkout") {
       const upsell = await clickUpsellPath(page, path);
       order.upsell = upsell;
       order.final_url = page.url();
+      const refreshed = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
+      order.final_receipt_line_items = refreshed.receipt_line_items;
+      if (refreshed.receipt_line_items.length) {
+        order.cart_state = refreshed.cart_state;
+        order.receipt_line_items = refreshed.receipt_line_items;
+        order.verification.order_read_status = refreshed.verification.order_read_status;
+        order.verification.total_incl_tax = refreshed.verification.total_incl_tax;
+        order.verification.currency = refreshed.verification.currency;
+      }
+      if (path === "accept") {
+        order.verification.accepted_upsell_line_present = hasAcceptedUpsellLine(order.receipt_line_items, initialLineCount);
+      }
     }
+    const ok = order.ok && (path !== "accept" || order.verification.accepted_upsell_line_present === true);
     return {
-      ok: order.ok,
-      error: order.error || null,
+      ok,
+      error: ok ? null : order.error || order.upsell?.error || "accepted upsell did not appear in final order lines",
       order,
       events: sanitizedEvents(events),
     };
@@ -240,7 +254,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runI
         ok: false,
         next_order_id: null,
         ref_id: null,
-        email,
+        qa_email: email ? "[redacted-qa-email]" : null,
         final_url: page.url(),
         verification: { verified: false, error: error instanceof Error ? error.message : String(error) },
         evidence: { events: sanitizedEvents(events) },
@@ -390,7 +404,7 @@ async function buildOrderEvidence({ page, events, path, email, checkoutPage, arg
     ok,
     next_order_id: number,
     ref_id: refId,
-    qa_email: email,
+    qa_email: email ? "[redacted-qa-email]" : null,
     is_test: orderBody?.is_test ?? null,
     payment_method: orderBody?.payment_method || (ok ? "card_token" : null),
     card: { last4: card.slice(-4) },
@@ -445,6 +459,8 @@ function testOrderAssertion(page, path, result) {
           final_url: result.order.final_url,
           is_test: result.order.is_test,
           line_count: result.order.receipt_line_items.length,
+          ...(path === "accept" ? { accepted_upsell_line_present: result.order.verification?.accepted_upsell_line_present } : {}),
+          ...(result.order.upsell ? { upsell_clicked: result.order.upsell.clicked, upsell_final_url: result.order.upsell.final_url } : {}),
           card_last4: result.order.card.last4,
         }
       : {
@@ -462,7 +478,7 @@ function captureCheckoutEvents(page) {
     events.requests.push({
       method: request.method(),
       url: request.url(),
-      postData: redactSensitive(request.postData()),
+      postData: summarizeRequestPostData(request.postData()),
     });
   });
   page.on("response", async (response) => {
@@ -505,6 +521,22 @@ function sanitizedEvents(events) {
     console: events.console.slice(-20),
     pageErrors: events.pageErrors.slice(-20),
   };
+}
+
+function summarizeRequestPostData(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "[redacted-request-body]";
+    return {
+      redacted: true,
+      keys: Object.keys(parsed).sort(),
+      ...(Array.isArray(parsed.lines) ? { line_count: parsed.lines.length } : {}),
+      ...(parsed.currency ? { currency: parsed.currency } : {}),
+    };
+  } catch {
+    return "[redacted-request-body]";
+  }
 }
 
 function summarizeResponseBody(body) {
@@ -654,6 +686,11 @@ function extractReceiptLines(order) {
     is_upsell: Boolean(line.is_upsell),
     price: line.price_incl_tax || line.price_excl_tax || line.price || null,
   }));
+}
+
+function hasAcceptedUpsellLine(lines, initialLineCount) {
+  if (!Array.isArray(lines) || lines.length === 0) return false;
+  return lines.some((line) => line.is_upsell) || (initialLineCount > 0 && lines.length > initialLineCount);
 }
 
 function refIdFromUrl(value) {

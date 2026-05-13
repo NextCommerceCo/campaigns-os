@@ -78,6 +78,7 @@ Usage:
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--output-dir qa-output] [--json]
+  campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
 
 Examples:
   npm run campaigns-os -- start \\
