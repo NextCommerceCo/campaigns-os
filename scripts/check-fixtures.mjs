@@ -153,7 +153,7 @@ try {
   const specPath = resolve(specDir, "campaignspec.json");
   writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
   runCliJson([
-    "prepare-build",
+    "start",
     "--spec", specPath,
     "--source", sourceRoot,
     "--target", targetRepo,
@@ -176,10 +176,24 @@ try {
   assertRelativePath(generatedReport.inputs.spec_path, "report.inputs.spec_path");
   assertRelativePath(generatedReport.inputs.source.root, "report.inputs.source.root");
 
+  const generatedDoctorOutput = readJson(resolve(targetRepo, ".campaign-runtime/doctor-output.json"));
+  assertRelativePath(generatedDoctorOutput.derived.packet_path, "doctor.derived.packet_path");
+  assertRelativePath(generatedDoctorOutput.derived.source_root, "doctor.derived.source_root");
+  assertRelativePath(generatedDoctorOutput.derived.target_repo, "doctor.derived.target_repo");
+  assertRelativePath(generatedDoctorOutput.derived.target_output_dir, "doctor.derived.target_output_dir");
+  assertRelativePath(generatedDoctorOutput.derived.spec_path, "doctor.derived.spec_path");
+  if (generatedDoctorOutput.next?.command?.includes(relativePathsTmp)) {
+    throw new Error("doctor.next.command should not leak the temp workspace absolute path.");
+  }
+
   const generatedDoctor = runCliJson(["doctor", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
   if (!generatedDoctor.ok) {
     throw new Error("Doctor should accept generated relative packet paths.");
   }
+
+  const strippedDoctor = runCliJson(["doctor", "--packet", packetPath, "--strip-paths", "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  assertRelativePath(strippedDoctor.derived.packet_path, "doctor --strip-paths derived.packet_path");
+  assertRelativePath(strippedDoctor.derived.source_root, "doctor --strip-paths derived.source_root");
 } finally {
   rmSync(relativePathsTmp, { recursive: true, force: true });
 }
