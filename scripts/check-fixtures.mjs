@@ -228,7 +228,10 @@ try {
   for (const page of ["checkout", "upsell", "receipt"]) {
     writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
   }
-  writeFileSync(resolve(sourceRoot, "landing.html"), "<html><body>Made in USA and ships from the USA.</body></html>");
+  writeFileSync(
+    resolve(sourceRoot, "landing.html"),
+    '<html><body>Made in USA and ships from the USA. Save $59.99 today. Call 1-800-555-1234. <span data-next-display="bundle.main.price">$49.99</span><span data-skip-market-lint="true">$999.99 1-800-555-0000 ships from the USA</span></body></html>',
+  );
 
   const marketSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
   marketSpec.campaign.available_currencies = ["USD", "CAD"];
@@ -248,6 +251,20 @@ try {
   const marketDoctor = runCliJson(["doctor", "--packet", marketPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
   if (!marketDoctor.warnings?.some((issue) => issue.code === "market_copy.us_specific_claims")) {
     throw new Error("Doctor should warn when multi-market specs contain US-specific source/template copy.");
+  }
+  const currencyWarning = marketDoctor.warnings?.find((issue) => issue.code === "copy.hardcoded_currency_symbol");
+  if (!currencyWarning?.message.includes('source:landing.html:1 "$59.99"')) {
+    throw new Error("Doctor should warn with file and line for hardcoded currency symbols outside SDK-bound copy.");
+  }
+  if (currencyWarning.message.includes("$999.99") || currencyWarning.message.includes("$49.99")) {
+    throw new Error("Doctor should skip hardcoded currency symbols inside SDK-bound or data-skip-market-lint regions.");
+  }
+  const phoneWarning = marketDoctor.warnings?.find((issue) => issue.code === "copy.hardcoded_phone");
+  if (!phoneWarning?.message.includes('source:landing.html:1 "1-800-555-1234"')) {
+    throw new Error("Doctor should warn with file and line for hardcoded phone numbers that differ from campaign.store_phone.");
+  }
+  if (phoneWarning.message.includes("1-800-555-0000")) {
+    throw new Error("Doctor should skip hardcoded phone numbers inside data-skip-market-lint regions.");
   }
 
   const singleMarketSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));

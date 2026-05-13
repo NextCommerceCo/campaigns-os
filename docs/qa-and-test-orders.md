@@ -80,6 +80,11 @@ For multi-market campaigns, add at least one non-default currency/country path
 to the QA pass. Verify currency display, shipping method names and prices,
 available payment methods, and market-specific copy such as delivery promises,
 warehouse origin, carrier names, free-shipping claims, and manufacturing claims.
+Doctor also warns on two adjacent copy risks before QA: hardcoded `$XX.XX`
+amounts outside SDK-bound display regions for multi-currency/non-USD campaigns,
+and hardcoded phone numbers that differ from CampaignSpec `campaign.store_phone`.
+If a static claim is intentionally preserved, wrap it in an element with
+`data-skip-market-lint="true"` and record why in the assembly report.
 
 Only fire SDK test orders when the campaign preview/production domain is
 allowlisted for the campaign API key and `test_card` sandbox routing is confirmed

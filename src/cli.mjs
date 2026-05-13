@@ -61,6 +61,9 @@ const US_MARKET_COPY_PATTERNS = [
   { label: "manufactured in the USA", regex: /\bmanufactur(?:ed|ing)\s+in\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
 ];
 
+const HARDCODED_CURRENCY_REGEX = /\$\s?\d[\d,]*(?:\.\d+)?(?:\/[A-Za-z]+)?/g;
+const HARDCODED_PHONE_REGEX = /\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
+
 const SDK_ROUTING_META_TAGS = [
   "next-success-url",
   "next-upsell-accept-url",
@@ -909,7 +912,9 @@ function isRuntimeRootedRoutingMeta(value, publicRouteSlug) {
 
 function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
   const scope = deriveMarketScope(spec);
-  if (!scope.needsCopyReview) return;
+  const currencyScope = deriveCurrencyCopyScope(spec);
+  const storePhone = firstNonEmptyString(spec?.campaign?.store_phone, spec?.campaign?.phone);
+  if (!scope.needsCopyReview && !currencyScope.needsCopyReview && !storePhone) return;
 
   const scanRoots = [];
   if (derived.source_root && existsSync(derived.source_root) && statSync(derived.source_root).isDirectory()) {
@@ -919,22 +924,43 @@ function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
     scanRoots.push({ label: "target", root: derived.target_output_dir });
   }
 
-  const matches = collectMarketCopyMatches(scanRoots);
-  if (!matches.length) {
+  const matches = scope.needsCopyReview ? collectMarketCopyMatches(scanRoots) : [];
+  if (scope.needsCopyReview && !matches.length) {
     ready.push(`Market-sensitive copy scan found no obvious US-only patterns (${scope.reasons.join(", ")}).`);
-    return;
+  } else if (matches.length) {
+    const matchSummary = summarizeCopyMatches(matches);
+    addIssue(
+      warnings,
+      "market_copy.us_specific_claims",
+      `Campaign market scope needs copy review (${scope.reasons.join(", ")}), and source/template files contain US-specific starter copy: ${matchSummary}. Confirm or replace this copy; do not remove it automatically.`
+    );
   }
 
-  const matchSummary = matches
-    .slice(0, 8)
-    .map((match) => `${match.label} in ${match.surface}:${match.path}`)
-    .join("; ");
-  const more = matches.length > 8 ? `; plus ${matches.length - 8} more` : "";
-  addIssue(
-    warnings,
-    "market_copy.us_specific_claims",
-    `Campaign market scope needs copy review (${scope.reasons.join(", ")}), and source/template files contain US-specific starter copy: ${matchSummary}${more}. Confirm or replace this copy; do not remove it automatically.`
-  );
+  if (currencyScope.needsCopyReview) {
+    const currencyMatches = collectHardcodedCurrencyMatches(scanRoots);
+    if (!currencyMatches.length) {
+      ready.push(`Hardcoded currency scan found no obvious static $ amounts (${currencyScope.reasons.join(", ")}).`);
+    } else {
+      addIssue(
+        warnings,
+        "copy.hardcoded_currency_symbol",
+        `Campaign currency scope needs copy review (${currencyScope.reasons.join(", ")}), and prepared HTML contains hardcoded $ amounts outside SDK-bound or skipped regions: ${summarizeCopyMatches(currencyMatches)}. Use SDK display tokens or remove static currency strings.`
+      );
+    }
+  }
+
+  if (storePhone) {
+    const phoneMatches = collectHardcodedPhoneMatches(scanRoots, storePhone);
+    if (!phoneMatches.length) {
+      ready.push("Hardcoded phone scan found no mismatched static phone numbers.");
+    } else {
+      addIssue(
+        warnings,
+        "copy.hardcoded_phone",
+        `Campaign Store Profile phone is "${storePhone}", but prepared HTML contains different hardcoded phone numbers outside skipped regions: ${summarizeCopyMatches(phoneMatches)}. Use the campaign.store_phone binding or remove static phone strings.`
+      );
+    }
+  }
 }
 
 function deriveMarketScope(spec) {
@@ -960,6 +986,22 @@ function deriveMarketScope(spec) {
   return { needsCopyReview: reasons.length > 0, reasons };
 }
 
+function deriveCurrencyCopyScope(spec) {
+  const campaign = spec?.campaign || {};
+  const defaultCurrency = normalizeCurrency(campaign.currency);
+  const currencies = [...new Set([
+    ...normalizeCurrencyList(campaign.available_currencies),
+    ...normalizeCurrencyList(campaign.additional_currencies),
+    ...normalizeCurrencyList(campaign.additionalCurrencies),
+  ])];
+  const reasons = [];
+
+  if (currencies.length > 1) reasons.push(`available currencies: ${currencies.join(", ")}`);
+  if (defaultCurrency && defaultCurrency !== "USD") reasons.push(`default currency: ${defaultCurrency}`);
+
+  return { needsCopyReview: reasons.length > 0, reasons };
+}
+
 function normalizeCurrency(value) {
   return isNonEmptyString(value) ? value.trim().toUpperCase() : "";
 }
@@ -979,15 +1021,99 @@ function collectMarketCopyMatches(scanRoots) {
   const matches = [];
   for (const { label: surface, root } of scanRoots) {
     for (const file of collectHtmlFiles(root)) {
-      const content = readFileSync(join(root, file.path), "utf8");
+      const content = maskMarketLintIgnoredRegions(readFileSync(join(root, file.path), "utf8"));
       for (const pattern of US_MARKET_COPY_PATTERNS) {
-        if (pattern.regex.test(content)) {
-          matches.push({ surface, path: file.path, label: pattern.label });
+        const match = content.match(pattern.regex);
+        if (match) {
+          matches.push({
+            surface,
+            path: file.path,
+            line: lineNumberAt(content, match.index || 0),
+            label: pattern.label,
+            text: match[0],
+          });
         }
       }
     }
   }
   return matches;
+}
+
+function collectHardcodedCurrencyMatches(scanRoots) {
+  const matches = [];
+  for (const { label: surface, root } of scanRoots) {
+    for (const file of collectHtmlFiles(root)) {
+      const content = maskMarketLintIgnoredRegions(readFileSync(join(root, file.path), "utf8"));
+      for (const match of content.matchAll(HARDCODED_CURRENCY_REGEX)) {
+        matches.push({
+          surface,
+          path: file.path,
+          line: lineNumberAt(content, match.index || 0),
+          label: match[0].replace(/\s+/g, " ").trim(),
+          text: match[0],
+        });
+      }
+    }
+  }
+  return matches;
+}
+
+function collectHardcodedPhoneMatches(scanRoots, storePhone) {
+  const expected = normalizePhoneNumber(storePhone);
+  if (!expected) return [];
+
+  const matches = [];
+  for (const { label: surface, root } of scanRoots) {
+    for (const file of collectHtmlFiles(root)) {
+      const content = maskMarketLintIgnoredRegions(readFileSync(join(root, file.path), "utf8"));
+      for (const match of content.matchAll(HARDCODED_PHONE_REGEX)) {
+        const found = normalizePhoneNumber(match[0]);
+        if (!found || found === expected) continue;
+        matches.push({
+          surface,
+          path: file.path,
+          line: lineNumberAt(content, match.index || 0),
+          label: match[0].replace(/\s+/g, " ").trim(),
+          text: match[0],
+        });
+      }
+    }
+  }
+  return matches;
+}
+
+function maskMarketLintIgnoredRegions(content) {
+  const ignoredElement =
+    /<([A-Za-z][A-Za-z0-9:-]*)(?=[^>]*(?:data-next-display|data-next-bundle-display|data-skip-market-lint\s*=\s*["']true["']))[^>]*>[\s\S]*?<\/\1>/gi;
+  const ignoredTag =
+    /<[^>]*(?:data-next-display|data-next-bundle-display|data-skip-market-lint\s*=\s*["']true["'])[^>]*>/gi;
+
+  return content
+    .replace(ignoredElement, preserveNewlinesMask)
+    .replace(ignoredTag, preserveNewlinesMask);
+}
+
+function preserveNewlinesMask(value) {
+  return value.replace(/[^\n]/g, " ");
+}
+
+function lineNumberAt(content, index) {
+  return content.slice(0, index).split("\n").length;
+}
+
+function normalizePhoneNumber(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  return digits;
+}
+
+function summarizeCopyMatches(matches) {
+  const summary = matches
+    .slice(0, 8)
+    .map((match) => `${match.surface}:${match.path}:${match.line} "${match.label}"`)
+    .join("; ");
+  const more = matches.length > 8 ? `; plus ${matches.length - 8} more` : "";
+  return `${summary}${more}`;
 }
 
 function validateCampaignsApiKey(packet, spec, warnings, ready) {
