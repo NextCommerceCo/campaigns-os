@@ -39,15 +39,7 @@ const KNOWN_DEPLOY_TARGETS = new Set([
 ]);
 
 const REQUIRED_STORE_PROFILE_FIELDS = [
-  "store_name",
   "store_url",
-  "store_terms",
-  "store_privacy",
-  "store_contact",
-  "store_returns",
-  "store_shipping",
-  "store_phone",
-  "store_phone_tel",
 ];
 
 const US_MARKET_COPY_PATTERNS = [
@@ -872,11 +864,11 @@ function validateSpecStoreProfile(spec, errors, ready) {
     addIssue(
       errors,
       "spec.store_profile",
-      `CampaignSpec campaign is missing Store Profile fields required for page-kit campaigns.json: ${missing.join(", ")}.`
+      `CampaignSpec campaign is missing required Store Profile field for page-kit campaigns.json: ${missing.join(", ")}.`
     );
     return;
   }
-  ready.push("CampaignSpec Store Profile fields are present for page-kit campaigns.json");
+  ready.push("CampaignSpec required Store Profile fields are present for page-kit campaigns.json");
 }
 
 function validateSpecShippingCountries(spec, warnings, ready) {
