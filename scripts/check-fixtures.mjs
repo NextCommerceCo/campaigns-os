@@ -128,6 +128,26 @@ function runCliJson(args, env = process.env) {
 
 validateCatalogFixtures();
 
+const omittedStageArraysTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-report-defaults-"));
+try {
+  const report = readJson(resolve(root, "examples/assembly-report.example.json"));
+  for (const stage of Object.values(report.stages || {})) {
+    delete stage.inputs;
+    delete stage.outputs;
+    delete stage.commands;
+    delete stage.blockers;
+    delete stage.warnings;
+  }
+  const omittedReportPath = resolve(omittedStageArraysTmp, "assembly-report.omitted-stage-arrays.json");
+  writeJson(omittedReportPath, report);
+  const validation = runCliJson(["validate-assembly-report", "--report", omittedReportPath, "--json"]);
+  if (!validation.ok) {
+    throw new Error("validate-assembly-report should accept omitted stage inputs/outputs/commands/blockers/warnings arrays.");
+  }
+} finally {
+  rmSync(omittedStageArraysTmp, { recursive: true, force: true });
+}
+
 const doctor = runCliJson(["doctor", "--packet", packet, "--json"], envWithout("CAMPAIGNS_API_KEY"));
 if (doctor.warnings?.some((issue) => issue.code === "campaign.api_key_source")) {
   throw new Error("Doctor should accept CampaignSpec campaign.campaigns_api_key without requiring CAMPAIGNS_API_KEY.");
