@@ -228,6 +228,7 @@ try {
     "--test-orders-allowed", "true",
     "--sandbox-test-card-confirmed", "true",
     "--allowed-domains-confirmed", "true",
+    "--preview-url", "https://deploy-preview.example.com/runtime-packet-demo/",
     "--production-url", "https://preview.example.com/runtime-packet-demo/",
     "--deploy-target", "netlify",
     "--json",
@@ -244,6 +245,9 @@ try {
   }
   if (updated.campaign?.allowed_domains_confirmed !== true) {
     throw new Error("qa policy set should persist campaign allowed-domain confirmation.");
+  }
+  if (updated.deploy?.preview_url !== "https://deploy-preview.example.com/runtime-packet-demo/") {
+    throw new Error("qa policy set should persist deploy preview URL updates.");
   }
   if (updated.deploy?.production_url !== "https://preview.example.com/runtime-packet-demo/" || updated.deploy?.target !== "netlify") {
     throw new Error("qa policy set should persist deploy updates.");
