@@ -163,6 +163,39 @@ try {
   rmSync(routingMetaTmp, { recursive: true, force: true });
 }
 
+const skillsTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-skills-"));
+try {
+  const dryRun = runCliJson(["install-skills", "--target", skillsTmp, "--dry-run", "--json"]);
+  if (!dryRun.skills?.length || !dryRun.skills.every((skill) => skill.action === "created")) {
+    throw new Error("install-skills dry run should report every missing skill as created.");
+  }
+  if (existsSync(resolve(skillsTmp, "next-campaigns-os", "SKILL.md"))) {
+    throw new Error("install-skills --dry-run should not write skill files.");
+  }
+
+  const installed = runCliJson(["install-skills", "--target", skillsTmp, "--json"]);
+  if (!installed.skills?.length || !installed.skills.every((skill) => skill.action === "created")) {
+    throw new Error("install-skills should create every missing skill on first install.");
+  }
+  if (!existsSync(resolve(skillsTmp, "next-campaigns-os", "SKILL.md"))) {
+    throw new Error("install-skills should write SKILL.md files under the target skills directory.");
+  }
+
+  const unchanged = runCliJson(["install-skills", "--target", skillsTmp, "--dry-run", "--json"]);
+  if (!unchanged.skills?.every((skill) => skill.action === "unchanged")) {
+    throw new Error("install-skills should report unchanged skills when target files match source.");
+  }
+
+  writeFileSync(resolve(skillsTmp, "next-campaigns-build", "SKILL.md"), "stale skill\n");
+  const stale = runCliJson(["install-skills", "--target", skillsTmp, "--dry-run", "--json"]);
+  const buildSkill = stale.skills?.find((skill) => skill.name === "next-campaigns-build");
+  if (buildSkill?.action !== "updated") {
+    throw new Error("install-skills should report stale target skills as updated.");
+  }
+} finally {
+  rmSync(skillsTmp, { recursive: true, force: true });
+}
+
 const marketCopyTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-market-copy-"));
 try {
   const sourceRoot = resolve(marketCopyTmp, "source-html");
