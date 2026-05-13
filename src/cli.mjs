@@ -7,6 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runQaCli } from "./qa-node.mjs";
@@ -60,6 +61,12 @@ const US_MARKET_COPY_PATTERNS = [
   { label: "manufactured in the USA", regex: /\bmanufactur(?:ed|ing)\s+in\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
 ];
 
+const SDK_ROUTING_META_TAGS = [
+  "next-success-url",
+  "next-upsell-accept-url",
+  "next-upsell-decline-url",
+];
+
 const HELP = `Campaigns OS toolkit
 
 Usage:
@@ -68,6 +75,7 @@ Usage:
   campaigns-os prepare-build --spec <json> --source <html-dir> --target <page-kit-dir> --template-family <family>
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
+  campaigns-os install-skills [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
@@ -123,6 +131,13 @@ export async function main(argv) {
   if (command === "install-agent-context") {
     const target = requireArg(args, "target");
     const result = installAgentContext(resolve(target), Boolean(args["dry-run"]));
+    writeResult(result, args, 0);
+    return;
+  }
+
+  if (command === "install-skills") {
+    if (args.target === true) throw new Error("Missing value for --target");
+    const result = installSkills(args.target, Boolean(args["dry-run"]));
     writeResult(result, args, 0);
     return;
   }
@@ -828,6 +843,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
     validateSpecPublicRoutes(spec, errors, ready);
     validateSpecStoreProfile(spec, errors, ready);
     validateSpecShippingCountries(spec, warnings, ready);
+    validateSpecRoutingMetaTags(spec, packet, warnings, ready);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready);
   }
 
@@ -875,6 +891,51 @@ function validateSpecShippingCountries(spec, warnings, ready) {
     return;
   }
   addIssue(warnings, "spec.available_shipping_countries", 'CampaignSpec campaign.available_shipping_countries should be "all" or an array of country codes.');
+}
+
+function validateSpecRoutingMetaTags(spec, packet, warnings, ready) {
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!publicRouteSlug) return;
+
+  const hits = [];
+  for (const page of activeSpecPages(spec)) {
+    const metaTags = page.sdk_hints?.meta_tags;
+    if (!isObject(metaTags)) continue;
+
+    for (const tag of SDK_ROUTING_META_TAGS) {
+      const value = metaTags[tag];
+      if (!isNonEmptyString(value)) continue;
+      const route = value.trim();
+      if (isRuntimeRootedRoutingMeta(route, publicRouteSlug)) continue;
+      hits.push(`${page.id}:${tag}=${route}`);
+    }
+  }
+
+  if (!hits.length) {
+    ready.push(`CampaignSpec SDK routing meta tags are runtime-rooted for /${publicRouteSlug}/`);
+    return;
+  }
+
+  const sample = hits.slice(0, 5).join("; ");
+  const more = hits.length > 5 ? `; plus ${hits.length - 5} more` : "";
+  addIssue(
+    warnings,
+    "routing_meta.runtime_root",
+    `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "/${publicRouteSlug}/upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
+  );
+}
+
+function normalizePublicRouteSlug(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^\/+|\/+$/g, "");
+}
+
+function isRuntimeRootedRoutingMeta(value, publicRouteSlug) {
+  if (isAbsoluteHttpUrl(value)) return true;
+  const route = value.trim();
+  if (!route.startsWith("/")) return false;
+  return route === `/${publicRouteSlug}` || route.startsWith(`/${publicRouteSlug}/`);
 }
 
 function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
@@ -1425,6 +1486,81 @@ function installAgentContext(targetRepo, dryRun = false) {
   };
 }
 
+function installSkills(targetArg = null, dryRun = false) {
+  const sourceDir = join(ROOT, "skills");
+  const targetDir = resolve(targetArg || join(homedir(), ".claude", "skills"));
+  const entries = readdirSync(sourceDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const skills = [];
+
+  if (!dryRun) mkdirSync(targetDir, { recursive: true });
+
+  for (const entry of entries) {
+    const name = entry.name;
+    const source = join(sourceDir, name, "SKILL.md");
+    if (!existsSync(source)) continue;
+
+    const destinationDir = join(targetDir, name);
+    const destination = join(destinationDir, "SKILL.md");
+    const sourceContent = readFileSync(source, "utf8");
+    const sourceDescriptor = describeSkillContent(sourceContent);
+    const hasDestination = existsSync(destination);
+    const destinationContent = hasDestination ? readFileSync(destination, "utf8") : null;
+    const destinationDescriptor = destinationContent == null ? null : describeSkillContent(destinationContent);
+    const action = !hasDestination
+      ? "created"
+      : destinationContent === sourceContent
+        ? "unchanged"
+        : "updated";
+
+    if (!dryRun && action !== "unchanged") {
+      mkdirSync(destinationDir, { recursive: true });
+      writeFileSync(destination, sourceContent);
+    }
+
+    skills.push({
+      name,
+      action,
+      source,
+      destination,
+      from: destinationDescriptor,
+      to: sourceDescriptor,
+    });
+  }
+
+  return {
+    ok: true,
+    status: dryRun ? "dry_run" : "installed",
+    source_directory: sourceDir,
+    target_directory: targetDir,
+    skills,
+    note: dryRun
+      ? "Dry run only; no skill files were written."
+      : "Restart Claude Code session to pick up new or updated skills.",
+  };
+}
+
+function describeSkillContent(content) {
+  const version = extractFrontmatterValue(content, "version");
+  const hash = createHash("sha256").update(content).digest("hex").slice(0, 12);
+  return {
+    version,
+    hash,
+    label: version ? `v${version}` : `sha256:${hash}`,
+  };
+}
+
+function extractFrontmatterValue(content, key) {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  for (const line of match[1].split("\n")) {
+    const parts = line.match(/^([A-Za-z0-9_-]+):\s*(.+?)\s*$/);
+    if (parts?.[1] === key) return parts[2].replace(/^["']|["']$/g, "");
+  }
+  return null;
+}
+
 function requireString(object, errors, path) {
   if (!isNonEmptyString(getPath(object, path))) addIssue(errors, path, `${path} is required.`);
 }
@@ -1478,6 +1614,10 @@ function printPrepareResult(result, args) {
 
 function printResult(result) {
   console.log(`Status: ${String(result.status || "unknown").toUpperCase()}`);
+  if (result.skills?.length) {
+    console.log("Skills:");
+    for (const skill of result.skills) console.log(`- ${formatSkillInstallSummary(skill)}`);
+  }
   if (result.ready?.length) {
     console.log("Ready:");
     for (const item of result.ready) console.log(`- ${item}`);
@@ -1499,4 +1639,14 @@ function printResult(result) {
     console.log("");
     console.log(result.prompt);
   }
+  if (result.note) console.log(result.note);
+}
+
+function formatSkillInstallSummary(skill) {
+  if (skill.action === "created") return `${skill.name}: created (${skill.to.label})`;
+  if (skill.action === "updated") {
+    const from = skill.from?.label || "missing";
+    return `${skill.name}: updated (${from} -> ${skill.to.label})`;
+  }
+  return `${skill.name}: unchanged (${skill.to.label})`;
 }
