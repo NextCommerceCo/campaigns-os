@@ -1,0 +1,737 @@
+import { SEVERITY, STATUS } from "./qa-verdict.mjs";
+
+const DEFAULT_BROWSER_TIMEOUT_MS = 30000;
+const DEFAULT_SETTLE_TIMEOUT_MS = 5000;
+const DEFAULT_TEST_CARD = "6011111111111117";
+const DEFAULT_TEST_CVV = "123";
+const DEFAULT_TEST_EXP_MONTH = "12";
+const DEFAULT_TEST_EXP_YEAR = "2030";
+
+export async function runBrowserChecks(topologies, args = {}) {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({ headless: args.headed !== true });
+  const context = await browser.newContext({
+    viewport: viewportFromArgs(args),
+    extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
+  });
+
+  try {
+    const assertions = [];
+    for (const topology of topologies) {
+      for (const page of topology.pages) {
+        assertions.push(...await runPageBrowserChecks(context, page, args));
+      }
+    }
+    return assertions;
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+}
+
+export async function runBrowserTestOrders(topologies, args = {}, runId = "local") {
+  const { chromium } = await import("playwright");
+  const checkoutPage = findPage(topologies, "checkout");
+  if (!checkoutPage?.url) {
+    return {
+      orders: [],
+      assertions: [assertion({
+        id: "browser-test-order:checkout",
+        family: "browser-test-order",
+        page: checkoutPage || { page_id: "checkout" },
+        status: STATUS.FAIL,
+        severity: SEVERITY.BLOCKER,
+        expected: "checkout page URL",
+        actual: "missing",
+      })],
+    };
+  }
+
+  const browser = await chromium.launch({ headless: args.headed !== true });
+  const context = await browser.newContext({
+    viewport: viewportFromArgs(args),
+    extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
+  });
+
+  const assertions = [];
+  const orders = [];
+  try {
+    for (const path of testOrderPaths(args["test-order"])) {
+      const result = await runSingleBrowserTestOrder(context, checkoutPage, path, args, runId);
+      orders.push(result.order);
+      assertions.push(testOrderAssertion(checkoutPage, path, result));
+    }
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+
+  return { orders, assertions };
+}
+
+async function runPageBrowserChecks(context, page, args) {
+  const assertions = [];
+  if (!page.url) {
+    assertions.push(assertion({
+      id: `browser-load:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "deployed URL",
+      actual: null,
+      evidence: { transport_error: { code: "missing_url", message: "No page URL could be resolved." } },
+    }));
+    return assertions;
+  }
+
+  const browserPage = await context.newPage();
+  const consoleErrors = [];
+  const pageErrors = [];
+  const failedRequests = [];
+  browserPage.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(trim(message.text()));
+  });
+  browserPage.on("pageerror", (error) => pageErrors.push(trim(error.message)));
+  browserPage.on("requestfailed", (request) => {
+    failedRequests.push({
+      url: request.url(),
+      failure: request.failure()?.errorText || "request failed",
+    });
+  });
+
+  try {
+    const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
+    const response = await browserPage.goto(page.url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await browserPage.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+    const status = response?.status() ?? null;
+    const title = await browserPage.title().catch(() => "");
+    const bodyPresent = await browserPage.locator("body").count().then((count) => count > 0).catch(() => false);
+
+    assertions.push(assertion({
+      id: `browser-load:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: status && status >= 400 ? STATUS.FAIL : STATUS.PASS,
+      severity: status && status >= 400 ? SEVERITY.BLOCKER : undefined,
+      expected: "browser-rendered page",
+      actual: status ? `HTTP ${status}` : "loaded",
+      evidence: { title, body_present: bodyPresent },
+    }));
+
+    if (page.page_type === "upsell") {
+      assertions.push(...await renderedUpsellControlAssertions(browserPage, page));
+    }
+    if (page.page_type === "checkout") {
+      assertions.push(...await checkoutPaymentSurfaceAssertions(browserPage, page));
+    }
+
+    if (pageErrors.length) {
+      assertions.push(runtimeIssueAssertion(page, "browser-page-errors", pageErrors));
+    }
+    if (consoleErrors.length) {
+      assertions.push(runtimeIssueAssertion(page, "browser-console-errors", consoleErrors));
+    }
+    if (failedRequests.length) {
+      assertions.push(assertion({
+        id: `browser-request-failures:${page.page_id}`,
+        family: "browser-runtime",
+        page,
+        status: STATUS.WARN,
+        severity: SEVERITY.WARN,
+        expected: "no failed browser requests",
+        actual: `${failedRequests.length} failed request(s)`,
+        evidence: { failed_requests: failedRequests.slice(0, 10) },
+      }));
+    }
+  } catch (error) {
+    assertions.push(assertion({
+      id: `browser-load:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "browser-rendered page",
+      actual: null,
+      evidence: { transport_error: { code: "browser_error", message: error instanceof Error ? error.message : String(error) } },
+    }));
+  } finally {
+    await browserPage.close().catch(() => {});
+  }
+
+  return assertions;
+}
+
+async function renderedUpsellControlAssertions(browserPage, page) {
+  const checks = [
+    ["accept", "add", page.expected_accept_url],
+    ["decline", "skip", page.expected_decline_url],
+  ];
+  const assertions = [];
+  for (const [kind, action, expectedUrl] of checks) {
+    if (!expectedUrl) continue;
+    const count = await browserPage.locator(`[data-next-upsell-action="${action}"]`).count().catch(() => 0);
+    assertions.push(assertion({
+      id: `browser-upsell-control:${page.page_id}:${kind}`,
+      family: "browser-runtime",
+      page,
+      status: count > 0 ? STATUS.PASS : STATUS.MANUAL_REVIEW,
+      severity: count > 0 ? undefined : SEVERITY.WARN,
+      expected: `rendered SDK ${kind} control`,
+      actual: count > 0 ? `${count} matching control(s)` : "not found",
+      evidence: { selector: `[data-next-upsell-action="${action}"]`, expected_url: expectedUrl },
+    }));
+  }
+  return assertions;
+}
+
+async function checkoutPaymentSurfaceAssertions(browserPage, page) {
+  const cardNumberMounts = await browserPage.locator('[data-next-checkout-field="cc-number"], #spreedly-number').count().catch(() => 0);
+  const cvvMounts = await browserPage.locator('[data-next-checkout-field="cvv"], #spreedly-cvv').count().catch(() => 0);
+  const spreedlyFrames = browserPage.frames().filter((frame) => /spreedly/i.test(frame.url()));
+  return [assertion({
+    id: `browser-payment-surface:${page.page_id}`,
+    family: "browser-runtime",
+    page,
+    status: cardNumberMounts > 0 && cvvMounts > 0 ? STATUS.PASS : STATUS.MANUAL_REVIEW,
+    severity: cardNumberMounts > 0 && cvvMounts > 0 ? undefined : SEVERITY.WARN,
+    expected: "rendered credit-card payment field mounts",
+    actual: `card_mounts=${cardNumberMounts}; cvv_mounts=${cvvMounts}; spreedly_frames=${spreedlyFrames.length}`,
+    evidence: {
+      card_number_selector: '[data-next-checkout-field="cc-number"], #spreedly-number',
+      cvv_selector: '[data-next-checkout-field="cvv"], #spreedly-cvv',
+      spreedly_frame_urls: spreedlyFrames.map((frame) => frame.url()).slice(0, 5),
+      next_step: "Run --test-order with allowlist/sandbox confirmation for typed-card checkout proof.",
+    },
+  })];
+}
+
+async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runId) {
+  const page = await context.newPage();
+  page.setDefaultTimeout(numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
+  const events = captureCheckoutEvents(page);
+  const email = testEmail(args, runId);
+
+  try {
+    await gotoAndSettle(page, checkoutPage.url, args);
+    await selectRequestedCart(page, args);
+    await advanceToCheckoutForm(page);
+    await fillCheckoutFields(page, args, email);
+    await fillPaymentFields(page, args);
+    await submitCheckout(page);
+    await waitForCheckoutResult(page);
+
+    const order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
+    if (order.ok && path !== "checkout") {
+      const upsell = await clickUpsellPath(page, path);
+      order.upsell = upsell;
+      order.final_url = page.url();
+    }
+    return {
+      ok: order.ok,
+      error: order.error || null,
+      order,
+      events: sanitizedEvents(events),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      order: {
+        path,
+        ok: false,
+        next_order_id: null,
+        ref_id: null,
+        email,
+        final_url: page.url(),
+        verification: { verified: false, error: error instanceof Error ? error.message : String(error) },
+        evidence: { events: sanitizedEvents(events) },
+      },
+      events: sanitizedEvents(events),
+    };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+async function gotoAndSettle(page, url, args) {
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS) });
+  await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await page.waitForTimeout(750);
+}
+
+async function selectRequestedCart(page, args) {
+  const cart = parseCart(args.cart);
+  for (const item of cart) {
+    const selector = `[data-next-selector-card][data-next-package-id="${escapeCss(String(item.packageId))}"], [data-next-package-id="${escapeCss(String(item.packageId))}"]`;
+    const target = page.locator(selector).first();
+    if (await target.count().catch(() => 0)) {
+      await target.scrollIntoViewIfNeeded().catch(() => {});
+      await target.click({ timeout: 5000 }).catch(() => {});
+    }
+  }
+}
+
+async function advanceToCheckoutForm(page) {
+  if (await hasVisibleCheckoutFields(page)) return;
+  const explicit = page.locator('[data-next-action="add-to-cart"], [data-next-checkout-action="add-to-cart"], [data-next-add-to-cart]').first();
+  if (await explicit.count().catch(() => 0)) {
+    await explicit.click({ timeout: 8000 }).catch(() => {});
+  } else {
+    await clickVisibleControlByText(page, /add to cart|checkout|continue|buy now/i);
+  }
+  await page.waitForTimeout(1500);
+  if (!await hasVisibleCheckoutFields(page)) throw new Error("Checkout form did not become visible after cart selection.");
+}
+
+async function hasVisibleCheckoutFields(page) {
+  return page.locator('[data-next-checkout-field="email"]:visible, [data-next-checkout-field="cc-number"]:visible, #spreedly-number:visible')
+    .count()
+    .then((count) => count > 0)
+    .catch(() => false);
+}
+
+async function fillCheckoutFields(page, args, email) {
+  const address = {
+    firstName: stringArg(args["test-first-name"]) || "QA",
+    lastName: stringArg(args["test-last-name"]) || "Playwright",
+    email,
+    phone: args["test-phone"] === true ? "" : stringArg(args["test-phone"]) || "",
+    country: stringArg(args["test-country"]) || "US",
+    address1: stringArg(args["test-address1"]) || "1600 Amphitheatre Pkwy",
+    city: stringArg(args["test-city"]) || "Mountain View",
+    province: stringArg(args["test-province"]) || "CA",
+    postal: stringArg(args["test-postal"]) || "94043",
+  };
+
+  await fillByField(page, "fname", address.firstName);
+  await fillByField(page, "lname", address.lastName);
+  await fillByField(page, "email", address.email);
+  await fillByField(page, "phone", address.phone, { optional: true });
+  await selectByField(page, "country", address.country);
+  await fillByField(page, "address1", address.address1);
+  await settleAddressAutocomplete(page);
+  await fillByField(page, "city", address.city);
+  await selectByField(page, "province", address.province);
+  await fillByField(page, "postal", address.postal);
+  await closeAddressAutocomplete(page);
+
+  const sameAsShipping = page.locator("#use_shipping_address").first();
+  if (await sameAsShipping.count().catch(() => 0)) {
+    await sameAsShipping.check().catch(() => {});
+  }
+
+  await fillByField(page, "billing-fname", address.firstName, { optional: true, onlyVisible: true });
+  await fillByField(page, "billing-lname", address.lastName, { optional: true, onlyVisible: true });
+  await fillByField(page, "billing-phone", address.phone, { optional: true, onlyVisible: true });
+  await selectByField(page, "billing-country", address.country, { optional: true, onlyVisible: true });
+  await fillByField(page, "billing-address1", address.address1, { optional: true, onlyVisible: true });
+  await fillByField(page, "billing-city", address.city, { optional: true, onlyVisible: true });
+  await selectByField(page, "billing-province", address.province, { optional: true, onlyVisible: true });
+  await fillByField(page, "billing-postal", address.postal, { optional: true, onlyVisible: true });
+}
+
+async function fillPaymentFields(page, args) {
+  await clickCreditPaymentMethod(page);
+  await selectByField(page, "exp-month", stringArg(args["test-exp-month"]) || DEFAULT_TEST_EXP_MONTH);
+  await selectYear(page, stringArg(args["test-exp-year"]) || DEFAULT_TEST_EXP_YEAR);
+
+  const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
+  const cvv = stringArg(args["test-cvv"]) || DEFAULT_TEST_CVV;
+  const numberInput = page.frameLocator('iframe[id^="spreedly-number-frame"]').locator("input").first();
+  const cvvInput = page.frameLocator('iframe[id^="spreedly-cvv-frame"]').locator("input").first();
+  await numberInput.click();
+  await numberInput.pressSequentially(card, { delay: 20 });
+  await cvvInput.click();
+  await cvvInput.pressSequentially(cvv, { delay: 20 });
+  await page.locator("body").click({ position: { x: 20, y: 20 } }).catch(() => {});
+  await page.waitForTimeout(500);
+}
+
+async function clickCreditPaymentMethod(page) {
+  const candidates = [
+    "#combo_mode_credit",
+    '[data-next-payment-method="credit"]',
+    '[data-next-payment-method="card"]',
+    'input[name="payment_method"][value="credit"]',
+    'input[name="payment_method"][value="card"]',
+  ];
+  for (const selector of candidates) {
+    const target = page.locator(selector).first();
+    if (await target.count().catch(() => 0)) {
+      await target.click({ force: true }).catch(() => {});
+      return;
+    }
+  }
+}
+
+async function submitCheckout(page) {
+  await closeAddressAutocomplete(page);
+  const submit = page.locator('button.submit-button[os-checkout-payment="combo"], button[os-checkout-payment="combo"], button[type="submit"]').first();
+  await submit.waitFor({ state: "visible" });
+  await submit.scrollIntoViewIfNeeded();
+  await submit.click();
+}
+
+async function waitForCheckoutResult(page) {
+  await page.waitForURL((url) => /ref_id=|receipt|upsell|thank|order|payment_failed/i.test(String(url)), { timeout: 60000 }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(3000);
+}
+
+async function buildOrderEvidence({ page, events, path, email, checkoutPage, args }) {
+  const orderCreate = lastJsonResponse(events, /\/api\/v1\/orders\/?$/i);
+  const orderRead = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i);
+  const orderBody = orderRead?.body || orderCreate?.body || null;
+  const refId = stringArg(orderBody?.ref_id) || refIdFromUrl(page.url());
+  const number = stringArg(orderBody?.number) || stringArg(orderBody?.id) || null;
+  const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
+  const ok = Boolean(orderCreate && orderCreate.status >= 200 && orderCreate.status < 300 && refId);
+  return {
+    path,
+    ok,
+    next_order_id: number,
+    ref_id: refId,
+    qa_email: email,
+    is_test: orderBody?.is_test ?? null,
+    payment_method: orderBody?.payment_method || (ok ? "card_token" : null),
+    card: { last4: card.slice(-4) },
+    checkout_url: checkoutPage.url,
+    final_url: page.url(),
+    cart_state: cartStateFromOrder(orderBody) || cartStateFromArgs(args),
+    receipt_line_items: extractReceiptLines(orderBody),
+    verification: {
+      verified: ok,
+      order_create_status: orderCreate?.status || null,
+      order_read_status: orderRead?.status || null,
+      total_incl_tax: orderBody?.total_incl_tax || null,
+      currency: orderBody?.currency || null,
+      error: ok ? null : await visibleErrorText(page),
+    },
+    evidence: {
+      order_request_seen: Boolean(orderCreate),
+      spreedly_tokenized: events.requests.some((request) => /spreedly.*payment_methods/i.test(request.url)),
+      events: sanitizedEvents(events),
+    },
+  };
+}
+
+async function clickUpsellPath(page, path) {
+  const action = path === "accept" ? "add" : "skip";
+  const selector = `[data-next-upsell-action="${action}"]`;
+  const control = page.locator(selector).first();
+  if (!await control.count().catch(() => 0)) {
+    return { path, clicked: false, error: `Missing upsell control ${selector}` };
+  }
+  await control.scrollIntoViewIfNeeded().catch(() => {});
+  await control.click({ timeout: 10000 }).catch(async () => {
+    await control.click({ force: true });
+  });
+  await waitForCheckoutResult(page);
+  return { path, clicked: true, final_url: page.url() };
+}
+
+function testOrderAssertion(page, path, result) {
+  return assertion({
+    id: `browser-test-order:${path}`,
+    family: "browser-test-order",
+    page,
+    status: result.ok ? STATUS.PASS : STATUS.FAIL,
+    severity: result.ok ? undefined : SEVERITY.BLOCKER,
+    expected: "test order created through deployed checkout page",
+    actual: result.ok ? result.order.next_order_id || result.order.ref_id : result.error || result.order?.verification?.error || "order not created",
+    evidence: result.ok
+      ? {
+          ref_id: result.order.ref_id,
+          order_number: result.order.next_order_id,
+          final_url: result.order.final_url,
+          is_test: result.order.is_test,
+          line_count: result.order.receipt_line_items.length,
+          card_last4: result.order.card.last4,
+        }
+      : {
+          final_url: result.order?.final_url,
+          events: result.events,
+        },
+  });
+}
+
+function captureCheckoutEvents(page) {
+  const events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
+  const interesting = /\/api\/v1\/(?:orders|upsells|carts)\/?|\/transactions|spreedly|campaigns\.apps/i;
+  page.on("request", (request) => {
+    if (!interesting.test(request.url())) return;
+    events.requests.push({
+      method: request.method(),
+      url: request.url(),
+      postData: redactSensitive(request.postData()),
+    });
+  });
+  page.on("response", async (response) => {
+    if (!interesting.test(response.url())) return;
+    const text = await response.text().catch(() => null);
+    events.responses.push({
+      status: response.status(),
+      url: response.url(),
+      body: parseMaybeJson(redactSensitive(text)),
+    });
+  });
+  page.on("requestfailed", (request) => {
+    if (!interesting.test(request.url())) return;
+    events.failed.push({ url: request.url(), failure: request.failure()?.errorText || "request failed" });
+  });
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type())) events.console.push({ type: message.type(), text: trim(message.text()) });
+  });
+  page.on("pageerror", (error) => events.pageErrors.push(trim(error.message)));
+  return events;
+}
+
+function lastJsonResponse(events, pattern) {
+  for (let index = events.responses.length - 1; index >= 0; index -= 1) {
+    const response = events.responses[index];
+    if (pattern.test(response.url) && response.body && typeof response.body === "object" && !Array.isArray(response.body)) return response;
+  }
+  return null;
+}
+
+function sanitizedEvents(events) {
+  return {
+    requests: events.requests.slice(-20),
+    responses: events.responses.slice(-20).map((response) => ({
+      status: response.status,
+      url: response.url,
+      body: summarizeResponseBody(response.body),
+    })),
+    failed: events.failed.slice(-20),
+    console: events.console.slice(-20),
+    pageErrors: events.pageErrors.slice(-20),
+  };
+}
+
+function summarizeResponseBody(body) {
+  if (typeof body === "string") return trim(body).slice(0, 1000);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  return {
+    ...(body.number ? { number: body.number } : {}),
+    ...(body.ref_id ? { ref_id: body.ref_id } : {}),
+    ...(body.is_test !== undefined ? { is_test: body.is_test } : {}),
+    ...(body.total_incl_tax ? { total_incl_tax: body.total_incl_tax } : {}),
+    ...(body.currency ? { currency: body.currency } : {}),
+    ...(body.checkout_url ? { checkout_url: body.checkout_url } : {}),
+    ...(Array.isArray(body.lines) ? { lines: extractReceiptLines(body) } : {}),
+    ...(body.detail ? { detail: body.detail } : {}),
+  };
+}
+
+async function clickVisibleControlByText(page, pattern) {
+  const controls = page.locator('button:visible, a:visible, [role="button"]:visible, input[type="submit"]:visible, input[type="button"]:visible, div[class*="button"]:visible, div[class*="btn"]:visible');
+  const count = await controls.count();
+  for (let index = 0; index < count; index += 1) {
+    const control = controls.nth(index);
+    const text = trim((await control.innerText().catch(() => "")) || (await control.getAttribute("value").catch(() => "")));
+    if (!pattern.test(text)) continue;
+    await control.scrollIntoViewIfNeeded().catch(() => {});
+    await control.click({ timeout: 8000 });
+    return true;
+  }
+  throw new Error(`No visible control matched ${pattern}`);
+}
+
+function parseMaybeJson(text) {
+  if (typeof text !== "string" || !text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return trim(text).slice(0, 1000);
+  }
+}
+
+function redactSensitive(value) {
+  if (typeof value !== "string") return value ?? null;
+  return value
+    .replace(/"number"\s*:\s*"\d{12,19}"/g, '"number":"[redacted-card]"')
+    .replace(/"verification_value"\s*:\s*"[^"]+"/g, '"verification_value":"[redacted-cvv]"')
+    .replace(/"card_token"\s*:\s*"[^"]+"/g, '"card_token":"[redacted-token]"')
+    .replace(/01[A-Z0-9]{24}/g, "[redacted-token]");
+}
+
+async function visibleErrorText(page) {
+  const messages = await page.locator('.next-error-label:visible, [class*="error"]:visible, [class*="alert"]:visible')
+    .evaluateAll((elements) => elements.map((element) => element.textContent?.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 10))
+    .catch(() => []);
+  return messages.join("; ") || "order request not observed";
+}
+
+async function fillByField(page, field, value, options = {}) {
+  const locator = page.locator(`[data-next-checkout-field="${field}"]`).first();
+  if (!await fieldUsable(locator, options)) {
+    if (options.optional) return false;
+    throw new Error(`Missing checkout field: ${field}`);
+  }
+  await locator.click().catch(() => {});
+  await locator.fill(value);
+  return true;
+}
+
+async function selectByField(page, field, value, options = {}) {
+  const locator = page.locator(`[data-next-checkout-field="${field}"]`).first();
+  if (!await fieldUsable(locator, options)) {
+    if (options.optional) return false;
+    throw new Error(`Missing checkout select: ${field}`);
+  }
+  await locator.selectOption(value);
+  return true;
+}
+
+async function selectYear(page, value) {
+  const locator = page.locator('[data-next-checkout-field="exp-year"]').first();
+  await locator.waitFor({ state: "visible" });
+  const options = await locator.locator("option").evaluateAll((elements) => elements.map((option) => ({ value: option.value, text: option.textContent?.trim() })));
+  const match = options.find((option) => option.value === value || option.text === value)
+    || options.find((option) => option.value && !/year/i.test(option.text || ""));
+  if (!match?.value) throw new Error("No usable expiration year option found.");
+  await locator.selectOption(match.value);
+}
+
+async function fieldUsable(locator, options = {}) {
+  const count = await locator.count().catch(() => 0);
+  if (!count) return false;
+  if (options.onlyVisible) return locator.isVisible().catch(() => false);
+  await locator.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+  return locator.isVisible().catch(() => false);
+}
+
+async function settleAddressAutocomplete(page) {
+  await page.waitForTimeout(750);
+  const suggestion = page.locator(".pac-item, .pac-container .pac-item, [role=option]").first();
+  if (await suggestion.count().catch(() => 0) && await suggestion.isVisible().catch(() => false)) {
+    await suggestion.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+  }
+}
+
+async function closeAddressAutocomplete(page) {
+  const close = page.locator(".pac-close-button").first();
+  if (await close.count().catch(() => 0) && await close.isVisible().catch(() => false)) {
+    await close.click({ force: true }).catch(() => {});
+  }
+}
+
+function testOrderPaths(mode) {
+  const normalized = String(mode || "off").toLowerCase();
+  if (normalized === "both") return ["accept", "decline"];
+  if (["checkout", "accept", "decline"].includes(normalized)) return [normalized];
+  throw new Error(`Unknown --test-order mode: ${mode}`);
+}
+
+function testEmail(args, runId) {
+  const explicit = stringArg(args["test-email"]);
+  if (explicit) return explicit;
+  const prefix = stringArg(args["test-email-prefix"]) || "qa+campaigns-os";
+  return `${prefix}-${String(runId).toLowerCase()}-${Date.now()}@example.com`;
+}
+
+function cartStateFromArgs(args) {
+  const packages = parseCart(args.cart).map((item) => ({ ref_id: item.packageId, quantity: item.quantity }));
+  return packages.length ? { packages } : { packages: [] };
+}
+
+function cartStateFromOrder(order) {
+  if (!Array.isArray(order?.lines)) return null;
+  return {
+    packages: order.lines.map((line) => ({
+      title: line.product_title || line.title || null,
+      quantity: line.quantity ?? null,
+      is_upsell: line.is_upsell ?? null,
+    })),
+  };
+}
+
+function extractReceiptLines(order) {
+  if (!Array.isArray(order?.lines)) return [];
+  return order.lines.map((line) => ({
+    title: line.product_title || line.title || line.name || null,
+    quantity: Number(line.quantity || 0),
+    is_upsell: Boolean(line.is_upsell),
+    price: line.price_incl_tax || line.price_excl_tax || line.price || null,
+  }));
+}
+
+function refIdFromUrl(value) {
+  try {
+    return new URL(value).searchParams.get("ref_id");
+  } catch {
+    return null;
+  }
+}
+
+function findPage(topologies, type) {
+  for (const topology of topologies || []) {
+    const page = (topology.pages || []).find((candidate) => candidate.page_type === type);
+    if (page) return page;
+  }
+  return null;
+}
+
+function parseCart(value) {
+  if (!value) return [];
+  return String(value).split(",").map((part) => {
+    const [packageId, quantity] = part.split(":").map((item) => item.trim());
+    return { packageId, quantity: Number.parseInt(quantity || "1", 10) || 1 };
+  }).filter((item) => item.packageId);
+}
+
+function normalizeCard(value) {
+  return String(value || "").replace(/[^\d]/g, "");
+}
+
+function stringArg(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function escapeCss(value) {
+  return value.replace(/["\\]/g, "\\$&");
+}
+
+function runtimeIssueAssertion(page, kind, messages) {
+  return assertion({
+    id: `${kind}:${page.page_id}`,
+    family: "browser-runtime",
+    page,
+    status: STATUS.WARN,
+    severity: SEVERITY.WARN,
+    expected: "clean browser runtime",
+    actual: `${messages.length} issue(s)`,
+    evidence: { messages: messages.slice(0, 10) },
+  });
+}
+
+function assertion({ id, family, page, status, severity, expected, actual, evidence }) {
+  return {
+    id,
+    family,
+    page: page.page_id || page.label || "campaign",
+    url: page.url || undefined,
+    status,
+    ...(severity ? { severity } : {}),
+    ...(expected !== undefined ? { expected } : {}),
+    ...(actual !== undefined ? { actual } : {}),
+    ...(evidence ? { evidence } : {}),
+  };
+}
+
+function viewportFromArgs(args) {
+  const width = numberArg(args["browser-width"], 1440);
+  const height = numberArg(args["browser-height"], 1200);
+  return { width, height };
+}
+
+function numberArg(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function trim(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}

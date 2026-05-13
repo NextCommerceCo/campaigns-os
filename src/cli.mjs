@@ -77,7 +77,7 @@ Usage:
   campaigns-os next polish --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
-  campaigns-os qa run --packet <json> [--base-url <url>] [--output-dir qa-output] [--json]
+  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--output-dir qa-output] [--json]
 
 Examples:
   npm run campaigns-os -- start \\
@@ -484,8 +484,8 @@ function prepareBuild(args, options = {}) {
   const doctorOutPath = resolve(args["doctor-out"] || join(targetRepo, ".campaign-runtime/doctor-output.json"));
   const spec = readJson(specPath);
   const { mapId, publicRouteSlug } = campaignIdentity(spec, args);
-  if (!mapId) throw new Error("CampaignSpec has no map ID. Provide --map-id or export a saved Map Builder spec.");
-  if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Provide --public-route-slug or set campaign.slug.");
+  if (!mapId) throw new Error("CampaignSpec has no map ID. Re-export a saved Map Builder spec with spec_identity.map_id before assembly; use --map-id only for legacy diagnostics.");
+  if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Re-export a saved Map Builder spec with spec_identity.public_route_slug or set campaign.slug.");
 
   const sourceKind = optionalString(args["source-kind"], "html_funnel");
   if (sourceKind !== "html_funnel") {
@@ -741,7 +741,7 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
     scaffold_reason: null,
   };
 
-  validatePacket(packet, packetPath, errors, warnings, ready, derived);
+  validatePacket(packet, packetPath, errors, warnings, ready, derived, { context, report });
   if (context) validateContext(context, warnings, ready, derived);
   if (report) validateAssemblyReportShape(report, errors, warnings, ready);
 
@@ -751,7 +751,7 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
   return outputBaseDir ? relativizeDoctorOutput(result, outputBaseDir) : result;
 }
 
-function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
+function validatePacket(packet, packetPath, errors, warnings, ready, derived, buildState = {}) {
   if (!isObject(packet)) {
     addIssue(errors, "packet.type", "Build Packet must be a JSON object.");
     return;
@@ -835,15 +835,17 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
       addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
     }
     ready.push("Local CampaignSpec parsed");
+    validateSpecIdentityExport(spec, warnings, ready);
     validateSpecPublicRoutes(spec, errors, ready);
     validateSpecStoreProfile(spec, errors, ready);
     validateSpecShippingCountries(spec, warnings, ready);
     validateSpecRoutingMetaTags(spec, packet, warnings, ready);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready);
+    validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState);
   }
 
   validateCampaignsApiKey(packet, spec, warnings, ready);
-  validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready);
+  validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived, buildState);
   validateMarketSensitiveCopy(spec, warnings, ready, derived);
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
@@ -888,6 +890,20 @@ function validateSpecShippingCountries(spec, warnings, ready) {
   addIssue(warnings, "spec.available_shipping_countries", 'CampaignSpec campaign.available_shipping_countries should be "all" or an array of country codes.');
 }
 
+function validateSpecIdentityExport(spec, warnings, ready) {
+  const identity = spec?.spec_identity;
+  if (isObject(identity) && isNonEmptyString(identity.map_id) && isNonEmptyString(identity.public_route_slug)) {
+    ready.push("CampaignSpec spec_identity includes map_id and public_route_slug");
+    return;
+  }
+
+  addIssue(
+    warnings,
+    "spec_identity.export",
+    "CampaignSpec is missing complete spec_identity.map_id/public_route_slug. Prefer re-exporting from a saved Map Builder map; CLI identity overrides should stay diagnostic-only."
+  );
+}
+
 function validateSpecRoutingMetaTags(spec, packet, warnings, ready) {
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!publicRouteSlug) return;
@@ -918,6 +934,114 @@ function validateSpecRoutingMetaTags(spec, packet, warnings, ready) {
     "routing_meta.runtime_root",
     `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "/${publicRouteSlug}/upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
   );
+}
+
+function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+  const expectedPages = activeSpecPages(spec)
+    .map((page) => ({
+      page,
+      metaTags: page.sdk_hints?.meta_tags,
+    }))
+    .filter(({ metaTags }) => isObject(metaTags) && Object.keys(metaTags).length > 0);
+  if (expectedPages.length === 0) return;
+
+  const allExpectedTags = [...new Set(expectedPages.flatMap(({ metaTags }) => Object.keys(metaTags)))].sort();
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const assemblyComplete = isStageComplete(buildState.report, "assembly");
+
+  if (!siteRoot || !existsSync(siteRoot)) {
+    addIssue(
+      warnings,
+      "sdk_hints.meta_tags",
+      `CampaignSpec expects SDK meta tags (${allExpectedTags.join(", ")}). Doctor cannot verify rendered output until page-kit build writes _site/${publicRouteSlug || "<slug>"}/.`
+    );
+    return;
+  }
+
+  let checked = 0;
+  for (const { page, metaTags } of expectedPages) {
+    const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page);
+    if (!builtPath || !existsSync(builtPath)) {
+      const issue = {
+        code: "built_output.page_missing",
+        message: `Built HTML is missing for CampaignSpec page "${page.id}" at ${builtPath ? relFromDir(targetRepo, builtPath) : "_site/<slug>/..."}.`,
+      };
+      (assemblyComplete ? errors : warnings).push(issue);
+      continue;
+    }
+
+    checked += 1;
+    const content = readFileSync(builtPath, "utf8");
+    validateBuiltHtmlStructure(content, builtPath, targetRepo, page, errors, warnings, assemblyComplete);
+
+    for (const [name, expectedValue] of Object.entries(metaTags)) {
+      const actualValue = extractMetaContent(content, name);
+      if (!isNonEmptyString(actualValue)) {
+        addIssue(
+          assemblyComplete ? errors : warnings,
+          "sdk_hints.meta_tags.missing",
+          `Built page "${page.id}" is missing SDK meta tag "${name}" expected from CampaignSpec.`,
+          { page_id: page.id, file: relFromDir(targetRepo, builtPath) }
+        );
+        continue;
+      }
+      if (SDK_ROUTING_META_TAGS.includes(name) && isNonEmptyString(expectedValue)) {
+        const expectedRoute = runtimeRouteForMetaValue(expectedValue, publicRouteSlug);
+        if (expectedRoute && actualValue.trim() !== expectedRoute) {
+          addIssue(
+            assemblyComplete ? errors : warnings,
+            "sdk_hints.meta_tags.route_mismatch",
+            `Built page "${page.id}" emits ${name}="${actualValue}", expected "${expectedRoute}".`,
+            { page_id: page.id, file: relFromDir(targetRepo, builtPath) }
+          );
+        }
+      }
+    }
+  }
+
+  if (checked > 0) ready.push(`Built SDK meta tags checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
+}
+
+function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, errors, warnings, assemblyComplete) {
+  const issueTarget = assemblyComplete ? errors : warnings;
+  const relPath = relFromDir(targetRepo, builtPath);
+  if (!/<body(?:\s|>)/i.test(content) || !/<\/body>/i.test(content)) {
+    addIssue(issueTarget, "built_output.body_missing", `Built page "${page.id}" does not contain a complete <body> element.`, { page_id: page.id, file: relPath });
+  }
+  if (!/(data-next-|window\.next|next-page-type|campaign-cart-sdk|campaign-cart)/i.test(content)) {
+    addIssue(issueTarget, "built_output.runtime_missing", `Built page "${page.id}" has no obvious Campaign Cart runtime markers.`, { page_id: page.id, file: relPath });
+  }
+}
+
+function builtHtmlPathForPage(targetRepo, publicRouteSlug, page) {
+  if (!targetRepo || !publicRouteSlug) return null;
+  const route = publicRouteForPage(page);
+  if (!route) return join(targetRepo, "_site", publicRouteSlug, "index.html");
+  const clean = route.replace(/^\/+|\/+$/g, "");
+  return clean ? join(targetRepo, "_site", publicRouteSlug, clean, "index.html") : join(targetRepo, "_site", publicRouteSlug, "index.html");
+}
+
+function extractMetaContent(content, name) {
+  const escaped = escapeRegExp(name);
+  const metaTag = new RegExp(`<meta\\b(?=[^>]*\\bname=["']${escaped}["'])([^>]*)>`, "i").exec(content);
+  if (!metaTag) return null;
+  const contentAttr = /\bcontent=["']([^"']*)["']/i.exec(metaTag[1]);
+  return contentAttr ? contentAttr[1] : "";
+}
+
+function runtimeRouteForMetaValue(value, publicRouteSlug) {
+  if (!isNonEmptyString(value)) return null;
+  const route = value.trim();
+  if (isAbsoluteHttpUrl(route)) return route;
+  if (isRuntimeRootedRoutingMeta(route, publicRouteSlug)) return route;
+  const normalized = normalizePageKitRoute(route);
+  return normalized ? `/${publicRouteSlug}/${normalized}` : `/${publicRouteSlug}/`;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizePublicRouteSlug(value) {
@@ -1290,7 +1414,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   }
 }
 
-function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready) {
+function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const family = packet.assembly?.template_family;
   const catalogInfo = packet.assembly?.commerce_catalog || {};
   if (catalogInfo.required !== true) return;
@@ -1311,14 +1435,19 @@ function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, rea
     return;
   }
   ready.push(`Template agentContract loaded for ${family}`);
-  for (const value of contract.frontmatter?.demoOnlyValues || []) {
-    addIssue(warnings, "frontmatter.demoOnlyValues", `Replace demo-only starter value before launch: ${value}`);
-  }
-  for (const value of contract.frontmatter?.replaceFromSpecOrApi || []) {
-    addIssue(warnings, "frontmatter.replaceFromSpecOrApi", `Must be replaced from CampaignSpec/API: ${value}`);
-  }
-  for (const value of contract.frontmatter?.removeWhenUnsupported || []) {
-    addIssue(warnings, "frontmatter.removeWhenUnsupported", `Remove when unsupported by target campaign: ${value}`);
+  const assemblyComplete = isStageComplete(buildState.report, "assembly");
+  if (assemblyComplete) {
+    validateBuiltContractResidue(contract, warnings, ready, derived);
+  } else {
+    for (const value of contract.frontmatter?.demoOnlyValues || []) {
+      addIssue(warnings, "frontmatter.demoOnlyValues", `Replace demo-only starter value before launch: ${value}`);
+    }
+    for (const value of contract.frontmatter?.replaceFromSpecOrApi || []) {
+      addIssue(warnings, "frontmatter.replaceFromSpecOrApi", `Must be replaced from CampaignSpec/API: ${value}`);
+    }
+    for (const value of contract.frontmatter?.removeWhenUnsupported || []) {
+      addIssue(warnings, "frontmatter.removeWhenUnsupported", `Remove when unsupported by target campaign: ${value}`);
+    }
   }
   if (family === "shop-three-step") {
     ready.push("shop-three-step uses dynamic shipping via window.next.getShippingMethods(); do not copy Olympus-style shipping_methods frontmatter into it.");
@@ -1328,9 +1457,56 @@ function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, rea
   if (spec) {
     const demoRefHits = collectDemoRefHits(spec, catalog.sharedFrontmatterVocabulary);
     for (const hit of demoRefHits) {
-      addIssue(warnings, "template_contract.demo_ref", `CampaignSpec contains a starter-looking demo ref "${hit}". Confirm it came from the actual Campaigns API.`);
+      addIssue(
+        warnings,
+        "template_contract.demo_ref",
+        `CampaignSpec contains a starter-looking demo ref "${hit.value}" at ${hit.path}. Confirm it came from the actual Campaigns API or attach _provenance.api/source metadata.`
+      );
     }
   }
+}
+
+function validateBuiltContractResidue(contract, warnings, ready, derived) {
+  const targetOutputDir = derived.target_output_dir;
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) {
+    addIssue(warnings, "frontmatter.build_state", "Assembly is recorded complete, but doctor cannot scan the target output directory for remaining starter contract residue.");
+    return;
+  }
+
+  const literalValues = [
+    ...(contract.frontmatter?.demoOnlyValues || []),
+    ...(contract.frontmatter?.removeWhenUnsupported || []),
+  ].filter((value) => isNonEmptyString(String(value)) && !String(value).includes("."));
+  const hits = collectLiteralMatches(targetOutputDir, literalValues);
+  if (!hits.length) {
+    ready.push("Built target output has no obvious demo-only or unsupported starter contract residue");
+    return;
+  }
+  addIssue(
+    warnings,
+    "frontmatter.build_residue",
+    `Assembly is recorded complete, but target output still contains starter contract residue: ${summarizeCopyMatches(hits)}.`
+  );
+}
+
+function collectLiteralMatches(root, values) {
+  if (!values.length) return [];
+  const escaped = values.map((value) => escapeRegExp(String(value))).join("|");
+  const regex = new RegExp(escaped, "g");
+  const matches = [];
+  for (const file of collectHtmlFiles(root)) {
+    const content = readFileSync(join(root, file.path), "utf8");
+    for (const match of content.matchAll(regex)) {
+      matches.push({
+        surface: "target",
+        path: file.path,
+        line: lineNumberAt(content, match.index || 0),
+        label: match[0],
+        text: match[0],
+      });
+    }
+  }
+  return matches;
 }
 
 function contractMentionsShipping(contract) {
@@ -1347,17 +1523,40 @@ function collectDemoRefHits(spec, vocab) {
   );
   if (demoValues.size === 0) return [];
   const hits = new Set();
-  const visit = (value, key = "") => {
+  const results = [];
+  const visit = (value, key = "", path = [], provenanceStack = []) => {
     if (Array.isArray(value)) {
-      value.forEach((item) => visit(item, key));
+      value.forEach((item, index) => visit(item, key, [...path, String(index)], provenanceStack));
     } else if (isObject(value)) {
-      for (const [childKey, childValue] of Object.entries(value)) visit(childValue, childKey);
+      const nextStack = [...provenanceStack, value._provenance].filter(Boolean);
+      for (const [childKey, childValue] of Object.entries(value)) {
+        if (childKey === "_provenance") continue;
+        visit(childValue, childKey, [...path, childKey], nextStack);
+      }
     } else if (["ref_id", "package_id", "package_ref_id", "shipping_method"].includes(key) && demoValues.has(String(value))) {
-      hits.add(String(value));
+      const hitKey = `${path.join(".")}:${String(value)}`;
+      if (!hits.has(hitKey) && !isApiSourcedProvenance(provenanceStack)) {
+        hits.add(hitKey);
+        results.push({ value: String(value), path: path.join(".") || key });
+      }
     }
   };
   visit(spec);
-  return [...hits];
+  return results;
+}
+
+function isApiSourcedProvenance(provenanceStack) {
+  return provenanceStack.some((provenance) => {
+    if (!isObject(provenance)) return false;
+    if (provenance.api === true || provenance.api_sourced === true) return true;
+    const source = String(provenance.source || provenance.origin || "").toLowerCase();
+    return source.includes("api") || source.includes("campaigns");
+  });
+}
+
+function isStageComplete(report, stage) {
+  const status = report?.stages?.[stage]?.status;
+  return isNonEmptyString(status) && status.startsWith("completed");
 }
 
 function validateContext(context, warnings, ready, derived) {
@@ -1492,6 +1691,8 @@ Rules:
 - For one-time prepurchase/order-bump packages outside the main bundles, default package_sync=false and show_line_total_price=false unless the spec explicitly requires quantity sync.
 - Record spec-driven removals, especially unsupported payment methods, so polish does not reintroduce them.
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
+- For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
+- After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
 - Run page-kit build and SDK/template lint, then update the assembly report before polish.`;
 }
 
@@ -1505,7 +1706,11 @@ Read first:
 - Target repo: ${packet.assembly.target_repo}
 - Output dir: ${packet.assembly.output_dir}
 
-Prepare the target page-kit structure and agent context, then update setup status in the assembly report before running next-campaigns-build. Do not wire checkout, upsell, receipt, payment, package, voucher, or shipping behavior during setup.`;
+Prepare the target page-kit structure and agent context, then update setup status in both:
+- .campaign-runtime/build-context.json scaffold.required/scaffold.mode/handoff fields
+- .campaign-runtime/assembly-report.json stages.setup
+
+Do not wire checkout, upsell, receipt, payment, package, voucher, or shipping behavior during setup.`;
 }
 
 function polishPrompt(packetPath, reportPath, packet) {
@@ -1528,9 +1733,9 @@ Base URL: ${url}
 Build Packet: ${packetPath}
 Assembly Report: ${reportPath}
 Node QA command:
-campaigns-os qa run --packet ${packetPath} --base-url ${url}
+campaigns-os qa run --packet ${packetPath} --base-url ${url} --browser
 
-Test-order proof must exercise the deployed campaign through the Campaign Cart SDK. Do not create hand-built backend API orders as launch proof. Only fire SDK test orders when test_orders_allowed=true, sandbox_test_card_confirmed=true, and the deployed domain is allowlisted. On current checkout pages, the browser automation hook is document.dispatchEvent(new CustomEvent("next:test-mode-activated", { detail: { method: "konami" } })); then click the rendered SDK upsell accept/decline controls. For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, payment methods, and market-specific copy. Summarize blockers, warnings, and remaining launch risks.`;
+Test-order proof must exercise the deployed campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Only fire test orders when test_orders_allowed=true, sandbox_test_card_confirmed=true, and the deployed domain is allowlisted. Use --test-order checkout/decline/accept/both with --allow-test-orders and --sandbox-test-card-confirmed; then click rendered SDK upsell accept/decline controls for upsell proof. For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, payment methods, and market-specific copy. Summarize blockers, warnings, and remaining launch risks.`;
 }
 
 function buildNextStep(errors, warnings, derived) {
