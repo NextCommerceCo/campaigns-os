@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
@@ -19,6 +20,10 @@ function readJson(path) {
   } catch (error) {
     throw new Error(`${relative(root, path)} is not valid JSON: ${error.message}`);
   }
+}
+
+function writeJson(path, value) {
+  writeFileSync(path, JSON.stringify(value, null, 2));
 }
 
 function hasPath(obj, dotted) {
@@ -126,6 +131,60 @@ validateCatalogFixtures();
 const doctor = runCliJson(["doctor", "--packet", packet, "--json"], envWithout("CAMPAIGNS_API_KEY"));
 if (doctor.warnings?.some((issue) => issue.code === "campaign.api_key_source")) {
   throw new Error("Doctor should accept CampaignSpec campaign.campaigns_api_key without requiring CAMPAIGNS_API_KEY.");
+}
+
+const marketCopyTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-market-copy-"));
+try {
+  const sourceRoot = resolve(marketCopyTmp, "source-html");
+  const targetRepo = resolve(marketCopyTmp, "target-page-kit");
+  const outputDir = resolve(targetRepo, "src/runtime-packet-demo");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+
+  for (const page of ["checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+  }
+  writeFileSync(resolve(sourceRoot, "landing.html"), "<html><body>Made in USA and ships from the USA.</body></html>");
+
+  const marketSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  marketSpec.campaign.available_currencies = ["USD", "CAD"];
+  marketSpec.campaign.available_shipping_countries = ["US", "CA"];
+  const marketSpecPath = resolve(marketCopyTmp, "campaignspec.json");
+  writeJson(marketSpecPath, marketSpec);
+
+  const marketPacket = readJson(packet);
+  marketPacket.spec.local_path = marketSpecPath;
+  marketPacket.source_html.root = sourceRoot;
+  marketPacket.assembly.target_repo = targetRepo;
+  marketPacket.assembly.output_dir = "src/runtime-packet-demo";
+  marketPacket.assembly.commerce_catalog.path = catalogPath;
+  const marketPacketPath = resolve(marketCopyTmp, "campaign-runtime.build.json");
+  writeJson(marketPacketPath, marketPacket);
+
+  const marketDoctor = runCliJson(["doctor", "--packet", marketPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (!marketDoctor.warnings?.some((issue) => issue.code === "market_copy.us_specific_claims")) {
+    throw new Error("Doctor should warn when multi-market specs contain US-specific source/template copy.");
+  }
+
+  const singleMarketSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  singleMarketSpec.campaign.currency = "CAD";
+  singleMarketSpec.campaign.available_shipping_countries = ["US"];
+  delete singleMarketSpec.campaign.available_currencies;
+  const singleMarketSpecPath = resolve(marketCopyTmp, "single-market-campaignspec.json");
+  writeJson(singleMarketSpecPath, singleMarketSpec);
+
+  const singleMarketPacket = readJson(marketPacketPath);
+  singleMarketPacket.spec.local_path = singleMarketSpecPath;
+  const singleMarketPacketPath = resolve(marketCopyTmp, "single-market-campaign-runtime.build.json");
+  writeJson(singleMarketPacketPath, singleMarketPacket);
+
+  const singleMarketDoctor = runCliJson(["doctor", "--packet", singleMarketPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (singleMarketDoctor.warnings?.some((issue) => issue.code === "market_copy.us_specific_claims")) {
+    throw new Error("Doctor should not warn solely because a single-market campaign uses a non-USD default currency.");
+  }
+} finally {
+  rmSync(marketCopyTmp, { recursive: true, force: true });
 }
 
 execFileSync(process.execPath, [cli, "next", "build", "--packet", packet, "--json"], {

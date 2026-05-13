@@ -30,6 +30,7 @@ Rules:
 - Prefer dispatching that CustomEvent over simulating the 10-key Konami sequence; keyboard automation has proven unreliable. The `detail.method = "konami"` discriminator is required.
 - After the base checkout test order redirects to upsell, click the rendered SDK upsell accept/decline controls to prove the live upsell path. Do not fabricate upsell lines with a direct API call.
 - Do not fire SDK test orders unless the preview/production domain is allowed for the campaign API key and `test_card` sandbox routing is confirmed for that merchant.
+- For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, available payment methods, and market-specific copy.
 - Treat missing deploy URL, missing polish status, or unresolved doctor blockers as launch blockers.
 - Report blockers, warnings, and residual risks.
 - QA follows build and polish; it does not edit campaign code.
