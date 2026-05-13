@@ -8,10 +8,15 @@ description: Run spec-aware QA from a Campaign Map ID and deployed campaign URL 
 Use this after the campaign has a preview or production URL and the assembly report records build and polish status. The public v0 runner is Node/npm-based, with an owned Playwright browser pass:
 
 ```bash
+npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url>
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser
 ```
+
+`npm run qa:install-browser` is part of the standard QA sequence. Run it once
+after install/update before using `--browser` or `--test-order`; do not skip it
+unless the local Playwright browser binary is already installed.
 
 Inputs:
 
@@ -23,6 +28,7 @@ Inputs:
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
+- Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA, then run typed-card test-order proof when policy allows. Pause only for missing inputs, blocked policy, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
 - `qa resolve` accepts either the deploy host or the campaign-root URL; when a Build Packet carries `campaign.public_route_slug`, the runner resolves page URLs under that slug.
 - Routing meta tags must be checked in runtime form. `next-success-url`, `next-upsell-accept-url`, and `next-upsell-decline-url` should point at campaign-root paths such as `/campaign-slug/upsell/`, not source filenames or unrooted spec literals.

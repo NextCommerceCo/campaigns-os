@@ -1,17 +1,20 @@
 # Campaigns OS Build Flow
 
-The intended flow is:
+The happy path is intentionally tight:
 
-1. Agent selects or confirms a starter template family.
-2. Agent reads `families[family].agentContract`.
-3. Agent uses `sharedFrontmatterVocabulary`.
-4. Agent replaces demo refs from CampaignSpec/API.
-5. Agent preserves protected SDK commerce surfaces.
-6. Agent runs page-kit build and SDK/template lint.
-7. Agent hands off to polish.
-8. QA follows after deploy through the Node/npm `campaigns-os qa` runner.
+1. Export a saved CampaignSpec from Campaign Map Builder, including Map ID and public route slug.
+2. Run `campaigns-os start` with the CampaignSpec, prepared source files, target page-kit repo, and template family.
+3. Treat doctor as the first gate. If it returns `collect-inputs`, stop and resolve the named blocker.
+4. Run setup when doctor asks for setup; otherwise continue to assembly.
+5. Assemble the page-kit campaign from starter-template contracts, not from copied demo commerce values.
+6. Run page-kit build plus SDK/template lint and record results in the assembly report.
+7. Run polish against the built campaign, then deploy a preview.
+8. Install the package-owned Playwright browser with `npm run qa:install-browser`.
+9. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser` with the preview URL.
+10. When the deployed domain and sandbox card routing are confirmed, run typed-card `--test-order` proof through the rendered checkout and upsell controls.
+11. Promote, block, or iterate from the recorded build, polish, deploy, QA, and test-order evidence.
 
-The doctor and checkpoint wrappers exist because agents take shortcuts under ambiguity. If the packet is blocked, stop and resolve the named blocker instead of improvising.
+Pause only for missing inputs, doctor blockers, blocked deploys, test-order policy gates, or merchant-specific uncertainty. The default path should not branch into external browser skills or hand-built backend order creation.
 
 ## Commerce Ownership
 

@@ -12,7 +12,7 @@ It gives campaign developers and AI coding tools a clear path for assembling a c
 6. Hand off to `next-campaigns-build`.
 7. Run build/lint, then `next-campaigns-polish`.
 8. Deploy a preview.
-9. Run `next-campaigns-qa`.
+9. Install the Campaigns OS Playwright browser once with `npm run qa:install-browser`, then run `next-campaigns-qa`.
 10. Record launch blockers and follow-up work.
 
 The toolkit is contract-backed: starter templates describe which parts are reusable page structure, which parts are live commerce wiring, and which demo values must be replaced for a real campaign. That helps AI tools avoid common mistakes like carrying over sample package IDs, copying shipping options from the wrong template shape, or editing SDK-owned checkout surfaces as plain HTML.
@@ -54,9 +54,15 @@ npm run campaigns-os -- next setup --packet <page-kit-repo>/campaign-runtime.bui
 npm run campaigns-os -- next build --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-report.json>
 npm run campaigns-os -- next qa --packet <packet.json> --report <assembly-report.json>
+npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet <packet.json>
-npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url>
+npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url> --browser
 ```
+
+Run `npm run qa:install-browser` once after install/update and before any QA
+command that uses `--browser` or `--test-order`. It installs the Chromium binary
+used by the package-owned Playwright flow; Campaigns OS QA should not depend on
+external browser skills.
 
 ## Template Contracts
 
@@ -85,4 +91,4 @@ Special case: `shop-three-step` uses dynamic shipping through `window.next.getSh
 
 ## Status
 
-Developer preview. Build output still needs the normal launch gates: build/lint evidence, polish, preview deploy, QA, and SDK-driven test-order proof when the deployed domain and `test_card` sandbox routing are confirmed.
+Developer preview. Build output still needs the normal launch gates: build/lint evidence, polish, preview deploy, Playwright browser QA, and typed-card test-order proof when the deployed domain and sandbox card routing are confirmed.

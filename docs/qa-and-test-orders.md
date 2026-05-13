@@ -21,6 +21,17 @@ npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json --base-u
 
 ## Run
 
+Install the package-owned Playwright browser once before rendered QA or
+test-order proof:
+
+```bash
+npm run qa:install-browser
+```
+
+This installs the Chromium binary used by `--browser` and `--test-order`. It is
+part of the normal Campaigns OS QA path after `npm install` or package updates.
+The QA flow must not depend on external browser skills or local agent tooling.
+
 ```bash
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
@@ -30,10 +41,10 @@ npm run campaigns-os -- qa run \
 The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags`, writes a local verdict JSON under `qa-output/<map-id>/<run-id>.json`, and returns exit code `4` when the verdict is blocked.
 
 Add `--browser` to run the first-party Playwright browser pass after the Node
-checks:
+checks. If the browser binary is missing, the CLI will prompt you to run
+`npm run qa:install-browser`:
 
 ```bash
-npm run qa:install-browser
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
   --base-url https://preview.example.com/campaign/ \

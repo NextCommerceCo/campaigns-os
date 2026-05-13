@@ -68,10 +68,17 @@ Build is not launch readiness. A complete run still needs:
 - starter-template/SDK lint
 - formal polish pass
 - preview deploy
+- Campaigns OS Playwright browser install
 - Node/npm QA with Map ID and preview URL
-- SDK-driven test-order proof when the deployed domain and `test_card` sandbox routing are confirmed
+- typed-card test-order proof when the deployed domain and sandbox card routing are confirmed
 
 ```bash
+npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet path/to/page-kit-repo/campaign-runtime.build.json
-npm run campaigns-os -- qa run --packet path/to/page-kit-repo/campaign-runtime.build.json --base-url https://preview.example.com/campaign/
+npm run campaigns-os -- qa run --packet path/to/page-kit-repo/campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser
 ```
+
+`npm run qa:install-browser` is a one-time local setup step after install/update.
+It installs the Chromium binary used by the package-owned Playwright QA flow.
+Run it before `--browser` or `--test-order`; the CLI will tell you to run it if
+the browser binary is missing.

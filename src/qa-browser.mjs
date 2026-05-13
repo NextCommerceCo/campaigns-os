@@ -8,8 +8,7 @@ const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
 
 export async function runBrowserChecks(topologies, args = {}) {
-  const { chromium } = await import("playwright");
-  const browser = await chromium.launch({ headless: args.headed !== true });
+  const browser = await launchChromium(args);
   const context = await browser.newContext({
     viewport: viewportFromArgs(args),
     extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
@@ -30,7 +29,6 @@ export async function runBrowserChecks(topologies, args = {}) {
 }
 
 export async function runBrowserTestOrders(topologies, args = {}, runId = "local") {
-  const { chromium } = await import("playwright");
   const checkoutPage = findPage(topologies, "checkout");
   if (!checkoutPage?.url) {
     return {
@@ -47,7 +45,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
     };
   }
 
-  const browser = await chromium.launch({ headless: args.headed !== true });
+  const browser = await launchChromium(args);
   const context = await browser.newContext({
     viewport: viewportFromArgs(args),
     extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
@@ -734,4 +732,35 @@ function numberArg(value, fallback) {
 
 function trim(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+async function launchChromium(args) {
+  let chromium;
+  try {
+    ({ chromium } = await import("playwright"));
+  } catch (error) {
+    throw new Error([
+      "Playwright is not installed for Campaigns OS.",
+      "Run `npm install` from the campaigns-os repo, then rerun QA.",
+      `Original error: ${error instanceof Error ? error.message : String(error)}`,
+    ].join(" "));
+  }
+
+  try {
+    return await chromium.launch({ headless: args.headed !== true });
+  } catch (error) {
+    if (isMissingPlaywrightBrowser(error)) {
+      throw new Error([
+        "Playwright Chromium is not installed for Campaigns OS browser QA.",
+        "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun the QA command.",
+        "This is required before using `--browser` or `--test-order`.",
+      ].join(" "));
+    }
+    throw error;
+  }
+}
+
+function isMissingPlaywrightBrowser(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /executable doesn't exist|browser.*not found|playwright install|install.*chromium/i.test(message);
 }
