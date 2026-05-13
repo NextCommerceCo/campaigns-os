@@ -64,7 +64,6 @@ Upsell accept/decline route checks accept rendered SDK controls as static eviden
 Add `--post-verdict` only when the operator intentionally wants to POST the verdict to the configured Campaign Map proxy:
 
 ```bash
-npm run qa:install-browser
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
   --base-url https://preview.example.com/campaign/ \
