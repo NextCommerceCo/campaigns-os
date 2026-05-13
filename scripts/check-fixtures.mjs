@@ -166,6 +166,23 @@ try {
   if (!marketDoctor.warnings?.some((issue) => issue.code === "market_copy.us_specific_claims")) {
     throw new Error("Doctor should warn when multi-market specs contain US-specific source/template copy.");
   }
+
+  const singleMarketSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  singleMarketSpec.campaign.currency = "CAD";
+  singleMarketSpec.campaign.available_shipping_countries = ["US"];
+  delete singleMarketSpec.campaign.available_currencies;
+  const singleMarketSpecPath = resolve(marketCopyTmp, "single-market-campaignspec.json");
+  writeJson(singleMarketSpecPath, singleMarketSpec);
+
+  const singleMarketPacket = readJson(marketPacketPath);
+  singleMarketPacket.spec.local_path = singleMarketSpecPath;
+  const singleMarketPacketPath = resolve(marketCopyTmp, "single-market-campaign-runtime.build.json");
+  writeJson(singleMarketPacketPath, singleMarketPacket);
+
+  const singleMarketDoctor = runCliJson(["doctor", "--packet", singleMarketPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (singleMarketDoctor.warnings?.some((issue) => issue.code === "market_copy.us_specific_claims")) {
+    throw new Error("Doctor should not warn solely because a single-market campaign uses a non-USD default currency.");
+  }
 } finally {
   rmSync(marketCopyTmp, { recursive: true, force: true });
 }

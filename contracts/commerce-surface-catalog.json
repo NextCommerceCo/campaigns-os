@@ -62,13 +62,6 @@
           "manufactured in the USA",
           "FDA-registered US facility"
         ]
-      },
-      {
-        "label": "US address-language assumption",
-        "examples": [
-          "State",
-          "ZIP Code"
-        ]
       }
     ],
     "agentRule": "When a warn-only pattern appears in a country-specific or multi-market campaign, treat it as replace-or-confirm campaign copy. Preserve it only when the CampaignSpec, source design, or operator explicitly confirms the claim. Do not remove it automatically."

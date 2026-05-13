@@ -54,7 +54,7 @@ const US_MARKET_COPY_PATTERNS = [
   { label: "ships from the USA", regex: /\bships?\s+from\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
   { label: "US warehouse", regex: /\b(?:US|U\.S\.|USA|United States)\s+warehouse\b/i },
   { label: "contiguous US", regex: /\bcontiguous\s+(?:US|U\.S\.|USA|United States)\b/i },
-  { label: "US-only shipping", regex: /\b(?:US|U\.S\.|USA|United States)[ -]?only\b/i },
+  { label: "US-only shipping", regex: /\b(?:US|U\.S\.|USA|United States)(?:-|\s+)?only\b/i },
   { label: "All US orders ship free", regex: /\bAll\s+(?:US|U\.S\.|USA|United States)\s+orders\s+ship\s+free\b/i },
   { label: "Made in USA", regex: /\bMade\s+in\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
   { label: "manufactured in the USA", regex: /\bmanufactur(?:ed|ing)\s+in\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
@@ -883,7 +883,6 @@ function deriveMarketScope(spec) {
     ...normalizeCurrencyList(campaign.available_currencies),
     ...normalizeCurrencyList(campaign.additional_currencies),
     ...normalizeCurrencyList(campaign.additionalCurrencies),
-    ...normalizeCurrencyList(campaign.currencies),
   ])];
   const additionalCurrencies = currencies.filter((currency) => currency && currency !== defaultCurrency);
   const countries = campaign.available_shipping_countries;
@@ -893,7 +892,6 @@ function deriveMarketScope(spec) {
   const reasons = [];
 
   if (additionalCurrencies.length) reasons.push(`additional currencies: ${additionalCurrencies.join(", ")}`);
-  if (defaultCurrency && defaultCurrency !== "USD") reasons.push(`default currency: ${defaultCurrency}`);
   if (countries === "all") reasons.push("available_shipping_countries=all");
   if (nonUsCountries.length) reasons.push(`non-US shipping countries: ${nonUsCountries.join(", ")}`);
   if (/country|multi/i.test(marketMode)) reasons.push(`market mode: ${marketMode}`);
