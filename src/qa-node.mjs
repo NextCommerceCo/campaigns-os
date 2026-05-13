@@ -24,12 +24,14 @@ Options:
   --post-verdict                  POST verdict JSON to <proxy-base>/api/qa/verdicts after writing the local copy.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
+                                  Requires one-time setup: npm run qa:install-browser.
   --headed                        Show the Playwright browser window when --browser is set.
   --browser-width <px>            Browser viewport width. Default: 1440.
   --browser-height <px>           Browser viewport height. Default: 1200.
   --browser-timeout <ms>          Browser navigation timeout. Default: 30000.
   --test-order <off|checkout|accept|decline|both>
                                   Create canonical Playwright typed-card test orders through the deployed checkout page.
+                                  Requires one-time setup: npm run qa:install-browser.
   --allow-test-orders             Required with --test-order other than off.
   --sandbox-test-card-confirmed   Required with --test-order other than off.
   --test-card <number>            Test card number for browser checkout. Default: Discover sandbox card 6011...1117.
