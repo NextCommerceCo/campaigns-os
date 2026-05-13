@@ -209,7 +209,6 @@ function relFromFile(filePath, targetPath) {
   const fromDir = dirname(resolve(filePath));
   const rel = relative(fromDir, resolve(targetPath));
   if (!rel) return ".";
-  if (rel.startsWith("..")) return resolve(targetPath);
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
