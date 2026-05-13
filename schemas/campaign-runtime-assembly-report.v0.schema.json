@@ -140,11 +140,11 @@
       "properties": {
         "stage": { "type": "string", "minLength": 1 },
         "status": { "type": "string", "minLength": 1 },
-        "inputs": { "type": "array" },
-        "outputs": { "type": "array" },
-        "commands": { "type": "array" },
-        "blockers": { "type": "array" },
-        "warnings": { "type": "array" }
+        "inputs": { "type": "array", "default": [] },
+        "outputs": { "type": "array", "default": [] },
+        "commands": { "type": "array", "default": [] },
+        "blockers": { "type": "array", "default": [] },
+        "warnings": { "type": "array", "default": [] }
       }
     },
     "evidenceCheck": {

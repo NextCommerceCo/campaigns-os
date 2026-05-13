@@ -128,9 +128,92 @@ function runCliJson(args, env = process.env) {
 
 validateCatalogFixtures();
 
+const omittedStageArraysTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-report-defaults-"));
+try {
+  const report = readJson(resolve(root, "examples/assembly-report.example.json"));
+  for (const stage of Object.values(report.stages || {})) {
+    delete stage.inputs;
+    delete stage.outputs;
+    delete stage.commands;
+    delete stage.blockers;
+    delete stage.warnings;
+  }
+  const omittedReportPath = resolve(omittedStageArraysTmp, "assembly-report.omitted-stage-arrays.json");
+  writeJson(omittedReportPath, report);
+  const validation = runCliJson(["validate-assembly-report", "--report", omittedReportPath, "--json"]);
+  if (!validation.ok) {
+    throw new Error("validate-assembly-report should accept omitted stage inputs/outputs/commands/blockers/warnings arrays.");
+  }
+} finally {
+  rmSync(omittedStageArraysTmp, { recursive: true, force: true });
+}
+
 const doctor = runCliJson(["doctor", "--packet", packet, "--json"], envWithout("CAMPAIGNS_API_KEY"));
 if (doctor.warnings?.some((issue) => issue.code === "campaign.api_key_source")) {
   throw new Error("Doctor should accept CampaignSpec campaign.campaigns_api_key without requiring CAMPAIGNS_API_KEY.");
+}
+if (!doctor.warnings?.some((issue) => issue.code === "routing_meta.runtime_root")) {
+  throw new Error("Doctor should warn when CampaignSpec routing meta tags are not runtime-rooted under the campaign slug.");
+}
+
+const routingMetaTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-routing-meta-"));
+try {
+  const rootedSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const checkout = rootedSpec.funnels?.[0]?.pages?.find((page) => page.id === "checkout");
+  const upsell = rootedSpec.funnels?.[0]?.pages?.find((page) => page.id === "upsell");
+  checkout.sdk_hints.meta_tags["next-success-url"] = "/runtime-packet-demo/upsell/";
+  upsell.sdk_hints.meta_tags["next-upsell-accept-url"] = "/runtime-packet-demo/receipt/";
+  upsell.sdk_hints.meta_tags["next-upsell-decline-url"] = "/runtime-packet-demo/receipt/";
+  const rootedSpecPath = resolve(routingMetaTmp, "campaignspec-rooted-meta.json");
+  writeJson(rootedSpecPath, rootedSpec);
+
+  const rootedPacket = readJson(packet);
+  rootedPacket.spec.local_path = rootedSpecPath;
+  rootedPacket.source_html.root = resolve(root, "examples/source-html");
+  rootedPacket.assembly.target_repo = resolve(root, "examples/target-page-kit");
+  rootedPacket.assembly.commerce_catalog.path = catalogPath;
+  const rootedPacketPath = resolve(routingMetaTmp, "campaign-runtime.build.json");
+  writeJson(rootedPacketPath, rootedPacket);
+
+  const rootedDoctor = runCliJson(["doctor", "--packet", rootedPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (rootedDoctor.warnings?.some((issue) => issue.code === "routing_meta.runtime_root")) {
+    throw new Error("Doctor should not warn when CampaignSpec routing meta tags are already runtime-rooted.");
+  }
+} finally {
+  rmSync(routingMetaTmp, { recursive: true, force: true });
+}
+
+const skillsTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-skills-"));
+try {
+  const dryRun = runCliJson(["install-skills", "--target", skillsTmp, "--dry-run", "--json"]);
+  if (!dryRun.skills?.length || !dryRun.skills.every((skill) => skill.action === "created")) {
+    throw new Error("install-skills dry run should report every missing skill as created.");
+  }
+  if (existsSync(resolve(skillsTmp, "next-campaigns-os", "SKILL.md"))) {
+    throw new Error("install-skills --dry-run should not write skill files.");
+  }
+
+  const installed = runCliJson(["install-skills", "--target", skillsTmp, "--json"]);
+  if (!installed.skills?.length || !installed.skills.every((skill) => skill.action === "created")) {
+    throw new Error("install-skills should create every missing skill on first install.");
+  }
+  if (!existsSync(resolve(skillsTmp, "next-campaigns-os", "SKILL.md"))) {
+    throw new Error("install-skills should write SKILL.md files under the target skills directory.");
+  }
+
+  const unchanged = runCliJson(["install-skills", "--target", skillsTmp, "--dry-run", "--json"]);
+  if (!unchanged.skills?.every((skill) => skill.action === "unchanged")) {
+    throw new Error("install-skills should report unchanged skills when target files match source.");
+  }
+
+  writeFileSync(resolve(skillsTmp, "next-campaigns-build", "SKILL.md"), "stale skill\n");
+  const stale = runCliJson(["install-skills", "--target", skillsTmp, "--dry-run", "--json"]);
+  const buildSkill = stale.skills?.find((skill) => skill.name === "next-campaigns-build");
+  if (buildSkill?.action !== "updated") {
+    throw new Error("install-skills should report stale target skills as updated.");
+  }
+} finally {
+  rmSync(skillsTmp, { recursive: true, force: true });
 }
 
 const marketCopyTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-market-copy-"));
