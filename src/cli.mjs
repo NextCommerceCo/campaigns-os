@@ -60,6 +60,12 @@ const US_MARKET_COPY_PATTERNS = [
   { label: "manufactured in the USA", regex: /\bmanufactur(?:ed|ing)\s+in\s+(?:the\s+)?(?:USA|U\.S\.A\.|US|U\.S\.|United States)\b/i },
 ];
 
+const SDK_ROUTING_META_TAGS = [
+  "next-success-url",
+  "next-upsell-accept-url",
+  "next-upsell-decline-url",
+];
+
 const HELP = `Campaigns OS toolkit
 
 Usage:
@@ -797,6 +803,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived) {
     validateSpecPublicRoutes(spec, errors, ready);
     validateSpecStoreProfile(spec, errors, ready);
     validateSpecShippingCountries(spec, warnings, ready);
+    validateSpecRoutingMetaTags(spec, packet, warnings, ready);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready);
   }
 
@@ -844,6 +851,51 @@ function validateSpecShippingCountries(spec, warnings, ready) {
     return;
   }
   addIssue(warnings, "spec.available_shipping_countries", 'CampaignSpec campaign.available_shipping_countries should be "all" or an array of country codes.');
+}
+
+function validateSpecRoutingMetaTags(spec, packet, warnings, ready) {
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!publicRouteSlug) return;
+
+  const hits = [];
+  for (const page of activeSpecPages(spec)) {
+    const metaTags = page.sdk_hints?.meta_tags;
+    if (!isObject(metaTags)) continue;
+
+    for (const tag of SDK_ROUTING_META_TAGS) {
+      const value = metaTags[tag];
+      if (!isNonEmptyString(value)) continue;
+      const route = value.trim();
+      if (isRuntimeRootedRoutingMeta(route, publicRouteSlug)) continue;
+      hits.push(`${page.id}:${tag}=${route}`);
+    }
+  }
+
+  if (!hits.length) {
+    ready.push(`CampaignSpec SDK routing meta tags are runtime-rooted for /${publicRouteSlug}/`);
+    return;
+  }
+
+  const sample = hits.slice(0, 5).join("; ");
+  const more = hits.length > 5 ? `; plus ${hits.length - 5} more` : "";
+  addIssue(
+    warnings,
+    "routing_meta.runtime_root",
+    `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "/${publicRouteSlug}/upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
+  );
+}
+
+function normalizePublicRouteSlug(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^\/+|\/+$/g, "");
+}
+
+function isRuntimeRootedRoutingMeta(value, publicRouteSlug) {
+  if (isAbsoluteHttpUrl(value)) return true;
+  const route = value.trim();
+  if (!route.startsWith("/")) return false;
+  return route === `/${publicRouteSlug}` || route.startsWith(`/${publicRouteSlug}/`);
 }
 
 function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
