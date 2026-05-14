@@ -19,16 +19,26 @@ Pause only for missing inputs, doctor blockers, blocked deploys, test-order poli
 ## Commerce Ownership
 
 - CampaignSpec/API own live campaign identity, routes, package refs, offer refs, shipping refs, payment support, tracking intent, footer links, and SEO values.
-- Starter template contracts own reusable commerce structure and protected SDK runtime surfaces.
+- Starter template contracts own the SDK attribute contract and protected runtime surfaces: checkout/cart/upsell/receipt/payment/address/totals/submit controls and their required data attributes.
 - Designed source owns visual composition, content hierarchy, imagery, and page-level copy.
 
 ## Assembly Rules
 
 - Landing and presell pages should preserve prepared HTML when it is a real standalone design. Use page-kit passthrough structure, inject the SDK/config requirements, and repoint CTAs into the CampaignSpec flow.
-- Checkout, upsell, downsell, and receipt pages should preserve the starter-template commerce surfaces and swap campaign-owned values instead of copying source commerce markup.
+- Checkout, upsell, downsell, and receipt pages should preserve starter-template SDK contracts while keeping the campaign/source visual language. Treat starter templates as the reference for required `data-next-*` controls and wiring, not as a mandate to carry their visual chrome into the final campaign.
 - SDK routing meta tags should be emitted as campaign-root paths, for example `/campaign-slug/upsell/`, even when the CampaignSpec source value is slug-relative like `upsell/`.
 - One-time prepurchase/order-bump packages outside the main bundle should default to fixed quantity and fixed line total display unless the spec explicitly requires syncing quantity with the main bundle.
 - Any source element dropped because the spec does not support it, such as PayPal when `available_payment_methods` excludes PayPal, should be recorded in the assembly report for polish.
+
+## Synthetic Campaigns
+
+For AI-generated or synthetic campaigns, the static source page can be used to
+exercise the design-to-page-kit path, but SDK checkout still needs a Campaigns
+App campaign, store URL, packages, shipping/payment configuration, and a
+domain-allowlisted API key. If the evaluator has no natural merchant/store,
+reuse a designated test store and record that choice. Otherwise mark checkout,
+receipt, and test-order QA as blocked instead of debugging an SDK loading state
+as if it were a page-kit build failure.
 
 ## Not Full Automation
 

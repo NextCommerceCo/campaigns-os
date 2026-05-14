@@ -427,7 +427,7 @@ function matchSourcePages(specPages, htmlFiles) {
         evidence: [`matched source filename against page keys: ${keys.join(", ")}`],
       });
     } else {
-      mappings.push({ page_id: page.id, skip_reason: "TODO: provide source HTML file or explicit skip reason" });
+      mappings.push({ page_id: page.id, skip_reason: "No matching source HTML file found; provide a source file or an explicit skip reason before build." });
       prompts.push({
         code: "MISSING_SOURCE_PAGE",
         stage: "prepare_build",
@@ -1686,8 +1686,10 @@ Read first:
 Rules:
 - Treat CampaignSpec/API as the source for package, shipping, voucher, payment, tracking, footer, and SEO values.
 - Read the selected template family's agentContract and sharedFrontmatterVocabulary before commerce wiring.
-- Preserve SDK-owned checkout/cart/upsell/receipt surfaces.
-- Preserve prepared source HTML for landing/presell pages when it is a real standalone design; use starter-template commerce surfaces for checkout/upsell/receipt.
+- Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes.
+- Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
+- For checkout/upsell/downsell/receipt, use the starter template as the SDK contract reference only: preserve required data-next controls and runtime wiring, but let the campaign/source own visual chrome, copy hierarchy, imagery, and brand layer.
+- If you copy starter-template files, copy the selected family atomically with dependent pages, _includes, _layouts, assets/css, and assets/js; do not copy only checkout.html and receipt.html.
 - Resolve SDK routing meta tags to campaign-root paths such as /${packet.campaign.public_route_slug}/upsell/, not source filenames or unrooted spec literals.
 - For one-time prepurchase/order-bump packages outside the main bundles, default package_sync=false and show_line_total_price=false unless the spec explicitly requires quantity sync.
 - Record spec-driven removals, especially unsupported payment methods, so polish does not reintroduce them.
@@ -1710,6 +1712,8 @@ Read first:
 Prepare the target page-kit structure and agent context, then update setup status in both:
 - .campaign-runtime/build-context.json scaffold.required/scaffold.mode/handoff fields
 - .campaign-runtime/assembly-report.json stages.setup
+
+When copying a starter template family, copy the family as an atomic page-kit slice: pages plus required _includes, _layouts, assets/css, and assets/js. Do not copy only checkout.html and receipt.html.
 
 Do not wire checkout, upsell, receipt, payment, package, voucher, or shipping behavior during setup.`;
 }

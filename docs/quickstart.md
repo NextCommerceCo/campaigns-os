@@ -32,6 +32,31 @@ Campaigns API keys are public, browser-side, domain-allowlisted keys. If your ex
 
 The Store Profile is operator-entered campaign metadata, not Campaigns API data. `doctor` requires `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present.
 
+For synthetic or AI-generated evaluation campaigns, create or reuse a known test
+store/API key before checkout work. A purely static source page can validate the
+landing-page assembly path, but SDK checkout, package, shipping, payment, and
+receipt surfaces need Campaigns App data; without it, checkout can remain in a
+loading state. Record the test store/key choice in the Build Packet or
+CampaignSpec so QA knows whether runtime checkout proof is expected or blocked.
+
+## Prepare Raw HTML Source
+
+`html_funnel` source files should be page-kit-ready source, not full browser
+documents copied verbatim from an AI tool. This is not a wholesale Liquid
+rewrite. Use Liquid only for page-kit helpers such as `campaign_link`,
+`campaign_asset`, and `campaign_include`.
+
+The conversion process used in prior builds is:
+
+- Strip document-level wrappers: `<!doctype>`, `<html>`, `<head>`, and `<body>`.
+- Add page frontmatter for title, layout, route/meta values, and any source mapping notes.
+- Move shared CSS into the campaign asset tree or an include when it is reused; inline page-specific CSS only when the target page-kit style allows it.
+- Move local images/fonts/assets into the campaign asset tree and root paths with `campaign_asset` when needed.
+- Replace internal links/CTAs with CampaignSpec routes, usually via `campaign_link`.
+- Keep source landing/presell composition and copy intact when it is a real design.
+- Use starter-template SDK contracts for checkout, upsell, downsell, receipt, payment, totals, and submit controls.
+- Run page-kit build and inspect `_site/<slug>/` before handing off to polish.
+
 ## Create The Packet
 
 ```bash
