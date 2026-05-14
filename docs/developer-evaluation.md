@@ -10,6 +10,13 @@ Recommended shared scenario:
 - Prepared HTML/assets
 - Test orders disabled unless sandbox routing is explicitly confirmed
 
+For AI-generated or synthetic source exercises, explicitly tell evaluators that
+the generated HTML is a source artifact, not final page-kit markup. They should
+convert it before build by stripping document wrappers, adding frontmatter, and
+extracting shared CSS/assets when useful. If the scenario does not have a real
+Campaigns App campaign/store, assign a designated test store/API key or mark
+checkout/runtime QA as intentionally blocked.
+
 Round-two alternatives:
 
 - `demeter`

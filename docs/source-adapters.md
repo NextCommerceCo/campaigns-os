@@ -13,4 +13,30 @@ Input:
 - assets referenced by those pages
 - explicit or inferred page mapping to CampaignSpec pages
 
+The `.html` files should be prepared for page-kit ingestion. This does not mean
+"rewrite everything into Liquid." Page Kit source files are HTML files with
+optional YAML frontmatter and optional Liquid filters/includes. Liquid is only
+needed where the page must call page-kit helpers such as `campaign_link`,
+`campaign_asset`, or `campaign_include`.
+
+Raw AI-generated HTML normally needs this conversion pass before build:
+
+1. Keep the page-owned body markup that represents the design intent.
+2. Remove document wrappers such as `<!doctype>`, `<html>`, `<head>`, and `<body>` so the page can be wrapped by the campaign layout.
+3. Add YAML frontmatter for `title`, `page_type`, route/permalink or `next_url`, and any `styles`/`scripts`.
+4. Move reusable `<style>` blocks into `src/<slug>/assets/css/...` and reference them from frontmatter; keep tiny page-specific styles inline only when that matches the target campaign style.
+5. Move referenced images/fonts/assets into the campaign asset tree and use `campaign_asset` when paths need to be campaign-rooted.
+6. Replace internal page links and CTA destinations with CampaignSpec-derived routes, usually through `campaign_link`.
+7. For checkout, upsell, downsell, receipt, payment, totals, and submit controls, preserve or recreate the starter-template SDK contract rather than trusting raw source commerce markup.
+8. Run page-kit build and inspect `_site/<slug>/` for a complete body, expected meta tags, campaign-rooted links, and SDK runtime markers.
+
+A single-file static landing page is a good source artifact, but it is not
+automatically a complete page-kit page.
+
 Checkout, cart, upsell, receipt, payment, totals, and submit behavior should remain governed by starter-template contracts and SDK wiring. Source files can carry page design, but live commerce behavior comes from the campaign setup and runtime surfaces.
+
+Template families are not single-file dependencies. If setup copies a starter
+family into a target campaign, copy the matching pages together with their
+family `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/` dependencies.
+Copying only `checkout.html` and `receipt.html` can leave Liquid includes,
+layouts, CSS, or JavaScript unresolved.

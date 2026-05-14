@@ -44,6 +44,15 @@ Then ask your AI tool to continue from the emitted handoff. Fresh target repos u
 
 The current source adapter is `html_funnel`: bring prepared HTML/CSS/assets for the campaign pages, plus a local exported CampaignSpec from Campaign Map Builder.
 
+For raw AI-generated or exported static HTML, "prepared" means page-kit-ready
+source, not a browser document dropped in unchanged and not a wholesale Liquid
+rewrite. Page Kit source is HTML with YAML frontmatter and optional Liquid
+helpers. Convert standalone HTML into the target page format first: remove outer
+`<html>`, `<head>`, and `<body>` wrappers, add page frontmatter, move shared
+CSS/assets into the campaign asset tree when useful, root links/assets with
+`campaign_link` and `campaign_asset` when needed, and keep landing/presell
+design markup separate from SDK-owned commerce controls.
+
 ## Important Commands
 
 ```bash
@@ -77,6 +86,11 @@ For each selected family, the agent must read:
 - `frontmatter.removeWhenUnsupported`
 
 Special case: `shop-three-step` uses dynamic shipping through `window.next.getShippingMethods()`. Do not blindly copy Olympus-style `shipping_methods` frontmatter into that family.
+
+When bootstrapping a family such as `demeter`, copy the family as an atomic
+page-kit slice. Checkout/receipt pages depend on matching `_includes/`,
+`_layouts/`, `assets/css/`, and `assets/js/`; copying only individual page files
+is not a valid minimum file set.
 
 ## Docs
 
