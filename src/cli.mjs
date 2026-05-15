@@ -740,6 +740,13 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
     spec_path: null,
     scaffold_required: false,
     scaffold_reason: null,
+    scope: {
+      mode: "unknown",
+      built_pages: [],
+      out_of_scope_pages: [],
+      previewable_routes: [],
+      blocked_runtime_pages: [],
+    },
   };
 
   validatePacket(packet, packetPath, errors, warnings, ready, derived, { context, report });
@@ -841,7 +848,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     validateSpecStoreProfile(spec, errors, ready);
     validateSpecShippingCountries(spec, warnings, ready);
     validateSpecRoutingMetaTags(spec, packet, warnings, ready);
-    validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready);
+    validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived);
     validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState);
   }
 
@@ -850,7 +857,14 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   validateMarketSensitiveCopy(spec, warnings, ready, derived);
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
-    addIssue(warnings, "deploy.preview_url", "No preview or production URL yet. QA remains blocked after build/polish.");
+    const partialScope = derived.scope?.mode === "partial";
+    addIssue(
+      warnings,
+      "deploy.preview_url",
+      partialScope
+        ? "No preview or production URL yet. After deploy, mapped pages are route/visual-testable; checkout/runtime launch QA remains blocked for out-of-scope pages."
+        : "No preview or production URL yet. QA remains blocked after build/polish."
+    );
   }
   if (packet.qa?.test_orders_allowed && !packet.qa?.sandbox_test_card_confirmed) {
     addIssue(errors, "qa.sandbox_test_card_confirmed", "test_orders_allowed=true requires sandbox_test_card_confirmed=true.");
@@ -1379,18 +1393,34 @@ function validateSpecPublicRoutes(spec, errors, ready) {
   if (pages.length > 0 && routeErrors === 0) ready.push("CampaignSpec public page routes are Page Kit-compatible");
 }
 
-function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready) {
+function pageRole(type) {
+  if (["checkout", "upsell", "downsell", "thankyou", "receipt", "select"].includes(type)) return "runtime";
+  return "visual";
+}
+
+function summarizeScopePages(pages) {
+  return pages.map((page) => `${page.type || "page"}:${page.page_id}`).join(", ");
+}
+
+function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}) {
   const pages = packet.source_html?.pages || [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
   const active = activeSpecPages(spec);
+  const specPartialScope = spec?.build_scope?.mode === "partial";
+  const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
   const activeIds = new Set(active.map((page) => page.id));
   const mappedIds = new Set();
+  const activeById = new Map(active.map((page) => [page.id, page]));
+  const builtPages = [];
+  const outOfScopePages = [];
+
   for (const page of pages) {
     if (!isNonEmptyString(page.page_id)) {
       addIssue(errors, "source_html.pages.page_id", "Every source page mapping needs page_id.");
       continue;
     }
     mappedIds.add(page.page_id);
+    const specPage = activeById.get(page.page_id);
     if (!activeIds.has(page.page_id)) {
       addIssue(warnings, "source_html.pages.extra", `Source mapping "${page.page_id}" is not an active CampaignSpec page.`);
     }
@@ -1398,20 +1428,74 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
       const fullPath = resolve(sourceRoot, page.path);
       if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
         addIssue(errors, "source_html.pages.path", `Source page file does not exist: ${page.path}`);
+      } else if (specPage) {
+        builtPages.push({
+          page_id: specPage.id,
+          type: specPage.type || "page",
+          role: pageRole(specPage.type),
+          route: publicRouteForPage(specPage),
+          source_path: page.path,
+        });
       }
     } else if (!page.skip_reason) {
       addIssue(errors, "source_html.pages.skip_reason", `Source mapping "${page.page_id}" needs path or skip_reason.`);
     } else {
-      addIssue(warnings, "source_html.pages.skip_reason", `CampaignSpec page "${page.page_id}" is skipped: ${page.skip_reason}`);
+      const skipped = specPage
+        ? {
+            page_id: specPage.id,
+            type: specPage.type || "page",
+            role: pageRole(specPage.type),
+            route: publicRouteForPage(specPage),
+            skip_reason: page.skip_reason,
+          }
+        : { page_id: page.page_id, type: "unknown", role: "unknown", route: null, skip_reason: page.skip_reason };
+      outOfScopePages.push(skipped);
+      addIssue(warnings, "source_html.pages.skip_reason", `CampaignSpec page "${page.page_id}" is out of scope for this partial build: ${page.skip_reason}`);
     }
   }
+
   for (const page of active) {
     if (!mappedIds.has(page.id)) {
       addIssue(errors, "source_html.pages.coverage", `Active CampaignSpec page "${page.id}" has no source mapping.`);
     }
   }
+
+  const runtimeBlocked = outOfScopePages.filter((page) => page.role === "runtime");
+  derived.scope = {
+    mode: outOfScopePages.length || specPartialScope ? "partial" : active.length ? "full" : "unknown",
+    built_pages: builtPages,
+    out_of_scope_pages: outOfScopePages,
+    out_of_scope_reasons: specPartialReasons,
+    previewable_routes: builtPages.map((page) => ({ page_id: page.page_id, type: page.type, route: page.route })),
+    blocked_runtime_pages: runtimeBlocked,
+  };
+
+  if (outOfScopePages.length > 0 || specPartialScope) {
+    const reasonSummary = specPartialReasons.length ? ` Reasons: ${specPartialReasons.join("; ")}.` : "";
+    addIssue(
+      warnings,
+      "scope.partial_build",
+      `Partial build scope detected. Built/previewable pages: ${summarizeScopePages(builtPages) || "none"}; out-of-scope pages: ${summarizeScopePages(outOfScopePages) || "declared in CampaignSpec build_scope"}.${reasonSummary}`
+    );
+    const buildScopeRuntimeBlocked = specPartialReasons.some((reason) => /\b(checkout|upsell|downsell|receipt|thankyou|runtime)\b/i.test(reason));
+    if (runtimeBlocked.length > 0 || buildScopeRuntimeBlocked) {
+      addIssue(
+        warnings,
+        "scope.runtime_qa_blocked",
+        `Checkout/runtime launch QA is blocked for out-of-scope pages: ${summarizeScopePages(runtimeBlocked) || "declared in CampaignSpec build_scope"}. Preview QA should cover only the built routes.`
+      );
+    }
+  }
+
   if (active.length > 0 && active.every((page) => mappedIds.has(page.id))) {
-    ready.push("Source mappings cover active CampaignSpec pages");
+    ready.push(outOfScopePages.length > 0 || specPartialScope
+      ? "Source mappings cover active CampaignSpec pages with explicit partial-scope skip reasons"
+      : "Source mappings cover active CampaignSpec pages");
+  }
+  if (builtPages.length > 0) {
+    ready.push(outOfScopePages.length > 0 || specPartialScope
+      ? `Partial build previewable routes: ${builtPages.map((page) => routeLabel(page.route)).join(", ")}`
+      : "All mapped CampaignSpec pages are build candidates");
   }
 }
 
@@ -1754,6 +1838,10 @@ function buildNextStep(errors, warnings, derived) {
     actions.push("Resolve packet blockers before assembly.");
   }
   if (codes.has("deploy.preview_url")) blockedStages.push("qa");
+  if (codes.has("scope.runtime_qa_blocked")) {
+    blockedStages.push("checkout-launch-ready");
+    blockedStages.push("test-orders");
+  }
   if (codes.has("campaign.allowed_domains_confirmed")) blockedStages.push("runtime-sdk-verification");
   if (codes.has("qa.test_orders_allowed") || codes.has("qa.sandbox_test_card_confirmed")) blockedStages.push("test-orders");
   if (codes.has("assembly.template_lock")) actions.push("Lock a template family before commerce wiring.");
@@ -1765,6 +1853,12 @@ function buildNextStep(errors, warnings, derived) {
   }
   if (codes.has("frontmatter.demoOnlyValues") || codes.has("frontmatter.replaceFromSpecOrApi")) {
     actions.push("Use the template agentContract to replace demo values from CampaignSpec/API.");
+  }
+  if (codes.has("scope.partial_build")) {
+    actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");
+  }
+  if (codes.has("scope.runtime_qa_blocked")) {
+    actions.push("Keep checkout/order-proof QA blocked until the out-of-scope runtime pages are built or explicitly delegated to an existing downstream URL.");
   }
 
   if (errors.length) {

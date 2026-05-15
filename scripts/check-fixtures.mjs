@@ -264,6 +264,42 @@ if (!doctor.warnings?.some((issue) => issue.code === "routing_meta.runtime_root"
   throw new Error("Doctor should warn when CampaignSpec routing meta tags are not runtime-rooted under the campaign slug.");
 }
 
+const partialScopeTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-partial-scope-"));
+try {
+  const partialPacket = readJson(packet);
+  partialPacket.source_html.root = resolve(root, "examples/source-html");
+  partialPacket.spec.local_path = resolve(root, "examples/campaignspec.v42.basic.json");
+  partialPacket.assembly.target_repo = resolve(root, "examples/target-page-kit");
+  partialPacket.assembly.commerce_catalog.path = catalogPath;
+  partialPacket.source_html.pages = [
+    { page_id: "landing", path: "landing.html" },
+    { page_id: "checkout", skip_reason: "Existing downstream checkout remains unchanged for this partial build." },
+    { page_id: "upsell", skip_reason: "Existing downstream upsell remains unchanged for this partial build." },
+    { page_id: "receipt", skip_reason: "Existing downstream receipt remains unchanged for this partial build." },
+  ];
+  const partialPacketPath = resolve(partialScopeTmp, "campaign-runtime.partial-build.json");
+  writeJson(partialPacketPath, partialPacket);
+
+  const partialDoctor = runCliJson(["doctor", "--packet", partialPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (partialDoctor.derived?.scope?.mode !== "partial") {
+    throw new Error("Doctor should classify packets with explicit skip reasons as partial scope.");
+  }
+  if (!partialDoctor.derived.scope.previewable_routes?.some((page) => page.page_id === "landing")) {
+    throw new Error("Doctor should list mapped pages as previewable routes for partial builds.");
+  }
+  if (!partialDoctor.derived.scope.blocked_runtime_pages?.some((page) => page.page_id === "checkout")) {
+    throw new Error("Doctor should mark skipped checkout/runtime pages as blocked for launch QA.");
+  }
+  if (!partialDoctor.warnings?.some((issue) => issue.code === "scope.partial_build")) {
+    throw new Error("Doctor should emit a partial build scope warning.");
+  }
+  if (!partialDoctor.next?.blocked_stages?.includes("checkout-launch-ready")) {
+    throw new Error("Doctor next step should block checkout launch readiness for partial runtime scope.");
+  }
+} finally {
+  rmSync(partialScopeTmp, { recursive: true, force: true });
+}
+
 const routingMetaTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-routing-meta-"));
 try {
   const rootedSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));

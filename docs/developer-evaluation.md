@@ -21,6 +21,9 @@ Round-two alternatives:
 
 - `demeter`
 - `shop-single-step`
+- partial-scope builds where only presell/landing or only upsell/downsell pages
+  are produced and the remaining CampaignSpec pages are marked with
+  `source_html.pages[].skip_reason`
 
 Capture friction as issues, not as side-channel notes. Use the issue templates in `.github/ISSUE_TEMPLATE`.
 

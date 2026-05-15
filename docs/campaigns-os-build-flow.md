@@ -16,6 +16,20 @@ The happy path is intentionally tight:
 
 Pause only for missing inputs, doctor blockers, blocked deploys, test-order policy gates, or merchant-specific uncertainty. The default path should not branch into external browser skills or hand-built backend order creation.
 
+## Partial Builds
+
+Partial builds are valid campaign work. A pass may build only new presell pages,
+landing pages, upsells, downsells, or another bounded slice that sends traffic
+to an existing downstream route. In the Build Packet, map pages being built with
+`source_html.pages[].path` and mark intentionally untouched pages with
+`source_html.pages[].skip_reason`.
+
+`doctor` classifies that as `derived.scope.mode = "partial"`. Mapped pages are
+route/visual-testable after deploy. Skipped checkout, upsell, downsell, or
+receipt pages keep checkout launch readiness and test-order proof blocked until
+those runtime pages are built or explicitly delegated to an existing downstream
+URL.
+
 ## Commerce Ownership
 
 - CampaignSpec/API own live campaign identity, routes, package refs, offer refs, shipping refs, payment support, tracking intent, footer links, and SEO values.

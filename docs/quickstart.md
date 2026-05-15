@@ -39,6 +39,12 @@ receipt surfaces need Campaigns App data; without it, checkout can remain in a
 loading state. Record the test store/key choice in the Build Packet or
 CampaignSpec so QA knows whether runtime checkout proof is expected or blocked.
 
+For partial campaign work, map only the pages being built with
+`source_html.pages[].path` and give intentionally untouched CampaignSpec pages a
+clear `skip_reason`. Doctor will surface those pages under `derived.scope`,
+label mapped routes as previewable, and keep checkout launch/test-order proof
+blocked when runtime pages are out of scope.
+
 ## Prepare Raw HTML Source
 
 `html_funnel` source files should be page-kit-ready source, not full browser
