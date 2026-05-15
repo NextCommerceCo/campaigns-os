@@ -1,0 +1,86 @@
+name: Refresh Starter Template Catalog
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "campaign-cart-starter-templates branch, tag, or SHA to snapshot"
+        required: false
+        default: "main"
+  repository_dispatch:
+    types: [starter-template-catalog-updated]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve source ref
+        id: source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
+          DISPATCH_SOURCE_REF: ${{ github.event.client_payload.source_ref }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          source_ref="$INPUT_SOURCE_REF"
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            source_ref="$DISPATCH_SOURCE_SHA"
+            if [ -z "$source_ref" ]; then
+              source_ref="$DISPATCH_SOURCE_REF"
+            fi
+          fi
+          if [ -z "$source_ref" ]; then
+            source_ref="main"
+          fi
+          echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh vendored catalog snapshot
+        env:
+          STARTER_TEMPLATES_TOKEN: ${{ secrets.STARTER_TEMPLATES_READ_TOKEN || github.token }}
+        run: |
+          node scripts/refresh-starter-template-catalog.mjs --source-ref "${{ steps.source.outputs.source_ref }}"
+
+      - name: Validate refreshed snapshot
+        run: npm run check
+
+      - name: Open refresh PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ steps.source.outputs.source_ref }}
+          SOURCE_REPO: NextCommerceCo/campaign-cart-starter-templates
+        run: |
+          if git diff --quiet; then
+            echo "Starter template catalog snapshot is already current."
+            exit 0
+          fi
+
+          safe_ref="$(printf '%s' "$SOURCE_REF" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-24)"
+          branch="automation/refresh-starter-template-catalog-${safe_ref}-${GITHUB_RUN_ID}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add contracts/commerce-surface-catalog.json contracts/fixtures/campaign-specs
+          git commit -m "Refresh starter template catalog snapshot"
+          git push origin "$branch"
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Refresh starter template catalog snapshot" \
+            --body "Refreshes the vendored Campaigns OS starter-template catalog snapshot from \`${SOURCE_REPO}@${SOURCE_REF}\`.
+
+          Validation:
+          - \`npm run check\`
+
+          Triggered by: \`${GITHUB_EVENT_NAME}\`"

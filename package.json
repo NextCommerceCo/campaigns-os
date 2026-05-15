@@ -11,6 +11,7 @@
     "campaigns-os": "node ./bin/campaigns-os.mjs",
     "qa": "node ./bin/campaigns-os.mjs qa",
     "qa:install-browser": "npx playwright install chromium",
+    "refresh:starter-catalog": "node ./scripts/refresh-starter-template-catalog.mjs",
     "check": "node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
     "check:private-strings": "node ./scripts/check-private-strings.mjs"
