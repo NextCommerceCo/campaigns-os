@@ -19,7 +19,8 @@ The toolkit is contract-backed: starter templates describe which parts are reusa
 
 ## Quick Start
 
-Run these commands from a local checkout of this repo:
+Run these commands from a local checkout of the public toolkit repo
+(`https://github.com/NextCommerceCo/campaigns-os`):
 
 ```bash
 npm install

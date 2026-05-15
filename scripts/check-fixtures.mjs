@@ -264,6 +264,32 @@ if (!doctor.warnings?.some((issue) => issue.code === "routing_meta.runtime_root"
   throw new Error("Doctor should warn when CampaignSpec routing meta tags are not runtime-rooted under the campaign slug.");
 }
 
+const sdkMismatchTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-sdk-mismatch-"));
+try {
+  const targetRepo = resolve(sdkMismatchTmp, "target-page-kit");
+  mkdirSync(resolve(targetRepo, "_data"), { recursive: true });
+  mkdirSync(resolve(targetRepo, "src", "runtime-packet-demo"), { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  writeJson(resolve(targetRepo, "_data", "campaigns.json"), {
+    "runtime-packet-demo": { sdk_version: "0.4.17" },
+  });
+
+  const mismatchPacket = readJson(packet);
+  mismatchPacket.spec.local_path = resolve(root, "examples/campaignspec.v42.basic.json");
+  mismatchPacket.source_html.root = resolve(root, "examples/source-html");
+  mismatchPacket.assembly.target_repo = targetRepo;
+  mismatchPacket.assembly.commerce_catalog.path = catalogPath;
+  const mismatchPacketPath = resolve(sdkMismatchTmp, "campaign-runtime.build.json");
+  writeJson(mismatchPacketPath, mismatchPacket);
+
+  const mismatchDoctor = runCliJson(["doctor", "--packet", mismatchPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (!mismatchDoctor.warnings?.some((issue) => issue.code === "page_kit.sdk_version")) {
+    throw new Error("Doctor should warn when target campaigns.json sdk_version differs from CampaignSpec.");
+  }
+} finally {
+  rmSync(sdkMismatchTmp, { recursive: true, force: true });
+}
+
 const partialScopeTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-partial-scope-"));
 try {
   const partialPacket = readJson(packet);
