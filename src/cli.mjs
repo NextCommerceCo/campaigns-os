@@ -846,6 +846,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     validateSpecIdentityExport(spec, warnings, ready);
     validateSpecPublicRoutes(spec, errors, ready);
     validateSpecStoreProfile(spec, errors, ready);
+    validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready);
     validateSpecShippingCountries(spec, warnings, ready);
     validateSpecRoutingMetaTags(spec, packet, warnings, ready);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived);
@@ -886,6 +887,38 @@ function validateSpecStoreProfile(spec, errors, ready) {
     return;
   }
   ready.push("CampaignSpec required Store Profile fields are present for page-kit campaigns.json");
+}
+
+function validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready) {
+  const specSdkVersion = firstNonEmptyString(spec?.global_config?.sdk_version, spec?.runtime?.sdk_version);
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!targetRepo || !specSdkVersion || !publicRouteSlug) return;
+
+  const campaignsPath = join(targetRepo, "_data", "campaigns.json");
+  if (!existsSync(campaignsPath)) return;
+
+  let campaigns;
+  try {
+    campaigns = readJson(campaignsPath);
+  } catch (error) {
+    addIssue(warnings, "page_kit.campaigns_json", `Could not parse target _data/campaigns.json to compare SDK version: ${error.message}`);
+    return;
+  }
+
+  const entry = campaigns?.[publicRouteSlug];
+  const targetSdkVersion = entry?.sdk_version;
+  if (!isNonEmptyString(targetSdkVersion)) return;
+
+  if (targetSdkVersion.trim() !== specSdkVersion) {
+    addIssue(
+      warnings,
+      "page_kit.sdk_version",
+      `Target _data/campaigns.json[${publicRouteSlug}].sdk_version "${targetSdkVersion}" does not match CampaignSpec sdk_version "${specSdkVersion}". Update the campaign entry or record the intentional pin before build/QA.`
+    );
+    return;
+  }
+
+  ready.push(`Target campaigns.json SDK version matches CampaignSpec (${specSdkVersion})`);
 }
 
 function validateSpecShippingCountries(spec, warnings, ready) {

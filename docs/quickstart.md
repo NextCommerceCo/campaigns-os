@@ -2,6 +2,21 @@
 
 This path is optimized for a developer using Claude Code or another AI coding tool with a prepared campaign design.
 
+## Install CLI
+
+Campaigns OS currently runs from the public toolkit repo:
+
+```bash
+git clone https://github.com/NextCommerceCo/campaigns-os.git
+cd campaigns-os
+npm install
+npm run campaigns-os -- --help
+```
+
+When working from a local checkout, replace `campaigns-os ...` examples with
+`npm run campaigns-os -- ...`. The package binary is `campaigns-os` when the
+tool is installed or linked into your shell.
+
 ## Install Skills
 
 After installing or updating the CLI, refresh the Campaigns OS skills in Claude Code:
@@ -96,7 +111,9 @@ Paste the generated handoff into your AI tool.
 Build is not launch readiness. A complete run still needs:
 
 - page-kit build
-- starter-template/SDK lint
+- starter-template/SDK lint from the target repo, for example `npm run lint:sdk`,
+  `npm run lint:sdk:promoted`, or `npm run lint:sdk:ci` when those scripts are
+  available. There is no separate `campaign-lint` package in the current flow.
 - formal polish pass
 - preview deploy
 - Campaigns OS Playwright browser install
