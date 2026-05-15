@@ -1189,22 +1189,26 @@ function validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, i
 
 function extractRenderedPackageRefs(content) {
   const refs = new Set();
-  for (const match of content.matchAll(/\bdata-next-package-id=["']([^"']+)["']/gi)) addNumericRef(refs, match[1]);
-  for (const match of content.matchAll(/\bdata-package-id=["']([^"']+)["']/gi)) addNumericRef(refs, match[1]);
-  for (const match of content.matchAll(/["']?packageId["']?\s*:\s*["']?([0-9]+)["']?/gi)) addNumericRef(refs, match[1]);
+  for (const match of content.matchAll(/\bdata-next-package-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
+  for (const match of content.matchAll(/\bdata-package-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
+  for (const match of content.matchAll(/["']?packageId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)) {
+    addRenderedRef(refs, match[1] || match[2] || match[3]);
+  }
   return refs;
 }
 
 function extractRenderedShippingRefs(content) {
   const refs = new Set();
-  for (const match of content.matchAll(/\bdata-next-shipping-id=["']([^"']+)["']/gi)) addNumericRef(refs, match[1]);
-  for (const match of content.matchAll(/["']?shippingId["']?\s*:\s*["']?([A-Za-z0-9_-]+)["']?/gi)) addNumericRef(refs, match[1]);
+  for (const match of content.matchAll(/\bdata-next-shipping-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
+  for (const match of content.matchAll(/["']?shippingId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)) {
+    addRenderedRef(refs, match[1] || match[2] || match[3]);
+  }
   return refs;
 }
 
-function addNumericRef(refs, value) {
+function addRenderedRef(refs, value) {
   const ref = String(value || "").trim();
-  if (/^[0-9]+$/.test(ref)) refs.add(ref);
+  if (/^[A-Za-z0-9_-]+$/.test(ref)) refs.add(ref);
 }
 
 function builtHtmlPathForPage(targetRepo, publicRouteSlug, page) {
