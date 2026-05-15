@@ -2,7 +2,7 @@
 
 The happy path is intentionally tight:
 
-1. Export a saved CampaignSpec from Campaign Map Builder, including Map ID and public route slug.
+1. Export a saved local CampaignSpec JSON from Campaign Map Builder, including Map ID and public route slug.
 2. Run `campaigns-os start` with the CampaignSpec, prepared source files, target page-kit repo, and template family.
 3. Treat doctor as the first gate. If it returns `collect-inputs`, stop and resolve the named blocker.
 4. Run setup when doctor asks for setup; otherwise continue to assembly.
@@ -43,6 +43,7 @@ URL.
 - SDK routing meta tags should be emitted as campaign-root paths, for example `/campaign-slug/upsell/`, even when the CampaignSpec source value is slug-relative like `upsell/`.
 - One-time prepurchase/order-bump packages outside the main bundle should default to fixed quantity and fixed line total display unless the spec explicitly requires syncing quantity with the main bundle.
 - Any source element dropped because the spec does not support it, such as PayPal when `available_payment_methods` excludes PayPal, should be recorded in the assembly report for polish.
+- After page-kit build, doctor checks rendered local script references plus rendered package and shipping refs against the CampaignSpec. Missing built scripts, stale package IDs, stale shipping IDs, and unavailable package refs must be fixed or intentionally blocked before QA.
 
 ## Synthetic Campaigns
 

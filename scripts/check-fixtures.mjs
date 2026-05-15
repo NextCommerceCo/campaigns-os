@@ -135,6 +135,17 @@ function runCliJson(args, env = process.env) {
   return JSON.parse(output);
 }
 
+function runCliJsonAllowFailure(args, env = process.env) {
+  try {
+    return runCliJson(args, env);
+  } catch (error) {
+    if (typeof error.stdout === "string" && error.stdout.trim()) {
+      return JSON.parse(error.stdout);
+    }
+    throw error;
+  }
+}
+
 validateCatalogFixtures();
 
 const relativePathsTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-relative-paths-"));
@@ -288,6 +299,92 @@ try {
   }
 } finally {
   rmSync(sdkMismatchTmp, { recursive: true, force: true });
+}
+
+const missingSpecPacket = readJson(packet);
+delete missingSpecPacket.spec.local_path;
+const missingSpecTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-missing-spec-"));
+try {
+  const missingSpecPacketPath = resolve(missingSpecTmp, "campaign-runtime.build.json");
+  writeJson(missingSpecPacketPath, missingSpecPacket);
+  const missingSpecDoctor = runCliJsonAllowFailure(["doctor", "--packet", missingSpecPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (!missingSpecDoctor.errors?.some((issue) => issue.code === "spec.local_path")) {
+    throw new Error("Doctor should block assembly when local CampaignSpec JSON is missing.");
+  }
+} finally {
+  rmSync(missingSpecTmp, { recursive: true, force: true });
+}
+
+const builtOutputTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-built-output-"));
+try {
+  const sourceRoot = resolve(builtOutputTmp, "source-html");
+  const targetRepo = resolve(builtOutputTmp, "target-page-kit");
+  const specPath = resolve(builtOutputTmp, "campaignspec.json");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(resolve(targetRepo, "src", "runtime-packet-demo"), { recursive: true });
+  mkdirSync(resolve(targetRepo, "_site", "runtime-packet-demo", "checkout"), { recursive: true });
+  mkdirSync(resolve(targetRepo, "_site", "runtime-packet-demo", "upsell"), { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+  }
+
+  const spec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const upsell = spec.funnels[0].pages.find((page) => page.id === "upsell");
+  upsell.packages[0].product_purchase_availability = "unavailable";
+  upsell.packages.push({ ref_id: "PKG_A", name: "String-ref upsell", product_purchase_availability: "available" });
+  spec.shipping_methods.push({ ref_id: "SHIP_A", name: "String-ref shipping" });
+  writeJson(specPath, spec);
+
+  writeFileSync(
+    resolve(targetRepo, "_site", "runtime-packet-demo", "checkout", "index.html"),
+    [
+      "<html><head>",
+      '<meta name="next-page-type" content="checkout">',
+      '<meta name="next-success-url" content="/runtime-packet-demo/upsell/">',
+      '<script src="/runtime-packet-demo/js/config.js"></script>',
+      "</head><body>",
+      '<div data-next-bundle-card data-next-shipping-id="2" data-next-bundle-items=\'[{"packageId":999,"quantity":1}]\'></div>',
+      '<div data-next-package-id="PKG_B" data-next-shipping-id="SHIP_B"></div>',
+      "<script>window.next = {};</script>",
+      "</body></html>",
+    ].join("")
+  );
+  writeFileSync(
+    resolve(targetRepo, "_site", "runtime-packet-demo", "upsell", "index.html"),
+    [
+      "<html><head>",
+      '<meta name="next-page-type" content="upsell">',
+      '<meta name="next-upsell-accept-url" content="/runtime-packet-demo/receipt/">',
+      '<meta name="next-upsell-decline-url" content="/runtime-packet-demo/receipt/">',
+      "</head><body><script>window.next = {};</script></body></html>",
+    ].join("")
+  );
+
+  const outputPacket = readJson(packet);
+  outputPacket.spec.local_path = specPath;
+  outputPacket.source_html.root = sourceRoot;
+  outputPacket.assembly.target_repo = targetRepo;
+  outputPacket.assembly.commerce_catalog.path = catalogPath;
+  const outputPacketPath = resolve(builtOutputTmp, "campaign-runtime.build.json");
+  writeJson(outputPacketPath, outputPacket);
+
+  const outputDoctor = runCliJson(["doctor", "--packet", outputPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  for (const code of ["built_output.script_missing", "built_output.package_ref", "built_output.shipping_ref", "spec.package_unavailable"]) {
+    if (!outputDoctor.warnings?.some((issue) => issue.code === code)) {
+      throw new Error(`Doctor should warn for ${code}.`);
+    }
+  }
+  const packageRefWarning = outputDoctor.warnings.find((issue) => issue.code === "built_output.package_ref");
+  if (!packageRefWarning?.message?.includes("PKG_B")) {
+    throw new Error("Doctor should validate rendered string package refs against CampaignSpec.");
+  }
+  const shippingRefWarning = outputDoctor.warnings.find((issue) => issue.code === "built_output.shipping_ref");
+  if (!shippingRefWarning?.message?.includes("SHIP_B")) {
+    throw new Error("Doctor should validate rendered string shipping refs against CampaignSpec.");
+  }
+} finally {
+  rmSync(builtOutputTmp, { recursive: true, force: true });
 }
 
 const partialScopeTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-partial-scope-"));

@@ -833,7 +833,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   derived.spec_path = specPath;
   let spec = null;
   if (!packet.spec?.local_path) {
-    addIssue(warnings, "spec.local_path", "No local CampaignSpec path is present. The current prepared-HTML flow works best with a local exported spec.");
+    addIssue(errors, "spec.local_path", "No local CampaignSpec path is present. Assembly must use a local exported CampaignSpec JSON so page coverage, routing, meta tags, and commerce refs are not guessed.");
   } else if (!existsSync(specPath)) {
     addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${packet.spec.local_path}`);
   } else {
@@ -850,6 +850,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     validateSpecShippingCountries(spec, warnings, ready);
     validateSpecRoutingMetaTags(spec, packet, warnings, ready);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived);
+    validateSpecPackageAvailability(spec, warnings, ready);
     validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState);
   }
 
@@ -938,6 +939,78 @@ function validateSpecShippingCountries(spec, warnings, ready) {
   addIssue(warnings, "spec.available_shipping_countries", 'CampaignSpec campaign.available_shipping_countries should be "all" or an array of country codes.');
 }
 
+function specPackageRecords(spec) {
+  const records = [];
+  const add = (pkg, source) => {
+    if (!isObject(pkg)) return;
+    const ref = firstNonEmptyString(pkg.ref_id, pkg.package_id != null ? String(pkg.package_id) : null, pkg.id != null ? String(pkg.id) : null);
+    if (!ref) return;
+    records.push({ ref, source, package: pkg });
+  };
+
+  for (const page of activeSpecPages(spec)) {
+    for (const pkg of Array.isArray(page.packages) ? page.packages : []) {
+      add(pkg, `page:${page.id}`);
+    }
+  }
+  for (const offer of Array.isArray(spec?.offers) ? spec.offers : []) {
+    for (const pkg of Array.isArray(offer.packages) ? offer.packages : []) {
+      add(pkg, `offer:${offer.ref_id || offer.code || offer.name || "unknown"}`);
+    }
+  }
+  for (const pkg of Array.isArray(spec?.packages) ? spec.packages : []) {
+    add(pkg, "packages");
+  }
+
+  return records;
+}
+
+function specPackageRefs(spec) {
+  return new Set(specPackageRecords(spec).map((record) => String(record.ref)));
+}
+
+function specShippingRefs(spec) {
+  const refs = new Set();
+  const add = (method) => {
+    const ref = firstNonEmptyString(method?.ref_id, method?.id != null ? String(method.id) : null, method?.shipping_method_id != null ? String(method.shipping_method_id) : null);
+    if (ref) refs.add(String(ref));
+  };
+
+  for (const method of Array.isArray(spec?.shipping_methods) ? spec.shipping_methods : []) add(method);
+  for (const offer of Array.isArray(spec?.offers) ? spec.offers : []) {
+    for (const method of Array.isArray(offer.shipping_methods) ? offer.shipping_methods : []) add(method);
+  }
+
+  return refs;
+}
+
+function validateSpecPackageAvailability(spec, warnings, ready) {
+  const unavailable = specPackageRecords(spec).filter((record) => {
+    const availability = firstNonEmptyString(
+      record.package.product_purchase_availability,
+      record.package.purchase_availability,
+      record.package.availability
+    );
+    return availability && availability.toLowerCase() === "unavailable";
+  });
+
+  if (!unavailable.length) {
+    ready.push("CampaignSpec package purchase availability has no unavailable package refs in active build data");
+    return;
+  }
+
+  const sample = unavailable
+    .slice(0, 6)
+    .map((record) => `${record.ref} (${record.source})`)
+    .join(", ");
+  const more = unavailable.length > 6 ? `; plus ${unavailable.length - 6} more` : "";
+  addIssue(
+    warnings,
+    "spec.package_unavailable",
+    `CampaignSpec contains package refs marked product_purchase_availability=unavailable: ${sample}${more}. Checkout or upsell API calls may 403 until the store variant is available.`
+  );
+}
+
 function validateSpecIdentityExport(spec, warnings, ready) {
   const identity = spec?.spec_identity;
   if (isObject(identity) && isNonEmptyString(identity.map_id) && isNonEmptyString(identity.public_route_slug)) {
@@ -1022,7 +1095,7 @@ function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived
 
     checked += 1;
     const content = readFileSync(builtPath, "utf8");
-    validateBuiltHtmlStructure(content, builtPath, targetRepo, page, errors, warnings, assemblyComplete);
+    validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, errors, warnings, assemblyComplete);
 
     for (const [name, expectedValue] of Object.entries(metaTags)) {
       const actualValue = extractMetaContent(content, name);
@@ -1052,7 +1125,7 @@ function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived
   if (checked > 0) ready.push(`Built SDK meta tags checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
 }
 
-function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, errors, warnings, assemblyComplete) {
+function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, errors, warnings, assemblyComplete) {
   const issueTarget = assemblyComplete ? errors : warnings;
   const relPath = relFromDir(targetRepo, builtPath);
   if (!/<body(?:\s|>)/i.test(content) || !/<\/body>/i.test(content)) {
@@ -1061,6 +1134,81 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, errors
   if (!/(data-next-|window\.next|next-page-type|campaign-cart-sdk|campaign-cart)/i.test(content)) {
     addIssue(issueTarget, "built_output.runtime_missing", `Built page "${page.id}" has no obvious Campaign Cart runtime markers.`, { page_id: page.id, file: relPath });
   }
+  validateBuiltScriptAssets(content, builtPath, targetRepo, page, issueTarget);
+  validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
+}
+
+function validateBuiltScriptAssets(content, builtPath, targetRepo, page, issueTarget) {
+  for (const tag of content.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)) {
+    const src = tag[1];
+    const resolved = resolveBuiltAssetPath(src, builtPath, targetRepo);
+    if (!resolved || existsSync(resolved)) continue;
+    addIssue(
+      issueTarget,
+      "built_output.script_missing",
+      `Built page "${page.id}" references script "${src}", but the file does not exist in built output.`,
+      { page_id: page.id, file: relFromDir(targetRepo, builtPath), script: src }
+    );
+  }
+}
+
+function resolveBuiltAssetPath(src, builtPath, targetRepo) {
+  if (!isNonEmptyString(src)) return null;
+  const raw = src.trim();
+  if (raw.startsWith("//") || isAbsoluteHttpUrl(raw) || raw.startsWith("data:") || raw.startsWith("mailto:") || raw.startsWith("tel:")) return null;
+  const clean = raw.replace(/[?#].*$/, "");
+  if (!clean || clean.startsWith("#")) return null;
+  if (clean.startsWith("/")) return join(targetRepo, "_site", clean.replace(/^\/+/, ""));
+  return resolve(dirname(builtPath), clean);
+}
+
+function validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget) {
+  const packageRefs = specPackageRefs(spec);
+  const shippingRefs = specShippingRefs(spec);
+  const relPath = relFromDir(targetRepo, builtPath);
+  const badPackages = [...extractRenderedPackageRefs(content)].filter((ref) => packageRefs.size > 0 && !packageRefs.has(ref));
+  const badShipping = [...extractRenderedShippingRefs(content)].filter((ref) => shippingRefs.size > 0 && !shippingRefs.has(ref));
+
+  if (badPackages.length > 0) {
+    addIssue(
+      issueTarget,
+      "built_output.package_ref",
+      `Built page "${page.id}" references package ID(s) not present in CampaignSpec: ${[...new Set(badPackages)].join(", ")}.`,
+      { page_id: page.id, file: relPath }
+    );
+  }
+  if (badShipping.length > 0) {
+    addIssue(
+      issueTarget,
+      "built_output.shipping_ref",
+      `Built page "${page.id}" references shipping ID(s) not present in CampaignSpec: ${[...new Set(badShipping)].join(", ")}.`,
+      { page_id: page.id, file: relPath }
+    );
+  }
+}
+
+function extractRenderedPackageRefs(content) {
+  const refs = new Set();
+  for (const match of content.matchAll(/\bdata-next-package-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
+  for (const match of content.matchAll(/\bdata-package-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
+  for (const match of content.matchAll(/["']?packageId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)) {
+    addRenderedRef(refs, match[1] || match[2] || match[3]);
+  }
+  return refs;
+}
+
+function extractRenderedShippingRefs(content) {
+  const refs = new Set();
+  for (const match of content.matchAll(/\bdata-next-shipping-id=["']([^"']+)["']/gi)) addRenderedRef(refs, match[1]);
+  for (const match of content.matchAll(/["']?shippingId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)) {
+    addRenderedRef(refs, match[1] || match[2] || match[3]);
+  }
+  return refs;
+}
+
+function addRenderedRef(refs, value) {
+  const ref = String(value || "").trim();
+  if (/^[A-Za-z0-9_-]+$/.test(ref)) refs.add(ref);
 }
 
 function builtHtmlPathForPage(targetRepo, publicRouteSlug, page) {
