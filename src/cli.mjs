@@ -851,6 +851,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     validateSpecRoutingMetaTags(spec, packet, warnings, ready);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived);
     validateSpecPackageAvailability(spec, warnings, ready);
+    validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState);
     validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState);
   }
 
@@ -1095,7 +1096,6 @@ function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived
 
     checked += 1;
     const content = readFileSync(builtPath, "utf8");
-    validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, errors, warnings, assemblyComplete);
 
     for (const [name, expectedValue] of Object.entries(metaTags)) {
       const actualValue = extractMetaContent(content, name);
@@ -1123,6 +1123,37 @@ function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived
   }
 
   if (checked > 0) ready.push(`Built SDK meta tags checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
+}
+
+function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+  const pages = activeSpecPages(spec);
+  if (pages.length === 0) return;
+
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  if (!siteRoot || !existsSync(siteRoot)) return;
+
+  const assemblyComplete = isStageComplete(buildState.report, "assembly");
+  let checked = 0;
+  for (const page of pages) {
+    const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page);
+    if (!builtPath || !existsSync(builtPath)) continue;
+
+    checked += 1;
+    validateBuiltHtmlStructure(
+      readFileSync(builtPath, "utf8"),
+      builtPath,
+      targetRepo,
+      page,
+      spec,
+      errors,
+      warnings,
+      assemblyComplete
+    );
+  }
+
+  if (checked > 0) ready.push(`Built HTML structure and commerce refs checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
 }
 
 function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, errors, warnings, assemblyComplete) {
