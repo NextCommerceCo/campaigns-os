@@ -7,9 +7,18 @@ description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Buil
 
 Use this skill to orient a campaign build, run preflight, decide the next stage, and keep the lifecycle honest.
 
+## Public Lifecycle Boundary
+
+The public `campaigns-os` package owns portable workflow semantics: Build
+Packet generation, Build Context, Assembly Report validation, doctor/readiness
+decisions, public build/polish/QA guidance, and browser QA runner behavior.
+Internal orchestration may wrap this workflow for Map Builder,
+Linear projection, QA Supervisor routing, dashboards, and promotion decisions,
+but those wrappers should not redefine the public contract.
+
 Workflow:
 
-1. Confirm the campaign was configured in Campaigns App and exported from Campaign Map Builder as CampaignSpec v4.2 JSON.
+1. Confirm the campaign was configured in Campaigns App and exported from Campaign Map Builder as current CampaignSpec JSON. Current authoring is v4.3+ while preserving the v4.2 `funnels[]` topology as the compatibility shape.
 2. Run `campaigns-os start` or `campaigns-os prepare-build` with a local CampaignSpec, prepared HTML/assets source, target page-kit repo, and explicit template family.
 3. Run `campaigns-os doctor --packet <packet>`.
 4. If doctor returns `collect-inputs`, stop and resolve the named blockers.
@@ -22,6 +31,7 @@ Workflow:
 Rules:
 
 - This is contract-backed guidance and preflight, not full automated readiness.
+- Preserve CampaignSpec as the source of truth. Do not make CampaignSpec absorb source-export paths, target repo paths, template decisions, deploy status, or test-order policy; those belong in the Build Packet and stage reports.
 - CampaignSpec/API own live commerce values.
 - Starter-template `agentContract` owns reusable commerce structure and protected SDK surfaces.
 - Designed source owns visual composition and page-level content.
