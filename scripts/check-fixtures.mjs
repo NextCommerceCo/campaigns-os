@@ -322,6 +322,7 @@ try {
   const specPath = resolve(builtOutputTmp, "campaignspec.json");
   mkdirSync(sourceRoot, { recursive: true });
   mkdirSync(resolve(targetRepo, "src", "runtime-packet-demo"), { recursive: true });
+  mkdirSync(resolve(targetRepo, "_site", "runtime-packet-demo", "landing"), { recursive: true });
   mkdirSync(resolve(targetRepo, "_site", "runtime-packet-demo", "checkout"), { recursive: true });
   mkdirSync(resolve(targetRepo, "_site", "runtime-packet-demo", "upsell"), { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
@@ -336,6 +337,17 @@ try {
   spec.shipping_methods.push({ ref_id: "SHIP_A", name: "String-ref shipping" });
   writeJson(specPath, spec);
 
+  writeFileSync(
+    resolve(targetRepo, "_site", "runtime-packet-demo", "landing", "index.html"),
+    [
+      "<html><head>",
+      "<title>Landing</title>",
+      "</head><body>",
+      '<a data-next-package-id="PKG_METALESS" href="/runtime-packet-demo/checkout/">Buy</a>',
+      "<script>window.next = {};</script>",
+      "</body></html>",
+    ].join("")
+  );
   writeFileSync(
     resolve(targetRepo, "_site", "runtime-packet-demo", "checkout", "index.html"),
     [
@@ -375,9 +387,12 @@ try {
       throw new Error(`Doctor should warn for ${code}.`);
     }
   }
-  const packageRefWarning = outputDoctor.warnings.find((issue) => issue.code === "built_output.package_ref");
-  if (!packageRefWarning?.message?.includes("PKG_B")) {
-    throw new Error("Doctor should validate rendered string package refs against CampaignSpec.");
+  const packageRefMessages = outputDoctor.warnings
+    .filter((issue) => issue.code === "built_output.package_ref")
+    .map((issue) => issue.message)
+    .join("\n");
+  if (!packageRefMessages.includes("PKG_METALESS") || !packageRefMessages.includes("PKG_B")) {
+    throw new Error("Doctor should validate rendered string package refs against CampaignSpec, including pages without sdk_hints.meta_tags.");
   }
   const shippingRefWarning = outputDoctor.warnings.find((issue) => issue.code === "built_output.shipping_ref");
   if (!shippingRefWarning?.message?.includes("SHIP_B")) {
