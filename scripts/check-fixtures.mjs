@@ -146,7 +146,28 @@ function runCliJsonAllowFailure(args, env = process.env) {
   }
 }
 
+function runCliText(args, env = process.env) {
+  return execFileSync(process.execPath, [cli, ...args], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+    env,
+    encoding: "utf8",
+  });
+}
+
 validateCatalogFixtures();
+
+const qaRunHelp = runCliText(["qa", "run", "--help"]);
+for (const expected of [
+  "campaigns-os qa — Node/npm spec-aware QA",
+  "--test-order <off|checkout|accept|decline|both>",
+  "--allow-test-orders",
+  "--sandbox-test-card-confirmed",
+]) {
+  if (!qaRunHelp.includes(expected)) {
+    throw new Error(`qa run --help should include ${expected}`);
+  }
+}
 
 const relativePathsTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-relative-paths-"));
 try {

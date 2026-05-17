@@ -94,7 +94,7 @@ export async function main(argv) {
   const args = parseArgs(argv);
   const command = args._[0] || "help";
 
-  if (command === "help" || args.help) {
+  if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
   }
