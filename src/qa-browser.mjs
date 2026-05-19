@@ -184,10 +184,19 @@ async function renderedUpsellControlAssertions(browserPage, page) {
 }
 
 async function checkoutPaymentSurfaceAssertions(browserPage, page) {
+  await settleCheckoutCommerce(browserPage);
   const cardNumberMounts = await browserPage.locator('[data-next-checkout-field="cc-number"], #spreedly-number').count().catch(() => 0);
   const cvvMounts = await browserPage.locator('[data-next-checkout-field="cvv"], #spreedly-cvv').count().catch(() => 0);
   const spreedlyFrames = browserPage.frames().filter((frame) => /spreedly/i.test(frame.url()));
-  return [assertion({
+  const geometry = await paymentSurfaceGeometry(browserPage);
+  const geometryOk = paymentGeometryAcceptable(geometry);
+  const express = await expressCheckoutGeometry(browserPage);
+  const expressOk = express.buttons.length > 0 && express.buttons.every((button) => button.height >= 44 && button.height <= 64);
+  const bundle = await checkoutBundleSelectorEvidence(browserPage);
+  const bundleOk = bundle.cards.every((card) => card.hasVisiblePrice) && bundle.selectedCount > 0;
+  const bump = await checkoutOrderBumpEvidence(browserPage);
+  const bumpOk = bump.toggles.every((toggle) => toggle.statesAgree);
+  const assertions = [assertion({
     id: `browser-payment-surface:${page.page_id}`,
     family: "browser-runtime",
     page,
@@ -201,7 +210,199 @@ async function checkoutPaymentSurfaceAssertions(browserPage, page) {
       spreedly_frame_urls: spreedlyFrames.map((frame) => frame.url()).slice(0, 5),
       next_step: "Run --test-order with allowlist/sandbox confirmation for typed-card checkout proof.",
     },
+  }), assertion({
+    id: `browser-payment-geometry:${page.page_id}`,
+    family: "browser-runtime",
+    page,
+    status: geometryOk ? STATUS.PASS : STATUS.FAIL,
+    severity: geometryOk ? undefined : SEVERITY.WARN,
+    expected: "native-looking card/CVV controls: fixed field height and centered hosted iframe text path",
+    actual: geometry.fields.map((field) => `${field.id}: host=${field.host.height}px iframe=${field.iframe.height}px center_delta=${field.centerDelta}px`).join("; ") || "no fields measured",
+    evidence: {
+      fields: geometry.fields,
+      rules: {
+        host_height_px: "42..64",
+        iframe_height_ratio_max: 0.72,
+        iframe_center_delta_px_max: 8,
+      },
+    },
+  }), assertion({
+    id: `browser-express-wallets:${page.page_id}`,
+    family: "browser-runtime",
+    page,
+    status: expressOk ? STATUS.PASS : STATUS.MANUAL_REVIEW,
+    severity: expressOk ? undefined : SEVERITY.WARN,
+    expected: "eligible express wallet buttons render with stable wallet-button dimensions; Apple Pay may be absent in non-eligible browsers",
+    actual: express.buttons.length ? express.buttons.map((button) => `${button.kind || "unknown"}:${button.width}x${button.height}`).join("; ") : "no express wallet buttons mounted",
+    evidence: {
+      buttons: express.buttons,
+      note: "Wallet presence is browser/device eligibility dependent; do not require Apple Pay in Chrome-only QA.",
+    },
   })];
+  if (bundle.cards.length) {
+    assertions.push(assertion({
+      id: `browser-bundle-selector:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: bundleOk ? STATUS.PASS : STATUS.FAIL,
+      severity: bundleOk ? undefined : SEVERITY.WARN,
+      expected: "bundle cards have one selected option and visible prices for every tier",
+      actual: `${bundle.selectedCount} selected; ${bundle.cards.filter((card) => card.hasVisiblePrice).length}/${bundle.cards.length} cards with visible price`,
+      evidence: bundle,
+    }));
+  }
+  if (bump.toggles.length) {
+    assertions.push(assertion({
+      id: `browser-order-bump-state:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: bumpOk ? STATUS.PASS : STATUS.FAIL,
+      severity: bumpOk ? undefined : SEVERITY.WARN,
+      expected: "order bump visible checkbox state agrees with active/in-cart and hidden input state",
+      actual: `${bump.toggles.filter((toggle) => toggle.statesAgree).length}/${bump.toggles.length} bump toggle(s) aligned`,
+      evidence: bump,
+    }));
+  }
+  return assertions;
+}
+
+async function settleCheckoutCommerce(browserPage) {
+  await browserPage.waitForSelector([
+    '[data-next-express-checkout="buttons"] .payment-btn',
+    '[data-next-checkout-field="cc-number"]',
+    '#spreedly-number',
+    '[data-next-bundle-card]',
+    '[data-next-toggle-card]',
+  ].join(", "), { timeout: 8000 }).catch(() => {});
+  await browserPage.waitForTimeout(1000).catch(() => {});
+}
+
+async function paymentSurfaceGeometry(browserPage) {
+  return browserPage.evaluate(() => {
+    const selectors = ['[data-next-checkout-field="cc-number"], #spreedly-number', '[data-next-checkout-field="cvv"], #spreedly-cvv'];
+    return {
+      fields: selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)).map((field) => {
+        const hostRect = field.getBoundingClientRect();
+        const iframe = field.querySelector("iframe");
+        const iframeRect = iframe?.getBoundingClientRect();
+        const hostCenter = hostRect.y + hostRect.height / 2;
+        const iframeCenter = iframeRect ? iframeRect.y + iframeRect.height / 2 : 0;
+        return {
+          id: field.id || field.getAttribute("data-next-checkout-field") || selector,
+          host: {
+            width: Math.round(hostRect.width),
+            height: Math.round(hostRect.height),
+          },
+          iframe: {
+            width: Math.round(iframeRect?.width || 0),
+            height: Math.round(iframeRect?.height || 0),
+          },
+          centerDelta: iframeRect ? Math.round(Math.abs(hostCenter - iframeCenter)) : null,
+        };
+      })),
+    };
+  }).catch(() => ({ fields: [] }));
+}
+
+function paymentGeometryAcceptable(geometry) {
+  if (!geometry.fields.length) return false;
+  return geometry.fields.every((field) => {
+    const hostHeight = Number(field.host?.height || 0);
+    const iframeHeight = Number(field.iframe?.height || 0);
+    const centerDelta = Number(field.centerDelta ?? 999);
+    if (hostHeight < 42 || hostHeight > 64) return false;
+    if (iframeHeight <= 0 || iframeHeight > hostHeight * 0.72) return false;
+    return centerDelta <= 8;
+  });
+}
+
+async function expressCheckoutGeometry(browserPage) {
+  return browserPage.evaluate(() => ({
+    buttons: Array.from(document.querySelectorAll('[data-next-express-checkout="buttons"] .payment-btn')).map((button) => {
+      const rect = button.getBoundingClientRect();
+      return {
+        kind: button.getAttribute("data-next-express-checkout") || null,
+        className: button.className || "",
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    }),
+  })).catch(() => ({ buttons: [] }));
+}
+
+async function checkoutBundleSelectorEvidence(browserPage) {
+  return browserPage.evaluate(() => {
+    const hasVisibleMoney = (value) => {
+      const text = String(value || "").replace(/\s+/g, " ").trim();
+      if (!text || /^[-–—]+$/.test(text)) return false;
+      if (/^[\d.,\s]+%$/.test(text)) return false;
+      const currency = "(?:[$€£¥₹₩₽₺₴₦₫₱₪₡₲₵]|USD|CAD|AUD|NZD|EUR|GBP|JPY|CHF|SEK|NOK|DKK|PLN|CZK|HUF|RON|BGN|BRL|MXN|ARS|CLP|COP|PEN|ZAR|INR|KRW|CNY|RMB|HKD|SGD|THB|TRY|AED|SAR)";
+      const number = "(?:\\d{1,3}(?:[,.\\s]\\d{3})*(?:[,.]\\d{1,2})?|\\d+(?:[,.]\\d+)?)";
+      return new RegExp(`(?:${currency}\\s*${number}|${number}\\s*${currency}|${number})`, "i").test(text);
+    };
+    const cards = Array.from(document.querySelectorAll("[data-next-bundle-card]")).filter((card) => {
+      const rect = card.getBoundingClientRect();
+      const style = getComputedStyle(card);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    }).map((card, index) => {
+      const rect = card.getBoundingClientRect();
+      const priceNodes = Array.from(card.querySelectorAll('[data-next-bundle-display*="price" i], [data-next-display*="price" i], .price'));
+      const prices = priceNodes.map((node) => node.textContent.trim()).filter(Boolean);
+      const selected = card.classList.contains("next-selected")
+        || card.getAttribute("aria-checked") === "true"
+        || card.querySelector('input[type="radio"], input[type="checkbox"]')?.checked === true;
+      return {
+        index,
+        id: card.getAttribute("data-next-bundle-id") || card.getAttribute("data-next-package-id") || null,
+        selected,
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        prices,
+        hasVisiblePrice: prices.some(hasVisibleMoney),
+      };
+    });
+    return {
+      selectedCount: cards.filter((card) => card.selected).length,
+      cards,
+    };
+  }).catch(() => ({ selectedCount: 0, cards: [] }));
+}
+
+async function checkoutOrderBumpEvidence(browserPage) {
+  return browserPage.evaluate(() => ({
+    toggles: Array.from(document.querySelectorAll("[data-next-toggle-card], [data-next-bump]")).filter((toggle) => {
+      const rect = toggle.getBoundingClientRect();
+      const style = getComputedStyle(toggle);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    }).map((toggle, index) => {
+      const input = toggle.querySelector('input[type="checkbox"]');
+      const marker = toggle.querySelector(".bump-check, [data-next-toggle-check], [aria-hidden]");
+      const markerAfter = marker ? getComputedStyle(marker, "::after") : null;
+      const markerStyle = marker ? getComputedStyle(marker) : null;
+      const markerChecked = Boolean(marker) && (
+        Number(markerAfter?.opacity || 0) > 0.5
+        || /check|✓/.test(marker?.textContent || "")
+        || markerStyle?.backgroundColor === "rgb(45, 148, 127)"
+      );
+      const active = toggle.classList.contains("next-active")
+        || toggle.classList.contains("next-in-cart")
+        || toggle.classList.contains("next-selected")
+        || toggle.getAttribute("aria-pressed") === "true";
+      const inputChecked = input ? input.checked : null;
+      const inputAgrees = inputChecked === null || inputChecked === active;
+      const markerAgrees = !marker || markerChecked === active;
+      return {
+        index,
+        packageId: toggle.getAttribute("data-next-package-id") || null,
+        active,
+        inputChecked,
+        markerChecked,
+        inputAgrees,
+        markerAgrees,
+        statesAgree: inputAgrees && markerAgrees,
+      };
+    }),
+  })).catch(() => ({ toggles: [] }));
 }
 
 async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runId) {

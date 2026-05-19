@@ -205,13 +205,16 @@ async function runQa(args) {
   if (args["post-verdict"]) {
     postResult = await postVerdict(verdict, resolved.proxyBase);
   }
+  const dashboardUrl = postResult?.ok
+    ? `${resolved.proxyBase.replace(/\/+$/, "")}/qa?slug=${encodeURIComponent(resolved.mapId)}&run=${encodeURIComponent(verdict.run_id)}`
+    : null;
   return {
     ok: verdict.disposition !== "blocked",
     status: verdict.disposition,
     run_id: verdict.run_id,
     map_id: resolved.mapId,
     base_url: resolved.baseUrl,
-    dashboard_url: `${resolved.proxyBase.replace(/\/+$/, "")}/qa?slug=${encodeURIComponent(resolved.mapId)}&run=${encodeURIComponent(verdict.run_id)}`,
+    dashboard_url: dashboardUrl,
     local_path: localPath,
     posted: postResult,
     counts: countAssertions(verdict.assertions),
@@ -630,8 +633,12 @@ function output(value, args) {
     console.log(`Disposition: ${value.verdict.disposition}`);
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
     console.log(`Local copy: ${value.local_path}`);
-    console.log(`Dashboard: ${value.dashboard_url}`);
-    if (value.posted) console.log(`Posted: ${JSON.stringify(value.posted)}`);
+    if (value.posted?.ok && value.dashboard_url) {
+      console.log(`Dashboard: ${value.dashboard_url}`);
+      console.log(`Posted: ${JSON.stringify(value.posted)}`);
+    } else {
+      console.log(`Dashboard: not posted; rerun with --post-verdict to publish this verdict to the QA tab.`);
+    }
     return;
   }
   console.log(`QA resolve complete.`);
