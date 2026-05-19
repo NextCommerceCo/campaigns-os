@@ -65,7 +65,9 @@ QA evidence redacts checkout request bodies and generated QA emails. Verdict art
 keep method, URL, response summaries, order refs, line-item summaries, and card last4,
 but they should not contain full customer address/payment payloads.
 
-Add `--post-verdict` only when the operator intentionally wants to POST the verdict to the configured Campaign Map proxy:
+Add `--post-verdict` when the operator intentionally wants to POST the verdict
+to the configured Campaign Map proxy. Runs without `--post-verdict` are
+local-only and will not appear in the QA dashboard run picker:
 
 ```bash
 npm run campaigns-os -- qa run \

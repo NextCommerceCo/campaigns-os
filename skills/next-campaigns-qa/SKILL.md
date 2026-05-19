@@ -12,6 +12,7 @@ npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url>
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser
+npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --post-verdict
 ```
 
 `npm run qa:install-browser` is part of the standard QA sequence. Run it once
@@ -30,6 +31,8 @@ Rules:
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
 - Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA, then run typed-card test-order proof when policy allows. Pause only for missing inputs, blocked policy, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
+- Use `--post-verdict` whenever the user expects the QA tab/dashboard to list the run. A run with `posted: null` is local-only evidence under `qa-output/` and must not be reported as dashboard-visible.
+- Browser QA must include checkout commerce geometry evidence, not just mount counts: express-wallet buttons rendered in the current browser, card/CVV hosted iframe host dimensions, iframe text-path height, and center alignment. Apple Pay is browser/device eligible, so record mounted wallet kinds instead of requiring Apple Pay in Chrome-only QA.
 - `qa resolve` accepts either the deploy host or the campaign-root URL; when a Build Packet carries `campaign.public_route_slug`, the runner resolves page URLs under that slug.
 - Routing meta tags must be checked in runtime form. `next-success-url`, `next-upsell-accept-url`, and `next-upsell-decline-url` should point at campaign-root paths such as `/campaign-slug/upsell/`, not source filenames or unrooted spec literals.
 - Upsell accept/decline routes may be SDK-bound controls rather than static `<a href>` links. Treat rendered `data-next-upsell-action="add"` and `data-next-upsell-action="skip"` controls as valid route evidence, then prove the path in the browser walkthrough.
