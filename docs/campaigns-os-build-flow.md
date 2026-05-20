@@ -36,10 +36,13 @@ URL.
 - Starter template contracts own the SDK attribute contract and protected runtime surfaces: checkout/cart/upsell/receipt/payment/address/totals/submit controls and their required data attributes.
 - Designed source owns visual composition, content hierarchy, imagery, and page-level copy.
 
+Packages identify sellable products or variants, and Offers own campaign price changes. Package Retail Price/Quantity fields may exist on older campaigns, but assembly should not introduce them for new tier pricing.
+
 ## Assembly Rules
 
 - Landing and presell pages should preserve prepared HTML when it is a real standalone design. Use page-kit passthrough structure, inject the SDK/config requirements, and repoint CTAs into the CampaignSpec flow.
 - Checkout, upsell, downsell, and receipt pages should preserve starter-template SDK contracts while keeping the campaign/source visual language. Treat starter templates as the reference for required `data-next-*` controls and wiring, not as a mandate to carry their visual chrome into the final campaign.
+- Buy-more-save-more selectors should use selected quantity plus Offer-aware price displays. Do not swap in stale package-per-tier IDs unless the CampaignSpec explicitly represents an older campaign that still owns separate packages for each option.
 - SDK routing meta tags should be emitted as campaign-root paths, for example `/campaign-slug/upsell/`, even when the CampaignSpec source value is slug-relative like `upsell/`.
 - One-time prepurchase/order-bump packages outside the main bundle should default to fixed quantity and fixed line total display unless the spec explicitly requires syncing quantity with the main bundle.
 - Any source element dropped because the spec does not support it, such as PayPal when `available_payment_methods` excludes PayPal, should be recorded in the assembly report for polish.

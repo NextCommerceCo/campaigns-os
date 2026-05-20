@@ -37,7 +37,7 @@ Use `--target <dir>` to sync into another skills directory for testing or a mana
 
 You need:
 
-- Campaigns App setup with packages, offers, shipping methods, payment methods, and an API key.
+- Campaigns App setup with product/variant packages, Offer-based price tiers, shipping methods, payment methods, and an API key.
 - Campaign Map exported as a local CampaignSpec JSON, including `campaign.store_url` for page-kit `campaigns.json`.
 - Prepared HTML/CSS/assets for the campaign pages.
 - A target `next-campaign-page-kit` repo or local directory.
@@ -46,6 +46,8 @@ You need:
 Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
 
 The Store Profile is operator-entered campaign metadata, not Campaigns API data. `doctor` requires `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present.
+
+Packages should identify products or variants, while Offers set the customer's final price. Do not create separate `1x` / `2x` / `3x` packages just to express tier pricing, and do not rely on package Retail Price/Quantity fields unless the campaign explicitly uses that older compatibility setup.
 
 For synthetic or AI-generated evaluation campaigns, create or reuse a known test
 store/API key before checkout work. A purely static source page can validate the
