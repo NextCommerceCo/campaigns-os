@@ -36,6 +36,8 @@ Rules:
 - `qa resolve` accepts either the deploy host or the campaign-root URL; when a Build Packet carries `campaign.public_route_slug`, the runner resolves page URLs under that slug.
 - Routing meta tags must be checked in runtime form. `next-success-url`, `next-upsell-accept-url`, and `next-upsell-decline-url` should point at campaign-root paths such as `/campaign-slug/upsell/`, not source filenames or unrooted spec literals.
 - Upsell accept/decline routes may be SDK-bound controls rather than static `<a href>` links. Treat rendered `data-next-upsell-action="add"` and `data-next-upsell-action="skip"` controls as valid route evidence, then prove the path in the browser walkthrough.
+- When CampaignSpec declares checkout `exit_intent.enabled`, browser QA should trigger/open the pop, accept the mapped offer, and verify the code is active, totals/order summary reprice through SDK/API state, and `cart.hasCoupon("CODE")` presentation appears only after apply.
+- When the deployed checkout includes a promo-code input, browser QA should enter a valid campaign voucher/promo code and verify active-code state, repricing, discount row rendering, and conditional presentation. Missing promo-code input is a blocker only when CampaignSpec, source design, or user instructions declared it.
 - Test orders must exercise the deployed campaign through the Campaign Cart SDK, not a hand-built backend API request.
 - Use the canonical Playwright typed-card path: fill customer/shipping fields, type sandbox card data into the active hosted payment iframes, and click the real checkout submit button.
 - The legacy SDK test-mode event and direct API order path are diagnostic fallbacks only; do not use them as launch proof unless the operator explicitly asks for a diagnostic fallback.
@@ -54,6 +56,6 @@ Canonical test-order flow:
 4. Type the sandbox card into the active hosted payment iframes and click the real checkout submit button.
 5. Wait for the SDK to create the test order and redirect with `ref_id`.
 6. On upsell pages, click the actual accept or decline button for the target path.
-7. Verify receipt/order evidence and summarize order number, `ref_id`, selected cart, upsell path, and line-item result.
+7. Verify receipt/order evidence and summarize order number, `ref_id`, selected cart, active vouchers/promo codes, discounts, upsell path, and line-item result.
 
 Do not use `campaigns-os qa --legacy-api-test-order` as the canonical proof path. It bypasses the deployed campaign page and the SDK checkout/upsell surfaces; keep it only as a diagnostic fallback when explicitly requested.

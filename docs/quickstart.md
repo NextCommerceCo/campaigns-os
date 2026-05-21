@@ -43,6 +43,11 @@ You need:
 - A target `next-campaign-page-kit` repo or local directory.
 - A starter template family decision, usually `olympus` unless `demeter` or `shop-single-step` better matches the campaign shape.
 
+If the checkout should have an exit-intent offer, configure it in Campaign Map
+Builder before export so the checkout page carries `exit_intent.offer_ref_id` and
+`exit_intent.offer_code`. Promo-code boxes are source/template/user-declared
+until CampaignSpec grows a durable field for them.
+
 Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
 
 The Store Profile is operator-entered campaign metadata, not Campaigns API data. `doctor` requires `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present.

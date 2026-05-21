@@ -61,6 +61,25 @@ Routing meta tags are evaluated in runtime-resolved form. If the spec carries `n
 
 Upsell accept/decline route checks accept rendered SDK controls as static evidence when there is no `<a href>`: `data-next-upsell-action="add"` for accept and `data-next-upsell-action="skip"` for decline. The browser walkthrough still needs to click the actual controls.
 
+## Offer Application QA
+
+When a checkout page declares `exit_intent.enabled`, QA should exercise the
+accept path as a checkout runtime behavior:
+
+- trigger or open the exit-intent surface in the rendered checkout
+- accept the mapped offer
+- verify the mapped code becomes active in cart state
+- verify bundle selectors, totals, order summary, and discount rows reprice from
+  SDK/API state
+- verify any code-specific labels gated by `cart.hasCoupon("CODE")` render only
+  after the code is active
+
+If a deployed checkout includes a promo-code input, QA should enter a valid
+campaign voucher/promo code and verify the same active-code, repricing, discount
+row, and conditional presentation evidence. Missing promo-code input is not a
+blocker unless CampaignSpec, the source design, or the user explicitly declared
+it as part of the build.
+
 QA evidence redacts checkout request bodies and generated QA emails. Verdict artifacts
 keep method, URL, response summaries, order refs, line-item summaries, and card last4,
 but they should not contain full customer address/payment payloads.
@@ -119,7 +138,8 @@ The intended QA order matrix is:
 2. Upsell-decline path by clicking the rendered SDK decline/skip control.
 3. Upsell-accept path by clicking the rendered SDK accept/add control.
 4. Receipt/order verification from the resulting `ref_id`, including line items,
-   selected packages, quantities, shipping method, vouchers, and upsell result.
+   selected packages, quantities, shipping method, vouchers/promo codes, discounts,
+   and upsell result.
 
 For multi-market campaigns, add at least one non-default currency/country path
 to the QA pass. Verify currency display, shipping method names and prices,
