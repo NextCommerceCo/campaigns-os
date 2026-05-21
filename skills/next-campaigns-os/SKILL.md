@@ -33,8 +33,8 @@ Rules:
 - This is contract-backed guidance and preflight, not full automated readiness.
 - Preserve CampaignSpec as the source of truth. Do not make CampaignSpec absorb source-export paths, target repo paths, template decisions, deploy status, or test-order policy; those belong in the Build Packet and stage reports.
 - CampaignSpec/API own live commerce values.
-- Treat checkout `exit_intent` as an optional CampaignSpec launch contract. If present, build must wire the mapped offer surface and QA must exercise the accept/apply path.
-- Treat promo-code inputs as source/template/user-declared until CampaignSpec has a durable field for them. They should validate/apply codes through SDK/API rather than owning pricing logic.
+- Treat checkout `exit_intent` and `promo_code_input` as optional CampaignSpec launch contracts. If present, build must wire the mapped offer surface and QA must exercise the accept/apply path.
+- Keep offer application surfaces out of pricing logic: they validate/apply codes through SDK/API, while Campaigns API/SDK own repricing, totals, and discount rows.
 - Starter-template `agentContract` owns reusable commerce structure and protected SDK surfaces.
 - Designed source owns visual composition and page-level content.
 - Do not copy demo refs or unsupported optional surfaces into the target campaign.

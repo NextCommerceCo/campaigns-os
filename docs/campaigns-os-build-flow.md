@@ -40,15 +40,20 @@ Packages identify sellable products or variants, and Offers own campaign price c
 
 ## Offer Application Surfaces
 
-CampaignSpec may declare checkout-level offer application behavior, currently
-`funnels[].pages[].exit_intent`. Treat it as intent for a runtime checkout
-surface, not as a separate pricing model:
+CampaignSpec may declare checkout-level offer application behavior through
+`funnels[].pages[].exit_intent` and `funnels[].pages[].promo_code_input`.
+Treat these fields as intent for runtime checkout surfaces, not as separate
+pricing models:
 
 - `exit_intent.offer_ref_id` points at the configured campaign Offer.
 - `exit_intent.offer_code` is the voucher/promo code the runtime should apply
   when the shopper accepts the pop.
-- optional `exit_intent.presentation` fields are copy hints for the popup and
-  the applied-state label.
+- `promo_code_input.offer_ref_id` points at the configured campaign Offer.
+- `promo_code_input.offer_code` is the voucher/promo code the runtime should
+  accept through the manual entry surface.
+- optional `notes` fields are build/QA implementation notes. Durable popup
+  copy, CTA labels, placeholders, success labels, and active labels belong to
+  the source design or selected template, not the Spec.
 
 Build should wire the selected starter-template checkout so the accepted offer
 is applied through the Campaign Cart SDK/Campaigns API path. Do not hardcode
@@ -62,11 +67,11 @@ Code-specific presentation belongs in SDK conditionals, for example:
 <span data-next-show='cart.hasCoupon("FREESHIP")'>Free shipping applied</span>
 ```
 
-The same ownership model should guide promo-code inputs. A promo-code box accepts
-a shopper-entered code and asks SDK/API to validate and apply it; it does not own
-pricing truth. Until CampaignSpec adds a durable promo-code field, build should
-only create or preserve a promo-code input when the source/template/user
-explicitly asks for one, and should record the decision in the assembly report.
+A promo-code box accepts a shopper-entered code and asks SDK/API to validate and
+apply it; it does not own pricing truth. When `promo_code_input.enabled` is
+declared, build should preserve or create the template/source promo-code surface,
+wire it to the mapped `offer_code`, and record the implementation decision in
+the assembly report.
 
 ## Assembly Rules
 

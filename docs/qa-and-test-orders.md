@@ -74,11 +74,11 @@ accept path as a checkout runtime behavior:
 - verify any code-specific labels gated by `cart.hasCoupon("CODE")` render only
   after the code is active
 
-If a deployed checkout includes a promo-code input, QA should enter a valid
-campaign voucher/promo code and verify the same active-code, repricing, discount
-row, and conditional presentation evidence. Missing promo-code input is not a
-blocker unless CampaignSpec, the source design, or the user explicitly declared
-it as part of the build.
+When a checkout page declares `promo_code_input.enabled`, QA should enter the
+mapped `offer_code` and verify the same active-code, repricing, discount row,
+and conditional presentation evidence. Missing promo-code input is a blocker
+when CampaignSpec, the source design, or the user explicitly declared it as part
+of the build.
 
 QA evidence redacts checkout request bodies and generated QA emails. Verdict artifacts
 keep method, URL, response summaries, order refs, line-item summaries, and card last4,
