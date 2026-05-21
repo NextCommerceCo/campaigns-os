@@ -43,10 +43,10 @@ You need:
 - A target `next-campaign-page-kit` repo or local directory.
 - A starter template family decision, usually `olympus` unless `demeter` or `shop-single-step` better matches the campaign shape.
 
-If the checkout should have an exit-intent offer, configure it in Campaign Map
-Builder before export so the checkout page carries `exit_intent.offer_ref_id` and
-`exit_intent.offer_code`. Promo-code boxes are source/template/user-declared
-until CampaignSpec grows a durable field for them.
+If the checkout should have an exit-intent offer or typed promo-code box,
+configure it in Campaign Map Builder before export so the checkout page carries
+the mapped `exit_intent.offer_ref_id` / `exit_intent.offer_code` or
+`promo_code_input.offer_ref_id` / `promo_code_input.offer_code`.
 
 Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
 
