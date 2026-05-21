@@ -38,6 +38,36 @@ URL.
 
 Packages identify sellable products or variants, and Offers own campaign price changes. Package Retail Price/Quantity fields may exist on older campaigns, but assembly should not introduce them for new tier pricing.
 
+## Offer Application Surfaces
+
+CampaignSpec may declare checkout-level offer application behavior, currently
+`funnels[].pages[].exit_intent`. Treat it as intent for a runtime checkout
+surface, not as a separate pricing model:
+
+- `exit_intent.offer_ref_id` points at the configured campaign Offer.
+- `exit_intent.offer_code` is the voucher/promo code the runtime should apply
+  when the shopper accepts the pop.
+- optional `exit_intent.presentation` fields are copy hints for the popup and
+  the applied-state label.
+
+Build should wire the selected starter-template checkout so the accepted offer
+is applied through the Campaign Cart SDK/Campaigns API path. Do not hardcode
+discount math, mutate static price literals, or treat the pop as an alternate
+bundle model. After the code is active, bundle selectors, totals, order summary,
+and discount rows should render from SDK/API state.
+
+Code-specific presentation belongs in SDK conditionals, for example:
+
+```html
+<span data-next-show='cart.hasCoupon("FREESHIP")'>Free shipping applied</span>
+```
+
+The same ownership model should guide promo-code inputs. A promo-code box accepts
+a shopper-entered code and asks SDK/API to validate and apply it; it does not own
+pricing truth. Until CampaignSpec adds a durable promo-code field, build should
+only create or preserve a promo-code input when the source/template/user
+explicitly asks for one, and should record the decision in the assembly report.
+
 ## Assembly Rules
 
 - Landing and presell pages should preserve prepared HTML when it is a real standalone design. Use page-kit passthrough structure, inject the SDK/config requirements, and repoint CTAs into the CampaignSpec flow.
@@ -45,6 +75,7 @@ Packages identify sellable products or variants, and Offers own campaign price c
 - Buy-more-save-more selectors should use selected quantity plus Offer-aware price displays. Do not swap in stale package-per-tier IDs unless the CampaignSpec explicitly represents an older campaign that still owns separate packages for each option.
 - SDK routing meta tags should be emitted as campaign-root paths, for example `/campaign-slug/upsell/`, even when the CampaignSpec source value is slug-relative like `upsell/`.
 - One-time prepurchase/order-bump packages outside the main bundle should default to fixed quantity and fixed line total display unless the spec explicitly requires syncing quantity with the main bundle.
+- Checkout exit-intent pops and promo-code inputs are protected offer application surfaces. Preserve/apply the selected family's SDK coupon/voucher hooks; skin the shell and copy around them.
 - Any source element dropped because the spec does not support it, such as PayPal when `available_payment_methods` excludes PayPal, should be recorded in the assembly report for polish.
 - After page-kit build, doctor checks rendered local script references plus rendered package and shipping refs against the CampaignSpec. Missing built scripts, stale package IDs, stale shipping IDs, and unavailable package refs must be fixed or intentionally blocked before QA.
 
