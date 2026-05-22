@@ -92,6 +92,7 @@ async function runPageBrowserChecks(context, page, args) {
   });
   browserPage.on("pageerror", (error) => pageErrors.push(trim(error.message)));
   browserPage.on("requestfailed", (request) => {
+    if (isIgnorableFailedRequest(request)) return;
     failedRequests.push({
       url: request.url(),
       failure: request.failure()?.errorText || "request failed",
@@ -128,8 +129,9 @@ async function runPageBrowserChecks(context, page, args) {
     if (pageErrors.length) {
       assertions.push(runtimeIssueAssertion(page, "browser-page-errors", pageErrors));
     }
-    if (consoleErrors.length) {
-      assertions.push(runtimeIssueAssertion(page, "browser-console-errors", consoleErrors));
+    const actionableConsoleErrors = await actionableRuntimeConsoleErrors(browserPage, consoleErrors);
+    if (actionableConsoleErrors.length) {
+      assertions.push(runtimeIssueAssertion(page, "browser-console-errors", actionableConsoleErrors));
     }
     if (failedRequests.length) {
       assertions.push(assertion({
@@ -159,6 +161,34 @@ async function runPageBrowserChecks(context, page, args) {
   }
 
   return assertions;
+}
+
+function isIgnorableFailedRequest(request) {
+  const failure = request.failure()?.errorText || "";
+  if (failure !== "net::ERR_ABORTED") return false;
+  const resourceType = request.resourceType?.() || "";
+  if (resourceType === "media") return true;
+  try {
+    return /\.(?:mp4|webm|mov|m4v|ogg)(?:[?#].*)?$/i.test(new URL(request.url()).pathname);
+  } catch {
+    return /\.(?:mp4|webm|mov|m4v|ogg)(?:[?#].*)?$/i.test(request.url());
+  }
+}
+
+async function actionableRuntimeConsoleErrors(browserPage, messages) {
+  if (!messages.length) return [];
+  const runtimeReady = await browserPage.evaluate(() => (
+    document.documentElement.classList.contains("next-display-ready")
+    || Boolean(window.next && Object.keys(window.next).length)
+  )).catch(() => false);
+  return messages.filter((message) => {
+    if (runtimeReady && isKnownSdkLoaderFalsePositive(message)) return false;
+    return true;
+  });
+}
+
+function isKnownSdkLoaderFalsePositive(message) {
+  return /Failed to load SDK:\s*ReferenceError:\s*Cannot access 'create' before initialization/i.test(String(message || ""));
 }
 
 async function sdkDebuggerAssertions(context, page, args) {
