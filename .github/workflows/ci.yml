@@ -10,7 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: campaigns-os
+      - uses: actions/checkout@v4
+        with:
+          repository: NextCommerceCo/campaign-cart-starter-templates
+          ref: main
+          path: campaign-cart-starter-templates
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
       - run: npm run check
+        working-directory: campaigns-os
+        env:
+          STARTER_TEMPLATES_PATH: ${{ github.workspace }}/campaign-cart-starter-templates
