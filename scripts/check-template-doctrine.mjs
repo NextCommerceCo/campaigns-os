@@ -94,10 +94,19 @@ const partials = walk(resolve(templatesRoot, "src"));
 // 3. For each partial, look for Liquid defaults targeting any doctrine variable.
 //    Match: {% if VAR == nil %}{% assign VAR = VALUE %}{% endif %}
 //    Tolerant of whitespace and the {% ... -%} trim form.
+// Escape regex metacharacters before interpolation. Defense-in-depth: the doctrine
+// extractor restricts varName to /[a-z_][a-z0-9_]*/ so no metacharacters reach here
+// today, but explicit escaping keeps the call site obviously safe if that constraint
+// ever relaxes.
+function escapeForRegExp(literal) {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function partialDefaultRegex(varName) {
+  const v = escapeForRegExp(varName);
   return new RegExp(
-    `\\{%-?\\s*if\\s+${varName}\\s*==\\s*nil\\s*-?%\\}` +
-      `\\s*\\{%-?\\s*assign\\s+${varName}\\s*=\\s*([a-z_0-9'"]+)\\s*-?%\\}`,
+    `\\{%-?\\s*if\\s+${v}\\s*==\\s*nil\\s*-?%\\}` +
+      `\\s*\\{%-?\\s*assign\\s+${v}\\s*=\\s*([a-z_0-9'"]+)\\s*-?%\\}`,
     "i",
   );
 }
@@ -110,7 +119,10 @@ for (const path of partials) {
   for (const [varName, doctrineValue] of doctrine) {
     const match = content.match(partialDefaultRegex(varName));
     if (!match) continue;
-    const partialValue = match[1].replace(/['"]/g, "").toLowerCase();
+    // Strip Liquid string quotes but preserve case. Case drift on Liquid boolean
+    // literals (True/TRUE vs true) is itself a partial-authoring bug we want to
+    // surface, not normalize away.
+    const partialValue = match[1].replace(/['"]/g, "");
     coverage.set(varName, (coverage.get(varName) || 0) + 1);
     if (partialValue !== doctrineValue) {
       violations.push({

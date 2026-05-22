@@ -12,6 +12,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: campaigns-os
+      # Deliberately unpinned: check-template-doctrine validates partial defaults
+      # against the live state of the templates repo so doctrine drift surfaces
+      # promptly. When the agent contract gains _synced_from_sha (deferred v2 work),
+      # pin this checkout to that SHA so contract tests run against the same
+      # snapshot the agent consumes.
       - uses: actions/checkout@v4
         with:
           repository: NextCommerceCo/campaign-cart-starter-templates
