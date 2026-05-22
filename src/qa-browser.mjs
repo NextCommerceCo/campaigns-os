@@ -6,6 +6,7 @@ const DEFAULT_TEST_CARD = "6011111111111117";
 const DEFAULT_TEST_CVV = "123";
 const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
+const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 
 export async function runBrowserChecks(topologies, args = {}) {
   const browser = await launchChromium(args);
@@ -270,8 +271,7 @@ async function sdkDebuggerAssertions(context, page, args) {
 function sdkDebuggerEligible(page) {
   const pageType = String(page.page_type || "").toLowerCase();
   const metaPageType = String(page.expected_meta_tags?.["next-page-type"] || "").toLowerCase();
-  return ["checkout", "upsell", "downsell", "thankyou", "receipt"].includes(pageType)
-    || ["checkout", "upsell", "downsell", "receipt"].includes(metaPageType);
+  return SDK_DEBUGGER_PAGE_TYPES.includes(pageType) || SDK_DEBUGGER_PAGE_TYPES.includes(metaPageType);
 }
 
 async function renderedUpsellControlAssertions(browserPage, page) {
