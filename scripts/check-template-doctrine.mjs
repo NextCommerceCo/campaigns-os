@@ -71,18 +71,19 @@ if (doctrine.size === 0) {
   );
 }
 
-// 2. Walk the templates repo for partials and pages that could render commerce surfaces.
-const SCAN_GLOBS = [/^src\/[^/]+\/_includes\/.+\.html$/, /^src\/[^/]+\/[^/]+\.html$/];
-
+// 2. Walk the templates repo for every .html file under src/. Permissive on
+//    purpose: doctrine variables only live in commerce partials, so scanning
+//    layout/landing-section files costs a few extra string ops but never produces
+//    false positives. Earlier glob-based scoping missed _layouts/ at depth 3 — a
+//    coverage gap better solved by widening than by maintaining brittle globs.
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    const rel = relative(templatesRoot, full);
     const stat = statSync(full);
     if (stat.isDirectory()) {
       if (entry === "node_modules" || entry === "_site" || entry.startsWith(".")) continue;
       walk(full, acc);
-    } else if (SCAN_GLOBS.some((rx) => rx.test(rel))) {
+    } else if (entry.endsWith(".html")) {
       acc.push(full);
     }
   }
@@ -104,10 +105,13 @@ function escapeForRegExp(literal) {
 
 function partialDefaultRegex(varName) {
   const v = escapeForRegExp(varName);
+  // `g` flag so matchAll surfaces every default-assignment of the variable in a
+  // partial. A partial declaring the same var twice with conflicting defaults is
+  // a real (rare) authoring bug; without `g` we'd only catch the first.
   return new RegExp(
     `\\{%-?\\s*if\\s+${v}\\s*==\\s*nil\\s*-?%\\}` +
       `\\s*\\{%-?\\s*assign\\s+${v}\\s*=\\s*([a-z_0-9'"]+)\\s*-?%\\}`,
-    "i",
+    "gi",
   );
 }
 
@@ -117,20 +121,22 @@ const coverage = new Map(); // varName -> count of partials that declare a defau
 for (const path of partials) {
   const content = readFileSync(path, "utf8");
   for (const [varName, doctrineValue] of doctrine) {
-    const match = content.match(partialDefaultRegex(varName));
-    if (!match) continue;
-    // Strip Liquid string quotes but preserve case. Case drift on Liquid boolean
-    // literals (True/TRUE vs true) is itself a partial-authoring bug we want to
-    // surface, not normalize away.
-    const partialValue = match[1].replace(/['"]/g, "");
+    const matches = [...content.matchAll(partialDefaultRegex(varName))];
+    if (matches.length === 0) continue;
     coverage.set(varName, (coverage.get(varName) || 0) + 1);
-    if (partialValue !== doctrineValue) {
-      violations.push({
-        file: relative(templatesRoot, path),
-        varName,
-        partialValue,
-        doctrineValue,
-      });
+    for (const match of matches) {
+      // Strip Liquid string quotes but preserve case. Case drift on Liquid boolean
+      // literals (True/TRUE vs true) is itself a partial-authoring bug we want to
+      // surface, not normalize away.
+      const partialValue = match[1].replace(/['"]/g, "");
+      if (partialValue !== doctrineValue) {
+        violations.push({
+          file: relative(templatesRoot, path),
+          varName,
+          partialValue,
+          doctrineValue,
+        });
+      }
     }
   }
 }
