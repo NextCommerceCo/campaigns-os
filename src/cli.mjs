@@ -753,7 +753,7 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
   if (context) validateContext(context, warnings, ready, derived);
   if (report) validateAssemblyReportShape(report, errors, warnings, ready);
 
-  const next = buildNextStep(errors, warnings, derived);
+  const next = buildNextStep(errors, warnings, derived, report);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
   const result = { ok: errors.length === 0, status, errors, warnings, ready, derived, next };
   return outputBaseDir ? relativizeDoctorOutput(result, outputBaseDir) : result;
@@ -1084,7 +1084,7 @@ function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived
 
   let checked = 0;
   for (const { page, metaTags } of expectedPages) {
-    const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page);
+    const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
     if (!builtPath || !existsSync(builtPath)) {
       const issue = {
         code: "built_output.page_missing",
@@ -1137,7 +1137,7 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
   let checked = 0;
   for (const page of pages) {
-    const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page);
+    const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
     if (!builtPath || !existsSync(builtPath)) continue;
 
     checked += 1;
@@ -1242,12 +1242,31 @@ function addRenderedRef(refs, value) {
   if (/^[A-Za-z0-9_-]+$/.test(ref)) refs.add(ref);
 }
 
-function builtHtmlPathForPage(targetRepo, publicRouteSlug, page) {
+function builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived = {}) {
   if (!targetRepo || !publicRouteSlug) return null;
-  const route = publicRouteForPage(page);
+  const sourcePermalink = sourcePermalinkForPage(derived?.target_output_dir, publicRouteSlug, page);
+  const route = sourcePermalink || runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug);
   if (!route) return join(targetRepo, "_site", publicRouteSlug, "index.html");
   const clean = route.replace(/^\/+|\/+$/g, "");
   return clean ? join(targetRepo, "_site", publicRouteSlug, clean, "index.html") : join(targetRepo, "_site", publicRouteSlug, "index.html");
+}
+
+function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page) {
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return null;
+
+  const expectedTerminal = terminalRouteSegment(publicRouteForPage(page));
+  const candidates = [];
+  for (const file of collectHtmlFiles(targetOutputDir)) {
+    if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
+    const fullPath = join(targetOutputDir, file.path);
+    const content = readFileSync(fullPath, "utf8");
+    const permalink = extractFrontmatterValue(content, "permalink");
+    if (!isNonEmptyString(permalink)) continue;
+    const relative = stripPublicRoutePrefix(normalizePageKitRoute(permalink), publicRouteSlug);
+    if (terminalRouteSegment(relative) === expectedTerminal) candidates.push(relative);
+  }
+
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 function extractMetaContent(content, name) {
@@ -1263,8 +1282,33 @@ function runtimeRouteForMetaValue(value, publicRouteSlug) {
   const route = value.trim();
   if (isAbsoluteHttpUrl(route)) return route;
   if (isRuntimeRootedRoutingMeta(route, publicRouteSlug)) return route;
-  const normalized = normalizePageKitRoute(route);
+  const normalized = runtimeRelativeRouteForSpecValue(route, publicRouteSlug);
   return normalized ? `/${publicRouteSlug}/${normalized}` : `/${publicRouteSlug}/`;
+}
+
+function runtimeRelativeRouteForSpecValue(value, publicRouteSlug) {
+  const normalized = normalizePageKitRoute(value);
+  if (!normalized) return "";
+  const stripped = stripPublicRoutePrefix(normalized, publicRouteSlug);
+  const segments = stripped.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  if (segments.length > 1) return `${segments[segments.length - 1]}/`;
+  return stripped;
+}
+
+function stripPublicRoutePrefix(route, publicRouteSlug) {
+  const normalized = normalizePageKitRoute(route);
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
+  if (!normalized || !slug) return normalized;
+  const clean = normalized.replace(/^\/+|\/+$/g, "");
+  if (clean === slug) return "";
+  if (clean.startsWith(`${slug}/`)) return `${clean.slice(slug.length + 1).replace(/\/?$/, "/")}`;
+  return normalized;
+}
+
+function terminalRouteSegment(route) {
+  const normalized = normalizePageKitRoute(route);
+  const parts = normalized.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "";
 }
 
 function escapeRegExp(value) {
@@ -1792,6 +1836,7 @@ function collectLiteralMatches(root, values) {
   const regex = new RegExp(escaped, "g");
   const matches = [];
   for (const file of collectHtmlFiles(root)) {
+    if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
     const content = readFileSync(join(root, file.path), "utf8");
     for (const match of content.matchAll(regex)) {
       matches.push({
@@ -2042,14 +2087,25 @@ campaigns-os qa run --packet ${packetPath} --base-url ${url} --browser
 Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the deployed campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Only fire test orders when test_orders_allowed=true, sandbox_test_card_confirmed=true, and the deployed domain is allowlisted. Use --test-order checkout/decline/accept/both with --allow-test-orders and --sandbox-test-card-confirmed; then click rendered SDK upsell accept/decline controls for upsell proof. For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, payment methods, and market-specific copy. Summarize blockers, warnings, and remaining launch risks.`;
 }
 
-function buildNextStep(errors, warnings, derived) {
+function buildNextStep(errors, warnings, derived, report = null) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
+  const assemblyStatus = report?.stages?.assembly?.status || "";
+  const polishStatus = report?.stages?.polish?.status || "";
+  const deployStatus = report?.stages?.deploy?.status || "";
+  const qaStatus = report?.stages?.qa?.status || "";
+  const assemblyComplete = assemblyStatus.startsWith("completed");
+  const polishRecorded = ["completed", "completed_with_warnings", "skipped", "blocked"].some((prefix) => polishStatus.startsWith(prefix));
+  const polishBlocked = polishStatus.startsWith("blocked");
+  const polishSatisfied = ["completed", "completed_with_warnings", "skipped"].some((prefix) => polishStatus.startsWith(prefix));
+  const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
+    || (report?.stages?.deploy?.outputs || []).some((output) => /^https?:\/\//.test(String(output)));
+  const qaRecorded = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => qaStatus.startsWith(prefix));
   const blockedStages = [];
   const actions = [];
   if (errors.length) {
     actions.push("Resolve packet blockers before assembly.");
   }
-  if (codes.has("deploy.preview_url")) blockedStages.push("qa");
+  if (codes.has("deploy.preview_url") && !deploySatisfied) blockedStages.push("qa");
   if (codes.has("scope.runtime_qa_blocked")) {
     blockedStages.push("checkout-launch-ready");
     blockedStages.push("test-orders");
@@ -2073,6 +2129,17 @@ function buildNextStep(errors, warnings, derived) {
     actions.push("Keep checkout/order-proof QA blocked until the out-of-scope runtime pages are built or explicitly delegated to an existing downstream URL.");
   }
 
+  if (assemblyComplete && !polishRecorded) {
+    blockedStages.push("deploy");
+    blockedStages.push("qa");
+    actions.push("Run next-campaigns-polish and record polish as completed, skipped, or blocked before deploy/QA handoff.");
+  }
+  if (assemblyComplete && polishBlocked) {
+    blockedStages.push("deploy");
+    blockedStages.push("qa");
+    actions.push("Resolve the recorded polish blockers, then rerun polish before deploy/QA handoff.");
+  }
+
   if (errors.length) {
     return {
       stage: "collect-inputs",
@@ -2081,6 +2148,63 @@ function buildNextStep(errors, warnings, derived) {
       default_skill: "next-campaigns-os",
       actions,
       blocked_stages: ["assembly", "polish", "deploy", "qa"],
+    };
+  }
+  if (assemblyComplete && !polishRecorded) {
+    return {
+      stage: "polish",
+      status: warnings.length ? "ready_with_warnings" : "ready",
+      owner: "polish",
+      default_skill: "next-campaigns-polish",
+      command: `campaigns-os next polish --packet ${derived.packet_path}`,
+      actions,
+      blocked_stages: [...new Set(blockedStages)],
+    };
+  }
+  if (assemblyComplete && polishBlocked) {
+    return {
+      stage: "polish",
+      status: "blocked",
+      owner: "polish",
+      default_skill: "next-campaigns-polish",
+      command: `campaigns-os next polish --packet ${derived.packet_path}`,
+      actions,
+      blocked_stages: [...new Set(blockedStages)],
+    };
+  }
+  if (assemblyComplete && polishSatisfied) {
+    const needsDeploy = codes.has("deploy.preview_url") && !deploySatisfied;
+    if (!needsDeploy && qaRecorded) {
+      return {
+        stage: blockedStages.includes("test-orders") ? "test-orders" : "complete",
+        status: blockedStages.includes("test-orders") ? "blocked" : (warnings.length ? "ready_with_warnings" : "ready"),
+        owner: blockedStages.includes("test-orders") ? "operator" : "qa",
+        default_skill: blockedStages.includes("test-orders") ? "next-campaigns-qa" : "next-campaigns-os",
+        command: blockedStages.includes("test-orders")
+          ? `campaigns-os next qa --packet ${derived.packet_path} --test-order checkout`
+          : undefined,
+        actions: actions.length
+          ? actions
+          : blockedStages.includes("test-orders")
+            ? ["Confirm test-order permission and sandbox card routing before firing checkout mutations."]
+            : ["Campaign assembly, polish, deploy, and QA checkpoints are recorded."],
+        blocked_stages: [...new Set(blockedStages)],
+      };
+    }
+    return {
+      stage: needsDeploy ? "deploy" : "qa",
+      status: warnings.length ? "ready_with_warnings" : "ready",
+      owner: needsDeploy ? "operator" : "qa",
+      default_skill: needsDeploy ? "next-campaigns-os" : "next-campaigns-qa",
+      command: needsDeploy
+        ? `Create a deploy preview for packet ${derived.packet_path}`
+        : `campaigns-os next qa --packet ${derived.packet_path}`,
+      actions: actions.length
+        ? actions
+        : needsDeploy
+          ? ["Create a preview or production URL, then run QA resolve before posting a verdict."]
+          : ["Run next-campaigns-qa against the deployed campaign URL."],
+      blocked_stages: [...new Set(blockedStages)],
     };
   }
   return {

@@ -108,7 +108,7 @@ async function resolveQaInputs(args) {
   const publicRouteSlug = resolvePublicRouteSlug({ packet, spec: normalized, rawSpec });
   const baseUrl = normalizeQaBaseUrl(inputBaseUrl, publicRouteSlug);
   const specHash = computeSpecHash(rawSpec);
-  const topologies = extractTopologies(normalized, { baseUrl });
+  const topologies = extractTopologies(normalized, { baseUrl, publicRouteSlug });
   return {
     packetPath,
     packet,
@@ -449,14 +449,14 @@ function normalizeSpec(raw) {
   return { ...raw, funnels: [] };
 }
 
-function extractTopologies(spec, { baseUrl = null } = {}) {
+function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null } = {}) {
   const pageById = new Map();
   for (const funnel of spec.funnels || []) {
     for (const page of funnel.pages || []) pageById.set(page.id, page);
   }
   const urlById = new Map();
   for (const [id, page] of pageById) {
-    urlById.set(id, resolvePageUrl(page, baseUrl));
+    urlById.set(id, resolvePageUrl(page, baseUrl, publicRouteSlug));
   }
   return (spec.funnels || []).map((funnel) => ({
     funnel_id: funnel.id || "default",
@@ -473,20 +473,20 @@ function extractTopologies(spec, { baseUrl = null } = {}) {
         label: page.label || page.id,
         url: urlById.get(page.id) || null,
         is_entry: Boolean(page.is_entry),
-        expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById }),
-        expected_next_url: resolveSibling(pageById, urlById, page.next_page || page.success_url, baseUrl),
-        expected_accept_url: resolveSibling(pageById, urlById, page.on_accept, baseUrl),
-        expected_decline_url: resolveSibling(pageById, urlById, page.on_decline, baseUrl),
+        expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug }),
+        expected_next_url: resolveSibling(pageById, urlById, page.next_page || page.success_url, baseUrl, publicRouteSlug),
+        expected_accept_url: resolveSibling(pageById, urlById, page.on_accept, baseUrl, publicRouteSlug),
+        expected_decline_url: resolveSibling(pageById, urlById, page.on_decline, baseUrl, publicRouteSlug),
         packages: page.packages || [],
       })),
   }));
 }
 
-function resolvePageUrl(page, baseUrl) {
+function resolvePageUrl(page, baseUrl, publicRouteSlug = null) {
   if (typeof page.url === "string" && page.url.trim()) return page.url.trim();
   if (!baseUrl) return null;
   const route = typeof page.page_url === "string" && page.page_url.trim()
-    ? normalizePageKitRoute(page.page_url)
+    ? runtimeRelativeRouteForSpecValue(page.page_url, publicRouteSlug)
     : page.is_entry
       ? ""
       : defaultRouteForType(page.type);
@@ -519,13 +519,32 @@ function normalizePageKitRoute(value) {
   return clean ? `${clean}/` : "";
 }
 
-function resolveSibling(pageById, urlById, ref, baseUrl) {
+function runtimeRelativeRouteForSpecValue(value, publicRouteSlug) {
+  const normalized = normalizePageKitRoute(value);
+  if (!normalized) return "";
+  const stripped = stripPublicRoutePrefix(normalized, publicRouteSlug);
+  const segments = stripped.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  if (segments.length > 1) return `${segments[segments.length - 1]}/`;
+  return stripped;
+}
+
+function stripPublicRoutePrefix(route, publicRouteSlug) {
+  const normalized = normalizePageKitRoute(route);
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
+  if (!normalized || !slug) return normalized;
+  const clean = normalized.replace(/^\/+|\/+$/g, "");
+  if (clean === slug) return "";
+  if (clean.startsWith(`${slug}/`)) return `${clean.slice(slug.length + 1).replace(/\/?$/, "/")}`;
+  return normalized;
+}
+
+function resolveSibling(pageById, urlById, ref, baseUrl, publicRouteSlug = null) {
   if (typeof ref !== "string" || !ref.trim()) return undefined;
   if (urlById.has(ref)) return urlById.get(ref) || null;
   if (isAbsoluteHttpUrl(ref)) return ref;
   if (baseUrl && (ref.startsWith("/") || ref.includes(".") || ref.endsWith("/"))) {
     try {
-      return joinBaseUrl(baseUrl, normalizePageKitRoute(ref) || ref);
+      return joinBaseUrl(baseUrl, runtimeRelativeRouteForSpecValue(ref, publicRouteSlug) || ref);
     } catch {
       return ref;
     }
@@ -544,14 +563,14 @@ function joinBaseUrl(baseUrl, route) {
   return new URL(normalizedRoute, base).toString();
 }
 
-function extractExpectedMetaTags(page, { baseUrl, pageById, urlById } = {}) {
+function extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug } = {}) {
   const source = page.sdk_hints?.meta_tags;
   if (!source || typeof source !== "object") return undefined;
   const out = {};
   for (const [key, value] of Object.entries(source)) {
     if (typeof value !== "string") continue;
     if (isRoutingMetaTag(key)) {
-      const resolved = resolveSibling(pageById || new Map(), urlById || new Map(), value, baseUrl);
+      const resolved = resolveSibling(pageById || new Map(), urlById || new Map(), value, baseUrl, publicRouteSlug);
       out[key] = stripOrigin(resolved || value);
     } else {
       out[key] = value;

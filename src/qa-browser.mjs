@@ -376,13 +376,25 @@ async function checkoutOrderBumpEvidence(browserPage) {
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
     }).map((toggle, index) => {
       const input = toggle.querySelector('input[type="checkbox"]');
-      const marker = toggle.querySelector(".bump-check, [data-next-toggle-check], [aria-hidden]");
+      const marker = toggle.querySelector(".bump-check, [data-next-toggle-check], .checkbox__icon, [os-component='check'], [aria-hidden]");
       const markerAfter = marker ? getComputedStyle(marker, "::after") : null;
       const markerStyle = marker ? getComputedStyle(marker) : null;
+      const markerContainer = marker?.closest(".checkbox__icon, .bump-check, [data-next-toggle-check], [os-component='check']") || marker;
+      const markerContainerStyle = markerContainer ? getComputedStyle(markerContainer) : null;
+      const markerVisible = Boolean(marker) && [markerStyle, markerContainerStyle].every((style) => (
+        style
+        && style.display !== "none"
+        && style.visibility !== "hidden"
+        && Number(style.opacity || 1) > 0.5
+      ));
+      const markerAfterVisible = markerVisible
+        && markerAfter
+        && !["none", "normal", '""'].includes(markerAfter.content)
+        && Number(markerAfter.opacity || 0) > 0.5;
       const markerChecked = Boolean(marker) && (
-        Number(markerAfter?.opacity || 0) > 0.5
-        || /check|✓/.test(marker?.textContent || "")
-        || markerStyle?.backgroundColor === "rgb(45, 148, 127)"
+        markerAfterVisible
+        || (markerVisible && /check|✓/.test(marker?.textContent || ""))
+        || (markerVisible && markerStyle?.backgroundColor === "rgb(45, 148, 127)")
       );
       const active = toggle.classList.contains("next-active")
         || toggle.classList.contains("next-in-cart")
