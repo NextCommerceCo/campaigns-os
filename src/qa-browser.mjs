@@ -123,6 +123,7 @@ async function runPageBrowserChecks(context, page, args) {
     if (page.page_type === "checkout") {
       assertions.push(...await checkoutPaymentSurfaceAssertions(browserPage, page));
     }
+    assertions.push(...await sdkDebuggerAssertions(context, page, args));
 
     if (pageErrors.length) {
       assertions.push(runtimeIssueAssertion(page, "browser-page-errors", pageErrors));
@@ -158,6 +159,89 @@ async function runPageBrowserChecks(context, page, args) {
   }
 
   return assertions;
+}
+
+async function sdkDebuggerAssertions(context, page, args) {
+  if (!sdkDebuggerEligible(page)) return [];
+
+  const debugPage = await context.newPage();
+  const consoleErrors = [];
+  const pageErrors = [];
+  debugPage.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(trim(message.text()));
+  });
+  debugPage.on("pageerror", (error) => pageErrors.push(trim(error.message)));
+
+  try {
+    const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
+    const url = withQueryParam(page.url, "debugger", "true");
+    const response = await debugPage.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await debugPage.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+    await debugPage.waitForTimeout(1000).catch(() => {});
+    const evidence = await debugPage.evaluate(() => ({
+      url: location.href,
+      displayReady: document.documentElement.classList.contains("next-display-ready"),
+      overlayHost: Boolean(document.querySelector("#next-debug-overlay-host")),
+      selectorContainer: Boolean(document.querySelector("#debug-selectors-container")),
+      currencySelector: Boolean(document.querySelector("#debug-currency-selector")),
+      countrySelector: Boolean(document.querySelector("#debug-country-selector")),
+      localeSelector: Boolean(document.querySelector("#debug-locale-selector")),
+      nextKeys: Object.keys(window.next || {}).slice(0, 20),
+    })).catch(() => ({
+      url,
+      displayReady: false,
+      overlayHost: false,
+      selectorContainer: false,
+      currencySelector: false,
+      countrySelector: false,
+      localeSelector: false,
+      nextKeys: [],
+    }));
+    const status = response?.status() ?? null;
+    const ok = (!status || status < 400)
+      && evidence.displayReady
+      && evidence.overlayHost
+      && evidence.selectorContainer
+      && evidence.currencySelector
+      && evidence.countrySelector
+      && evidence.localeSelector;
+
+    return [assertion({
+      id: `browser-sdk-debugger:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: ok ? STATUS.PASS : STATUS.WARN,
+      severity: ok ? undefined : SEVERITY.WARN,
+      expected: "Campaign Cart SDK debugger mode mounts on SDK-owned runtime pages",
+      actual: ok ? "debugger overlay and selector controls mounted" : "debugger overlay incomplete",
+      evidence: {
+        ...evidence,
+        http_status: status,
+        console_errors: consoleErrors.slice(0, 10),
+        page_errors: pageErrors.slice(0, 10),
+      },
+    })];
+  } catch (error) {
+    return [assertion({
+      id: `browser-sdk-debugger:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: "Campaign Cart SDK debugger mode mounts on SDK-owned runtime pages",
+      actual: "debugger navigation failed",
+      evidence: { transport_error: { code: "browser_error", message: error instanceof Error ? error.message : String(error) } },
+    })];
+  } finally {
+    await debugPage.close().catch(() => {});
+  }
+}
+
+function sdkDebuggerEligible(page) {
+  const pageType = String(page.page_type || "").toLowerCase();
+  const metaPageType = String(page.expected_meta_tags?.["next-page-type"] || "").toLowerCase();
+  return ["checkout", "upsell", "downsell", "thankyou", "receipt"].includes(pageType)
+    || ["checkout", "upsell", "downsell", "receipt"].includes(metaPageType);
 }
 
 async function renderedUpsellControlAssertions(browserPage, page) {
@@ -911,6 +995,17 @@ function refIdFromUrl(value) {
     return new URL(value).searchParams.get("ref_id");
   } catch {
     return null;
+  }
+}
+
+function withQueryParam(value, key, paramValue) {
+  try {
+    const url = new URL(value);
+    url.searchParams.set(key, paramValue);
+    return url.toString();
+  } catch {
+    const separator = String(value || "").includes("?") ? "&" : "?";
+    return `${value}${separator}${encodeURIComponent(key)}=${encodeURIComponent(paramValue)}`;
   }
 }
 
