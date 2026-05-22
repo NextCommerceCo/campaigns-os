@@ -57,6 +57,12 @@ inspects checkout payment field mounts. It is owned by this package through the
 `playwright` dependency; QA must not rely on external browser skills or local
 agent tooling.
 
+For SDK-owned runtime pages such as checkout, upsell, downsell, and receipt,
+the browser pass also opens a separate instrumented view with `?debugger=true`
+and verifies that the Campaign Cart debugger overlay and selector controls
+mount. This debugger check is separate from the normal user-flow page load and
+test-order path so shopper behavior is not altered by QA instrumentation.
+
 Routing meta tags are evaluated in runtime-resolved form. If the spec carries `next-success-url: upsell/`, the deployed page should emit a campaign-root path such as `/roadside-ready/upsell/` so the SDK does not resolve the redirect from the site root.
 
 Upsell accept/decline route checks accept rendered SDK controls as static evidence when there is no `<a href>`: `data-next-upsell-action="add"` for accept and `data-next-upsell-action="skip"` for decline. The browser walkthrough still needs to click the actual controls.
@@ -84,9 +90,9 @@ QA evidence redacts checkout request bodies and generated QA emails. Verdict art
 keep method, URL, response summaries, order refs, line-item summaries, and card last4,
 but they should not contain full customer address/payment payloads.
 
-Add `--post-verdict` when the operator intentionally wants to POST the verdict
-to the configured Campaign Map proxy. Runs without `--post-verdict` are
-local-only and will not appear in the QA dashboard run picker:
+Add `--post-verdict` when the operator expects the QA tab/dashboard to list the
+run. Runs without `--post-verdict` are local-only and will not appear in the QA
+dashboard run picker:
 
 ```bash
 npm run campaigns-os -- qa run \

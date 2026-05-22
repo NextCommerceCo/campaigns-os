@@ -10,7 +10,7 @@ The happy path is intentionally tight:
 6. Run page-kit build plus SDK/template lint and record results in the assembly report.
 7. Run polish against the built campaign, then deploy a preview.
 8. Install the package-owned Playwright browser with `npm run qa:install-browser`.
-9. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser` with the preview URL.
+9. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser --post-verdict` with the preview URL so the QA tab records the run.
 10. When the deployed domain and sandbox card routing are confirmed, run typed-card `--test-order` proof through the rendered checkout and upsell controls.
 11. Promote, block, or iterate from the recorded build, polish, deploy, QA, and test-order evidence.
 
@@ -83,6 +83,7 @@ the assembly report.
 - Checkout exit-intent pops and promo-code inputs are protected offer application surfaces. Preserve/apply the selected family's SDK coupon/voucher hooks; skin the shell and copy around them.
 - Any source element dropped because the spec does not support it, such as PayPal when `available_payment_methods` excludes PayPal, should be recorded in the assembly report for polish.
 - After page-kit build, doctor checks rendered local script references plus rendered package and shipping refs against the CampaignSpec. Missing built scripts, stale package IDs, stale shipping IDs, and unavailable package refs must be fixed or intentionally blocked before QA.
+- Browser QA opens SDK-owned runtime pages once as a shopper and once with `?debugger=true`. The debugger pass should prove the Campaign Cart debugger overlay and selector controls mount without changing the normal checkout/test-order flow.
 
 ## Synthetic Campaigns
 
