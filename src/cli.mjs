@@ -2089,12 +2089,23 @@ Run the browser install once after install/update before --browser or --test-ord
 
 function buildNextStep(errors, warnings, derived, report = null) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
+  const assemblyStatus = report?.stages?.assembly?.status || "";
+  const polishStatus = report?.stages?.polish?.status || "";
+  const deployStatus = report?.stages?.deploy?.status || "";
+  const qaStatus = report?.stages?.qa?.status || "";
+  const assemblyComplete = assemblyStatus.startsWith("completed");
+  const polishRecorded = ["completed", "completed_with_warnings", "skipped", "blocked"].some((prefix) => polishStatus.startsWith(prefix));
+  const polishBlocked = polishStatus.startsWith("blocked");
+  const polishSatisfied = ["completed", "completed_with_warnings", "skipped"].some((prefix) => polishStatus.startsWith(prefix));
+  const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
+    || (report?.stages?.deploy?.outputs || []).some((output) => /^https?:\/\//.test(String(output)));
+  const qaRecorded = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => qaStatus.startsWith(prefix));
   const blockedStages = [];
   const actions = [];
   if (errors.length) {
     actions.push("Resolve packet blockers before assembly.");
   }
-  if (codes.has("deploy.preview_url")) blockedStages.push("qa");
+  if (codes.has("deploy.preview_url") && !deploySatisfied) blockedStages.push("qa");
   if (codes.has("scope.runtime_qa_blocked")) {
     blockedStages.push("checkout-launch-ready");
     blockedStages.push("test-orders");
@@ -2118,12 +2129,6 @@ function buildNextStep(errors, warnings, derived, report = null) {
     actions.push("Keep checkout/order-proof QA blocked until the out-of-scope runtime pages are built or explicitly delegated to an existing downstream URL.");
   }
 
-  const assemblyStatus = report?.stages?.assembly?.status || "";
-  const polishStatus = report?.stages?.polish?.status || "";
-  const assemblyComplete = assemblyStatus.startsWith("completed");
-  const polishRecorded = ["completed", "completed_with_warnings", "skipped", "blocked"].some((prefix) => polishStatus.startsWith(prefix));
-  const polishBlocked = polishStatus.startsWith("blocked");
-  const polishSatisfied = ["completed", "completed_with_warnings", "skipped"].some((prefix) => polishStatus.startsWith(prefix));
   if (assemblyComplete && !polishRecorded) {
     blockedStages.push("deploy");
     blockedStages.push("qa");
@@ -2168,7 +2173,24 @@ function buildNextStep(errors, warnings, derived, report = null) {
     };
   }
   if (assemblyComplete && polishSatisfied) {
-    const needsDeploy = codes.has("deploy.preview_url");
+    const needsDeploy = codes.has("deploy.preview_url") && !deploySatisfied;
+    if (!needsDeploy && qaRecorded) {
+      return {
+        stage: blockedStages.includes("test-orders") ? "test-orders" : "complete",
+        status: blockedStages.includes("test-orders") ? "blocked" : (warnings.length ? "ready_with_warnings" : "ready"),
+        owner: blockedStages.includes("test-orders") ? "operator" : "qa",
+        default_skill: blockedStages.includes("test-orders") ? "next-campaigns-qa" : "next-campaigns-os",
+        command: blockedStages.includes("test-orders")
+          ? `campaigns-os next qa --packet ${derived.packet_path} --test-order checkout`
+          : undefined,
+        actions: actions.length
+          ? actions
+          : blockedStages.includes("test-orders")
+            ? ["Confirm test-order permission and sandbox card routing before firing checkout mutations."]
+            : ["Campaign assembly, polish, deploy, and QA checkpoints are recorded."],
+        blocked_stages: [...new Set(blockedStages)],
+      };
+    }
     return {
       stage: needsDeploy ? "deploy" : "qa",
       status: warnings.length ? "ready_with_warnings" : "ready",
