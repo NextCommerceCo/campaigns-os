@@ -1864,7 +1864,7 @@ function contractMentionsShipping(contract) {
 function validateUnsupportedShippingFrontmatter(packet, packetPath, family, warnings, ready, derived) {
   const hits = collectShippingFrontmatterHits(packet, packetPath, derived);
   if (hits.length === 0) {
-    ready.push(`${family} contract has no explicit shipping frontmatter residue in mapped source/target pages`);
+    ready.push(`${family} contract has no explicit shipping frontmatter residue in currently available mapped source/target pages`);
     return;
   }
   addIssue(
@@ -1917,8 +1917,9 @@ function shippingFrontmatterKeys(frontmatter) {
 }
 
 function summarizeShippingFrontmatterHits(hits) {
-  const summary = hits.slice(0, 4).map((hit) => `${hit.surface}:${hit.path}:${hit.line} (${hit.key})`);
-  const more = hits.length > summary.length ? ` and ${hits.length - summary.length} more` : "";
+  const limit = 4;
+  const summary = hits.slice(0, limit).map((hit) => `${hit.surface}:${hit.path}:${hit.line} (${hit.key})`);
+  const more = hits.length > limit ? ` and ${hits.length - limit} more` : "";
   return `${summary.join(", ")}${more}`;
 }
 
