@@ -459,6 +459,50 @@ try {
   rmSync(partialScopeTmp, { recursive: true, force: true });
 }
 
+const unusedShippingTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-unused-shipping-"));
+try {
+  const sourceRoot = resolve(unusedShippingTmp, "source-html");
+  mkdirSync(sourceRoot, { recursive: true });
+  writeFileSync(resolve(sourceRoot, "landing.html"), "---\npage_type: product\n---\n<section>Landing</section>\n");
+  writeFileSync(
+    resolve(sourceRoot, "checkout.html"),
+    [
+      "---",
+      "page_type: checkout",
+      "shipping_methods:",
+      "  standard: 2",
+      "  free: 1",
+      "---",
+      "<section>Checkout</section>",
+    ].join("\n")
+  );
+  writeFileSync(resolve(sourceRoot, "upsell.html"), "---\npage_type: upsell\n---\n<section>Upsell</section>\n");
+  writeFileSync(resolve(sourceRoot, "receipt.html"), "---\npage_type: receipt\n---\n<section>Receipt</section>\n");
+
+  const shopPacket = readJson(packet);
+  shopPacket.source_html.root = sourceRoot;
+  shopPacket.spec.local_path = resolve(root, "examples/campaignspec.v42.basic.json");
+  shopPacket.assembly.target_repo = resolve(root, "examples/target-page-kit");
+  shopPacket.assembly.template_family = "shop-single-step";
+  shopPacket.assembly.commerce_catalog.path = catalogPath;
+  shopPacket.assembly.template_lock = {
+    locked: true,
+    locked_by: "fixture",
+    confidence: "high",
+    evidence: ["contracts/fixtures/campaign-specs/shop-single-step-upsell-receipt.json"],
+  };
+  const shopPacketPath = resolve(unusedShippingTmp, "campaign-runtime.shop-single-step.json");
+  writeJson(shopPacketPath, shopPacket);
+
+  const shopDoctor = runCliJson(["doctor", "--packet", shopPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  const warning = shopDoctor.warnings?.find((issue) => issue.code === "template_contract.shipping_unused");
+  if (!warning?.message?.includes("shop-single-step") || !warning.message.includes("checkout.html")) {
+    throw new Error("Doctor should warn when a non-shipping template family carries copied shipping frontmatter.");
+  }
+} finally {
+  rmSync(unusedShippingTmp, { recursive: true, force: true });
+}
+
 const routingMetaTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-routing-meta-"));
 try {
   const rootedSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));

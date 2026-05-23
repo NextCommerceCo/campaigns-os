@@ -1790,9 +1790,13 @@ function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, rea
       addIssue(warnings, "frontmatter.removeWhenUnsupported", `Remove when unsupported by target campaign: ${value}`);
     }
   }
+  const consumesExplicitShipping = contractMentionsShipping(contract);
   if (family === "shop-three-step") {
     ready.push("shop-three-step uses dynamic shipping via window.next.getShippingMethods(); do not copy Olympus-style shipping_methods frontmatter into it.");
-  } else if (contractMentionsShipping(contract) && spec && !Array.isArray(spec.shipping_methods)) {
+  }
+  if (!consumesExplicitShipping) {
+    validateUnsupportedShippingFrontmatter(packet, packetPath, family, warnings, ready, derived);
+  } else if (spec && !Array.isArray(spec.shipping_methods)) {
     addIssue(errors, "template_contract.shipping_methods", `${family} contract references shipping_methods but CampaignSpec has no shipping_methods array.`);
   }
   if (spec) {
@@ -1855,6 +1859,68 @@ function contractMentionsShipping(contract) {
   return Object.values(contract.frontmatter || {})
     .flatMap((value) => Array.isArray(value) ? value : [])
     .some((value) => String(value).includes("shipping_methods") || String(value).includes("shipping_method"));
+}
+
+function validateUnsupportedShippingFrontmatter(packet, packetPath, family, warnings, ready, derived) {
+  const hits = collectShippingFrontmatterHits(packet, packetPath, derived);
+  if (hits.length === 0) {
+    ready.push(`${family} contract has no explicit shipping frontmatter residue in currently available mapped source/target pages`);
+    return;
+  }
+  addIssue(
+    warnings,
+    "template_contract.shipping_unused",
+    `${family} does not consume explicit shipping frontmatter, but mapped page frontmatter still declares ${summarizeShippingFrontmatterHits(hits)}. Remove copied shipping_methods/shipping_method values and let the family resolve shipping through its own SDK/runtime surface.`
+  );
+}
+
+function collectShippingFrontmatterHits(packet, packetPath, derived = {}) {
+  const hits = [];
+  const seen = new Set();
+  const addFile = (surface, root, relPath) => {
+    if (!root || !relPath) return;
+    const filePath = resolve(root, relPath);
+    const key = `${surface}:${filePath}`;
+    if (seen.has(key) || !existsSync(filePath) || !statSync(filePath).isFile()) return;
+    seen.add(key);
+    const frontmatter = extractYamlFrontmatter(readFileSync(filePath, "utf8"));
+    if (!frontmatter) return;
+    for (const hit of shippingFrontmatterKeys(frontmatter)) {
+      hits.push({ surface, path: relFromDir(root, filePath), key: hit.key, line: hit.line });
+    }
+  };
+
+  const sourceRoot = derived.source_root || resolveFromFile(packetPath, packet.source_html?.root);
+  for (const page of packet.source_html?.pages || []) addFile("source", sourceRoot, page.path);
+
+  const targetOutputDir = derived.target_output_dir;
+  if (targetOutputDir && existsSync(targetOutputDir) && statSync(targetOutputDir).isDirectory()) {
+    for (const file of collectHtmlFiles(targetOutputDir)) addFile("target", targetOutputDir, file.path);
+  }
+
+  return hits;
+}
+
+function extractYamlFrontmatter(content) {
+  const match = String(content || "").match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  return match ? match[1] : "";
+}
+
+function shippingFrontmatterKeys(frontmatter) {
+  const hits = [];
+  const lines = String(frontmatter || "").split(/\r?\n/);
+  lines.forEach((line, index) => {
+    const match = line.match(/^\s*(shipping_methods|shipping_method)\s*:/);
+    if (match) hits.push({ key: match[1], line: index + 2 });
+  });
+  return hits;
+}
+
+function summarizeShippingFrontmatterHits(hits) {
+  const limit = 4;
+  const summary = hits.slice(0, limit).map((hit) => `${hit.surface}:${hit.path}:${hit.line} (${hit.key})`);
+  const more = hits.length > limit ? ` and ${hits.length - limit} more` : "";
+  return `${summary.join(", ")}${more}`;
 }
 
 function collectDemoRefHits(spec, vocab) {
