@@ -33,7 +33,7 @@ Commit durable packet/context/report artifacts when they represent a real build 
 
 ## Source HTML Manifest Auto-Population
 
-When the source HTML root carries a [source-html manifest](https://github.com/Sellmore-Co/figma-sections-export/blob/main/docs/source-html-manifest.md) at `<source>/.campaigns-os/source-html-manifest.json`, `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching.
+When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`), `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching.
 
 Behavior:
 
@@ -46,7 +46,7 @@ When the manifest is absent, prepare-build's behavior is unchanged — pages are
 
 ## Design Source-Aware Coverage Error
 
-CampaignSpec pages may carry an optional `design_source` block (see `next-campaigns-ops` CampaignSpec `Page.design_source`). When doctor detects an active spec page with no source mapping, the `source_html.pages.coverage` error now carries a hint that points the operator at the design source:
+CampaignSpec pages may carry an optional `design_source` block on `Page` — a pointer to the design artifact (Figma file + per-breakpoint selection URLs) that supplies prepared HTML for that page. When doctor detects an active spec page with no source mapping, the `source_html.pages.coverage` error now carries a hint that points the operator at the design source:
 
 - `design_source.type === "figma"` with `file_url`: doctor calls out the Figma file and the figma-sections-export handoff command (`npm run handoff -- <slug>`).
 - `design_source` set without `file_url`: doctor flags the missing `file_url` so the spec can be corrected.
