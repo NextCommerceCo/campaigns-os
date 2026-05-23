@@ -853,7 +853,8 @@
           "contracts/fixtures/campaign-specs/shop-single-step-upsell-receipt.json"
         ],
         "agentNotes": [
-          "Shop-single-step is a real family, not a generic fallback. Preserve its summary/payment template roots."
+          "Shop-single-step is a real family, not a generic fallback. Preserve its summary/payment template roots.",
+          "Do not add Olympus-style shipping_methods frontmatter; this family does not consume explicit selector-card shipping refs."
         ]
       }
     },

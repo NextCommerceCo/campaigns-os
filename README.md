@@ -86,7 +86,11 @@ For each selected family, the agent must read:
 - `frontmatter.replaceFromSpecOrApi`
 - `frontmatter.removeWhenUnsupported`
 
-Special case: `shop-three-step` uses dynamic shipping through `window.next.getShippingMethods()`. Do not blindly copy Olympus-style `shipping_methods` frontmatter into that family.
+Shipping is family-specific. Families whose contracts include `shipping_methods`
+or `shipping_method` must source those refs from CampaignSpec/API. Families that
+do not own explicit shipping frontmatter, including `shop-single-step`, should
+not receive copied Olympus-style `shipping_methods` blocks. Special case:
+`shop-three-step` uses dynamic shipping through `window.next.getShippingMethods()`.
 
 When bootstrapping a family such as `demeter`, copy the family as an atomic
 page-kit slice. Checkout/receipt pages depend on matching `_includes/`,
