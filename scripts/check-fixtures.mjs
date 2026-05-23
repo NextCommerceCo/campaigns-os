@@ -706,6 +706,80 @@ try {
   rmSync(manifestTmp, { recursive: true, force: true });
 }
 
+// Source-html manifest with a duplicate page_id. The first entry wins (deterministic);
+// each subsequent occurrence must surface as a MANIFEST_DUPLICATE_PAGE prompt
+// rather than silently dropping. Also exercises the manifest-specific skip_reason
+// when a spec page has no manifest entry — its text must reference the manifest,
+// not the generic filesystem fallback message.
+const manifestDuplicateTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-manifest-duplicate-"));
+try {
+  const sourceRoot = resolve(manifestDuplicateTmp, "source-html");
+  const targetRepo = resolve(manifestDuplicateTmp, "target-page-kit");
+  mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const file of ["landing-real.html", "landing-shadow.html", "checkout.html", "upsell.html", "receipt.html"]) {
+    writeFileSync(resolve(sourceRoot, file), `<html><body>${file}</body></html>`);
+  }
+  // landing appears twice; the `upsell` spec page is intentionally absent from
+  // the manifest so MISSING_SOURCE_PAGE fires with the manifest-specific message.
+  writeJson(resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json"), {
+    schema_version: "source-html-manifest/v0",
+    generated_at: "2026-05-23T00:00:00.000Z",
+    generator: "figma-sections-export@1.0.0",
+    campaign_slug: "runtime-packet-demo",
+    root: ".",
+    pages: [
+      { page_id: "landing",  path: "landing-real.html",   page_type: "landing" },
+      { page_id: "landing",  path: "landing-shadow.html", page_type: "landing" },
+      { page_id: "checkout", path: "checkout.html",       page_type: "checkout" },
+      { page_id: "receipt",  path: "receipt.html",        page_type: "thankyou" },
+    ],
+  });
+
+  const specPath = resolve(manifestDuplicateTmp, "campaignspec.json");
+  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  const prepResult = runCliJsonAllowFailure([
+    "prepare-build",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  // Assert duplicate prompt fired. Prompts live on the build context as
+  // prompts_required (not at the prepare-build --json root).
+  const prompts = prepResult.context?.prompts_required || [];
+  const duplicatePrompt = prompts.find((p) => p.code === "MANIFEST_DUPLICATE_PAGE");
+  if (!duplicatePrompt) {
+    throw new Error(`manifest-duplicate fixture: expected MANIFEST_DUPLICATE_PAGE prompt, got: ${JSON.stringify(prompts.map((p) => p.code))}`);
+  }
+  if (!duplicatePrompt.message.includes("landing-real.html") || !duplicatePrompt.message.includes("landing-shadow.html")) {
+    throw new Error(`manifest-duplicate fixture: duplicate prompt should name both first and duplicate paths, got: ${duplicatePrompt.message}`);
+  }
+
+  // First entry wins — the packet should map landing to landing-real.html, not the shadow.
+  const generatedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  const landingMapping = generatedPacket.source_html.pages.find((p) => p.page_id === "landing");
+  if (!landingMapping || landingMapping.path !== "landing-real.html") {
+    throw new Error(`manifest-duplicate fixture: expected landing -> landing-real.html (first entry wins), got ${JSON.stringify(landingMapping)}`);
+  }
+
+  // The upsell spec page is absent from the manifest. Its skip_reason should
+  // reference the manifest by path so operators know we consulted it — not
+  // the legacy filesystem-fallback message.
+  const upsellMapping = generatedPacket.source_html.pages.find((p) => p.page_id === "upsell");
+  if (!upsellMapping || !upsellMapping.skip_reason) {
+    throw new Error(`manifest-duplicate fixture: expected upsell to carry skip_reason, got ${JSON.stringify(upsellMapping)}`);
+  }
+  if (!upsellMapping.skip_reason.includes("source-html manifest")) {
+    throw new Error(`manifest-duplicate fixture: upsell skip_reason should name the manifest (so operators know it was consulted), got: ${upsellMapping.skip_reason}`);
+  }
+} finally {
+  rmSync(manifestDuplicateTmp, { recursive: true, force: true });
+}
+
 const designSourceTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-design-source-"));
 try {
   // No manifest, no source file for `landing` — but spec carries design_source.

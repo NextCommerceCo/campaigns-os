@@ -459,10 +459,25 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
   const prompts = [];
   const decisions = [];
   const manifestPages = Array.isArray(manifest.pages) ? manifest.pages : [];
+  // Build a page_id → entry index. When the manifest contains duplicate page_id
+  // entries we keep the first occurrence (deterministic) AND surface each
+  // additional occurrence as a MANIFEST_DUPLICATE_PAGE prompt — silently
+  // dropping duplicates would mask manifest-emitter bugs and leave the operator
+  // wondering why their second entry never took effect.
   const byPageId = new Map();
   for (const entry of manifestPages) {
     if (!entry || !isNonEmptyString(entry.page_id)) continue;
-    if (!byPageId.has(entry.page_id)) byPageId.set(entry.page_id, entry);
+    if (byPageId.has(entry.page_id)) {
+      const firstEntry = byPageId.get(entry.page_id);
+      prompts.push({
+        code: "MANIFEST_DUPLICATE_PAGE",
+        stage: "prepare_build",
+        message: `Source-html manifest has more than one entry for page_id "${entry.page_id}" (first path "${firstEntry.path || ""}", duplicate path "${entry.path || ""}"). Only the first entry is used. Deduplicate the manifest before build.`,
+        page_id: entry.page_id,
+      });
+      continue;
+    }
+    byPageId.set(entry.page_id, entry);
   }
   const matchedIds = new Set();
 
@@ -482,9 +497,12 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
         evidence: [`source-html manifest entry page_id="${page.id}" path="${entry.path}" from ${manifestPath}`],
       });
     } else {
+      // Distinct from the filesystem-matching fallback skip_reason — operators
+      // debugging this need to know the manifest was consulted and simply
+      // didn't list the page, not that we never looked.
       mappings.push({
         page_id: page.id,
-        skip_reason: "No matching source HTML file found; provide a source file or an explicit skip reason before build.",
+        skip_reason: `No entry for "${page.id}" in source-html manifest at ${manifestPath}; add this page_id to the manifest, provide an explicit skip_reason in the packet, or remove the manifest to fall back to filesystem matching.`,
       });
       prompts.push({
         code: "MISSING_SOURCE_PAGE",
