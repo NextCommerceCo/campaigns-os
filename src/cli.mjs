@@ -395,6 +395,121 @@ function pageMatchKeys(page, ordinal) {
   return [...keys];
 }
 
+const SOURCE_HTML_MANIFEST_REL_PATH = ".campaigns-os/source-html-manifest.json";
+const SOURCE_HTML_MANIFEST_SCHEMA = "source-html-manifest/v0";
+
+/**
+ * Read the source-html manifest from `<sourceRoot>/.campaigns-os/source-html-manifest.json`.
+ * Returns `{ manifest, path, warning }`:
+ * - `manifest` is the parsed JSON when present AND schema_version matches the supported version.
+ * - `manifest` is `null` when the file is absent (caller falls back to filesystem matching).
+ * - `warning` is set when the manifest exists but should be ignored (unknown schema, parse error, etc.).
+ *
+ * @param {string} sourceRoot Absolute filesystem path to the source HTML root.
+ * @returns {{ manifest: object | null, path: string | null, warning: string | null }}
+ */
+function readSourceHtmlManifest(sourceRoot) {
+  const manifestPath = resolve(sourceRoot, SOURCE_HTML_MANIFEST_REL_PATH);
+  if (!existsSync(manifestPath) || !statSync(manifestPath).isFile()) {
+    return { manifest: null, path: null, warning: null };
+  }
+  let manifest;
+  try {
+    manifest = readJson(manifestPath);
+  } catch (error) {
+    return {
+      manifest: null,
+      path: manifestPath,
+      warning: `Could not parse source-html manifest at ${manifestPath}: ${error.message}. Falling back to filesystem matching.`,
+    };
+  }
+  if (!isObject(manifest)) {
+    return {
+      manifest: null,
+      path: manifestPath,
+      warning: `Source-html manifest at ${manifestPath} is not a JSON object. Falling back to filesystem matching.`,
+    };
+  }
+  if (manifest.schema_version !== SOURCE_HTML_MANIFEST_SCHEMA) {
+    return {
+      manifest: null,
+      path: manifestPath,
+      warning: `Source-html manifest at ${manifestPath} has unsupported schema_version "${manifest.schema_version}". Expected "${SOURCE_HTML_MANIFEST_SCHEMA}". Falling back to filesystem matching.`,
+    };
+  }
+  return { manifest, path: manifestPath, warning: null };
+}
+
+/**
+ * Map manifest entries to active CampaignSpec pages. Manifest `page_id` is the join key.
+ * Produces the same `{ mappings, prompts, decisions }` shape as `matchSourcePages`, so the
+ * downstream packet/context plumbing is unchanged.
+ *
+ * Manifest entries whose `page_id` does not appear in `specPages` surface as
+ * `MANIFEST_EXTRA_PAGE` prompts (analogous to the existing `MISSING_SOURCE_PAGE` pattern)
+ * so the operator can fix either the manifest or the spec.
+ *
+ * @param {Array<object>} specPages Active CampaignSpec pages.
+ * @param {object} manifest Parsed source-html manifest.
+ * @param {string} manifestPath Absolute manifest path (used in decision evidence).
+ * @returns {{ mappings: Array<object>, prompts: Array<object>, decisions: Array<object> }}
+ */
+function applyManifestToPages(specPages, manifest, manifestPath) {
+  const mappings = [];
+  const prompts = [];
+  const decisions = [];
+  const manifestPages = Array.isArray(manifest.pages) ? manifest.pages : [];
+  const byPageId = new Map();
+  for (const entry of manifestPages) {
+    if (!entry || !isNonEmptyString(entry.page_id)) continue;
+    if (!byPageId.has(entry.page_id)) byPageId.set(entry.page_id, entry);
+  }
+  const matchedIds = new Set();
+
+  for (const page of specPages) {
+    const entry = byPageId.get(page.id);
+    if (entry && isNonEmptyString(entry.path)) {
+      const mapping = { page_id: page.id, path: entry.path };
+      if (isNonEmptyString(entry.page_type)) mapping.page_type = entry.page_type;
+      mappings.push(mapping);
+      matchedIds.add(page.id);
+      decisions.push({
+        id: `dec_page_map_${page.id}`,
+        stage: "prepare_build",
+        decision_type: "deterministic_derivation",
+        decision: `mapped CampaignSpec page "${page.id}" to source file "${entry.path}" via source-html manifest`,
+        confidence: "high",
+        evidence: [`source-html manifest entry page_id="${page.id}" path="${entry.path}" from ${manifestPath}`],
+      });
+    } else {
+      mappings.push({
+        page_id: page.id,
+        skip_reason: "No matching source HTML file found; provide a source file or an explicit skip reason before build.",
+      });
+      prompts.push({
+        code: "MISSING_SOURCE_PAGE",
+        stage: "prepare_build",
+        message: `Active CampaignSpec page "${page.id}" has no matching HTML file (source-html manifest did not list it).`,
+        page_id: page.id,
+      });
+    }
+  }
+
+  for (const entry of manifestPages) {
+    if (!entry || !isNonEmptyString(entry.page_id)) continue;
+    if (matchedIds.has(entry.page_id)) continue;
+    if (specPages.some((page) => page.id === entry.page_id)) continue;
+    prompts.push({
+      code: "MANIFEST_EXTRA_PAGE",
+      stage: "prepare_build",
+      message: `Source-html manifest lists page_id "${entry.page_id}" (path "${entry.path || ""}") which is not an active CampaignSpec page. Reconcile the manifest or the spec before build.`,
+      page_id: entry.page_id,
+    });
+  }
+
+  return { mappings, prompts, decisions };
+}
+
 function matchSourcePages(specPages, htmlFiles) {
   const used = new Set();
   const mappings = [];
@@ -495,7 +610,14 @@ function prepareBuild(args, options = {}) {
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
-  const matched = matchSourcePages(activePages, htmlFiles);
+  const manifestResult = readSourceHtmlManifest(sourceRoot);
+  const manifestWarnings = manifestResult.warning ? [manifestResult.warning] : [];
+  const matched = manifestResult.manifest
+    ? applyManifestToPages(activePages, manifestResult.manifest, manifestResult.path)
+    : matchSourcePages(activePages, htmlFiles);
+  if (manifestResult.warning) {
+    console.warn(`[campaigns-os prepare-build] ${manifestResult.warning}`);
+  }
   const explicitTemplateFamily = optionalString(args["template-family"]);
   const hintedTemplateFamily = preferredTemplateFamily(spec);
   const templateFamily = explicitTemplateFamily || hintedTemplateFamily || "undecided";
@@ -586,6 +708,17 @@ function prepareBuild(args, options = {}) {
     source: {
       root: portable(sourceRoot),
       html_files: htmlFiles,
+      manifest: manifestResult.manifest
+        ? {
+            path: portable(manifestResult.path),
+            schema_version: manifestResult.manifest.schema_version,
+            generator: manifestResult.manifest.generator || null,
+            generated_at: manifestResult.manifest.generated_at || null,
+            campaign_slug: manifestResult.manifest.campaign_slug || null,
+            page_count: Array.isArray(manifestResult.manifest.pages) ? manifestResult.manifest.pages.length : 0,
+          }
+        : null,
+      manifest_warnings: manifestWarnings,
     },
     page_map: matched.mappings.map((mapping) => ({
       page_id: mapping.page_id,
@@ -1658,6 +1791,49 @@ function summarizeScopePages(pages) {
   return pages.map((page) => `${page.type || "page"}:${page.page_id}`).join(", ");
 }
 
+/**
+ * Build a context-aware error message for a CampaignSpec page that has no source mapping.
+ * When `design_source` is set, point the operator at the figma-sections-export handoff so
+ * the missing source HTML can be regenerated instead of leaving the operator guessing.
+ *
+ * @param {object} page Active spec page (may carry `design_source`).
+ * @returns {string}
+ */
+function coverageErrorMessage(page) {
+  const designSource = page && isObject(page.design_source) ? page.design_source : null;
+  if (designSource) {
+    const fileUrl = optionalString(designSource.file_url);
+    if (designSource.type === "figma" && fileUrl) {
+      return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}; run figma-sections-export (npm run handoff -- <slug>) to emit the source-html manifest, then rerun prepare-build.`;
+    }
+    if (!fileUrl) {
+      return `Active CampaignSpec page "${page.id}" has no source mapping. design_source is set but file_url is missing — add file_url to the spec before requesting a build.`;
+    }
+    return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="${designSource.type}" at ${fileUrl}; produce the source HTML for this page before rerunning prepare-build.`;
+  }
+  return `Active CampaignSpec page "${page.id}" has no source mapping.`;
+}
+
+/**
+ * Build the optional `detail` payload for a source-coverage error. Captures the design_source
+ * pointer when present so downstream agents/UIs can render a clickable link without re-parsing
+ * the message string.
+ *
+ * @param {object} page Active spec page.
+ * @returns {object | null}
+ */
+function coverageErrorDetail(page) {
+  const designSource = page && isObject(page.design_source) ? page.design_source : null;
+  if (!designSource) return null;
+  return {
+    page_id: page.id,
+    design_source: {
+      type: designSource.type || null,
+      file_url: optionalString(designSource.file_url) || null,
+    },
+  };
+}
+
 function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}) {
   const pages = packet.source_html?.pages || [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
@@ -1712,7 +1888,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
 
   for (const page of active) {
     if (!mappedIds.has(page.id)) {
-      addIssue(errors, "source_html.pages.coverage", `Active CampaignSpec page "${page.id}" has no source mapping.`);
+      addIssue(errors, "source_html.pages.coverage", coverageErrorMessage(page), coverageErrorDetail(page));
     }
   }
 

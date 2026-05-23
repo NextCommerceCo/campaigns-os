@@ -634,6 +634,150 @@ try {
   rmSync(marketCopyTmp, { recursive: true, force: true });
 }
 
+const manifestTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-source-html-manifest-"));
+try {
+  const sourceRoot = resolve(manifestTmp, "source-html");
+  const targetRepo = resolve(manifestTmp, "target-page-kit");
+  mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  // Source files use non-standard filenames so filesystem matching could NOT
+  // produce these mappings — the only way to map them is via the manifest.
+  for (const file of ["landing-section-a.html", "checkout-step.html", "upsell-step.html", "receipt-step.html"]) {
+    writeFileSync(resolve(sourceRoot, file), `<html><body>${file}</body></html>`);
+  }
+  writeJson(resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json"), {
+    schema_version: "source-html-manifest/v0",
+    generated_at: "2026-05-23T00:00:00.000Z",
+    generator: "figma-sections-export@1.0.0",
+    campaign_slug: "runtime-packet-demo",
+    root: ".",
+    pages: [
+      { page_id: "landing", path: "landing-section-a.html", page_type: "landing" },
+      { page_id: "checkout", path: "checkout-step.html", page_type: "checkout" },
+      { page_id: "upsell", path: "upsell-step.html", page_type: "upsell" },
+      { page_id: "receipt", path: "receipt-step.html", page_type: "thankyou" },
+    ],
+  });
+
+  const specPath = resolve(manifestTmp, "campaignspec.json");
+  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  runCliJson([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
+  const generatedPacket = readJson(packetPath);
+  const expectedPaths = {
+    landing: "landing-section-a.html",
+    checkout: "checkout-step.html",
+    upsell: "upsell-step.html",
+    receipt: "receipt-step.html",
+  };
+  for (const [pageId, expected] of Object.entries(expectedPaths)) {
+    const mapping = generatedPacket.source_html.pages.find((page) => page.page_id === pageId);
+    if (!mapping || mapping.path !== expected) {
+      throw new Error(`source-html manifest fixture: expected ${pageId} -> ${expected}, got ${JSON.stringify(mapping)}`);
+    }
+    if (mapping.page_type !== ({ landing: "landing", checkout: "checkout", upsell: "upsell", receipt: "thankyou" })[pageId]) {
+      throw new Error(`source-html manifest fixture: expected ${pageId} page_type carried through, got ${mapping.page_type}`);
+    }
+  }
+
+  const generatedContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
+  if (generatedContext.source?.manifest?.schema_version !== "source-html-manifest/v0") {
+    throw new Error("Build context should record the manifest schema_version when present.");
+  }
+  if (generatedContext.source.manifest.page_count !== 4) {
+    throw new Error(`Build context should record manifest page_count=4, got ${generatedContext.source.manifest.page_count}`);
+  }
+  const manifestDecisions = (generatedContext.decisions || []).filter((decision) =>
+    decision.decision_type === "deterministic_derivation" && decision.evidence?.some((line) => line.includes("source-html manifest entry"))
+  );
+  if (manifestDecisions.length !== 4) {
+    throw new Error(`Expected 4 manifest-sourced page-map decisions, got ${manifestDecisions.length}`);
+  }
+} finally {
+  rmSync(manifestTmp, { recursive: true, force: true });
+}
+
+const designSourceTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-design-source-"));
+try {
+  // No manifest, no source file for `landing` — but spec carries design_source.
+  // Doctor should emit the design_source-aware coverage error.
+  const sourceRoot = resolve(designSourceTmp, "source-html");
+  const targetRepo = resolve(designSourceTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(resolve(targetRepo, "src", "runtime-packet-demo"), { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  // Intentionally omit landing.html so the coverage check fires.
+  for (const page of ["checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+  }
+
+  const spec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const landing = spec.funnels[0].pages.find((page) => page.id === "landing");
+  landing.design_source = {
+    type: "figma",
+    file_url: "https://www.figma.com/design/abc123/Test?node-id=143-10518",
+    breakpoints: {
+      desktop: "https://www.figma.com/design/abc123/Test?node-id=143-10518",
+    },
+  };
+  const specPath = resolve(designSourceTmp, "campaignspec.json");
+  writeJson(specPath, spec);
+
+  const designSourcePacket = readJson(packet);
+  designSourcePacket.spec.local_path = specPath;
+  designSourcePacket.source_html.root = sourceRoot;
+  designSourcePacket.assembly.target_repo = targetRepo;
+  designSourcePacket.assembly.commerce_catalog.path = catalogPath;
+  // Drop landing from packet pages to force the coverage error.
+  designSourcePacket.source_html.pages = designSourcePacket.source_html.pages.filter((page) => page.page_id !== "landing");
+  const designSourcePacketPath = resolve(designSourceTmp, "campaign-runtime.build.json");
+  writeJson(designSourcePacketPath, designSourcePacket);
+
+  const designSourceDoctor = runCliJsonAllowFailure(["doctor", "--packet", designSourcePacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  const coverageError = designSourceDoctor.errors?.find((issue) => issue.code === "source_html.pages.coverage");
+  if (!coverageError) {
+    throw new Error("Doctor should emit source_html.pages.coverage when an active page is unmapped.");
+  }
+  if (!coverageError.message.includes("Design is in Figma")) {
+    throw new Error(`Doctor coverage error should reference design_source when present, got: ${coverageError.message}`);
+  }
+  if (!coverageError.message.includes("https://www.figma.com/design/abc123/Test")) {
+    throw new Error(`Doctor coverage error should include the Figma file_url, got: ${coverageError.message}`);
+  }
+  if (!coverageError.detail || coverageError.detail.design_source?.type !== "figma") {
+    throw new Error("Doctor coverage error should carry a detail payload describing design_source.");
+  }
+
+  // Second variant: design_source set but no file_url -> different message.
+  landing.design_source = { type: "figma", file_url: "" };
+  writeJson(specPath, spec);
+  const noFileUrlDoctor = runCliJsonAllowFailure(["doctor", "--packet", designSourcePacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  const noFileUrlError = noFileUrlDoctor.errors?.find((issue) => issue.code === "source_html.pages.coverage");
+  if (!noFileUrlError?.message.includes("file_url is missing")) {
+    throw new Error(`Doctor should call out missing design_source.file_url, got: ${noFileUrlError?.message}`);
+  }
+
+  // Third variant: no design_source -> generic message preserved.
+  delete landing.design_source;
+  writeJson(specPath, spec);
+  const genericDoctor = runCliJsonAllowFailure(["doctor", "--packet", designSourcePacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  const genericError = genericDoctor.errors?.find((issue) => issue.code === "source_html.pages.coverage");
+  if (!genericError || genericError.message.includes("Figma") || genericError.message.includes("design_source")) {
+    throw new Error(`Doctor should keep the generic coverage error when design_source is absent, got: ${genericError?.message}`);
+  }
+} finally {
+  rmSync(designSourceTmp, { recursive: true, force: true });
+}
+
 execFileSync(process.execPath, [cli, "next", "build", "--packet", packet, "--json"], {
   cwd: root,
   stdio: "pipe",
