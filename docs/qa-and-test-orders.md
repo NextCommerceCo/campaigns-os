@@ -119,10 +119,21 @@ npm run campaigns-os -- qa run \
   --sandbox-test-card-confirmed
 ```
 
-Supported modes are `checkout`, `decline`, `accept`, and `both`. `checkout`
-stops after the base order redirect. `decline` and `accept` click the rendered
-upsell controls after checkout, and `both` creates two fresh checkout orders so
-each upsell path starts from a clean order.
+Supported modes are `checkout`, `decline`, `accept`, `both`, `full`, and explicit
+accept/decline paths such as `accept-decline`, `accept-accept-decline`, or
+`decline-decline-accept`. `checkout` stops after the base order redirect.
+`decline` and `accept` click the rendered controls on the first upsell page.
+`both` creates two fresh checkout orders for those first-page paths. `full`
+derives the number of sequential upsell/downsell pages from the resolved funnel
+topology and creates fresh checkout orders for every accept/decline combination.
+For example, a two-offer funnel creates four paths, while a five-offer funnel
+creates 32 paths plus the checkout baseline.
+
+To prevent accidental order floods, browser test orders default to
+`--max-test-orders 6`. If `full` expands beyond that cap, the command stops and
+prints the generated order count. Choose explicit accept/decline paths for a
+smaller sample matrix, or rerun with a larger `--max-test-orders` only after the
+operator approves that order count.
 
 The default card is the Discover sandbox card `6011 1111 1111 1117`, CVV `123`,
 expiration `12/2030`. Override with `--test-card`, `--test-cvv`,
@@ -173,8 +184,27 @@ npm run campaigns-os -- qa policy set \
 ```
 
 The accepted-upsell path passes only after the browser clicks the rendered SDK
-accept/add control and the final order evidence contains an upsell line, either
-via an explicit `is_upsell` line or an increased final line count.
+accept/add control, observes the order upsell API mutation, and the final order
+evidence contains the selected upsell package. A pre-purchase bump line marked
+`is_upsell` is not enough to satisfy accepted-upsell proof.
+
+For launch-grade proof on funnels with a checkout bump and sequential upsells,
+use a topology-depth matrix instead of a single happy path:
+
+1. Checkout-only with the base cart.
+2. Checkout-only with the base cart plus bump when the bump is in scope.
+3. Base cart through an operator-approved sample matrix, for example all-decline,
+   all-accept, and one or two mixed accept/decline paths.
+4. Base plus bump cart through the same sample matrix when bump behavior is
+   launch-relevant.
+5. Use `full` only when the operator explicitly wants exhaustive proof for the
+   generated order count.
+
+Record order numbers, `ref_id` values, and expected line-item shapes in the
+handoff. If the browser console shows an SDK module-load error but the SDK
+fallback loads and checkout/order proof passes, keep it as platform warning
+evidence for the Campaign Cart owner instead of patching campaign source around
+it.
 
 The older direct backend mode is available only as
 `--legacy-api-test-order <accept|decline|both>`. It is diagnostic behavior, not
