@@ -30,9 +30,10 @@ Options:
   --browser-width <px>            Browser viewport width. Default: 1440.
   --browser-height <px>           Browser viewport height. Default: 1200.
   --browser-timeout <ms>          Browser navigation timeout. Default: 30000.
-  --test-order <off|checkout|accept|decline|both>
+  --test-order <off|checkout|accept|decline|both|full|accept-decline[-accept...]>
                                   Create canonical Playwright typed-card test orders through the deployed checkout page.
                                   Requires one-time setup: npm run qa:install-browser.
+  --max-test-orders <n>           Safety cap for browser typed-card order count. Default: 6.
   --allow-test-orders             Required with --test-order other than off.
   --sandbox-test-card-confirmed   Required with --test-order other than off.
   --test-orders-allowed <bool>    qa policy set: persist test-order permission in the Build Packet.
