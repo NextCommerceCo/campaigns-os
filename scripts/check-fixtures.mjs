@@ -558,10 +558,16 @@ try {
   }
 
   writeFileSync(resolve(skillsTmp, "next-campaigns-build", "SKILL.md"), "stale skill\n");
+  mkdirSync(resolve(skillsTmp, "next-campaigns-build", "references"), { recursive: true });
+  writeFileSync(resolve(skillsTmp, "next-campaigns-build", "references", "stale.md"), "stale bundled reference\n");
   const stale = runCliJson(["install-skills", "--target", skillsTmp, "--dry-run", "--json"]);
   const buildSkill = stale.skills?.find((skill) => skill.name === "next-campaigns-build");
   if (buildSkill?.action !== "updated") {
     throw new Error("install-skills should report stale target skills as updated.");
+  }
+  runCliJson(["install-skills", "--target", skillsTmp, "--json"]);
+  if (existsSync(resolve(skillsTmp, "next-campaigns-build", "references", "stale.md"))) {
+    throw new Error("install-skills should remove stale bundled reference files when updating a skill.");
   }
 
   const codexDryRun = runCliJson(["install-skills", "--platform", "codex", "--dry-run", "--json"]);

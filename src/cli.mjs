@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -2416,10 +2417,9 @@ function installSkillsToTarget({ sourceDir, target, dryRun }) {
 
     const destinationDir = join(targetDir, name);
     const destination = join(destinationDir, "SKILL.md");
-    const sourceFiles = listFilesRecursive(sourceSkillDir);
-    const sourceDescriptor = describeSkillDirectory(sourceSkillDir, sourceFiles);
+    const sourceDescriptor = describeSkillDirectory(sourceSkillDir);
     const hasDestination = existsSync(destination);
-    const destinationDescriptor = hasDestination ? describeSkillDirectory(destinationDir, sourceFiles) : null;
+    const destinationDescriptor = hasDestination ? describeSkillDirectory(destinationDir) : null;
     const action = !hasDestination
       ? "created"
       : destinationDescriptor?.hash === sourceDescriptor.hash
@@ -2427,7 +2427,7 @@ function installSkillsToTarget({ sourceDir, target, dryRun }) {
         : "updated";
 
     if (!dryRun && action !== "unchanged") {
-      mkdirSync(destinationDir, { recursive: true });
+      rmSync(destinationDir, { recursive: true, force: true });
       cpSync(sourceSkillDir, destinationDir, { recursive: true, force: true });
     }
 
@@ -2477,11 +2477,12 @@ function listFilesRecursive(dir) {
   return files;
 }
 
-function describeSkillDirectory(dir, relativeFiles) {
+function describeSkillDirectory(dir) {
   const skillPath = join(dir, "SKILL.md");
   const skillContent = existsSync(skillPath) ? readFileSync(skillPath, "utf8") : "";
   const version = extractFrontmatterValue(skillContent, "version");
   const hash = createHash("sha256");
+  const relativeFiles = listFilesRecursive(dir);
   for (const file of relativeFiles) {
     const fullPath = join(dir, file);
     hash.update(file);
