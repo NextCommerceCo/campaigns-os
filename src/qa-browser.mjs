@@ -8,6 +8,7 @@ const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
 const DEFAULT_MAX_TEST_ORDERS = 6;
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
+const ORDER_UPSELLS_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/upsells\/?(?:[?#].*)?$/i;
 
 export async function runBrowserChecks(topologies, args = {}) {
   const browser = await launchChromium(args);
@@ -759,7 +760,7 @@ async function waitForCheckoutResult(page) {
 async function buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody = null }) {
   const orderCreate = lastJsonResponse(events, /\/api\/v1\/orders\/?$/i);
   const orderRead = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i);
-  const upsellOrderResponse = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/upsells\/?$/i);
+  const upsellOrderResponse = lastJsonResponse(events, ORDER_UPSELLS_RESPONSE_PATTERN);
   const orderBody = preferredOrderBody || upsellOrderResponse?.body || orderRead?.body || orderCreate?.body || null;
   const refId = stringArg(orderBody?.ref_id) || refIdFromUrl(page.url());
   const number = stringArg(orderBody?.number) || stringArg(orderBody?.id) || null;
@@ -805,7 +806,7 @@ async function clickUpsellPath(page, path, _options = {}) {
   const mutationPromise = path === "accept"
     ? page.waitForResponse((response) => (
         response.request().method() === "POST"
-        && /\/api\/v1\/orders\/[^/]+\/upsells\/?$/i.test(response.url())
+        && isOrderUpsellsUrl(response.url())
       ), { timeout: 20000 }).catch(() => null)
     : Promise.resolve(null);
   await control.scrollIntoViewIfNeeded().catch(() => {});
@@ -1188,7 +1189,7 @@ function acceptedUpsellProof(lines, initialLines, expectedItems, events) {
     for (const item of expected) {
       const match = lines.find((line) => (
         line.is_upsell
-        && line.quantity >= Number(item.quantity || 1)
+        && Number(line.quantity || 0) === Number(item.quantity || 1)
         && lineMatchesExpectedUpsell(line, item, events)
       ));
       if (match) matchedLines.push(match);
@@ -1261,7 +1262,11 @@ function campaignPackageMeta(events, packageId) {
 }
 
 function upsellMutationCount(events) {
-  return (events.responses || []).filter((response) => /\/api\/v1\/orders\/[^/]+\/upsells\/?$/i.test(response.url)).length;
+  return (events.responses || []).filter((response) => isOrderUpsellsUrl(response.url)).length;
+}
+
+function isOrderUpsellsUrl(url) {
+  return ORDER_UPSELLS_RESPONSE_PATTERN.test(String(url || ""));
 }
 
 function summarizeUpsellStep(step) {
@@ -1409,3 +1414,8 @@ function isMissingPlaywrightBrowser(error) {
   const message = error instanceof Error ? error.message : String(error);
   return /executable doesn't exist|browser.*not found|playwright install|install.*chromium/i.test(message);
 }
+
+export const __qaBrowserTestHooks = Object.freeze({
+  acceptedUpsellProof,
+  isOrderUpsellsUrl,
+});
