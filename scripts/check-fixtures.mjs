@@ -548,6 +548,9 @@ try {
   if (!existsSync(resolve(skillsTmp, "next-campaigns-os", "SKILL.md"))) {
     throw new Error("install-skills should write SKILL.md files under the target skills directory.");
   }
+  if (!existsSync(resolve(skillsTmp, "next-campaigns-os", "references", "session-intake.md"))) {
+    throw new Error("install-skills should write bundled skill reference files.");
+  }
 
   const unchanged = runCliJson(["install-skills", "--target", skillsTmp, "--dry-run", "--json"]);
   if (!unchanged.skills?.every((skill) => skill.action === "unchanged")) {
@@ -559,6 +562,22 @@ try {
   const buildSkill = stale.skills?.find((skill) => skill.name === "next-campaigns-build");
   if (buildSkill?.action !== "updated") {
     throw new Error("install-skills should report stale target skills as updated.");
+  }
+
+  const codexDryRun = runCliJson(["install-skills", "--platform", "codex", "--dry-run", "--json"]);
+  if (codexDryRun.platform !== "codex" || !String(codexDryRun.target_directory || "").endsWith(".codex/skills")) {
+    throw new Error("install-skills --platform codex should target ~/.codex/skills.");
+  }
+
+  const allDryRun = runCliJson(["install-skills", "--platform", "all", "--dry-run", "--json"]);
+  const platforms = new Set((allDryRun.targets || []).map((target) => target.platform));
+  for (const platform of ["claude", "codex", "agents"]) {
+    if (!platforms.has(platform)) {
+      throw new Error(`install-skills --platform all should include ${platform}.`);
+    }
+  }
+  if (!allDryRun.skills?.every((skill) => skill.platform)) {
+    throw new Error("install-skills --platform all should annotate each skill with its target platform.");
   }
 } finally {
   rmSync(skillsTmp, { recursive: true, force: true });

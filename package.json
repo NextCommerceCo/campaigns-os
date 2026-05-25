@@ -9,6 +9,7 @@
   },
   "scripts": {
     "campaigns-os": "node ./bin/campaigns-os.mjs",
+    "skills": "bash ./skills.sh",
     "qa": "node ./bin/campaigns-os.mjs qa",
     "qa:install-browser": "npx playwright install chromium",
     "refresh:starter-catalog": "node ./scripts/refresh-starter-template-catalog.mjs",
@@ -32,6 +33,7 @@
     "prompts",
     "schemas",
     "scripts",
+    "skills.sh",
     "skills",
     "src",
     "README.md",

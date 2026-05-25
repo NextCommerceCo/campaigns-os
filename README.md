@@ -58,6 +58,8 @@ design markup separate from SDK-owned commerce controls.
 
 ```bash
 npm run campaigns-os -- install-skills --dry-run
+npm run campaigns-os -- install-skills --platform codex --dry-run
+npm run skills -- status
 npm run campaigns-os -- prepare-build --spec <spec.json> --source <html-dir> --target <page-kit-repo> --template-family <family>
 npm run campaigns-os -- doctor --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- next setup --packet <page-kit-repo>/campaign-runtime.build.json

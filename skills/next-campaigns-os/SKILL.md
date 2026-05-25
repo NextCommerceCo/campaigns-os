@@ -28,6 +28,36 @@ Workflow:
 8. When the deployed domain and sandbox card routing are confirmed, run typed-card `--test-order` proof through the rendered checkout/upsell flow.
 9. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
 
+## Session Intake
+
+When a Campaigns OS session starts, classify the starting path before handing
+off to setup, build, polish, QA, or promotion. The operator should separate:
+
+- Intent: build, partial page update, existing campaign update, QA only, repair from verdict, design/source assembly, or promotion.
+- Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign repo, deployed URL, or target deployment system.
+- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, deployed preview/production URL, API key source, domain allowlist, and sandbox card confirmation.
+- Change policy: what may change and what must be preserved, especially checkout, offer logic, routes, legal copy, and live campaign behavior.
+- Proof policy: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
+
+Return a compact brief before acting:
+
+```text
+Mode:
+Intent:
+Source truth:
+Runtime truth:
+Change policy:
+Proof policy:
+Next skill/command:
+Missing inputs:
+```
+
+Use `references/session-intake.md` when the mode, allowed changes, or proof
+depth is unclear. Ask only for fields needed by the selected starting path; a
+QA-only session should not require design files, and a partial landing update
+should not force checkout/test-order policy unless commerce or routing can be
+affected.
+
 Rules:
 
 - This is contract-backed guidance and preflight, not full automated readiness.
