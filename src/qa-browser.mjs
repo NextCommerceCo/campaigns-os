@@ -6,6 +6,7 @@ const DEFAULT_TEST_CARD = "6011111111111117";
 const DEFAULT_TEST_CVV = "123";
 const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
+const DEFAULT_MAX_TEST_ORDERS = 6;
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 
 export async function runBrowserChecks(topologies, args = {}) {
@@ -54,8 +55,10 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
 
   const assertions = [];
   const orders = [];
+  const paths = testOrderPaths(args["test-order"], topologies);
+  enforceTestOrderLimit(paths, args);
   try {
-    for (const path of testOrderPaths(args["test-order"])) {
+    for (const path of paths) {
       const result = await runSingleBrowserTestOrder(context, checkoutPage, path, args, runId);
       orders.push(result.order);
       assertions.push(testOrderAssertion(checkoutPage, path, result));
@@ -547,12 +550,25 @@ async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runI
     await waitForCheckoutResult(page);
 
     const order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
-    const initialLineCount = order.receipt_line_items.length;
-    if (order.ok && path !== "checkout") {
-      const upsell = await clickUpsellPath(page, path);
+    const stepFailures = [];
+    const upsellSteps = testOrderSteps(path);
+
+    if (order.ok && upsellSteps.length) {
+      order.upsell_steps = [];
+    }
+
+    for (let stepIndex = 0; order.ok && stepIndex < upsellSteps.length; stepIndex += 1) {
+      const step = upsellSteps[stepIndex];
+      const initialLineItems = order.receipt_line_items.slice();
+      const initialUpsellMutationCount = upsellMutationCount(events);
+      await waitForUpsellPageReady(page, args);
+      const upsell = await clickUpsellPath(page, step, { events, stepIndex });
+      const preferredOrderBody = upsell.api_response_order_body || null;
+      delete upsell.api_response_order_body;
       order.upsell = upsell;
+      order.upsell_steps.push(upsell);
       order.final_url = page.url();
-      const refreshed = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
+      const refreshed = await buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody });
       order.final_receipt_line_items = refreshed.receipt_line_items;
       if (refreshed.receipt_line_items.length) {
         order.cart_state = refreshed.cart_state;
@@ -561,14 +577,35 @@ async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runI
         order.verification.total_incl_tax = refreshed.verification.total_incl_tax;
         order.verification.currency = refreshed.verification.currency;
       }
-      if (path === "accept") {
-        order.verification.accepted_upsell_line_present = hasAcceptedUpsellLine(order.receipt_line_items, initialLineCount);
+      if (step === "accept") {
+        const proof = acceptedUpsellProof(order.receipt_line_items, initialLineItems, upsell.expected_items, events);
+        upsell.verification = {
+          accepted_upsell_line_present: proof.ok,
+          accepted_upsell_match: proof,
+          upsell_api_response_seen: upsell.api_response_seen,
+          upsell_api_response_status: upsell.api_response_status,
+        };
+        if (!upsell.api_response_seen) stepFailures.push(`step ${stepIndex + 1}: upsell accept did not call order upsell API`);
+        if (!proof.ok) stepFailures.push(`step ${stepIndex + 1}: ${proof.reason}`);
+      } else {
+        const proof = declinedUpsellProof(order.receipt_line_items, initialLineItems, events, initialUpsellMutationCount);
+        upsell.verification = proof;
+        if (!proof.ok) stepFailures.push(`step ${stepIndex + 1}: ${proof.reason}`);
       }
     }
-    const ok = order.ok && (path !== "accept" || order.verification.accepted_upsell_line_present === true);
+
+    const acceptedSteps = (order.upsell_steps || []).filter((step) => step.path === "accept");
+    if (acceptedSteps.length) {
+      order.verification.accepted_upsell_line_present = acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
+      order.verification.upsell_api_response_seen = acceptedSteps.every((step) => step.verification?.upsell_api_response_seen === true);
+      order.verification.accepted_upsell_matches = acceptedSteps.map((step) => step.verification?.accepted_upsell_match).filter(Boolean);
+    }
+    if (stepFailures.length) order.verification.upsell_step_failures = stepFailures;
+
+    const ok = order.ok && stepFailures.length === 0;
     return {
       ok,
-      error: ok ? null : order.error || order.upsell?.error || "accepted upsell did not appear in final order lines",
+      error: ok ? null : order.error || order.upsell?.error || stepFailures.join("; ") || "accepted upsell did not appear in final order lines",
       order,
       events: sanitizedEvents(events),
     };
@@ -714,14 +751,16 @@ async function submitCheckout(page) {
 
 async function waitForCheckoutResult(page) {
   await page.waitForURL((url) => /ref_id=|receipt|upsell|thank|order|payment_failed/i.test(String(url)), { timeout: 60000 }).catch(() => {});
-  await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
-  await page.waitForTimeout(3000);
+  await page.waitForLoadState("domcontentloaded", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await page.waitForTimeout(1500);
 }
 
-async function buildOrderEvidence({ page, events, path, email, checkoutPage, args }) {
+async function buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody = null }) {
   const orderCreate = lastJsonResponse(events, /\/api\/v1\/orders\/?$/i);
   const orderRead = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i);
-  const orderBody = orderRead?.body || orderCreate?.body || null;
+  const upsellOrderResponse = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/upsells\/?$/i);
+  const orderBody = preferredOrderBody || upsellOrderResponse?.body || orderRead?.body || orderCreate?.body || null;
   const refId = stringArg(orderBody?.ref_id) || refIdFromUrl(page.url());
   const number = stringArg(orderBody?.number) || stringArg(orderBody?.id) || null;
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
@@ -755,19 +794,37 @@ async function buildOrderEvidence({ page, events, path, email, checkoutPage, arg
   };
 }
 
-async function clickUpsellPath(page, path) {
+async function clickUpsellPath(page, path, _options = {}) {
   const action = path === "accept" ? "add" : "skip";
   const selector = `[data-next-upsell-action="${action}"]`;
   const control = page.locator(selector).first();
   if (!await control.count().catch(() => 0)) {
     return { path, clicked: false, error: `Missing upsell control ${selector}` };
   }
+  const expectedItems = path === "accept" ? await selectedUpsellItems(page) : [];
+  const mutationPromise = path === "accept"
+    ? page.waitForResponse((response) => (
+        response.request().method() === "POST"
+        && /\/api\/v1\/orders\/[^/]+\/upsells\/?$/i.test(response.url())
+      ), { timeout: 20000 }).catch(() => null)
+    : Promise.resolve(null);
   await control.scrollIntoViewIfNeeded().catch(() => {});
   await control.click({ timeout: 10000 }).catch(async () => {
     await control.click({ force: true });
   });
+  const mutationResponse = await mutationPromise;
+  const mutationBody = mutationResponse ? await readJsonResponseBody(mutationResponse) : null;
   await waitForCheckoutResult(page);
-  return { path, clicked: true, final_url: page.url() };
+  return {
+    path,
+    clicked: true,
+    final_url: page.url(),
+    expected_items: expectedItems,
+    api_response_seen: Boolean(mutationResponse),
+    api_response_status: mutationResponse?.status() || null,
+    api_response_url: mutationResponse?.url() || null,
+    api_response_order_body: mutationBody,
+  };
 }
 
 function testOrderAssertion(page, path, result) {
@@ -788,6 +845,8 @@ function testOrderAssertion(page, path, result) {
           line_count: result.order.receipt_line_items.length,
           ...(path === "accept" ? { accepted_upsell_line_present: result.order.verification?.accepted_upsell_line_present } : {}),
           ...(result.order.upsell ? { upsell_clicked: result.order.upsell.clicked, upsell_final_url: result.order.upsell.final_url } : {}),
+          ...(result.order.upsell_steps ? { upsell_steps: result.order.upsell_steps.map(summarizeUpsellStep) } : {}),
+          ...(result.order.verification?.accepted_upsell_matches ? { accepted_upsell_matches: result.order.verification.accepted_upsell_matches } : {}),
           card_last4: result.order.card.last4,
         }
       : {
@@ -810,11 +869,10 @@ function captureCheckoutEvents(page) {
   });
   page.on("response", async (response) => {
     if (!interesting.test(response.url())) return;
-    const text = await response.text().catch(() => null);
     events.responses.push({
       status: response.status(),
       url: response.url(),
-      body: parseMaybeJson(redactSensitive(text)),
+      body: await readJsonResponseBody(response),
     });
   });
   page.on("requestfailed", (request) => {
@@ -826,6 +884,11 @@ function captureCheckoutEvents(page) {
   });
   page.on("pageerror", (error) => events.pageErrors.push(trim(error.message)));
   return events;
+}
+
+async function readJsonResponseBody(response) {
+  const text = await response.text().catch(() => null);
+  return parseMaybeJson(redactSensitive(text));
 }
 
 function lastJsonResponse(events, pattern) {
@@ -975,11 +1038,56 @@ async function closeAddressAutocomplete(page) {
   }
 }
 
-function testOrderPaths(mode) {
+function testOrderPaths(mode, topologies = []) {
   const normalized = String(mode || "off").toLowerCase();
+  if (normalized === "full") return ["checkout", ...testOrderPathMatrix(testOrderDepth(topologies))];
   if (normalized === "both") return ["accept", "decline"];
   if (["checkout", "accept", "decline"].includes(normalized)) return [normalized];
+  if (/^(accept|decline)(-(accept|decline))+$/.test(normalized)) return [normalized];
   throw new Error(`Unknown --test-order mode: ${mode}`);
+}
+
+function enforceTestOrderLimit(paths, args) {
+  const maxOrders = numberArg(args["max-test-orders"], DEFAULT_MAX_TEST_ORDERS);
+  if (paths.length <= maxOrders) return;
+  const preview = paths.slice(0, 8).join(", ");
+  const suffix = paths.length > 8 ? ", ..." : "";
+  throw new Error([
+    `--test-order ${args["test-order"]} expands to ${paths.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
+    `Planned paths: ${preview}${suffix}.`,
+    "Choose explicit accept/decline paths for a smaller sample matrix, or rerun with a higher --max-test-orders after operator approval.",
+  ].join(" "));
+}
+
+function testOrderDepth(topologies = []) {
+  const pages = topologies.flatMap((topology) => Array.isArray(topology?.pages) ? topology.pages : []);
+  return pages.filter((page) => ["upsell", "downsell"].includes(String(page?.page_type || "").toLowerCase())).length;
+}
+
+function testOrderPathMatrix(depth) {
+  const count = Math.max(0, Number(depth || 0));
+  if (count === 0) return [];
+  const paths = [];
+  const walk = (prefix, remaining) => {
+    if (remaining === 0) {
+      paths.push(prefix.join("-"));
+      return;
+    }
+    walk([...prefix, "decline"], remaining - 1);
+    walk([...prefix, "accept"], remaining - 1);
+  };
+  walk([], count);
+  return paths;
+}
+
+function testOrderSteps(path) {
+  const normalized = String(path || "").toLowerCase();
+  if (!normalized || normalized === "checkout") return [];
+  const steps = normalized.split("-").filter(Boolean);
+  if (!steps.every((step) => ["accept", "decline"].includes(step))) {
+    throw new Error(`Unknown test-order path: ${path}`);
+  }
+  return steps;
 }
 
 function testEmail(args, runId) {
@@ -1012,12 +1120,174 @@ function extractReceiptLines(order) {
     quantity: Number(line.quantity || 0),
     is_upsell: Boolean(line.is_upsell),
     price: line.price_incl_tax || line.price_excl_tax || line.price || null,
+    sku: line.product_sku || line.sku || null,
+    product_id: line.product_id ?? null,
+    variant_id: line.variant_id ?? line.product_variant_id ?? null,
   }));
 }
 
-function hasAcceptedUpsellLine(lines, initialLineCount) {
-  if (!Array.isArray(lines) || lines.length === 0) return false;
-  return lines.some((line) => line.is_upsell) || (initialLineCount > 0 && lines.length > initialLineCount);
+async function waitForUpsellPageReady(page, args) {
+  const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
+  await page.locator('[data-next-upsell], [data-next-upsell-action="add"], [data-next-upsell-action="skip"]').first()
+    .waitFor({ state: "visible", timeout: timeoutMs })
+    .catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await page.waitForFunction(() => document.documentElement.classList.contains("next-display-ready"), null, { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+}
+
+async function selectedUpsellItems(page) {
+  return page.evaluate(() => {
+    const offer = document.querySelector("[data-next-upsell]") || document;
+    const selector = offer.querySelector("[data-next-bundle-selector][data-next-upsell-context]")
+      || offer.querySelector("[data-next-bundle-selector]");
+    const selectedCard = selector?.querySelector('[data-next-bundle-card][data-next-selected="true"], [data-next-bundle-card].next-selected')
+      || selector?.querySelector("[data-next-bundle-card]");
+    const parseJson = (value) => {
+      if (!value) return null;
+      try { return JSON.parse(value); } catch { return null; }
+    };
+    const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    if (selectedCard) {
+      const items = parseJson(selectedCard.getAttribute("data-next-bundle-items"));
+      if (Array.isArray(items) && items.length) {
+        return items.map((item) => {
+          const packageId = String(item.packageId ?? item.package_id ?? "");
+          const displayName = clean(document.querySelector(`[data-next-display="package.${packageId}.name"]`)?.textContent);
+          return {
+            package_id: packageId,
+            quantity: Number(item.quantity || 1),
+            display_name: displayName || null,
+            selector_id: selector?.getAttribute("data-next-selector-id") || null,
+            bundle_id: selectedCard.getAttribute("data-next-bundle-id") || null,
+            vouchers: parseJson(selectedCard.getAttribute("data-next-bundle-vouchers")) || [],
+          };
+        }).filter((item) => item.package_id);
+      }
+    }
+
+    const directPackageId = offer.getAttribute?.("data-next-package-id")
+      || offer.querySelector?.("[data-next-package-id]")?.getAttribute("data-next-package-id");
+    if (directPackageId) {
+      const displayName = clean(document.querySelector(`[data-next-display="package.${directPackageId}.name"]`)?.textContent);
+      return [{ package_id: String(directPackageId), quantity: 1, display_name: displayName || null, selector_id: null, bundle_id: null, vouchers: [] }];
+    }
+    return [];
+  }).catch(() => []);
+}
+
+function acceptedUpsellProof(lines, initialLines, expectedItems, events) {
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return { ok: false, reason: "final order lines were empty", expected_items: expectedItems || [], matched_lines: [] };
+  }
+
+  const expected = Array.isArray(expectedItems) ? expectedItems.filter((item) => item?.package_id) : [];
+  if (expected.length) {
+    const matchedLines = [];
+    const missing = [];
+    for (const item of expected) {
+      const match = lines.find((line) => (
+        line.is_upsell
+        && line.quantity >= Number(item.quantity || 1)
+        && lineMatchesExpectedUpsell(line, item, events)
+      ));
+      if (match) matchedLines.push(match);
+      else missing.push(item);
+    }
+    return {
+      ok: missing.length === 0,
+      reason: missing.length ? `expected upsell package(s) not found in final order lines: ${missing.map((item) => item.package_id).join(", ")}` : null,
+      expected_items: expected,
+      matched_lines: matchedLines,
+    };
+  }
+
+  const newLines = addedLines(lines, initialLines);
+  const matchedLines = newLines.filter((line) => line.is_upsell);
+  return {
+    ok: matchedLines.length > 0,
+    reason: matchedLines.length ? null : "no new upsell line appeared after accept",
+    expected_items: [],
+    matched_lines: matchedLines,
+  };
+}
+
+function declinedUpsellProof(lines, initialLines, events, initialUpsellMutationCount = 0) {
+  const mutationSeen = upsellMutationCount(events) > initialUpsellMutationCount;
+  if (mutationSeen) return { ok: false, reason: "decline path called order upsell API" };
+  const newLines = addedLines(lines, initialLines);
+  if (newLines.some((line) => line.is_upsell)) return { ok: false, reason: "decline path added an upsell line", added_lines: newLines };
+  return { ok: true, reason: null };
+}
+
+function addedLines(lines, initialLines) {
+  const remaining = (initialLines || []).map(lineSignature);
+  return (lines || []).filter((line) => {
+    const signature = lineSignature(line);
+    const index = remaining.indexOf(signature);
+    if (index >= 0) {
+      remaining.splice(index, 1);
+      return false;
+    }
+    return true;
+  });
+}
+
+function lineMatchesExpectedUpsell(line, expected, events) {
+  const meta = campaignPackageMeta(events, expected.package_id);
+  if (meta?.product_sku && line.sku && normalizeLabel(meta.product_sku) === normalizeLabel(line.sku)) return true;
+  if (meta?.product_variant_id && Number(line.variant_id) === Number(meta.product_variant_id)) return true;
+  if (meta?.product_id && Number(line.product_id) === Number(meta.product_id)) return true;
+
+  const lineTitle = normalizeLabel(line.title);
+  const names = [
+    expected.display_name,
+    meta?.name,
+    meta?.product_name,
+    meta?.product_variant_name,
+  ].map(normalizeLabel).filter(Boolean);
+  return names.some((name) => lineTitle.includes(name) || name.includes(lineTitle));
+}
+
+function campaignPackageMeta(events, packageId) {
+  const target = String(packageId);
+  for (let index = events.responses.length - 1; index >= 0; index -= 1) {
+    const body = events.responses[index]?.body;
+    if (!Array.isArray(body?.packages)) continue;
+    const match = body.packages.find((pkg) => String(pkg.ref_id) === target);
+    if (match) return match;
+  }
+  return null;
+}
+
+function upsellMutationCount(events) {
+  return (events.responses || []).filter((response) => /\/api\/v1\/orders\/[^/]+\/upsells\/?$/i.test(response.url)).length;
+}
+
+function summarizeUpsellStep(step) {
+  return {
+    path: step.path,
+    clicked: step.clicked,
+    final_url: step.final_url,
+    expected_items: step.expected_items,
+    api_response_seen: step.api_response_seen,
+    api_response_status: step.api_response_status,
+    accepted_upsell_line_present: step.verification?.accepted_upsell_line_present,
+  };
+}
+
+function lineSignature(line) {
+  return [
+    normalizeLabel(line?.title),
+    Number(line?.quantity || 0),
+    normalizeLabel(line?.sku),
+    normalizeLabel(line?.price),
+    line?.is_upsell === true ? "upsell" : "base",
+  ].join("|");
+}
+
+function normalizeLabel(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function refIdFromUrl(value) {

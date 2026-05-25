@@ -160,7 +160,8 @@ validateCatalogFixtures();
 const qaRunHelp = runCliText(["qa", "run", "--help"]);
 for (const expected of [
   "campaigns-os qa — Node/npm spec-aware QA",
-  "--test-order <off|checkout|accept|decline|both>",
+  "--test-order <off|checkout|accept|decline|both|full|accept-decline[-accept...]>",
+  "--max-test-orders <n>",
   "--allow-test-orders",
   "--sandbox-test-card-confirmed",
 ]) {
