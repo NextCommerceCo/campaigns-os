@@ -89,6 +89,7 @@
               "page_id": { "type": "string", "minLength": 1 },
               "path": { "type": "string", "minLength": 1 },
               "page_type": { "type": "string", "minLength": 1 },
+              "upsell_template_pattern": { "type": "string", "minLength": 1 },
               "skip_reason": { "type": "string", "minLength": 1 },
               "notes": { "type": ["string", "null"] }
             },

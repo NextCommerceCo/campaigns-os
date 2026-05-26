@@ -66,6 +66,41 @@ Behavior:
 
 When the manifest is absent, prepare-build's behavior is unchanged — pages are matched by filesystem name slug as before.
 
+## Authoring-Time Hints (Template Family + Upsell Pattern)
+
+The CampaignSpec carries two optional **hints** the build agent uses
+as defaults. Both are hints, not contracts: CLI / operator overrides
+always win.
+
+**Campaign-level:** `campaign.preferred_template_family` declares
+which starter family the campaign was authored against (one of
+`olympus`, `limos`, `demeter`, `olympus-mv-single-step`,
+`olympus-mv-two-step`, `shop-single-step`, `shop-three-step`). The
+consumer (`preferredTemplateFamily()` in `src/cli.mjs`) reads this
+at three spec locations and uses it as the default template family
+when no `--template-family` CLI flag is given.
+
+Resolution order:
+
+1. `--template-family <family>` CLI flag (sets `template_lock.locked: true`).
+2. `spec.spec_identity.preferred_template_family`.
+3. `spec.campaign.preferred_template_family` (the canonical authoring location).
+4. `spec.preferred_template_family` (legacy fallback).
+5. `"undecided"`.
+
+When the hint wins, `template_lock.locked` stays `false` — the family is set as the default but not locked, so a downstream stage (or a follow-up operator pass) can override without contradiction. `template_decision_notes` records the hint source. `template.candidates` in the build context lists the hint with `source: "CampaignSpec preferred_template_family"` for provenance.
+
+**Per-page:** `Page.upsell_template_pattern` declares the UI variant
+for an upsell page (one of `mv`, `bundle_tier_pills`,
+`bundle_tier_cards`, `single`). Flows from the spec page onto
+`packet.source_html.pages[].upsell_template_pattern` so the build
+stage can pick the right partial without re-parsing the spec.
+
+The field is per-page; only upsell pages should carry it. Upstream
+spec validation warns when it's set on non-upsell pages, but the
+consumer surfaces it verbatim and lets the build stage decide what
+to do with it.
+
 ## Orchestration Loop (`campaigns-os next`)
 
 `campaigns-os next` (no stage argument) is the agentic orchestration primitive. It reads the current packet, doctor, and assembly report state from disk and tells you which stage should run next. Each call re-reads state, so the loop is idempotent and recoverable across sessions / machines.
