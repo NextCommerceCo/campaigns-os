@@ -66,6 +66,54 @@ Behavior:
 
 When the manifest is absent, prepare-build's behavior is unchanged — pages are matched by filesystem name slug as before.
 
+## Orchestration Loop (`campaigns-os next`)
+
+`campaigns-os next` (no stage argument) is the agentic orchestration primitive. It reads the current packet, doctor, and assembly report state from disk and tells you which stage should run next. Each call re-reads state, so the loop is idempotent and recoverable across sessions / machines.
+
+The motion:
+
+```text
+agent calls `next` → gets { stage, prompt, picked_reason } → does the work →
+updates assembly report's stages.<name>.status → calls `next` again →
+repeat until stage="done"
+```
+
+Stage order: `setup → build → polish → deploy → qa`. The picker walks this list and returns the first stage whose recorded status isn't terminal (`completed`, `completed_with_warnings`, `skipped`).
+
+| Stage | Report key | Owner |
+|---|---|---|
+| setup | `stages.setup` | scaffold the page-kit campaign repo |
+| build | `stages.assembly` | assemble the campaign (next-campaigns-build) |
+| polish | `stages.polish` | source-design fidelity pass (next-campaigns-polish) |
+| deploy | `stages.deploy` | ship `_site/` to Netlify / CF Pages / Vercel / etc. (out-of-band) |
+| qa | `stages.qa` | spec-aware QA (next-campaigns-qa) |
+
+The CLI stage name is `build` but the report keys the same stage as `assembly` — the picker handles the translation. Both names refer to the same lifecycle step.
+
+Result shape (with `--json`):
+
+```jsonc
+{
+  "ok": true,
+  "status": "ready",
+  "stage": "build",
+  "picked_reason": "Stage \"assembly\" has status \"pending\"; run \"build\" next.",
+  "prompt": "Use next-campaigns-build for this Campaigns OS handoff. ...",
+  "errors": [],
+  "warnings": [],
+  "ready": [],
+  "stage_blocked": false  // present only when the recorded status is "blocked"
+}
+```
+
+Terminal states:
+
+- **`stage: "doctor-blocked"`** — doctor returned errors. Resolve the blockers and re-run `campaigns-os doctor` to confirm before calling `next` again.
+- **`stage: "done"`** — every stage is in a terminal status. Pipeline is complete. To re-run a specific stage, set its status back to `"pending"` in the assembly report and call `next` again.
+- **`stage_blocked: true`** — the picker returned a stage whose recorded status is `blocked`. Don't run the prompt as-is; clear the blocker first.
+
+The legacy form `campaigns-os next <stage>` (e.g. `next build`) still works and is the way to force a specific stage when you want to override the picker.
+
 ## Design Source-Aware Coverage Error
 
 CampaignSpec pages may carry an optional `design_source` block on `Page` — a pointer to the design artifact (Figma file + per-breakpoint selection URLs) that supplies prepared HTML for that page. When doctor detects an active spec page with no source mapping, the `source_html.pages.coverage` error now carries a hint that points the operator at the design source:

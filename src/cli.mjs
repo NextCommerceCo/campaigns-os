@@ -83,9 +83,11 @@ Usage:
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
+  campaigns-os next --packet <json> [--json]                       # self-decide next stage from report state
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next polish --packet <json> --report <json> [--json]
+  campaigns-os next deploy --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--output-dir qa-output] [--json]
@@ -164,8 +166,10 @@ export async function main(argv) {
   }
 
   if (command === "next") {
-    const stage = args._[1];
-    if (!stage) throw new Error("Missing next stage: build, polish, or qa.");
+    // Slice 3 Phase 2: `campaigns-os next` (no stage) self-decides the next
+    // stage from the current report + doctor state. Existing form with an
+    // explicit stage (`next build`, `next polish`, etc.) is unchanged.
+    const stage = args._[1] || null;
     const result = nextStage(stage, args);
     writeResult(result, args, result.ok ? 0 : 2);
     return;
@@ -2353,6 +2357,91 @@ function validateAssemblyReport(report) {
   return { ok: errors.length === 0, status, errors, warnings, ready };
 }
 
+/**
+ * Stage order for the orchestration loop. Pre-Slice-3-Phase-2 the agent had
+ * to know this sequence; now `campaigns-os next` (no stage arg) self-decides
+ * by walking this list and finding the first stage whose recorded status
+ * isn't a terminal one (completed / completed_with_warnings / skipped).
+ *
+ * These are CLI stage names (what the user types as `next <stage>`). The
+ * assembly report keys them slightly differently — the "build" CLI stage
+ * maps to the "assembly" report key. reportKeyForCliStage() handles that.
+ */
+const STAGE_ORDER = ["setup", "build", "polish", "deploy", "qa"];
+const STAGE_TERMINAL_STATUSES = ["completed", "skipped"];
+const STAGE_BLOCKED_STATUSES = new Set(["blocked"]);
+
+function reportKeyForCliStage(cliStage) {
+  return cliStage === "build" ? "assembly" : cliStage;
+}
+
+/**
+ * Self-decide which stage should run next given the current report + doctor
+ * state. Pure function — reads no filesystem, no network.
+ *
+ * Returns one of:
+ *   { stage: "doctor-blocked", reason }                        — doctor said no
+ *   { stage: "<setup|build|polish|deploy|qa>", reason, blocked? }
+ *   { stage: "done", reason }                                  — every stage terminal
+ *
+ * "blocked: true" means the stage's recorded status is "blocked" and the
+ * caller needs to unblock it before continuing. We still return the stage
+ * (rather than treating it as done) so the orchestrator surfaces the
+ * blocker rather than skipping past it.
+ *
+ * `report` may be null (e.g. doctor failed before report was written); in
+ * that case we return the earliest non-skipped stage so the agent has
+ * something concrete to work on once doctor clears.
+ */
+function pickNextStage(report, doctor) {
+  if (doctor && !doctor.ok) {
+    return {
+      stage: "doctor-blocked",
+      reason: `Doctor reported ${doctor.errors?.length || 0} blocker(s); resolve them before any stage runs.`,
+    };
+  }
+
+  if (!report || !report.stages) {
+    return {
+      stage: "setup",
+      reason: "No assembly report on disk yet. Start with setup (assembly report should appear after prepare-build).",
+    };
+  }
+
+  for (const cliStage of STAGE_ORDER) {
+    const reportKey = reportKeyForCliStage(cliStage);
+    const stage = report.stages[reportKey];
+    if (!stage) {
+      return {
+        stage: cliStage,
+        reason: `Stage "${reportKey}" is not recorded in the assembly report; run "${cliStage}" next.`,
+      };
+    }
+    const status = String(stage.status || "");
+    if (STAGE_BLOCKED_STATUSES.has(status)) {
+      return {
+        stage: cliStage,
+        reason: `Stage "${reportKey}" is blocked (status="${status}"); unblock before continuing.`,
+        blocked: true,
+      };
+    }
+    // Match by prefix so "completed_with_warnings" and future suffixes
+    // (e.g. "completed_partial") count as terminal.
+    const isTerminal = STAGE_TERMINAL_STATUSES.some((t) => status.startsWith(t));
+    if (!isTerminal) {
+      return {
+        stage: cliStage,
+        reason: `Stage "${reportKey}" has status "${status || "(unset)"}"; run "${cliStage}" next.`,
+      };
+    }
+  }
+
+  return {
+    stage: "done",
+    reason: "All stages are in a terminal status (completed / completed_with_warnings / skipped). Pipeline is complete.",
+  };
+}
+
 function nextStage(stage, args) {
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
@@ -2369,6 +2458,41 @@ function nextStage(stage, args) {
   const ready = [...doctor.ready];
   if (!doctor.ok) errors.push(...doctor.errors);
 
+  // Slice 3 Phase 2: when no stage was passed, self-decide. The orchestration
+  // loop is: agent calls `next`, gets a stage + prompt, does the work,
+  // updates the assembly report's stages.<name>.status, then calls `next`
+  // again. Each call re-reads state from disk so the loop is idempotent
+  // and recoverable across sessions / machines.
+  let picked = null;
+  if (!stage) {
+    picked = pickNextStage(report, doctor);
+    if (picked.stage === "doctor-blocked") {
+      return {
+        ok: false,
+        status: "blocked",
+        stage: "doctor-blocked",
+        reason: picked.reason,
+        errors,
+        warnings,
+        ready,
+        prompt: "Resolve the doctor errors above before continuing. Re-run `campaigns-os doctor --packet <path>` to confirm, then `campaigns-os next --packet <path>` to advance.",
+      };
+    }
+    if (picked.stage === "done") {
+      return {
+        ok: true,
+        status: "ready",
+        stage: "done",
+        reason: picked.reason,
+        errors,
+        warnings,
+        ready,
+        prompt: "Pipeline complete. All stages in the assembly report are in a terminal status. If you need to re-run a stage, set its status back to \"pending\" in the report and call `next` again.",
+      };
+    }
+    stage = picked.stage;
+  }
+
   let prompt = "";
   if (stage === "setup") {
     if (!doctor.ok) addIssue(errors, "next.setup.doctor", "Doctor is blocked; resolve packet errors before setup.");
@@ -2382,6 +2506,16 @@ function nextStage(stage, args) {
     const assemblyStatus = report?.stages?.assembly?.status || "";
     if (!assemblyStatus.startsWith("completed")) addIssue(errors, "next.polish.assembly", `Assembly status is "${assemblyStatus || "missing"}"; polish expects completed assembly or an explicit blocked/skipped handoff.`);
     prompt = polishPrompt(packetPath, reportPath, packet);
+  } else if (stage === "deploy") {
+    // Slice 3 Phase 2: deploy is an out-of-band step (Netlify / CF Pages /
+    // etc.) but it's still a stage in the orchestration loop because the
+    // agent needs to know when to fire it and what to record afterwards.
+    if (!report) addIssue(errors, "next.deploy.report", "Assembly report is required before deploy.");
+    const polishStatus = report?.stages?.polish?.status || "";
+    if (!["completed", "skipped", "blocked"].some((prefix) => polishStatus.startsWith(prefix))) {
+      addIssue(errors, "next.deploy.polish", `Polish status is "${polishStatus || "missing"}"; record completed/skipped/blocked before deploy.`);
+    }
+    prompt = deployPrompt(packetPath, reportPath, packet);
   } else if (stage === "qa") {
     if (!report) addIssue(errors, "next.qa.report", "Assembly report is required before QA.");
     const deployUrl = packet.deploy?.preview_url || packet.deploy?.production_url;
@@ -2395,7 +2529,7 @@ function nextStage(stage, args) {
     throw new Error(`Unknown next stage: ${stage}`);
   }
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
-  return {
+  const result = {
     ok: errors.length === 0,
     status,
     stage,
@@ -2404,6 +2538,14 @@ function nextStage(stage, args) {
     ready,
     prompt,
   };
+  // When the caller invoked `next` with no stage, surface the picker's
+  // reasoning so the agent / operator can see WHY this stage was chosen
+  // (vs them having to re-derive it from report state themselves).
+  if (picked) {
+    result.picked_reason = picked.reason;
+    if (picked.blocked) result.stage_blocked = true;
+  }
+  return result;
 }
 
 function buildPrompt(packetPath, contextPath, reportPath, packet) {
@@ -2459,6 +2601,28 @@ Read first:
 - Template family: ${packet.assembly.template_family}
 
 Compare source against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, capture desktop/mobile evidence, and record polish as completed, skipped, or blocked before QA.`;
+}
+
+function deployPrompt(packetPath, reportPath, packet) {
+  const target = packet.deploy?.target || "unknown";
+  const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || `/${packet.campaign?.public_route_slug || "<slug>"}/`;
+  return `Deploy the built campaign to ${target}.
+
+Read first:
+- Build Packet: ${packetPath}
+- Assembly Report: ${reportPath}
+- Expected live URL path: ${liveUrlPath}
+- Deploy target: ${target}
+
+Deploy is currently an out-of-band step: the page-kit build produces _site/ output; you (or your CI) ship it to ${target}. Use the deploy target's normal tooling (netlify deploy, wrangler pages deploy, vercel deploy, etc.).
+
+After deploy succeeds:
+1. Record the resulting URL on the packet at deploy.preview_url (preview deploys) or deploy.production_url (production).
+2. Update the assembly report's stages.deploy.status to "completed" with the URL and any relevant notes in outputs.
+3. Verify the SDK initialises on the deployed origin — this requires the deploy URL host to be in the Campaigns App allowed-domains list. Confirm before calling QA.
+4. Run \`campaigns-os next --packet ${packetPath}\` to advance to QA.
+
+If the deploy is blocked (allowed-domain not yet added, CI permission missing, host-side outage), set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
 }
 
 function qaPrompt(packetPath, reportPath, packet) {
