@@ -105,6 +105,7 @@ is not a valid minimum file set.
 - [Access Model](docs/access-model.md)
 - [Build Packet](docs/build-packet.md)
 - [Campaigns OS Build Flow](docs/campaigns-os-build-flow.md)
+- [Entry Points](docs/entry-points.md) — five intake shapes (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and which producer / manifest each one ships with
 - [Source Adapters](docs/source-adapters.md)
 - [Developer Evaluation](docs/developer-evaluation.md)
 - [QA And Test Orders](docs/qa-and-test-orders.md)
