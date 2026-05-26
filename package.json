@@ -9,10 +9,11 @@
   },
   "scripts": {
     "campaigns-os": "node ./bin/campaigns-os.mjs",
+    "skills": "bash ./skills.sh",
     "qa": "node ./bin/campaigns-os.mjs qa",
     "qa:install-browser": "npx playwright install chromium",
     "refresh:starter-catalog": "node ./scripts/refresh-starter-template-catalog.mjs",
-    "check": "node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs",
+    "check": "node --test ./src/qa-browser.test.mjs && node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
     "check:private-strings": "node ./scripts/check-private-strings.mjs",
     "check:template-doctrine": "node ./scripts/check-template-doctrine.mjs"
@@ -32,6 +33,7 @@
     "prompts",
     "schemas",
     "scripts",
+    "skills.sh",
     "skills",
     "src",
     "README.md",

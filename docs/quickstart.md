@@ -25,13 +25,23 @@ After installing or updating the CLI, refresh the Campaigns OS skills in Claude 
 campaigns-os install-skills
 ```
 
-By default, this syncs `skills/*/SKILL.md` from the installed package into `~/.claude/skills/<skill-name>/SKILL.md` and reports which skills were created, updated, or unchanged. Preview changes without writing files:
+By default, this syncs bundled `skills/*` directories from the installed package into `~/.claude/skills/<skill-name>/` and reports which skills were created, updated, or unchanged. Preview changes without writing files:
 
 ```bash
 campaigns-os install-skills --dry-run
 ```
 
-Use `--target <dir>` to sync into another skills directory for testing or a managed profile.
+Use `--platform` for other local agent profiles:
+
+```bash
+campaigns-os install-skills --platform codex
+campaigns-os install-skills --platform agents
+campaigns-os install-skills --platform all --dry-run
+```
+
+From a local checkout, `./skills.sh status` previews every known local target
+and `./skills.sh install codex` refreshes Codex skills. Use `--target <dir>` to
+sync into another skills directory for testing or a managed profile.
 
 ## Inputs
 

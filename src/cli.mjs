@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -70,7 +72,7 @@ Usage:
   campaigns-os prepare-build --spec <json> --source <html-dir> --target <page-kit-dir> --template-family <family>
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
-  campaigns-os install-skills [--target <skills-dir>] [--dry-run] [--json]
+  campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
@@ -133,7 +135,8 @@ export async function main(argv) {
 
   if (command === "install-skills") {
     if (args.target === true) throw new Error("Missing value for --target");
-    const result = installSkills(args.target, Boolean(args["dry-run"]));
+    if (args.platform === true) throw new Error("Missing value for --platform");
+    const result = installSkills(args.target, Boolean(args["dry-run"]), args.platform);
     writeResult(result, args, 0);
     return;
   }
@@ -2507,9 +2510,92 @@ function installAgentContext(targetRepo, dryRun = false) {
   };
 }
 
-function installSkills(targetArg = null, dryRun = false) {
+const SKILL_PLATFORMS = [
+  {
+    id: "claude",
+    label: "Claude Code",
+    target: () => join(homedir(), ".claude", "skills"),
+  },
+  {
+    id: "codex",
+    label: "Codex",
+    target: () => join(homedir(), ".codex", "skills"),
+  },
+  {
+    id: "agents",
+    label: "Shared agent skills",
+    target: () => join(homedir(), ".agents", "skills"),
+  },
+];
+
+function skillPlatformHelp() {
+  return SKILL_PLATFORMS.map((platform) => platform.id).concat("all").join(", ");
+}
+
+function resolveSkillInstallTargets(targetArg = null, platformArg = null) {
+  if (isNonEmptyString(targetArg)) {
+    return [{
+      platform: "custom",
+      platform_label: "Custom target",
+      target_directory: resolve(targetArg),
+    }];
+  }
+
+  const requested = String(platformArg || "claude").trim().toLowerCase();
+  const selected = requested === "all"
+    ? SKILL_PLATFORMS
+    : SKILL_PLATFORMS.filter((platform) => platform.id === requested);
+
+  if (!selected.length) {
+    throw new Error(`Unknown --platform ${requested}. Use one of: ${skillPlatformHelp()}.`);
+  }
+
+  return selected.map((platform) => ({
+    platform: platform.id,
+    platform_label: platform.label,
+    target_directory: platform.target(),
+  }));
+}
+
+function installSkills(targetArg = null, dryRun = false, platformArg = null) {
   const sourceDir = join(ROOT, "skills");
-  const targetDir = resolve(targetArg || join(homedir(), ".claude", "skills"));
+  const targets = resolveSkillInstallTargets(targetArg, platformArg);
+  const targetResults = targets.map((target) => installSkillsToTarget({
+    sourceDir,
+    target,
+    dryRun,
+  }));
+
+  if (targetResults.length === 1) {
+    return {
+      ...targetResults[0],
+      available_platforms: SKILL_PLATFORMS.map((platform) => ({
+        platform: platform.id,
+        label: platform.label,
+        target_directory: platform.target(),
+      })),
+    };
+  }
+
+  return {
+    ok: true,
+    status: dryRun ? "dry_run" : "installed",
+    source_directory: sourceDir,
+    targets: targetResults,
+    skills: targetResults.flatMap((target) => target.skills),
+    available_platforms: SKILL_PLATFORMS.map((platform) => ({
+      platform: platform.id,
+      label: platform.label,
+      target_directory: platform.target(),
+    })),
+    note: dryRun
+      ? "Dry run only; no skill files were written."
+      : "Restart local agent sessions to pick up new or updated skills.",
+  };
+}
+
+function installSkillsToTarget({ sourceDir, target, dryRun }) {
+  const targetDir = target.target_directory;
   const entries = readdirSync(sourceDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -2519,30 +2605,31 @@ function installSkills(targetArg = null, dryRun = false) {
 
   for (const entry of entries) {
     const name = entry.name;
-    const source = join(sourceDir, name, "SKILL.md");
+    const sourceSkillDir = join(sourceDir, name);
+    const source = join(sourceSkillDir, "SKILL.md");
     if (!existsSync(source)) continue;
 
     const destinationDir = join(targetDir, name);
     const destination = join(destinationDir, "SKILL.md");
-    const sourceContent = readFileSync(source, "utf8");
-    const sourceDescriptor = describeSkillContent(sourceContent);
+    const sourceDescriptor = describeSkillDirectory(sourceSkillDir);
     const hasDestination = existsSync(destination);
-    const destinationContent = hasDestination ? readFileSync(destination, "utf8") : null;
-    const destinationDescriptor = destinationContent == null ? null : describeSkillContent(destinationContent);
+    const destinationDescriptor = hasDestination ? describeSkillDirectory(destinationDir) : null;
     const action = !hasDestination
       ? "created"
-      : destinationContent === sourceContent
+      : destinationDescriptor?.hash === sourceDescriptor.hash
         ? "unchanged"
         : "updated";
 
     if (!dryRun && action !== "unchanged") {
-      mkdirSync(destinationDir, { recursive: true });
-      writeFileSync(destination, sourceContent);
+      rmSync(destinationDir, { recursive: true, force: true });
+      cpSync(sourceSkillDir, destinationDir, { recursive: true, force: true });
     }
 
     skills.push({
       name,
       action,
+      platform: target.platform,
+      platform_label: target.platform_label,
       source,
       destination,
       from: destinationDescriptor,
@@ -2553,22 +2640,55 @@ function installSkills(targetArg = null, dryRun = false) {
   return {
     ok: true,
     status: dryRun ? "dry_run" : "installed",
+    platform: target.platform,
+    platform_label: target.platform_label,
     source_directory: sourceDir,
     target_directory: targetDir,
     skills,
     note: dryRun
       ? "Dry run only; no skill files were written."
-      : "Restart Claude Code session to pick up new or updated skills.",
+      : `Restart ${target.platform_label} session to pick up new or updated skills.`,
   };
 }
 
-function describeSkillContent(content) {
-  const version = extractFrontmatterValue(content, "version");
-  const hash = createHash("sha256").update(content).digest("hex").slice(0, 12);
+function listFilesRecursive(dir) {
+  const files = [];
+  const root = resolve(dir);
+  if (!existsSync(root)) return files;
+
+  function walk(current) {
+    for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile()) {
+        files.push(relative(root, fullPath));
+      }
+    }
+  }
+
+  walk(root);
+  return files;
+}
+
+function describeSkillDirectory(dir) {
+  const skillPath = join(dir, "SKILL.md");
+  const skillContent = existsSync(skillPath) ? readFileSync(skillPath, "utf8") : "";
+  const version = extractFrontmatterValue(skillContent, "version");
+  const hash = createHash("sha256");
+  const relativeFiles = listFilesRecursive(dir);
+  for (const file of relativeFiles) {
+    const fullPath = join(dir, file);
+    hash.update(file);
+    hash.update("\0");
+    hash.update(existsSync(fullPath) ? readFileSync(fullPath) : "__MISSING__");
+    hash.update("\0");
+  }
+  const digest = hash.digest("hex").slice(0, 12);
   return {
     version,
-    hash,
-    label: version ? `v${version}` : `sha256:${hash}`,
+    hash: digest,
+    label: version ? `v${version}` : `sha256:${digest}`,
   };
 }
 
@@ -2635,6 +2755,14 @@ function printPrepareResult(result, args) {
 
 function printResult(result) {
   console.log(`Status: ${String(result.status || "unknown").toUpperCase()}`);
+  if (result.targets?.length) {
+    console.log("Targets:");
+    for (const target of result.targets) {
+      console.log(`- ${target.platform_label || target.platform}: ${target.target_directory}`);
+    }
+  } else if (result.platform_label && result.target_directory) {
+    console.log(`Target: ${result.platform_label} (${result.target_directory})`);
+  }
   if (result.skills?.length) {
     console.log("Skills:");
     for (const skill of result.skills) console.log(`- ${formatSkillInstallSummary(skill)}`);
@@ -2664,10 +2792,11 @@ function printResult(result) {
 }
 
 function formatSkillInstallSummary(skill) {
-  if (skill.action === "created") return `${skill.name}: created (${skill.to.label})`;
+  const prefix = skill.platform && skill.platform !== "custom" ? `${skill.platform}/` : "";
+  if (skill.action === "created") return `${prefix}${skill.name}: created (${skill.to.label})`;
   if (skill.action === "updated") {
     const from = skill.from?.label || "missing";
-    return `${skill.name}: updated (${from} -> ${skill.to.label})`;
+    return `${prefix}${skill.name}: updated (${from} -> ${skill.to.label})`;
   }
-  return `${skill.name}: unchanged (${skill.to.label})`;
+  return `${prefix}${skill.name}: unchanged (${skill.to.label})`;
 }
