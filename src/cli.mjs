@@ -228,6 +228,21 @@ function firstNonEmptyString(...values) {
   return null;
 }
 
+// Slice 4b: coerce Page.upsell_mv_tiers into a clean {min, max} pair for the
+// build packet. Returns null when the field is absent, malformed, or partial
+// — partial state should not flow into the packet; upstream validation
+// (AssemblyHintsShape) already warns the author when the spec carries a
+// half-state hint. Strict integer check (not Number()-coercion) so the
+// consumer posture matches the spec rule's: stringy "1" is malformed.
+function normalizedMvTiers(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const { min, max } = value;
+  if (!Number.isInteger(min) || !Number.isInteger(max)) return null;
+  if (min < 1 || max < 1) return null;
+  if (min > max) return null;
+  return { min, max };
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -629,6 +644,12 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
       // to do with it.
       const upsellPattern = optionalString(page.upsell_template_pattern);
       if (upsellPattern) mapping.upsell_template_pattern = upsellPattern;
+      // Slice 4b: per-page MV tier range. Same flow as upsell_template_pattern
+      // — surface the spec hint onto the packet so the build stage doesn't
+      // re-parse the spec. normalizedMvTiers() drops partial/malformed
+      // shapes; the spec rule warns the author separately.
+      const mvTiers = normalizedMvTiers(page.upsell_mv_tiers);
+      if (mvTiers) mapping.upsell_mv_tiers = mvTiers;
       mappings.push(mapping);
       matchedIds.add(page.id);
       decisions.push({
@@ -699,6 +720,9 @@ function matchSourcePages(specPages, htmlFiles) {
       // regardless of which path produced the mapping.
       const upsellPattern = optionalString(page.upsell_template_pattern);
       if (upsellPattern) mapping.upsell_template_pattern = upsellPattern;
+      // Slice 4b: see applyManifestToPages for rationale.
+      const mvTiers = normalizedMvTiers(page.upsell_mv_tiers);
+      if (mvTiers) mapping.upsell_mv_tiers = mvTiers;
       mappings.push(mapping);
       decisions.push({
         id: `dec_page_map_${page.id}`,
