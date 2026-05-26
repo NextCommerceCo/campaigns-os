@@ -2361,15 +2361,27 @@ function validateAssemblyReport(report) {
  * Stage order for the orchestration loop. Pre-Slice-3-Phase-2 the agent had
  * to know this sequence; now `campaigns-os next` (no stage arg) self-decides
  * by walking this list and finding the first stage whose recorded status
- * isn't a terminal one (completed / completed_with_warnings / skipped).
+ * isn't a terminal one.
  *
  * These are CLI stage names (what the user types as `next <stage>`). The
  * assembly report keys them slightly differently — the "build" CLI stage
  * maps to the "assembly" report key. reportKeyForCliStage() handles that.
+ *
+ * Frozen so a downstream caller can't accidentally mutate the loop order
+ * or terminal-status set at runtime (these are pure module-level state).
  */
-const STAGE_ORDER = ["setup", "build", "polish", "deploy", "qa"];
-const STAGE_TERMINAL_STATUSES = ["completed", "skipped"];
-const STAGE_BLOCKED_STATUSES = new Set(["blocked"]);
+const STAGE_ORDER = Object.freeze(["setup", "build", "polish", "deploy", "qa"]);
+
+/**
+ * Status values that count as terminal under PREFIX matching — so
+ * "completed", "completed_with_warnings", and "completed_partial" all
+ * count as terminal under "completed". This matches how the existing
+ * stages already report sub-statuses (see report.stages.assembly.status
+ * shapes in src/cli.mjs and qa/shared/qa-verdict.js). Renamed from
+ * STAGE_TERMINAL_STATUSES to make the prefix-matching contract explicit.
+ */
+const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped"]);
+const STAGE_BLOCKED_STATUSES = Object.freeze(new Set(["blocked"]));
 
 function reportKeyForCliStage(cliStage) {
   return cliStage === "build" ? "assembly" : cliStage;
@@ -2379,19 +2391,31 @@ function reportKeyForCliStage(cliStage) {
  * Self-decide which stage should run next given the current report + doctor
  * state. Pure function — reads no filesystem, no network.
  *
- * Returns one of:
- *   { stage: "doctor-blocked", reason }                        — doctor said no
- *   { stage: "<setup|build|polish|deploy|qa>", reason, blocked? }
- *   { stage: "done", reason }                                  — every stage terminal
+ * @param {object|null} report  Assembly report (may be null when doctor
+ *                              failed before the report was written).
+ * @param {object|null} doctor  Doctor result. When `doctor.ok === false`,
+ *                              short-circuits with "doctor-blocked" so the
+ *                              caller surfaces the doctor errors instead
+ *                              of advancing the pipeline. This is an
+ *                              intentional early-exit: any future
+ *                              stage-specific doctor signal logic should
+ *                              live AFTER this gate, not before.
  *
- * "blocked: true" means the stage's recorded status is "blocked" and the
- * caller needs to unblock it before continuing. We still return the stage
- * (rather than treating it as done) so the orchestrator surfaces the
- * blocker rather than skipping past it.
+ * @returns {{ stage: string, reason: string, blocked?: boolean }}
+ *   Where `stage` is one of:
+ *     - "doctor-blocked"             — doctor reported errors
+ *     - "setup" | "build" | "polish" | "deploy" | "qa"  — next stage to run
+ *     - "done"                       — every stage in terminal status
  *
- * `report` may be null (e.g. doctor failed before report was written); in
- * that case we return the earliest non-skipped stage so the agent has
- * something concrete to work on once doctor clears.
+ *   `blocked: true` is set when the returned stage's recorded status in
+ *   the report is "blocked" (per STAGE_BLOCKED_STATUSES). The picker
+ *   still returns the stage (rather than treating it as done) so the
+ *   orchestrator surfaces the blocker rather than silently skipping
+ *   past it.
+ *
+ *   `reason` is a human-readable string describing why this stage was
+ *   chosen, intended for direct display in CLI / JSON output so the
+ *   operator can audit picker decisions.
  */
 function pickNextStage(report, doctor) {
   if (doctor && !doctor.ok) {
@@ -2427,7 +2451,7 @@ function pickNextStage(report, doctor) {
     }
     // Match by prefix so "completed_with_warnings" and future suffixes
     // (e.g. "completed_partial") count as terminal.
-    const isTerminal = STAGE_TERMINAL_STATUSES.some((t) => status.startsWith(t));
+    const isTerminal = STAGE_TERMINAL_STATUS_PREFIXES.some((t) => status.startsWith(t));
     if (!isTerminal) {
       return {
         stage: cliStage,
