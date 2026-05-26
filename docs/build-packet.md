@@ -16,6 +16,8 @@ The current schema is `schemas/campaign-runtime-build-packet.v0.schema.json`.
 
 Page-kit also needs `campaign.store_url` for `_data/campaigns.json`. Additional Store Profile fields live under `campaign.store_*` as optional storefront/legal metadata because they are operator-entered, not Campaigns API data.
 
+> **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
+
 ## Artifact Locations
 
 By default `campaigns-os start` writes into the target repo:
