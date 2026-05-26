@@ -99,6 +99,15 @@
                   "max": { "type": "integer", "minimum": 1 }
                 }
               },
+              "variant_labels": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["primary"],
+                "properties": {
+                  "primary": { "type": "string", "minLength": 1 },
+                  "secondary": { "type": "string", "minLength": 1 }
+                }
+              },
               "skip_reason": { "type": "string", "minLength": 1 },
               "notes": { "type": ["string", "null"] }
             },

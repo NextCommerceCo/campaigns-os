@@ -729,7 +729,16 @@ try {
   });
 
   const specPath = resolve(manifestTmp, "campaignspec.json");
-  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  // Slice 4e: also declare variant_labels on the upsell page so this fixture
+  // proves the per-page hint flows through applyManifestToPages (the manifest
+  // path), not only matchSourcePages (the filesystem fallback exercised by
+  // the assembly-hints fixture). Without this assertion the manifest-path
+  // emission lives untested.
+  const manifestSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const manifestUpsellPage = manifestSpec.funnels?.[0]?.pages?.find((p) => p.type === "upsell");
+  if (!manifestUpsellPage) throw new Error("manifest fixture: example spec has no upsell page; adjust fixture spec.");
+  manifestUpsellPage.variant_labels = { primary: "Size", secondary: "Color" };
+  writeJson(specPath, manifestSpec);
   runCliJson([
     "start",
     "--spec", specPath,
@@ -754,6 +763,19 @@ try {
     }
     if (mapping.page_type !== ({ landing: "landing", checkout: "checkout", upsell: "upsell", receipt: "thankyou" })[pageId]) {
       throw new Error(`source-html manifest fixture: expected ${pageId} page_type carried through, got ${mapping.page_type}`);
+    }
+  }
+
+  // Slice 4e: variant_labels round-trips through the manifest path with both
+  // fields preserved on the upsell mapping; non-upsell mappings stay clean.
+  const manifestUpsellMapping = generatedPacket.source_html.pages.find((page) => page.page_id === "upsell");
+  if (!manifestUpsellMapping?.variant_labels || manifestUpsellMapping.variant_labels.primary !== "Size" || manifestUpsellMapping.variant_labels.secondary !== "Color") {
+    throw new Error(`source-html manifest fixture: expected upsell mapping to carry variant_labels={primary:"Size",secondary:"Color"} via applyManifestToPages, got ${JSON.stringify(manifestUpsellMapping)}`);
+  }
+  for (const otherPageId of ["landing", "checkout", "receipt"]) {
+    const otherMapping = generatedPacket.source_html.pages.find((page) => page.page_id === otherPageId);
+    if (otherMapping && "variant_labels" in otherMapping) {
+      throw new Error(`source-html manifest fixture: non-upsell mapping ${otherPageId} should not carry variant_labels, got ${JSON.stringify(otherMapping)}`);
     }
   }
 
@@ -1318,6 +1340,8 @@ try {
   // surface this on the matching source_html.pages mapping the same way
   // upsell_template_pattern flows through.
   upsellSpecPage.upsell_mv_tiers = { min: 2, max: 4 };
+  // Slice 4e: declare variant column labels on the upsell page. Same flow.
+  upsellSpecPage.variant_labels = { primary: "Size", secondary: "Color" };
 
   const specPath = resolve(assemblyHintsTmp, "campaignspec.json");
   writeJson(specPath, hintedSpec);
@@ -1352,6 +1376,10 @@ try {
   if (!upsellMapping.upsell_mv_tiers || upsellMapping.upsell_mv_tiers.min !== 2 || upsellMapping.upsell_mv_tiers.max !== 4) {
     throw new Error(`assembly-hints fixture: expected upsell mapping to carry upsell_mv_tiers={min:2,max:4}, got ${JSON.stringify(upsellMapping)}`);
   }
+  // Slice 4e: variant labels round-trip into the same mapping with both fields preserved.
+  if (!upsellMapping.variant_labels || upsellMapping.variant_labels.primary !== "Size" || upsellMapping.variant_labels.secondary !== "Color") {
+    throw new Error(`assembly-hints fixture: expected upsell mapping to carry variant_labels={primary:"Size",secondary:"Color"}, got ${JSON.stringify(upsellMapping)}`);
+  }
   // Non-upsell mappings should NOT carry the pattern field — it was only set
   // on the upsell spec page, so other mappings stay clean.
   const landingMapping = hintAdoptedPacket.source_html.pages.find((p) => p.page_id !== upsellSpecPage.id);
@@ -1360,6 +1388,9 @@ try {
   }
   if (landingMapping && "upsell_mv_tiers" in landingMapping) {
     throw new Error(`assembly-hints fixture: non-upsell mappings should not carry upsell_mv_tiers, got ${JSON.stringify(landingMapping)}`);
+  }
+  if (landingMapping && "variant_labels" in landingMapping) {
+    throw new Error(`assembly-hints fixture: non-upsell mappings should not carry variant_labels, got ${JSON.stringify(landingMapping)}`);
   }
   const hintContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
   const hintCandidate = (hintContext.template?.candidates || []).find((c) => c.source?.includes("preferred_template_family"));
@@ -1416,6 +1447,51 @@ try {
     if ("upsell_mv_tiers" in malformedMapping) {
       throw new Error(`assembly-hints fixture: malformed tier input ${JSON.stringify(malformed)} should have been dropped, got ${JSON.stringify(malformedMapping)}`);
     }
+  }
+
+  // 4. Slice 4e: partial / malformed variant_labels shapes should NOT flow
+  //    into the packet. Same posture as the tier-range guard above.
+  upsellSpecPage.upsell_mv_tiers = { min: 2, max: 4 };  // reset to a good value
+  for (const malformed of [{ primary: "" }, { secondary: "Color" }, { primary: 42, secondary: "Color" }, ["Size", "Color"], "junk", null]) {
+    upsellSpecPage.variant_labels = malformed;
+    writeJson(specPath, hintedSpec);
+    runCliJsonAllowFailure([
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus-mv-two-step",
+      "--json",
+    ]);
+    const malformedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+    const malformedMapping = malformedPacket.source_html.pages.find((p) => p.page_id === upsellSpecPage.id);
+    if (!malformedMapping) {
+      throw new Error(`assembly-hints fixture: expected upsell mapping in packet for malformed variant_labels input ${JSON.stringify(malformed)}, got ${JSON.stringify(malformedPacket.source_html.pages)}`);
+    }
+    if ("variant_labels" in malformedMapping) {
+      throw new Error(`assembly-hints fixture: malformed variant_labels input ${JSON.stringify(malformed)} should have been dropped, got ${JSON.stringify(malformedMapping)}`);
+    }
+  }
+
+  // 5. Slice 4e: primary-only variant_labels (single-attribute case)
+  //    should pass through with the secondary field omitted.
+  upsellSpecPage.variant_labels = { primary: "Flavor" };
+  writeJson(specPath, hintedSpec);
+  runCliJsonAllowFailure([
+    "prepare-build",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus-mv-two-step",
+    "--json",
+  ]);
+  const primaryOnlyPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  const primaryOnlyMapping = primaryOnlyPacket.source_html.pages.find((p) => p.page_id === upsellSpecPage.id);
+  if (!primaryOnlyMapping?.variant_labels || primaryOnlyMapping.variant_labels.primary !== "Flavor") {
+    throw new Error(`assembly-hints fixture: primary-only variant_labels should pass through, got ${JSON.stringify(primaryOnlyMapping)}`);
+  }
+  if ("secondary" in primaryOnlyMapping.variant_labels) {
+    throw new Error(`assembly-hints fixture: primary-only variant_labels should not emit a secondary key, got ${JSON.stringify(primaryOnlyMapping)}`);
   }
 } finally {
   rmSync(assemblyHintsTmp, { recursive: true, force: true });
