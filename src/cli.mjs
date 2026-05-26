@@ -19,6 +19,13 @@ const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
 const CONTEXT_SCHEMA = "campaign-runtime-build-context/v0";
 const REPORT_SCHEMA = "campaign-runtime-assembly-report/v0";
 
+// Default proxy base for `--map-id` spec retrieval. The Map Builder
+// (campaign-map.nextcommerce.com) is fronted by the nc-campaigns-proxy
+// Cloudflare Worker, which exposes `/api/spec/<map-id>` returning the
+// canonical saved CampaignSpec from KV. Override via `--proxy-base`
+// for staging environments or local Worker dev (e.g. wrangler dev).
+const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
+
 const KNOWN_TEMPLATE_FAMILIES = new Set([
   "undecided",
   "olympus",
@@ -68,8 +75,10 @@ const HELP = `Campaigns OS toolkit
 
 Usage:
   campaigns-os help
-  campaigns-os start --spec <json> --source <html-dir> --target <page-kit-dir> --template-family <family>
-  campaigns-os prepare-build --spec <json> --source <html-dir> --target <page-kit-dir> --template-family <family>
+  campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
+                     [--proxy-base <url>] [--cached-spec]
+  campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
+                             [--proxy-base <url>] [--cached-spec]
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
@@ -89,6 +98,13 @@ Examples:
     --target examples/target-page-kit \\
     --template-family olympus
 
+  # Fetch the spec straight from the Map Builder by Map ID (KV is source of truth):
+  npm run campaigns-os -- start \\
+    --map-id veyra-v1-knp4 \\
+    --source examples/source-html \\
+    --target examples/target-page-kit \\
+    --template-family olympus
+
   npm run campaigns-os -- doctor --packet examples/build-packet.basic.json --json
 `;
 
@@ -102,13 +118,19 @@ export async function main(argv) {
   }
 
   if (command === "start") {
+    const resolved = await resolveSpecPath(args);
+    args.spec = resolved.specPath;
     const result = prepareBuild(args, { runDoctor: true, installContext: true });
+    result.spec_source = resolved;
     printPrepareResult(result, args);
     return;
   }
 
   if (command === "prepare-build") {
+    const resolved = await resolveSpecPath(args);
+    args.spec = resolved.specPath;
     const result = prepareBuild(args, { runDoctor: false, installContext: false });
+    result.spec_source = resolved;
     printPrepareResult(result, args);
     return;
   }
@@ -213,6 +235,112 @@ function readJsonIfExists(path) {
 function writeJson(path, value) {
   mkdirSync(dirname(resolve(path)), { recursive: true });
   writeFileSync(resolve(path), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/**
+ * Fetch a CampaignSpec by Map ID from the proxy Worker.
+ *
+ * The Map Builder portal at campaign-map.nextcommerce.com is fronted by
+ * the nc-campaigns-proxy Cloudflare Worker, which persists saved specs
+ * in KV and exposes them via GET /api/spec/<map-id>. Response shape is
+ * { ok: true, data: <spec> } or { ok: false, error: <message> } on a
+ * 200 with a logical failure.
+ *
+ * `fetchImpl` is parameterized for tests so a local mock server can
+ * stand in for the deployed Worker.
+ *
+ * @param {string} mapId — saved Map Builder identity (e.g. "veyra-v1-knp4")
+ * @param {object} [opts]
+ * @param {string} [opts.proxyBase] — proxy origin without trailing slash
+ * @param {Function} [opts.fetchImpl] — fetch shim for testing
+ * @returns {Promise<object>} parsed CampaignSpec
+ */
+async function fetchSpecByMapId(mapId, opts = {}) {
+  const trimmed = String(mapId || "").trim();
+  if (!trimmed) throw new Error("fetchSpecByMapId: mapId is required.");
+  const base = (opts.proxyBase || DEFAULT_PROXY_BASE).replace(/\/+$/, "");
+  const url = `${base}/api/spec/${encodeURIComponent(trimmed)}`;
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== "function") {
+    throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
+  }
+  let res;
+  try {
+    res = await fetchImpl(url, { headers: { Accept: "application/json" } });
+  } catch (error) {
+    throw new Error(`Spec fetch network error: ${error.message} (${url})`);
+  }
+  if (!res.ok) {
+    throw new Error(`Spec fetch failed: ${res.status} ${res.statusText} (${url})`);
+  }
+  let body;
+  try {
+    body = await res.json();
+  } catch (error) {
+    throw new Error(`Spec fetch returned invalid JSON: ${error.message} (${url})`);
+  }
+  if (!body || body.ok === false || body.data == null) {
+    throw new Error(`Spec fetch returned ok=false: ${body?.error || "unknown error"} (${url})`);
+  }
+  return body.data;
+}
+
+/**
+ * Sanitize a Map ID for use as a cache filename. Map IDs are normally
+ * already filesystem-safe slugs (e.g. "veyra-v1-knp4"), but defend
+ * against unexpected characters so a malformed ID can't escape the
+ * cache directory.
+ */
+function sanitizeMapIdForFilename(mapId) {
+  return String(mapId).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 128) || "unnamed";
+}
+
+/**
+ * Resolve `--spec` / `--map-id` into a local file path that downstream
+ * sync code (prepareBuild, doctor, etc.) can read like any other spec.
+ *
+ * Resolution order:
+ *   --spec <path>        -> use that local file directly
+ *   --map-id <id>        -> fetch from proxy, cache to disk, return cache path
+ *   (neither set)        -> error
+ *
+ * When fetched, the spec is cached at
+ *   <targetRepo>/.campaign-runtime/fetched-specs/<sanitized-id>.json
+ * so subsequent stages have a stable on-disk path AND so the fetch is
+ * inspectable for debugging. KV is the source of truth, so re-runs
+ * always re-fetch by default; pass `--cached-spec` to reuse the cache
+ * without hitting the network (useful for offline iteration).
+ *
+ * Returns `{ specPath, source, mapId?, proxyBase? }`. `source` is one
+ * of "local" | "remote" | "cache".
+ */
+async function resolveSpecPath(args, opts = {}) {
+  if (args.spec) {
+    const specPath = resolve(args.spec);
+    if (!existsSync(specPath)) throw new Error(`CampaignSpec does not exist: ${specPath}`);
+    return { specPath, source: "local" };
+  }
+  if (args["map-id"]) {
+    const mapId = String(args["map-id"]).trim();
+    const targetRepo = opts.targetRepo || (args.target ? resolve(args.target) : null);
+    if (!targetRepo) {
+      throw new Error("--map-id requires --target (so the fetched spec can be cached under <target>/.campaign-runtime/).");
+    }
+    const proxyBase = optionalString(args["proxy-base"], DEFAULT_PROXY_BASE);
+    const cacheDir = join(targetRepo, ".campaign-runtime", "fetched-specs");
+    const cachePath = join(cacheDir, `${sanitizeMapIdForFilename(mapId)}.json`);
+    if (args["cached-spec"]) {
+      if (!existsSync(cachePath)) {
+        throw new Error(`--cached-spec set but no cached spec found at ${cachePath}. Run without --cached-spec to fetch.`);
+      }
+      return { specPath: cachePath, source: "cache", mapId, proxyBase };
+    }
+    const spec = await fetchSpecByMapId(mapId, { proxyBase, fetchImpl: opts.fetchImpl });
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
+    return { specPath: cachePath, source: "remote", mapId, proxyBase };
+  }
+  throw new Error("Either --spec <path> or --map-id <id> is required.");
 }
 
 function sha256File(path) {
@@ -2741,6 +2869,16 @@ function printPrepareResult(result, args) {
     return;
   }
   console.log("Campaigns OS prepare-build");
+  if (result.spec_source) {
+    const src = result.spec_source;
+    if (src.source === "remote") {
+      console.log(`Spec: ${src.specPath} (fetched from ${src.proxyBase}/api/spec/${src.mapId})`);
+    } else if (src.source === "cache") {
+      console.log(`Spec: ${src.specPath} (cached from ${src.proxyBase}/api/spec/${src.mapId}; --cached-spec)`);
+    } else {
+      console.log(`Spec: ${src.specPath}`);
+    }
+  }
   console.log(`Packet: ${result.packetPath}`);
   console.log(`Context: ${result.contextPath}`);
   console.log(`Report: ${result.reportPath}`);

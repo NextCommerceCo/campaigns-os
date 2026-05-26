@@ -146,6 +146,48 @@ function runCliJsonAllowFailure(args, env = process.env) {
   }
 }
 
+/**
+ * Async variant of runCliJson. Use this when the fixture spins up an
+ * in-process HTTP server (e.g. mock proxy for --map-id) — execFileSync
+ * blocks the parent event loop, so the spawned child can't connect back
+ * to the server. execFile with a Promise wrapper keeps both event loops
+ * live during the call.
+ */
+async function runCliJsonAsync(args, env = process.env) {
+  const { execFile } = await import("node:child_process");
+  return new Promise((resolveFn, rejectFn) => {
+    execFile(
+      process.execPath,
+      [cli, ...args],
+      { cwd: root, env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        // Mirror runCliJsonAllowFailure's policy: if stdout has parseable
+        // JSON, return it even when the CLI exited non-zero (doctor sets
+        // process.exitCode=2 when validation fails but still emits a
+        // complete result). Only reject when stdout is missing or
+        // unparseable AND the process errored.
+        if (typeof stdout === "string" && stdout.trim()) {
+          try {
+            resolveFn(JSON.parse(stdout));
+            return;
+          } catch {
+            // fall through to error branch
+          }
+        }
+        if (error) {
+          const wrapped = new Error(`CLI ${args[0]} failed: ${error.message}`);
+          wrapped.code = error.code;
+          wrapped.stdout = stdout;
+          wrapped.stderr = stderr;
+          rejectFn(wrapped);
+          return;
+        }
+        rejectFn(new Error(`CLI ${args[0]} returned non-JSON stdout: ${stdout}`));
+      },
+    );
+  });
+}
+
 function runCliText(args, env = process.env) {
   return execFileSync(process.execPath, [cli, ...args], {
     cwd: root,
@@ -908,6 +950,165 @@ if (checkout?.expected_meta_tags?.["next-success-url"] !== "/runtime-packet-demo
 }
 if (upsell?.expected_meta_tags?.["next-upsell-accept-url"] !== "/runtime-packet-demo/receipt/") {
   throw new Error(`QA should expect runtime-rooted next-upsell-accept-url, got ${upsell?.expected_meta_tags?.["next-upsell-accept-url"]}`);
+}
+
+// Slice 3: `--map-id` resolves the spec from the proxy Worker.
+// Spin a tiny in-process HTTP server that mimics nc-campaigns-proxy's
+// /api/spec/<map-id> endpoint, then run `start --map-id` against it.
+// Asserts:
+//   - fetched spec lands in <target>/.campaign-runtime/fetched-specs/<id>.json
+//   - the packet's spec.local_path points at that cache file
+//   - --cached-spec re-reads the cache without hitting the network
+//   - 404s and ok:false responses surface as clean CLI errors
+const { createServer } = await import("node:http");
+
+const mapIdTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-map-id-"));
+try {
+  const sourceRoot = resolve(mapIdTmp, "source-html");
+  const targetRepo = resolve(mapIdTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+  }
+  const exampleSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+
+  let fetchCount = 0;
+  const server = createServer((req, res) => {
+    fetchCount += 1;
+    // /api/spec/<id> success path
+    if (req.method === "GET" && req.url === "/api/spec/fixture-map-id") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, data: exampleSpec }));
+      return;
+    }
+    // /api/spec/<id> logical-failure path (200 with ok:false)
+    if (req.method === "GET" && req.url === "/api/spec/fixture-not-found") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "spec not found in KV" }));
+      return;
+    }
+    // /api/spec/<id> HTTP-failure path
+    if (req.method === "GET" && req.url === "/api/spec/fixture-server-error") {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "upstream KV unavailable" }));
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: "not found" }));
+  });
+  await new Promise((resolveFn) => server.listen(0, "127.0.0.1", resolveFn));
+  const { port } = server.address();
+  const proxyBase = `http://127.0.0.1:${port}`;
+
+  try {
+    // 1. Happy path: --map-id fetches, caches, and runs start.
+    const startResult = await runCliJsonAsync([
+      "start",
+      "--map-id", "fixture-map-id",
+      "--proxy-base", proxyBase,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+    if (startResult.spec_source?.source !== "remote") {
+      throw new Error(`map-id fixture: expected spec_source.source="remote", got ${JSON.stringify(startResult.spec_source)}`);
+    }
+    if (startResult.spec_source?.mapId !== "fixture-map-id") {
+      throw new Error(`map-id fixture: spec_source should record mapId, got ${JSON.stringify(startResult.spec_source)}`);
+    }
+    const cachePath = resolve(targetRepo, ".campaign-runtime/fetched-specs/fixture-map-id.json");
+    if (!existsSync(cachePath)) {
+      throw new Error(`map-id fixture: expected cached spec at ${cachePath}`);
+    }
+    const cachedSpec = readJson(cachePath);
+    if (cachedSpec.schema_version !== exampleSpec.schema_version) {
+      throw new Error(`map-id fixture: cached spec should round-trip schema_version, got ${cachedSpec.schema_version}`);
+    }
+    const generatedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+    if (!generatedPacket.spec?.local_path?.includes("fetched-specs/fixture-map-id.json")) {
+      throw new Error(`map-id fixture: packet spec.local_path should point at the cached spec, got ${generatedPacket.spec?.local_path}`);
+    }
+    // Verify the network was actually hit on the first run. Without this,
+    // a regression that silently returned a cached spec on a fresh invocation
+    // (or a no-op resolveSpecPath) would pass the "spec_source.source=remote"
+    // assertion above purely by mislabelling.
+    if (fetchCount < 1) {
+      throw new Error(`map-id fixture: happy path should have hit the proxy at least once, but server received ${fetchCount} request(s)`);
+    }
+
+    // 2. --cached-spec re-reads the cache without a network call.
+    fetchCount = 0;
+    const cachedResult = await runCliJsonAsync([
+      "prepare-build",
+      "--map-id", "fixture-map-id",
+      "--proxy-base", proxyBase,
+      "--cached-spec",
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+    if (cachedResult.spec_source?.source !== "cache") {
+      throw new Error(`map-id fixture: --cached-spec should produce spec_source.source="cache", got ${JSON.stringify(cachedResult.spec_source)}`);
+    }
+    if (fetchCount !== 0) {
+      throw new Error(`map-id fixture: --cached-spec should NOT hit the network, but server received ${fetchCount} request(s)`);
+    }
+    // The cached-spec packet must still wire spec.local_path at the cache
+    // file — the same contract as the remote-fetch path. A future change
+    // that resolves the cache differently (e.g. embeds the JSON inline,
+    // points at a transient temp file) would silently break downstream
+    // stages that read packet.spec.local_path; lock the path here.
+    const cachedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+    if (!cachedPacket.spec?.local_path?.includes("fetched-specs/fixture-map-id.json")) {
+      throw new Error(`map-id fixture: --cached-spec packet spec.local_path should point at the cache file, got ${cachedPacket.spec?.local_path}`);
+    }
+
+    // 3. ok:false response surfaces as a clean CLI error.
+    let okFalseError = null;
+    try {
+      await runCliJsonAsync([
+        "prepare-build",
+        "--map-id", "fixture-not-found",
+        "--proxy-base", proxyBase,
+        "--source", sourceRoot,
+        "--target", targetRepo,
+        "--template-family", "olympus",
+        "--json",
+      ]);
+    } catch (error) {
+      okFalseError = String(error.stderr || error.message || "");
+    }
+    if (!okFalseError || !okFalseError.includes("spec not found in KV")) {
+      throw new Error(`map-id fixture: expected ok:false error to surface "spec not found in KV", got: ${okFalseError}`);
+    }
+
+    // 4. HTTP 5xx response surfaces as a clean CLI error.
+    let httpError = null;
+    try {
+      await runCliJsonAsync([
+        "prepare-build",
+        "--map-id", "fixture-server-error",
+        "--proxy-base", proxyBase,
+        "--source", sourceRoot,
+        "--target", targetRepo,
+        "--template-family", "olympus",
+        "--json",
+      ]);
+    } catch (error) {
+      httpError = String(error.stderr || error.message || "");
+    }
+    if (!httpError || !httpError.includes("503")) {
+      throw new Error(`map-id fixture: expected HTTP 5xx error to include status code, got: ${httpError}`);
+    }
+  } finally {
+    await new Promise((resolveFn) => server.close(resolveFn));
+  }
+} finally {
+  rmSync(mapIdTmp, { recursive: true, force: true });
 }
 
 console.log("Fixture checks passed");
