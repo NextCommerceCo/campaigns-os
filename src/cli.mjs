@@ -243,6 +243,22 @@ function normalizedMvTiers(value) {
   return { min, max };
 }
 
+// Slice 4e: coerce Page.variant_labels into a clean {primary, secondary?}
+// pair for the build packet. primary is required; secondary is optional
+// (single-attribute products only set primary). Drops the field entirely
+// when shape is malformed or primary is empty — upstream validation
+// (VariantLabelsShape) warns the author separately.
+function normalizedVariantLabels(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const primary = isNonEmptyString(value.primary) ? value.primary.trim() : null;
+  if (!primary) return null;
+  const out = { primary };
+  if (isNonEmptyString(value.secondary)) {
+    out.secondary = value.secondary.trim();
+  }
+  return out;
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -650,6 +666,11 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
       // shapes; the spec rule warns the author separately.
       const mvTiers = normalizedMvTiers(page.upsell_mv_tiers);
       if (mvTiers) mapping.upsell_mv_tiers = mvTiers;
+      // Slice 4e: per-page MV variant column labels. Same flow as the
+      // other hints. normalizedVariantLabels() drops partial/malformed
+      // shapes (empty primary, non-string secondary, etc.).
+      const variantLabels = normalizedVariantLabels(page.variant_labels);
+      if (variantLabels) mapping.variant_labels = variantLabels;
       mappings.push(mapping);
       matchedIds.add(page.id);
       decisions.push({
@@ -723,6 +744,9 @@ function matchSourcePages(specPages, htmlFiles) {
       // Slice 4b: see applyManifestToPages for rationale.
       const mvTiers = normalizedMvTiers(page.upsell_mv_tiers);
       if (mvTiers) mapping.upsell_mv_tiers = mvTiers;
+      // Slice 4e: see applyManifestToPages for rationale.
+      const variantLabels = normalizedVariantLabels(page.variant_labels);
+      if (variantLabels) mapping.variant_labels = variantLabels;
       mappings.push(mapping);
       decisions.push({
         id: `dec_page_map_${page.id}`,
