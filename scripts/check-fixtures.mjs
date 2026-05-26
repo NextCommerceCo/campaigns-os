@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
@@ -1904,6 +1905,171 @@ try {
   }
 } finally {
   rmSync(driftTmp, { recursive: true, force: true });
+}
+
+// Slice 6 backward-compat: mixed manifest where some entries carry source_hash
+// and others don't. The drift check must stay silent on the hash-less entries
+// (pre-Slice-6 producers) even after their files are edited. A regression
+// where "absent hash" gets treated as "expected empty hash" would always-warn
+// on those entries, which is what this fixture guards against.
+const mixedManifestTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-mixed-manifest-"));
+try {
+  const sourceRoot = resolve(mixedManifestTmp, "source-html");
+  const targetRepo = resolve(mixedManifestTmp, "target-page-kit");
+  mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page} v1</body></html>`);
+  }
+
+  // Hand-craft a manifest where landing has source_hash but checkout/upsell/
+  // receipt do not. Simulates a pre-Slice-6 producer (or one mid-migration).
+  const landingHash = createHash("sha256").update(readFileSync(resolve(sourceRoot, "landing.html"))).digest("hex");
+  writeJson(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"), {
+    schema_version: "source-html-manifest/v0",
+    generated_at: "2026-05-26T00:00:00.000Z",
+    generator: "mixed-manifest-test@1.0",
+    campaign_slug: "mixed-manifest-demo",
+    root: ".",
+    pages: [
+      { page_id: "landing", path: "landing.html", page_type: "landing", source_hash: landingHash },
+      { page_id: "checkout", path: "checkout.html", page_type: "checkout" },
+      { page_id: "upsell", path: "upsell.html", page_type: "upsell" },
+      { page_id: "receipt", path: "receipt.html", page_type: "thankyou" },
+    ],
+  });
+
+  const specPath = resolve(mixedManifestTmp, "campaignspec.json");
+  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  runCliJson([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  // Verify the packet carries source_hash for landing and omits it for others.
+  const mixedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  const landingMapping = mixedPacket.source_html.pages.find((p) => p.page_id === "landing");
+  if (landingMapping?.source_hash !== landingHash) {
+    throw new Error(`mixed-manifest fixture: landing mapping should carry source_hash, got ${JSON.stringify(landingMapping)}`);
+  }
+  for (const otherPageId of ["checkout", "upsell", "receipt"]) {
+    const otherMapping = mixedPacket.source_html.pages.find((p) => p.page_id === otherPageId);
+    if (otherMapping && "source_hash" in otherMapping) {
+      throw new Error(`mixed-manifest fixture: ${otherPageId} mapping should not carry source_hash (manifest omitted it), got ${JSON.stringify(otherMapping)}`);
+    }
+  }
+
+  // Edit checkout.html (which has NO source_hash in the manifest). Doctor
+  // should stay silent — there's no hash to compare against.
+  writeFileSync(resolve(sourceRoot, "checkout.html"), `<html><body>checkout v2 (edited)</body></html>`);
+  const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
+  const mixedDoctorResult = runCliJsonAllowFailure([
+    "doctor",
+    "--packet", packetPath,
+    "--spec", specPath,
+    "--json",
+  ]);
+  const mixedDriftWarnings = (mixedDoctorResult.warnings || []).filter(
+    (issue) => issue.code === "source_html.pages.source_hash",
+  );
+  if (mixedDriftWarnings.length > 0) {
+    throw new Error(`mixed-manifest fixture: editing a hash-less page should not fire a drift warning, got ${JSON.stringify(mixedDriftWarnings)}`);
+  }
+
+  // Edit landing.html (which DOES have source_hash). Doctor should now fire
+  // exactly one warning for landing — proving the mixed-manifest case still
+  // works for the hashed entries.
+  writeFileSync(resolve(sourceRoot, "landing.html"), `<html><body>landing v2 (edited)</body></html>`);
+  const mixedDoctorAfterLanding = runCliJsonAllowFailure([
+    "doctor",
+    "--packet", packetPath,
+    "--spec", specPath,
+    "--json",
+  ]);
+  const landingDriftWarnings = (mixedDoctorAfterLanding.warnings || []).filter(
+    (issue) => issue.code === "source_html.pages.source_hash",
+  );
+  if (landingDriftWarnings.length !== 1 || !landingDriftWarnings[0].message.includes("landing.html")) {
+    throw new Error(`mixed-manifest fixture: editing landing.html (hash-bearing) should fire one drift warning naming landing, got ${JSON.stringify(landingDriftWarnings)}`);
+  }
+} finally {
+  rmSync(mixedManifestTmp, { recursive: true, force: true });
+}
+
+// Slice 5b/5c follow-up: fresh AI-gen campaign where the producer hasn't run
+// yet. Every spec page carries design_source.type='ai-generated' but no source
+// HTML exists and no manifest is present. matchSourcePages now omits the
+// skip_reason mapping for design_source pages, so the packet's
+// source_html.pages array can end up empty. Doctor must produce a
+// design_source-aware coverage error per active page (not a generic
+// "out of scope" or "needs path or skip_reason" message), guiding the
+// operator to run the producer.
+const freshAiGenTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-fresh-ai-gen-"));
+try {
+  const sourceRoot = resolve(freshAiGenTmp, "source-html");
+  const targetRepo = resolve(freshAiGenTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  // Intentionally NO .html files, NO manifest. Producer hasn't run.
+
+  // Mark every active page as ai-generated.
+  const spec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const activePages = (spec.funnels?.[0]?.pages || []).filter((p) => p.enabled !== false);
+  if (activePages.length === 0) {
+    throw new Error("fresh-ai-gen fixture sanity: example spec has no active pages.");
+  }
+  for (const page of activePages) {
+    page.design_source = {
+      type: "ai-generated",
+      file_url: `https://design-archive.example.com/ai-gen/${page.id}`,
+      notes: "Producer scheduled but hasn't run yet",
+    };
+  }
+  const specPath = resolve(freshAiGenTmp, "campaignspec.json");
+  writeJson(specPath, spec);
+
+  const result = runCliJsonAllowFailure([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  // Packet should still be written (start handles the failure mode by emitting
+  // a packet with whatever was resolvable, plus prompts/errors).
+  const freshPacketPath = resolve(targetRepo, "campaign-runtime.build.json");
+  if (!existsSync(freshPacketPath)) {
+    throw new Error("fresh-ai-gen fixture: start should still emit campaign-runtime.build.json even when source coverage fails.");
+  }
+  const freshPacket = readJson(freshPacketPath);
+  // source_html.pages should be empty (no mappings emitted for design_source pages with no source).
+  if (!Array.isArray(freshPacket.source_html?.pages) || freshPacket.source_html.pages.length !== 0) {
+    throw new Error(`fresh-ai-gen fixture: source_html.pages should be empty when every page is unresolved design_source, got ${JSON.stringify(freshPacket.source_html?.pages)}`);
+  }
+
+  // Doctor should fire one coverage error per active page with ai-generated wording.
+  const coverageErrors = (result.doctor?.errors || []).filter((issue) => issue.code === "source_html.pages.coverage");
+  if (coverageErrors.length !== activePages.length) {
+    throw new Error(`fresh-ai-gen fixture: expected ${activePages.length} coverage errors (one per page), got ${coverageErrors.length}: ${JSON.stringify(coverageErrors)}`);
+  }
+  for (const err of coverageErrors) {
+    if (!err.message.includes("ai-generated")) {
+      throw new Error(`fresh-ai-gen fixture: every coverage error should mention "ai-generated", got: ${err.message}`);
+    }
+    if (!err.message.includes("re-run the producing agent")) {
+      throw new Error(`fresh-ai-gen fixture: every coverage error should recommend "re-run the producing agent", got: ${err.message}`);
+    }
+  }
+} finally {
+  rmSync(freshAiGenTmp, { recursive: true, force: true });
 }
 
 console.log("Fixture checks passed");

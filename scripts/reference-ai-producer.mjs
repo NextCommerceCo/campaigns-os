@@ -32,9 +32,11 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import {
+  SOURCE_HTML_MANIFEST_REL_PATH as MANIFEST_REL_PATH,
+  SOURCE_HTML_MANIFEST_SCHEMA as MANIFEST_SCHEMA,
+} from "../src/source-html-manifest.mjs";
 
-const MANIFEST_REL_PATH = ".campaigns-os/source-html-manifest.json";
-const MANIFEST_SCHEMA = "source-html-manifest/v0";
 const DEFAULT_GENERATOR = "reference-ai-producer@1.0.0";
 
 const PAGE_TYPE_FROM_SLUG = {

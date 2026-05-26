@@ -13,6 +13,10 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runQaCli } from "./qa-node.mjs";
+import {
+  SOURCE_HTML_MANIFEST_REL_PATH,
+  SOURCE_HTML_MANIFEST_SCHEMA,
+} from "./source-html-manifest.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
@@ -560,9 +564,6 @@ function pageMatchKeys(page, ordinal) {
   if (page.type === "downsell") keys.add("downsell");
   return [...keys];
 }
-
-const SOURCE_HTML_MANIFEST_REL_PATH = ".campaigns-os/source-html-manifest.json";
-const SOURCE_HTML_MANIFEST_SCHEMA = "source-html-manifest/v0";
 
 /**
  * Read the source-html manifest from `<sourceRoot>/.campaigns-os/source-html-manifest.json`.
