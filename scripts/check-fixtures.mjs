@@ -848,6 +848,177 @@ try {
   rmSync(manifestDuplicateTmp, { recursive: true, force: true });
 }
 
+// Slice 5e: mixed-source entry point. One campaign, four pages, each
+// nominally produced by a different upstream (figma export, AI agent,
+// template-stock copy, hand-authored). Each producer writes into its
+// own subdirectory under the source root; a single manifest at the
+// source-root level unifies them.
+//
+// Asserts:
+//   - manifest paths can reference subdirectories (not just flat files)
+//   - packet.source_html.pages[].path round-trips the subdirectory path
+//   - per-page page_type carries through regardless of which subtree
+//     the file lives in
+//   - decisions[] cites the manifest as the deterministic source for
+//     every page, even though physical files live in different trees
+//
+// This is the realistic shape for "AI-generated landing + template-stock
+// checkout/upsell" campaigns. See docs/entry-points.md "Mixed".
+const mixedSourceTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-mixed-source-"));
+try {
+  const sourceRoot = resolve(mixedSourceTmp, "source-html");
+  const targetRepo = resolve(mixedSourceTmp, "target-page-kit");
+  mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+
+  // Four producer subtrees, each writing one page into its own area.
+  // Filenames intentionally vary so filesystem matching could not
+  // produce these mappings even if it ran.
+  const producers = [
+    { dir: "figma-export",    file: "landing-page.html",     pageId: "landing",  pageType: "landing" },
+    { dir: "ai-generated",    file: "presell-article.html",  pageId: "checkout", pageType: "checkout" },
+    { dir: "template-stock",  file: "upsell.html",           pageId: "upsell",   pageType: "upsell" },
+    { dir: "hand-authored",   file: "thanks.html",           pageId: "receipt",  pageType: "thankyou" },
+  ];
+  for (const producer of producers) {
+    mkdirSync(resolve(sourceRoot, producer.dir), { recursive: true });
+    writeFileSync(
+      resolve(sourceRoot, producer.dir, producer.file),
+      `<html><body>${producer.dir}/${producer.file}</body></html>`,
+    );
+  }
+
+  writeJson(resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json"), {
+    schema_version: "source-html-manifest/v0",
+    generated_at: "2026-05-26T00:00:00.000Z",
+    generator: "mixed-source-orchestrator@1.0.0",
+    campaign_slug: "runtime-packet-demo",
+    root: ".",
+    pages: producers.map((p) => ({
+      page_id: p.pageId,
+      path: `${p.dir}/${p.file}`,
+      page_type: p.pageType,
+    })),
+  });
+
+  const specPath = resolve(mixedSourceTmp, "campaignspec.json");
+  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  runCliJson([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  const generatedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  for (const producer of producers) {
+    const mapping = generatedPacket.source_html.pages.find((p) => p.page_id === producer.pageId);
+    if (!mapping) {
+      throw new Error(`mixed-source fixture: expected mapping for "${producer.pageId}", got none.`);
+    }
+    const expectedPath = `${producer.dir}/${producer.file}`;
+    if (mapping.path !== expectedPath) {
+      throw new Error(`mixed-source fixture: expected ${producer.pageId} -> ${expectedPath}, got ${mapping.path}`);
+    }
+    if (mapping.page_type !== producer.pageType) {
+      throw new Error(`mixed-source fixture: expected ${producer.pageId} page_type=${producer.pageType}, got ${mapping.page_type}`);
+    }
+  }
+
+  const generatedContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
+  const manifestDecisions = (generatedContext.decisions || []).filter((decision) =>
+    decision.decision_type === "deterministic_derivation" && decision.evidence?.some((line) => line.includes("source-html manifest entry"))
+  );
+  if (manifestDecisions.length !== producers.length) {
+    throw new Error(`mixed-source fixture: expected ${producers.length} manifest-sourced decisions (one per producer), got ${manifestDecisions.length}`);
+  }
+} finally {
+  rmSync(mixedSourceTmp, { recursive: true, force: true });
+}
+
+// Slice 5a: template-stock entry point. No design_source on the spec,
+// no manifest, no figma involvement. Just spec + a source directory
+// of HTML files matching standard page-type names. This is Sam's
+// nanosocks scaffold pass — clone a starter template, fill the spec,
+// ship. See docs/entry-points.md "Template-stock".
+//
+// The relativePathsTmp fixture earlier in this file already exercises
+// the filesystem-matching code path. This block adds a focused
+// assertion that names it as the canonical template-stock shape:
+// no manifest file should be created, no design_source-aware error
+// branch should fire, every active spec page should map via filename
+// slug.
+const templateStockTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-template-stock-"));
+try {
+  const sourceRoot = resolve(templateStockTmp, "source-html");
+  const targetRepo = resolve(templateStockTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+  }
+
+  // Spec is the example v4.2 basic — no design_source on any page.
+  const spec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const hasAnyDesignSource = (spec.funnels || []).some((funnel) =>
+    (funnel.pages || []).some((page) => page.design_source != null),
+  );
+  if (hasAnyDesignSource) {
+    throw new Error("template-stock fixture sanity: example spec carries design_source on some page; pick a different fixture spec.");
+  }
+
+  const specPath = resolve(templateStockTmp, "campaignspec.json");
+  writeJson(specPath, spec);
+  const result = runCliJson([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  // No manifest written to the source root.
+  if (existsSync(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"))) {
+    throw new Error("template-stock fixture: no manifest should be written to the source root.");
+  }
+
+  // Build context should NOT record a manifest entry.
+  const generatedContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
+  if (generatedContext.source?.manifest) {
+    throw new Error(`template-stock fixture: build context should not record a manifest, got ${JSON.stringify(generatedContext.source.manifest)}`);
+  }
+
+  // Every active page mapped via filesystem slug — the page filenames
+  // should round-trip.
+  const generatedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  for (const expected of ["landing.html", "checkout.html", "upsell.html", "receipt.html"]) {
+    const mapping = generatedPacket.source_html.pages.find((p) => p.path === expected);
+    if (!mapping) {
+      throw new Error(`template-stock fixture: expected ${expected} mapping via filesystem slug, got pages=${JSON.stringify(generatedPacket.source_html.pages)}`);
+    }
+  }
+
+  // Doctor's coverage error variant should NOT include Figma hint text
+  // (template-stock path has no design_source set, so no design_source
+  // hint applies). This double-checks the design_source-aware branch
+  // doesn't accidentally fire on the template-stock path.
+  if (result.doctor) {
+    const coverageErrors = (result.doctor.errors || []).filter((issue) => issue.code === "source_html.pages.coverage");
+    for (const error of coverageErrors) {
+      if (error.message.includes("Figma") || error.message.includes("design_source")) {
+        throw new Error(`template-stock fixture: coverage error should not mention Figma/design_source on template-stock path, got: ${error.message}`);
+      }
+    }
+  }
+} finally {
+  rmSync(templateStockTmp, { recursive: true, force: true });
+}
+
 const designSourceTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-design-source-"));
 try {
   // No manifest, no source file for `landing` — but spec carries design_source.

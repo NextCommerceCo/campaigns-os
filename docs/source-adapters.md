@@ -4,6 +4,8 @@ The current release uses `html_funnel`: prepared HTML/CSS/assets provided by the
 
 The adapter is deliberately explicit so the Build Packet, doctor, build, polish, deploy, and QA gates can reason about the source pages the same way every time.
 
+> **Where does the source HTML come from?** That's the entry-point question, covered in a separate doc: [docs/entry-points.md](./entry-points.md) names the five recognized shapes (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and explains how each populates the inputs this adapter consumes.
+
 ## `html_funnel`
 
 Input:
