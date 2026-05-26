@@ -108,6 +108,11 @@
                   "secondary": { "type": "string", "minLength": 1 }
                 }
               },
+              "source_hash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "Optional sha256 of the source HTML file at the time the manifest was written. Doctor compares this to the on-disk file's actual hash and warns on mismatch (Slice 6 drift detection)."
+              },
               "skip_reason": { "type": "string", "minLength": 1 },
               "notes": { "type": ["string", "null"] }
             },
