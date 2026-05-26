@@ -1314,6 +1314,10 @@ try {
   const upsellSpecPage = hintedSpec.funnels?.[0]?.pages?.find((p) => p.type === "upsell");
   if (!upsellSpecPage) throw new Error("assembly-hints fixture: example spec has no upsell page; adjust fixture spec.");
   upsellSpecPage.upsell_template_pattern = "mv";
+  // Slice 4b: declare a tier range on the upsell page. The packet should
+  // surface this on the matching source_html.pages mapping the same way
+  // upsell_template_pattern flows through.
+  upsellSpecPage.upsell_mv_tiers = { min: 2, max: 4 };
 
   const specPath = resolve(assemblyHintsTmp, "campaignspec.json");
   writeJson(specPath, hintedSpec);
@@ -1344,11 +1348,18 @@ try {
   if (upsellMapping.upsell_template_pattern !== "mv") {
     throw new Error(`assembly-hints fixture: expected upsell mapping to carry upsell_template_pattern="mv", got ${JSON.stringify(upsellMapping)}`);
   }
+  // Slice 4b: tier range round-trips into the same mapping.
+  if (!upsellMapping.upsell_mv_tiers || upsellMapping.upsell_mv_tiers.min !== 2 || upsellMapping.upsell_mv_tiers.max !== 4) {
+    throw new Error(`assembly-hints fixture: expected upsell mapping to carry upsell_mv_tiers={min:2,max:4}, got ${JSON.stringify(upsellMapping)}`);
+  }
   // Non-upsell mappings should NOT carry the pattern field — it was only set
   // on the upsell spec page, so other mappings stay clean.
   const landingMapping = hintAdoptedPacket.source_html.pages.find((p) => p.page_id !== upsellSpecPage.id);
   if (landingMapping && "upsell_template_pattern" in landingMapping) {
     throw new Error(`assembly-hints fixture: non-upsell mappings should not carry upsell_template_pattern, got ${JSON.stringify(landingMapping)}`);
+  }
+  if (landingMapping && "upsell_mv_tiers" in landingMapping) {
+    throw new Error(`assembly-hints fixture: non-upsell mappings should not carry upsell_mv_tiers, got ${JSON.stringify(landingMapping)}`);
   }
   const hintContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
   const hintCandidate = (hintContext.template?.candidates || []).find((c) => c.source?.includes("preferred_template_family"));
@@ -1380,6 +1391,31 @@ try {
   const stillHintedCandidate = (overrideContext.template?.candidates || []).find((c) => c.source?.includes("preferred_template_family"));
   if (!stillHintedCandidate || stillHintedCandidate.family !== "olympus-mv-single-step") {
     throw new Error(`assembly-hints fixture: hint provenance should survive CLI override, got ${JSON.stringify(overrideContext.template?.candidates)}`);
+  }
+
+  // 3. Slice 4b: partial / malformed upsell_mv_tiers shapes should NOT flow
+  //    into the packet. Upstream spec validation warns the author; the
+  //    consumer side drops the field rather than passing half-state
+  //    downstream.
+  for (const malformed of [{ min: 5, max: 2 }, { min: 1 }, { min: "1", max: 3 }, "junk", null]) {
+    upsellSpecPage.upsell_mv_tiers = malformed;
+    writeJson(specPath, hintedSpec);
+    runCliJsonAllowFailure([
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus-mv-two-step",
+      "--json",
+    ]);
+    const malformedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+    const malformedMapping = malformedPacket.source_html.pages.find((p) => p.page_id === upsellSpecPage.id);
+    if (!malformedMapping) {
+      throw new Error(`assembly-hints fixture: expected upsell mapping in packet for malformed tier input ${JSON.stringify(malformed)}, got ${JSON.stringify(malformedPacket.source_html.pages)}`);
+    }
+    if ("upsell_mv_tiers" in malformedMapping) {
+      throw new Error(`assembly-hints fixture: malformed tier input ${JSON.stringify(malformed)} should have been dropped, got ${JSON.stringify(malformedMapping)}`);
+    }
   }
 } finally {
   rmSync(assemblyHintsTmp, { recursive: true, force: true });
