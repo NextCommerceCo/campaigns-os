@@ -66,6 +66,32 @@ Behavior:
 
 When the manifest is absent, prepare-build's behavior is unchanged — pages are matched by filesystem name slug as before.
 
+### Per-page `source_hash` (Slice 6 drift detection)
+
+Each `manifest.pages[]` entry MAY carry a `source_hash` field — the sha256 hex digest of the source HTML file's contents at the moment the producer wrote the manifest. When present, prepare-build threads the hash onto the matching `packet.source_html.pages[]` mapping. Doctor reads the packet mapping at validate time, computes the current on-disk sha256 of the same file, and warns (`source_html.pages.source_hash`) when they diverge.
+
+Behavior:
+
+- Optional on the producer side. Producers that don't emit `source_hash` (pre-Slice-6 manifests, template-stock, hand-authored) keep working; doctor's drift check is silent without a hash to compare.
+- Warning severity only. A drift never blocks a build — the operator decides whether to re-run the producer to refresh the manifest or accept the local edits.
+- The warning names the file path and includes both hashes (truncated to 12 chars) so the operator can confirm which file diverged without re-running the producer.
+
+### Reference AI-generated producer
+
+`scripts/reference-ai-producer.mjs` ships in this repo as the smallest possible producer reference. It walks a folder of HTML files (auto-discovery) or accepts explicit `--page page_id=path` mappings, computes sha256 per file, and emits the `source-html-manifest/v0` at the canonical location.
+
+Usage:
+
+```bash
+node scripts/reference-ai-producer.mjs \
+  --source <source-root> \
+  --campaign-slug <slug> \
+  [--generator <name@version>] \
+  [--page landing=presell-a.html --page checkout=checkout/step.html]
+```
+
+Real AI agents (Claude, Codex, etc.) that produce campaign source HTML should adopt this manifest shape so doctor's design_source-aware error messages and Slice 6 drift detection work uniformly across producers. The script generates only the manifest; it does not write any HTML.
+
 ## Authoring-Time Hints (Template Family + Upsell Pattern)
 
 The CampaignSpec carries two optional **hints** the build agent uses

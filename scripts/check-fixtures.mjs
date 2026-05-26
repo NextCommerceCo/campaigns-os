@@ -1634,4 +1634,276 @@ try {
   rmSync(nextOrchestrationTmp, { recursive: true, force: true });
 }
 
+// Slice 5b + 5c: AI-generated entry point end-to-end.
+//
+// Two halves exercised:
+//   1. Producer side — running the reference AI producer emits a v0
+//      manifest with sha256 hashes per page entry, generator stamped.
+//   2. Consumer side — prepare-build picks up the manifest, threads
+//      source_hash onto each packet mapping; doctor's design_source-aware
+//      error variant for "ai-generated" fires when a spec page references
+//      ai-generated source HTML that isn't present.
+const aiGenTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-ai-generated-"));
+try {
+  const sourceRoot = resolve(aiGenTmp, "source-html");
+  const targetRepo = resolve(aiGenTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page} (ai-generated)</body></html>`);
+  }
+
+  // 1. Producer side — run the reference AI producer; the manifest must land
+  //    at the canonical path and carry source_hash + generator.
+  execFileSync(
+    "node",
+    [
+      resolve(root, "scripts/reference-ai-producer.mjs"),
+      "--source", sourceRoot,
+      "--campaign-slug", "ai-gen-demo",
+      "--generator", "reference-ai-producer@test",
+    ],
+    { stdio: "ignore" },
+  );
+  const manifestPath = resolve(sourceRoot, ".campaigns-os/source-html-manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error("ai-generated fixture: producer should have written the manifest at .campaigns-os/source-html-manifest.json");
+  }
+  const manifest = readJson(manifestPath);
+  if (manifest.schema_version !== "source-html-manifest/v0") {
+    throw new Error(`ai-generated fixture: manifest schema_version should be source-html-manifest/v0, got ${manifest.schema_version}`);
+  }
+  if (manifest.generator !== "reference-ai-producer@test") {
+    throw new Error(`ai-generated fixture: manifest generator should reflect the --generator flag, got ${manifest.generator}`);
+  }
+  if (!Array.isArray(manifest.pages) || manifest.pages.length !== 4) {
+    throw new Error(`ai-generated fixture: manifest should list 4 pages, got ${JSON.stringify(manifest.pages)}`);
+  }
+  for (const entry of manifest.pages) {
+    if (typeof entry.source_hash !== "string" || !/^[0-9a-f]{64}$/.test(entry.source_hash)) {
+      throw new Error(`ai-generated fixture: manifest entry should carry a 64-char hex source_hash, got ${JSON.stringify(entry)}`);
+    }
+  }
+
+  // 2. Consumer side — declare design_source.type="ai-generated" on the
+  //    landing page so doctor's design_source-aware branch is exercised. The
+  //    spec example doesn't set design_source by default; we mutate it
+  //    before writing the spec file.
+  const spec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const landingPage = spec.funnels?.[0]?.pages?.find((p) => p.type === "landing");
+  if (!landingPage) throw new Error("ai-generated fixture: example spec missing a landing page; pick a different fixture spec.");
+  landingPage.design_source = {
+    type: "ai-generated",
+    file_url: "https://design-archive.example.com/ai-gen/landing-v1",
+    notes: "Produced by Claude on 2026-05-26",
+  };
+  const specPath = resolve(aiGenTmp, "campaignspec.json");
+  writeJson(specPath, spec);
+
+  // Run start → prepare-build is invoked internally; packet should pick up
+  // the manifest's source_hash and thread it onto the mapping.
+  runCliJson([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+  const packet = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  const landingMapping = packet.source_html.pages.find((p) => p.page_id === landingPage.id);
+  if (!landingMapping || landingMapping.path !== "landing.html") {
+    throw new Error(`ai-generated fixture: landing mapping should resolve via manifest, got ${JSON.stringify(landingMapping)}`);
+  }
+  if (typeof landingMapping.source_hash !== "string" || landingMapping.source_hash.length !== 64) {
+    throw new Error(`ai-generated fixture: landing mapping should carry source_hash from manifest, got ${JSON.stringify(landingMapping)}`);
+  }
+  // Every mapping should carry source_hash since the manifest set one for every page.
+  for (const mapping of packet.source_html.pages) {
+    if (!mapping.source_hash) {
+      throw new Error(`ai-generated fixture: every manifest-derived mapping should carry source_hash, missing on ${JSON.stringify(mapping)}`);
+    }
+  }
+
+  // 3. Doctor error variant — delete the landing source HTML so coverage
+  //    fails for that page. Doctor should surface the ai-generated
+  //    variant of the message (recommend re-running the producing agent).
+  rmSync(resolve(sourceRoot, "landing.html"));
+  // Also drop the manifest so the coverage failure surfaces through the
+  // filesystem-fallback path (which routes through coverageErrorMessage).
+  rmSync(manifestPath);
+  const aiGenDoctorResult = runCliJsonAllowFailure([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+  const aiGenCoverageErrors = (aiGenDoctorResult.doctor?.errors || []).filter((issue) => issue.code === "source_html.pages.coverage");
+  const aiGenLandingError = aiGenCoverageErrors.find((issue) => issue.detail?.page_id === landingPage.id);
+  if (!aiGenLandingError) {
+    throw new Error(`ai-generated fixture: doctor should fire a coverage error for the missing landing page, got errors=${JSON.stringify(aiGenCoverageErrors)}`);
+  }
+  if (!aiGenLandingError.message.includes("ai-generated")) {
+    throw new Error(`ai-generated fixture: coverage error message should mention "ai-generated" for the variant hint, got: ${aiGenLandingError.message}`);
+  }
+  if (!aiGenLandingError.message.includes("re-run the producing agent")) {
+    throw new Error(`ai-generated fixture: coverage error message should recommend "re-run the producing agent", got: ${aiGenLandingError.message}`);
+  }
+} finally {
+  rmSync(aiGenTmp, { recursive: true, force: true });
+}
+
+// Slice 5d: Hand-authored entry point — same shape as template-stock from
+// the consumer's view (no design_source, no manifest) but exercised with
+// non-conventional filenames to prove filesystem fallback handles
+// designer/dev-authored HTML that doesn't follow canonical slug names.
+const handAuthoredTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-hand-authored-"));
+try {
+  const sourceRoot = resolve(handAuthoredTmp, "source-html");
+  const targetRepo = resolve(handAuthoredTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  // Bespoke filenames matching the canonical slugs — filesystem fallback
+  // resolves by slug, so these still match the spec pages.
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page} (hand-authored bespoke)</body></html>`);
+  }
+
+  // Spec must NOT carry design_source on any page (defining property of the
+  // hand-authored entry point per docs/entry-points.md).
+  const spec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const hasAnyDesignSource = (spec.funnels || []).some((funnel) =>
+    (funnel.pages || []).some((page) => page.design_source != null),
+  );
+  if (hasAnyDesignSource) {
+    throw new Error("hand-authored fixture sanity: example spec carries design_source on some page; pick a different fixture spec.");
+  }
+  const specPath = resolve(handAuthoredTmp, "campaignspec.json");
+  writeJson(specPath, spec);
+  const result = runCliJson([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  // No manifest expected.
+  if (existsSync(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"))) {
+    throw new Error("hand-authored fixture: no manifest should land in the source root.");
+  }
+
+  // Every active spec page should resolve via filesystem fallback.
+  const packet = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  for (const expected of ["landing.html", "checkout.html", "upsell.html", "receipt.html"]) {
+    const mapping = packet.source_html.pages.find((p) => p.path === expected);
+    if (!mapping) {
+      throw new Error(`hand-authored fixture: expected ${expected} mapping via filesystem slug, got pages=${JSON.stringify(packet.source_html.pages)}`);
+    }
+    // Hand-authored path has no source_hash (no manifest to source from).
+    if ("source_hash" in mapping) {
+      throw new Error(`hand-authored fixture: mapping should not carry source_hash without a manifest, got ${JSON.stringify(mapping)}`);
+    }
+  }
+
+  // Doctor coverage errors (if any) must not include ai-generated / Figma
+  // hint text — the hand-authored path is design_source-less, so only the
+  // generic message applies.
+  const coverageErrors = (result.doctor?.errors || []).filter((issue) => issue.code === "source_html.pages.coverage");
+  for (const error of coverageErrors) {
+    if (error.message.includes("Figma") || error.message.includes("ai-generated") || error.message.includes("design_source")) {
+      throw new Error(`hand-authored fixture: coverage error should not mention Figma / ai-generated / design_source on the hand-authored path, got: ${error.message}`);
+    }
+  }
+} finally {
+  rmSync(handAuthoredTmp, { recursive: true, force: true });
+}
+
+// Slice 6: source-hash drift detection.
+//
+// Producer emits a manifest with sha256 per page → consumer threads the
+// hash onto the packet → doctor runs against the packet → operator edits
+// the source file on disk → doctor's next run warns about the drift.
+//
+// Silent when manifest doesn't carry source_hash (backward compat) and when
+// the file is unchanged.
+const driftTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-drift-"));
+try {
+  const sourceRoot = resolve(driftTmp, "source-html");
+  const targetRepo = resolve(driftTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page} v1</body></html>`);
+  }
+
+  // Producer emits a manifest with source_hash on every entry.
+  execFileSync(
+    "node",
+    [
+      resolve(root, "scripts/reference-ai-producer.mjs"),
+      "--source", sourceRoot,
+      "--campaign-slug", "drift-demo",
+    ],
+    { stdio: "ignore" },
+  );
+
+  const specPath = resolve(driftTmp, "campaignspec.json");
+  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  const startResult = runCliJson([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  // 1. Initial doctor run after start — no drift warning expected (file
+  //    hashes match the manifest because nothing has been edited).
+  const initialDriftWarnings = (startResult.doctor?.warnings || []).filter(
+    (issue) => issue.code === "source_html.pages.source_hash",
+  );
+  if (initialDriftWarnings.length > 0) {
+    throw new Error(`drift fixture: no drift warnings expected immediately after start, got ${JSON.stringify(initialDriftWarnings)}`);
+  }
+
+  // 2. Operator edits the landing page (changes its hash) and re-runs
+  //    doctor against the existing packet. The drift warning should fire
+  //    naming the landing file.
+  writeFileSync(resolve(sourceRoot, "landing.html"), `<html><body>landing v2 (operator edits)</body></html>`);
+  const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
+  const driftResult = runCliJsonAllowFailure([
+    "doctor",
+    "--packet", packetPath,
+    "--spec", specPath,
+    "--json",
+  ]);
+  const driftWarnings = (driftResult.warnings || []).filter(
+    (issue) => issue.code === "source_html.pages.source_hash",
+  );
+  if (driftWarnings.length !== 1) {
+    throw new Error(`drift fixture: expected exactly one drift warning after editing landing.html, got ${JSON.stringify(driftResult.warnings)}`);
+  }
+  if (!driftWarnings[0].message.includes("landing.html") || !driftWarnings[0].message.includes("hash mismatch")) {
+    throw new Error(`drift fixture: drift warning should name landing.html and "hash mismatch", got: ${driftWarnings[0].message}`);
+  }
+
+  // 3. Unedited files stay silent — the warning fires only for the page
+  //    whose on-disk content diverged.
+  for (const warning of driftWarnings) {
+    if (!warning.message.includes("landing.html")) {
+      throw new Error(`drift fixture: unexpected drift warning for non-landing page, got: ${warning.message}`);
+    }
+  }
+} finally {
+  rmSync(driftTmp, { recursive: true, force: true });
+}
+
 console.log("Fixture checks passed");

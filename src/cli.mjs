@@ -671,6 +671,16 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
       // shapes (empty primary, non-string secondary, etc.).
       const variantLabels = normalizedVariantLabels(page.variant_labels);
       if (variantLabels) mapping.variant_labels = variantLabels;
+      // Slice 6: source_hash drift detection. When the manifest carries a
+      // sha256 for the source file, thread it onto the packet so doctor can
+      // compare it to the on-disk file's actual hash at validate time. A
+      // mismatch means the file was edited after the manifest was written
+      // — useful signal for "design has drifted from what got handed off."
+      // Optional: producers that don't emit hashes (or pre-Slice-6 manifests)
+      // produce mappings without source_hash; doctor's drift check is silent
+      // in that case.
+      const sourceHash = optionalString(entry.source_hash);
+      if (sourceHash) mapping.source_hash = sourceHash;
       mappings.push(mapping);
       matchedIds.add(page.id);
       decisions.push({
@@ -757,7 +767,18 @@ function matchSourcePages(specPages, htmlFiles) {
         evidence: [`matched source filename against page keys: ${keys.join(", ")}`],
       });
     } else {
-      mappings.push({ page_id: page.id, skip_reason: "No matching source HTML file found; provide a source file or an explicit skip reason before build." });
+      // Slice 5b/5c: when the spec page carries design_source, the absence of
+      // source HTML is a coverage error (producer hasn't run / handoff is
+      // incomplete), NOT a partial-build skip. Omit the mapping so doctor's
+      // validateSourceCoverage fires the design_source-aware coverageErrorMessage
+      // with producer-specific guidance (figma → run handoff; ai-generated →
+      // re-run the agent). Pages without design_source keep the existing
+      // skip_reason posture so template-stock / hand-authored builds can
+      // proceed in partial scope.
+      const hasDesignSource = isObject(page.design_source);
+      if (!hasDesignSource) {
+        mappings.push({ page_id: page.id, skip_reason: "No matching source HTML file found; provide a source file or an explicit skip reason before build." });
+      }
       prompts.push({
         code: "MISSING_SOURCE_PAGE",
         stage: "prepare_build",
@@ -2008,8 +2029,17 @@ function summarizeScopePages(pages) {
 
 /**
  * Build a context-aware error message for a CampaignSpec page that has no source mapping.
- * When `design_source` is set, point the operator at the figma-sections-export handoff so
- * the missing source HTML can be regenerated instead of leaving the operator guessing.
+ * When `design_source` is set, point the operator at the producing pipeline so the missing
+ * source HTML can be regenerated instead of leaving the operator guessing.
+ *
+ * Per docs/entry-points.md, today's recognized producers:
+ *   - figma:        run figma-sections-export
+ *   - ai-generated: re-run the producing agent (Claude/Codex/etc.)
+ *   - hand-authored / template-stock: no design_source set; falls through to generic
+ *
+ * Future producers (Penpot, Sketch, plain Markdown converters, etc.) slot in by adding a
+ * `design_source.type` value here. The fallback path emits a generic "produce the source
+ * HTML for this page" message so unknown types don't crash the operator's UX.
  *
  * @param {object} page Active spec page (may carry `design_source`).
  * @returns {string}
@@ -2021,10 +2051,14 @@ function coverageErrorMessage(page) {
     if (designSource.type === "figma" && fileUrl) {
       return `Active CampaignSpec page "${page.id}" has no source mapping. Design is in Figma at ${fileUrl}; run figma-sections-export (npm run handoff -- <slug>) to emit the source-html manifest, then rerun prepare-build.`;
     }
+    if (designSource.type === "ai-generated") {
+      const fileUrlHint = fileUrl ? ` (design reference: ${fileUrl})` : "";
+      return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="ai-generated"${fileUrlHint} — re-run the producing agent so the source HTML and source-html manifest land in the source root, then rerun prepare-build. See docs/entry-points.md for the AI-generated entry point contract.`;
+    }
     if (!fileUrl) {
       return `Active CampaignSpec page "${page.id}" has no source mapping. design_source is set but file_url is missing — add file_url to the spec before requesting a build.`;
     }
-    return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="${designSource.type}" at ${fileUrl}; produce the source HTML for this page before rerunning prepare-build.`;
+    return `Active CampaignSpec page "${page.id}" has no source mapping. design_source.type="${designSource.type}" at ${fileUrl}; produce the source HTML for this page (or update design_source.type to a recognized producer — see docs/entry-points.md) before rerunning prepare-build.`;
   }
   return `Active CampaignSpec page "${page.id}" has no source mapping.`;
 }
@@ -2075,14 +2109,37 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
       const fullPath = resolve(sourceRoot, page.path);
       if (!existsSync(fullPath) || !statSync(fullPath).isFile()) {
         addIssue(errors, "source_html.pages.path", `Source page file does not exist: ${page.path}`);
-      } else if (specPage) {
-        builtPages.push({
-          page_id: specPage.id,
-          type: specPage.type || "page",
-          role: pageRole(specPage.type),
-          route: publicRouteForPage(specPage),
-          source_path: page.path,
-        });
+      } else {
+        // Slice 6: drift detection. When the packet carries a manifest-derived
+        // source_hash for this page, compute the on-disk file's actual hash
+        // and warn when they diverge. A mismatch means the file was edited
+        // after the manifest was written, which is the signal that "design
+        // handoff is stale" — operator should re-run the producer or accept
+        // the local edits and regenerate the manifest.
+        //
+        // Silent when source_hash is absent (template-stock, hand-authored,
+        // and producers that haven't adopted Slice 6 yet). Never an error —
+        // drift is a warning so a build can still ship.
+        const expectedHash = optionalString(page.source_hash);
+        if (expectedHash) {
+          const actualHash = sha256File(fullPath);
+          if (actualHash !== expectedHash) {
+            addIssue(
+              warnings,
+              "source_html.pages.source_hash",
+              `Source page "${page.page_id}" hash mismatch — file at ${page.path} has changed since the manifest was written (manifest sha256=${expectedHash.slice(0, 12)}…, on-disk sha256=${actualHash.slice(0, 12)}…). Re-run the producer to refresh the manifest, or accept the local edits.`,
+            );
+          }
+        }
+        if (specPage) {
+          builtPages.push({
+            page_id: specPage.id,
+            type: specPage.type || "page",
+            role: pageRole(specPage.type),
+            route: publicRouteForPage(specPage),
+            source_path: page.path,
+          });
+        }
       }
     } else if (!page.skip_reason) {
       addIssue(errors, "source_html.pages.skip_reason", `Source mapping "${page.page_id}" needs path or skip_reason.`);
