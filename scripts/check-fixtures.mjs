@@ -813,7 +813,13 @@ try {
     if (!generatedPacket.spec?.local_path?.includes("fetched-specs/fixture-map-id.json")) {
       throw new Error(`map-id fixture: packet spec.local_path should point at the cached spec, got ${generatedPacket.spec?.local_path}`);
     }
-    const fetchCountAfterStart = fetchCount;
+    // Verify the network was actually hit on the first run. Without this,
+    // a regression that silently returned a cached spec on a fresh invocation
+    // (or a no-op resolveSpecPath) would pass the "spec_source.source=remote"
+    // assertion above purely by mislabelling.
+    if (fetchCount < 1) {
+      throw new Error(`map-id fixture: happy path should have hit the proxy at least once, but server received ${fetchCount} request(s)`);
+    }
 
     // 2. --cached-spec re-reads the cache without a network call.
     fetchCount = 0;
@@ -832,6 +838,15 @@ try {
     }
     if (fetchCount !== 0) {
       throw new Error(`map-id fixture: --cached-spec should NOT hit the network, but server received ${fetchCount} request(s)`);
+    }
+    // The cached-spec packet must still wire spec.local_path at the cache
+    // file — the same contract as the remote-fetch path. A future change
+    // that resolves the cache differently (e.g. embeds the JSON inline,
+    // points at a transient temp file) would silently break downstream
+    // stages that read packet.spec.local_path; lock the path here.
+    const cachedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+    if (!cachedPacket.spec?.local_path?.includes("fetched-specs/fixture-map-id.json")) {
+      throw new Error(`map-id fixture: --cached-spec packet spec.local_path should point at the cache file, got ${cachedPacket.spec?.local_path}`);
     }
 
     // 3. ok:false response surfaces as a clean CLI error.
