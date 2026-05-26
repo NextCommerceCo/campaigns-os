@@ -729,7 +729,16 @@ try {
   });
 
   const specPath = resolve(manifestTmp, "campaignspec.json");
-  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  // Slice 4e: also declare variant_labels on the upsell page so this fixture
+  // proves the per-page hint flows through applyManifestToPages (the manifest
+  // path), not only matchSourcePages (the filesystem fallback exercised by
+  // the assembly-hints fixture). Without this assertion the manifest-path
+  // emission lives untested.
+  const manifestSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  const manifestUpsellPage = manifestSpec.funnels?.[0]?.pages?.find((p) => p.type === "upsell");
+  if (!manifestUpsellPage) throw new Error("manifest fixture: example spec has no upsell page; adjust fixture spec.");
+  manifestUpsellPage.variant_labels = { primary: "Size", secondary: "Color" };
+  writeJson(specPath, manifestSpec);
   runCliJson([
     "start",
     "--spec", specPath,
@@ -754,6 +763,19 @@ try {
     }
     if (mapping.page_type !== ({ landing: "landing", checkout: "checkout", upsell: "upsell", receipt: "thankyou" })[pageId]) {
       throw new Error(`source-html manifest fixture: expected ${pageId} page_type carried through, got ${mapping.page_type}`);
+    }
+  }
+
+  // Slice 4e: variant_labels round-trips through the manifest path with both
+  // fields preserved on the upsell mapping; non-upsell mappings stay clean.
+  const manifestUpsellMapping = generatedPacket.source_html.pages.find((page) => page.page_id === "upsell");
+  if (!manifestUpsellMapping?.variant_labels || manifestUpsellMapping.variant_labels.primary !== "Size" || manifestUpsellMapping.variant_labels.secondary !== "Color") {
+    throw new Error(`source-html manifest fixture: expected upsell mapping to carry variant_labels={primary:"Size",secondary:"Color"} via applyManifestToPages, got ${JSON.stringify(manifestUpsellMapping)}`);
+  }
+  for (const otherPageId of ["landing", "checkout", "receipt"]) {
+    const otherMapping = generatedPacket.source_html.pages.find((page) => page.page_id === otherPageId);
+    if (otherMapping && "variant_labels" in otherMapping) {
+      throw new Error(`source-html manifest fixture: non-upsell mapping ${otherPageId} should not carry variant_labels, got ${JSON.stringify(otherMapping)}`);
     }
   }
 
