@@ -50,3 +50,26 @@ Retrieval behavior:
 - Failure modes (HTTP error, `{ok: false}` response, network timeout) surface as clean CLI errors before any packet is written.
 
 The fetched spec is treated identically to a `--spec`-supplied local file from this point forward — same identity validation, same `prepareBuild` pipeline, same idempotency semantics. Re-running `start --map-id` on the same campaign re-fetches the spec, regenerates the packet, and re-runs doctor. If `design_source` was newly populated since the last run, the doctor's design_source-aware blocker logic surfaces it; if nothing changed, the run is a no-op as far as downstream stages are concerned.
+
+## Source HTML Manifest Auto-Population
+
+When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`), `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching.
+
+Behavior:
+
+- The manifest is consumed only when its `schema_version` is `source-html-manifest/v0`. Unknown schema versions log a warning and fall back to filesystem matching so out-of-band tools cannot silently corrupt the packet.
+- The manifest's `page_id` must match an active CampaignSpec page id. Manifest entries with no matching spec page surface as a `MANIFEST_EXTRA_PAGE` prompt (analogous to the existing `MISSING_SOURCE_PAGE` prompt) so the operator reconciles either the spec or the manifest before build.
+- Path values are relative to the manifest's location (which is always `<source>/.campaigns-os/source-html-manifest.json`, so effectively relative to the source root).
+- The build context records `source.manifest` with `schema_version`, `generator`, `generated_at`, and `page_count`, and the assembly decision log records evidence citing the manifest file.
+
+When the manifest is absent, prepare-build's behavior is unchanged — pages are matched by filesystem name slug as before.
+
+## Design Source-Aware Coverage Error
+
+CampaignSpec pages may carry an optional `design_source` block on `Page` — a pointer to the design artifact (Figma file + per-breakpoint selection URLs) that supplies prepared HTML for that page. When doctor detects an active spec page with no source mapping, the `source_html.pages.coverage` error now carries a hint that points the operator at the design source:
+
+- `design_source.type === "figma"` with `file_url`: doctor calls out the Figma file and the figma-sections-export handoff command (`npm run handoff -- <slug>`).
+- `design_source` set without `file_url`: doctor flags the missing `file_url` so the spec can be corrected.
+- `design_source` unset: doctor keeps the original generic coverage error.
+
+The error code (`source_html.pages.coverage`) is unchanged so existing doctor consumers do not need to be updated; only the human-readable `message` and an optional `detail.design_source` payload are added.
