@@ -1385,4 +1385,141 @@ try {
   rmSync(assemblyHintsTmp, { recursive: true, force: true });
 }
 
+// Slice 3 Phase 2: `campaigns-os next` (no stage arg) self-decides the next
+// stage from the current report + doctor state. The orchestration loop:
+//
+//   agent calls `next` → gets stage + prompt → does the work → updates
+//   report.stages.<name>.status → calls `next` again → repeat until "done"
+//
+// Each call re-reads state from disk, so the loop is idempotent and
+// recoverable across sessions / machines. This fixture walks the loop
+// stage by stage and confirms the picker advances in lockstep with the
+// report's recorded state.
+const nextOrchestrationTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-next-orchestration-"));
+try {
+  const sourceRoot = resolve(nextOrchestrationTmp, "source-html");
+  const targetRepo = resolve(nextOrchestrationTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+  }
+  const specPath = resolve(nextOrchestrationTmp, "campaignspec.json");
+  writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
+  runCliJsonAllowFailure([
+    "start",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus",
+    "--json",
+  ]);
+
+  const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
+  const reportPath = resolve(targetRepo, ".campaign-runtime/assembly-report.json");
+
+  function nextNoStage() {
+    return runCliJsonAllowFailure(["next", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  }
+
+  function markStageStatus(reportKey, status, extras = {}) {
+    const report = readJson(reportPath);
+    report.stages[reportKey] = { ...report.stages[reportKey], status, ...extras };
+    writeJson(reportPath, report);
+  }
+
+  function setDeployUrl(url) {
+    const packet = readJson(packetPath);
+    packet.deploy = packet.deploy || {};
+    packet.deploy.preview_url = url;
+    writeJson(packetPath, packet);
+  }
+
+  // After `start` on a target with only package.json (no campaign output
+  // dir yet), report stages are: prepare_build=completed, setup=pending
+  // (scaffold required), assembly=pending, etc. First `next` should pick
+  // setup. This is the realistic agentic shape — start from a fresh target
+  // repo, scaffold first, then build.
+  let step = nextNoStage();
+  if (step.stage !== "setup") {
+    throw new Error(`next-orchestration fixture: expected first picked stage to be "setup" (scaffold required), got ${step.stage}. picked_reason=${step.picked_reason}`);
+  }
+  if (!step.picked_reason || !step.picked_reason.includes("setup")) {
+    throw new Error(`next-orchestration fixture: picked_reason should reference setup, got: ${step.picked_reason}`);
+  }
+
+  // Mark setup completed → picker should advance to build (assembly).
+  markStageStatus("setup", "completed");
+  step = nextNoStage();
+  if (step.stage !== "build") {
+    throw new Error(`next-orchestration fixture: after setup completed, expected "build" (assembly), got ${step.stage}. picked_reason=${step.picked_reason}`);
+  }
+  if (!step.picked_reason || !step.picked_reason.includes("assembly")) {
+    throw new Error(`next-orchestration fixture: build picked_reason should reference the assembly report key, got: ${step.picked_reason}`);
+  }
+  if (!step.prompt || !step.prompt.includes("next-campaigns-build")) {
+    throw new Error(`next-orchestration fixture: build prompt should mention next-campaigns-build skill, got: ${step.prompt?.slice(0, 100)}`);
+  }
+
+  // Mark assembly completed → picker should advance to polish.
+  markStageStatus("assembly", "completed");
+  step = nextNoStage();
+  if (step.stage !== "polish") {
+    throw new Error(`next-orchestration fixture: after assembly completed, expected "polish", got ${step.stage}. picked_reason=${step.picked_reason}`);
+  }
+
+  // Mark polish completed → picker should advance to deploy.
+  markStageStatus("polish", "completed");
+  step = nextNoStage();
+  if (step.stage !== "deploy") {
+    throw new Error(`next-orchestration fixture: after polish completed, expected "deploy", got ${step.stage}. picked_reason=${step.picked_reason}`);
+  }
+  if (!step.prompt || !step.prompt.includes("Deploy the built campaign")) {
+    throw new Error(`next-orchestration fixture: deploy prompt should describe the deploy step, got: ${step.prompt?.slice(0, 100)}`);
+  }
+
+  // Mark deploy completed + set preview URL → picker should advance to qa.
+  markStageStatus("deploy", "completed");
+  setDeployUrl("https://preview.example.com/runtime-packet-demo/");
+  step = nextNoStage();
+  if (step.stage !== "qa") {
+    throw new Error(`next-orchestration fixture: after deploy completed, expected "qa", got ${step.stage}. picked_reason=${step.picked_reason}`);
+  }
+
+  // Mark qa completed → picker should return "done".
+  markStageStatus("qa", "completed");
+  step = nextNoStage();
+  if (step.stage !== "done") {
+    throw new Error(`next-orchestration fixture: after all stages completed, expected "done", got ${step.stage}. picked_reason=${step.picked_reason}`);
+  }
+  if (step.ok !== true) {
+    throw new Error(`next-orchestration fixture: done status should be ok=true, got ${JSON.stringify(step)}`);
+  }
+
+  // Idempotency: a blocked stage should be SURFACED (not skipped). Walk back
+  // by setting polish to "blocked" and re-running next — picker should
+  // return polish with stage_blocked=true.
+  markStageStatus("polish", "blocked", { blockers: [{ code: "TEST_BLOCK", message: "fixture-induced block" }] });
+  step = nextNoStage();
+  if (step.stage !== "polish") {
+    throw new Error(`next-orchestration fixture: blocked stage should be surfaced, got stage=${step.stage}`);
+  }
+  if (step.stage_blocked !== true) {
+    throw new Error(`next-orchestration fixture: blocked stage should set stage_blocked=true, got ${JSON.stringify(step)}`);
+  }
+
+  // completed_with_warnings counts as terminal — picker should NOT pick the
+  // stage again. Mark polish back to completed_with_warnings and re-run; the
+  // picker should advance past polish to the next non-terminal stage. Since
+  // all downstream stages are already completed, it should return "done".
+  markStageStatus("polish", "completed_with_warnings");
+  step = nextNoStage();
+  if (step.stage !== "done") {
+    throw new Error(`next-orchestration fixture: completed_with_warnings should be terminal; expected "done", got ${step.stage}`);
+  }
+} finally {
+  rmSync(nextOrchestrationTmp, { recursive: true, force: true });
+}
+
 console.log("Fixture checks passed");
