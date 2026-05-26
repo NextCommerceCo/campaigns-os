@@ -2402,6 +2402,24 @@ function reportKeyForCliStage(cliStage) {
 }
 
 /**
+ * Predicate: is a polish status acceptable as a handoff into a downstream
+ * stage (deploy, qa)? Polish must be either terminal (completed, completed_*
+ * via prefix matching, or skipped) or explicitly blocked — blocked means the
+ * operator has acknowledged polish couldn't run and recorded a reason, which
+ * is a valid handoff signal too.
+ *
+ * Centralized so deploy and qa stages share one source of truth. Previously
+ * the qa check listed "completed_with_warnings" explicitly (redundant with
+ * the prefix-match on "completed") while the deploy check omitted it,
+ * leaving the appearance of drift even though both behaved the same.
+ */
+function polishHandoffReady(polishStatus) {
+  const status = String(polishStatus || "");
+  if (STAGE_BLOCKED_STATUSES.has(status)) return true;
+  return STAGE_TERMINAL_STATUS_PREFIXES.some((t) => status.startsWith(t));
+}
+
+/**
  * Self-decide which stage should run next given the current report + doctor
  * state. Pure function — reads no filesystem, no network.
  *
@@ -2416,22 +2434,35 @@ function reportKeyForCliStage(cliStage) {
  *                              live AFTER this gate, not before.
  *
  * @returns {{ stage: string, reason: string, blocked?: boolean }}
- *   Where `stage` is one of:
- *     - "doctor-blocked"             — doctor reported errors
- *     - "setup" | "build" | "polish" | "deploy" | "qa"  — next stage to run
- *     - "done"                       — every stage in terminal status
+ *   An object with three possible shapes:
  *
- *   `blocked: true` is set when the returned stage's recorded status in
- *   the report is "blocked" (per STAGE_BLOCKED_STATUSES). The picker
- *   still returns the stage (rather than treating it as done) so the
- *   orchestrator surfaces the blocker rather than silently skipping
- *   past it.
+ *   1. `{ stage: "doctor-blocked", reason }` — doctor reported errors.
+ *      No `blocked` field. Caller should surface the doctor errors.
+ *   2. `{ stage: "<setup|build|polish|deploy|qa>", reason, blocked? }`
+ *      — next stage to run. `blocked: true` is present and `true` when
+ *      the returned stage's recorded status in the report is "blocked"
+ *      (per STAGE_BLOCKED_STATUSES). The picker still returns the stage
+ *      (rather than treating it as done) so the orchestrator surfaces
+ *      the blocker rather than silently skipping past it. When
+ *      `blocked` is absent or `false`, the stage is in its normal
+ *      ready-to-run state.
+ *   3. `{ stage: "done", reason }` — every stage in terminal status.
+ *      No `blocked` field.
  *
  *   `reason` is a human-readable string describing why this stage was
  *   chosen, intended for direct display in CLI / JSON output so the
  *   operator can audit picker decisions.
+ *
+ *   CONSUMERS: always check `result.stage` first (special values
+ *   "doctor-blocked" and "done" need their own handling), then read
+ *   `result.blocked === true` to detect the surfaced-blocker case.
  */
 function pickNextStage(report, doctor) {
+  // Intentional early-exit on doctor failure: skip the rest of the
+  // picker so the caller surfaces doctor errors as the primary signal
+  // instead of advancing the pipeline. If future stage-specific doctor
+  // signal logic needs to run (e.g. consulting doctor.derived for
+  // specific stages), add it AFTER this gate, not before.
   if (doctor && !doctor.ok) {
     return {
       stage: "doctor-blocked",
@@ -2549,18 +2580,16 @@ function nextStage(stage, args) {
     // etc.) but it's still a stage in the orchestration loop because the
     // agent needs to know when to fire it and what to record afterwards.
     if (!report) addIssue(errors, "next.deploy.report", "Assembly report is required before deploy.");
-    const polishStatus = report?.stages?.polish?.status || "";
-    if (!["completed", "skipped", "blocked"].some((prefix) => polishStatus.startsWith(prefix))) {
-      addIssue(errors, "next.deploy.polish", `Polish status is "${polishStatus || "missing"}"; record completed/skipped/blocked before deploy.`);
+    if (!polishHandoffReady(report?.stages?.polish?.status)) {
+      addIssue(errors, "next.deploy.polish", `Polish status is "${report?.stages?.polish?.status || "missing"}"; record completed/skipped/blocked before deploy.`);
     }
     prompt = deployPrompt(packetPath, reportPath, packet);
   } else if (stage === "qa") {
     if (!report) addIssue(errors, "next.qa.report", "Assembly report is required before QA.");
     const deployUrl = packet.deploy?.preview_url || packet.deploy?.production_url;
     if (!deployUrl) addIssue(errors, "next.qa.deploy_url", "QA requires deploy.preview_url or deploy.production_url.");
-    const polishStatus = report?.stages?.polish?.status || "";
-    if (!["completed", "completed_with_warnings", "skipped", "blocked"].some((prefix) => polishStatus.startsWith(prefix))) {
-      addIssue(errors, "next.qa.polish", `Polish status is "${polishStatus || "missing"}"; record completed/skipped/blocked before QA.`);
+    if (!polishHandoffReady(report?.stages?.polish?.status)) {
+      addIssue(errors, "next.qa.polish", `Polish status is "${report?.stages?.polish?.status || "missing"}"; record completed/skipped/blocked before QA.`);
     }
     prompt = qaPrompt(packetPath, reportPath, packet);
   } else {
