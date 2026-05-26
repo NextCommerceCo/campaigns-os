@@ -617,6 +617,14 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
     if (entry && isNonEmptyString(entry.path)) {
       const mapping = { page_id: page.id, path: entry.path };
       if (isNonEmptyString(entry.page_type)) mapping.page_type = entry.page_type;
+      // Slice 4a Phase 2: per-page UI variant hint flows from the spec page
+      // onto the packet mapping so the build stage can read it without
+      // re-reading the spec. CLI/operator overrides at build time still win.
+      // Upstream spec validation warns when this is set on a non-upsell
+      // page; we surface it verbatim and let the build stage decide what
+      // to do with it.
+      const upsellPattern = optionalString(page.upsell_template_pattern);
+      if (upsellPattern) mapping.upsell_template_pattern = upsellPattern;
       mappings.push(mapping);
       matchedIds.add(page.id);
       decisions.push({
@@ -681,7 +689,13 @@ function matchSourcePages(specPages, htmlFiles) {
     const match = unused[0] || candidates[0] || null;
     if (match) {
       used.add(match.path);
-      mappings.push({ page_id: page.id, path: match.path });
+      const mapping = { page_id: page.id, path: match.path };
+      // Slice 4a Phase 2: see applyManifestToPages for rationale. Same
+      // pattern in both mapping functions so per-page hints flow through
+      // regardless of which path produced the mapping.
+      const upsellPattern = optionalString(page.upsell_template_pattern);
+      if (upsellPattern) mapping.upsell_template_pattern = upsellPattern;
+      mappings.push(mapping);
       decisions.push({
         id: `dec_page_map_${page.id}`,
         stage: "prepare_build",

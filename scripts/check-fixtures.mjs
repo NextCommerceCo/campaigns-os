@@ -1282,4 +1282,107 @@ try {
   rmSync(mapIdTmp, { recursive: true, force: true });
 }
 
+// Slice 4a Phase 2: authoring-time hints flow through prepare-build.
+//
+// Two halves to exercise:
+//   1. campaign.preferred_template_family — packet.assembly.template_family
+//      adopts the hint when no --template-family CLI override is given;
+//      lock stays unlocked (only operator CLI locks the family); decision
+//      log + template_decision_notes cite the hint source.
+//   2. Page.upsell_template_pattern — flows from the spec page onto
+//      packet.source_html.pages[].upsell_template_pattern so the build
+//      stage can read the per-page UI variant without re-parsing the spec.
+//
+// Also asserts CLI override wins on the campaign-level field.
+const assemblyHintsTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-assembly-hints-"));
+try {
+  const sourceRoot = resolve(assemblyHintsTmp, "source-html");
+  const targetRepo = resolve(assemblyHintsTmp, "target-page-kit");
+  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(targetRepo, { recursive: true });
+  writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+  }
+
+  // Build a spec carrying both hints. Pick the campaign-level family that's
+  // distinct from the test's CLI overrides below so the assertions can tell
+  // them apart.
+  const hintedSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
+  hintedSpec.campaign = hintedSpec.campaign || {};
+  hintedSpec.campaign.preferred_template_family = "olympus-mv-single-step";
+  const upsellSpecPage = hintedSpec.funnels?.[0]?.pages?.find((p) => p.type === "upsell");
+  if (!upsellSpecPage) throw new Error("assembly-hints fixture: example spec has no upsell page; adjust fixture spec.");
+  upsellSpecPage.upsell_template_pattern = "mv";
+
+  const specPath = resolve(assemblyHintsTmp, "campaignspec.json");
+  writeJson(specPath, hintedSpec);
+
+  // 1. No --template-family override. Packet should adopt the hint and
+  //    record the hint source in candidates + decision notes.
+  runCliJsonAllowFailure([
+    "prepare-build",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--json",
+  ]);
+  const hintAdoptedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  if (hintAdoptedPacket.assembly?.template_family !== "olympus-mv-single-step") {
+    throw new Error(`assembly-hints fixture: expected packet.assembly.template_family to adopt the hint, got ${hintAdoptedPacket.assembly?.template_family}`);
+  }
+  if (hintAdoptedPacket.assembly?.template_lock?.locked !== false) {
+    throw new Error(`assembly-hints fixture: hint should NOT lock the family (only operator CLI locks), got template_lock=${JSON.stringify(hintAdoptedPacket.assembly?.template_lock)}`);
+  }
+  if (!hintAdoptedPacket.assembly?.template_decision_notes?.includes("hints olympus-mv-single-step")) {
+    throw new Error(`assembly-hints fixture: template_decision_notes should mention the hint source, got: ${hintAdoptedPacket.assembly?.template_decision_notes}`);
+  }
+  const upsellMapping = hintAdoptedPacket.source_html.pages.find((p) => p.page_id === upsellSpecPage.id);
+  if (!upsellMapping) {
+    throw new Error(`assembly-hints fixture: expected upsell mapping in packet, got ${JSON.stringify(hintAdoptedPacket.source_html.pages)}`);
+  }
+  if (upsellMapping.upsell_template_pattern !== "mv") {
+    throw new Error(`assembly-hints fixture: expected upsell mapping to carry upsell_template_pattern="mv", got ${JSON.stringify(upsellMapping)}`);
+  }
+  // Non-upsell mappings should NOT carry the pattern field — it was only set
+  // on the upsell spec page, so other mappings stay clean.
+  const landingMapping = hintAdoptedPacket.source_html.pages.find((p) => p.page_id !== upsellSpecPage.id);
+  if (landingMapping && "upsell_template_pattern" in landingMapping) {
+    throw new Error(`assembly-hints fixture: non-upsell mappings should not carry upsell_template_pattern, got ${JSON.stringify(landingMapping)}`);
+  }
+  const hintContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
+  const hintCandidate = (hintContext.template?.candidates || []).find((c) => c.source?.includes("preferred_template_family"));
+  if (!hintCandidate || hintCandidate.family !== "olympus-mv-single-step") {
+    throw new Error(`assembly-hints fixture: build context should record the hint as a candidate, got ${JSON.stringify(hintContext.template?.candidates)}`);
+  }
+
+  // 2. CLI override wins on conflict. Spec hint = olympus-mv-single-step,
+  //    CLI override = olympus-mv-two-step → packet locks two-step.
+  runCliJsonAllowFailure([
+    "prepare-build",
+    "--spec", specPath,
+    "--source", sourceRoot,
+    "--target", targetRepo,
+    "--template-family", "olympus-mv-two-step",
+    "--json",
+  ]);
+  const overridePacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  if (overridePacket.assembly?.template_family !== "olympus-mv-two-step") {
+    throw new Error(`assembly-hints fixture: CLI override should win over the hint, got ${overridePacket.assembly?.template_family}`);
+  }
+  if (overridePacket.assembly?.template_lock?.locked !== true) {
+    throw new Error(`assembly-hints fixture: CLI override should lock the family, got ${JSON.stringify(overridePacket.assembly?.template_lock)}`);
+  }
+  // The hint should still appear in the candidate list (provenance preserved)
+  // even though the override won — operators auditing later should see what
+  // the spec was hinting at.
+  const overrideContext = readJson(resolve(targetRepo, ".campaign-runtime/build-context.json"));
+  const stillHintedCandidate = (overrideContext.template?.candidates || []).find((c) => c.source?.includes("preferred_template_family"));
+  if (!stillHintedCandidate || stillHintedCandidate.family !== "olympus-mv-single-step") {
+    throw new Error(`assembly-hints fixture: hint provenance should survive CLI override, got ${JSON.stringify(overrideContext.template?.candidates)}`);
+  }
+} finally {
+  rmSync(assemblyHintsTmp, { recursive: true, force: true });
+}
+
 console.log("Fixture checks passed");
