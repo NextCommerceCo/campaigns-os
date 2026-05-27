@@ -24,14 +24,14 @@ Inputs:
 - Campaign Map ID from the Build Packet
 - deployed base URL
 - assembly report
-- QA/test-order policy and sandbox routing confirmation
+- QA/test-order policy, domain allowlist confirmation, and operator-approved order count/path depth
 
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
 - Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA, then run typed-card test-order proof when policy allows. Pause only for missing inputs, blocked policy, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
-- Use `--post-verdict` whenever the user expects the QA tab/dashboard to list the run. A run with `posted: null` is local-only evidence under `qa-output/` and must not be reported as dashboard-visible.
+- Use `--post-verdict` for launch QA and typed-card test-order proof so the QA tab/dashboard carries the full audit log. A run with `posted: null` is local-only evidence under `qa-output/` and must not be reported as dashboard-visible.
 - Browser QA must include checkout commerce geometry evidence, not just mount counts: express-wallet buttons rendered in the current browser, card/CVV hosted iframe host dimensions, iframe text-path height, and center alignment. Apple Pay is browser/device eligible, so record mounted wallet kinds instead of requiring Apple Pay in Chrome-only QA.
 - `qa resolve` accepts either the deploy host or the campaign-root URL; when a Build Packet carries `campaign.public_route_slug`, the runner resolves page URLs under that slug.
 - Routing meta tags must be checked in runtime form. `next-success-url`, `next-upsell-accept-url`, and `next-upsell-decline-url` should point at campaign-root paths such as `/campaign-slug/upsell/`, not source filenames or unrooted spec literals.
@@ -40,13 +40,14 @@ Rules:
 - When CampaignSpec declares checkout `promo_code_input.enabled`, browser QA should enter the mapped `offer_code` and verify active-code state, repricing, discount row rendering, and conditional presentation. Missing promo-code input is a blocker when CampaignSpec, source design, or user instructions declared it.
 - Test orders must exercise the deployed campaign through the Campaign Cart SDK, not a hand-built backend API request.
 - Use the canonical Playwright typed-card path: fill customer/shipping fields, type sandbox card data into the active hosted payment iframes, and click the real checkout submit button.
+- Use a shared safe inbox for typed-card test-order customer email when the operator provides one. Reusing one safe inbox keeps customer/user lists clean while still allowing notification delivery.
 - The legacy SDK test-mode event and direct API order path are diagnostic fallbacks only; do not use them as launch proof unless the operator explicitly asks for a diagnostic fallback.
 - After the base checkout test order redirects to upsell, click the rendered SDK upsell accept/decline controls to prove the live upsell path. Do not fabricate upsell lines with a direct API call.
 - Valid test-order modes are `checkout`, `accept`, `decline`, `both`, `full`, `off`, and explicit accept/decline paths such as `accept-decline-accept`.
 - Browser test orders default to a max-order cap. If `full` expands past that cap, choose explicit sample paths or rerun with a larger `--max-test-orders` only after the operator approves that count.
 - For multi-offer funnels, prefer checkout-only plus an operator-approved sample matrix such as all-decline, all-accept, and one or two mixed paths. Use exhaustive `full` only when the operator explicitly approves the generated order count.
 - Accepted-upsell proof is valid only when the browser observes the order upsell API mutation and the final order evidence contains the selected upsell package. A checkout bump line marked `is_upsell` is not accepted-upsell proof.
-- Do not fire test orders unless the preview/production domain is allowed for the campaign API key and sandbox card routing is confirmed for that merchant.
+- Do not fire test orders unless the preview/production domain is allowed for the campaign API key and the operator-approved order count/path depth is clear. The standard sandbox card credentials are always available; do not ask for merchant-specific sandbox routing confirmation.
 - For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, available payment methods, and market-specific copy.
 - Treat missing deploy URL, missing polish status, or unresolved doctor blockers as launch blockers.
 - Report blockers, warnings, and residual risks.

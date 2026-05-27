@@ -35,7 +35,7 @@ Options:
                                   Requires one-time setup: npm run qa:install-browser.
   --max-test-orders <n>           Safety cap for browser typed-card order count. Default: 6.
   --allow-test-orders             Required with --test-order other than off.
-  --sandbox-test-card-confirmed   Required with --test-order other than off.
+  --sandbox-test-card-confirmed   Required acknowledgement that the standard sandbox test card may be used.
   --test-orders-allowed <bool>    qa policy set: persist test-order permission in the Build Packet.
   --allowed-domains-confirmed <bool>
                                   qa policy set: persist deployed-domain allowlist confirmation.
@@ -46,6 +46,8 @@ Options:
   --test-cvv <cvv>                Test card CVV. Default: 123.
   --test-exp-month <mm>           Test card expiration month. Default: 12.
   --test-exp-year <yyyy>          Test card expiration year. Default: 2030.
+  --test-email <email>            Customer email for browser test orders. Env CAMPAIGNS_OS_QA_TEST_EMAIL is also recognized.
+  --test-email-prefix <prefix>    Legacy unique email prefix override.
   --legacy-api-test-order <off|accept|decline|both>
                                   Diagnostic-only direct Campaigns API order creation; bypasses deployed checkout.
   --api-key <key>                 Campaigns API key for legacy direct API diagnostics. Env QA_CAMPAIGNS_API_KEY is also recognized.
@@ -363,7 +365,7 @@ async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }
   const orders = [];
   for (const path of paths) {
     if (!["accept", "decline"].includes(path)) throw new Error(`Unknown --test-order mode: ${mode}`);
-    const create = await createTestOrder({ apiBase, apiKey, cart, runId, successUrl: checkout.expected_next_url || upsell?.url || checkout.url, spec: resolved.spec });
+    const create = await createTestOrder({ apiBase, apiKey, cart, runId, successUrl: checkout.expected_next_url || upsell?.url || checkout.url, spec: resolved.spec, args });
     const verification = { expected_line_count: cart.length, actual_line_count: 0, diff: [], verified: false };
     if (!create.ok) {
       verification.error = create.error || "order create failed";
@@ -400,10 +402,10 @@ async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }
   return orders;
 }
 
-async function createTestOrder({ apiBase, apiKey, cart, runId, successUrl, spec }) {
+async function createTestOrder({ apiBase, apiKey, cart, runId, successUrl, spec, args = {} }) {
   const shippingMethod = firstShippingMethod(spec);
   const body = {
-    user: { email: `qa+${Date.now()}@example.com`, first_name: "QA", last_name: "Test" },
+    user: { email: stringArg(args["test-email"]) || stringArg(process.env.CAMPAIGNS_OS_QA_TEST_EMAIL) || `qa+campaigns-os-${String(runId).toLowerCase()}@example.com`, first_name: "QA", last_name: "Test" },
     lines: cart.map((item) => ({ package_id: Number(item.packageId), quantity: item.quantity })),
     shipping_address: {
       first_name: "QA",

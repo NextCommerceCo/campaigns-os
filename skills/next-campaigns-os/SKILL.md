@@ -25,7 +25,7 @@ Workflow:
 5. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
 6. After build, require polish and a preview deploy before QA.
 7. Run the package-owned browser QA path in sequence: `npm run qa:install-browser`, `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser`.
-8. When the deployed domain and sandbox card routing are confirmed, run typed-card `--test-order` proof through the rendered checkout/upsell flow.
+8. When the deployed domain is allowlisted and the operator-approved order count/path depth is clear, run typed-card `--test-order` proof through the rendered checkout/upsell flow.
 9. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
 
 ## Session Intake

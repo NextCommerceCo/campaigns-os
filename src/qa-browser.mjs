@@ -326,7 +326,7 @@ async function checkoutPaymentSurfaceAssertions(browserPage, page) {
       card_number_selector: '[data-next-checkout-field="cc-number"], #spreedly-number',
       cvv_selector: '[data-next-checkout-field="cvv"], #spreedly-cvv',
       spreedly_frame_urls: spreedlyFrames.map((frame) => frame.url()).slice(0, 5),
-      next_step: "Run --test-order with allowlist/sandbox confirmation for typed-card checkout proof.",
+      next_step: "Run --test-order after domain allowlist and order count/path depth approval for typed-card checkout proof.",
     },
   }), assertion({
     id: `browser-payment-geometry:${page.page_id}`,
@@ -1094,7 +1094,10 @@ function testOrderSteps(path) {
 function testEmail(args, runId) {
   const explicit = stringArg(args["test-email"]);
   if (explicit) return explicit;
-  const prefix = stringArg(args["test-email-prefix"]) || "qa+campaigns-os";
+  const configured = stringArg(process.env.CAMPAIGNS_OS_QA_TEST_EMAIL);
+  if (configured) return configured;
+  const prefix = stringArg(args["test-email-prefix"]);
+  if (!prefix) return `qa+campaigns-os-${String(runId).toLowerCase()}-${Date.now()}@example.com`;
   return `${prefix}-${String(runId).toLowerCase()}-${Date.now()}@example.com`;
 }
 
@@ -1418,4 +1421,5 @@ function isMissingPlaywrightBrowser(error) {
 export const __qaBrowserTestHooks = Object.freeze({
   acceptedUpsellProof,
   isOrderUpsellsUrl,
+  testEmail,
 });
