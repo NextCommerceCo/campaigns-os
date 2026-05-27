@@ -646,11 +646,64 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
     }
     byPageId.set(entry.page_id, entry);
   }
+
+  // Stable fallback indexes so the manifest survives Map Builder page_id churn.
+  // Map Builder mints fresh opaque page_ids (`page_<ts>_<n>`) on every new map
+  // and on funnel clone, so a manifest keyed only on page_id breaks whenever the
+  // spec is regenerated. We therefore also resolve by `page_url` (the stable
+  // public route) and by `page_type` + ordinal (stable position among same-type
+  // pages). page_id remains the highest-precedence key; these only fill gaps.
+  const byPageUrl = new Map();
+  const typeBuckets = new Map(); // page_type -> [entries] in manifest order
+  for (const entry of manifestPages) {
+    if (!entry || !isNonEmptyString(entry.path)) continue;
+    const url = optionalString(entry.page_url);
+    if (url !== null) {
+      const norm = normalizePageKitRoute(url);
+      if (!byPageUrl.has(norm)) byPageUrl.set(norm, entry);
+    }
+    const t = optionalString(entry.page_type);
+    if (t) {
+      if (!typeBuckets.has(t)) typeBuckets.set(t, []);
+      typeBuckets.get(t).push(entry);
+    }
+  }
+  // Per-type ordinal of each spec page (1-based position among same-type pages).
+  const typeOrdinals = new Map();
+  const typeSeen = new Map();
+  for (const page of specPages) {
+    const t = page.type || "page";
+    const n = (typeSeen.get(t) || 0) + 1;
+    typeSeen.set(t, n);
+    typeOrdinals.set(page.id, n);
+  }
+  const usedEntries = new Set();
+
   const matchedIds = new Set();
 
   for (const page of specPages) {
-    const entry = byPageId.get(page.id);
+    // Resolve in precedence order: exact page_id, then stable page_url, then
+    // page_type + ordinal. Record which key matched for the decision evidence.
+    let entry = byPageId.get(page.id);
+    let matchVia = "page_id";
+    if (!(entry && isNonEmptyString(entry.path))) {
+      const norm = normalizePageKitRoute(optionalString(page.page_url) || "");
+      const urlEntry = byPageUrl.get(norm);
+      if (urlEntry && isNonEmptyString(urlEntry.path) && !usedEntries.has(urlEntry)) {
+        entry = urlEntry;
+        matchVia = "page_url";
+      } else {
+        const bucket = typeBuckets.get(page.type) || [];
+        const ordinal = typeOrdinals.get(page.id) || 1;
+        const typeEntry = bucket[ordinal - 1];
+        if (typeEntry && isNonEmptyString(typeEntry.path) && !usedEntries.has(typeEntry)) {
+          entry = typeEntry;
+          matchVia = "page_type+ordinal";
+        }
+      }
+    }
     if (entry && isNonEmptyString(entry.path)) {
+      usedEntries.add(entry);
       const mapping = { page_id: page.id, path: entry.path };
       if (isNonEmptyString(entry.page_type)) mapping.page_type = entry.page_type;
       // Slice 4a Phase 2: per-page UI variant hint flows from the spec page
@@ -688,9 +741,9 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
         id: `dec_page_map_${page.id}`,
         stage: "prepare_build",
         decision_type: "deterministic_derivation",
-        decision: `mapped CampaignSpec page "${page.id}" to source file "${entry.path}" via source-html manifest`,
-        confidence: "high",
-        evidence: [`source-html manifest entry page_id="${page.id}" path="${entry.path}" from ${manifestPath}`],
+        decision: `mapped CampaignSpec page "${page.id}" to source file "${entry.path}" via source-html manifest (matched by ${matchVia})`,
+        confidence: matchVia === "page_id" ? "high" : "medium",
+        evidence: [`source-html manifest entry matched page "${page.id}" by ${matchVia}; path="${entry.path}" from ${manifestPath}`],
       });
     } else {
       // Distinct from the filesystem-matching fallback skip_reason — operators
@@ -713,6 +766,10 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
     if (!entry || !isNonEmptyString(entry.page_id)) continue;
     if (matchedIds.has(entry.page_id)) continue;
     if (specPages.some((page) => page.id === entry.page_id)) continue;
+    // Don't flag entries that were consumed via the page_url / page_type+ordinal
+    // fallback (their page_id won't match a current spec page after a regen, but
+    // they did resolve to a page).
+    if (usedEntries.has(entry)) continue;
     prompts.push({
       code: "MANIFEST_EXTRA_PAGE",
       stage: "prepare_build",
