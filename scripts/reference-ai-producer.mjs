@@ -20,8 +20,10 @@
  *
  * If no --page mappings are supplied, the script auto-discovers .html files in
  * <source-root> and derives page_id from the basename (e.g. landing.html →
- * page_id="landing", page_type="landing"). Explicit --page args override
- * auto-discovery and can map non-standard filenames or paths into named pages.
+ * page_id="landing", page_type="landing"). Nested index files derive page_id
+ * from their parent directory (e.g. checkout/index.html → "checkout").
+ * Explicit --page args override auto-discovery and can map non-standard
+ * filenames or paths into named pages.
  *
  * The manifest pages[].source_hash is filled in from sha256(file contents) so
  * doctor's Slice 6 drift detection has something to compare against on the
@@ -95,7 +97,7 @@ Options:
 
 Behavior:
   - Without --page args, walks <source> for *.html files and derives page_id from the basename
-    (landing.html → "landing"). Skips files inside .campaigns-os/.
+    (landing.html → "landing"; checkout/index.html → "checkout"). Skips files inside .campaigns-os/.
   - With --page args, only the explicitly mapped files are included. Paths must exist under <source>.
   - Each entry's source_hash is set to sha256(file contents) so doctor can detect drift.
 `);
@@ -136,7 +138,9 @@ function walkHtmlFiles(sourceRoot) {
 
 function derivePageId(filePath, sourceRoot) {
   const rel = relative(sourceRoot, filePath);
-  const slug = basename(rel, extname(rel)).toLowerCase();
+  const base = basename(rel, extname(rel)).toLowerCase();
+  const parent = basename(dirname(rel)).toLowerCase();
+  const slug = base === "index" && parent && parent !== "." ? parent : base;
   return { page_id: slug, page_type: PAGE_TYPE_FROM_SLUG[slug] || null };
 }
 
@@ -149,9 +153,9 @@ function buildEntriesFromAutoDiscovery(sourceRoot) {
     if (page_type) entry.page_type = page_type;
     return entry;
   });
-  // Deduplicate by page_id (last wins; warn if collisions). Standard pages
-  // ship one file per page_type so collisions usually mean the operator
-  // placed two files that derive the same slug.
+  // Deduplicate by page_id. Standard pages ship one file per page_type; a
+  // collision means auto-discovery cannot produce a deterministic handoff and
+  // the operator needs explicit --page mappings.
   const seen = new Map();
   const collisions = [];
   for (const entry of entries) {
@@ -161,9 +165,10 @@ function buildEntriesFromAutoDiscovery(sourceRoot) {
     seen.set(entry.page_id, entry);
   }
   if (collisions.length > 0) {
-    for (const collision of collisions) {
-      process.stderr.write(`reference-ai-producer: page_id "${collision.page_id}" mapped to multiple files: ${collision.paths.join(", ")}. Last one wins; use --page to disambiguate.\n`);
-    }
+    const details = collisions
+      .map((collision) => `page_id "${collision.page_id}" mapped to ${collision.paths.join(", ")}`)
+      .join("; ");
+    fail(`auto-discovery produced duplicate page_id values (${details}). Use explicit --page page_id=path mappings to disambiguate.`);
   }
   return [...seen.values()];
 }
