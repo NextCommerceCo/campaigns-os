@@ -61,7 +61,7 @@ Behavior:
 
 - The manifest is consumed only when its `schema_version` is `source-html-manifest/v0`. Unknown schema versions log a warning and fall back to filesystem matching so out-of-band tools cannot silently corrupt the packet.
 - The manifest's `page_id` must match an active CampaignSpec page id. Manifest entries with no matching spec page surface as a `MANIFEST_EXTRA_PAGE` prompt (analogous to the existing `MISSING_SOURCE_PAGE` prompt) so the operator reconciles either the spec or the manifest before build.
-- Path values are relative to the manifest's location (which is always `<source>/.campaigns-os/source-html-manifest.json`, so effectively relative to the source root).
+- Path values are relative to the source HTML root (`<source>`), not to the `.campaigns-os/` directory that contains the manifest. For example, use `checkout/index.html`, not `../checkout/index.html`.
 - The build context records `source.manifest` with `schema_version`, `generator`, `generated_at`, and `page_count`, and the assembly decision log records evidence citing the manifest file.
 
 When the manifest is absent, prepare-build's behavior is unchanged — pages are matched by filesystem name slug as before.
@@ -78,7 +78,7 @@ Behavior:
 
 ### Reference AI-generated producer
 
-`scripts/reference-ai-producer.mjs` ships in this repo as the smallest possible producer reference. It walks a folder of HTML files (auto-discovery) or accepts explicit `--page page_id=path` mappings, computes sha256 per file, and emits the `source-html-manifest/v0` at the canonical location.
+`scripts/reference-ai-producer.mjs` ships in this repo as the smallest possible producer reference. It walks a folder of HTML files (auto-discovery) or accepts explicit `--page page_id=path` mappings, computes sha256 per file, and emits the `source-html-manifest/v0` at the canonical location. Auto-discovery maps `landing.html` to `landing` and nested `checkout/index.html` to `checkout`; duplicate inferred page ids fail fast, so use explicit `--page` mappings for ambiguous layouts.
 
 Usage:
 

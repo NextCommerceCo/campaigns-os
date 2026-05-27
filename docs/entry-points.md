@@ -134,7 +134,11 @@ per-page; `source_html.pages[]` is per-page).
 - **Manifest:** one combined manifest at the source root listing
   every page, with each entry's `path` pointing at its producer's
   output location. Different producers write to different
-  subdirectories; the manifest unifies them.
+  subdirectories; the manifest unifies them. Manifest paths are
+  relative to the source root (`checkout/index.html`), and the
+  reference producer only auto-derives nested `index.html` files from
+  their parent directory. Use explicit `--page page_id=path` mappings
+  when multiple files would infer the same page id.
 - **`prepare-build` behavior:** when a manifest is present it
   governs every mapping — including pages whose path points into a
   template-stock subdirectory. Operators with mixed sources should

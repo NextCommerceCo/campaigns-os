@@ -1549,12 +1549,34 @@ try {
     writeJson(packetPath, packet);
   }
 
+  // A blocked prepare-build record must stop the loop before setup/build,
+  // even when the live doctor result is otherwise OK. This protects the
+  // assembly report as the durable handoff source of truth.
+  markStageStatus("prepare_build", "blocked", {
+    blockers: [{ code: "TEST_PREPARE_BLOCK", message: "fixture-induced prepare-build block" }],
+  });
+  let step = nextNoStage();
+  if (step.stage !== "prepare-build" || step.ok !== false) {
+    throw new Error(`next-orchestration fixture: blocked prepare_build should stop the picker, got ${JSON.stringify(step)}`);
+  }
+  if (step.stage_blocked !== true) {
+    throw new Error(`next-orchestration fixture: blocked prepare_build should set stage_blocked=true, got ${JSON.stringify(step)}`);
+  }
+  if (!step.errors?.some((issue) => issue.code === "TEST_PREPARE_BLOCK")) {
+    throw new Error(`next-orchestration fixture: prepare_build blockers should surface as next errors, got ${JSON.stringify(step.errors)}`);
+  }
+  step = runCliJsonAllowFailure(["next", "build", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (step.ok !== false || !step.errors?.some((issue) => issue.code === "TEST_PREPARE_BLOCK")) {
+    throw new Error(`next-orchestration fixture: explicit next build should respect blocked prepare_build, got ${JSON.stringify(step)}`);
+  }
+  markStageStatus("prepare_build", "completed", { blockers: [] });
+
   // After `start` on a target with only package.json (no campaign output
   // dir yet), report stages are: prepare_build=completed, setup=pending
   // (scaffold required), assembly=pending, etc. First `next` should pick
   // setup. This is the realistic agentic shape — start from a fresh target
   // repo, scaffold first, then build.
-  let step = nextNoStage();
+  step = nextNoStage();
   if (step.stage !== "setup") {
     throw new Error(`next-orchestration fixture: expected first picked stage to be "setup" (scaffold required), got ${step.stage}. picked_reason=${step.picked_reason}`);
   }
@@ -1620,6 +1642,14 @@ try {
   }
   if (step.stage_blocked !== true) {
     throw new Error(`next-orchestration fixture: blocked stage should set stage_blocked=true, got ${JSON.stringify(step)}`);
+  }
+  step = runCliJsonAllowFailure(["next", "deploy", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (step.ok !== false || !step.errors?.some((issue) => issue.code === "next.deploy.polish")) {
+    throw new Error(`next-orchestration fixture: explicit next deploy should not accept blocked polish as handoff-ready, got ${JSON.stringify(step)}`);
+  }
+  step = runCliJsonAllowFailure(["next", "qa", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (step.ok !== false || !step.errors?.some((issue) => issue.code === "next.qa.polish")) {
+    throw new Error(`next-orchestration fixture: explicit next qa should not accept blocked polish as handoff-ready, got ${JSON.stringify(step)}`);
   }
 
   // completed_with_warnings counts as terminal — picker should NOT pick the
@@ -1755,6 +1785,59 @@ try {
   }
 } finally {
   rmSync(aiGenTmp, { recursive: true, force: true });
+}
+
+// Reference producer auto-discovery should support page-kit-style nested
+// index files without collapsing every page to page_id="index", and should
+// fail fast when two files still infer the same page id.
+const aiGenNestedTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-ai-generated-nested-"));
+try {
+  const sourceRoot = resolve(aiGenNestedTmp, "source-html");
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    mkdirSync(resolve(sourceRoot, page), { recursive: true });
+    writeFileSync(resolve(sourceRoot, page, "index.html"), `<html><body>${page} nested</body></html>`);
+  }
+  execFileSync(
+    "node",
+    [
+      resolve(root, "scripts/reference-ai-producer.mjs"),
+      "--source", sourceRoot,
+      "--campaign-slug", "ai-gen-nested-demo",
+      "--generator", "reference-ai-producer@test",
+    ],
+    { stdio: "ignore" },
+  );
+  const manifest = readJson(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"));
+  const ids = new Set(manifest.pages?.map((entry) => entry.page_id));
+  for (const page of ["landing", "checkout", "upsell", "receipt"]) {
+    if (!ids.has(page)) {
+      throw new Error(`ai-generated nested fixture: nested ${page}/index.html should derive page_id="${page}", got ${JSON.stringify(manifest.pages)}`);
+    }
+  }
+
+  writeFileSync(resolve(sourceRoot, "landing.html"), "<html><body>duplicate landing</body></html>");
+  let duplicateFailed = false;
+  try {
+    execFileSync(
+      "node",
+      [
+        resolve(root, "scripts/reference-ai-producer.mjs"),
+        "--source", sourceRoot,
+        "--campaign-slug", "ai-gen-nested-demo",
+      ],
+      { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" },
+    );
+  } catch (error) {
+    duplicateFailed = true;
+    if (!String(error.stderr || "").includes("duplicate page_id")) {
+      throw new Error(`ai-generated nested fixture: duplicate inferred page ids should explain the failure, got stderr=${String(error.stderr || "")}`);
+    }
+  }
+  if (!duplicateFailed) {
+    throw new Error("ai-generated nested fixture: duplicate inferred page ids should fail auto-discovery");
+  }
+} finally {
+  rmSync(aiGenNestedTmp, { recursive: true, force: true });
 }
 
 // Slice 5d: Hand-authored entry point — same shape as template-stock from
