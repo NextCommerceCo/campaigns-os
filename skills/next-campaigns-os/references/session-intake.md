@@ -23,7 +23,7 @@ Definitions:
 
 - Intent: what the user wants done, such as build, update, QA, repair, or promote.
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign, target repo, or deployed URL.
-- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, repo state, deployed preview/production URL, Campaigns API key source, domain allowlist, and sandbox-card confirmation.
+- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, repo state, deployed preview/production URL, Campaigns API key source, domain allowlist, and operator-approved test-order count/path depth.
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, live campaign routes, and legal/merchant copy.
 - Proof policy: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
 
@@ -145,7 +145,7 @@ Treat test orders as explicit, order-mutating proof. Record:
 
 - Allowed: yes/no/unknown.
 - Domain allowlisted: yes/no/unknown.
-- Sandbox card routing confirmed: yes/no/unknown.
+- Test-order count/path depth approved: yes/no/unknown.
 - Cart matrix: base cart, base plus bump, specific package refs/quantities.
 - Depth: `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
 - Max order cap: default package cap unless the operator approves more.

@@ -8,7 +8,7 @@ Recommended shared scenario:
 - Source adapter: `html_funnel`
 - Local exported CampaignSpec
 - Prepared HTML/assets
-- Test orders disabled unless sandbox routing is explicitly confirmed
+- Test orders disabled unless the deployed domain is allowlisted and the approved order count/path depth is clear
 
 For AI-generated or synthetic source exercises, explicitly tell evaluators that
 the generated HTML is a source artifact, not final page-kit markup. They should

@@ -113,4 +113,4 @@ is not a valid minimum file set.
 
 ## Status
 
-Developer preview. Build output still needs the normal launch gates: build/lint evidence, polish, preview deploy, Playwright browser QA, and typed-card test-order proof when the deployed domain and sandbox card routing are confirmed.
+Developer preview. Build output still needs the normal launch gates: build/lint evidence, polish, preview deploy, Playwright browser QA, and typed-card test-order proof when the deployed domain is allowlisted and the order count/path depth is approved.

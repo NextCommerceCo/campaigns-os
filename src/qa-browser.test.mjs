@@ -27,3 +27,24 @@ test("accepted upsell proof requires exact expected quantity", () => {
   ], [], expected, events);
   assert.equal(exact.ok, true);
 });
+
+test("browser test orders can reuse a configured safe QA inbox", () => {
+  const { testEmail } = __qaBrowserTestHooks;
+  const previous = process.env.CAMPAIGNS_OS_QA_TEST_EMAIL;
+
+  try {
+    process.env.CAMPAIGNS_OS_QA_TEST_EMAIL = "shared@example.test";
+    assert.equal(testEmail({}, "RUN123"), "shared@example.test");
+
+    delete process.env.CAMPAIGNS_OS_QA_TEST_EMAIL;
+    assert.equal(testEmail({ "test-email": "buyer@example.test" }, "RUN123"), "buyer@example.test");
+    assert.match(testEmail({}, "RUN123"), /^qa\+campaigns-os-run123-\d+@example\.com$/);
+    assert.match(testEmail({ "test-email-prefix": "qa+custom" }, "RUN123"), /^qa\+custom-run123-\d+@example\.com$/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CAMPAIGNS_OS_QA_TEST_EMAIL;
+    } else {
+      process.env.CAMPAIGNS_OS_QA_TEST_EMAIL = previous;
+    }
+  }
+});

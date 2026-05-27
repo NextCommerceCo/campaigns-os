@@ -116,7 +116,8 @@ npm run campaigns-os -- qa run \
   --base-url https://preview.example.com/campaign/ \
   --test-order checkout \
   --allow-test-orders \
-  --sandbox-test-card-confirmed
+  --sandbox-test-card-confirmed \
+  --post-verdict
 ```
 
 Supported modes are `checkout`, `decline`, `accept`, `both`, `full`, and explicit
@@ -139,6 +140,10 @@ The default card is the Discover sandbox card `6011 1111 1111 1117`, CVV `123`,
 expiration `12/2030`. Override with `--test-card`, `--test-cvv`,
 `--test-exp-month`, and `--test-exp-year` when a merchant/gateway requires a
 different sandbox card.
+
+Browser test orders can reuse a shared safe inbox with `--test-email <email>` or
+`CAMPAIGNS_OS_QA_TEST_EMAIL` so repeated QA does not create a new customer/user
+record for every run.
 
 The browser driver intentionally behaves like a user:
 
@@ -169,7 +174,7 @@ If a static claim is intentionally preserved, wrap it in an element with
 `data-skip-market-lint="true"` and record why in the assembly report.
 
 Only fire test orders when the campaign preview/production domain is allowlisted
-for the campaign API key and sandbox card routing is confirmed for that merchant.
+for the campaign API key and the operator-approved order count/path depth is clear.
 Test orders are QA evidence; they are not deleted as part of the automated flow.
 
 Use `qa policy set` to record those confirmations in the Build Packet without
