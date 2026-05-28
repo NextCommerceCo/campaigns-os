@@ -1,11 +1,11 @@
 # Campaigns OS
 
-Campaigns OS is the developer toolkit for agent-assisted NEXT campaign builds.
+Campaigns OS is the developer toolkit for agent-assisted campaign builds on [Next Commerce](https://nextcommerce.com), a full-stack ecommerce platform for direct-response brands. A *campaign* is a short, conversion-focused funnel — landing page, checkout, optional upsells/downsells, receipt — wired to live products, price tiers, shipping, and payments.
 
-It gives campaign developers and AI coding tools a clear path for assembling a campaign from prepared page files:
+This toolkit gives campaign developers and AI coding tools a clear path for assembling one from prepared page files:
 
-1. Configure the campaign in Campaigns App.
-2. Create or review the Campaign Map.
+1. Configure the campaign in the Next Commerce dashboard (Campaigns App).
+2. Create or review the Campaign Map in [Campaign Map Builder](https://campaign-map.nextcommerce.com).
 3. Export a local CampaignSpec JSON.
 4. Bring prepared HTML/CSS/assets for the campaign pages.
 5. Create and doctor a Build Packet.
