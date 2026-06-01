@@ -35,7 +35,7 @@ Public `campaigns-os` owns local Finding Capture:
 - Tiny Prompts at natural stage boundaries.
 - Local listing and export.
 
-Internal `next-campaigns-ops` owns aggregation and routing:
+Internal campaign operations tooling owns aggregation and routing:
 
 - clustering findings across runs;
 - deriving trend reports;
@@ -262,7 +262,7 @@ campaigns-os findings submit
 ```
 
 Submission belongs behind the explicit Contribution Boundary and may be backed by
-internal `next-campaigns-ops` ingestion later.
+internal campaign operations ingestion later.
 
 ## Open Questions
 

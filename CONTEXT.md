@@ -79,9 +79,9 @@ _Avoid_: assignee, reporter, owner
 
 **Campaigns OS Operator**:
 A person or agent using Campaigns OS to assemble, adapt, prove, or repair a
-campaign. Operators include internal NEXT/Sellmore team members and future
-agency users; they do not include shoppers or ordinary merchant-facing campaign
-approval viewers.
+campaign. Operators include internal campaign team members and future agency
+users; they do not include shoppers or ordinary merchant-facing campaign approval
+viewers.
 _Avoid_: end user, shopper, customer
 
 **Spec-Driven Campaign Development**:

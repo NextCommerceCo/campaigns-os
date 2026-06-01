@@ -9,7 +9,7 @@ Glossary: [Campaigns OS Context](../CONTEXT.md)
 
 Title: Implement Campaigns OS Workflow Findings Sidecar v0
 
-Team: Sellmore / Campaigns OS
+Team: Campaigns OS
 
 Purpose:
 Add a lightweight, local-first sidecar to public `campaigns-os` so operators and
@@ -241,7 +241,7 @@ Do not expand public docs into internal aggregation or Linear routing details.
   without prompting.
 - The Findings Journal is append-only JSONL under `.campaign-runtime/`.
 - Markdown export is pasteable into Linear/GitHub/Slack.
-- JSON export is suitable for future `next-campaigns-ops` ingestion.
+- JSON export is suitable for future internal campaign operations ingestion.
 - Commands do not require Linear access or NEXT internal credentials.
 - No finding is uploaded automatically.
 - Skipped Tiny Prompts are not recorded.
@@ -268,7 +268,7 @@ npm run campaigns-os -- findings export --json \
 
 ## Follow-Up Ticket Trigger
 
-Create a separate internal `next-campaigns-ops` issue only after v0 public
-capture exists and at least three real runs produce journals. The follow-up
-should ingest exported JSON, group by Observation Stage and Finding Kind, and
-propose Linear issue batches without changing the public package boundary.
+Create a separate internal operations issue only after v0 public capture exists
+and at least three real runs produce journals. The follow-up should ingest
+exported JSON, group by Observation Stage and Finding Kind, and propose issue
+batches without changing the public package boundary.
