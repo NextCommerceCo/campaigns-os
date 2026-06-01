@@ -1,0 +1,44 @@
+# Dependabot version-update config.
+#
+# Surfaces dependency bumps as PRs so the Node-20 GitHub Actions deprecation
+# and stale npm pins don't silently accrue. Grouped per ecosystem to limit
+# review noise.
+#
+# Enables version-update PRs. Dependabot *security* alerts are a separate repo
+# setting (Settings → Code security) and must be toggled there.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+
+  # Root package (playwright + check tooling).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      root:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps"
+
+  # Example/fixture page-kit (internal next-campaign-page-kit).
+  - package-ecosystem: "npm"
+    directory: "/examples/target-page-kit"
+    schedule:
+      interval: "weekly"
+    groups:
+      target-page-kit:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps(examples)"
