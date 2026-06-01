@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { runBrowserChecks, runBrowserTestOrders } from "./qa-browser.mjs";
+import { runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
 import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
@@ -30,15 +30,15 @@ Options:
   --browser-width <px>            Browser viewport width. Default: 1440.
   --browser-height <px>           Browser viewport height. Default: 1200.
   --browser-timeout <ms>          Browser navigation timeout. Default: 30000.
-  --test-order <off|checkout|accept|decline|both|full|accept-decline[-accept...]>
-                                  Create canonical Playwright typed-card test orders through the deployed checkout page.
+  --test-order <off|common|checkout|accept|decline|both|full|accept-decline[-accept...]>
+                                  Create Playwright typed-card test orders through the deployed checkout page.
+                                  Test cards bypass the gateway and create no transactions, so no permission
+                                  flags or packet policy are needed — just pick a mode. Default mode (bare
+                                  --test-order, or "common") runs a 3-5 shape sample; "full" is every permutation.
                                   Requires one-time setup: npm run qa:install-browser.
-  --max-test-orders <n>           Safety cap for browser typed-card order count. Default: 6.
-  --allow-test-orders             Required with --test-order other than off.
-  --sandbox-test-card-confirmed   Required acknowledgement that the standard sandbox test card may be used.
-  --test-orders-allowed <bool>    qa policy set: persist test-order permission in the Build Packet.
+  --max-test-orders <n>           Accidental-flood guard for browser order count (not a permission gate). Default: 6.
   --allowed-domains-confirmed <bool>
-                                  qa policy set: persist deployed-domain allowlist confirmation.
+                                  qa policy set: persist deployed-domain SDK-origin confirmation.
   --preview-url <url>             qa policy set: persist packet deploy.preview_url.
   --production-url <url>          qa policy set: persist packet deploy.production_url.
   --deploy-target <target>        qa policy set: persist packet deploy.target.
@@ -327,14 +327,10 @@ async function maybeRunTestOrders({ args, resolved, runId, assertions }) {
   const mode = String(args["test-order"] || "off").toLowerCase();
   const legacyMode = String(args["legacy-api-test-order"] || "off").toLowerCase();
   if ((!mode || mode === "off") && (!legacyMode || legacyMode === "off")) return [];
-  const packetPolicy = resolved.packet?.qa || {};
   if (mode && mode !== "off") {
-    if (args["allow-test-orders"] !== true || args["sandbox-test-card-confirmed"] !== true) {
-      throw new Error("--test-order requires --allow-test-orders and --sandbox-test-card-confirmed.");
-    }
-    if (resolved.packet && (packetPolicy.test_orders_allowed !== true || packetPolicy.sandbox_test_card_confirmed !== true)) {
-      throw new Error("Build Packet QA policy does not allow browser test orders.");
-    }
+    // Test Orders use global test cards: they bypass the payment gateway, create
+    // no transactions, and need no merchant setup or approval. `--test-order
+    // <mode>` is sufficient intent — no permission flags or packet policy gate.
     const result = await runBrowserTestOrders(resolved.topologies, args, runId);
     assertions.push(...result.assertions);
     return result.orders;
@@ -346,13 +342,9 @@ async function maybeRunTestOrders({ args, resolved, runId, assertions }) {
 async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }) {
   const mode = String(args["test-order"] || "off").toLowerCase();
   if (!mode || mode === "off") return [];
-  const packetPolicy = resolved.packet?.qa || {};
-  if (args["allow-test-orders"] !== true || args["sandbox-test-card-confirmed"] !== true) {
-    throw new Error("--test-order requires --allow-test-orders and --sandbox-test-card-confirmed.");
-  }
-  if (resolved.packet && (packetPolicy.test_orders_allowed !== true || packetPolicy.sandbox_test_card_confirmed !== true)) {
-    throw new Error("Build Packet QA policy does not allow legacy direct API test orders.");
-  }
+  // Diagnostic-only legacy path. Like the browser path, it needs no permission
+  // flags or packet policy gate — test cards bypass the gateway. It still needs
+  // API credentials because it talks to the Campaigns API directly.
   const apiKey = stringArg(args["api-key"]) || process.env.QA_CAMPAIGNS_API_KEY;
   const apiBase = stringArg(args["campaigns-api-base"]) || process.env.CAMPAIGNS_API_BASE;
   if (!apiKey || !apiBase) throw new Error("Legacy direct API test orders require --api-key/QA_CAMPAIGNS_API_KEY and --campaigns-api-base/CAMPAIGNS_API_BASE.");
@@ -405,7 +397,7 @@ async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }
 async function createTestOrder({ apiBase, apiKey, cart, runId, successUrl, spec, args = {} }) {
   const shippingMethod = firstShippingMethod(spec);
   const body = {
-    user: { email: stringArg(args["test-email"]) || stringArg(process.env.CAMPAIGNS_OS_QA_TEST_EMAIL) || `qa+campaigns-os-${String(runId).toLowerCase()}@example.com`, first_name: "QA", last_name: "Test" },
+    user: { email: testEmail(args), first_name: "QA", last_name: "Test" },
     lines: cart.map((item) => ({ package_id: Number(item.packageId), quantity: item.quantity })),
     shipping_address: {
       first_name: "QA",

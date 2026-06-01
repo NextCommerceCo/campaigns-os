@@ -203,10 +203,8 @@ validateCatalogFixtures();
 const qaRunHelp = runCliText(["qa", "run", "--help"]);
 for (const expected of [
   "campaigns-os qa — Node/npm spec-aware QA",
-  "--test-order <off|checkout|accept|decline|both|full|accept-decline[-accept...]>",
+  "--test-order <off|common|checkout|accept|decline|both|full|accept-decline[-accept...]>",
   "--max-test-orders <n>",
-  "--allow-test-orders",
-  "--sandbox-test-card-confirmed",
 ]) {
   if (!qaRunHelp.includes(expected)) {
     throw new Error(`qa run --help should include ${expected}`);

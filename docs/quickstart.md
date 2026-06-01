@@ -135,7 +135,7 @@ Build is not launch readiness. A complete run still needs:
 - preview deploy
 - Campaigns OS Playwright browser install
 - Node/npm QA with Map ID and preview URL
-- typed-card test-order proof when the deployed domain is allowlisted and the order count/path depth is approved
+- typed-card test-order proof via `--test-order common` (global test cards bypass the gateway; no permission/approval needed — depth is the only control)
 
 ```bash
 npm run qa:install-browser

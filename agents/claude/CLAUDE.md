@@ -19,9 +19,9 @@ Core rules:
 - Do not copy Olympus-style `shipping_methods` frontmatter into `shop-three-step`; it uses dynamic shipping through `window.next.getShippingMethods()`.
 - Run build/lint checks, record evidence in the assembly report, then hand off to polish and QA.
 - QA uses the Campaigns OS Node/npm runner: install the package-owned Playwright browser with `npm run qa:install-browser`, run `campaigns-os qa resolve --packet campaign-runtime.build.json`, then run `campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser`.
-- Typed-card test-order proof, when policy allows, uses `campaigns-os qa run --test-order <checkout|decline|accept|both|full|explicit-path>` through the deployed checkout and rendered upsell controls. For deep funnels, prefer operator-approved explicit accept/decline samples unless exhaustive `full` is approved.
+- Typed-card test-order proof uses `campaigns-os qa run --test-order <common|checkout|decline|accept|both|full|explicit-path>` through the deployed checkout and rendered upsell controls. `common` is the default 3-5 shape sample; use `full` for every permutation. Depth is the only control — no permission/approval step.
 - Test-order proof must use the canonical Playwright typed-card path through the deployed checkout: select the rendered cart, fill customer/shipping fields, type the sandbox card into active hosted payment iframes, click the real submit button, then click rendered SDK upsell accept/decline controls and verify receipt/order evidence.
 - Do not use external browser skills, the SDK test-mode event, or hand-built backend API orders as launch proof. Those are diagnostic fallbacks only when explicitly requested.
-- Do not fire SDK test orders unless the deployed domain is allowlisted for the campaign API key and `test_card` sandbox routing is confirmed for the merchant.
+- Test orders are safe to fire any time: global test cards bypass the gateway, create no transactions, and need no merchant-specific routing confirmation. The deployed origin must be allowlisted for the campaign API key so the SDK loads — that is about the SDK initializing, not test-order permission.
 
 Current source adapter: prepared HTML/assets (`html_funnel`).

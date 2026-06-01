@@ -23,7 +23,7 @@ Definitions:
 
 - Intent: what the user wants done, such as build, update, QA, repair, or promote.
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign, target repo, or deployed URL.
-- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, repo state, deployed preview/production URL, Campaigns API key source, domain allowlist, and operator-approved test-order count/path depth.
+- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, repo state, deployed preview/production URL, Campaigns API key source, SDK origin allowlist (so the SDK loads), and test-order depth choice.
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, live campaign routes, and legal/merchant copy.
 - Proof policy: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
 
@@ -45,7 +45,7 @@ Required before build:
 - Source type and source files: Figma, exported HTML, prepared HTML, existing campaign, or other.
 - Pages in scope and any pages to preserve.
 - Template family if known; otherwise infer and ask before locking commerce surfaces.
-- Proof policy, including browser QA and whether typed-card test orders are allowed.
+- Proof policy, including browser QA and the typed-card test-order depth to run.
 
 Route to Build Packet preparation, doctor, setup when scaffold is missing,
 build, polish, then QA.
@@ -105,7 +105,7 @@ Collect:
 - Build Packet path if local; otherwise enough info to resolve topology.
 - Whether browser QA should run.
 - Whether verdict must post to the QA dashboard.
-- Typed-card test-order policy.
+- Typed-card test-order depth (`common`/explicit/`full`).
 
 Route to QA. Do not patch campaign code from the QA-only path.
 
@@ -118,12 +118,12 @@ Collect:
 - Verdict path or dashboard URL/run ID.
 - Build Packet and Assembly Report paths when local.
 - Whether repair may edit source, and which surfaces are protected.
-- Whether order-mutating retests are still allowed.
+- The typed-card test-order depth to re-run for the retest.
 
 The public verdict is the source of repair truth. Route repairable items to
 specialist skills, ask only the needed clarification questions, and keep
 typed-card order failures as manual/specialist handoffs unless the owner and
-test-order gates are clear.
+the test-order depth to re-run are clear.
 
 ### Promotion Or Experiment
 
@@ -141,16 +141,16 @@ hand-edit deployed routing config as the primary promotion path.
 
 ## Test-Order Proof Policy
 
-Treat test orders as explicit, order-mutating proof. Record:
+Treat test orders as cheap, repeatable proof: global test cards bypass the
+gateway and create no transactions, so they need no permission or approval. The
+only real choice is depth. Record:
 
-- Allowed: yes/no/unknown.
-- Domain allowlisted: yes/no/unknown.
-- Test-order count/path depth approved: yes/no/unknown.
+- Depth: `common` (default 3-5 shape sample), `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
 - Cart matrix: base cart, base plus bump, specific package refs/quantities.
-- Depth: `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
-- Max order cap: default package cap unless the operator approves more.
+- SDK origin allowlisted (so the SDK loads): yes/no/unknown — separate from test-order permission.
+- Max order cap: the accidental-flood guard; raise `--max-test-orders` for exhaustive proof.
 - Market coverage: default market only or at least one non-default country/currency path.
+- Customer email: reuse one inbox via `--test-email`/`CAMPAIGNS_OS_QA_TEST_EMAIL` (the customer record is not deletable).
 
-For deep funnels, prefer checkout-only plus an operator-approved sample matrix:
-all-decline, all-accept, and one or two mixed explicit paths. Use `full` only
-after showing the generated order count and cap.
+`--test-order common` covers the typical checkout-plus-accept/decline sample
+automatically. Use `full` when you want every generated permutation.

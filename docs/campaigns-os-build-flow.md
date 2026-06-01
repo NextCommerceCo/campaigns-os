@@ -11,10 +11,10 @@ The happy path is intentionally tight:
 7. Run polish against the built campaign, then deploy a preview.
 8. Install the package-owned Playwright browser with `npm run qa:install-browser`.
 9. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser --post-verdict` with the preview URL so the QA tab records the run.
-10. When the deployed domain is allowlisted and the order count/path depth is approved, run typed-card `--test-order` proof through the rendered checkout and upsell controls.
+10. Run typed-card `--test-order common` proof through the rendered checkout and upsell controls (global test cards bypass the gateway and create no transactions; no approval needed). The deployed origin must be allowlisted for the campaign API key so the SDK loads — separate from test-order permission.
 11. Promote, block, or iterate from the recorded build, polish, deploy, QA, and test-order evidence.
 
-Pause only for missing inputs, doctor blockers, blocked deploys, test-order policy gates, or merchant-specific uncertainty. The default path should not branch into external browser skills or hand-built backend order creation.
+Pause only for missing inputs, doctor blockers, blocked deploys, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty. The default path should not branch into external browser skills or hand-built backend order creation.
 
 ## Partial Builds
 

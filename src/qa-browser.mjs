@@ -7,6 +7,14 @@ const DEFAULT_TEST_CVV = "123";
 const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
 const DEFAULT_MAX_TEST_ORDERS = 6;
+// Stable fallback customer email for test orders. Test Orders use global test
+// cards that bypass the gateway and create no transactions, but the resulting
+// Customer/user record is NOT deletable — so every run must reuse ONE address
+// rather than minting a unique one (which would litter the customer list). This
+// is a synthetic last-resort default: internal/agency runs should set
+// --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL to a real monitored inbox so the
+// ESP delivers receipts instead of accumulating bounces to an unroutable host.
+const DEFAULT_QA_TEST_EMAIL = "qa-test@campaigns-os.test";
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 const ORDER_UPSELLS_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/upsells\/?(?:[?#].*)?$/i;
 
@@ -326,7 +334,7 @@ async function checkoutPaymentSurfaceAssertions(browserPage, page) {
       card_number_selector: '[data-next-checkout-field="cc-number"], #spreedly-number',
       cvv_selector: '[data-next-checkout-field="cvv"], #spreedly-cvv',
       spreedly_frame_urls: spreedlyFrames.map((frame) => frame.url()).slice(0, 5),
-      next_step: "Run --test-order after domain allowlist and order count/path depth approval for typed-card checkout proof.",
+      next_step: "Run --test-order common for typed-card checkout proof (test cards bypass the gateway; no approval needed).",
     },
   }), assertion({
     id: `browser-payment-geometry:${page.page_id}`,
@@ -539,7 +547,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runI
   const page = await context.newPage();
   page.setDefaultTimeout(numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
   const events = captureCheckoutEvents(page);
-  const email = testEmail(args, runId);
+  const email = testEmail(args);
 
   try {
     await gotoAndSettle(page, checkoutPage.url, args);
@@ -1041,11 +1049,28 @@ async function closeAddressAutocomplete(page) {
 
 function testOrderPaths(mode, topologies = []) {
   const normalized = String(mode || "off").toLowerCase();
+  // `common` (also the bare `--test-order` flag, which parses to boolean true)
+  // is the default sample: a sensible 3-5 shapes for everyday QA. `full` is the
+  // explicit opt-in for every accept/decline permutation.
+  if (normalized === "common" || normalized === "true") return testOrderCommonPaths(topologies);
   if (normalized === "full") return ["checkout", ...testOrderPathMatrix(testOrderDepth(topologies))];
   if (normalized === "both") return ["accept", "decline"];
   if (["checkout", "accept", "decline"].includes(normalized)) return [normalized];
   if (/^(accept|decline)(-(accept|decline))+$/.test(normalized)) return [normalized];
   throw new Error(`Unknown --test-order mode: ${mode}`);
+}
+
+// The default "common shapes" sample: checkout baseline, plus first-upsell
+// accept and decline when the funnel has post-checkout offers, plus one deeper
+// mixed path when there are two or more offers. Stays within 1-4 orders so it
+// never trips the flood cap. Bundle/quantity and bump coverage come from
+// `--cart`; exhaustive permutations come from `full`.
+function testOrderCommonPaths(topologies = []) {
+  const depth = testOrderDepth(topologies);
+  const paths = ["checkout"];
+  if (depth >= 1) paths.push("accept", "decline");
+  if (depth >= 2) paths.push("accept-decline");
+  return paths;
 }
 
 function enforceTestOrderLimit(paths, args) {
@@ -1056,7 +1081,7 @@ function enforceTestOrderLimit(paths, args) {
   throw new Error([
     `--test-order ${args["test-order"]} expands to ${paths.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
     `Planned paths: ${preview}${suffix}.`,
-    "Choose explicit accept/decline paths for a smaller sample matrix, or rerun with a higher --max-test-orders after operator approval.",
+    "This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with a higher --max-test-orders for exhaustive proof.",
   ].join(" "));
 }
 
@@ -1091,14 +1116,17 @@ function testOrderSteps(path) {
   return steps;
 }
 
-function testEmail(args, runId) {
+export function testEmail(args) {
   const explicit = stringArg(args["test-email"]);
   if (explicit) return explicit;
   const configured = stringArg(process.env.CAMPAIGNS_OS_QA_TEST_EMAIL);
   if (configured) return configured;
+  // Stable per-prefix and stable default — reuse one customer across runs.
+  // (Previously appended runId + timestamp, which minted a fresh undeletable
+  // customer on every run.)
   const prefix = stringArg(args["test-email-prefix"]);
-  if (!prefix) return `qa+campaigns-os-${String(runId).toLowerCase()}-${Date.now()}@example.com`;
-  return `${prefix}-${String(runId).toLowerCase()}-${Date.now()}@example.com`;
+  if (prefix) return prefix.includes("@") ? prefix : `${prefix}@campaigns-os.test`;
+  return DEFAULT_QA_TEST_EMAIL;
 }
 
 function cartStateFromArgs(args) {
@@ -1422,4 +1450,5 @@ export const __qaBrowserTestHooks = Object.freeze({
   acceptedUpsellProof,
   isOrderUpsellsUrl,
   testEmail,
+  testOrderPaths,
 });

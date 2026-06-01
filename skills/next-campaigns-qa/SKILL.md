@@ -24,12 +24,12 @@ Inputs:
 - Campaign Map ID from the Build Packet
 - deployed base URL
 - assembly report
-- QA/test-order policy, domain allowlist confirmation, and operator-approved order count/path depth
+- Test-order depth choice (`common` default vs explicit paths vs `full`) and SDK origin allowlist confirmation (so the SDK loads)
 
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
-- Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA, then run typed-card test-order proof when policy allows. Pause only for missing inputs, blocked policy, or merchant-specific uncertainty.
+- Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA, then run typed-card test-order proof. Test orders need no permission step. Pause only for missing inputs, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
 - Use `--post-verdict` for launch QA and typed-card test-order proof so the QA tab/dashboard carries the full audit log. A run with `posted: null` is local-only evidence under `qa-output/` and must not be reported as dashboard-visible.
 - Browser QA must include checkout commerce geometry evidence, not just mount counts: express-wallet buttons rendered in the current browser, card/CVV hosted iframe host dimensions, iframe text-path height, and center alignment. Apple Pay is browser/device eligible, so record mounted wallet kinds instead of requiring Apple Pay in Chrome-only QA.
@@ -44,10 +44,10 @@ Rules:
 - The legacy SDK test-mode event and direct API order path are diagnostic fallbacks only; do not use them as launch proof unless the operator explicitly asks for a diagnostic fallback.
 - After the base checkout test order redirects to upsell, click the rendered SDK upsell accept/decline controls to prove the live upsell path. Do not fabricate upsell lines with a direct API call.
 - Valid test-order modes are `checkout`, `accept`, `decline`, `both`, `full`, `off`, and explicit accept/decline paths such as `accept-decline-accept`.
-- Browser test orders default to a max-order cap. If `full` expands past that cap, choose explicit sample paths or rerun with a larger `--max-test-orders` only after the operator approves that count.
-- For multi-offer funnels, prefer checkout-only plus an operator-approved sample matrix such as all-decline, all-accept, and one or two mixed paths. Use exhaustive `full` only when the operator explicitly approves the generated order count.
+- Browser test orders default to a max-order cap (an accidental-flood guard, not a permission gate). If `full` expands past it, choose explicit sample paths or rerun with a larger `--max-test-orders`.
+- For multi-offer funnels, `--test-order common` covers the typical checkout-plus-accept/decline sample automatically. Use exhaustive `full` when you want every generated permutation.
 - Accepted-upsell proof is valid only when the browser observes the order upsell API mutation and the final order evidence contains the selected upsell package. A checkout bump line marked `is_upsell` is not accepted-upsell proof.
-- Do not fire test orders unless the preview/production domain is allowed for the campaign API key and the operator-approved order count/path depth is clear. The standard sandbox card credentials are always available; do not ask for merchant-specific sandbox routing confirmation.
+- Test orders are safe to fire any time: global test cards bypass the gateway, create no transactions, and need no merchant-specific sandbox routing confirmation. The preview/production origin must be allowlisted for the campaign API key so the SDK loads — that is about SDK initialization, not test-order permission.
 - For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, available payment methods, and market-specific copy.
 - Treat missing deploy URL, missing polish status, or unresolved doctor blockers as launch blockers.
 - Report blockers, warnings, and residual risks.
