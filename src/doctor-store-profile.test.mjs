@@ -13,10 +13,15 @@ function run(campaign) {
   return { errors, warnings, ready };
 }
 
-test("R2-B5: a placeholder/localhost store_url warns", () => {
-  const { errors, warnings } = run({ store_url: "https://localhost:3000/", available_payment_methods: ["card"] });
+test("R2-B5: a reserved documentation store_url warns", () => {
+  const { errors, warnings } = run({ store_url: "https://shop.example.com/", available_payment_methods: ["card"] });
   assert.equal(codes(errors).includes("spec.store_profile"), false);
   assert.ok(codes(warnings).includes("spec.store_profile.placeholder_store_url"));
+});
+
+test("R2-B5: a localhost store_url does NOT warn (sanctioned dev domain)", () => {
+  const { warnings } = run({ store_url: "https://localhost:3000/", available_payment_methods: ["card"] });
+  assert.equal(codes(warnings).includes("spec.store_profile.placeholder_store_url"), false);
 });
 
 test("R2-B5: empty available_payment_methods warns", () => {

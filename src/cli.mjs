@@ -1363,10 +1363,13 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready) {
   }
 }
 
-// SELL-362 / R2-B5: a best-effort check for store URLs that clearly cannot be
-// a live storefront (local dev hosts, reserved test/example TLDs). Intentionally
-// conservative — only obvious non-production hosts trip it, so a real merchant
-// domain never false-positives. A non-URL string is left to other validators.
+// SELL-362 / R2-B5: a best-effort check for store URLs that clearly cannot be a
+// live storefront. Intentionally conservative — only RFC-reserved documentation
+// domains (example.com / .example / .invalid) trip it, so a real merchant domain
+// never false-positives. Local dev hosts (localhost, 127.0.0.1, .local, .test)
+// are deliberately NOT flagged: localhost is a globally allowed campaigns-app
+// development domain, so a localhost store_url is an expected dev/QA value, not a
+// misconfiguration. A non-URL string is left to other validators.
 function looksLikePlaceholderStoreUrl(value) {
   let url;
   try {
@@ -1375,8 +1378,7 @@ function looksLikePlaceholderStoreUrl(value) {
     return false;
   }
   const host = url.hostname.toLowerCase();
-  if (["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(host)) return true;
-  if (/\.(local|test|example|invalid|localhost)$/.test(host)) return true;
+  if (/\.(example|invalid)$/.test(host)) return true;
   if (host === "example.com" || host.endsWith(".example.com")) return true;
   return false;
 }
