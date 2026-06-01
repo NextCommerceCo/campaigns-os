@@ -14,6 +14,16 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { fileURLToPath } from "node:url";
 import { runQaCli } from "./qa-node.mjs";
 import {
+  appendFinding,
+  buildFinding,
+  exportJson as exportFindingsJson,
+  exportSummaryMarkdown,
+  FINDING_KINDS,
+  FINDING_STAGES,
+  readJournal,
+  resolveJournalPath,
+} from "./findings.mjs";
+import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "./source-html-manifest.mjs";
@@ -96,6 +106,9 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--output-dir qa-output] [--json]
   campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
+  campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [...context flags]
+  campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
+  campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
 
 Examples:
   npm run campaigns-os -- start \\
@@ -144,6 +157,7 @@ export async function main(argv) {
   if (command === "doctor" || command === "validate-build-packet") {
     const result = doctorCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
+    printDoctorTinyPrompt(result, args);
     return;
   }
 
@@ -176,11 +190,17 @@ export async function main(argv) {
     const stage = args._[1] || null;
     const result = nextStage(stage, args);
     writeResult(result, args, result.ok ? 0 : 2);
+    printNextTinyPrompt(result, args);
     return;
   }
 
   if (command === "qa") {
     await runQaCli(args);
+    return;
+  }
+
+  if (command === "findings") {
+    await findingsCommand(args);
     return;
   }
 
@@ -3327,6 +3347,160 @@ function writeResult(result, args, failureCode) {
     printResult(result);
   }
   if (failureCode) process.exitCode = failureCode;
+}
+
+// --- Workflow Findings Sidecar -------------------------------------------
+//
+// Local Finding Capture for the Learning Trail. Capture is local-first and
+// public-package owned; it never requires Linear access or NEXT internal
+// context, and it never phones home. See docs/workflow-findings-sidecar.md.
+
+async function findingsCommand(args) {
+  const sub = args._[1] || "";
+  if (sub === "add") return findingsAdd(args);
+  if (sub === "list") return findingsList(args);
+  if (sub === "export") return findingsExport(args);
+  throw new Error(`Unknown findings subcommand "${sub}". Use: add | list | export.`);
+}
+
+async function promptForFinding(current) {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const stage = current.stage || (await rl.question(`Stage (${FINDING_STAGES.join("/")}): `)).trim();
+    const kind = current.kind || (await rl.question(`Kind (${FINDING_KINDS.join("/")}): `)).trim();
+    const summary = current.summary || (await rl.question("Summary: ")).trim();
+    const details = current.details || (await rl.question("Details (optional): ")).trim() || null;
+    return { stage, kind, summary, details };
+  } finally {
+    rl.close();
+  }
+}
+
+async function findingsAdd(args) {
+  // Flags-first so agents and scripts can record findings without prompts.
+  // When required flags are missing AND stdin is a TTY, fall back to a tiny
+  // interactive prompt for only stage/kind/summary/details. When required
+  // flags are missing and the command is non-interactive, fail clearly.
+  let stage = optionalString(args.stage);
+  let kind = optionalString(args.kind);
+  let summary = optionalString(args.summary === true ? null : args.summary);
+  let details = optionalString(args.details === true ? null : args.details);
+
+  const missing = [];
+  if (!stage) missing.push("--stage");
+  if (!kind) missing.push("--kind");
+  if (!summary) missing.push("--summary");
+
+  if (missing.length) {
+    if (process.stdin.isTTY) {
+      const answers = await promptForFinding({ stage, kind, summary, details });
+      stage = answers.stage;
+      kind = answers.kind;
+      summary = answers.summary;
+      details = answers.details;
+    } else {
+      throw new Error(
+        `findings add is missing required flags: ${missing.join(", ")}. `
+          + `Provide them as flags (flags-first for agents/CI), e.g. `
+          + `--stage ${FINDING_STAGES[0]} --kind ${FINDING_KINDS[0]} --summary "..."`,
+      );
+    }
+  }
+
+  const commandExitStatus = optionalString(args["command-exit-status"]);
+  const finding = buildFinding({
+    stage,
+    kind,
+    summary,
+    details,
+    expected: optionalString(args.expected),
+    actual: optionalString(args.actual),
+    severity: optionalString(args.severity),
+    command: optionalString(args.command),
+    command_exit_status: commandExitStatus != null ? Number.parseInt(commandExitStatus, 10) : undefined,
+    source_type: optionalString(args["source-type"]),
+    template_family: optionalString(args["template-family"]),
+    map_id: optionalString(args["map-id"]),
+    campaign_slug: optionalString(args["campaign-slug"]),
+    target_repo: optionalString(args["target-repo"]),
+    packet_path: optionalString(args.packet),
+    assembly_report_path: optionalString(args["report"]),
+    qa_run_id: optionalString(args["qa-run-id"]),
+    author_type: optionalString(args["author-type"]),
+    evidence_quality: optionalString(args["evidence-quality"]),
+    suggested_owner: optionalString(args["suggested-owner"]),
+    safe_to_share: args["safe-to-share"],
+    artifact_paths: optionalString(args["artifact-paths"]),
+  });
+
+  const journalPath = resolveJournalPath(args);
+  appendFinding(journalPath, finding);
+
+  if (args.json) {
+    console.log(JSON.stringify({ ok: true, journal: journalPath, finding }, null, 2));
+    return;
+  }
+  console.log("Workflow finding recorded.");
+  console.log(`Journal: ${journalPath}`);
+  console.log(`Finding: [${finding.stage}/${finding.kind}] ${finding.summary}`);
+  console.log(`ID: ${finding.id}`);
+}
+
+function findingsList(args) {
+  const journalPath = resolveJournalPath(args);
+  const { findings, malformed } = readJournal(journalPath);
+  if (args.json) {
+    console.log(JSON.stringify({ ok: true, journal: journalPath, count: findings.length, findings, malformed }, null, 2));
+    return;
+  }
+  console.log(`Workflow findings: ${findings.length}`);
+  console.log(`Journal: ${journalPath}`);
+  for (const finding of findings) {
+    console.log(`- [${finding.stage || "?"}/${finding.kind || "?"}] ${finding.summary || "(no summary)"} (${finding.id || "no-id"})`);
+  }
+  if (malformed.length) {
+    console.log(`Skipped ${malformed.length} malformed line(s): ${malformed.map((entry) => entry.line).join(", ")}`);
+  }
+}
+
+function findingsExport(args) {
+  const journalPath = resolveJournalPath(args);
+  const { findings } = readJournal(journalPath);
+  // Structured JSON is explicit; Markdown summary is the default so a run
+  // summary pastes straight into an issue tracker, PR, or chat.
+  if (args.json) {
+    console.log(JSON.stringify(exportFindingsJson(findings), null, 2));
+    return;
+  }
+  process.stdout.write(exportSummaryMarkdown(findings));
+}
+
+// Tiny Prompts: skippable one-line guidance at stage boundaries. They surface
+// the next Expected Proof Step and optionally point at `findings add`. They
+// are TEXT-ONLY by design — JSON output stays machine-readable, so these are
+// never written into the serialized result object.
+
+function printDoctorTinyPrompt(result, args) {
+  if (args.json) return;
+  if (result.status === "blocked") {
+    console.log("");
+    console.log("Next expected proof: resolve the blockers above, then re-run doctor.");
+    console.log('If a blocker is confusing or the prompt is missing, record it: campaigns-os findings add --stage doctor --kind blocker --summary "..."');
+    return;
+  }
+  console.log("");
+  console.log("Next expected proof: campaigns-os next to pick the next stage (setup/build), then polish, deploy, and QA.");
+  console.log('Found workflow friction here? campaigns-os findings add --stage doctor --kind friction --summary "..."');
+}
+
+function printNextTinyPrompt(result, args) {
+  if (args.json) return;
+  if (result.stage !== "qa") return;
+  console.log("");
+  console.log("Next expected proof: browser QA. Run: campaigns-os qa run --packet <packet> --report <report>");
+  console.log("Browser QA needs a deployed base URL; typed-card test orders still need domain allowlist + order-depth approval.");
+  console.log('Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: campaigns-os findings add --stage qa --kind missing_prompt --summary "..."');
 }
 
 function printPrepareResult(result, args) {

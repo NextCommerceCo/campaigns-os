@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-workflow-finding.v0.schema.json",
+  "title": "Campaigns OS Workflow Finding v0",
+  "description": "One operator-, agent-, or system-observed signal about the Campaigns OS workflow itself. Captured locally to the append-only Findings Journal. Strict about the required core; permissive about optional context fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "created_at", "stage", "kind", "summary"],
+  "properties": {
+    "schema_version": {
+      "const": "campaigns-os-workflow-finding/v0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable unique local ID, e.g. wf_<timestamp>_<random>. Local-only; not a cross-run primary key."
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO 8601 timestamp of capture."
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "overall",
+        "intake",
+        "start",
+        "doctor",
+        "setup",
+        "build",
+        "polish",
+        "deploy",
+        "qa",
+        "test-order",
+        "next"
+      ],
+      "description": "Observation Stage: the lifecycle moment where the finding was noticed."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "positive_signal",
+        "friction",
+        "missing_prompt",
+        "blocker",
+        "docs_gap",
+        "automation_gap",
+        "idea"
+      ],
+      "description": "Small operator-facing classification. Not a Linear label or priority."
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short one-line description of the finding."
+    },
+    "details": {
+      "type": ["string", "null"]
+    },
+    "expected": {
+      "type": ["string", "null"]
+    },
+    "actual": {
+      "type": ["string", "null"]
+    },
+    "severity": {
+      "type": ["string", "null"],
+      "description": "Free-form operator severity hint. Not a launch gate."
+    },
+    "artifact_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "References to artifacts (packet, report, doctor output, QA verdict). Paths only — not contents."
+    },
+    "command": {
+      "type": ["string", "null"]
+    },
+    "command_exit_status": {
+      "type": ["integer", "null"]
+    },
+    "source_type": {
+      "type": ["string", "null"]
+    },
+    "template_family": {
+      "type": ["string", "null"]
+    },
+    "map_id": {
+      "type": ["string", "null"]
+    },
+    "campaign_slug": {
+      "type": ["string", "null"]
+    },
+    "target_repo": {
+      "type": ["string", "null"]
+    },
+    "packet_path": {
+      "type": ["string", "null"]
+    },
+    "assembly_report_path": {
+      "type": ["string", "null"]
+    },
+    "qa_run_id": {
+      "type": ["string", "null"]
+    },
+    "author_type": {
+      "type": "string",
+      "enum": ["operator", "agent", "system"],
+      "description": "Source of the finding. Agents may record observed workflow gaps but must not invent subjective operator feedback."
+    },
+    "evidence_quality": {
+      "type": "string",
+      "enum": [
+        "operator_report",
+        "artifact_referenced",
+        "artifact_attached",
+        "system_observed"
+      ],
+      "description": "Declared strength of evidence. Lets useful weak signals enter the Learning Trail without pretending to be QA Verdicts."
+    },
+    "suggested_owner": {
+      "type": ["string", "null"],
+      "description": "Optional routing aid for later internal aggregation. Not the first clustering dimension."
+    },
+    "safe_to_share": {
+      "type": ["boolean", "null"],
+      "description": "Operator hint that this finding's summary/references are safe to contribute beyond the workspace. Does not itself trigger any upload."
+    }
+  }
+}

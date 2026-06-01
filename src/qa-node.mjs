@@ -660,6 +660,7 @@ function output(value, args) {
       console.log(`Posted: ${JSON.stringify(value.posted)}`);
     } else {
       console.log(`Dashboard: not posted; rerun with --post-verdict to publish this verdict to the QA tab.`);
+      console.log(`Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
     }
     return;
   }
