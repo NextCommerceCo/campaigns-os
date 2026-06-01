@@ -25,7 +25,7 @@ Workflow:
 5. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
 6. After build, require polish and a preview deploy before QA.
 7. Run the package-owned browser QA path in sequence: `npm run qa:install-browser`, `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser`.
-8. When the deployed domain is allowlisted and the operator-approved order count/path depth is clear, run typed-card `--test-order` proof through the rendered checkout/upsell flow.
+8. Run typed-card `--test-order common` proof through the rendered checkout/upsell flow. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed — depth is the only control (`full` for every permutation). The deployed origin must be allowlisted for the campaign API key so the SDK loads.
 9. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
 
 ## Session Intake
@@ -35,7 +35,7 @@ off to setup, build, polish, QA, or promotion. The operator should separate:
 
 - Intent: build, partial page update, existing campaign update, QA only, repair from verdict, design/source assembly, or promotion.
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign repo, deployed URL, or target deployment system.
-- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, deployed preview/production URL, API key source, domain allowlist, and sandbox card confirmation.
+- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, deployed preview/production URL, API key source, and SDK origin allowlist (so the SDK loads — not a test-order gate).
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, routes, legal copy, and live campaign behavior.
 - Proof policy: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
 

@@ -103,47 +103,61 @@ npm run campaigns-os -- qa run \
 
 ## Test Orders
 
-Canonical test-order proof is typed-card, browser-driven checkout automation. The
-QA runner opens the deployed campaign checkout with Playwright, selects the
-intended cart with rendered campaign controls, fills the customer/shipping form,
-types the sandbox card into the active hosted payment iframes, and clicks the
-real checkout submit button. A hand-built backend API order does not prove the
-deployed checkout/upsell surfaces.
+Test Orders use **global test cards** that work on any live store and integration.
+They **bypass the payment gateway and create no transactions** (and no fulfillment),
+so they are safe to run any time and need **no permission flags, packet policy,
+domain allowlist, or merchant setup** — you just pick a mode. They leave a small,
+easy-to-clean footprint: Test orders are deletable in bulk, and the resulting
+Customer record is reused (see the test email note below) rather than multiplied.
+
+Canonical proof is typed-card, browser-driven checkout automation. The QA runner
+opens the deployed campaign checkout with Playwright, selects the intended cart
+with rendered campaign controls, fills the customer/shipping form, types the test
+card into the active hosted payment iframes, and clicks the real checkout submit
+button. A hand-built backend API order does not prove the deployed
+checkout/upsell surfaces.
 
 ```bash
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
   --base-url https://preview.example.com/campaign/ \
-  --test-order checkout \
-  --allow-test-orders \
-  --sandbox-test-card-confirmed \
+  --test-order common \
   --post-verdict
 ```
 
-Supported modes are `checkout`, `decline`, `accept`, `both`, `full`, and explicit
-accept/decline paths such as `accept-decline`, `accept-accept-decline`, or
-`decline-decline-accept`. `checkout` stops after the base order redirect.
-`decline` and `accept` click the rendered controls on the first upsell page.
-`both` creates two fresh checkout orders for those first-page paths. `full`
-derives the number of sequential upsell/downsell pages from the resolved funnel
-topology and creates fresh checkout orders for every accept/decline combination.
-For example, a two-offer funnel creates four paths, while a five-offer funnel
-creates 32 paths plus the checkout baseline.
+The default mode is **`common`** (also what bare `--test-order` runs): a sensible
+3-5 shape sample — the checkout baseline, plus first-upsell `accept` and `decline`
+when the funnel has post-checkout offers, plus one deeper mixed path when there
+are two or more offers. This is the everyday QA depth.
 
-To prevent accidental order floods, browser test orders default to
-`--max-test-orders 6`. If `full` expands beyond that cap, the command stops and
-prints the generated order count. Choose explicit accept/decline paths for a
-smaller sample matrix, or rerun with a larger `--max-test-orders` only after the
-operator approves that order count.
+Other modes: `checkout` (base order redirect only), `accept`/`decline` (click the
+rendered control on the first upsell page), `both` (two fresh orders for those
+first-page paths), explicit accept/decline paths such as `accept-decline-accept`
+for a targeted matrix, and **`full`** — every accept/decline permutation derived
+from the funnel's sequential upsell/downsell depth (a two-offer funnel = 4 paths,
+a five-offer funnel = 32 paths plus the checkout baseline). Use `full` when you
+explicitly want exhaustive proof. Bundle/quantity and bump coverage come from
+`--cart`.
 
-The default card is the Discover sandbox card `6011 1111 1111 1117`, CVV `123`,
-expiration `12/2030`. Override with `--test-card`, `--test-cvv`,
-`--test-exp-month`, and `--test-exp-year` when a merchant/gateway requires a
-different sandbox card.
+`--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
+gate**. `common` always stays under it; if `full` expands past it, the command
+stops and prints the planned count so you can choose a smaller matrix or raise the
+cap. No approval step is involved.
 
-Browser test orders can reuse a shared safe inbox with `--test-email <email>` or
-`CAMPAIGNS_OS_QA_TEST_EMAIL` so repeated QA does not create a new customer/user
-record for every run.
+The default card is the Discover test card `6011 1111 1111 1117`, CVV `123`,
+expiration `12/2030` (success path; `6011 0009 9013 9424` exercises 3DS). Override
+with `--test-card`, `--test-cvv`, `--test-exp-month`, and `--test-exp-year`.
+
+### Test customer email
+
+All test orders should reuse **one** customer, because the Customer/user record
+is not deletable — minting a fresh email per run litters the customer list. Set
+the address with `--test-email <email>` or `CAMPAIGNS_OS_QA_TEST_EMAIL`. Prefer a
+**real, monitored inbox** so the ESP delivers order/receipt notifications instead
+of accumulating bounces to an unroutable address (this is why internal runs use a
+shared real inbox rather than a synthetic one). When neither is set, the runner
+falls back to a single stable synthetic address — still one reused customer, but
+not deliverable.
 
 The browser driver intentionally behaves like a user:
 
@@ -173,20 +187,21 @@ and hardcoded phone numbers that differ from CampaignSpec `campaign.store_phone`
 If a static claim is intentionally preserved, wrap it in an element with
 `data-skip-market-lint="true"` and record why in the assembly report.
 
-Only fire test orders when the campaign preview/production domain is allowlisted
-for the campaign API key and the operator-approved order count/path depth is clear.
-Test orders are QA evidence; they are not deleted as part of the automated flow.
-
-Use `qa policy set` to record those confirmations in the Build Packet without
-editing JSON by hand:
+Test orders themselves need no allowlist or approval. A separate concern is the
+**SDK origin allowlist**: the Campaign Cart SDK must be allowed to load on the
+deployed origin for the campaign API key, or runtime checks (and the live page
+itself) may not initialize. `qa policy set` records that origin confirmation in
+the Build Packet:
 
 ```bash
 npm run campaigns-os -- qa policy set \
   --packet campaign-runtime.build.json \
-  --test-orders-allowed true \
-  --sandbox-test-card-confirmed true \
   --allowed-domains-confirmed true
 ```
+
+The `--test-orders-allowed` / `--sandbox-test-card-confirmed` flags are still
+accepted and persisted as informational metadata, but they no longer gate test
+orders — those run from `--test-order <mode>` alone.
 
 The accepted-upsell path passes only after the browser clicks the rendered SDK
 accept/add control, observes the order upsell API mutation, and the final order
@@ -198,12 +213,12 @@ use a topology-depth matrix instead of a single happy path:
 
 1. Checkout-only with the base cart.
 2. Checkout-only with the base cart plus bump when the bump is in scope.
-3. Base cart through an operator-approved sample matrix, for example all-decline,
-   all-accept, and one or two mixed accept/decline paths.
+3. Base cart through a sample matrix, for example all-decline, all-accept, and
+   one or two mixed accept/decline paths (`--test-order common` covers the
+   typical 3-5 of these automatically).
 4. Base plus bump cart through the same sample matrix when bump behavior is
    launch-relevant.
-5. Use `full` only when the operator explicitly wants exhaustive proof for the
-   generated order count.
+5. Use `full` when you want exhaustive proof for the full generated order count.
 
 Record order numbers, `ref_id` values, and expected line-item shapes in the
 handoff. If the browser console shows an SDK module-load error but the SDK

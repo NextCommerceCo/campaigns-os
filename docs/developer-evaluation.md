@@ -8,7 +8,7 @@ Recommended shared scenario:
 - Source adapter: `html_funnel`
 - Local exported CampaignSpec
 - Prepared HTML/assets
-- Test orders disabled unless the deployed domain is allowlisted and the approved order count/path depth is clear
+- Test orders run any time via `--test-order` — global test cards bypass the gateway and create no transactions; depth (count/permutations) is the only control. The deployed origin still needs to be allowlisted for the campaign API key so the SDK loads, which is separate from test-order permission.
 
 For AI-generated or synthetic source exercises, explicitly tell evaluators that
 the generated HTML is a source artifact, not final page-kit markup. They should
