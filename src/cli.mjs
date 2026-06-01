@@ -1432,6 +1432,21 @@ function specShippingRefs(spec) {
   return refs;
 }
 
+// SELL-362 / R2-B1: the set of refs the CampaignSpec itself declares as real
+// commerce entities — packages (page/offer/top-level), shipping methods, and
+// offer ref_ids. A reference whose value matches one of these points at a
+// genuinely-declared entity, so the demo-ref check below should not treat it
+// as a starter placeholder even when the Map export omitted ref-level
+// `_provenance.api` stamping (the provenance gap that produced the noise).
+function specDeclaredCommerceRefs(spec) {
+  const refs = new Set([...specPackageRefs(spec), ...specShippingRefs(spec)]);
+  for (const offer of Array.isArray(spec?.offers) ? spec.offers : []) {
+    const ref = firstNonEmptyString(offer?.ref_id, offer?.id != null ? String(offer.id) : null);
+    if (ref) refs.add(String(ref));
+  }
+  return refs;
+}
+
 function validateSpecPackageAvailability(spec, warnings, ready) {
   const unavailable = specPackageRecords(spec).filter((record) => {
     const availability = firstNonEmptyString(
@@ -2449,13 +2464,21 @@ function summarizeShippingFrontmatterHits(hits) {
   return `${summary.join(", ")}${more}`;
 }
 
-function collectDemoRefHits(spec, vocab) {
+export function collectDemoRefHits(spec, vocab) {
   const demoValues = new Set(
     Object.values(vocab || {})
       .flatMap((entry) => Array.isArray(entry.demoOnlyValues) ? entry.demoOnlyValues : [])
       .map((value) => String(value))
   );
   if (demoValues.size === 0) return [];
+  // SELL-362 / R2-B1: a ref whose value matches a real commerce entity the
+  // spec declares (package/offer/shipping_method) is legitimate, not a
+  // starter placeholder. The Map exporter does not stamp `_provenance.api`
+  // down to the ref level, so provenance alone was missing it and flagging
+  // valid low-integer API refs (e.g. "1"/"2"). Suppressing declared refs
+  // kills that noise while still flagging refs that point at nothing the
+  // spec defines.
+  const declaredRefs = specDeclaredCommerceRefs(spec);
   const hits = new Set();
   const results = [];
   const visit = (value, key = "", path = [], provenanceStack = []) => {
@@ -2469,7 +2492,7 @@ function collectDemoRefHits(spec, vocab) {
       }
     } else if (["ref_id", "package_id", "package_ref_id", "shipping_method"].includes(key) && demoValues.has(String(value))) {
       const hitKey = `${path.join(".")}:${String(value)}`;
-      if (!hits.has(hitKey) && !isApiSourcedProvenance(provenanceStack)) {
+      if (!hits.has(hitKey) && !isApiSourcedProvenance(provenanceStack) && !declaredRefs.has(String(value))) {
         hits.add(hitKey);
         results.push({ value: String(value), path: path.join(".") || key });
       }
