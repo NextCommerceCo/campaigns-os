@@ -1292,7 +1292,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     ready.push("Local CampaignSpec parsed");
     validateSpecIdentityExport(spec, warnings, ready);
     validateSpecPublicRoutes(spec, errors, ready);
-    validateSpecStoreProfile(spec, errors, ready);
+    validateSpecStoreProfile(spec, errors, warnings, ready);
     validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready);
     validateSpecShippingCountries(spec, warnings, ready);
     validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState);
@@ -1324,7 +1324,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   }
 }
 
-function validateSpecStoreProfile(spec, errors, ready) {
+export function validateSpecStoreProfile(spec, errors, warnings, ready) {
   const campaign = spec?.campaign || {};
   const missing = REQUIRED_STORE_PROFILE_FIELDS.filter((field) => !isNonEmptyString(campaign[field]));
   if (missing.length > 0) {
@@ -1336,6 +1336,51 @@ function validateSpecStoreProfile(spec, errors, ready) {
     return;
   }
   ready.push("CampaignSpec required Store Profile fields are present for page-kit campaigns.json");
+
+  // SELL-362 / R2-B5: a store profile can pass the required-field check yet
+  // still be unable to complete a real order — the gap neither doctor nor
+  // browser QA surfaced in the Round 2 run. These are readiness *warnings*
+  // (not blockers): a routing/visual-only run is fine, but a typed-card test
+  // order or a real shopper cannot transact against a placeholder store URL or
+  // a store with no payment methods. Surfacing them here lets order-proof
+  // approval happen with the store-config risk already visible.
+  const storeUrl = campaign.store_url;
+  if (isNonEmptyString(storeUrl) && looksLikePlaceholderStoreUrl(storeUrl)) {
+    addIssue(
+      warnings,
+      "spec.store_profile.placeholder_store_url",
+      `CampaignSpec campaign.store_url "${storeUrl}" looks like a local/placeholder store, not a live storefront. A real shopper or typed-card test order cannot complete against it. Set the merchant's production store_url before order proof.`
+    );
+  } else if (isNonEmptyString(storeUrl)) {
+    ready.push("CampaignSpec store_url points at a non-placeholder storefront");
+  }
+
+  const paymentMethods = campaign.available_payment_methods;
+  if (Array.isArray(paymentMethods) && paymentMethods.length === 0) {
+    addIssue(
+      warnings,
+      "spec.store_profile.no_payment_methods",
+      "CampaignSpec campaign.available_payment_methods is empty. Checkout has no payment method to offer, so a typed-card test order cannot complete. Confirm the store's payment methods before order proof."
+    );
+  }
+}
+
+// SELL-362 / R2-B5: a best-effort check for store URLs that clearly cannot be
+// a live storefront (local dev hosts, reserved test/example TLDs). Intentionally
+// conservative — only obvious non-production hosts trip it, so a real merchant
+// domain never false-positives. A non-URL string is left to other validators.
+function looksLikePlaceholderStoreUrl(value) {
+  let url;
+  try {
+    url = new URL(String(value).trim());
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  if (["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(host)) return true;
+  if (/\.(local|test|example|invalid|localhost)$/.test(host)) return true;
+  if (host === "example.com" || host.endsWith(".example.com")) return true;
+  return false;
 }
 
 function validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready) {
