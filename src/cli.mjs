@@ -1295,7 +1295,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     validateSpecStoreProfile(spec, errors, ready);
     validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready);
     validateSpecShippingCountries(spec, warnings, ready);
-    validateSpecRoutingMetaTags(spec, packet, warnings, ready);
+    validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState);
     validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived);
     validateSpecPackageAvailability(spec, warnings, ready);
     validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState);
@@ -1488,9 +1488,23 @@ function validateSpecIdentityExport(spec, warnings, ready) {
   );
 }
 
-function validateSpecRoutingMetaTags(spec, packet, warnings, ready) {
+export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived = {}, buildState = {}) {
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!publicRouteSlug) return;
+
+  // SELL-362 / R2-B2: the spec only carries unrooted routing-meta *hints*; the
+  // page-kit build roots them when it renders _site/<slug>/. Once that built
+  // output exists and assembly is complete, validateBuiltSdkMetaTags checks the
+  // actual rendered values authoritatively. Re-warning on the spec literal here
+  // would just repeat a "fix before QA" message the build already satisfied
+  // (browser QA later proved the deployed output correct), so defer to the
+  // built-output check instead of double-flagging.
+  const targetRepo = derived.target_repo;
+  const siteRoot = targetRepo ? join(targetRepo, "_site", publicRouteSlug) : null;
+  if (isStageComplete(buildState.report, "assembly") && siteRoot && existsSync(siteRoot)) {
+    ready.push(`CampaignSpec routing meta deferred to built-output verification (_site/${publicRouteSlug}/).`);
+    return;
+  }
 
   const hits = [];
   for (const page of activeSpecPages(spec)) {
@@ -1790,7 +1804,7 @@ function isRuntimeRootedRoutingMeta(value, publicRouteSlug) {
   return route === `/${publicRouteSlug}` || route.startsWith(`/${publicRouteSlug}/`);
 }
 
-function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
+export function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
   const scope = deriveMarketScope(spec);
   const currencyScope = deriveCurrencyCopyScope(spec);
   const storePhone = firstNonEmptyString(spec?.campaign?.store_phone, spec?.campaign?.phone);
@@ -1818,13 +1832,27 @@ function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
 
   if (currencyScope.needsCopyReview) {
     const currencyMatches = collectHardcodedCurrencyMatches(scanRoots);
+    // SELL-362 / R2-B2: the assembled/built campaign output is the QA artifact.
+    // Once the build has actually produced output and that output is
+    // currency-clean, residual $ in the *source* HTML is the raw input the build
+    // tokenized — not a live-page defect. Warn on the built output; downgrade
+    // source-only residue to an info note so a correct build stops re-tripping
+    // this warning. Guard on the target containing built HTML, not merely an
+    // (empty) output directory existing — an empty target means the build has
+    // not run yet, so source warnings must still stand.
+    const targetScanRoot = scanRoots.find((scanRoot) => scanRoot.label === "target");
+    const hasBuiltTarget = Boolean(targetScanRoot) && collectHtmlFiles(targetScanRoot.root).length > 0;
+    const targetMatches = currencyMatches.filter((match) => match.surface === "target");
+    const reportableMatches = hasBuiltTarget ? targetMatches : currencyMatches;
     if (!currencyMatches.length) {
       ready.push(`Hardcoded currency scan found no obvious static $ amounts (${currencyScope.reasons.join(", ")}).`);
+    } else if (!reportableMatches.length) {
+      ready.push(`Hardcoded currency scan: built output is currency-clean; ${currencyMatches.length} static $ amount(s) remain only in source HTML (raw input tokenized by build).`);
     } else {
       addIssue(
         warnings,
         "copy.hardcoded_currency_symbol",
-        `Campaign currency scope needs copy review (${currencyScope.reasons.join(", ")}), and prepared HTML contains hardcoded $ amounts outside SDK-bound or skipped regions: ${summarizeCopyMatches(currencyMatches)}. Use SDK display tokens or remove static currency strings.`
+        `Campaign currency scope needs copy review (${currencyScope.reasons.join(", ")}), and ${hasBuiltTarget ? "built campaign output" : "prepared HTML"} contains hardcoded $ amounts outside SDK-bound or skipped regions: ${summarizeCopyMatches(reportableMatches)}. Use SDK display tokens or remove static currency strings.`
       );
     }
   }
