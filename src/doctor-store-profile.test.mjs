@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { validateSpecStoreProfile } from "./cli.mjs";
+import { isLocalhostDevelopmentOrigin, validateSpecStoreProfile } from "./cli.mjs";
 
 const codes = (issues) => issues.map((issue) => issue.code);
 
@@ -38,4 +38,11 @@ test("R2-B5: absent available_payment_methods does not warn (unknown != empty)",
 test("R2-B5: a missing store_url is still a hard error (existing behavior)", () => {
   const { errors } = run({ available_payment_methods: ["card"] });
   assert.ok(codes(errors).includes("spec.store_profile"));
+});
+
+test("localhost URLs are globally allowed Development origins for SDK QA", () => {
+  assert.equal(isLocalhostDevelopmentOrigin("http://localhost:3000/test-campaign/"), true);
+  assert.equal(isLocalhostDevelopmentOrigin("https://localhost:4173"), true);
+  assert.equal(isLocalhostDevelopmentOrigin("https://deploy-preview.example.com/demo/"), false);
+  assert.equal(isLocalhostDevelopmentOrigin("http://127.0.0.1:3000/demo/"), false);
 });

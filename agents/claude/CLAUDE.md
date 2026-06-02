@@ -5,7 +5,7 @@ You are helping assemble a NEXT campaign through Campaigns OS. Start from the Bu
 Core rules:
 
 - Treat CampaignSpec as campaign intent and the Campaigns API as live commerce truth.
-- Treat the Build Packet as the handoff envelope: source adapter, target repo, template family, deploy target, and QA policy.
+- Treat the Build Packet as the handoff envelope: source adapter, target repo, template family, deploy target, SDK origin state, and QA proof depth.
 - Read the selected starter template family's `agentContract` and the catalog `sharedFrontmatterVocabulary` before wiring commerce.
 - Replace demo package, shipping, voucher, payment, tracking, footer, and SEO values from CampaignSpec/API.
 - Preserve SDK-owned checkout, cart, upsell, receipt, payment, address, totals, and submit surfaces.
@@ -18,10 +18,11 @@ Core rules:
 - Record spec-driven removals, such as unavailable payment methods, so polish does not reintroduce them.
 - Do not copy Olympus-style `shipping_methods` frontmatter into `shop-three-step`; it uses dynamic shipping through `window.next.getShippingMethods()`.
 - Run build/lint checks, record evidence in the assembly report, then hand off to polish and QA.
-- QA uses the Campaigns OS Node/npm runner: install the package-owned Playwright browser with `npm run qa:install-browser`, run `campaigns-os qa resolve --packet campaign-runtime.build.json`, then run `campaigns-os qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser`.
+- QA uses the Campaigns OS Node/npm runner: install the package-owned Playwright browser with `npm run qa:install-browser`, run `campaigns-os qa resolve --packet campaign-runtime.build.json`, then run `campaigns-os qa run --packet campaign-runtime.build.json --base-url <url> --browser --test-order common`.
 - Typed-card test-order proof uses `campaigns-os qa run --test-order <common|checkout|decline|accept|both|full|explicit-path>` through the deployed checkout and rendered upsell controls. `common` is the default 3-5 shape sample; use `full` for every permutation. Depth is the only control — no permission/approval step.
-- Test-order proof must use the canonical Playwright typed-card path through the deployed checkout: select the rendered cart, fill customer/shipping fields, type the sandbox card into active hosted payment iframes, click the real submit button, then click rendered SDK upsell accept/decline controls and verify receipt/order evidence.
+- Test-order proof must use the canonical Playwright typed-card path through the tested checkout: select the rendered cart, fill customer/shipping fields, type the sandbox card into active hosted payment iframes, click the real submit button, then click rendered SDK upsell accept/decline controls and verify receipt/order evidence.
 - Do not use external browser skills, the SDK test-mode event, or hand-built backend API orders as launch proof. Those are diagnostic fallbacks only when explicitly requested.
-- Test orders are safe to fire any time: global test cards bypass the gateway, create no transactions, and need no merchant-specific routing confirmation. The deployed origin must be allowlisted for the campaign API key so the SDK loads — that is about the SDK initializing, not test-order permission.
+- Test orders are safe to fire any time: global test cards bypass the gateway, create no transactions, and need no merchant-specific routing confirmation. Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins must be allowlisted for the campaign API key so the SDK loads — that is about SDK initialization, not test-order permission.
+- Campaigns OS proof is not merchant launch readiness. Before launch, confirm production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration.
 
 Current source adapter: prepared HTML/assets (`html_funnel`).

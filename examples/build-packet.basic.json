@@ -62,7 +62,7 @@
   "qa": {
     "test_orders_allowed": false,
     "sandbox_test_card_confirmed": false,
-    "test_order_policy_notes": "SDK-driven test orders stay disabled until the deployed domain is allowlisted and test_card sandbox routing is confirmed."
+    "test_order_policy_notes": "Test Orders use global test cards that bypass the gateway and create no transactions. Run them with `qa run --test-order common` by default; use `full` only for exhaustive proof. Localhost on any port is a Development domain for SDK QA; non-localhost preview/production origins still need SDK origin allowlist confirmation. These flags are informational, not a permission gate."
   },
   "notes": "Synthetic v0 example. Values must be replaced with actual CampaignSpec/API values for a real campaign."
 }

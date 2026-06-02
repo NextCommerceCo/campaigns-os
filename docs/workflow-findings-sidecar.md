@@ -186,8 +186,12 @@ Examples:
 - When build/polish evidence exists but no QA verdict exists: allow an agent or
   system finding as a Completeness Signal.
 
-Browser QA still requires a deployed base URL. Typed-card test-order proof still
-requires explicit domain allowlist and order-depth approval.
+Browser QA and typed-card proof require a tested base URL. Localhost on any port
+is a Campaigns App Development domain (SDK allowed, analytics suppressed);
+non-localhost preview/production origins still need SDK origin allowlist
+confirmation. Typed-card proof itself needs no permission gate — choose the
+order depth (`common` by default, explicit path, or `full`) and keep
+`--max-test-orders` as the accidental-flood guard.
 
 ## Contribution Boundary
 

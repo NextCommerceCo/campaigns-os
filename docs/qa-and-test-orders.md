@@ -40,15 +40,17 @@ npm run campaigns-os -- qa run \
 
 The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags`, writes a local verdict JSON under `qa-output/<map-id>/<run-id>.json`, and returns exit code `4` when the verdict is blocked.
 
-Add `--browser` to run the first-party Playwright browser pass after the Node
-checks. If the browser binary is missing, the CLI will prompt you to run
+Add `--browser --test-order common` for the normal proof pass: first-party
+Playwright browser checks plus the default typed-card order sample. If the
+browser binary is missing, the CLI will prompt you to run
 `npm run qa:install-browser`:
 
 ```bash
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
   --base-url https://preview.example.com/campaign/ \
-  --browser
+  --browser \
+  --test-order common
 ```
 
 The browser pass renders each live page in Chromium, captures browser console
@@ -106,7 +108,7 @@ npm run campaigns-os -- qa run \
 Test Orders use **global test cards** that work on any live store and integration.
 They **bypass the payment gateway and create no transactions** (and no fulfillment),
 so they are safe to run any time and need **no permission flags, packet policy,
-domain allowlist, or merchant setup** — you just pick a mode. They leave a small,
+merchant sandbox routing, or test-order approval** — you just pick a mode. They leave a small,
 easy-to-clean footprint: Test orders are deletable in bulk, and the resulting
 Customer record is reused (see the test email note below) rather than multiplied.
 
@@ -189,9 +191,12 @@ If a static claim is intentionally preserved, wrap it in an element with
 
 Test orders themselves need no allowlist or approval. A separate concern is the
 **SDK origin allowlist**: the Campaign Cart SDK must be allowed to load on the
-deployed origin for the campaign API key, or runtime checks (and the live page
-itself) may not initialize. `qa policy set` records that origin confirmation in
-the Build Packet:
+tested origin for the campaign API key, or runtime checks (and the live page
+itself) may not initialize. Localhost on any port is globally available as a
+Campaigns App **Development domain**; SDK calls are allowed there and Campaigns
+analytics events are suppressed. Non-localhost preview/production origins still
+need SDK origin allowlist confirmation. `qa policy set` records that origin
+confirmation in the Build Packet:
 
 ```bash
 npm run campaigns-os -- qa policy set \
@@ -202,6 +207,15 @@ npm run campaigns-os -- qa policy set \
 The `--test-orders-allowed` / `--sandbox-test-card-confirmed` flags are still
 accepted and persisted as informational metadata, but they no longer gate test
 orders — those run from `--test-order <mode>` alone.
+
+## Launch Readiness Note
+
+Campaigns OS can prove the campaign build, SDK wiring, browser behavior, and
+typed-card order paths. It does not prove the merchant is ready for real
+shoppers. Before launch, confirm the production storefront URL, live payment
+methods, shipping markets, legal/support URLs, analytics expectations, and
+merchant-side configuration. Treat these as real-shopper readiness items, not
+Campaigns OS build blockers.
 
 The accepted-upsell path passes only after the browser clicks the rendered SDK
 accept/add control, observes the order upsell API mutation, and the final order

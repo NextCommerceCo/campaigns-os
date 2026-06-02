@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-qa
-description: Run spec-aware QA from a Campaign Map ID and deployed campaign URL after build, polish, and deploy evidence exist, including Playwright typed-card test-order proof when requested.
+description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
 # Next Campaigns QA
@@ -11,8 +11,8 @@ Use this after the campaign has a preview or production URL and the assembly rep
 npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url>
-npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser
-npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --post-verdict
+npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common
+npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common --post-verdict
 ```
 
 `npm run qa:install-browser` is part of the standard QA sequence. Run it once
@@ -22,14 +22,14 @@ unless the local Playwright browser binary is already installed.
 Inputs:
 
 - Campaign Map ID from the Build Packet
-- deployed base URL
+- tested base URL (localhost dev URL, preview URL, or production URL)
 - assembly report
-- Test-order depth choice (`common` default vs explicit paths vs `full`) and SDK origin allowlist confirmation (so the SDK loads)
+- Test-order depth choice (`common` default vs explicit paths vs `full`) and SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation so the SDK loads)
 
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
-- Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA, then run typed-card test-order proof. Test orders need no permission step. Pause only for missing inputs, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty.
+- Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA plus typed-card proof with `--test-order common` by default. Test orders need no permission step. Pause only for missing inputs, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
 - Use `--post-verdict` for launch QA and typed-card test-order proof so the QA tab/dashboard carries the full audit log. A run with `posted: null` is local-only evidence under `qa-output/` and must not be reported as dashboard-visible.
 - Browser QA must include checkout commerce geometry evidence, not just mount counts: express-wallet buttons rendered in the current browser, card/CVV hosted iframe host dimensions, iframe text-path height, and center alignment. Apple Pay is browser/device eligible, so record mounted wallet kinds instead of requiring Apple Pay in Chrome-only QA.
@@ -38,7 +38,7 @@ Rules:
 - Upsell accept/decline routes may be SDK-bound controls rather than static `<a href>` links. Treat rendered `data-next-upsell-action="add"` and `data-next-upsell-action="skip"` controls as valid route evidence, then prove the path in the browser walkthrough.
 - When CampaignSpec declares checkout `exit_intent.enabled`, browser QA should trigger/open the pop, accept the mapped offer, and verify the code is active, totals/order summary reprice through SDK/API state, and `cart.hasCoupon("CODE")` presentation appears only after apply.
 - When CampaignSpec declares checkout `promo_code_input.enabled`, browser QA should enter the mapped `offer_code` and verify active-code state, repricing, discount row rendering, and conditional presentation. Missing promo-code input is a blocker when CampaignSpec, source design, or user instructions declared it.
-- Test orders must exercise the deployed campaign through the Campaign Cart SDK, not a hand-built backend API request.
+- Test orders must exercise the tested campaign through the Campaign Cart SDK, not a hand-built backend API request.
 - Use the canonical Playwright typed-card path: fill customer/shipping fields, type sandbox card data into the active hosted payment iframes, and click the real checkout submit button.
 - Use a shared safe inbox for typed-card test-order customer email when the operator provides one. Reusing one safe inbox keeps customer/user lists clean while still allowing notification delivery.
 - The legacy SDK test-mode event and direct API order path are diagnostic fallbacks only; do not use them as launch proof unless the operator explicitly asks for a diagnostic fallback.
@@ -47,7 +47,8 @@ Rules:
 - Browser test orders default to a max-order cap (an accidental-flood guard, not a permission gate). If `full` expands past it, choose explicit sample paths or rerun with a larger `--max-test-orders`.
 - For multi-offer funnels, `--test-order common` covers the typical checkout-plus-accept/decline sample automatically. Use exhaustive `full` when you want every generated permutation.
 - Accepted-upsell proof is valid only when the browser observes the order upsell API mutation and the final order evidence contains the selected upsell package. A checkout bump line marked `is_upsell` is not accepted-upsell proof.
-- Test orders are safe to fire any time: global test cards bypass the gateway, create no transactions, and need no merchant-specific sandbox routing confirmation. The preview/production origin must be allowlisted for the campaign API key so the SDK loads — that is about SDK initialization, not test-order permission.
+- Test orders are safe to fire any time: global test cards bypass the gateway, create no transactions, and need no merchant-specific sandbox routing confirmation. Localhost on any port is globally available as a Campaigns App Development domain and suppresses Campaigns analytics; non-localhost preview/production origins must be allowlisted for the campaign API key so the SDK loads — that is about SDK initialization, not test-order permission.
+- Launch readiness is separate from Campaigns OS proof. If QA passes on local/preview, still surface production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration as real-shopper readiness items before launch.
 - For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, available payment methods, and market-specific copy.
 - Treat missing deploy URL, missing polish status, or unresolved doctor blockers as launch blockers.
 - Report blockers, warnings, and residual risks.
