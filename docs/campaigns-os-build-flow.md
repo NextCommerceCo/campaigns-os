@@ -10,8 +10,8 @@ The happy path is intentionally tight:
 6. Run page-kit build plus SDK/template lint and record results in the assembly report.
 7. Run polish against the built campaign, then deploy a preview.
 8. Install the package-owned Playwright browser with `npm run qa:install-browser`.
-9. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser --post-verdict` with the preview URL so the QA tab records the run.
-10. Run typed-card `--test-order common` proof through the rendered checkout and upsell controls (global test cards bypass the gateway and create no transactions; no approval needed). The deployed origin must be allowlisted for the campaign API key so the SDK loads — separate from test-order permission.
+9. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser --test-order common --post-verdict` with the tested URL so the QA tab records browser QA plus typed-card proof.
+10. Treat test-order depth as the control: global test cards bypass the gateway and create no transactions, so no approval is needed. Localhost on any port is a Campaigns App Development domain (SDK allowed, analytics suppressed); non-localhost preview/production origins must still be allowlisted for the campaign API key so the SDK loads.
 11. Promote, block, or iterate from the recorded build, polish, deploy, QA, and test-order evidence.
 
 Pause only for missing inputs, doctor blockers, blocked deploys, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty. The default path should not branch into external browser skills or hand-built backend order creation.
@@ -89,8 +89,10 @@ the assembly report.
 
 For AI-generated or synthetic campaigns, the static source page can be used to
 exercise the design-to-page-kit path, but SDK checkout still needs a Campaigns
-App campaign, store URL, packages, shipping/payment configuration, and a
-domain-allowlisted API key. If the evaluator has no natural merchant/store,
+App campaign, store URL, packages, shipping/payment configuration, and an SDK
+origin that can load the campaign API key. Localhost on any port is available for
+Development-domain SDK checks, but a non-localhost preview/production origin must
+be allowlisted. If the evaluator has no natural merchant/store,
 reuse a designated test store and record that choice. Otherwise mark checkout,
 receipt, and test-order QA as blocked instead of debugging an SDK loading state
 as if it were a page-kit build failure.
@@ -98,3 +100,7 @@ as if it were a page-kit build failure.
 ## Not Full Automation
 
 This repo improves first-run success. It does not yet prove a campaign is live-ready.
+
+Campaigns OS proof is not merchant launch readiness. Before launch, confirm the
+production storefront URL, live payment methods, shipping markets, legal/support
+URLs, analytics expectations, and merchant-side configuration.

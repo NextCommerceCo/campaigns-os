@@ -140,7 +140,7 @@ Build is not launch readiness. A complete run still needs:
 ```bash
 npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet path/to/page-kit-repo/campaign-runtime.build.json
-npm run campaigns-os -- qa run --packet path/to/page-kit-repo/campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser
+npm run campaigns-os -- qa run --packet path/to/page-kit-repo/campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser --test-order common
 ```
 
 `npm run qa:install-browser` is a one-time local setup step after install/update.

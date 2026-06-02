@@ -23,9 +23,9 @@ Definitions:
 
 - Intent: what the user wants done, such as build, update, QA, repair, or promote.
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign, target repo, or deployed URL.
-- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, repo state, deployed preview/production URL, Campaigns API key source, SDK origin allowlist (so the SDK loads), and test-order depth choice.
+- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, repo state, tested URL, Campaigns API key source, SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation), and test-order depth choice.
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, live campaign routes, and legal/merchant copy.
-- Proof policy: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
+- Proof depth: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
 
 Ask only for the fields needed by the selected mode. Do not force a full-funnel
 build prompt when the user only needs QA, a partial page update, or repair from
@@ -45,7 +45,7 @@ Required before build:
 - Source type and source files: Figma, exported HTML, prepared HTML, existing campaign, or other.
 - Pages in scope and any pages to preserve.
 - Template family if known; otherwise infer and ask before locking commerce surfaces.
-- Proof policy, including browser QA and the typed-card test-order depth to run.
+- Proof depth, including browser QA and the typed-card test-order depth to run.
 
 Route to Build Packet preparation, doctor, setup when scaffold is missing,
 build, polish, then QA.
@@ -147,7 +147,7 @@ only real choice is depth. Record:
 
 - Depth: `common` (default 3-5 shape sample), `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
 - Cart matrix: base cart, base plus bump, specific package refs/quantities.
-- SDK origin allowlisted (so the SDK loads): yes/no/unknown — separate from test-order permission.
+- SDK origin state (so the SDK loads): localhost Development domain, non-localhost allowlisted, or unknown — separate from test-order permission.
 - Max order cap: the accidental-flood guard; raise `--max-test-orders` for exhaustive proof.
 - Market coverage: default market only or at least one non-default country/currency path.
 - Customer email: reuse one inbox via `--test-email`/`CAMPAIGNS_OS_QA_TEST_EMAIL` (the customer record is not deletable).

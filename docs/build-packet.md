@@ -10,7 +10,7 @@ It answers:
 - Which target page-kit repo should be updated?
 - Which starter template family is locked?
 - Which commerce catalog/contract should the agent read?
-- Which deploy target and QA policy apply?
+- Which deploy target, SDK origin state, and QA proof depth apply?
 
 The current schema is `schemas/campaign-runtime-build-packet.v0.schema.json`.
 

@@ -17,7 +17,7 @@ Usage:
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
 
 Options:
-  --packet <path>                 Read Map ID, local CampaignSpec, deploy URL, and QA policy from a Build Packet.
+  --packet <path>                 Read Map ID, local CampaignSpec, deploy URL, and QA metadata from a Build Packet.
   --spec <path>                   Local exported CampaignSpec JSON. Preferred for the prepared-HTML flow.
   --proxy-base <url>              Campaign Map proxy base for fetching /api/spec/<map-id>.
   --base-url <url>                Deployed campaign root. Packet deploy URL is used when omitted.
@@ -31,14 +31,15 @@ Options:
   --browser-height <px>           Browser viewport height. Default: 1200.
   --browser-timeout <ms>          Browser navigation timeout. Default: 30000.
   --test-order <off|common|checkout|accept|decline|both|full|accept-decline[-accept...]>
-                                  Create Playwright typed-card test orders through the deployed checkout page.
+                                  Create Playwright typed-card test orders through the tested checkout page.
                                   Test cards bypass the gateway and create no transactions, so no permission
                                   flags or packet policy are needed — just pick a mode. Default mode (bare
                                   --test-order, or "common") runs a 3-5 shape sample; "full" is every permutation.
                                   Requires one-time setup: npm run qa:install-browser.
   --max-test-orders <n>           Accidental-flood guard for browser order count (not a permission gate). Default: 6.
   --allowed-domains-confirmed <bool>
-                                  qa policy set: persist deployed-domain SDK-origin confirmation.
+                                  qa policy set: persist non-localhost SDK-origin confirmation.
+                                  Localhost on any port is a global Development domain with analytics suppressed.
   --preview-url <url>             qa policy set: persist packet deploy.preview_url.
   --production-url <url>          qa policy set: persist packet deploy.production_url.
   --deploy-target <target>        qa policy set: persist packet deploy.target.
@@ -634,7 +635,7 @@ function output(value, args) {
     return;
   }
   if (value.action === "qa-policy-set") {
-    console.log(`QA policy updated.`);
+    console.log(`QA metadata updated.`);
     console.log(`Packet: ${value.packet_path}`);
     console.log(`Changed: ${value.changed.length ? value.changed.join(", ") : "(none)"}`);
     return;

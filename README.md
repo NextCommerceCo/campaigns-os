@@ -68,7 +68,7 @@ npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-re
 npm run campaigns-os -- next qa --packet <packet.json> --report <assembly-report.json>
 npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet <packet.json>
-npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url> --browser
+npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url> --browser --test-order common
 npm run campaigns-os -- findings add --stage overall --kind positive_signal --summary "..."
 npm run campaigns-os -- findings export --summary
 ```
@@ -116,4 +116,6 @@ is not a valid minimum file set.
 
 ## Status
 
-Developer preview. Build output still needs the normal launch gates: build/lint evidence, polish, preview deploy, Playwright browser QA, and typed-card test-order proof via `--test-order common` (global test cards bypass the gateway and create no transactions; no approval needed — depth is the only control).
+Developer preview. Build output still needs the normal proof gates: build/lint evidence, polish, preview deploy or local dev URL, Playwright browser QA, and typed-card test-order proof via `--test-order common` (global test cards bypass the gateway and create no transactions; no approval needed — depth is the only control). Localhost on any port is a Campaigns App Development domain, so SDK calls are allowed and analytics are suppressed there; non-localhost preview/production origins still need SDK origin allowlist confirmation.
+
+Launch readiness is separate from Campaigns OS proof. Before real shoppers see a campaign, confirm the production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration.
