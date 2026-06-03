@@ -62,6 +62,8 @@ npm run campaigns-os -- install-skills --platform codex --dry-run
 npm run skills -- status
 npm run campaigns-os -- prepare-build --spec <spec.json> --source <html-dir> --target <page-kit-repo> --template-family <family>
 npm run campaigns-os -- doctor --packet <page-kit-repo>/campaign-runtime.build.json
+npm run campaigns-os -- theme inspect --packet <page-kit-repo>/campaign-runtime.build.json --json
+npm run campaigns-os -- theme generate --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- next setup --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- next build --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-report.json>
@@ -106,6 +108,7 @@ is not a valid minimum file set.
 - [Quickstart](docs/quickstart.md)
 - [Access Model](docs/access-model.md)
 - [Build Packet](docs/build-packet.md)
+- [Brand Theme Bridge](docs/brand-theme-bridge.md)
 - [Campaigns OS Build Flow](docs/campaigns-os-build-flow.md)
 - [Entry Points](docs/entry-points.md) — five intake shapes (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and which producer / manifest each one ships with
 - [Source Adapters](docs/source-adapters.md)

@@ -23,7 +23,7 @@ Definitions:
 
 - Intent: what the user wants done, such as build, update, QA, repair, or promote.
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign, target repo, or deployed URL.
-- Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, repo state, tested URL, Campaigns API key source, SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation), and test-order depth choice.
+- Runtime truth: Build Packet, Build Context, Assembly Report, optional `context.theme` / `.campaign-runtime/theme/theme-report.json`, doctor JSON, repo state, tested URL, Campaigns API key source, SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation), and test-order depth choice.
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, live campaign routes, and legal/merchant copy.
 - Proof depth: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
 

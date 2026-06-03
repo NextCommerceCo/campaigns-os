@@ -117,6 +117,25 @@
       }
     },
     "decisions": { "type": "array" },
+    "theme": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "status": { "enum": ["applied", "skipped", "blocked", "needs_review"] },
+        "css_path": { "type": ["string", "null"] },
+        "load_order": { "enum": ["after-next-core", "not-applied", "unknown"] },
+        "commerce_pages": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "warnings": { "type": "array" },
+        "repair_loop_defect": {}
+      }
+    },
     "evidence": { "type": "array" },
     "blockers": { "type": "array" },
     "warnings": { "type": "array" },

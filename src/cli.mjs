@@ -27,6 +27,12 @@ import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "./source-html-manifest.mjs";
+import {
+  inspectBrandTheme,
+  validateAssemblyReportThemeBlock,
+  validateThemeContextBlock,
+  writeThemeArtifacts,
+} from "./brand-theme.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
@@ -90,10 +96,12 @@ const HELP = `Campaigns OS toolkit
 Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
-                     [--proxy-base <url>] [--cached-spec]
+                     [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
-                             [--proxy-base <url>] [--cached-spec]
+                             [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
+  campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
+  campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
@@ -125,6 +133,8 @@ Examples:
     --template-family olympus
 
   npm run campaigns-os -- doctor --packet examples/build-packet.basic.json --json
+
+  npm run campaigns-os -- theme inspect --packet examples/build-packet.basic.json --json
 `;
 
 export async function main(argv) {
@@ -158,6 +168,12 @@ export async function main(argv) {
     const result = doctorCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
+    return;
+  }
+
+  if (command === "theme") {
+    const result = themeCommand(args);
+    writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
@@ -942,6 +958,7 @@ function prepareBuild(args, options = {}) {
   const outputDir = optionalString(args["output-dir"], `src/${publicRouteSlug}`);
   const liveUrlPath = optionalString(args["live-url-path"], `/${publicRouteSlug}/`);
   const commerceCatalog = optionalString(args["commerce-catalog"], join(ROOT, "contracts/commerce-surface-catalog.json"));
+  const themePolicy = optionalString(args["theme-policy"], "inspect_only");
   const blockers = matched.prompts.map((prompt) => ({ code: prompt.code, stage: prompt.stage, message: prompt.message }));
   const portable = (path) => relFromDir(targetRepo, path);
 
@@ -1062,6 +1079,30 @@ function prepareBuild(args, options = {}) {
     decisions: matched.decisions,
   };
 
+  const themeInspection = inspectBrandTheme({
+    packet,
+    packetPath,
+    context,
+    policy: themePolicy,
+    force: args.force === true,
+  });
+  const shouldWriteThemeCss = themeInspection.context_theme?.generated?.can_auto_generate === true;
+  const writtenTheme = writeThemeArtifacts(themeInspection, {
+    writeReport: true,
+    writeCss: shouldWriteThemeCss,
+    force: args.force === true,
+  });
+  context.theme = {
+    ...themeInspection.context_theme,
+    wrote: writtenTheme.wrote,
+  };
+  if (!writtenTheme.ok && Array.isArray(writtenTheme.errors) && writtenTheme.errors.length > 0) {
+    context.theme.warnings = [
+      ...(context.theme.warnings || []),
+      ...writtenTheme.errors.map((error) => ({ code: error.code, message: error.message, detail: error.detail || null })),
+    ];
+  }
+
   const report = createAssemblyReport({ packetPath, contextPath, reportPath, specPath, sourceRoot, sourceKind, targetRepo, packet, context, blockers });
 
   writeJson(packetPath, packet);
@@ -1101,6 +1142,30 @@ function inspectCommerceZones(sourceRoot, htmlFiles) {
     }
   }
   return findings;
+}
+
+function assemblyThemeFromContext(theme) {
+  if (!isObject(theme)) return null;
+  const warnings = Array.isArray(theme.warnings) ? theme.warnings : [];
+  const canApply = theme.generated?.can_generate === true && theme.generated?.stale?.stale !== true;
+  const wroteCss = theme.wrote?.css === true;
+  return {
+    status: theme.status === "blocked"
+      ? "blocked"
+      : canApply || wroteCss
+        ? "needs_review"
+        : "skipped",
+    css_path: wroteCss || canApply ? theme.generated?.css_path || null : null,
+    load_order: "unknown",
+    commerce_pages: [],
+    evidence: wroteCss
+      ? ["prepare-build auto-generated .campaign-runtime/theme/brand-theme.css; build should copy that existing artifact into campaign assets and load it after next-core.css on commerce pages."]
+      : theme.generated?.can_generate
+        ? ["theme inspect found a generatable brand theme; run theme generate or explicit auto policy before applying."]
+        : ["theme inspect completed; no generated brand theme was applied during prepare-build."],
+    warnings,
+    repair_loop_defect: null,
+  };
 }
 
 function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, sourceRoot, sourceKind, targetRepo, packet, context, blockers }) {
@@ -1145,6 +1210,7 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
       qa: createStage("qa", "pending"),
     },
     decisions: context.decisions,
+    theme: assemblyThemeFromContext(context.theme),
     evidence: [],
     blockers,
     warnings: context.commerce_zone_findings.length
@@ -1167,6 +1233,32 @@ function doctorCommand(args) {
     reportPath: args.report ? resolve(args.report) : null,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   });
+}
+
+function themeCommand(args) {
+  const subcommand = args._[1] || "inspect";
+  if (!["inspect", "generate"].includes(subcommand)) {
+    throw new Error(`Unknown theme subcommand "${subcommand}". Use: inspect | generate.`);
+  }
+  const packetPath = resolve(requireArg(args, "packet"));
+  const packet = readJson(packetPath);
+  const context = readJsonIfExists(args.context ? resolve(args.context) : null);
+  const policy = optionalString(args["theme-policy"], subcommand === "generate" ? "auto" : "inspect_only");
+  const inspection = inspectBrandTheme({
+    packet,
+    packetPath,
+    context,
+    policy,
+    outDir: args["out-dir"] === true ? null : args["out-dir"],
+    force: args.force === true,
+  });
+  if (subcommand === "inspect") return { ...inspection, css: undefined };
+  const written = writeThemeArtifacts(inspection, {
+    writeReport: true,
+    writeCss: true,
+    force: args.force === true,
+  });
+  return { ...written, css: undefined };
 }
 
 function doctorPacket(packetPath, { contextPath = null, reportPath = null, outputBaseDir = null } = {}) {
@@ -1197,7 +1289,7 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
   };
 
   validatePacket(packet, packetPath, errors, warnings, ready, derived, { context, report });
-  if (context) validateContext(context, warnings, ready, derived);
+  if (context) validateContext(context, errors, warnings, ready, derived);
   if (report) validateAssemblyReportShape(report, errors, warnings, ready);
 
   const next = buildNextStep(errors, warnings, derived, report);
@@ -2603,7 +2695,7 @@ function isStageComplete(report, stage) {
   return isNonEmptyString(status) && status.startsWith("completed");
 }
 
-function validateContext(context, warnings, ready, derived) {
+function validateContext(context, errors, warnings, ready, derived) {
   if (context.schema_version !== CONTEXT_SCHEMA) addIssue(warnings, "context.schema_version", `Context schema should be ${CONTEXT_SCHEMA}.`);
   else ready.push(`Build context schema ${CONTEXT_SCHEMA}`);
   if (context.source_adapter !== "html_funnel") {
@@ -2618,6 +2710,10 @@ function validateContext(context, warnings, ready, derived) {
     derived.scaffold_required = true;
     derived.scaffold_reason = context.scaffold.reason || "Build context says setup is required.";
   }
+  const themeResult = validateThemeContextBlock(context.theme);
+  for (const error of themeResult.errors) errors.push(error);
+  for (const warning of themeResult.warnings) warnings.push(warning);
+  ready.push(...themeResult.ready);
 }
 
 function validateAssemblyReportShape(report, errors, warnings, ready) {
@@ -2660,6 +2756,10 @@ function validateAssemblyReport(report) {
   for (const field of ["decisions", "evidence", "blockers", "warnings"]) {
     if (!Array.isArray(report[field])) addIssue(errors, field, `${field} must be an array.`);
   }
+  const themeResult = validateAssemblyReportThemeBlock(report.theme);
+  for (const error of themeResult.errors) errors.push(error);
+  for (const warning of themeResult.warnings) warnings.push(warning);
+  ready.push(...themeResult.ready);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
   return { ok: errors.length === 0, status, errors, warnings, ready };
 }
@@ -2996,6 +3096,8 @@ Rules:
 - Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes.
 - Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
 - For checkout/upsell/downsell/receipt, use the starter template as the SDK contract reference only: preserve required data-next controls and runtime wiring, but let the campaign/source own visual chrome, copy hierarchy, imagery, and brand layer.
+- Read context.theme and .campaign-runtime/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
+- Generated brand-theme.css v0 is root-variable-only. Do not edit SDK-owned selectors, package controls, payment fields, totals, submit controls, receipt templates, route meta tags, or SDK JavaScript as part of theme application.
 - If you copy starter-template files, copy the selected family atomically with dependent pages, _includes, _layouts, assets/css, and assets/js; do not copy only checkout.html and receipt.html.
 - Resolve SDK routing meta tags to campaign-root paths such as /${packet.campaign.public_route_slug}/upsell/, not source filenames or unrooted spec literals.
 - For one-time prepurchase/order-bump packages outside the main bundles, default package_sync=false and show_line_total_price=false unless the spec explicitly requires quantity sync.
@@ -3003,7 +3105,7 @@ Rules:
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
 - For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
-- Run page-kit build and SDK/template lint, then update the assembly report before polish.`;
+- Run page-kit build and SDK/template lint, then update the assembly report before polish. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.`;
 }
 
 function setupPrompt(packetPath, contextPath, reportPath, packet) {
@@ -3033,7 +3135,9 @@ Read first:
 - Assembly Report: ${reportPath}
 - Template family: ${packet.assembly.template_family}
 
-Compare source against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, capture desktop/mobile evidence, and record polish as completed, skipped, or blocked before QA.`;
+Compare source against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, capture desktop/mobile evidence, and record polish as completed, skipped, or blocked before QA.
+
+If report.theme/context.theme exists, verify source token parity for primary color, CTA, surface, text, font/radius when present, and verify brand-theme.css loads after next-core.css on commerce pages. If the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.`;
 }
 
 function deployPrompt(packetPath, reportPath, packet) {

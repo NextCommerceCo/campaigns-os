@@ -107,6 +107,23 @@ npm run campaigns-os -- start \
 
 `start` creates the packet, context, report, doctor output, and target-repo agent context. It does not edit campaign pages, deploy, run QA, or place test orders.
 
+It also runs brand-theme discovery in inspect-only mode. When source tokens are
+available, the build context records `context.theme` and the target repo gets
+`.campaign-runtime/theme/theme-report.json`. It does not write
+`brand-theme.css` by default.
+
+To inspect or generate the optional commerce-page brand bridge:
+
+```bash
+npm run campaigns-os -- theme inspect --packet path/to/page-kit-repo/campaign-runtime.build.json --json
+npm run campaigns-os -- theme generate --packet path/to/page-kit-repo/campaign-runtime.build.json --json
+```
+
+Use `--theme-policy auto` on `start` / `prepare-build` only when you want
+Campaigns OS to write `brand-theme.css` automatically from high-confidence
+source tokens. Generated CSS is root-variable-only and must be loaded after
+`next-core.css` on checkout, upsell, downsell, and receipt pages.
+
 ## Continue In Your AI Tool
 
 Run:

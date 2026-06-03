@@ -1,0 +1,32 @@
+{
+  "schema_version": "brand-theme-source-defaults/v0",
+  "producer": "figma-sections-export",
+  "producer_version": "v0",
+  "description": "Known scaffold defaults emitted by figma-sections-export new-section.sh. Matching these values is evidence of uncustomized source tokens, not brand truth.",
+  "core_tokens": [
+    "--brand-primary",
+    "--brand-secondary",
+    "--brand-accent",
+    "--surface-bg",
+    "--surface-card",
+    "--text-primary",
+    "--text-secondary",
+    "--text-inverse",
+    "--border-default"
+  ],
+  "tokens": {
+    "--brand-primary": "#0f75ff",
+    "--brand-secondary": "#edf2ff",
+    "--brand-accent": "#22c55e",
+    "--surface-bg": "#ffffff",
+    "--surface-card": "#f8faff",
+    "--surface-alt": "#f1f5ff",
+    "--text-primary": "#020b1e",
+    "--text-secondary": "#4a5568",
+    "--text-inverse": "#ffffff",
+    "--border-default": "#e2e8f0",
+    "--state-success": "#22c55e",
+    "--state-warning": "#f59e0b",
+    "--state-error": "#ef4444"
+  }
+}

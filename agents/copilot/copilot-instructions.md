@@ -5,6 +5,7 @@ When this repository contains Campaigns OS artifacts, use them as the build hand
 - `campaign-runtime.build.json` defines the CampaignSpec, source adapter, target output, template family, deploy target, SDK origin state, and QA proof depth.
 - `.campaign-runtime/build-context.json` records page mappings and setup/build handoff details.
 - `.campaign-runtime/assembly-report.json` records stage evidence and blockers.
+- `.campaign-runtime/theme/theme-report.json`, when present, is optional brand-theme evidence. Generated `brand-theme.css` must load after `next-core.css`; missing or low-confidence theme is a warning/skipped reason, not permission to edit SDK-owned runtime surfaces.
 
 Preserve Campaign Cart SDK-owned commerce surfaces. Replace starter demo refs from CampaignSpec/API. Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Landing/presell pages can preserve source design; checkout/upsell/downsell/receipt should use starter-template commerce surfaces as SDK contract references while campaign/source owns visual chrome. Copy starter template families atomically with dependent pages, `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/`; do not copy only checkout/receipt pages. Do not claim launch readiness until build, polish, deploy, and QA evidence are recorded.
 
