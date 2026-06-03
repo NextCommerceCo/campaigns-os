@@ -77,6 +77,60 @@
         "candidates": { "type": "array" }
       }
     },
+    "theme": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "policy", "source_kind", "confidence", "generated"],
+      "properties": {
+        "status": { "enum": ["ready", "ready_with_warnings", "missing", "blocked", "disabled"] },
+        "policy": { "enum": ["inspect_only", "auto", "off"] },
+        "source_kind": { "const": "html_funnel" },
+        "producer": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          }
+        },
+        "source_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["path", "role", "hash"],
+            "properties": {
+              "path": { "type": "string" },
+              "role": { "type": "string" },
+              "hash": { "type": "string" },
+              "token_count": { "type": "number" }
+            }
+          }
+        },
+        "selected_source": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        },
+        "producer_defaults": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "confidence": { "enum": ["high", "medium", "low", "none"] },
+        "generated": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "css_path": { "type": ["string", "null"] },
+            "report_path": { "type": ["string", "null"] },
+            "can_generate": { "type": "boolean" },
+            "can_auto_generate": { "type": "boolean" }
+          }
+        },
+        "mappings": { "type": "array" },
+        "unmapped_defaults": { "type": "array" },
+        "warnings": { "type": "array" }
+      }
+    },
     "commerce_zone_findings": { "type": "array" },
     "prompts_required": { "type": "array" },
     "decisions": { "type": "array" }

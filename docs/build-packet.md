@@ -27,11 +27,17 @@ campaign-runtime.build.json
 .campaign-runtime/build-context.json
 .campaign-runtime/assembly-report.json
 .campaign-runtime/doctor-output.json
+.campaign-runtime/theme/theme-report.json
 ```
 
 Commit durable packet/context/report artifacts when they represent a real build handoff. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.
 
 `campaigns-os start` / `campaigns-os prepare-build` writes packet, context, report, and generated doctor-output paths as relative paths by default, including sibling CampaignSpec/source directories such as `../campaign-source`. `campaigns-os doctor` and `validate-build-packet` continue to accept older absolute-path packets; use `campaigns-os doctor --strip-paths` when regenerating a commit-ready doctor output from an older packet. Committed handoff artifacts should not contain machine-local absolute paths unless no relative form is possible.
+
+`start` / `prepare-build` also run the [Brand Theme Bridge](./brand-theme-bridge.md)
+in `inspect_only` mode. The optional theme evidence lives in `context.theme`,
+`report.theme`, and `.campaign-runtime/theme/theme-report.json`. The Build
+Packet itself does not gain required theme fields in v0.
 
 ## CampaignSpec Retrieval (`--map-id`)
 
