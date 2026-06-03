@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 
@@ -60,7 +61,7 @@ Options:
 `);
 }
 
-function mapTemplateSnapshotPath(path) {
+export function mapTemplateSnapshotPath(path) {
   if (typeof path !== "string") return path;
   if (path === "docs/fixtures/campaign-specs") return "contracts/fixtures/campaign-specs";
   if (path.startsWith(TEMPLATE_FIXTURE_PREFIX)) {
@@ -69,7 +70,7 @@ function mapTemplateSnapshotPath(path) {
   return path;
 }
 
-function adaptCatalogForCampaignsOs(catalog) {
+export function adaptCatalogForCampaignsOs(catalog) {
   const next = structuredClone(catalog);
 
   if (next.campaignSpecFixturePolicy?.directory) {
@@ -84,6 +85,29 @@ function adaptCatalogForCampaignsOs(catalog) {
   }
 
   return next;
+}
+
+export function mergeLocalQaStructure(adaptedCatalog, sourceCatalog, existingCatalog) {
+  if (!existingCatalog || typeof existingCatalog !== "object") return adaptedCatalog;
+  for (const [family, existingFamily] of Object.entries(existingCatalog.families || {})) {
+    const existingQaStructure = existingFamily?.agentContract?.qaStructure;
+    if (!existingQaStructure || typeof existingQaStructure !== "object" || Array.isArray(existingQaStructure)) continue;
+
+    const targetContract = adaptedCatalog.families?.[family]?.agentContract;
+    if (!targetContract) continue;
+
+    const sourceQaStructure = sourceCatalog.families?.[family]?.agentContract?.qaStructure;
+    if (!sourceQaStructure || typeof sourceQaStructure !== "object" || Array.isArray(sourceQaStructure)) {
+      targetContract.qaStructure = structuredClone(existingQaStructure);
+      continue;
+    }
+
+    targetContract.qaStructure = {
+      ...structuredClone(existingQaStructure),
+      ...targetContract.qaStructure,
+    };
+  }
+  return adaptedCatalog;
 }
 
 function collectSourceFixturePaths(catalog) {
@@ -103,6 +127,12 @@ function safeRepoPath(path) {
     throw new Error(`Refusing to write outside the repo: ${path}`);
   }
   return resolved;
+}
+
+function readExistingCatalog(path) {
+  const fullPath = safeRepoPath(path);
+  if (!existsSync(fullPath)) return null;
+  return JSON.parse(readFileSync(fullPath, "utf8"));
 }
 
 async function fetchRepoFile({ repo, ref, path, token }) {
@@ -147,7 +177,8 @@ async function main() {
     token,
   });
   const sourceCatalog = JSON.parse(rawCatalog);
-  const adaptedCatalog = adaptCatalogForCampaignsOs(sourceCatalog);
+  const existingCatalog = readExistingCatalog(args.targetCatalog);
+  const adaptedCatalog = mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog);
 
   if (!args.dryRun) {
     writeText(args.targetCatalog, `${JSON.stringify(adaptedCatalog, null, 2)}\n`);
@@ -172,7 +203,10 @@ async function main() {
   console.log(`${action} ${args.targetCatalog} from ${args.sourceRepo}:${args.sourceCatalog}@${args.sourceRef}`);
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (import.meta.url === invokedPath) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}

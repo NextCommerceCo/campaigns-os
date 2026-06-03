@@ -37,6 +37,14 @@ automatically a complete page-kit page.
 
 Checkout, cart, upsell, receipt, payment, totals, and submit behavior should remain governed by starter-template contracts and SDK wiring. Source files can carry page design, but live commerce behavior comes from the campaign setup and runtime surfaces.
 
+If a source page marks a region as SDK-owned, for example with
+`data-commerce-zone="checkout-form"` or comments like `SDK-OWNED: ... provided
+by the limos checkout commerce surface`, treat that as an instruction to adopt
+the selected starter-template family shell for that runtime surface. It is not
+permission to invent a custom checkout shell and paste only borrowed partials
+inside it. `prepare-build` records these regions in the Build Context, and
+doctor warns until the build path has a clear shell-adoption decision.
+
 Template families are not single-file dependencies. If setup copies a starter
 family into a target campaign, copy the matching pages together with their
 family `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/` dependencies.

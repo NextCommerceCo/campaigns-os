@@ -45,8 +45,11 @@ export function createVerdict({
   operator = "",
   assertions,
   testOrders = [],
-  exceptions = [],
+  exceptions = null,
 }) {
+  const normalizedExceptions = Array.isArray(exceptions)
+    ? exceptions
+    : deriveExceptions(assertions);
   return {
     schema_version: QA_SCHEMA_VERSION,
     run_id: runId,
@@ -61,8 +64,30 @@ export function createVerdict({
     disposition: computeDisposition(assertions),
     assertions,
     test_orders: testOrders,
-    exceptions,
+    exceptions: normalizedExceptions,
   };
+}
+
+export function deriveExceptions(assertions = []) {
+  if (!Array.isArray(assertions)) return [];
+  return assertions
+    .filter((assertion) => (
+      assertion?.status === STATUS.FAIL
+      || assertion?.status === STATUS.WARN
+      || assertion?.status === STATUS.MANUAL_REVIEW
+      || assertion?.severity === SEVERITY.WARN
+      || assertion?.severity === SEVERITY.BLOCKER
+    ))
+    .map((assertion) => ({
+      id: assertion.id || null,
+      family: assertion.family || null,
+      page: assertion.page || null,
+      url: assertion.url || null,
+      status: assertion.status || null,
+      severity: assertion.severity || null,
+      expected: assertion.expected,
+      actual: assertion.actual,
+    }));
 }
 
 export function validateVerdict(verdict) {

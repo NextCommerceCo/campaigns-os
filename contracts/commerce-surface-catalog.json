@@ -399,6 +399,47 @@
             ]
           }
         ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Olympus checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Olympus checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        },
         "fixtures": [
           "contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json"
         ],
@@ -553,6 +594,47 @@
             ]
           }
         ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Limos checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Limos checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right order-summary column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        },
         "fixtures": [
           "contracts/fixtures/campaign-specs/limos-single-offer-quantity.json"
         ],
@@ -711,6 +793,47 @@
             ]
           }
         ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Demeter checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Demeter checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        },
         "fixtures": [
           "contracts/fixtures/campaign-specs/demeter-editorial-tiered.json"
         ],
@@ -849,6 +972,47 @@
             ]
           }
         ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered shop single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "shop checkout layout",
+                "selector": ".checkout__layout"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout__column--left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout__column--right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        },
         "fixtures": [
           "contracts/fixtures/campaign-specs/shop-single-step-upsell-receipt.json"
         ],
@@ -1009,6 +1173,47 @@
             ]
           }
         ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Olympus MV single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Olympus MV checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        },
         "fixtures": [
           "contracts/fixtures/campaign-specs/olympus-mv-single-step-configurable.json"
         ],
@@ -1185,6 +1390,47 @@
             ]
           }
         ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Olympus MV two-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Olympus MV checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        },
         "fixtures": [
           "contracts/fixtures/campaign-specs/olympus-mv-two-step-configurable.json"
         ],
@@ -1317,6 +1563,39 @@
             ]
           }
         ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered shop three-step checkout must preserve the shop checkout shell and runtime summary/form roots.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "shop checkout layout",
+                "selector": ".checkout__layout"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout__column--left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout__column--right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        },
         "fixtures": [
           "contracts/fixtures/campaign-specs/shop-three-step-dynamic-shipping.json"
         ],

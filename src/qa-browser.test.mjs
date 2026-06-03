@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
 test("order upsell response matcher accepts query strings", () => {
@@ -76,4 +77,69 @@ test("test-order 'common' preset = checkout + accept/decline sample, scaled to f
   assert.deepEqual(testOrderPaths("common", topo(2)), ["checkout", "accept", "decline", "accept-decline"]);
   // bare `--test-order` parses to boolean true → same default preset
   assert.deepEqual(testOrderPaths(true, topo(1)), ["checkout", "accept", "decline"]);
+});
+
+test("commerce structure assertion soft-fails when a required family shell selector is missing", () => {
+  const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
+  const page = { page_id: "checkout", page_type: "checkout", url: "https://example.test/checkout/" };
+  const result = commerceStructureAssertionFromEvidence(page, {
+    template_family: "limos",
+    contract_status: "loaded",
+    checks: [
+      { name: "Limos checkout wrapper", status: "fail", selectors: [".checkout-wrapper"], count: 0, visible_count: 0 },
+      { name: "rendered order summary", status: "pass", selectors: ["[data-next-cart-summary]"], count: 1, visible_count: 1 },
+    ],
+  });
+
+  assert.equal(result.id, "browser-commerce-structure:checkout");
+  assert.equal(result.status, "fail");
+  assert.equal(result.severity, "warn");
+  assert.match(result.actual, /missing Limos checkout wrapper/);
+});
+
+test("commerce structure assertion passes when contract checks pass", () => {
+  const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
+  const page = { page_id: "checkout", page_type: "checkout" };
+  const result = commerceStructureAssertionFromEvidence(page, {
+    template_family: "limos",
+    contract_status: "loaded",
+    checks: [
+      { name: "Limos checkout wrapper", status: "pass", selectors: [".checkout-wrapper"], count: 1, visible_count: 1 },
+      { name: "rendered order summary", status: "pass", selectors: ["[data-next-cart-summary]"], count: 1, visible_count: 1 },
+    ],
+  });
+
+  assert.equal(result.status, "pass");
+  assert.equal(result.severity, undefined);
+});
+
+test("commerce structure assertion asks for manual review when contract has no selectors", () => {
+  const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
+  const result = commerceStructureAssertionFromEvidence({ page_id: "checkout" }, {
+    template_family: "demeter",
+    contract_status: "missing_family_qa_structure",
+    checks: [],
+  });
+
+  assert.equal(result.status, "manual_review");
+  assert.equal(result.severity, "warn");
+});
+
+test("promoted template families declare checkout commerce structure contracts", () => {
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  const promotedFamilies = [
+    "olympus",
+    "limos",
+    "demeter",
+    "shop-single-step",
+    "olympus-mv-single-step",
+    "olympus-mv-two-step",
+    "shop-three-step",
+  ];
+
+  for (const family of promotedFamilies) {
+    const contract = catalog.families?.[family]?.agentContract?.qaStructure?.checkout;
+    assert.ok(contract, `${family} should declare checkout qaStructure`);
+    assert.ok(contract.requiredVisibleSelectors?.length > 0, `${family} should have visible structure selectors`);
+  }
 });

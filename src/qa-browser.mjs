@@ -389,7 +389,141 @@ async function checkoutPaymentSurfaceAssertions(browserPage, page) {
       evidence: bump,
     }));
   }
+  assertions.push(...await checkoutCommerceStructureAssertions(browserPage, page));
   return assertions;
+}
+
+async function checkoutCommerceStructureAssertions(browserPage, page) {
+  const family = page.template_family || null;
+  const contract = page.commerce_structure_contract || null;
+  const contractStatus = page.commerce_structure_contract_status || null;
+  if (!family && !contractStatus) return [];
+  if (!contract) {
+    return [assertion({
+      id: `browser-commerce-structure:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: STATUS.MANUAL_REVIEW,
+      severity: SEVERITY.WARN,
+      expected: "template-family rendered commerce structure contract",
+      actual: contractStatus || "not available",
+      evidence: {
+        template_family: family,
+        contract_status: contractStatus,
+        next_step: "Add agentContract.qaStructure for this template family before treating structure as machine-verified.",
+      },
+    })];
+  }
+
+  const evidence = await inspectCommerceStructure(browserPage, contract);
+  return [commerceStructureAssertionFromEvidence(page, {
+    template_family: family,
+    contract_status: contractStatus,
+    ...evidence,
+  })];
+}
+
+async function inspectCommerceStructure(browserPage, contract) {
+  const safeContract = isPlainObject(contract) ? contract : {};
+  const checks = await browserPage.evaluate((input) => {
+    const visible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== "none"
+        && style.visibility !== "hidden"
+        && Number(style.opacity || "1") !== 0;
+    };
+    const textFor = (elements) => elements
+      .filter(visible)
+      .map((element) => (element.textContent || "").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    const evaluate = (rule, mode) => {
+      const selectors = Array.isArray(rule.selectors) && rule.selectors.length
+        ? rule.selectors
+        : [rule.selector].filter(Boolean);
+      const elements = selectors.flatMap((selector) => {
+        try {
+          return Array.from(document.querySelectorAll(selector));
+        } catch {
+          return [];
+        }
+      });
+      const visibleElements = elements.filter(visible);
+      const text = textFor(elements);
+      const ok = mode === "exists"
+        ? elements.length > 0
+        : mode === "visible"
+          ? visibleElements.length > 0
+          : visibleElements.length > 0 && text.length > 0;
+      return {
+        name: rule.name || selectors.join(", "),
+        selectors,
+        mode,
+        status: ok ? "pass" : "fail",
+        count: elements.length,
+        visible_count: visibleElements.length,
+        text_length: text.length,
+        sample_text: text.slice(0, 120),
+      };
+    };
+    const checks = [];
+    for (const rule of input.requiredSelectors || []) checks.push(evaluate(rule, "exists"));
+    for (const rule of input.requiredVisibleSelectors || []) checks.push(evaluate(rule, "visible"));
+    for (const rule of input.requiredNonEmptySelectors || []) checks.push(evaluate(rule, "non_empty"));
+    return checks;
+  }, safeContract).catch((error) => [{
+    name: "commerce structure inspection",
+    selectors: [],
+    mode: "inspect",
+    status: "fail",
+    count: 0,
+    visible_count: 0,
+    text_length: 0,
+    sample_text: "",
+    error: error instanceof Error ? error.message : String(error),
+  }]);
+
+  return {
+    description: typeof safeContract.description === "string" ? safeContract.description : null,
+    checks,
+  };
+}
+
+function commerceStructureAssertionFromEvidence(page, evidence) {
+  const checks = Array.isArray(evidence?.checks) ? evidence.checks : [];
+  if (!checks.length) {
+    return assertion({
+      id: `browser-commerce-structure:${page.page_id}`,
+      family: "browser-runtime",
+      page,
+      status: STATUS.MANUAL_REVIEW,
+      severity: SEVERITY.WARN,
+      expected: "template-family rendered commerce structure contract",
+      actual: "contract has no machine-checkable selectors",
+      evidence,
+    });
+  }
+  const failed = checks.filter((check) => check.status === "fail");
+  return assertion({
+    id: `browser-commerce-structure:${page.page_id}`,
+    family: "browser-runtime",
+    page,
+    status: failed.length ? STATUS.FAIL : STATUS.PASS,
+    severity: failed.length ? SEVERITY.WARN : undefined,
+    expected: "rendered checkout conforms to the selected template-family commerce structure contract",
+    actual: failed.length
+      ? `${checks.length - failed.length}/${checks.length} structure check(s) passed; missing ${failed.map((check) => check.name).join(", ")}`
+      : `${checks.length}/${checks.length} structure check(s) passed`,
+    evidence,
+  });
+}
+
+function isPlainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value);
 }
 
 async function settleCheckoutCommerce(browserPage) {
@@ -1448,6 +1582,7 @@ function isMissingPlaywrightBrowser(error) {
 
 export const __qaBrowserTestHooks = Object.freeze({
   acceptedUpsellProof,
+  commerceStructureAssertionFromEvidence,
   isOrderUpsellsUrl,
   testEmail,
   testOrderPaths,

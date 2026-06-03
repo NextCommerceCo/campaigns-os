@@ -1119,25 +1119,62 @@ function prepareBuild(args, options = {}) {
   return { packetPath, contextPath, reportPath, doctorOutPath, packet, context, report, doctor };
 }
 
-function inspectCommerceZones(sourceRoot, htmlFiles) {
+export function inspectCommerceZones(sourceRoot, htmlFiles) {
   const findings = [];
   const attrPattern = /\b(data-next-[a-zA-Z0-9-]+)/g;
+  const commerceZoneAttrPattern = /\bdata-commerce-zone\s*=\s*["']([^"']+)["']/gi;
+  const commerceSlotAttrPattern = /\bdata-commerce-slot\s*=\s*["']([^"']+)["']/gi;
+  const sdkOwnedPattern = /sdk-owned|provided\s+by\s+the\s+(?:[a-z0-9-]+\s+)?starter-template\s+sdk\s+contract|provided\s+by\s+the\s+(?:[a-z0-9-]+\s+)?checkout\s+commerce\s+surface/i;
   for (const file of htmlFiles) {
     const content = readFileSync(join(resolve(sourceRoot), file.path), "utf8");
     const lower = content.toLowerCase();
+    attrPattern.lastIndex = 0;
+    commerceZoneAttrPattern.lastIndex = 0;
+    commerceSlotAttrPattern.lastIndex = 0;
     const attrs = [...new Set([...content.matchAll(attrPattern)].map((match) => match[1]))];
+    const commerceZones = [
+      ...content.matchAll(commerceZoneAttrPattern),
+      ...content.matchAll(commerceSlotAttrPattern),
+    ].map((match) => match[1]).filter(Boolean);
+    const sdkOwnedMarker = sdkOwnedPattern.test(content);
+    const sdkOwnedDeclared = sdkOwnedMarker || commerceZones.length > 0;
+    const commerceZoneText = commerceZones.join(" ");
+    const checkoutCommerceZone = /(checkout|payment|order-summary|summary|cart|submit|shipping)/i.test(commerceZoneText);
+    const upsellCommerceZone = /(upsell|downsell)/i.test(commerceZoneText);
+    const receiptCommerceZone = /(receipt|thankyou|thank-you)/i.test(commerceZoneText);
+    const pathLower = String(file.path || "").toLowerCase();
+    const checkoutRuntimeHint = /(^|[/_-])checkout([./_-]|$)/i.test(pathLower)
+      || /\bdata-next-checkout(?:=|-)/i.test(content)
+      || /\bos-checkout-payment\b/i.test(content)
+      || checkoutCommerceZone
+      || (sdkOwnedMarker && /(checkout|payment|order-summary|summary|cart|submit|shipping)/i.test(content));
+    const upsellRuntimeHint = /(^|[/_-])(up|down)?sell([./_-]|$)/i.test(pathLower)
+      || /\bdata-next-(?:up|down)?sell(?:=|-)/i.test(content)
+      || upsellCommerceZone
+      || (sdkOwnedMarker && /(upsell|downsell)/i.test(content));
+    const receiptRuntimeHint = /(^|[/_-])(receipt|thankyou|thank-you)([./_-]|$)/i.test(pathLower)
+      || receiptCommerceZone
+      || (sdkOwnedMarker && /(receipt|thankyou|thank-you)/i.test(content));
+    const requiresTemplateShell = sdkOwnedDeclared && (checkoutRuntimeHint || upsellRuntimeHint || receiptRuntimeHint);
     const zones = [];
-    if (lower.includes("checkout")) zones.push("checkout");
-    if (lower.includes("payment") || lower.includes("card number")) zones.push("payment");
-    if (lower.includes("upsell")) zones.push("upsell");
-    if (lower.includes("receipt") || lower.includes("order summary")) zones.push("receipt");
+    if (checkoutRuntimeHint) zones.push("checkout");
+    if (checkoutRuntimeHint && (lower.includes("payment") || lower.includes("card number"))) zones.push("payment");
+    if (upsellRuntimeHint) zones.push("upsell");
+    if (receiptRuntimeHint) zones.push("receipt");
     if (attrs.length > 0) zones.push("sdk_attributes");
+    if (commerceZones.length > 0) zones.push("commerce_zones");
+    if (sdkOwnedDeclared) zones.push("sdk_owned_declared");
     if (zones.length > 0) {
       findings.push({
         path: file.path,
         zones: [...new Set(zones)],
+        commerce_zones: [...new Set(commerceZones)],
+        sdk_owned_declared: sdkOwnedDeclared,
+        requires_template_shell: requiresTemplateShell,
         sdk_attributes: attrs,
-        action: "review_and_preserve_catalog_surfaces",
+        action: requiresTemplateShell
+          ? "adopt_selected_template_family_shell_before_assembly"
+          : "review_and_preserve_catalog_surfaces",
       });
     }
   }
@@ -2706,6 +2743,7 @@ function validateContext(context, errors, warnings, ready, derived) {
       addIssue(warnings, `context.prompts_required.${prompt.code || "prompt"}`, prompt.message || "Context has unresolved prompts.");
     }
   }
+  validateCommerceZoneFindings(context.commerce_zone_findings, warnings, ready);
   if (context.scaffold?.required === true) {
     derived.scaffold_required = true;
     derived.scaffold_reason = context.scaffold.reason || "Build context says setup is required.";
@@ -2714,6 +2752,25 @@ function validateContext(context, errors, warnings, ready, derived) {
   for (const error of themeResult.errors) errors.push(error);
   for (const warning of themeResult.warnings) warnings.push(warning);
   ready.push(...themeResult.ready);
+}
+
+export function validateCommerceZoneFindings(findings, warnings, ready) {
+  if (!Array.isArray(findings) || findings.length === 0) return;
+  const shellRequired = findings.filter((finding) => finding?.requires_template_shell === true);
+  if (shellRequired.length === 0) {
+    ready.push("Source commerce zones inspected; no SDK-owned commerce shell placeholders declared");
+    return;
+  }
+  for (const finding of shellRequired) {
+    const zones = Array.isArray(finding.commerce_zones) && finding.commerce_zones.length
+      ? finding.commerce_zones.join(", ")
+      : finding.zones?.filter((zone) => zone !== "sdk_owned_declared").join(", ") || "commerce zone";
+    addIssue(
+      warnings,
+      "source_html.commerce_shell_required",
+      `Source page "${finding.path}" declares SDK-owned commerce zone(s): ${zones}. During build, adopt the selected starter-template family shell for these zones; do not wrap borrowed partials in a custom checkout/upsell structure. Browser QA will verify rendered commerce structure when the family contract declares it.`
+    );
+  }
 }
 
 function validateAssemblyReportShape(report, errors, warnings, ready) {
