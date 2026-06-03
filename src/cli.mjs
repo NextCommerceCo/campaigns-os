@@ -1159,7 +1159,7 @@ function assemblyThemeFromContext(theme) {
     load_order: "unknown",
     commerce_pages: [],
     evidence: wroteCss
-      ? ["prepare-build wrote brand-theme.css; build must copy/apply it after next-core.css on commerce pages."]
+      ? ["prepare-build auto-generated .campaign-runtime/theme/brand-theme.css; build should copy that existing artifact into campaign assets and load it after next-core.css on commerce pages."]
       : theme.generated?.can_generate
         ? ["theme inspect found a generatable brand theme; run theme generate or explicit auto policy before applying."]
         : ["theme inspect completed; no generated brand theme was applied during prepare-build."],

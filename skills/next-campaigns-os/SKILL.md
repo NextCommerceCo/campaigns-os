@@ -20,13 +20,14 @@ Workflow:
 
 1. Confirm the campaign was configured in Campaigns App and exported from Campaign Map Builder as current CampaignSpec JSON. Current authoring is v4.3+ while preserving the v4.2 `funnels[]` topology as the compatibility shape.
 2. Run `campaigns-os start` or `campaigns-os prepare-build` with a local CampaignSpec, prepared HTML/assets source, target page-kit repo, and explicit template family.
-3. Run `campaigns-os doctor --packet <packet>`.
-4. If doctor returns `collect-inputs`, stop and resolve the named blockers.
-5. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
-6. After build, require polish and a preview deploy before QA.
-7. Run the package-owned proof path in sequence: `npm run qa:install-browser`, `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common`.
-8. Treat typed-card proof depth as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed (`common` by default, `full` for every permutation). Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
-9. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
+3. Treat brand-theme discovery as optional evidence, not a required input. `start` / `prepare-build` run it in inspect-only mode by default and record `context.theme`; use `campaigns-os theme inspect` or `campaigns-os theme generate` when a checkout/upsell brand bridge is relevant.
+4. Run `campaigns-os doctor --packet <packet>`.
+5. If doctor returns `collect-inputs`, stop and resolve the named blockers.
+6. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
+7. After build, require polish and a preview deploy before QA.
+8. Run the package-owned proof path in sequence: `npm run qa:install-browser`, `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common`.
+9. Treat typed-card proof depth as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed (`common` by default, `full` for every permutation). Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
+10. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
 
 ## Session Intake
 
@@ -67,6 +68,7 @@ Rules:
 - Keep offer application surfaces out of pricing logic: they validate/apply codes through SDK/API, while Campaigns API/SDK own repricing, totals, and discount rows.
 - Starter-template `agentContract` owns reusable commerce structure and protected SDK surfaces.
 - Designed source owns visual composition and page-level content.
+- Brand-theme evidence is workflow-order neutral. Do not assume a Figma export came first; consume `context.theme` and `.campaign-runtime/theme/theme-report.json` when present, and keep missing/low-confidence theme as a warning unless the task explicitly requires theme application.
 - Do not copy demo refs or unsupported optional surfaces into the target campaign.
 - Use SDK conditionals such as `cart.hasCoupon("CODE")` for code-specific presentation; do not mutate visible prices from campaign-specific JavaScript.
 - Build Packet, context, and assembly-report paths should be repo-relative when possible so handoff artifacts can be committed without machine-local absolute paths.

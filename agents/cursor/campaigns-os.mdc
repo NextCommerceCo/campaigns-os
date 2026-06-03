@@ -6,7 +6,7 @@ globs:
 alwaysApply: false
 ---
 
-Read Campaigns OS artifacts before editing campaign pages. Treat CampaignSpec/API values as live commerce truth, starter-template contracts as SDK surface truth, and designed HTML/assets as visual/content intent.
+Read Campaigns OS artifacts before editing campaign pages. Treat CampaignSpec/API values as live commerce truth, starter-template contracts as SDK surface truth, and designed HTML/assets as visual/content intent. If `context.theme` or `.campaign-runtime/theme/theme-report.json` exists, use it as optional brand-theme evidence; generated `brand-theme.css` must load after `next-core.css`, and missing/low-confidence theme is a warning or skipped reason, not permission to edit SDK-owned runtime surfaces.
 
 Do not carry over demo package, shipping, voucher, payment, tracking, footer, or SEO values. Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Preserve prepared landing/presell source HTML when it is a real standalone design. For checkout/upsell/downsell/receipt, use starter-template commerce surfaces as SDK contract references while campaign/source owns visual chrome. Copy starter template families atomically with dependent pages, `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/`; do not copy only checkout/receipt pages. Emit SDK routing meta tags as campaign-root paths such as `/campaign-slug/upsell/`. Preserve SDK-owned checkout/cart/upsell/receipt surfaces. For `shop-three-step`, shipping is dynamic via `window.next.getShippingMethods()`.
 
