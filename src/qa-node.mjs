@@ -157,9 +157,20 @@ function loadCommerceStructureContract({ packet, packetPath, templateFamily }) {
       status: "catalog_parse_error",
       pages: {},
       catalog_path: catalogPathValue,
-      error: error instanceof Error ? error.message : String(error),
+      error: serializeThrownValue(error),
     };
   }
+}
+
+function serializeThrownValue(error) {
+  const diagnostic = { message: String(error) };
+  if (error && typeof error === "object") {
+    const record = error;
+    if (typeof record.name === "string" && record.name) diagnostic.name = record.name;
+    if (typeof record.message === "string" && record.message) diagnostic.message = record.message;
+    if (typeof record.stack === "string" && record.stack) diagnostic.stack = record.stack;
+  }
+  return diagnostic;
 }
 
 function resolvePayload(resolved) {

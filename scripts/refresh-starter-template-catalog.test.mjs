@@ -44,7 +44,7 @@ test("catalog refresh lets upstream qaStructure override matching local pages", 
           qaStructure: {
             checkout: {
               description: "upstream checkout structure",
-              requiredVisibleSelectors: [{ name: "form", selector: "[data-next-checkout=\"form\"]" }],
+              requiredVisibleSelectors: [{ name: "form", selector: '[data-next-checkout="form"]' }],
             },
           },
         },
@@ -62,7 +62,7 @@ test("catalog refresh lets upstream qaStructure override matching local pages", 
             },
             upsell: {
               description: "local upsell structure",
-              requiredVisibleSelectors: [{ name: "accept", selector: "[data-next-upsell-action=\"add\"]" }],
+              requiredVisibleSelectors: [{ name: "accept", selector: '[data-next-upsell-action="add"]' }],
             },
           },
         },
