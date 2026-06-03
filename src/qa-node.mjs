@@ -112,7 +112,12 @@ async function resolveQaInputs(args) {
   const publicRouteSlug = resolvePublicRouteSlug({ packet, spec: normalized, rawSpec });
   const baseUrl = normalizeQaBaseUrl(inputBaseUrl, publicRouteSlug);
   const specHash = computeSpecHash(rawSpec);
-  const topologies = extractTopologies(normalized, { baseUrl, publicRouteSlug });
+  const templateFamily = stringArg(packet?.assembly?.template_family)
+    || stringArg(normalized?.spec_identity?.preferred_template_family)
+    || stringArg(normalized?.campaign?.preferred_template_family)
+    || null;
+  const commerceStructureContract = loadCommerceStructureContract({ packet, packetPath, templateFamily });
+  const topologies = extractTopologies(normalized, { baseUrl, publicRouteSlug, templateFamily, commerceStructureContract });
   return {
     packetPath,
     packet,
@@ -125,8 +130,36 @@ async function resolveQaInputs(args) {
     spec: normalized,
     specVersion: String(rawSpec.schema_version || rawSpec.schemaVersion || "unknown"),
     specHash,
+    templateFamily,
+    commerceStructureContract,
     topologies,
   };
+}
+
+function loadCommerceStructureContract({ packet, packetPath, templateFamily }) {
+  if (!packet || !packetPath || !templateFamily) return null;
+  const catalogPathValue = packet.assembly?.commerce_catalog?.path;
+  if (!catalogPathValue) return { family: templateFamily, status: "missing_catalog_path", pages: {} };
+  const catalogPath = resolveFromFile(packetPath, catalogPathValue);
+  if (!catalogPath || !existsSync(catalogPath)) return { family: templateFamily, status: "missing_catalog", pages: {} };
+  try {
+    const catalog = readJson(catalogPath);
+    const qaStructure = catalog?.families?.[templateFamily]?.agentContract?.qaStructure;
+    return {
+      family: templateFamily,
+      status: qaStructure && typeof qaStructure === "object" ? "loaded" : "missing_family_qa_structure",
+      pages: qaStructure && typeof qaStructure === "object" ? qaStructure : {},
+      catalog_path: catalogPathValue,
+    };
+  } catch (error) {
+    return {
+      family: templateFamily,
+      status: "catalog_parse_error",
+      pages: {},
+      catalog_path: catalogPathValue,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function resolvePayload(resolved) {
@@ -445,7 +478,7 @@ function normalizeSpec(raw) {
   return { ...raw, funnels: [] };
 }
 
-function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null } = {}) {
+function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templateFamily = null, commerceStructureContract = null } = {}) {
   const pageById = new Map();
   for (const funnel of spec.funnels || []) {
     for (const page of funnel.pages || []) pageById.set(page.id, page);
@@ -474,6 +507,9 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null } = {}
         expected_accept_url: resolveSibling(pageById, urlById, page.on_accept, baseUrl, publicRouteSlug),
         expected_decline_url: resolveSibling(pageById, urlById, page.on_decline, baseUrl, publicRouteSlug),
         packages: page.packages || [],
+        template_family: templateFamily || undefined,
+        commerce_structure_contract: commerceStructureContract?.pages?.[page.type || "page"] || undefined,
+        commerce_structure_contract_status: commerceStructureContract?.status || undefined,
       })),
   }));
 }

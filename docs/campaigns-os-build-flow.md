@@ -77,6 +77,7 @@ the assembly report.
 
 - Landing and presell pages should preserve prepared HTML when it is a real standalone design. Use page-kit passthrough structure, inject the SDK/config requirements, and repoint CTAs into the CampaignSpec flow.
 - Checkout, upsell, downsell, and receipt pages should preserve starter-template SDK contracts while keeping the campaign/source visual language. Treat starter templates as the reference for required `data-next-*` controls and wiring, not as a mandate to carry their visual chrome into the final campaign.
+- If source HTML declares SDK-owned zones such as `data-commerce-zone="checkout-form"` or `data-commerce-zone="order-summary"`, adopt the selected starter-template family shell for that runtime page. Do not build a custom checkout/upsell structure around a few borrowed includes; browser QA will check declared family structure where `agentContract.qaStructure` exists.
 - If `context.theme` names a generated `brand-theme.css`, copy it into campaign assets and load it after `next-core.css` on checkout, upsell, downsell, and receipt pages. Generated brand-theme v0 is root-variable-only; do not use it as permission to edit SDK-owned selectors or runtime structure.
 - Buy-more-save-more selectors should use selected quantity plus Offer-aware price displays. Do not swap in stale package-per-tier IDs unless the CampaignSpec explicitly represents an older campaign that still owns separate packages for each option.
 - SDK routing meta tags should be emitted as campaign-root paths, for example `/campaign-slug/upsell/`, even when the CampaignSpec source value is slug-relative like `upsell/`.
@@ -85,6 +86,7 @@ the assembly report.
 - Any source element dropped because the spec does not support it, such as PayPal when `available_payment_methods` excludes PayPal, should be recorded in the assembly report for polish.
 - After page-kit build, doctor checks rendered local script references plus rendered package and shipping refs against the CampaignSpec. Missing built scripts, stale package IDs, stale shipping IDs, and unavailable package refs must be fixed or intentionally blocked before QA.
 - Browser QA opens SDK-owned runtime pages once as a shopper and once with `?debugger=true`. The debugger pass should prove the Campaign Cart debugger overlay and selector controls mount without changing the normal checkout/test-order flow.
+- Browser QA also checks template-family commerce structure when the family contract declares machine-checkable selectors. Missing required Limos checkout shell markers, for example, are treated as a warning-severity failure: the checkout may load, but it is not proven as a conformant Limos checkout.
 
 ## Synthetic Campaigns
 

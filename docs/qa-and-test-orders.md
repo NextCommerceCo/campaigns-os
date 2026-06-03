@@ -55,9 +55,14 @@ npm run campaigns-os -- qa run \
 
 The browser pass renders each live page in Chromium, captures browser console
 errors, page errors, and failed requests, verifies rendered upsell controls, and
-inspects checkout payment field mounts. It is owned by this package through the
-`playwright` dependency; QA must not rely on external browser skills or local
-agent tooling.
+inspects checkout payment field mounts. For checkout pages with a locked
+template family, it also runs `browser-commerce-structure` against any
+machine-checkable `agentContract.qaStructure` selectors in the commerce surface
+catalog. If the family contract is silent, the assertion returns
+`manual_review`, not `pass`; if declared required structure is missing, it
+soft-fails with warning severity so the verdict becomes `ready_with_exceptions`.
+It is owned by this package through the `playwright` dependency; QA must not
+rely on external browser skills or local agent tooling.
 
 For SDK-owned runtime pages such as checkout, upsell, downsell, and receipt,
 the browser pass also opens a separate instrumented view with `?debugger=true`
