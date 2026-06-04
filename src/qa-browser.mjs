@@ -7,13 +7,30 @@ const DEFAULT_TEST_CVV = "123";
 const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
 const DEFAULT_MAX_TEST_ORDERS = 6;
-// Stable fallback customer email for test orders. Test Orders use global test
-// cards that bypass the gateway and create no transactions, but the resulting
-// Customer/user record is NOT deletable — so every run must reuse ONE address
-// rather than minting a unique one (which would litter the customer list). This
-// is a synthetic last-resort default: internal/agency runs should set
-// --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL to a real monitored inbox so the
-// ESP delivers receipts instead of accumulating bounces to an unroutable host.
+// Stable fallback customer email for test orders. Two intents, deliberately split:
+//
+// (b) STABILITY — Test Orders use global test cards that bypass the gateway and
+// create no transactions, but the resulting Customer/user record is NOT deletable.
+// Every run must therefore reuse ONE address rather than mint a unique one (which
+// would litter the customer list). Hence a single stable default, never per-run.
+//
+// (a) DELIVERABILITY — a test order STILL fires the store's transactional Order
+// Confirmation email to this address (confirmed against the platform's published
+// test-order behavior: only third-party tracking postbacks are suppressed for test
+// orders, not the native receipt — there is even a configurable 0-10 min send delay
+// so post-sale upsells fold into one confirmation). `.test` is an RFC 6761 reserved
+// TLD that never resolves, so the ESP HARD-BOUNCES it against the *store's* sending
+// reputation. Acceptable for low-volume self-QA, but harmful at the volume internal/
+// agency runs reach across many merchant stores — those runs MUST set --test-email
+// or CAMPAIGNS_OS_QA_TEST_EMAIL to a real monitored inbox (one stable, deliverable
+// address, injected at runtime by the private operator skill).
+//
+// Do NOT "fix" the bounce by hardcoding a real inbox HERE. This is a public package:
+// no real domain can be responsibly baked in (it would receive strangers' test
+// receipts; RFC 2606 example.* domains are equally undeliverable), and the private-
+// string guard bans the internal one by design. The trade-off is intentional —
+// public default = stable + unroutable, deliverability is opt-in at runtime. Swapping
+// in a real address silently re-breaks both intent (a) and the public/private boundary.
 const DEFAULT_QA_TEST_EMAIL = "qa-test@campaigns-os.test";
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 const ORDER_UPSELLS_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/upsells\/?(?:[?#].*)?$/i;
