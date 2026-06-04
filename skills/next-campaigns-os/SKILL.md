@@ -12,8 +12,8 @@ Use this skill to orient a campaign build, run preflight, decide the next stage,
 The public `campaigns-os` package owns portable workflow semantics: Build
 Packet generation, Build Context, Assembly Report validation, doctor/readiness
 decisions, public build/polish/QA guidance, and browser QA runner behavior.
-Internal orchestration may wrap this workflow for Map Builder,
-Linear projection, QA Supervisor routing, dashboards, and promotion decisions,
+Internal orchestration may wrap this workflow for the Map Builder,
+issue-tracker projection, QA routing, dashboards, and promotion decisions,
 but those wrappers should not redefine the public contract.
 
 Workflow:

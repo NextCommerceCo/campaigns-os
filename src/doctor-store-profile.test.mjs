@@ -24,10 +24,32 @@ test("R2-B5: empty available_payment_methods warns", () => {
   assert.ok(codes(warnings).includes("spec.store_profile.no_payment_methods"));
 });
 
-test("R2-B5: a real storefront with payment methods is clean", () => {
-  const { errors, warnings } = run({ store_url: "https://shop.acmevitamins.com/", available_payment_methods: ["card", "paypal"] });
+test("R2-B5: a real storefront with all force-enabled methods supported is clean", () => {
+  const { errors, warnings } = run({
+    store_url: "https://shop.acmevitamins.com/",
+    available_payment_methods: ["card", "paypal", "klarna"],
+    available_express_payment_methods: ["apple_pay", "google_pay"],
+  });
   assert.deepEqual(errors, []);
   assert.deepEqual(warnings, []);
+});
+
+test("warns when checkout-page force-enabled methods are absent from the spec", () => {
+  const { warnings } = run({ store_url: "https://shop.acmevitamins.com/", available_payment_methods: ["card"] });
+  const warning = warnings.find((issue) => issue.code === "spec.store_profile.payment_methods_default_on");
+  assert.ok(warning, "expected a payment_methods_default_on warning");
+  for (const method of ["paypal", "klarna", "apple_pay", "google_pay"]) {
+    assert.ok(warning.message.includes(method), `warning should name ${method}`);
+  }
+});
+
+test("does not false-fire on object-form payment methods ({ code, label })", () => {
+  const { warnings } = run({
+    store_url: "https://shop.acmevitamins.com/",
+    available_payment_methods: [{ code: "card" }, { code: "paypal" }, { code: "klarna" }],
+    available_express_payment_methods: [{ code: "apple_pay" }, { code: "google_pay" }],
+  });
+  assert.equal(codes(warnings).includes("spec.store_profile.payment_methods_default_on"), false);
 });
 
 test("R2-B5: absent available_payment_methods does not warn (unknown != empty)", () => {

@@ -40,10 +40,9 @@ const CONTEXT_SCHEMA = "campaign-runtime-build-context/v0";
 const REPORT_SCHEMA = "campaign-runtime-assembly-report/v0";
 
 // Default proxy base for `--map-id` spec retrieval. The Map Builder
-// (campaign-map.nextcommerce.com) is fronted by the nc-campaigns-proxy
-// Cloudflare Worker, which exposes `/api/spec/<map-id>` returning the
-// canonical saved CampaignSpec from KV. Override via `--proxy-base`
-// for staging environments or local Worker dev (e.g. wrangler dev).
+// (campaign-map.nextcommerce.com) is fronted by a backend service that
+// exposes `/api/spec/<map-id>` returning the canonical saved CampaignSpec.
+// Override via `--proxy-base` for staging environments or a local backend.
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 
 const KNOWN_TEMPLATE_FAMILIES = new Set([
@@ -316,8 +315,8 @@ function writeJson(path, value) {
  * Fetch a CampaignSpec by Map ID from the proxy Worker.
  *
  * The Map Builder portal at campaign-map.nextcommerce.com is fronted by
- * the nc-campaigns-proxy Cloudflare Worker, which persists saved specs
- * in KV and exposes them via GET /api/spec/<map-id>. Response shape is
+ * a backend service that persists saved specs and exposes them via
+ * GET /api/spec/<map-id>. Response shape is
  * { ok: true, data: <spec> } or { ok: false, error: <message> } on a
  * 200 with a logical failure.
  *
@@ -1494,6 +1493,33 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready) {
       "spec.store_profile.no_payment_methods",
       "CampaignSpec campaign.available_payment_methods is empty. A real shopper would have no payment method to complete checkout. Confirm the store's payment methods before launch."
     );
+  }
+
+  // Starter-template checkout pages hard-code the payment-methods include with
+  // show_paypal/show_klarna/show_apple_pay/show_google_pay = true (the include
+  // itself defaults them false). So a method the spec does not support still
+  // renders unless the build removes it from that include call. When the spec
+  // declares its supported methods and one of those four is absent from both
+  // available_payment_methods and available_express_payment_methods, warn so the
+  // build disables it (or the spec adds it). Methods may be plain strings or
+  // { code, label } objects.
+  const normalizeMethod = (method) =>
+    String(method && typeof method === "object" ? method.code : method).toLowerCase().replace(/[\s-]+/g, "_");
+  const supportedMethods = new Set([
+    ...(Array.isArray(paymentMethods) ? paymentMethods : []).map(normalizeMethod),
+    ...(Array.isArray(campaign.available_express_payment_methods) ? campaign.available_express_payment_methods : []).map(normalizeMethod),
+  ]);
+  if (supportedMethods.size > 0) {
+    const unsupportedDefaults = ["paypal", "klarna", "apple_pay", "google_pay"].filter(
+      (method) => !supportedMethods.has(method)
+    );
+    if (unsupportedDefaults.length > 0) {
+      addIssue(
+        warnings,
+        "spec.store_profile.payment_methods_default_on",
+        `Starter-template checkout pages enable ${unsupportedDefaults.join(", ")} in the payment-methods include by default, but the CampaignSpec does not list ${unsupportedDefaults.length > 1 ? "them" : "it"} in available_payment_methods/available_express_payment_methods. If you build on a starter template family, remove the show_* arg(s) from the checkout payment-methods include (or add the method to the spec) so unsupported methods do not ship.`
+      );
+    }
   }
 }
 

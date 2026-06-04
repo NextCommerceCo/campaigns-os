@@ -15,6 +15,8 @@ const forbidden = [
   /\bDevin\b/,
   /\bSellmore\b/,
   /\bsellmore\b/,
+  /nc-campaigns-proxy/,
+  /QA Supervisor/,
 ];
 
 const hits = [];

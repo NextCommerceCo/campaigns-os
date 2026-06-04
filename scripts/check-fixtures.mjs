@@ -1145,7 +1145,7 @@ if (upsell?.expected_meta_tags?.["next-upsell-accept-url"] !== "/runtime-packet-
 }
 
 // Slice 3: `--map-id` resolves the spec from the proxy Worker.
-// Spin a tiny in-process HTTP server that mimics nc-campaigns-proxy's
+// Spin a tiny in-process HTTP server that mimics the Map Builder backend's
 // /api/spec/<map-id> endpoint, then run `start --map-id` against it.
 // Asserts:
 //   - fetched spec lands in <target>/.campaign-runtime/fetched-specs/<id>.json
