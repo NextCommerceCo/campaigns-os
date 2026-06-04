@@ -97,15 +97,15 @@ QA evidence redacts checkout request bodies and generated QA emails. Verdict art
 keep method, URL, response summaries, order refs, line-item summaries, and card last4,
 but they should not contain full customer address/payment payloads.
 
-Add `--post-verdict` when the operator expects the QA tab/dashboard to list the
-run. Runs without `--post-verdict` are local-only and will not appear in the QA
-dashboard run picker:
+QA runs **publish to the QA portal by default** — they appear in the Campaign Map
+QA tab and the run picker, and the command prints the portal link. No flag needed.
+Pass `--no-post-verdict` (or `--local-only`) for offline / dev / CI runs that should
+stay local-only; publishing never fails the QA run if the portal is unreachable.
 
 ```bash
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
-  --base-url https://preview.example.com/campaign/ \
-  --post-verdict
+  --base-url https://preview.example.com/campaign/
 ```
 
 ## Test Orders
@@ -128,8 +128,7 @@ checkout/upsell surfaces.
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
   --base-url https://preview.example.com/campaign/ \
-  --test-order common \
-  --post-verdict
+  --test-order common
 ```
 
 The default mode is **`common`** (also what bare `--test-order` runs): a sensible

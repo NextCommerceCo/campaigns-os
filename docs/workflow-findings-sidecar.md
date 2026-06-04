@@ -165,7 +165,7 @@ Record workflow finding? [y/N]
 ```
 
 ```text
-Local-only QA evidence created. Rerun with --post-verdict for dashboard evidence.
+Local-only QA evidence created (--no-post-verdict). Omit that flag to publish to the QA portal.
 Record workflow finding? [y/N]
 ```
 

@@ -11,8 +11,10 @@ Use this after the campaign has a preview or production URL and the assembly rep
 npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url>
+# Browser QA + typed-card proof. Publishes to the QA portal by default and prints the portal link.
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common
-npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common --post-verdict
+# Offline / dev / CI only: keep the verdict local
+npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common --no-post-verdict
 ```
 
 `npm run qa:install-browser` is part of the standard QA sequence. Run it once
@@ -31,7 +33,7 @@ Rules:
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
 - Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA plus typed-card proof with `--test-order common` by default. Test orders need no permission step. Pause only for missing inputs, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
-- Use `--post-verdict` for launch QA and typed-card test-order proof so the QA tab/dashboard carries the full audit log. A run with `posted: null` is local-only evidence under `qa-output/` and must not be reported as dashboard-visible.
+- QA runs publish to the QA portal by default, so the QA tab/dashboard carries the full audit log and the run prints its portal link — report that link as the run reference. Pass `--no-post-verdict` (or `--local-only`) only for offline / dev / CI runs; those stay local-only under `qa-output/` and must not be reported as dashboard-visible.
 - Browser QA must include checkout commerce geometry evidence, not just mount counts: express-wallet buttons rendered in the current browser, card/CVV hosted iframe host dimensions, iframe text-path height, and center alignment. Apple Pay is browser/device eligible, so record mounted wallet kinds instead of requiring Apple Pay in Chrome-only QA.
 - `qa resolve` accepts either the deploy host or the campaign-root URL; when a Build Packet carries `campaign.public_route_slug`, the runner resolves page URLs under that slug.
 - Routing meta tags must be checked in runtime form. `next-success-url`, `next-upsell-accept-url`, and `next-upsell-decline-url` should point at campaign-root paths such as `/campaign-slug/upsell/`, not source filenames or unrooted spec literals.

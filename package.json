@@ -13,7 +13,7 @@
     "qa": "node ./bin/campaigns-os.mjs qa",
     "qa:install-browser": "npx playwright install chromium",
     "refresh:starter-catalog": "node ./scripts/refresh-starter-template-catalog.mjs",
-    "check": "node --test ./src/qa-browser.test.mjs ./src/qa-verdict.test.mjs ./src/findings.test.mjs ./src/doctor-demo-ref.test.mjs ./src/doctor-built-output.test.mjs ./src/doctor-commerce-shell.test.mjs ./src/doctor-store-profile.test.mjs ./src/brand-theme.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs && node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs",
+    "check": "node --test ./src/qa-browser.test.mjs ./src/qa-verdict.test.mjs ./src/qa-publish.test.mjs ./src/findings.test.mjs ./src/doctor-demo-ref.test.mjs ./src/doctor-built-output.test.mjs ./src/doctor-commerce-shell.test.mjs ./src/doctor-store-profile.test.mjs ./src/brand-theme.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs && node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
     "check:private-strings": "node ./scripts/check-private-strings.mjs",
     "check:template-doctrine": "node ./scripts/check-template-doctrine.mjs"

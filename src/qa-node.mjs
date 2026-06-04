@@ -22,7 +22,10 @@ Options:
   --proxy-base <url>              Campaign Map proxy base for fetching /api/spec/<map-id>.
   --base-url <url>                Deployed campaign root. Packet deploy URL is used when omitted.
   --output-dir <path>             Local verdict directory. Default: qa-output.
-  --post-verdict                  POST verdict JSON to <proxy-base>/api/qa/verdicts after writing the local copy.
+  --post-verdict                  (default) Publish the verdict to the QA portal at
+                                  <proxy-base>/api/qa/verdicts and print the QA portal link.
+                                  Publishing is automatic; this flag is retained for clarity.
+  --no-post-verdict, --local-only Skip publishing; write only the local verdict copy (offline / dev / CI).
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
                                   Requires one-time setup: npm run qa:install-browser.
@@ -249,9 +252,18 @@ async function runQa(args) {
   if (validationErrors.length) throw new Error(`QA verdict failed local validation:\n- ${validationErrors.join("\n- ")}`);
   const outputDir = resolve(args["output-dir"] || "qa-output");
   const localPath = writeLocalVerdict(verdict, outputDir);
+  // Publish to the QA portal by default so runs land in the Campaign Map QA tab without the
+  // operator needing to know a flag (LLM/agent UIs are the primary interface). Opt out with
+  // --no-post-verdict / --local-only / --post-verdict false. Never fail the run if publish is unreachable.
+  const shouldPublish = shouldPublishVerdict(args);
   let postResult = null;
-  if (args["post-verdict"]) {
-    postResult = await postVerdict(verdict, resolved.proxyBase);
+  let postError = null;
+  if (shouldPublish) {
+    try {
+      postResult = await postVerdict(verdict, resolved.proxyBase);
+    } catch (error) {
+      postError = error.message;
+    }
   }
   const dashboardUrl = postResult?.ok
     ? `${resolved.proxyBase.replace(/\/+$/, "")}/qa?slug=${encodeURIComponent(resolved.mapId)}&run=${encodeURIComponent(verdict.run_id)}`
@@ -265,6 +277,8 @@ async function runQa(args) {
     dashboard_url: dashboardUrl,
     local_path: localPath,
     posted: postResult,
+    post_error: postError,
+    publish_skipped: !shouldPublish,
     counts: countAssertions(verdict.assertions),
     verdict,
   };
@@ -696,12 +710,13 @@ function output(value, args) {
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
     console.log(`Local copy: ${value.local_path}`);
     if (value.posted?.ok && value.dashboard_url) {
-      console.log(`Dashboard: ${value.dashboard_url}`);
-      console.log(`Posted: ${JSON.stringify(value.posted)}`);
+      console.log(`QA portal: ${value.dashboard_url}`);
+    } else if (value.publish_skipped) {
+      console.log(`QA portal: publish skipped (--no-post-verdict); local verdict only.`);
     } else {
-      console.log(`Dashboard: not posted; rerun with --post-verdict to publish this verdict to the QA tab.`);
-      console.log(`Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
+      console.log(`QA portal: publish failed${value.post_error ? ` (${value.post_error})` : ""}; local verdict kept at ${value.local_path}. Re-run with network access, or pass --no-post-verdict to silence.`);
     }
+    console.log(`Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
     return;
   }
   console.log(`QA resolve complete.`);
@@ -791,6 +806,19 @@ function booleanArg(value, key) {
   if (["true", "1", "yes", "y", "on"].includes(normalized)) return true;
   if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
   throw new Error(`--${key} must be true or false.`);
+}
+
+export function shouldPublishVerdict(args) {
+  // Publishing the QA verdict to the portal is the default shape. Opt out with
+  // --no-post-verdict, --local-only, or --post-verdict false (offline / dev / CI runs).
+  if (args["no-post-verdict"] === true || args["local-only"] === true) return false;
+  if ("post-verdict" in args) {
+    const value = args["post-verdict"];
+    if (value === true) return true;
+    const normalized = String(value).trim().toLowerCase();
+    if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
+  }
+  return true;
 }
 
 function policySnapshot(packet) {
