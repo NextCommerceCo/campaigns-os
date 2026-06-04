@@ -10,7 +10,7 @@ The happy path is intentionally tight:
 6. Run page-kit build plus SDK/template lint and record results in the assembly report.
 7. Run polish against the built campaign, then deploy a preview.
 8. Install the package-owned Playwright browser with `npm run qa:install-browser`.
-9. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser --test-order common --post-verdict` with the tested URL so the QA tab records browser QA plus typed-card proof.
+9. Run `campaigns-os qa resolve`, then `campaigns-os qa run --browser --test-order common` with the tested URL. QA runs publish to the QA portal by default (the QA tab records browser QA plus typed-card proof and the run prints its portal link); pass `--no-post-verdict` only for offline / dev / CI runs.
 10. Treat test-order depth as the control: global test cards bypass the gateway and create no transactions, so no approval is needed. Localhost on any port is a Campaigns App Development domain (SDK allowed, analytics suppressed); non-localhost preview/production origins must still be allowlisted for the campaign API key so the SDK loads.
 11. Promote, block, or iterate from the recorded build, polish, deploy, QA, and test-order evidence.
 
