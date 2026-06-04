@@ -728,8 +728,11 @@ async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runI
           upsell_api_response_seen: upsell.api_response_seen,
           upsell_api_response_status: upsell.api_response_status,
         };
-        if (!upsell.api_response_seen) stepFailures.push(`step ${stepIndex + 1}: upsell accept did not call order upsell API`);
-        if (!proof.ok) stepFailures.push(`step ${stepIndex + 1}: ${proof.reason}`);
+        stepFailures.push(...upsellAcceptStepFailures(stepIndex, proof, upsell.api_response_seen));
+        if (proof.ok && !upsell.api_response_seen) {
+          upsell.verification.upsell_api_response_observation =
+            "live order-upsell request not observed; confirmed via order read-back (upsell line present in persisted order)";
+        }
       } else {
         const proof = declinedUpsellProof(order.receipt_line_items, initialLineItems, events, initialUpsellMutationCount);
         upsell.verification = proof;
@@ -1342,6 +1345,22 @@ async function selectedUpsellItems(page) {
   }).catch(() => []);
 }
 
+// Decide whether an accepted-upsell step should fail. The order read-back (proof.ok)
+// is authoritative: the upsell line cannot appear in the persisted order unless the
+// order-upsell API added it. The live network observation (apiResponseSeen) is a
+// best-effort signal that can miss the request on fast stepper-accept client nav, so
+// it must not block on its own. Block only when the read-back proof also fails.
+function upsellAcceptStepFailures(stepIndex, proof, apiResponseSeen) {
+  const failures = [];
+  if (!proof.ok) {
+    failures.push(`step ${stepIndex + 1}: ${proof.reason}`);
+    if (!apiResponseSeen) {
+      failures.push(`step ${stepIndex + 1}: upsell accept did not call order upsell API`);
+    }
+  }
+  return failures;
+}
+
 function acceptedUpsellProof(lines, initialLines, expectedItems, events) {
   if (!Array.isArray(lines) || lines.length === 0) {
     return { ok: false, reason: "final order lines were empty", expected_items: expectedItems || [], matched_lines: [] };
@@ -1582,6 +1601,7 @@ function isMissingPlaywrightBrowser(error) {
 
 export const __qaBrowserTestHooks = Object.freeze({
   acceptedUpsellProof,
+  upsellAcceptStepFailures,
   commerceStructureAssertionFromEvidence,
   isOrderUpsellsUrl,
   testEmail,

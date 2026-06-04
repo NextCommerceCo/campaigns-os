@@ -29,6 +29,27 @@ test("accepted upsell proof requires exact expected quantity", () => {
   assert.equal(exact.ok, true);
 });
 
+test("upsell accept step: order read-back is authoritative over the live API observation", () => {
+  const { upsellAcceptStepFailures } = __qaBrowserTestHooks;
+  const proofOk = { ok: true, reason: null };
+  const proofMissing = { ok: false, reason: "expected upsell package(s) not found in final order lines: 3" };
+
+  // Upsell line present in the persisted order → no failure, even if the live request was missed.
+  assert.deepEqual(upsellAcceptStepFailures(0, proofOk, false), []);
+  assert.deepEqual(upsellAcceptStepFailures(0, proofOk, true), []);
+
+  // Line genuinely absent → real failure; the missed live request is reported alongside it.
+  assert.deepEqual(upsellAcceptStepFailures(0, proofMissing, false), [
+    "step 1: expected upsell package(s) not found in final order lines: 3",
+    "step 1: upsell accept did not call order upsell API",
+  ]);
+
+  // Line absent but the request WAS seen → just the read-back proof failure.
+  assert.deepEqual(upsellAcceptStepFailures(0, proofMissing, true), [
+    "step 1: expected upsell package(s) not found in final order lines: 3",
+  ]);
+});
+
 test("test order email resolves to ONE stable address (reused customer, not per-run)", () => {
   const { testEmail } = __qaBrowserTestHooks;
   const previous = process.env.CAMPAIGNS_OS_QA_TEST_EMAIL;
