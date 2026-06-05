@@ -29,6 +29,12 @@ jobs:
           # is compiled to plain JS and runs on engines.node (>=20); this newer
           # toolchain version only gates running the .ts tests in CI.
           node-version: "24"
+      # Installs devDeps (typescript) and runs `prepare` -> build:spec, so the
+      # compiled campaign-spec/dist exists before `check` (which now imports it
+      # via the CLI and runs `tsc`). Without this, `check` fails — `tsc` is not
+      # a global.
+      - run: npm ci
+        working-directory: campaigns-os
       - run: npm run check
         working-directory: campaigns-os
         env:

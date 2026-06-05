@@ -33,7 +33,7 @@
     "check:cart-readiness": "node ./scripts/check-cart-readiness-contract.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   },
   "dependencies": {
     "playwright": "^1.60.0"

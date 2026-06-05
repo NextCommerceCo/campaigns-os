@@ -8,6 +8,7 @@
 // install would pull the package's playwright dependency).
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,7 +53,7 @@ try {
   );
   if (leaked.length) fail(`dev files leaked into tarball: ${leaked.slice(0, 8).join(", ")}`);
 
-  // 4. The packed bundle imports and runs.
+  // 4. The packed bundle imports and runs (ESM consumer path).
   const mod = await import(distEntry);
   for (const name of ["validateSpec", "normalize", "runRules", "allRules"]) {
     if (typeof mod[name] === "undefined") fail(`packed bundle missing export: ${name}`);
@@ -60,6 +61,20 @@ try {
   const violations = mod.validateSpec({});
   if (!Array.isArray(violations) || violations[0]?.ruleId !== "Normalize") {
     fail("packed bundle validateSpec({}) did not behave as expected");
+  }
+
+  // 4b. CJS consumer path: the `default` export condition is only useful if
+  // `require()` actually resolves the ESM bundle on the running node. require(ESM)
+  // is supported on node >=20.19 / >=22.12 (see engines.node). This exercises it
+  // for real instead of trusting the condition exists. (Codex review.)
+  try {
+    const requireFromPack = createRequire(join(pkgRoot, "package.json"));
+    const required = requireFromPack(distEntry);
+    if (typeof required.validateSpec !== "function") {
+      fail("require() of the packed bundle did not expose validateSpec");
+    }
+  } catch (err) {
+    fail(`require() of the packed bundle failed (require(ESM) on node ${process.version}): ${err.message}`);
   }
 
   // 5. Bundle-size visibility (Codex: a registry does nothing for bundle size).
