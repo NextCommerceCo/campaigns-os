@@ -132,8 +132,16 @@
           "type": "array",
           "items": { "type": "string" }
         },
-        "warnings": { "type": "array" },
-        "repair_loop_defect": {}
+        "warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/themeIssue" }
+        },
+        "repair_loop_defect": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/themeIssue" }
+          ]
+        }
       }
     },
     "evidence": { "type": "array" },
@@ -197,6 +205,16 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "notes": { "type": ["string", "null"] }
+      }
+    },
+    "themeIssue": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "detail": { "type": "object", "additionalProperties": true }
       }
     }
   }

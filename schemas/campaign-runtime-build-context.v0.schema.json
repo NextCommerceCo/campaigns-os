@@ -123,7 +123,36 @@
             "css_path": { "type": ["string", "null"] },
             "report_path": { "type": ["string", "null"] },
             "can_generate": { "type": "boolean" },
-            "can_auto_generate": { "type": "boolean" }
+            "can_auto_generate": { "type": "boolean" },
+            "overwrite_requires_force": { "type": "boolean" },
+            "safety": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ok", "errors", "warnings"],
+              "properties": {
+                "ok": { "type": "boolean" },
+                "errors": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/themeIssue" }
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/themeIssue" }
+                }
+              }
+            },
+            "stale": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["stale", "reasons"],
+              "properties": {
+                "stale": { "type": "boolean" },
+                "reasons": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
           }
         },
         "mappings": { "type": "array" },
@@ -134,5 +163,17 @@
     "commerce_zone_findings": { "type": "array" },
     "prompts_required": { "type": "array" },
     "decisions": { "type": "array" }
+  },
+  "$defs": {
+    "themeIssue": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "detail": { "type": "object", "additionalProperties": true }
+      }
+    }
   }
 }

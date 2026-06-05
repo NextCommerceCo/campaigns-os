@@ -189,9 +189,34 @@ test("theme validators reject malformed context and applied report load order", 
     load_order: "unknown",
     commerce_pages: [],
     evidence: [],
+    warnings: [],
+    repair_loop_defect: null,
   });
   assert.equal(reportResult.ok, false);
   assert.ok(reportResult.errors.some((error) => error.code === "report.theme.load_order"));
+
+  const looseBackCompatResult = validateAssemblyReportThemeBlock({
+    status: "needs_review",
+    css_path: null,
+    load_order: "unknown",
+    commerce_pages: [],
+    evidence: [],
+    warnings: [],
+    repair_loop_defect: {},
+  });
+  assert.equal(looseBackCompatResult.ok, true);
+
+  const malformedDefectResult = validateAssemblyReportThemeBlock({
+    status: "needs_review",
+    css_path: null,
+    load_order: "unknown",
+    commerce_pages: [],
+    evidence: [],
+    warnings: [],
+    repair_loop_defect: "not-an-object",
+  });
+  assert.equal(malformedDefectResult.ok, false);
+  assert.ok(malformedDefectResult.errors.some((error) => error.code === "report.theme.repair_loop_defect"));
 });
 
 test("prepare-build records inspect-only theme context and report without writing CSS by default", () => {

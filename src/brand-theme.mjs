@@ -819,6 +819,14 @@ export function validateAssemblyReportThemeBlock(theme) {
   if (theme.evidence !== undefined && !Array.isArray(theme.evidence)) {
     errors.push(issue("report.theme.evidence", "report.theme.evidence must be an array when present."));
   }
+  if (theme.warnings !== undefined && !Array.isArray(theme.warnings)) {
+    errors.push(issue("report.theme.warnings", "report.theme.warnings must be an array when present."));
+  }
+  if (theme.repair_loop_defect !== undefined && theme.repair_loop_defect !== null) {
+    if (!isObject(theme.repair_loop_defect)) {
+      errors.push(issue("report.theme.repair_loop_defect", "report.theme.repair_loop_defect must be null or an object when present."));
+    }
+  }
   return {
     ok: errors.length === 0,
     errors,
