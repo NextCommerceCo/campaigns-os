@@ -44,8 +44,9 @@ Rules:
 - Use the canonical Playwright typed-card path: fill customer/shipping fields, type sandbox card data into the active hosted payment iframes, and click the real checkout submit button.
 - Use a shared safe inbox for typed-card test-order customer email when the operator provides one. Reusing one safe inbox keeps customer/user lists clean while still allowing notification delivery.
 - The legacy SDK test-mode event and direct API order path are diagnostic fallbacks only; do not use them as launch proof unless the operator explicitly asks for a diagnostic fallback.
+- Do not use `next.getCartData().cartLines` as cart-populated proof. That field currently stays empty; use typed-card order read-back for committed cart truth, the `cart:updated` payload `items` / `summary.lines` for in-page cart state, and rendered bundle DOM evidence for pre-commit selection.
 - After the base checkout test order redirects to upsell, click the rendered SDK upsell accept/decline controls to prove the live upsell path. Do not fabricate upsell lines with a direct API call.
-- Valid test-order modes are `checkout`, `accept`, `decline`, `both`, `full`, `off`, and explicit accept/decline paths such as `accept-decline-accept`.
+- Valid test-order modes are `common`, `checkout`, `accept`, `decline`, `both`, `full`, `off`, and explicit accept/decline paths such as `accept-decline-accept`.
 - Browser test orders default to a max-order cap (an accidental-flood guard, not a permission gate). If `full` expands past it, choose explicit sample paths or rerun with a larger `--max-test-orders`.
 - For multi-offer funnels, `--test-order common` covers the typical checkout-plus-accept/decline sample automatically. Use exhaustive `full` when you want every generated permutation.
 - Accepted-upsell proof is valid only when the browser observes the order upsell API mutation and the final order evidence contains the selected upsell package. A checkout bump line marked `is_upsell` is not accepted-upsell proof.

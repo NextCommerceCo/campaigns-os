@@ -12,6 +12,10 @@ Use this skill to orient a campaign build, run preflight, decide the next stage,
 The public `campaigns-os` package owns portable workflow semantics: Build
 Packet generation, Build Context, Assembly Report validation, doctor/readiness
 decisions, public build/polish/QA guidance, and browser QA runner behavior.
+It also owns CampaignSpec validation through the public
+`@nextcommerce/campaigns-os/campaign-spec` subpath; Map Builder, the public
+doctor, and agency tooling should consume that same rule registry instead of
+vendoring or reimplementing spec rules.
 Internal orchestration may wrap this workflow for the Map Builder,
 issue-tracker projection, QA routing, dashboards, and promotion decisions,
 but those wrappers should not redefine the public contract.
@@ -38,7 +42,7 @@ off to setup, build, polish, QA, or promotion. The operator should separate:
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign repo, deployed URL, or target deployment system.
 - Runtime truth: Build Packet, Build Context, Assembly Report, doctor JSON, tested URL, API key source, and SDK origin allowlist state (localhost is already a Development domain; non-localhost origins still need confirmation).
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, routes, legal copy, and live campaign behavior.
-- Proof depth: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
+- Proof depth: visual preview, doctor, browser QA, QA portal/local verdict policy, typed-card test-order depth, market coverage, and repair routing.
 
 Return a compact brief before acting:
 
@@ -63,6 +67,7 @@ Rules:
 
 - This is contract-backed guidance and preflight, not full automated readiness.
 - Preserve CampaignSpec as the source of truth. Do not make CampaignSpec absorb source-export paths, target repo paths, template decisions, deploy status, or test-order depth; those belong in the Build Packet and stage reports.
+- Treat `spec.validation` doctor findings as public CampaignSpec rule findings. When JSON output carries `detail.ruleId`, `detail.path`, and `detail.data`, use those fields for UI/repair routing instead of parsing message text.
 - CampaignSpec/API own live commerce values.
 - Treat checkout `exit_intent` and `promo_code_input` as optional CampaignSpec launch contracts. If present, build must wire the mapped offer surface and QA must exercise the accept/apply path.
 - Keep offer application surfaces out of pricing logic: they validate/apply codes through SDK/API, while Campaigns API/SDK own repricing, totals, and discount rows.
@@ -71,7 +76,8 @@ Rules:
 - Brand-theme evidence is workflow-order neutral. Do not assume a Figma export came first; consume `context.theme` and `.campaign-runtime/theme/theme-report.json` when present, and keep missing/low-confidence theme as a warning unless the task explicitly requires theme application.
 - Do not copy demo refs or unsupported optional surfaces into the target campaign.
 - Use SDK conditionals such as `cart.hasCoupon("CODE")` for code-specific presentation; do not mutate visible prices from campaign-specific JavaScript.
-- Build Packet, context, and assembly-report paths should be repo-relative when possible so handoff artifacts can be committed without machine-local absolute paths.
+- Build Packet, Build Context, and Assembly Report paths should be repo-relative when possible so handoff artifacts can be committed without machine-local absolute paths.
+- Preserve Build Context `theme` inspection state and Assembly Report `theme` application state when present; they are public v0 contract fields and should not be dropped by wrappers, setup reruns, or repair passes.
 - Store Profile fields are operator-entered storefront/legal metadata for page-kit `campaigns.json`; they do not come from the Campaigns API and should be collected in the CampaignSpec before build.
 - Keep the lifecycle in a tight sequence. Pause only for missing inputs, doctor blockers, deploy blockers, out-of-scope runtime pages, or merchant-specific uncertainty.
 - Launch readiness is separate from Campaigns OS proof. Surface production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration as real-shopper readiness items, not Campaigns OS build blockers.
