@@ -1,0 +1,32 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": { "map_id": "fixture-orphan-offer-ref" },
+  "campaign": {
+    "ref_id": 20,
+    "slug": "orphan-offer-ref",
+    "payment_env_key": "test_key"
+  },
+  "runtime": { "sdk_version": "0.4.0" },
+  "shipping_methods": [{ "ref_id": "ship-standard" }],
+  "offers": [
+    { "ref_id": "offer-free-ship", "name": "Free Shipping Save", "code": "FREESHIP" }
+  ],
+  "funnels": [
+    {
+      "id": "f",
+      "name": "F",
+      "hypothesis": "Page references an offer ref_id that's not in spec.offers.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "f-l",
+          "type": "landing",
+          "label": "Landing",
+          "next_page": "f-ty",
+          "offers": [{ "ref_id": "missing-offer-99" }]
+        },
+        { "id": "f-ty", "type": "thankyou" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "nc-campaign-spec",
+  "version": "0.1.0",
+  "description": "CampaignSpec contract: normalize, rule registry, fixture corpus. Sits at the centre of Campaigns OS — every other module either authors, validates, projects, or consumes specs through this interface.",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "test": "bun test"
+  }
+}

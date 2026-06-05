@@ -1,0 +1,13 @@
+{
+  "violations": [
+    {
+      "ruleId": "ThankYouRequirement",
+      "severity": "error",
+      "message": "Funnel must end with a Thank You page.",
+      "path": "/funnels",
+      "data": {
+        "isPartialScope": false
+      }
+    }
+  ]
+}

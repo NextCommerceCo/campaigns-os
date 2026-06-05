@@ -1,0 +1,10 @@
+{
+  "violations": [
+    {
+      "ruleId": "DownsellWithoutUpsell",
+      "severity": "warning",
+      "message": "Downsell pages present but no Upsell pages — intentional?",
+      "path": "/funnels"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "violations": [
+    {
+      "ruleId": "PageIdUniqueness",
+      "severity": "error",
+      "message": "Duplicate page id \"shared-landing\" across funnels — page IDs must be globally unique.",
+      "path": "/funnels/1/pages/0/id",
+      "data": {
+        "pageId": "shared-landing",
+        "firstOccurrence": { "funnelIdx": 0, "pageIdx": 0 },
+        "secondOccurrence": { "funnelIdx": 1, "pageIdx": 0 }
+      }
+    }
+  ]
+}

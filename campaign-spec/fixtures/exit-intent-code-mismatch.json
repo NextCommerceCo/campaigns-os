@@ -1,0 +1,38 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": { "map_id": "fixture-exit-intent-code-mismatch" },
+  "campaign": {
+    "ref_id": 22,
+    "slug": "exit-intent-code-mismatch",
+    "payment_env_key": "test_key"
+  },
+  "runtime": { "sdk_version": "0.4.0" },
+  "shipping_methods": [{ "ref_id": "ship-standard" }],
+  "offers": [
+    { "ref_id": "offer-free-ship", "name": "Free Shipping Save", "code": "FREESHIP" },
+    { "ref_id": "offer-discount-10", "name": "10% Off", "code": "DISCOUNT" }
+  ],
+  "funnels": [
+    {
+      "id": "f",
+      "name": "F",
+      "hypothesis": "Exit intent points at FreeShip offer but uses Discount offer's code.",
+      "weight": 100,
+      "pages": [
+        { "id": "f-l", "type": "landing", "next_page": "f-c" },
+        {
+          "id": "f-c",
+          "type": "checkout",
+          "label": "Checkout",
+          "success_url": "f-ty",
+          "exit_intent": {
+            "enabled": true,
+            "offer_ref_id": "offer-free-ship",
+            "offer_code": "DISCOUNT"
+          }
+        },
+        { "id": "f-ty", "type": "thankyou" }
+      ]
+    }
+  ]
+}

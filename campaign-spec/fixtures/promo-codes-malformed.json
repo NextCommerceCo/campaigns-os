@@ -1,0 +1,40 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-promo-codes-malformed"
+  },
+  "campaign": {
+    "ref_id": 30,
+    "slug": "promo-codes-malformed",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    { "ref_id": "ship-standard" }
+  ],
+  "funnels": [
+    {
+      "id": "main",
+      "name": "Main",
+      "hypothesis": "Promo codes carrying assorted malformations.",
+      "weight": 100,
+      "pages": [
+        { "id": "p-l", "type": "landing", "label": "Landing", "next_page": "p-co" },
+        { "id": "p-co", "type": "checkout", "label": "Checkout", "success_url": "p-ty" },
+        { "id": "p-ty", "type": "thankyou", "label": "Thank You" }
+      ],
+      "promo_codes": [
+        { "id": "summer", "code": "SUMMER26", "starts_at": "2026-06-15", "ends_at": "2026-08-31" },
+        { "id": "summer", "code": "DIFFERENT", "starts_at": "2026-09-01" },
+        { "id": "bf", "code": "summer26", "starts_at": "2026-11-16", "ends_at": "2026-11-29" },
+        { "id": "", "code": "MISSING_ID" },
+        { "id": "nocode", "code": "" },
+        { "id": "bad-dates", "code": "BD1", "starts_at": "not-a-date" },
+        { "id": "inverted", "code": "INV", "starts_at": "2026-12-31", "ends_at": "2026-01-01" },
+        { "id": "bad-visual", "code": "BV1", "title": 42 }
+      ]
+    }
+  ]
+}

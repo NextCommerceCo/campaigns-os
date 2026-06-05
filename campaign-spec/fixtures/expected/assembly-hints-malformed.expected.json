@@ -1,0 +1,94 @@
+{
+  "violations": [
+    {
+      "ruleId": "AssemblyHintsShape",
+      "severity": "warning",
+      "message": "campaign.preferred_template_family \"olympus-typo\" is not in the known set (olympus, limos, demeter, olympus-mv-single-step, olympus-mv-two-step, shop-single-step, shop-three-step). The build agent will still try to use it as a hint, but consider correcting the value if this is a typo.",
+      "path": "/campaign/preferred_template_family",
+      "data": {
+        "check": "template-family-unknown",
+        "value": "olympus-typo"
+      }
+    },
+    {
+      "ruleId": "AssemblyHintsShape",
+      "severity": "warning",
+      "message": "\"Landing\" — upsell_template_pattern is set on a non-upsell page (type=landing). The hint is meaningful only on upsell pages; remove it or move it to an upsell page.",
+      "path": "/funnels/0/pages/0/upsell_template_pattern",
+      "data": {
+        "pageId": "d-l",
+        "pageType": "landing",
+        "check": "pattern-on-non-upsell"
+      }
+    },
+    {
+      "ruleId": "AssemblyHintsShape",
+      "severity": "warning",
+      "message": "\"Thank You\" — upsell_template_pattern is set on a non-upsell page (type=thankyou). The hint is meaningful only on upsell pages; remove it or move it to an upsell page.",
+      "path": "/funnels/0/pages/5/upsell_template_pattern",
+      "data": {
+        "pageId": "d-ty",
+        "pageType": "thankyou",
+        "check": "pattern-on-non-upsell"
+      }
+    },
+    {
+      "ruleId": "AssemblyHintsShape",
+      "severity": "warning",
+      "message": "\"Thank You\" — upsell_template_pattern \"wild_pattern\" is not in the known set (mv, bundle_tier_pills, bundle_tier_cards, single). Build will use it as a hint, but confirm the value matches a template-family variant.",
+      "path": "/funnels/0/pages/5/upsell_template_pattern",
+      "data": {
+        "pageId": "d-ty",
+        "check": "pattern-unknown",
+        "value": "wild_pattern"
+      }
+    },
+    {
+      "ruleId": "AssemblyHintsShape",
+      "severity": "warning",
+      "message": "\"Landing\" — upsell_mv_tiers is set on a non-upsell page (type=landing). The hint is meaningful only on upsell pages; remove it or move it to an upsell page.",
+      "path": "/funnels/0/pages/0/upsell_mv_tiers",
+      "data": {
+        "pageId": "d-l",
+        "pageType": "landing",
+        "check": "tiers-on-non-upsell"
+      }
+    },
+    {
+      "ruleId": "AssemblyHintsShape",
+      "severity": "warning",
+      "message": "\"Upsell Bad Range\" — upsell_mv_tiers has min=5 greater than max=2; swap the values or fix the range.",
+      "path": "/funnels/0/pages/2/upsell_mv_tiers",
+      "data": {
+        "pageId": "d-up-bad-range",
+        "check": "tiers-bad-range",
+        "min": 5,
+        "max": 2
+      }
+    },
+    {
+      "ruleId": "AssemblyHintsShape",
+      "severity": "warning",
+      "message": "\"Upsell Bad Types\" — upsell_mv_tiers requires positive integers for \"min\" and \"max\"; got min=\"1\", max=3.",
+      "path": "/funnels/0/pages/3/upsell_mv_tiers",
+      "data": {
+        "pageId": "d-up-bad-types",
+        "check": "tiers-bad-type",
+        "min": "1",
+        "max": 3
+      }
+    },
+    {
+      "ruleId": "AssemblyHintsShape",
+      "severity": "warning",
+      "message": "\"Upsell Missing Max\" — upsell_mv_tiers is missing \"max\"; declare both as positive integers (e.g. {\"min\": 1, \"max\": 5}) or remove the field.",
+      "path": "/funnels/0/pages/4/upsell_mv_tiers",
+      "data": {
+        "pageId": "d-up-missing",
+        "check": "tiers-missing-field",
+        "hasMin": true,
+        "hasMax": false
+      }
+    }
+  ]
+}

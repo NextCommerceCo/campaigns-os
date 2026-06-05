@@ -1,0 +1,16 @@
+{
+  "violations": [
+    {
+      "ruleId": "ExitIntentValidation",
+      "severity": "error",
+      "message": "\"Checkout\" — Exit intent offer code \"DISCOUNT\" does not match campaign offer code \"FREESHIP\".",
+      "path": "/funnels/0/pages/1/exit_intent/offer_code",
+      "data": {
+        "pageId": "f-c",
+        "check": "code_ref_mismatch",
+        "providedCode": "DISCOUNT",
+        "expectedCode": "FREESHIP"
+      }
+    }
+  ]
+}

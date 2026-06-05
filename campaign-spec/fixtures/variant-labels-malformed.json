@@ -1,0 +1,72 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-variant-labels-malformed"
+  },
+  "campaign": {
+    "ref_id": 31,
+    "slug": "variant-labels-malformed",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    { "ref_id": "ship-standard" }
+  ],
+  "funnels": [
+    {
+      "id": "f1",
+      "name": "Primary",
+      "hypothesis": "Variant-labels carrying assorted malformations.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "p-l",
+          "type": "landing",
+          "label": "Landing",
+          "next_page": "p-co",
+          "variant_labels": { "primary": "Size" }
+        },
+        {
+          "id": "p-co",
+          "type": "checkout",
+          "label": "Checkout",
+          "success_url": "p-up-empty"
+        },
+        {
+          "id": "p-up-empty",
+          "type": "upsell",
+          "label": "Upsell Empty Primary",
+          "on_accept": "p-up-bad-secondary",
+          "on_decline": "p-up-bad-secondary",
+          "packages": [{ "ref_id": 1, "name": "Bump", "price": 19, "price_retail": 29 }],
+          "variant_labels": { "primary": "" }
+        },
+        {
+          "id": "p-up-bad-secondary",
+          "type": "upsell",
+          "label": "Upsell Bad Secondary",
+          "on_accept": "p-up-bad-shape",
+          "on_decline": "p-up-bad-shape",
+          "packages": [{ "ref_id": 1, "name": "Bump", "price": 19, "price_retail": 29 }],
+          "variant_labels": { "primary": "Size", "secondary": 42 }
+        },
+        {
+          "id": "p-up-bad-shape",
+          "type": "upsell",
+          "label": "Upsell Bad Shape",
+          "on_accept": "p-ty",
+          "on_decline": "p-ty",
+          "packages": [{ "ref_id": 1, "name": "Bump", "price": 19, "price_retail": 29 }],
+          "variant_labels": ["Size", "Color"]
+        },
+        {
+          "id": "p-ty",
+          "type": "thankyou",
+          "label": "Thank You"
+        }
+      ]
+    }
+  ]
+}

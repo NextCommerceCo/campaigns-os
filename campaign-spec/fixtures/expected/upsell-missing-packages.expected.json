@@ -1,0 +1,14 @@
+{
+  "violations": [
+    {
+      "ruleId": "UpsellHasPackages",
+      "severity": "error",
+      "message": "\"Upsell\" has no packages assigned.",
+      "path": "/funnels/0/pages/2/packages",
+      "data": {
+        "pageId": "f-u",
+        "pageType": "upsell"
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "violations": [
+    {
+      "ruleId": "ExitIntentValidation",
+      "severity": "warning",
+      "message": "\"Landing\" — Exit intent is configured on a non-checkout page. The 0.4.x runtime contract expects checkout-level exit intent.",
+      "path": "/funnels/0/pages/0/exit_intent",
+      "data": {
+        "pageId": "f-l",
+        "check": "placement",
+        "pageType": "landing"
+      }
+    }
+  ]
+}

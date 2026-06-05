@@ -1,0 +1,38 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-hypothesis-too-short"
+  },
+  "campaign": {
+    "ref_id": 8,
+    "slug": "hypothesis-too-short",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "draft",
+      "name": "Draft",
+      "hypothesis": "short",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "d-l",
+          "type": "landing",
+          "next_page": "d-ty"
+        },
+        {
+          "id": "d-ty",
+          "type": "thankyou"
+        }
+      ]
+    }
+  ]
+}

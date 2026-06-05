@@ -1,0 +1,13 @@
+{
+  "violations": [
+    {
+      "ruleId": "ThankYouRequirement",
+      "severity": "warning",
+      "message": "Spec has no Thank You page. Valid for partial builds when traffic continues to an existing downstream route.",
+      "path": "/funnels",
+      "data": {
+        "isPartialScope": true
+      }
+    }
+  ]
+}

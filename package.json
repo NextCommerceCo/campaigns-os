@@ -20,7 +20,7 @@
     "check:cart-readiness": "node ./scripts/check-cart-readiness-contract.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=23.6.0"
   },
   "dependencies": {
     "playwright": "^1.60.0"
@@ -28,6 +28,7 @@
   "files": [
     "agents",
     "bin",
+    "campaign-spec",
     "contracts",
     "docs",
     "examples",

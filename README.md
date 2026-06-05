@@ -103,6 +103,18 @@ page-kit slice. Checkout/receipt pages depend on matching `_includes/`,
 `_layouts/`, `assets/css/`, and `assets/js/`; copying only individual page files
 is not a valid minimum file set.
 
+## Spec Validation
+
+`campaign-spec/` is the single, public source of truth for CampaignSpec
+validation: a `normalize` phase, a composable rule registry, and a fixture
+corpus. The `doctor` runs these rules during spec validation (emitted under the
+`spec.validation` code, complementary to its packet/build-aware spec checks), and
+any campaign authoring UI (such as a Map Builder bundle) can import the same
+registry — so a spec rule is authored once and reaches internal teams and
+third-party agencies alike. The rules are pure TypeScript over a normalized spec
+with no heavy dependencies; the CLI loads them via Node's native type stripping
+(see `engines.node`). See [`campaign-spec/README.md`](campaign-spec/README.md).
+
 ## Docs
 
 - [Quickstart](docs/quickstart.md)

@@ -1,0 +1,55 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-duplicate-page-ids"
+  },
+  "campaign": {
+    "ref_id": 9,
+    "slug": "duplicate-page-ids",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "control",
+      "name": "Control",
+      "hypothesis": "Control funnel for the duplicate-id test.",
+      "weight": 50,
+      "pages": [
+        {
+          "id": "shared-landing",
+          "type": "landing",
+          "next_page": "control-ty"
+        },
+        {
+          "id": "control-ty",
+          "type": "thankyou"
+        }
+      ]
+    },
+    {
+      "id": "variant",
+      "name": "Variant",
+      "hypothesis": "Variant reuses shared-landing — global ID collision.",
+      "weight": 50,
+      "pages": [
+        {
+          "id": "shared-landing",
+          "type": "landing",
+          "next_page": "variant-ty"
+        },
+        {
+          "id": "variant-ty",
+          "type": "thankyou"
+        }
+      ]
+    }
+  ]
+}

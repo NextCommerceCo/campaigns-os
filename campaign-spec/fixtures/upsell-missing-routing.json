@@ -1,0 +1,55 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-upsell-missing-routing"
+  },
+  "campaign": {
+    "ref_id": 13,
+    "slug": "upsell-missing-routing",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "f",
+      "name": "F",
+      "hypothesis": "Upsell page missing both on_accept and on_decline routes.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "f-l",
+          "type": "landing",
+          "next_page": "f-c"
+        },
+        {
+          "id": "f-c",
+          "type": "checkout",
+          "success_url": "f-u"
+        },
+        {
+          "id": "f-u",
+          "type": "upsell",
+          "label": "Upsell",
+          "packages": [
+            {
+              "ref_id": 1,
+              "name": "Bundle",
+              "price": 19
+            }
+          ]
+        },
+        {
+          "id": "f-ty",
+          "type": "thankyou"
+        }
+      ]
+    }
+  ]
+}

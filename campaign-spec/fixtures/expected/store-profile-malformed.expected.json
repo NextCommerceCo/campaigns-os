@@ -1,0 +1,25 @@
+{
+  "violations": [
+    {
+      "ruleId": "StoreProfileShape",
+      "severity": "warning",
+      "message": "campaign.store_phone_tel \"+1-800-555-1234\" must be a tel: URI (e.g. \"tel:+18005551234\"); without the scheme it renders a broken link in <a href> attributes.",
+      "path": "/campaign/store_phone_tel",
+      "data": { "check": "store-phone-tel-missing-scheme", "value": "+1-800-555-1234" }
+    },
+    {
+      "ruleId": "StoreProfileShape",
+      "severity": "warning",
+      "message": "campaign.allowed_domains[0] must be a non-empty hostname string; got \"\".",
+      "path": "/campaign/allowed_domains/0",
+      "data": { "check": "allowed-domain-bad-entry", "index": 0, "value": "" }
+    },
+    {
+      "ruleId": "StoreProfileShape",
+      "severity": "warning",
+      "message": "campaign.allowed_domains[2] must be a non-empty hostname string; got 42.",
+      "path": "/campaign/allowed_domains/2",
+      "data": { "check": "allowed-domain-bad-entry", "index": 2, "value": 42 }
+    }
+  ]
+}

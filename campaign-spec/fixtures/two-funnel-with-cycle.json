@@ -1,0 +1,101 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-two-funnel-with-cycle"
+  },
+  "campaign": {
+    "ref_id": 2,
+    "slug": "two-funnel-with-cycle",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "control",
+      "name": "Control",
+      "hypothesis": "Baseline funnel for the split test.",
+      "weight": 50,
+      "pages": [
+        {
+          "id": "landing-control",
+          "type": "landing",
+          "label": "Control Landing",
+          "next_page": "checkout-control"
+        },
+        {
+          "id": "checkout-control",
+          "type": "checkout",
+          "label": "Control Checkout",
+          "success_url": "thankyou-control"
+        },
+        {
+          "id": "thankyou-control",
+          "type": "thankyou",
+          "label": "Control Thank You"
+        }
+      ]
+    },
+    {
+      "id": "variant",
+      "name": "Variant",
+      "hypothesis": "Upsell decline loops back to upsell — should be flagged.",
+      "weight": 50,
+      "pages": [
+        {
+          "id": "landing-variant",
+          "type": "landing",
+          "label": "Variant Landing",
+          "next_page": "checkout-variant"
+        },
+        {
+          "id": "checkout-variant",
+          "type": "checkout",
+          "label": "Variant Checkout",
+          "success_url": "upsell-variant"
+        },
+        {
+          "id": "upsell-variant",
+          "type": "upsell",
+          "label": "Variant Upsell",
+          "on_accept": "thankyou-variant",
+          "on_decline": "downsell-variant",
+          "packages": [
+            {
+              "ref_id": 1,
+              "name": "Upsell",
+              "price": 49,
+              "price_retail": 99
+            }
+          ]
+        },
+        {
+          "id": "downsell-variant",
+          "type": "downsell",
+          "label": "Variant Downsell",
+          "on_accept": "thankyou-variant",
+          "on_decline": "upsell-variant",
+          "packages": [
+            {
+              "ref_id": 2,
+              "name": "Downsell",
+              "price": 19,
+              "price_retail": 39
+            }
+          ]
+        },
+        {
+          "id": "thankyou-variant",
+          "type": "thankyou",
+          "label": "Variant Thank You"
+        }
+      ]
+    }
+  ]
+}

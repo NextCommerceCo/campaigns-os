@@ -1,0 +1,16 @@
+{
+  "violations": [
+    {
+      "ruleId": "PackagePricingSanity",
+      "severity": "warning",
+      "message": "\"Upsell\" — Package \"Suspect Bundle\" has retail price $0.00. Verify pricing with offers model.",
+      "path": "/funnels/0/pages/2/packages/0/price_retail",
+      "data": {
+        "pageId": "f-u",
+        "packageName": "Suspect Bundle",
+        "price": 19,
+        "priceRetail": 0
+      }
+    }
+  ]
+}
