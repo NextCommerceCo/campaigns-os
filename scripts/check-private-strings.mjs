@@ -23,7 +23,7 @@ const hits = [];
 
 function walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory() && ignoredDirs.has(entry.name)) continue;
+    if (ignoredDirs.has(entry.name)) continue; // skip by name (worktree .git is a file, not a dir)
     const fullPath = join(dir, entry.name);
     const rel = relative(root, fullPath);
     if (entry.isDirectory()) {
