@@ -1,0 +1,13 @@
+{
+  "violations": [
+    {
+      "ruleId": "CheckoutHasSuccessUrl",
+      "severity": "warning",
+      "message": "Checkout success URL not set (needed to route to first upsell).",
+      "path": "/funnels/0/pages/1/success_url",
+      "data": {
+        "pageId": "f-c"
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "violations": [
+    {
+      "ruleId": "VariantLabelsShape",
+      "severity": "warning",
+      "message": "\"Landing\" — variant_labels is set on a non-upsell page (type=landing). The hint is meaningful only on upsell pages; remove it or move it to an upsell page.",
+      "path": "/funnels/0/pages/0/variant_labels",
+      "data": { "pageId": "p-l", "pageType": "landing", "check": "labels-on-non-upsell" }
+    },
+    {
+      "ruleId": "VariantLabelsShape",
+      "severity": "warning",
+      "message": "\"Upsell Empty Primary\" — variant_labels.primary is required and must be a non-empty string (e.g. \"Size\").",
+      "path": "/funnels/0/pages/2/variant_labels/primary",
+      "data": { "pageId": "p-up-empty", "check": "labels-primary-missing" }
+    },
+    {
+      "ruleId": "VariantLabelsShape",
+      "severity": "warning",
+      "message": "\"Upsell Bad Secondary\" — variant_labels.secondary must be a non-empty string when set (omit the field for single-attribute products); got 42.",
+      "path": "/funnels/0/pages/3/variant_labels/secondary",
+      "data": { "pageId": "p-up-bad-secondary", "check": "labels-secondary-bad-type", "value": 42 }
+    },
+    {
+      "ruleId": "VariantLabelsShape",
+      "severity": "warning",
+      "message": "\"Upsell Bad Shape\" — variant_labels must be an object with a \"primary\" string field; got array.",
+      "path": "/funnels/0/pages/4/variant_labels",
+      "data": { "pageId": "p-up-bad-shape", "check": "labels-bad-shape" }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-duplicate-funnel-ids"
+  },
+  "campaign": {
+    "ref_id": 7,
+    "slug": "duplicate-funnel-ids",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "same",
+      "name": "First",
+      "hypothesis": "First funnel with id=same.",
+      "weight": 50,
+      "pages": [
+        {
+          "id": "a-l",
+          "type": "landing",
+          "next_page": "a-ty"
+        },
+        {
+          "id": "a-ty",
+          "type": "thankyou"
+        }
+      ]
+    },
+    {
+      "id": "same",
+      "name": "Second",
+      "hypothesis": "Second funnel with same id — should be flagged.",
+      "weight": 50,
+      "pages": [
+        {
+          "id": "b-l",
+          "type": "landing",
+          "next_page": "b-ty"
+        },
+        {
+          "id": "b-ty",
+          "type": "thankyou"
+        }
+      ]
+    }
+  ]
+}

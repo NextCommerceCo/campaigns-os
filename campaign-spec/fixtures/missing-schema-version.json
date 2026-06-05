@@ -1,0 +1,37 @@
+{
+  "spec_identity": {
+    "map_id": "fixture-missing-schema-version"
+  },
+  "campaign": {
+    "ref_id": 5,
+    "slug": "missing-schema-version",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "f",
+      "name": "F",
+      "hypothesis": "Spec is otherwise valid but missing schema_version.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "f-l",
+          "type": "landing",
+          "next_page": "f-ty"
+        },
+        {
+          "id": "f-ty",
+          "type": "thankyou"
+        }
+      ]
+    }
+  ]
+}

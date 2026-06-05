@@ -1,0 +1,54 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-design-source-malformed"
+  },
+  "campaign": {
+    "ref_id": 9,
+    "slug": "design-source-malformed",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "draft",
+      "name": "Draft",
+      "hypothesis": "Designer pasted partial data into the design_source block.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "d-l",
+          "type": "landing",
+          "label": "Landing",
+          "next_page": "d-ty",
+          "design_source": {
+            "type": "figma",
+            "file_url": "not-a-url",
+            "breakpoints": {
+              "desktop": "https://example.com/not-figma",
+              "tablet": "",
+              "mobile": "https://www.figma.com/design/abc123/Sections?node-id=143-10518"
+            }
+          }
+        },
+        {
+          "id": "d-ty",
+          "type": "thankyou",
+          "label": "Thank You",
+          "design_source": {
+            "type": "figma",
+            "file_url": "https://www.figma.com/design/abc123/Sections",
+            "breakpoints": {}
+          }
+        }
+      ]
+    }
+  ]
+}

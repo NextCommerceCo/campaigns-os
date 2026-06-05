@@ -1,0 +1,15 @@
+{
+  "violations": [
+    {
+      "ruleId": "FunnelWeightSum",
+      "severity": "error",
+      "message": "Funnel weights must sum to 100 (got 99).",
+      "path": "/funnels",
+      "data": {
+        "sum": 99,
+        "expected": 100,
+        "tolerance": 0.01
+      }
+    }
+  ]
+}

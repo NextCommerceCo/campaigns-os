@@ -1,0 +1,22 @@
+{
+  "violations": [
+    {
+      "ruleId": "CampaignMetadata",
+      "severity": "warning",
+      "message": "No campaign loaded — campaign key required for spec export.",
+      "path": "/campaign/payment_env_key",
+      "data": {
+        "missing": "payment_env_key"
+      }
+    },
+    {
+      "ruleId": "CampaignMetadata",
+      "severity": "warning",
+      "message": "Campaign has no numeric ref_id; API refresh cannot disambiguate multi-campaign responses.",
+      "path": "/campaign/ref_id",
+      "data": {
+        "missing": "ref_id"
+      }
+    }
+  ]
+}

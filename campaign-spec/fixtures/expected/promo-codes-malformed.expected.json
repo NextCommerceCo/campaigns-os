@@ -1,0 +1,53 @@
+{
+  "violations": [
+    {
+      "ruleId": "PromoCodesShape",
+      "severity": "warning",
+      "message": "\"Main\" — promo_codes[1].id \"summer\" duplicates an earlier entry; ids must be unique within a funnel.",
+      "path": "/funnels/0/promo_codes/1/id",
+      "data": { "funnelId": "main", "index": 1, "check": "promo-id-duplicate", "value": "summer" }
+    },
+    {
+      "ruleId": "PromoCodesShape",
+      "severity": "warning",
+      "message": "\"Main\" — promo_codes[2].code \"summer26\" duplicates an earlier entry (case-insensitive); ordering decides priority so duplicates are ambiguous.",
+      "path": "/funnels/0/promo_codes/2/code",
+      "data": { "funnelId": "main", "index": 2, "check": "promo-code-duplicate", "value": "summer26" }
+    },
+    {
+      "ruleId": "PromoCodesShape",
+      "severity": "warning",
+      "message": "\"Main\" — promo_codes[3].id is required and must be a non-empty string.",
+      "path": "/funnels/0/promo_codes/3/id",
+      "data": { "funnelId": "main", "index": 3, "check": "promo-id-missing" }
+    },
+    {
+      "ruleId": "PromoCodesShape",
+      "severity": "warning",
+      "message": "\"Main\" — promo_codes[4].code is required and must be a non-empty string.",
+      "path": "/funnels/0/promo_codes/4/code",
+      "data": { "funnelId": "main", "index": 4, "check": "promo-code-missing" }
+    },
+    {
+      "ruleId": "PromoCodesShape",
+      "severity": "warning",
+      "message": "\"Main\" — promo_codes[5].starts_at \"not-a-date\" is not a valid ISO date string.",
+      "path": "/funnels/0/promo_codes/5/starts_at",
+      "data": { "funnelId": "main", "index": 5, "check": "promo-starts-at-bad", "value": "not-a-date" }
+    },
+    {
+      "ruleId": "PromoCodesShape",
+      "severity": "warning",
+      "message": "\"Main\" — promo_codes[6] starts_at \"2026-12-31\" is after ends_at \"2026-01-01\"; swap the values or fix the range.",
+      "path": "/funnels/0/promo_codes/6",
+      "data": { "funnelId": "main", "index": 6, "check": "promo-range-inverted", "starts_at": "2026-12-31", "ends_at": "2026-01-01" }
+    },
+    {
+      "ruleId": "PromoCodesShape",
+      "severity": "warning",
+      "message": "\"Main\" — promo_codes[7].title must be a string; got number.",
+      "path": "/funnels/0/promo_codes/7/title",
+      "data": { "funnelId": "main", "index": 7, "field": "title", "check": "promo-visual-bad-type" }
+    }
+  ]
+}

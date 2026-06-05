@@ -1,0 +1,48 @@
+{
+  "violations": [
+    {
+      "ruleId": "DesignSourceShape",
+      "severity": "warning",
+      "message": "\"Landing\" — design_source.file_url does not look like a URL: not-a-url",
+      "path": "/funnels/0/pages/0/design_source/file_url",
+      "data": {
+        "pageId": "d-l",
+        "check": "file-url-shape",
+        "value": "not-a-url"
+      }
+    },
+    {
+      "ruleId": "DesignSourceShape",
+      "severity": "warning",
+      "message": "\"Landing\" — design_source.type is \"figma\" but breakpoints.desktop is not a figma.com URL: https://example.com/not-figma",
+      "path": "/funnels/0/pages/0/design_source/breakpoints/desktop",
+      "data": {
+        "pageId": "d-l",
+        "check": "breakpoint-not-figma",
+        "breakpoint": "desktop",
+        "value": "https://example.com/not-figma"
+      }
+    },
+    {
+      "ruleId": "DesignSourceShape",
+      "severity": "warning",
+      "message": "\"Landing\" — design_source.breakpoints.tablet is set but empty.",
+      "path": "/funnels/0/pages/0/design_source/breakpoints/tablet",
+      "data": {
+        "pageId": "d-l",
+        "check": "breakpoint-empty",
+        "breakpoint": "tablet"
+      }
+    },
+    {
+      "ruleId": "DesignSourceShape",
+      "severity": "warning",
+      "message": "\"Thank You\" — design_source.breakpoints is present but no desktop/tablet/mobile URL is set.",
+      "path": "/funnels/0/pages/1/design_source/breakpoints",
+      "data": {
+        "pageId": "d-ty",
+        "check": "breakpoints-empty"
+      }
+    }
+  ]
+}

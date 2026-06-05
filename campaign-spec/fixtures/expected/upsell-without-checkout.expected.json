@@ -1,0 +1,13 @@
+{
+  "violations": [
+    {
+      "ruleId": "UpsellWithoutCheckout",
+      "severity": "error",
+      "message": "Upsells require an active Checkout page.",
+      "path": "/funnels",
+      "data": {
+        "isPartialScope": false
+      }
+    }
+  ]
+}

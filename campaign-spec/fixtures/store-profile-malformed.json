@@ -1,0 +1,32 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-store-profile-malformed"
+  },
+  "campaign": {
+    "ref_id": 32,
+    "slug": "store-profile-malformed",
+    "payment_env_key": "test_key",
+    "store_phone_tel": "+1-800-555-1234",
+    "allowed_domains": ["", "store.example.com", 42]
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    { "ref_id": "ship-standard" }
+  ],
+  "funnels": [
+    {
+      "id": "f1",
+      "name": "Primary",
+      "hypothesis": "Store profile fields carry malformed values.",
+      "weight": 100,
+      "pages": [
+        { "id": "p-l", "type": "landing", "label": "Landing", "next_page": "p-co" },
+        { "id": "p-co", "type": "checkout", "label": "Checkout", "success_url": "p-ty" },
+        { "id": "p-ty", "type": "thankyou", "label": "Thank You" }
+      ]
+    }
+  ]
+}

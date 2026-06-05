@@ -33,6 +33,18 @@ import {
   validateThemeContextBlock,
   writeThemeArtifacts,
 } from "./brand-theme.mjs";
+// ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
+// campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
+// spec check is authored once and reaches internal teams and agencies alike.
+// Authored as pure TypeScript with no heavy deps; compiled to plain ESM by
+// `npm run build:spec` (tsc -> campaign-spec/dist) so the package runs on the
+// node engine in package.json without type-stripping. build runs on `prepare`,
+// so a fresh install (including the git-ref consumer) always has dist.
+import {
+  normalize as normalizeCampaignSpec,
+  runRules,
+  specOnlyRules,
+} from "../campaign-spec/dist/index.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
@@ -1423,6 +1435,29 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
       addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
     }
     ready.push("Local CampaignSpec parsed");
+    // ADR-003: run the shared campaign-spec rule registry — the single public
+    // source of CampaignSpec validation. specOnlyRules is the right preset
+    // here: the doctor runs without a deployed URL, so any rule requiring one
+    // is skipped. These pure spec-shape rules are complementary to the
+    // packet/build-aware spec checks below (which stay); both run so internal
+    // and agency users get identical spec-shape validation. Emitted under the
+    // single spec.validation code. The per-violation rule identity is preserved
+    // in `detail` (ruleId + JSON-pointer path + structured data) — additive, so
+    // text output is unchanged (printResult shows code+message) while JSON
+    // consumers and field-level UI can map a finding back to the exact rule and
+    // spec field. (ADR-003 D4.)
+    try {
+      for (const violation of runRules(normalizeCampaignSpec(spec), specOnlyRules)) {
+        addIssue(
+          violation.severity === "error" ? errors : warnings,
+          "spec.validation",
+          violation.message,
+          { ruleId: violation.ruleId, path: violation.path, data: violation.data }
+        );
+      }
+    } catch (error) {
+      addIssue(errors, "spec.validation", `CampaignSpec validation failed: ${error.message}`);
+    }
     validateSpecIdentityExport(spec, warnings, ready);
     validateSpecPublicRoutes(spec, errors, ready);
     validateSpecStoreProfile(spec, errors, warnings, ready);

@@ -1,0 +1,83 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-assembly-hints-malformed"
+  },
+  "campaign": {
+    "ref_id": 10,
+    "slug": "assembly-hints-malformed",
+    "payment_env_key": "test_key",
+    "preferred_template_family": "olympus-typo"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "draft",
+      "name": "Draft",
+      "hypothesis": "Designer set authoring hints with unknown / misplaced / malformed values.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "d-l",
+          "type": "landing",
+          "label": "Landing",
+          "next_page": "d-co",
+          "upsell_template_pattern": "mv",
+          "upsell_mv_tiers": { "min": 2, "max": 4 }
+        },
+        {
+          "id": "d-co",
+          "type": "checkout",
+          "label": "Checkout",
+          "success_url": "d-up-bad-range"
+        },
+        {
+          "id": "d-up-bad-range",
+          "type": "upsell",
+          "label": "Upsell Bad Range",
+          "on_accept": "d-up-bad-types",
+          "on_decline": "d-up-bad-types",
+          "packages": [
+            { "ref_id": 1, "name": "Bump", "price": 19, "price_retail": 29 }
+          ],
+          "upsell_mv_tiers": { "min": 5, "max": 2 }
+        },
+        {
+          "id": "d-up-bad-types",
+          "type": "upsell",
+          "label": "Upsell Bad Types",
+          "on_accept": "d-up-missing",
+          "on_decline": "d-up-missing",
+          "packages": [
+            { "ref_id": 1, "name": "Bump", "price": 19, "price_retail": 29 }
+          ],
+          "upsell_mv_tiers": { "min": "1", "max": 3 }
+        },
+        {
+          "id": "d-up-missing",
+          "type": "upsell",
+          "label": "Upsell Missing Max",
+          "on_accept": "d-ty",
+          "on_decline": "d-ty",
+          "packages": [
+            { "ref_id": 1, "name": "Bump", "price": 19, "price_retail": 29 }
+          ],
+          "upsell_mv_tiers": { "min": 1 }
+        },
+        {
+          "id": "d-ty",
+          "type": "thankyou",
+          "label": "Thank You",
+          "upsell_template_pattern": "wild_pattern"
+        }
+      ]
+    }
+  ]
+}

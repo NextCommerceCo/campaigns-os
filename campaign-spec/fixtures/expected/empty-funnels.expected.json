@@ -1,0 +1,23 @@
+{
+  "violations": [
+    {
+      "ruleId": "FunnelCount",
+      "severity": "error",
+      "message": "Spec must define at least 1 funnel.",
+      "path": "/funnels",
+      "data": {
+        "count": 0,
+        "min": 1
+      }
+    },
+    {
+      "ruleId": "PageCount",
+      "severity": "error",
+      "message": "Funnel must have at least 1 page.",
+      "path": "/funnels",
+      "data": {
+        "totalPages": 0
+      }
+    }
+  ]
+}

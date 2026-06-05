@@ -1,0 +1,10 @@
+{
+  "violations": [
+    {
+      "ruleId": "SchemaVersion",
+      "severity": "error",
+      "message": "Missing schema_version",
+      "path": "/schema_version"
+    }
+  ]
+}

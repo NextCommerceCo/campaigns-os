@@ -1,0 +1,55 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-weight-sum-imbalanced"
+  },
+  "campaign": {
+    "ref_id": 3,
+    "slug": "weight-sum-imbalanced",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "a",
+      "name": "A",
+      "hypothesis": "Weight 50 — paired below.",
+      "weight": 50,
+      "pages": [
+        {
+          "id": "a-l",
+          "type": "landing",
+          "next_page": "a-ty"
+        },
+        {
+          "id": "a-ty",
+          "type": "thankyou"
+        }
+      ]
+    },
+    {
+      "id": "b",
+      "name": "B",
+      "hypothesis": "Weight 49 — sums to 99, not 100.",
+      "weight": 49,
+      "pages": [
+        {
+          "id": "b-l",
+          "type": "landing",
+          "next_page": "b-ty"
+        },
+        {
+          "id": "b-ty",
+          "type": "thankyou"
+        }
+      ]
+    }
+  ]
+}

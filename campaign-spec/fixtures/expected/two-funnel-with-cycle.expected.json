@@ -1,0 +1,14 @@
+{
+  "violations": [
+    {
+      "ruleId": "CycleDetection",
+      "severity": "error",
+      "message": "Circular route detected starting at \"Variant Upsell\". Cycle: upsell-variant → downsell-variant → upsell-variant",
+      "path": "/funnels/1/pages/2",
+      "data": {
+        "cycle": ["upsell-variant", "downsell-variant", "upsell-variant"],
+        "entryPageId": "upsell-variant"
+      }
+    }
+  ]
+}

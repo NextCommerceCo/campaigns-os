@@ -1,0 +1,13 @@
+{
+  "violations": [
+    {
+      "ruleId": "ShippingCountriesShape",
+      "severity": "warning",
+      "message": "Shipping countries must be \"all\" or an array of country codes.",
+      "path": "/campaign/available_shipping_countries",
+      "data": {
+        "received": "US"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "violations": [
+    {
+      "ruleId": "FunnelWeightSum",
+      "severity": "error",
+      "message": "Funnel \"rogue\" — weight must be a number in [0, 100] (got 150).",
+      "path": "/funnels/0/weight",
+      "data": {
+        "funnelId": "rogue",
+        "weight": 150
+      }
+    }
+  ]
+}

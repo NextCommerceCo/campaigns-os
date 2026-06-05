@@ -1,0 +1,15 @@
+{
+  "violations": [
+    {
+      "ruleId": "FunnelHypothesisLength",
+      "severity": "error",
+      "message": "Funnel \"draft\" — hypothesis must be at least 10 chars (got 5).",
+      "path": "/funnels/0/hypothesis",
+      "data": {
+        "funnelId": "draft",
+        "length": 5,
+        "min": 10
+      }
+    }
+  ]
+}

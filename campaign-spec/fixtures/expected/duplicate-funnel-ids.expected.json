@@ -1,0 +1,14 @@
+{
+  "violations": [
+    {
+      "ruleId": "FunnelIdentity",
+      "severity": "error",
+      "message": "Duplicate funnel id \"same\".",
+      "path": "/funnels/1/id",
+      "data": {
+        "funnelId": "same",
+        "funnelIdx": 1
+      }
+    }
+  ]
+}

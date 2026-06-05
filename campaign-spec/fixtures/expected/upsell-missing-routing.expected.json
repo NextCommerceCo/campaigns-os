@@ -1,0 +1,24 @@
+{
+  "violations": [
+    {
+      "ruleId": "UpsellRoutingComplete",
+      "severity": "error",
+      "message": "\"Upsell\" — Accept path not set.",
+      "path": "/funnels/0/pages/2/on_accept",
+      "data": {
+        "pageId": "f-u",
+        "missing": "on_accept"
+      }
+    },
+    {
+      "ruleId": "UpsellRoutingComplete",
+      "severity": "error",
+      "message": "\"Upsell\" — Decline path not set.",
+      "path": "/funnels/0/pages/2/on_decline",
+      "data": {
+        "pageId": "f-u",
+        "missing": "on_decline"
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-weight-out-of-range"
+  },
+  "campaign": {
+    "ref_id": 4,
+    "slug": "weight-out-of-range",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "rogue",
+      "name": "Rogue",
+      "hypothesis": "Weight 150 — out of valid [0, 100] range.",
+      "weight": 150,
+      "pages": [
+        {
+          "id": "rogue-l",
+          "type": "landing",
+          "next_page": "rogue-ty"
+        },
+        {
+          "id": "rogue-ty",
+          "type": "thankyou"
+        }
+      ]
+    }
+  ]
+}

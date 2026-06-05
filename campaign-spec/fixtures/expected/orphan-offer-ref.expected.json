@@ -1,0 +1,14 @@
+{
+  "violations": [
+    {
+      "ruleId": "OfferRefIntegrity",
+      "severity": "warning",
+      "message": "\"Landing\" — Offer ref missing-offer-99 not found in campaign offers. Refresh API data to sync.",
+      "path": "/funnels/0/pages/0/offers/0/ref_id",
+      "data": {
+        "pageId": "f-l",
+        "refId": "missing-offer-99"
+      }
+    }
+  ]
+}

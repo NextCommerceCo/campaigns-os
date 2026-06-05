@@ -1,0 +1,10 @@
+{
+  "violations": [
+    {
+      "ruleId": "ShippingMethodsPresent",
+      "severity": "warning",
+      "message": "No shipping methods selected.",
+      "path": "/shipping_methods"
+    }
+  ]
+}
