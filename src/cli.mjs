@@ -1468,7 +1468,7 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready) {
   }
   ready.push("CampaignSpec required Store Profile fields are present for page-kit campaigns.json");
 
-  // SELL-362 / R2-B5: a store profile can pass the required-field check yet
+  // a store profile can pass the required-field check yet
   // still be unable to serve a real shopper — the gap neither doctor nor
   // browser QA surfaced in the Round 2 run. These are real-shopper readiness
   // *warnings* (not blockers): a routing/visual-only run is fine, and they are
@@ -1523,7 +1523,7 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready) {
   }
 }
 
-// SELL-362 / R2-B5: a best-effort check for store URLs that clearly cannot be
+// a best-effort check for store URLs that clearly cannot be
 // a live storefront (local dev hosts, reserved test/example TLDs). Intentionally
 // conservative — only obvious non-production hosts trip it, so a real merchant
 // domain never false-positives. A non-URL string is left to other validators.
@@ -1646,7 +1646,7 @@ function specShippingRefs(spec) {
   return refs;
 }
 
-// SELL-362 / R2-B1: the set of refs the CampaignSpec itself declares as real
+// the set of refs the CampaignSpec itself declares as real
 // commerce entities — packages (page/offer/top-level), shipping methods, and
 // offer ref_ids. A reference whose value matches one of these points at a
 // genuinely-declared entity, so the demo-ref check below should not treat it
@@ -1706,7 +1706,7 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!publicRouteSlug) return;
 
-  // SELL-362 / R2-B2: the spec only carries unrooted routing-meta *hints*; the
+  // the spec only carries unrooted routing-meta *hints*; the
   // page-kit build roots them when it renders _site/<slug>/. Once that built
   // output exists and assembly is complete, validateBuiltSdkMetaTags checks the
   // actual rendered values authoritatively. Re-warning on the spec literal here
@@ -2046,7 +2046,7 @@ export function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
 
   if (currencyScope.needsCopyReview) {
     const currencyMatches = collectHardcodedCurrencyMatches(scanRoots);
-    // SELL-362 / R2-B2: the assembled/built campaign output is the QA artifact.
+    // the assembled/built campaign output is the QA artifact.
     // Once the build has actually produced output and that output is
     // currency-clean, residual $ in the *source* HTML is the raw input the build
     // tokenized — not a live-page defect. Warn on the built output; downgrade
@@ -2790,7 +2790,7 @@ export function collectDemoRefHits(spec, vocab) {
       .map((value) => String(value))
   );
   if (demoValues.size === 0) return [];
-  // SELL-362 / R2-B1: a ref whose value matches a real commerce entity the
+  // a ref whose value matches a real commerce entity the
   // spec declares (package/offer/shipping_method) is legitimate, not a
   // starter placeholder. The Map exporter does not stamp `_provenance.api`
   // down to the ref level, so provenance alone was missing it and flagging

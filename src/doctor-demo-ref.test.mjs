@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { collectDemoRefHits } from "./cli.mjs";
 
 // Shared vocab: the starter template's demo-only refs collide with real
-// low-integer Campaigns-API ref_ids ("1"/"2") — the root of SELL-362 / R2-B1.
+// low-integer Campaigns-API ref_ids ("1"/"2") — a known demo-ref defect.
 const VOCAB = { commerce: { demoOnlyValues: ["1", "2"] } };
 
 test("R2-B1: a ref the spec declares as a real package is not flagged", () => {
