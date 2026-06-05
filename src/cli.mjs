@@ -2564,6 +2564,10 @@ function offerRefsFromEntries(entries) {
 
 export function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const family = packet.assembly?.template_family;
+  // Match the private doctor (build-packet.js): the ported template_contract.*
+  // checks below do not apply to non-automatable families. The pre-existing
+  // agentContract / demo_ref / shipping checks keep running for all families.
+  const familyAutomatable = isNonEmptyString(family) && family !== "undecided" && family !== "custom";
   const catalogInfo = packet.assembly?.commerce_catalog || {};
   if (catalogInfo.required !== true) return;
   const catalogPath = resolveFromFile(packetPath, catalogInfo.path || "../contracts/commerce-surface-catalog.json");
@@ -2572,7 +2576,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     return;
   }
   const catalog = readJson(catalogPath);
-  if (catalog.agentContractVersion !== 1) {
+  if (familyAutomatable && catalog.agentContractVersion !== 1) {
     addIssue(warnings, "template_contract.catalog_version", "Commerce surface catalog agentContractVersion is not 1; verify contract semantics before build.");
   }
   if (!isObject(catalog.sharedFrontmatterVocabulary)) {
@@ -2586,7 +2590,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     return;
   }
   ready.push(`Template agentContract loaded for ${family}`);
-  if (contract.status && contract.status !== "agent-ready") {
+  if (familyAutomatable && contract.status && contract.status !== "agent-ready") {
     addIssue(warnings, "template_contract.status", `Template family "${family}" contract status is "${contract.status}"; treat this as guided assembly, not full automation.`);
   }
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
@@ -2628,7 +2632,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     const mismatchedFamilies = specPages.filter(
       (page) => isNonEmptyString(page.sdk_hints?.template_family) && page.sdk_hints.template_family !== family
     );
-    if (mismatchedFamilies.length > 0) {
+    if (familyAutomatable && mismatchedFamilies.length > 0) {
       addIssue(
         errors,
         "template_contract.spec_family",
@@ -2639,7 +2643,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     const checkoutPackageRefs = specPages
       .filter((page) => page.type === "checkout" || page.type === "select")
       .flatMap((page) => packageRefsFromEntries(page.packages));
-    if (contractMentions(contract, /\b(packages\.main_package|single_offer\.package_id|variant_slots)\b/) && checkoutPackageRefs.length === 0) {
+    if (familyAutomatable && contractMentions(contract, /\b(packages\.main_package|single_offer\.package_id|variant_slots)\b/) && checkoutPackageRefs.length === 0) {
       addIssue(
         errors,
         "template_contract.packages",
@@ -2653,6 +2657,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
       ...offerRefsFromEntries(page.offers),
     ]);
     if (
+      familyAutomatable &&
       contractMentions(contract, /\b(upsell_offer|upsell_bundle_tiers|inline upsell)\b/, ["optionalWhenSupported", "replaceFromSpecOrApi", "demoOnlyValues"]) &&
       upsellPages.length > 0 &&
       upsellPackageRefs.length === 0

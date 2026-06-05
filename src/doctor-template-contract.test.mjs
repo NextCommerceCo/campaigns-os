@@ -115,3 +115,20 @@ test("template_contract.catalog_version warns when agentContractVersion is not 1
   });
   assert.ok(codes(warnings).includes("template_contract.catalog_version"));
 });
+
+test("ported checks are exempt for a custom family (matches the private doctor)", () => {
+  // custom + agentContractVersion:2 + no checkout packages would trip
+  // catalog_version + packages for an automatable family; custom is exempt.
+  const { errors, warnings } = run({
+    family: "custom",
+    agentContractVersion: 2,
+    contract: { ...checkoutContract, status: "draft" },
+    spec: specWith([{ id: "checkout", type: "checkout" }]),
+  });
+  for (const code of ["template_contract.packages", "template_contract.upsell_refs", "template_contract.spec_family"]) {
+    assert.equal(codes(errors).includes(code), false, `${code} should not fire for custom`);
+  }
+  for (const code of ["template_contract.status", "template_contract.catalog_version"]) {
+    assert.equal(codes(warnings).includes(code), false, `${code} should not fire for custom`);
+  }
+});
