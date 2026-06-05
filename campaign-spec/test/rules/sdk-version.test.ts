@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from '../harness.ts'
 import { SdkVersion } from '../../rules/sdk-version.ts'
 import { normalize } from '../../normalize.ts'
 import type { CampaignSpec } from '../../types.ts'

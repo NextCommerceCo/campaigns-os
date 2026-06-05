@@ -104,17 +104,25 @@ drift.
 
 ## Tests
 
+The suite runs on `node --test` (no bun dependency); `test/harness.ts` is a thin
+adapter mapping the matchers used onto `node:assert`.
+
 ```bash
-cd campaign-spec
-bun test
+# from the campaigns-os package root
+npm run check:spec
+# or directly
+node --test "campaign-spec/test/**/*.test.ts"
 ```
 
-Two surfaces:
+Three surfaces:
 
 - **Per-rule** (`test/rules/*.test.ts`): focused fixtures, focused assertions.
 - **Corpus contract** (`test/corpus.test.ts`): every fixture asserted against
   its expected violations across all rules. Drift lights up exactly which
   fixture diffed.
+- **Compiled bundle** (`test/dist-smoke.test.ts`): imports the built
+  `dist/index.js` to prove `npm run build:spec` produced a working ESM module
+  with the full public surface (run `build:spec` first).
 
 ## Consuming from a browser bundle
 

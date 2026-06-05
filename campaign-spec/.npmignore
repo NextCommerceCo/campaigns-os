@@ -1,0 +1,9 @@
+# Publish only the compiled artifact + docs from this module.
+# (Presence of this .npmignore is also what lets the gitignored dist/ ship:
+# npm uses .npmignore for this subtree instead of the root .gitignore.)
+*.ts
+!*.d.ts
+/tsconfig.json
+/tsconfig.build.json
+/test/
+/fixtures/

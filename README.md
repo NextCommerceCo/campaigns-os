@@ -111,9 +111,11 @@ corpus. The `doctor` runs these rules during spec validation (emitted under the
 `spec.validation` code, complementary to its packet/build-aware spec checks), and
 any campaign authoring UI (such as a Map Builder bundle) can import the same
 registry — so a spec rule is authored once and reaches internal teams and
-third-party agencies alike. The rules are pure TypeScript over a normalized spec
-with no heavy dependencies; the CLI loads them via Node's native type stripping
-(see `engines.node`). See [`campaign-spec/README.md`](campaign-spec/README.md).
+third-party agencies alike. The rules are authored in TypeScript with no heavy
+dependencies and compiled to plain ESM (`npm run build:spec`, on `prepare`) and a
+stable subpath export `@nextcommerce/campaigns-os/campaign-spec`, so consumers run
+them on `engines.node` (>=20) with no type-stripping or build step of their own.
+See [`campaign-spec/README.md`](campaign-spec/README.md).
 
 ## Docs
 

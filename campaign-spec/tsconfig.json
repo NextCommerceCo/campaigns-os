@@ -7,8 +7,9 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "outDir": "dist",
-    "types": ["bun-types"]
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": []
   },
   "include": ["*.ts", "rules/*.ts", "fixtures/*.ts", "test/**/*.ts"]
 }

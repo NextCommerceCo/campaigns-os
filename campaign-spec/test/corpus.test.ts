@@ -10,7 +10,7 @@
  * to match (and review the diff carefully).
  */
 
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from './harness.ts'
 import { normalize, runRules, allRules } from '../index.ts'
 import { corpus } from '../fixtures/index.ts'
 

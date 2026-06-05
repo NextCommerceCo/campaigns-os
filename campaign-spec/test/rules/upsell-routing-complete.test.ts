@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from '../harness.ts'
 import { UpsellRoutingComplete } from '../../rules/upsell-routing-complete.ts'
 import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'

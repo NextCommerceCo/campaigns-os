@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from '../harness.ts'
 import { StoreProfileShape } from '../../rules/store-profile-shape.ts'
 import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'

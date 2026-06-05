@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from '../harness.ts'
 import { PromoCodeInputValidation } from '../../rules/promo-code-input-validation.ts'
 import { normalize } from '../../normalize.ts'
 import type { CampaignSpec } from '../../types.ts'

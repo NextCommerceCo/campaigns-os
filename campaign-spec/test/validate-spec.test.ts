@@ -8,7 +8,7 @@
  * else uses `runRules(normalize(spec), <preset>)`).
  */
 
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from './harness.ts'
 import { validateSpec } from '../index.ts'
 
 describe('validateSpec (backwards-compat wrapper)', () => {

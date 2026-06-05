@@ -6,7 +6,7 @@
  * only the cycle-relevant fixtures.
  */
 
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from '../harness.ts'
 import { CycleDetection } from '../../rules/cycle-detection.ts'
 import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'

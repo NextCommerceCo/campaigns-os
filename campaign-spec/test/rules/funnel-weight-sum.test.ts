@@ -5,7 +5,7 @@
  * sums that miss 100 ± 0.01.
  */
 
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from '../harness.ts'
 import { FunnelWeightSum } from '../../rules/funnel-weight-sum.ts'
 import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'

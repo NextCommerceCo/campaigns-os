@@ -4,8 +4,17 @@
   "private": true,
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
   "type": "module",
+  "sideEffects": false,
   "bin": {
     "campaigns-os": "./bin/campaigns-os.mjs"
+  },
+  "exports": {
+    "./campaign-spec": {
+      "types": "./campaign-spec/dist/index.d.ts",
+      "import": "./campaign-spec/dist/index.js",
+      "default": "./campaign-spec/dist/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
     "campaigns-os": "node ./bin/campaigns-os.mjs",
@@ -13,17 +22,24 @@
     "qa": "node ./bin/campaigns-os.mjs qa",
     "qa:install-browser": "npx playwright install chromium",
     "refresh:starter-catalog": "node ./scripts/refresh-starter-template-catalog.mjs",
-    "check": "node --test ./src/qa-browser.test.mjs ./src/qa-verdict.test.mjs ./src/qa-publish.test.mjs ./src/findings.test.mjs ./src/doctor-demo-ref.test.mjs ./src/doctor-built-output.test.mjs ./src/doctor-commerce-shell.test.mjs ./src/doctor-template-contract.test.mjs ./src/doctor-store-profile.test.mjs ./src/brand-theme.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs && node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs && node ./scripts/check-cart-readiness-contract.mjs",
+    "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
+    "prepare": "npm run build:spec",
+    "check:spec": "node --test \"campaign-spec/test/**/*.test.ts\"",
+    "check": "npm run build:spec && node --test ./src/qa-browser.test.mjs ./src/qa-verdict.test.mjs ./src/qa-publish.test.mjs ./src/findings.test.mjs ./src/doctor-demo-ref.test.mjs ./src/doctor-built-output.test.mjs ./src/doctor-commerce-shell.test.mjs ./src/doctor-template-contract.test.mjs ./src/doctor-store-profile.test.mjs ./src/doctor-spec-validation.test.mjs ./src/brand-theme.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs && npm run check:spec && node ./scripts/check-fixtures.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs && node ./scripts/check-cart-readiness-contract.mjs && npm run check:pack",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
+    "check:pack": "node ./scripts/check-pack.mjs",
     "check:private-strings": "node ./scripts/check-private-strings.mjs",
     "check:template-doctrine": "node ./scripts/check-template-doctrine.mjs",
     "check:cart-readiness": "node ./scripts/check-cart-readiness-contract.mjs"
   },
   "engines": {
-    "node": ">=23.6.0"
+    "node": ">=20"
   },
   "dependencies": {
     "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   },
   "files": [
     "agents",
