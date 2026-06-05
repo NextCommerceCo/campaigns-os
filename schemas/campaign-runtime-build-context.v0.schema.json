@@ -118,12 +118,35 @@
         "confidence": { "enum": ["high", "medium", "low", "none"] },
         "generated": {
           "type": "object",
-          "additionalProperties": true,
+          "additionalProperties": false,
           "properties": {
             "css_path": { "type": ["string", "null"] },
             "report_path": { "type": ["string", "null"] },
             "can_generate": { "type": "boolean" },
-            "can_auto_generate": { "type": "boolean" }
+            "can_auto_generate": { "type": "boolean" },
+            "overwrite_requires_force": { "type": "boolean" },
+            "safety": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ok", "errors", "warnings"],
+              "properties": {
+                "ok": { "type": "boolean" },
+                "errors": { "type": "array" },
+                "warnings": { "type": "array" }
+              }
+            },
+            "stale": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["stale", "reasons"],
+              "properties": {
+                "stale": { "type": "boolean" },
+                "reasons": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
           }
         },
         "mappings": { "type": "array" },

@@ -119,7 +119,8 @@
     "decisions": { "type": "array" },
     "theme": {
       "type": ["object", "null"],
-      "additionalProperties": true,
+      "additionalProperties": false,
+      "required": ["status", "css_path", "load_order", "commerce_pages", "evidence", "warnings", "repair_loop_defect"],
       "properties": {
         "status": { "enum": ["applied", "skipped", "blocked", "needs_review"] },
         "css_path": { "type": ["string", "null"] },
@@ -133,7 +134,22 @@
           "items": { "type": "string" }
         },
         "warnings": { "type": "array" },
-        "repair_loop_defect": {}
+        "repair_loop_defect": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "type": "string", "minLength": 1 },
+                "message": { "type": "string", "minLength": 1 },
+                "path": { "type": "string", "minLength": 1 },
+                "detail": {}
+              }
+            }
+          ]
+        }
       }
     },
     "evidence": { "type": "array" },
