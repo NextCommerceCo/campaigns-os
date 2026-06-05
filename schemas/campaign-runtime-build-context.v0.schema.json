@@ -118,7 +118,7 @@
         "confidence": { "enum": ["high", "medium", "low", "none"] },
         "generated": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "css_path": { "type": ["string", "null"] },
             "report_path": { "type": ["string", "null"] },
@@ -131,8 +131,14 @@
               "required": ["ok", "errors", "warnings"],
               "properties": {
                 "ok": { "type": "boolean" },
-                "errors": { "type": "array" },
-                "warnings": { "type": "array" }
+                "errors": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/themeIssue" }
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/themeIssue" }
+                }
               }
             },
             "stale": {
@@ -157,5 +163,17 @@
     "commerce_zone_findings": { "type": "array" },
     "prompts_required": { "type": "array" },
     "decisions": { "type": "array" }
+  },
+  "$defs": {
+    "themeIssue": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "detail": { "type": "object", "additionalProperties": true }
+      }
+    }
   }
 }

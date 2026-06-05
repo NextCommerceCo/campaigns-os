@@ -803,11 +803,6 @@ export function validateAssemblyReportThemeBlock(theme) {
     errors.push(issue("report.theme.type", "report.theme must be an object."));
     return { ok: false, errors, warnings, ready: [] };
   }
-  for (const key of ["status", "css_path", "load_order", "commerce_pages", "evidence", "warnings", "repair_loop_defect"]) {
-    if (!(key in theme)) {
-      errors.push(issue(`report.theme.${key}`, `report.theme.${key} is required when report.theme is present.`));
-    }
-  }
   validateEnum(theme.status, THEME_REPORT_STATUSES, "report.theme.status", errors);
   if (theme.css_path !== undefined && theme.css_path !== null && (!isNonEmptyString(theme.css_path) || isAbsolute(theme.css_path))) {
     errors.push(issue("report.theme.css_path", "report.theme.css_path must be a relative path when present."));
@@ -830,13 +825,6 @@ export function validateAssemblyReportThemeBlock(theme) {
   if (theme.repair_loop_defect !== undefined && theme.repair_loop_defect !== null) {
     if (!isObject(theme.repair_loop_defect)) {
       errors.push(issue("report.theme.repair_loop_defect", "report.theme.repair_loop_defect must be null or an object when present."));
-    } else {
-      if (!isNonEmptyString(theme.repair_loop_defect.code)) {
-        errors.push(issue("report.theme.repair_loop_defect.code", "report.theme.repair_loop_defect.code is required when repair_loop_defect is present."));
-      }
-      if (!isNonEmptyString(theme.repair_loop_defect.message)) {
-        errors.push(issue("report.theme.repair_loop_defect.message", "report.theme.repair_loop_defect.message is required when repair_loop_defect is present."));
-      }
     }
   }
   return {
