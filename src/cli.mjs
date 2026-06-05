@@ -2538,8 +2538,36 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   }
 }
 
-function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
+// Helpers ported from the private build-packet doctor (ADR-003 step 2) so the
+// shared-concern template-contract checks live here in the public doctor too.
+function frontmatterList(contract, key) {
+  const value = contract?.frontmatter?.[key];
+  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+function contractMentions(contract, pattern, keys = ["requiredWhenCloning", "replaceFromSpecOrApi"]) {
+  return keys.flatMap((key) => frontmatterList(contract, key)).some((value) => pattern.test(value));
+}
+function packageRefsFromEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .map((entry) => entry?.ref_id ?? entry?.package_ref_id ?? entry?.package_id ?? entry?.id)
+    .filter((value) => value !== undefined && value !== null && String(value).trim().length > 0)
+    .map((value) => String(value));
+}
+function offerRefsFromEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .flatMap((entry) => [entry?.package_ref_id, entry?.package_id, entry?.ref_id, entry?.code])
+    .filter((value) => value !== undefined && value !== null && String(value).trim().length > 0)
+    .map((value) => String(value));
+}
+
+export function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const family = packet.assembly?.template_family;
+  // Match the private doctor (build-packet.js): the ported template_contract.*
+  // checks below do not apply to non-automatable families. The pre-existing
+  // agentContract / demo_ref / shipping checks keep running for all families.
+  const familyAutomatable = isNonEmptyString(family) && family !== "undecided" && family !== "custom";
   const catalogInfo = packet.assembly?.commerce_catalog || {};
   if (catalogInfo.required !== true) return;
   const catalogPath = resolveFromFile(packetPath, catalogInfo.path || "../contracts/commerce-surface-catalog.json");
@@ -2548,6 +2576,9 @@ function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, rea
     return;
   }
   const catalog = readJson(catalogPath);
+  if (familyAutomatable && catalog.agentContractVersion !== 1) {
+    addIssue(warnings, "template_contract.catalog_version", "Commerce surface catalog agentContractVersion is not 1; verify contract semantics before build.");
+  }
   if (!isObject(catalog.sharedFrontmatterVocabulary)) {
     addIssue(errors, "catalog.sharedFrontmatterVocabulary", "Commerce catalog is missing sharedFrontmatterVocabulary.");
   } else {
@@ -2559,6 +2590,9 @@ function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, rea
     return;
   }
   ready.push(`Template agentContract loaded for ${family}`);
+  if (familyAutomatable && contract.status && contract.status !== "agent-ready") {
+    addIssue(warnings, "template_contract.status", `Template family "${family}" contract status is "${contract.status}"; treat this as guided assembly, not full automation.`);
+  }
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
   if (assemblyComplete) {
     validateBuiltContractResidue(contract, warnings, ready, derived);
@@ -2589,6 +2623,49 @@ function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, rea
         warnings,
         "template_contract.demo_ref",
         `CampaignSpec contains a starter-looking demo ref "${hit.value}" at ${hit.path}. Confirm it came from the actual Campaigns API or attach _provenance.api/source metadata.`
+      );
+    }
+
+    // ADR-003 step 2: template-contract checks ported from the private doctor.
+    const specPages = activeSpecPages(spec);
+
+    const mismatchedFamilies = specPages.filter(
+      (page) => isNonEmptyString(page.sdk_hints?.template_family) && page.sdk_hints.template_family !== family
+    );
+    if (familyAutomatable && mismatchedFamilies.length > 0) {
+      addIssue(
+        errors,
+        "template_contract.spec_family",
+        `CampaignSpec sdk_hints.template_family disagrees with packet template family on pages: ${mismatchedFamilies.map((page) => `${page.id}=${page.sdk_hints.template_family}`).join(", ")}.`
+      );
+    }
+
+    const checkoutPackageRefs = specPages
+      .filter((page) => page.type === "checkout" || page.type === "select")
+      .flatMap((page) => packageRefsFromEntries(page.packages));
+    if (familyAutomatable && contractMentions(contract, /\b(packages\.main_package|single_offer\.package_id|variant_slots)\b/) && checkoutPackageRefs.length === 0) {
+      addIssue(
+        errors,
+        "template_contract.packages",
+        `Template family "${family}" requires checkout package frontmatter, but the active CampaignSpec checkout/select pages have no package refs.`
+      );
+    }
+
+    const upsellPages = specPages.filter((page) => page.type === "upsell" || page.type === "downsell");
+    const upsellPackageRefs = upsellPages.flatMap((page) => [
+      ...packageRefsFromEntries(page.packages),
+      ...offerRefsFromEntries(page.offers),
+    ]);
+    if (
+      familyAutomatable &&
+      contractMentions(contract, /\b(upsell_offer|upsell_bundle_tiers|inline upsell)\b/, ["optionalWhenSupported", "replaceFromSpecOrApi", "demoOnlyValues"]) &&
+      upsellPages.length > 0 &&
+      upsellPackageRefs.length === 0
+    ) {
+      addIssue(
+        errors,
+        "template_contract.upsell_refs",
+        `Template family "${family}" exposes upsell frontmatter, but active upsell/downsell pages have no package or offer refs to replace demo values.`
       );
     }
   }

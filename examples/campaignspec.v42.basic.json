@@ -53,6 +53,13 @@
           "label": "Checkout",
           "page_url": "checkout/",
           "success_url": "upsell",
+          "packages": [
+            {
+              "ref_id": "1",
+              "name": "Demo Bundle",
+              "price": "49.00"
+            }
+          ],
           "sdk_hints": {
             "meta_tags": {
               "next-page-type": "checkout",
