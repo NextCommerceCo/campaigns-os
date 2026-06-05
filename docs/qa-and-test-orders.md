@@ -108,6 +108,34 @@ npm run campaigns-os -- qa run \
   --base-url https://preview.example.com/campaign/
 ```
 
+## Cart-state verification: do not trust `cartLines`
+
+When QA needs to confirm the cart actually holds the expected items, **do not read
+`next.getCartData().cartLines`**. That field is currently always an empty array
+regardless of cart contents — `getCartData()` returns `cartStore.enrichedItems`,
+which is initialized `[]` and never populated; the real line items live in the
+store's `items` / `summary.lines`. See
+[NextCommerceCo/campaign-cart#36](https://github.com/NextCommerceCo/campaign-cart/issues/36).
+Verified live on deployed checkouts (SDK 0.4.18 and 0.4.24): a correctly committed
+bundle shows populated internal `items` while `cartLines` stays `[]`. An assertion
+like `cartLines.length > 0` therefore **silently passes on an empty array** — a
+false-positive "cart populated" verdict.
+
+Use the signals this runner already relies on instead:
+
+- **Committed cart (truth):** the typed-card test-order order read-back — the
+  persisted order's receipt line items (`/api/v1/orders` response). This is the
+  proof path the test-order flow uses. For an in-page check, read the
+  `cart:updated` event payload (`items` / `summary.lines`).
+- **In-flight selection (pre-commit):** rendered DOM evidence —
+  `[data-next-bundle-card]` selected state and visible prices — or the bundle
+  selector's `_getSelectedBundleItems()`. Subtotal/totals reflect the previewed
+  selection and are not proof that a line committed.
+
+This is enforced by `scripts/check-cart-readiness-contract.mjs` (part of
+`npm run check`), which fails if QA source reaches for `cartLines`. Relax or
+retire that guard once #36 ships and `cartLines` is populated.
+
 ## Test Orders
 
 Test Orders use **global test cards** that work on any live store and integration.
