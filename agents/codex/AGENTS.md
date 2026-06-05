@@ -5,6 +5,7 @@ Use this context when working in a target campaign repo with Campaigns OS artifa
 - Read `campaign-runtime.build.json` first.
 - If `.campaign-runtime/build-context.json` or `.campaign-runtime/assembly-report.json` exists, read them before editing campaign files.
 - Run `campaigns-os doctor --packet campaign-runtime.build.json` before build work.
+- Treat CampaignSpec validation as owned by the public `@nextcommerce/campaigns-os/campaign-spec` rules surfaced through doctor `spec.validation` findings; use structured rule/path detail when available.
 - Respect the selected template family's `agentContract`.
 - Replace demo refs from CampaignSpec/API; do not preserve starter sample IDs.
 - Preserve Campaign Cart SDK-owned checkout, cart, upsell, receipt, payment, address, totals, and submit surfaces.
@@ -20,5 +21,6 @@ Use this context when working in a target campaign repo with Campaigns OS artifa
 - Build hands off to polish; polish hands off to QA.
 - QA uses the Campaigns OS Node/npm runner. Install the package-owned Playwright browser with `npm run qa:install-browser`, run `campaigns-os qa resolve`, then run `campaigns-os qa run --browser --test-order common` against the tested URL.
 - Typed-card test-order proof uses `campaigns-os qa run --test-order <common|checkout|decline|accept|both|full|explicit-path>` through the tested checkout and rendered upsell controls. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed — depth is the only control (`common` = default 3-5 shape sample, `full` = every permutation). Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation. Do not use external browser skills, the SDK test-mode event, or hand-built backend API orders as launch proof.
+- Do not use `next.getCartData().cartLines` as cart-populated proof; use typed-card order read-back, `cart:updated` payload `items` / `summary.lines`, and rendered bundle DOM evidence.
 - Campaigns OS proof is not merchant launch readiness. Before launch, confirm production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration.
 - This is not full automated readiness. QA remains a separate gate.

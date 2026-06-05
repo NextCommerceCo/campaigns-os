@@ -38,6 +38,7 @@ Build rules:
 - If an order bump package comes from `packages.prepurchase_*` and is not one of the main `bundles[]`, default `package_sync=false` and `show_line_total_price=false` unless the CampaignSpec explicitly says the add-on quantity must sync with the main bundle.
 - For two-step package-selection-before-checkout flows, use the selector page as the pre-checkout step, encode the selected cart with `forcePackageId`, preserve attribution/tracking params, and strip `forcePackageId` from the visible checkout URL after SDK initialization.
 - Record intentional drops from source HTML in the assembly report, especially payment/provider changes such as "PayPal removed because CampaignSpec available_payment_methods excludes it." Polish must inherit these decisions.
+- Preserve any existing Build Context `theme` inspection state and Assembly Report `theme` application state. If build applies, skips, or invalidates generated theme CSS, update `report.theme` rather than leaving stale evidence.
 - After page-kit build, inspect rendered `_site` output: body exists, Campaign Cart runtime markers exist, `sdk_hints.meta_tags` rendered, route meta points at the campaign root, and copied funnel attribution/runtime baggage is gone.
 - For `shop-three-step`, shipping methods are dynamic through `window.next.getShippingMethods()`; do not add static Olympus-style `shipping_methods` frontmatter.
 - Run page-kit build and SDK/template lint available in the target repo.

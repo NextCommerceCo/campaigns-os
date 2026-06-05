@@ -25,7 +25,7 @@ Definitions:
 - Source truth: CampaignSpec/Map Builder export, Figma/design file, prepared HTML, existing campaign, target repo, or deployed URL.
 - Runtime truth: Build Packet, Build Context, Assembly Report, optional `context.theme` / `.campaign-runtime/theme/theme-report.json`, doctor JSON, repo state, tested URL, Campaigns API key source, SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation), and test-order depth choice.
 - Change policy: what may change and what must be preserved, especially checkout, offer logic, live campaign routes, and legal/merchant copy.
-- Proof depth: visual preview, doctor, browser QA, posted verdict, typed-card test-order depth, market coverage, and repair routing.
+- Proof depth: visual preview, doctor, browser QA, QA portal/local verdict policy, typed-card test-order depth, market coverage, and repair routing.
 
 Ask only for the fields needed by the selected mode. Do not force a full-funnel
 build prompt when the user only needs QA, a partial page update, or repair from
@@ -104,7 +104,7 @@ Collect:
 - Map ID and deployed base URL.
 - Build Packet path if local; otherwise enough info to resolve topology.
 - Whether browser QA should run.
-- Whether verdict must post to the QA dashboard.
+- Whether verdict should use the default QA portal publish path or stay local-only.
 - Typed-card test-order depth (`common`/explicit/`full`).
 
 Route to QA. Do not patch campaign code from the QA-only path.

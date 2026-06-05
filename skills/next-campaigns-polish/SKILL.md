@@ -12,6 +12,7 @@ Responsibilities:
 - Compare prepared source design against built campaign pages.
 - Scan the prepared source assets for brand marks such as `logo*.png`, `logo*.svg`, and obvious header/logo images before leaving starter-template logos in place.
 - Read the assembly report decisions before polishing. Do not reintroduce source-HTML elements that build intentionally dropped because CampaignSpec/API did not support them, such as unavailable payment methods.
+- Preserve existing `report.theme` data. If polish changes generated theme CSS, load order, commerce-page coverage, theme warnings, or the first repair-loop defect, update the Assembly Report `theme` block rather than leaving stale evidence.
 - Patch only SDK-safe CSS, skin, layout, and content surfaces.
 - Preserve checkout/cart/upsell/receipt runtime wiring.
 - Capture desktop and mobile evidence for key commerce anchors.
