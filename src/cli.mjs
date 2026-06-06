@@ -1872,6 +1872,7 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
       targetRepo,
       page,
       spec,
+      publicRouteSlug,
       errors,
       warnings,
       assemblyComplete
@@ -1881,7 +1882,7 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
   if (checked > 0) ready.push(`Built HTML structure and commerce refs checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
 }
 
-function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, errors, warnings, assemblyComplete) {
+function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, publicRouteSlug, errors, warnings, assemblyComplete) {
   const issueTarget = assemblyComplete ? errors : warnings;
   const relPath = relFromDir(targetRepo, builtPath);
   if (!/<body(?:\s|>)/i.test(content) || !/<\/body>/i.test(content)) {
@@ -1890,15 +1891,17 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
   if (!/(data-next-|window\.next|next-page-type|campaign-cart-sdk|campaign-cart)/i.test(content)) {
     addIssue(issueTarget, "built_output.runtime_missing", `Built page "${page.id}" has no obvious Campaign Cart runtime markers.`, { page_id: page.id, file: relPath });
   }
-  validateBuiltScriptAssets(content, builtPath, targetRepo, page, issueTarget);
+  validateBuiltPageKitAssetPaths(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
+  validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
 }
 
-function validateBuiltScriptAssets(content, builtPath, targetRepo, page, issueTarget) {
+function validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget) {
   for (const tag of content.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)) {
     const src = tag[1];
     const resolved = resolveBuiltAssetPath(src, builtPath, targetRepo);
     if (!resolved || existsSync(resolved)) continue;
+    if (pageKitAssetPathViolation(src, normalizePublicRouteSlug(publicRouteSlug))) continue;
     addIssue(
       issueTarget,
       "built_output.script_missing",
@@ -1906,6 +1909,91 @@ function validateBuiltScriptAssets(content, builtPath, targetRepo, page, issueTa
       { page_id: page.id, file: relFromDir(targetRepo, builtPath), script: src }
     );
   }
+}
+
+export function validateBuiltPageKitAssetPaths(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget) {
+  const hits = collectPageKitAssetPathViolations(content, publicRouteSlug)
+    .filter((hit) => {
+      const resolved = resolveBuiltAssetPath(hit.reference, builtPath, targetRepo);
+      return resolved && !existsSync(resolved);
+    });
+
+  if (!hits.length) return;
+
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
+  const sample = hits
+    .slice(0, 5)
+    .map((hit) => `${hit.reference} (${hit.kind}, line ${hit.line})`)
+    .join("; ");
+  const more = hits.length > 5 ? `; plus ${hits.length - 5} more` : "";
+  const renderedExample = slug ? `/${slug}/config.js` : "/<slug>/config.js";
+  const sourceExample = slug ? `src/${slug}/assets/config.js` : "src/<slug>/assets/config.js";
+
+  addIssue(
+    issueTarget,
+    "built_output.pagekit_asset_path",
+    `Built page "${page.id}" references page-kit asset path(s) that do not exist in built output: ${sample}${more}. next-campaign-page-kit copies ${sourceExample} to "${renderedExample}" (not "/assets/config.js" or "/${slug || "<slug>"}/assets/config.js"). Use "{{ 'config.js' | campaign_asset }}" in page-kit source, or rewrite raw passthrough HTML to the campaign-rooted built URL.`,
+    {
+      page_id: page.id,
+      file: relFromDir(targetRepo, builtPath),
+      references: hits.map((hit) => ({
+        reference: hit.reference,
+        expected: hit.expected,
+        line: hit.line,
+        kind: hit.kind,
+      })),
+    }
+  );
+}
+
+export function collectPageKitAssetPathViolations(content, publicRouteSlug) {
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
+  const hits = [];
+  const seen = new Set();
+
+  const record = (kind, reference, index) => {
+    const hit = pageKitAssetPathViolation(reference, slug);
+    if (!hit) return;
+    const key = `${kind}:${hit.reference}:${lineNumberAt(content, index || 0)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    hits.push({
+      ...hit,
+      kind,
+      line: lineNumberAt(content, index || 0),
+    });
+  };
+
+  for (const match of content.matchAll(/\b(src|href)=["']([^"']+)["']/gi)) {
+    record(match[1].toLowerCase(), match[2], match.index);
+  }
+  for (const match of content.matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi)) {
+    record("css-url", match[2], match.index);
+  }
+
+  return hits;
+}
+
+function pageKitAssetPathViolation(reference, publicRouteSlug) {
+  const raw = String(reference || "").trim();
+  if (!raw || raw.startsWith("//") || isAbsoluteHttpUrl(raw) || raw.startsWith("data:") || raw.startsWith("mailto:") || raw.startsWith("tel:")) return null;
+
+  const clean = raw.replace(/[?#].*$/, "");
+  const slugAssetsPrefix = publicRouteSlug ? `/${publicRouteSlug}/assets/` : null;
+  let assetPath = null;
+
+  if (clean.startsWith("/assets/")) {
+    assetPath = clean.slice("/assets/".length);
+  } else if (slugAssetsPrefix && clean.startsWith(slugAssetsPrefix)) {
+    assetPath = clean.slice(slugAssetsPrefix.length);
+  }
+
+  if (!assetPath || assetPath.startsWith("../") || assetPath.includes("/../")) return null;
+  return {
+    reference: raw,
+    asset_path: assetPath,
+    expected: publicRouteSlug ? `/${publicRouteSlug}/${assetPath}` : `/<slug>/${assetPath}`,
+  };
 }
 
 function resolveBuiltAssetPath(src, builtPath, targetRepo) {
@@ -3288,7 +3376,7 @@ Read first:
 Rules:
 - Treat CampaignSpec/API as the source for package, shipping, voucher, payment, tracking, footer, and SEO values.
 - Read the selected template family's agentContract and sharedFrontmatterVocabulary before commerce wiring.
-- Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes.
+- Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Page Kit publishes src/<slug>/assets/config.js as /<slug>/config.js and src/<slug>/assets/products/foo.png as /<slug>/products/foo.png; do not leave raw /assets/... or /<slug>/assets/... references in rendered pages.
 - Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
 - For checkout/upsell/downsell/receipt, use the starter template as the SDK contract reference only: preserve required data-next controls and runtime wiring, but let the campaign/source own visual chrome, copy hierarchy, imagery, and brand layer.
 - Read context.theme and .campaign-runtime/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.

@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
-import { validateMarketSensitiveCopy, validateSpecRoutingMetaTags } from "./cli.mjs";
+import {
+  collectPageKitAssetPathViolations,
+  validateBuiltPageKitAssetPaths,
+  validateMarketSensitiveCopy,
+  validateSpecRoutingMetaTags,
+} from "./cli.mjs";
 
 function withTempDir(run) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-doctor-"));
@@ -40,6 +45,55 @@ test("R2-B2 routing: defers to built output once assembly is complete and _site 
     validateSpecRoutingMetaTags(ROUTING_SPEC, PACKET, warnings, ready, { target_repo: dir }, buildState);
     assert.equal(codes(warnings).includes("routing_meta.runtime_root"), false);
     assert.ok(ready.some((note) => note.includes("deferred to built-output verification")));
+  });
+});
+
+test("R2-B2 page-kit assets: detects unconverted /assets built references", () => {
+  const hits = collectPageKitAssetPathViolations(`
+    <script src="/assets/config.js"></script>
+    <img src="/${SLUG}/assets/products/lumi.png">
+    <link href="/${SLUG}/css/brand.css" rel="stylesheet">
+  `, SLUG);
+
+  assert.deepEqual(hits.map((hit) => hit.reference), [
+    "/assets/config.js",
+    `/${SLUG}/assets/products/lumi.png`,
+  ]);
+  assert.deepEqual(hits.map((hit) => hit.expected), [
+    `/${SLUG}/config.js`,
+    `/${SLUG}/products/lumi.png`,
+  ]);
+});
+
+test("R2-B2 page-kit assets: doctor explains campaign_asset repair for missing built references", () => {
+  withTempDir((dir) => {
+    const targetRepo = join(dir, "target");
+    const builtPath = join(targetRepo, "_site", SLUG, "landing", "index.html");
+    mkdirSync(dirname(builtPath), { recursive: true });
+
+    const issues = [];
+    validateBuiltPageKitAssetPaths(
+      `
+        <body data-next-page-type="landing">
+          <script src="/assets/config.js"></script>
+          <img src="/${SLUG}/assets/products/lumi.png">
+        </body>
+      `,
+      builtPath,
+      targetRepo,
+      { id: "landing" },
+      SLUG,
+      issues
+    );
+
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0].code, "built_output.pagekit_asset_path");
+    assert.match(issues[0].message, /copies src\/test-campaign\/assets\/config\.js to "\/test-campaign\/config\.js"/);
+    assert.match(issues[0].message, /campaign_asset/);
+    assert.deepEqual(issues[0].detail.references.map((hit) => hit.expected), [
+      `/${SLUG}/config.js`,
+      `/${SLUG}/products/lumi.png`,
+    ]);
   });
 });
 
