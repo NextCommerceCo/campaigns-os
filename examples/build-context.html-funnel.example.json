@@ -39,6 +39,24 @@
     "lock": { "locked": false, "locked_by": null, "confidence": "none", "evidence": [] },
     "candidates": []
   },
+  "adapter_decisions": {
+    "raw_html_conversion_status": "pending",
+    "source_asset_strategy": "pagekit_campaign_asset_root",
+    "route_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "config_script_strategy": "campaign_asset",
+    "commerce_shell_adoption": "template_clone_first_required",
+    "wrapper_policy": "strip_document_wrappers",
+    "frontmatter_policy": "pagekit_yaml_frontmatter",
+    "script_style_reference_policy": "frontmatter_or_campaign_asset",
+    "cta_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "layout_choice": "campaign_layout",
+    "template_files_copied": {
+      "status": "pending",
+      "required_groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+      "groups": [],
+      "paths": []
+    }
+  },
   "commerce_zone_findings": [
     {
       "path": "checkout.html",

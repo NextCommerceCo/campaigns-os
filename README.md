@@ -72,6 +72,7 @@ npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet <packet.json>
 npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url> --browser --test-order common
 npm run campaigns-os -- findings add --stage overall --kind positive_signal --summary "..."
+npm run campaigns-os -- findings harvest --packet <packet.json>
 npm run campaigns-os -- findings export --summary
 ```
 
@@ -123,11 +124,14 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 - [Access Model](docs/access-model.md)
 - [Build Packet](docs/build-packet.md)
 - [Brand Theme Bridge](docs/brand-theme-bridge.md)
+- [CampaignSpec Authoring Examples](docs/campaignspec-authoring-examples.md)
 - [Campaigns OS Build Flow](docs/campaigns-os-build-flow.md)
 - [Entry Points](docs/entry-points.md) — five intake shapes (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and which producer / manifest each one ships with
 - [Source Adapters](docs/source-adapters.md)
+- [Setup Profile Parity](docs/setup-profile-parity.md)
 - [Developer Evaluation](docs/developer-evaluation.md)
 - [QA And Test Orders](docs/qa-and-test-orders.md)
+- [Small PR Review Path](docs/small-pr-review-path.md)
 - [Workflow Findings Sidecar](docs/workflow-findings-sidecar.md) — local-first capture of workflow signals (the Learning Trail), separate from the formal proof trail; never phones home
 - [Versioning](docs/versioning.md)
 
