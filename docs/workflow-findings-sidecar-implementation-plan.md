@@ -1,8 +1,14 @@
 # Implement Workflow Findings Sidecar v0
 
+> **Historical (shipped).** This is the v0 local-only build plan, kept as an
+> accurate record of what shipped. The surface has since evolved into
+> **Run Telemetry** — see [Run Telemetry](./workflow-findings-sidecar.md), which
+> supersedes the v0 "never phone home" framing. Workflow Findings are now one
+> channel inside a per-run Run Record.
+
 Status: Ready for implementation
 Date: 2026-06-01
-Primary design: [Workflow Findings Sidecar](./workflow-findings-sidecar.md)
+Primary design: [Run Telemetry](./workflow-findings-sidecar.md)
 Glossary: [Campaigns OS Context](../CONTEXT.md)
 
 ## Linear-Ready Ticket
