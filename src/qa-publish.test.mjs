@@ -56,3 +56,17 @@ test("qa resolve asks for a tested URL before browser and typed-card proof", () 
   assert.match(lines[1], /Localhost on any port/);
   assert.match(lines[1], /non-localhost preview\/production origins still need SDK origin allowlist/);
 });
+
+test("qa resolve preserves custom proxy base in the next proof command", () => {
+  const lines = qaResolveNextProofLines({
+    map_id: "shw-round-2",
+    proxy_base: "https://campaign-map.example.test/qa proxy",
+    spec_source: "https://campaign-map.example.test/qa%20proxy/api/spec/shw-round-2",
+    base_url: "https://preview.example.test/simple-home-watch/",
+  });
+
+  assert.match(lines[0], /campaigns-os qa run shw-round-2/);
+  assert.match(lines[0], /--proxy-base 'https:\/\/campaign-map\.example\.test\/qa proxy'/);
+  assert.match(lines[0], /--base-url https:\/\/preview\.example\.test\/simple-home-watch\//);
+  assert.match(lines[0], /--browser --test-order common/);
+});

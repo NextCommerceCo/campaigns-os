@@ -181,6 +181,7 @@ function resolvePayload(resolved) {
     ok: true,
     map_id: resolved.mapId,
     ...(resolved.packetPath ? { packet_path: resolved.packetPath } : {}),
+    ...(resolved.proxyBase && resolved.proxyBase !== DEFAULT_PROXY_BASE ? { proxy_base: resolved.proxyBase } : {}),
     spec_source: resolved.specSource,
     spec_version: resolved.specVersion,
     spec_hash: resolved.specHash,
@@ -751,13 +752,14 @@ export function qaResolveNextProofLines(value) {
 
 function qaRunCommandFromResolve(value) {
   const base = shellToken(value.base_url);
+  const proxy = value.proxy_base ? ` --proxy-base ${shellToken(value.proxy_base)}` : "";
   if (value.packet_path) {
-    return `campaigns-os qa run --packet ${shellToken(value.packet_path)} --base-url ${base} --browser --test-order common`;
+    return `campaigns-os qa run --packet ${shellToken(value.packet_path)}${proxy} --base-url ${base} --browser --test-order common`;
   }
   if (isLocalFilePath(value.spec_source)) {
-    return `campaigns-os qa run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)} --base-url ${base} --browser --test-order common`;
+    return `campaigns-os qa run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)}${proxy} --base-url ${base} --browser --test-order common`;
   }
-  return `campaigns-os qa run ${shellToken(value.map_id)} --base-url ${base} --browser --test-order common`;
+  return `campaigns-os qa run ${shellToken(value.map_id)}${proxy} --base-url ${base} --browser --test-order common`;
 }
 
 function isLocalFilePath(value) {
