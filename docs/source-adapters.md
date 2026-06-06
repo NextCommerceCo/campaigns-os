@@ -27,7 +27,7 @@ Raw AI-generated HTML normally needs this conversion pass before build:
 2. Remove document wrappers such as `<!doctype>`, `<html>`, `<head>`, and `<body>` so the page can be wrapped by the campaign layout.
 3. Add YAML frontmatter for `title`, `page_type`, route/permalink or `next_url`, and any `styles`/`scripts`.
 4. Move reusable `<style>` blocks into `src/<slug>/assets/css/...` and reference them from frontmatter; keep tiny page-specific styles inline only when that matches the target campaign style.
-5. Move referenced images/fonts/assets into the campaign asset tree and use `campaign_asset` when paths need to be campaign-rooted.
+5. Move referenced images/fonts/assets into the campaign asset tree and use `campaign_asset` when paths need to be campaign-rooted. Page Kit copies `src/<slug>/assets/*` to the campaign root in built output: `src/<slug>/assets/config.js` renders as `/<slug>/config.js`, and `src/<slug>/assets/products/foo.png` renders as `/<slug>/products/foo.png`. Do not leave raw `/assets/...` or `/<slug>/assets/...` references in rendered pages unless that nested `assets/` directory exists intentionally.
 6. Replace internal page links and CTA destinations with CampaignSpec-derived routes, usually through `campaign_link`.
 7. For checkout, upsell, downsell, receipt, payment, totals, and submit controls, preserve or recreate the starter-template SDK contract rather than trusting raw source commerce markup.
 8. Run page-kit build and inspect `_site/<slug>/` for a complete body, expected meta tags, campaign-rooted links, and SDK runtime markers.
