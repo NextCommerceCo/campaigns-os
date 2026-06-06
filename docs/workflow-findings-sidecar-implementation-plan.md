@@ -17,10 +17,11 @@ agents can capture structured Workflow Findings without requiring Linear access,
 NEXT internal context, or a heavy debug mode.
 
 Why this matters now:
-Brett's Vitae Charm run produced two important signals: accurate CampaignSpec
-data made checkout/upsell integration flow smoothly, and QA was not obvious as
-the next expected proof step. Round 2 dogfood should make these signals cheap to
-capture across internal and future agency operators.
+Internal campaign assembly runs produced two important signals: accurate
+CampaignSpec data made checkout/upsell integration flow smoothly, and QA was
+not obvious as the next expected proof step. The sidecar should make these
+signals cheap to capture across internal and future agency operators without
+encoding a private operator workflow in the public package.
 
 ## Scope
 
@@ -235,8 +236,8 @@ Do not expand public docs into internal aggregation or Linear routing details.
 
 ## Acceptance Criteria
 
-- A Campaigns OS operator can record a positive signal from Brett's Vitae
-  Charm-style run using one CLI command.
+- A Campaigns OS operator can record a positive signal from a prior internal
+  campaign assembly run using one CLI command.
 - A non-interactive agent can record an observed missing-QA Completeness Signal
   without prompting.
 - The Findings Journal is append-only JSONL under `.campaign-runtime/`.

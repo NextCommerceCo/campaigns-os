@@ -51,17 +51,17 @@ test("R2-B2 routing: defers to built output once assembly is complete and _site 
 test("R2-B2 page-kit assets: detects unconverted /assets built references", () => {
   const hits = collectPageKitAssetPathViolations(`
     <script src="/assets/config.js"></script>
-    <img src="/${SLUG}/assets/products/lumi.png">
+    <img src="/${SLUG}/assets/products/hero.png">
     <link href="/${SLUG}/css/brand.css" rel="stylesheet">
   `, SLUG);
 
   assert.deepEqual(hits.map((hit) => hit.reference), [
     "/assets/config.js",
-    `/${SLUG}/assets/products/lumi.png`,
+    `/${SLUG}/assets/products/hero.png`,
   ]);
   assert.deepEqual(hits.map((hit) => hit.expected), [
     `/${SLUG}/config.js`,
-    `/${SLUG}/products/lumi.png`,
+    `/${SLUG}/products/hero.png`,
   ]);
 });
 
@@ -76,7 +76,7 @@ test("R2-B2 page-kit assets: doctor explains campaign_asset repair for missing b
       `
         <body data-next-page-type="landing">
           <script src="/assets/config.js"></script>
-          <img src="/${SLUG}/assets/products/lumi.png">
+          <img src="/${SLUG}/assets/products/hero.png">
         </body>
       `,
       builtPath,
@@ -92,7 +92,7 @@ test("R2-B2 page-kit assets: doctor explains campaign_asset repair for missing b
     assert.match(issues[0].message, /campaign_asset/);
     assert.deepEqual(issues[0].detail.references.map((hit) => hit.expected), [
       `/${SLUG}/config.js`,
-      `/${SLUG}/products/lumi.png`,
+      `/${SLUG}/products/hero.png`,
     ]);
   });
 });
