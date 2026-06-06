@@ -1901,7 +1901,7 @@ function validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicR
     const src = tag[1];
     const resolved = resolveBuiltAssetPath(src, builtPath, targetRepo);
     if (!resolved || existsSync(resolved)) continue;
-    if (pageKitAssetPathViolation(src, normalizePublicRouteSlug(publicRouteSlug))) continue;
+    if (pageKitAssetPathViolation(src, publicRouteSlug)) continue;
     addIssue(
       issueTarget,
       "built_output.script_missing",
