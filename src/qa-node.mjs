@@ -180,6 +180,7 @@ function resolvePayload(resolved) {
   return {
     ok: true,
     map_id: resolved.mapId,
+    ...(resolved.packetPath ? { packet_path: resolved.packetPath } : {}),
     spec_source: resolved.specSource,
     spec_version: resolved.specVersion,
     spec_hash: resolved.specHash,
@@ -727,6 +728,46 @@ function output(value, args) {
     console.log(`\n${funnel.funnel_name} (${funnel.funnel_id}, ${funnel.weight}%)`);
     for (const page of funnel.pages) console.log(`- [${page.page_type}] ${page.label}: ${page.url || "(missing)"}`);
   }
+  const nextProofLines = qaResolveNextProofLines(value);
+  if (nextProofLines.length) {
+    console.log("");
+    for (const line of nextProofLines) console.log(line);
+  }
+}
+
+export function qaResolveNextProofLines(value) {
+  if (!value?.base_url) {
+    return [
+      "Next expected proof: provide --base-url with the preview/local campaign URL, then run browser QA + typed-card proof with --browser --test-order common.",
+      "Localhost on any port is SDK-allowed with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.",
+    ];
+  }
+
+  return [
+    `Next expected proof: ${qaRunCommandFromResolve(value)}`,
+    "Typed-card test orders use global test cards (no transactions/no permission gate); QA publishes to the portal by default.",
+  ];
+}
+
+function qaRunCommandFromResolve(value) {
+  const base = shellToken(value.base_url);
+  if (value.packet_path) {
+    return `campaigns-os qa run --packet ${shellToken(value.packet_path)} --base-url ${base} --browser --test-order common`;
+  }
+  if (isLocalFilePath(value.spec_source)) {
+    return `campaigns-os qa run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)} --base-url ${base} --browser --test-order common`;
+  }
+  return `campaigns-os qa run ${shellToken(value.map_id)} --base-url ${base} --browser --test-order common`;
+}
+
+function isLocalFilePath(value) {
+  return typeof value === "string" && value.trim() && !isAbsoluteHttpUrl(value);
+}
+
+function shellToken(value) {
+  const text = String(value || "");
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, "'\\''")}'`;
 }
 
 function countAssertions(assertions) {

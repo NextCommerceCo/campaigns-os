@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shouldPublishVerdict } from "./qa-node.mjs";
+import { qaResolveNextProofLines, shouldPublishVerdict } from "./qa-node.mjs";
 
 // Publishing the QA verdict to the Campaign Map QA portal is the default shape:
 // LLM/agent UIs are the primary interface, so a run should land in the portal
@@ -30,4 +30,29 @@ test("--post-verdict false opts out", () => {
 
 test("unrelated flags do not affect the default", () => {
   assert.equal(shouldPublishVerdict({ browser: true, "test-order": "common" }), true);
+});
+
+test("qa resolve names the next proof command when a base URL is known", () => {
+  const lines = qaResolveNextProofLines({
+    map_id: "shw-round-2",
+    packet_path: "/tmp/campaign-runtime.build.json",
+    base_url: "http://localhost:4173/simple-home-watch/",
+  });
+
+  assert.match(lines[0], /Next expected proof:/);
+  assert.match(lines[0], /campaigns-os qa run --packet \/tmp\/campaign-runtime\.build\.json/);
+  assert.match(lines[0], /--browser --test-order common/);
+  assert.match(lines[1], /publishes to the portal by default/);
+});
+
+test("qa resolve asks for a tested URL before browser and typed-card proof", () => {
+  const lines = qaResolveNextProofLines({
+    map_id: "shw-round-2",
+    base_url: null,
+  });
+
+  assert.match(lines[0], /provide --base-url/);
+  assert.match(lines[0], /--browser --test-order common/);
+  assert.match(lines[1], /Localhost on any port/);
+  assert.match(lines[1], /non-localhost preview\/production origins still need SDK origin allowlist/);
 });
