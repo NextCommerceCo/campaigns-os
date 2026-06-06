@@ -39,6 +39,35 @@ in `inspect_only` mode. The optional theme evidence lives in `context.theme`,
 `report.theme`, and `.campaign-runtime/theme/theme-report.json`. The Build
 Packet itself does not gain required theme fields in v0.
 
+## Adapter And Proof Fields
+
+Fresh packets now include `source_html.adapter_contract`. Build Context and
+Assembly Report carry the same values as `adapter_decisions`, and build agents
+should update the report as they complete work.
+
+Required adapter decisions:
+
+| Field | Purpose |
+| --- | --- |
+| `raw_html_conversion_status` | Whether prepared HTML has been converted into page-kit-ready source. |
+| `source_asset_strategy` | How images/fonts/CSS/JS are moved and referenced. Prefer `pagekit_campaign_asset_root`. |
+| `commerce_shell_adoption` | Whether checkout/upsell/downsell/receipt use a template-clone-first SDK surface. |
+| `route_rewrite_policy` | How page links, CTAs, and SDK routing values were rewritten from CampaignSpec routes. |
+| `template_files_copied` | Whether the selected template family was copied/verified as one atomic page-kit slice. |
+| `config_script_strategy` | How campaign config scripts are loaded. |
+
+`template_files_copied` is intentionally group-based rather than prose-only:
+`pages`, `_includes`, `_layouts`, `assets/css`, `assets/js`, and
+`frontmatter_vocabulary`. Doctor warns when an assembly-complete report still
+shows `pending`/`partial` template copying or misses one of those groups.
+
+Fresh packets also include `qa.proof_policy`, mirrored into
+`report.proof_policy`. It records browser QA requirement, typed-card depth,
+localhost Development-domain behavior, non-localhost SDK allowlist requirement,
+order path depth, and operator approval state. Test cards still need no
+permission gate; the explicit field prevents agents from re-litigating proof
+depth in chat.
+
 ## CampaignSpec Retrieval (`--map-id`)
 
 `campaigns-os start` / `campaigns-os prepare-build` accept the CampaignSpec via either of two routes:

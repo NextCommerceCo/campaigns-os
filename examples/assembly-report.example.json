@@ -54,6 +54,33 @@
       "acknowledged_by": null
     }
   ],
+  "adapter_decisions": {
+    "raw_html_conversion_status": "completed",
+    "source_asset_strategy": "pagekit_campaign_asset_root",
+    "route_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "config_script_strategy": "campaign_asset",
+    "commerce_shell_adoption": "template_clone_first_verified",
+    "wrapper_policy": "strip_document_wrappers",
+    "frontmatter_policy": "pagekit_yaml_frontmatter",
+    "script_style_reference_policy": "frontmatter_or_campaign_asset",
+    "cta_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "layout_choice": "campaign_layout",
+    "template_files_copied": {
+      "status": "verified_existing_slice",
+      "required_groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+      "groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+      "paths": ["src/example-campaign", "src/example-campaign/_includes", "src/example-campaign/_layouts", "src/example-campaign/assets/css", "src/example-campaign/assets/js"]
+    }
+  },
+  "proof_policy": {
+    "browser_qa_required": true,
+    "typed_card_depth": "common",
+    "localhost_development_domain_allowed": true,
+    "non_localhost_origin_allowlist_required": true,
+    "order_path_depth": "common",
+    "operator_approval_state": "not_required_global_test_cards",
+    "qa_portal_publish_default": true
+  },
   "evidence": [],
   "blockers": [],
   "warnings": [

@@ -32,7 +32,25 @@
         "page_id": "receipt",
         "path": "receipt.html"
       }
-    ]
+    ],
+    "adapter_contract": {
+      "raw_html_conversion_status": "pending",
+      "source_asset_strategy": "pagekit_campaign_asset_root",
+      "route_rewrite_policy": "campaignspec_routes_via_campaign_link",
+      "config_script_strategy": "campaign_asset",
+      "commerce_shell_adoption": "template_clone_first_required",
+      "wrapper_policy": "strip_document_wrappers",
+      "frontmatter_policy": "pagekit_yaml_frontmatter",
+      "script_style_reference_policy": "frontmatter_or_campaign_asset",
+      "cta_rewrite_policy": "campaignspec_routes_via_campaign_link",
+      "layout_choice": "campaign_layout",
+      "template_files_copied": {
+        "status": "pending",
+        "required_groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        "groups": [],
+        "paths": []
+      }
+    }
   },
   "assembly": {
     "implementation": "next-campaigns-build",
@@ -62,6 +80,15 @@
   "qa": {
     "test_orders_allowed": false,
     "sandbox_test_card_confirmed": false,
+    "proof_policy": {
+      "browser_qa_required": true,
+      "typed_card_depth": "common",
+      "localhost_development_domain_allowed": true,
+      "non_localhost_origin_allowlist_required": true,
+      "order_path_depth": "common",
+      "operator_approval_state": "not_required_global_test_cards",
+      "qa_portal_publish_default": true
+    },
     "test_order_policy_notes": "Test Orders use global test cards that bypass the gateway and create no transactions. Run them with `qa run --test-order common` by default; use `full` only for exhaustive proof. Localhost on any port is a Development domain for SDK QA; non-localhost preview/production origins still need SDK origin allowlist confirmation. These flags are informational, not a permission gate."
   },
   "notes": "Synthetic v0 example. Values must be replaced with actual CampaignSpec/API values for a real campaign."

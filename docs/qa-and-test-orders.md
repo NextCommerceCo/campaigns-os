@@ -64,6 +64,14 @@ soft-fails with warning severity so the verdict becomes `ready_with_exceptions`.
 It is owned by this package through the `playwright` dependency; QA must not
 rely on external browser skills or local agent tooling.
 
+Fresh Build Packets record the proof contract in `qa.proof_policy`, and
+Assembly Reports mirror it at `report.proof_policy`. The important fields are
+`browser_qa_required`, `typed_card_depth`, `order_path_depth`,
+`localhost_development_domain_allowed`,
+`non_localhost_origin_allowlist_required`, and `operator_approval_state`.
+Agents should update proof state in artifacts instead of renegotiating browser
+QA or typed-card depth in chat.
+
 For SDK-owned runtime pages such as checkout, upsell, downsell, and receipt,
 the browser pass also opens a separate instrumented view with `?debugger=true`
 and verifies that the Campaign Cart debugger overlay and selector controls

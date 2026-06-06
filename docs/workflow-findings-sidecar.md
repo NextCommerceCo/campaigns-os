@@ -234,6 +234,19 @@ campaigns-os findings list
 campaigns-os findings export --summary
 ```
 
+Artifact-driven proposal is local-first:
+
+```bash
+campaigns-os findings harvest --packet campaign-runtime.build.json
+campaigns-os findings harvest --packet campaign-runtime.build.json --write
+```
+
+`findings harvest` reads doctor output derived from the packet plus the
+packet-adjacent Build Context and Assembly Report when present. It proposes
+Workflow Findings for doctor blockers, selected warnings, and report blockers.
+Without `--write`, it prints proposals only. With `--write`, it appends them to
+the local journal. It does not upload, route, cluster, or create issues.
+
 `findings add` should be flags-first so agents and scripts can record findings
 without prompts. When run without enough flags, it may fall back to a tiny
 interactive prompt for only:

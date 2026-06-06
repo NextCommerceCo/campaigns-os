@@ -102,6 +102,24 @@ const SDK_ROUTING_META_TAGS = [
   "next-upsell-decline-url",
 ];
 
+const TEMPLATE_SLICE_REQUIRED_GROUPS = Object.freeze([
+  "pages",
+  "_includes",
+  "_layouts",
+  "assets/css",
+  "assets/js",
+  "frontmatter_vocabulary",
+]);
+
+const RUNTIME_PAGE_TYPES = new Set(["checkout", "select", "upsell", "downsell", "thankyou", "receipt"]);
+
+const RAW_HTML_CONVERSION_STATUSES = new Set(["pending", "in_progress", "completed", "not_required", "blocked"]);
+const SOURCE_ASSET_STRATEGIES = new Set(["pagekit_campaign_asset_root", "external_cdn", "raw_passthrough", "not_applicable", "unknown"]);
+const ROUTE_REWRITE_POLICIES = new Set(["campaignspec_routes_via_campaign_link", "pagekit_public_routes", "raw_passthrough", "not_applicable", "unknown"]);
+const CONFIG_SCRIPT_STRATEGIES = new Set(["campaign_asset", "frontmatter_script", "inline", "not_required", "unknown"]);
+const COMMERCE_SHELL_ADOPTIONS = new Set(["not_required", "template_clone_first_required", "template_clone_first_verified", "sdk_surfaces_preserved", "custom_html_experimental"]);
+const TEMPLATE_FILES_COPIED_STATUSES = new Set(["pending", "complete", "verified_existing_slice", "partial", "not_applicable"]);
+
 const HELP = `Campaigns OS toolkit
 
 Usage:
@@ -126,6 +144,7 @@ Usage:
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--no-post-verdict] [--output-dir qa-output] [--json]
   campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [...context flags]
+  campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
 
@@ -927,6 +946,44 @@ function createStage(stage, status, extras = {}) {
   };
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createAdapterDecisions({ commerceZoneFindings = [] } = {}) {
+  const shellRequired = commerceZoneFindings.some((finding) => finding?.requires_template_shell === true);
+  return {
+    raw_html_conversion_status: "pending",
+    source_asset_strategy: "pagekit_campaign_asset_root",
+    route_rewrite_policy: "campaignspec_routes_via_campaign_link",
+    config_script_strategy: "campaign_asset",
+    commerce_shell_adoption: shellRequired ? "template_clone_first_required" : "not_required",
+    wrapper_policy: "strip_document_wrappers",
+    frontmatter_policy: "pagekit_yaml_frontmatter",
+    script_style_reference_policy: "frontmatter_or_campaign_asset",
+    cta_rewrite_policy: "campaignspec_routes_via_campaign_link",
+    layout_choice: "campaign_layout",
+    template_files_copied: {
+      status: "pending",
+      required_groups: [...TEMPLATE_SLICE_REQUIRED_GROUPS],
+      groups: [],
+      paths: [],
+    },
+  };
+}
+
+function createProofPolicy() {
+  return {
+    browser_qa_required: true,
+    typed_card_depth: "common",
+    localhost_development_domain_allowed: true,
+    non_localhost_origin_allowlist_required: true,
+    order_path_depth: "common",
+    operator_approval_state: "not_required_global_test_cards",
+    qa_portal_publish_default: true,
+  };
+}
+
 function prepareBuild(args, options = {}) {
   const specPath = resolve(requireArg(args, "spec"));
   const sourceRoot = resolve(requireArg(args, "source"));
@@ -972,6 +1029,9 @@ function prepareBuild(args, options = {}) {
   const themePolicy = optionalString(args["theme-policy"], "inspect_only");
   const blockers = matched.prompts.map((prompt) => ({ code: prompt.code, stage: prompt.stage, message: prompt.message }));
   const portable = (path) => relFromDir(targetRepo, path);
+  const commerceZoneFindings = inspectCommerceZones(sourceRoot, htmlFiles);
+  const adapterDecisions = createAdapterDecisions({ commerceZoneFindings });
+  const proofPolicy = createProofPolicy();
 
   const packet = {
     schema_version: PACKET_SCHEMA,
@@ -991,6 +1051,7 @@ function prepareBuild(args, options = {}) {
     source_html: {
       root: relFromFile(packetPath, sourceRoot),
       pages: matched.mappings,
+      adapter_contract: cloneJson(adapterDecisions),
     },
     assembly: {
       implementation: "next-campaigns-build",
@@ -1025,6 +1086,7 @@ function prepareBuild(args, options = {}) {
     qa: {
       test_orders_allowed: args["test-orders-allowed"] === true,
       sandbox_test_card_confirmed: args["sandbox-test-card-confirmed"] === true,
+      proof_policy: proofPolicy,
       test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common` (3-5 shape sample) or `--test-order full` (every permutation). Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. These flags are informational, not a permission gate.",
     },
     notes: "Generated by campaigns-os prepare-build. Replace demo refs from CampaignSpec/API before launch.",
@@ -1085,7 +1147,8 @@ function prepareBuild(args, options = {}) {
       lock: packet.assembly.template_lock,
       candidates: templateCandidates,
     },
-    commerce_zone_findings: inspectCommerceZones(sourceRoot, htmlFiles),
+    adapter_decisions: cloneJson(adapterDecisions),
+    commerce_zone_findings: commerceZoneFindings,
     prompts_required: matched.prompts,
     decisions: matched.decisions,
   };
@@ -1258,6 +1321,8 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
       qa: createStage("qa", "pending"),
     },
     decisions: context.decisions,
+    adapter_decisions: cloneJson(context.adapter_decisions || createAdapterDecisions()),
+    proof_policy: cloneJson(packet.qa?.proof_policy || createProofPolicy()),
     theme: assemblyThemeFromContext(context.theme),
     evidence: [],
     blockers,
@@ -1473,6 +1538,8 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   validateCampaignsApiKey(packet, spec, warnings, ready);
   validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived, buildState);
   validateMarketSensitiveCopy(spec, warnings, ready, derived);
+  validateAdapterContracts(packet, packetPath, spec, errors, warnings, ready, derived, buildState);
+  validateProofPolicy(packet, warnings, ready);
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
     const partialScope = derived.scope?.mode === "partial";
@@ -1488,6 +1555,204 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   // transactions, so they need no per-packet permission. The packet qa.* booleans
   // are retained as informational metadata but no longer gate test orders or QA
   // stage progression.
+}
+
+function validateAdapterContracts(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
+  const packetContract = packet.source_html?.adapter_contract;
+  validateAdapterDecisionShape(packetContract, "source_html.adapter_contract", warnings, ready);
+  validateAdapterSourceFiles(packetContract, packet, packetPath, warnings, ready);
+
+  const contextDecisions = buildState.context?.adapter_decisions;
+  validateAdapterDecisionShape(contextDecisions, "context.adapter_decisions", warnings, ready);
+
+  const reportDecisions = buildState.report?.adapter_decisions;
+  validateAdapterDecisionShape(reportDecisions, "report.adapter_decisions", warnings, ready);
+
+  const decisions = reportDecisions || contextDecisions || packetContract;
+  validateAdapterDecisionGates({
+    decisions,
+    location: reportDecisions ? "report.adapter_decisions" : contextDecisions ? "context.adapter_decisions" : "source_html.adapter_contract",
+    spec,
+    family: packet.assembly?.template_family,
+    assemblyComplete: isStageComplete(buildState.report, "assembly"),
+    errors,
+    warnings,
+    ready,
+  });
+}
+
+function validateAdapterDecisionShape(decisions, location, warnings, ready) {
+  if (!decisions) {
+    addIssue(warnings, location, `${location} is missing; adapter choices are not doctor-able. New prepare-build runs write source_asset_strategy, commerce_shell_adoption, route_rewrite_policy, template_files_copied, config_script_strategy, and raw_html_conversion_status.`);
+    return;
+  }
+  if (!isObject(decisions)) {
+    addIssue(warnings, location, `${location} must be an object when present.`);
+    return;
+  }
+  checkEnum(decisions.raw_html_conversion_status, RAW_HTML_CONVERSION_STATUSES, `${location}.raw_html_conversion_status`, warnings);
+  checkEnum(decisions.source_asset_strategy, SOURCE_ASSET_STRATEGIES, `${location}.source_asset_strategy`, warnings);
+  checkEnum(decisions.route_rewrite_policy, ROUTE_REWRITE_POLICIES, `${location}.route_rewrite_policy`, warnings);
+  checkEnum(decisions.config_script_strategy, CONFIG_SCRIPT_STRATEGIES, `${location}.config_script_strategy`, warnings);
+  checkEnum(decisions.commerce_shell_adoption, COMMERCE_SHELL_ADOPTIONS, `${location}.commerce_shell_adoption`, warnings);
+
+  const copied = decisions.template_files_copied;
+  if (copied != null) {
+    if (!isObject(copied)) {
+      addIssue(warnings, `${location}.template_files_copied`, `${location}.template_files_copied must be an object when present.`);
+    } else {
+      checkEnum(copied.status, TEMPLATE_FILES_COPIED_STATUSES, `${location}.template_files_copied.status`, warnings);
+      if (copied.groups != null && !Array.isArray(copied.groups)) {
+        addIssue(warnings, `${location}.template_files_copied.groups`, `${location}.template_files_copied.groups must be an array.`);
+      }
+      if (copied.paths != null && !Array.isArray(copied.paths)) {
+        addIssue(warnings, `${location}.template_files_copied.paths`, `${location}.template_files_copied.paths must be an array.`);
+      }
+    }
+  }
+  ready.push(`${location} adapter decision fields loaded`);
+}
+
+function checkEnum(value, allowed, code, warnings) {
+  if (value == null) return;
+  if (!allowed.has(value)) addIssue(warnings, code, `${code} has unknown value "${value}".`);
+}
+
+function validateAdapterSourceFiles(decisions, packet, packetPath, warnings, ready) {
+  if (!isObject(decisions)) return;
+  const status = decisions.raw_html_conversion_status;
+  if (!["completed", "not_required"].includes(status)) return;
+
+  const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
+  if (!sourceRoot || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
+  const hits = [];
+  for (const page of packet.source_html?.pages || []) {
+    if (!page.path) continue;
+    const fullPath = resolve(sourceRoot, page.path);
+    if (!existsSync(fullPath) || !statSync(fullPath).isFile()) continue;
+    const content = readFileSync(fullPath, "utf8");
+    const wrappers = collectDocumentWrapperNames(content);
+    if (wrappers.length) hits.push({ path: page.path, wrappers });
+  }
+  if (!hits.length) {
+    ready.push("Source adapter wrapper check found no document wrappers in completed source pages");
+    return;
+  }
+  const sample = hits.slice(0, 4).map((hit) => `${hit.path} (${hit.wrappers.join(", ")})`).join("; ");
+  const more = hits.length > 4 ? `; plus ${hits.length - 4} more` : "";
+  addIssue(
+    warnings,
+    "source_html.raw_html_wrappers",
+    `source_html.adapter_contract.raw_html_conversion_status is "${status}", but mapped source HTML still contains document wrapper tags: ${sample}${more}. Strip <!doctype>, <html>, <head>, and <body> before treating the page as page-kit-ready source.`
+  );
+}
+
+function collectDocumentWrapperNames(content) {
+  const wrappers = [];
+  const text = String(content || "");
+  if (/<!doctype\b/i.test(text)) wrappers.push("doctype");
+  if (/<html(?:\s|>)/i.test(text)) wrappers.push("html");
+  if (/<head(?:\s|>)/i.test(text)) wrappers.push("head");
+  if (/<body(?:\s|>)/i.test(text)) wrappers.push("body");
+  return wrappers;
+}
+
+function validateAdapterDecisionGates({ decisions, location, spec, family, assemblyComplete, errors, warnings, ready }) {
+  if (!isObject(decisions)) return;
+  const runtimePages = activeSpecPages(spec).filter((page) => RUNTIME_PAGE_TYPES.has(String(page.type || "").toLowerCase()));
+  const familyAutomatable = isNonEmptyString(family) && family !== "undecided" && family !== "custom";
+
+  if (assemblyComplete) {
+    if (["pending", "in_progress", "blocked"].includes(decisions.raw_html_conversion_status)) {
+      addIssue(
+        warnings,
+        "adapter.raw_html_conversion_status",
+        `Assembly is recorded complete, but ${location}.raw_html_conversion_status is "${decisions.raw_html_conversion_status}". Record completed/not_required after wrapper stripping, frontmatter, asset moves, script/style refs, CTA rewrites, route policy, and layout choice are settled.`
+      );
+    }
+    if (["raw_passthrough", "unknown"].includes(decisions.source_asset_strategy)) {
+      addIssue(warnings, "adapter.source_asset_strategy", `Assembly is recorded complete with ${location}.source_asset_strategy="${decisions.source_asset_strategy}". Page-kit builds should normally use pagekit_campaign_asset_root so src/<slug>/assets/* publishes at /<slug>/*.`);
+    }
+    if (["raw_passthrough", "unknown"].includes(decisions.route_rewrite_policy)) {
+      addIssue(warnings, "adapter.route_rewrite_policy", `Assembly is recorded complete with ${location}.route_rewrite_policy="${decisions.route_rewrite_policy}". Record how CampaignSpec routes and CTA destinations were rewritten before QA.`);
+    }
+    if (decisions.config_script_strategy === "unknown") {
+      addIssue(warnings, "adapter.config_script_strategy", `Assembly is recorded complete but ${location}.config_script_strategy is unknown. Record whether config scripts load via campaign assets, frontmatter scripts, inline config, or not_required.`);
+    }
+  }
+
+  if (runtimePages.length > 0 && familyAutomatable) {
+    const adoption = decisions.commerce_shell_adoption;
+    if (adoption === "custom_html_experimental") {
+      addIssue(
+        errors,
+        "adapter.commerce_shell_adoption",
+        `Runtime commerce pages (${runtimePages.map((page) => page.id).join(", ")}) are marked custom_html_experimental for template family "${family}". Use template_clone_first_verified or sdk_surfaces_preserved before treating checkout/upsell/downsell/receipt as build-ready.`
+      );
+    } else if (assemblyComplete && !["template_clone_first_verified", "sdk_surfaces_preserved"].includes(adoption)) {
+      addIssue(
+        warnings,
+        "adapter.commerce_shell_adoption",
+        `Assembly is recorded complete, but ${location}.commerce_shell_adoption is "${adoption || "missing"}" for runtime commerce pages (${runtimePages.map((page) => page.id).join(", ")}). Commerce pages should be template-clone-first, then styled, with SDK-owned surfaces preserved.`
+      );
+    }
+  }
+
+  if (assemblyComplete && familyAutomatable) {
+    validateTemplateFilesCopied(decisions.template_files_copied, location, warnings, ready);
+  }
+}
+
+function validateTemplateFilesCopied(copied, location, warnings, ready) {
+  if (!isObject(copied)) {
+    addIssue(warnings, "adapter.template_files_copied", `Assembly is recorded complete, but ${location}.template_files_copied is missing. Record the selected template family as an atomic slice: pages, _includes, _layouts, CSS, JS, and frontmatter vocabulary.`);
+    return;
+  }
+  const status = copied.status || "missing";
+  if (!["complete", "verified_existing_slice", "not_applicable"].includes(status)) {
+    addIssue(warnings, "adapter.template_files_copied", `Assembly is recorded complete, but ${location}.template_files_copied.status is "${status}". Copy or verify the selected template family as one atomic slice, not individual commerce pages.`);
+    return;
+  }
+  if (status === "not_applicable") {
+    ready.push("Template slice copying marked not_applicable");
+    return;
+  }
+  const groups = new Set(Array.isArray(copied.groups) ? copied.groups.map(String) : []);
+  const missing = TEMPLATE_SLICE_REQUIRED_GROUPS.filter((group) => !groups.has(group));
+  if (missing.length) {
+    addIssue(
+      warnings,
+      "adapter.template_files_copied.groups",
+      `${location}.template_files_copied.status is "${status}", but required group(s) are missing: ${missing.join(", ")}. Atomic template slices include pages, _includes, _layouts, assets/css, assets/js, and frontmatter_vocabulary.`
+    );
+    return;
+  }
+  ready.push("Template family slice copy/verification covers required page-kit dependency groups");
+}
+
+function validateProofPolicy(packet, warnings, ready) {
+  const policy = packet.qa?.proof_policy;
+  if (!policy) {
+    addIssue(warnings, "qa.proof_policy", "qa.proof_policy is missing. New packets make browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state explicit.");
+    return;
+  }
+  if (!isObject(policy)) {
+    addIssue(warnings, "qa.proof_policy", "qa.proof_policy must be an object when present.");
+    return;
+  }
+  if (policy.browser_qa_required !== true) {
+    addIssue(warnings, "qa.proof_policy.browser_qa_required", "Browser QA should stay explicit in the packet/report before launch proof.");
+  }
+  if (!isNonEmptyString(policy.typed_card_depth)) {
+    addIssue(warnings, "qa.proof_policy.typed_card_depth", "qa.proof_policy.typed_card_depth should name the intended typed-card depth, usually common.");
+  }
+  if (!isNonEmptyString(policy.order_path_depth)) {
+    addIssue(warnings, "qa.proof_policy.order_path_depth", "qa.proof_policy.order_path_depth should name checkout/upsell order-path depth.");
+  }
+  if (!isNonEmptyString(policy.operator_approval_state)) {
+    addIssue(warnings, "qa.proof_policy.operator_approval_state", "qa.proof_policy.operator_approval_state should be explicit, e.g. not_required_global_test_cards.");
+  }
+  ready.push(`QA proof policy loaded: browser=${policy.browser_qa_required === true}, typed_card_depth=${policy.typed_card_depth || "unspecified"}, order_path_depth=${policy.order_path_depth || "unspecified"}`);
 }
 
 export function validateSpecStoreProfile(spec, errors, warnings, ready) {
@@ -2970,6 +3235,7 @@ function validateContext(context, errors, warnings, ready, derived) {
     }
   }
   validateCommerceZoneFindings(context.commerce_zone_findings, warnings, ready);
+  validateAdapterDecisionShape(context.adapter_decisions, "context.adapter_decisions", warnings, ready);
   if (context.scaffold?.required === true) {
     derived.scaffold_required = true;
     derived.scaffold_reason = context.scaffold.reason || "Build context says setup is required.";
@@ -3043,8 +3309,19 @@ function validateAssemblyReport(report) {
   for (const error of themeResult.errors) errors.push(error);
   for (const warning of themeResult.warnings) warnings.push(warning);
   ready.push(...themeResult.ready);
+  validateAdapterDecisionShape(report.adapter_decisions, "report.adapter_decisions", warnings, ready);
+  validateAssemblyProofPolicy(report.proof_policy, warnings, ready);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
   return { ok: errors.length === 0, status, errors, warnings, ready };
+}
+
+function validateAssemblyProofPolicy(policy, warnings, ready) {
+  if (policy == null) return;
+  if (!isObject(policy)) {
+    addIssue(warnings, "report.proof_policy", "report.proof_policy must be an object when present.");
+    return;
+  }
+  ready.push("Assembly report proof_policy loaded");
 }
 
 /**
@@ -3858,9 +4135,10 @@ function writeResult(result, args, failureCode) {
 async function findingsCommand(args) {
   const sub = args._[1] || "";
   if (sub === "add") return findingsAdd(args);
+  if (sub === "harvest") return findingsHarvest(args);
   if (sub === "list") return findingsList(args);
   if (sub === "export") return findingsExport(args);
-  throw new Error(`Unknown findings subcommand "${sub}". Use: add | list | export.`);
+  throw new Error(`Unknown findings subcommand "${sub}". Use: add | harvest | list | export.`);
 }
 
 async function promptForFinding(current) {
@@ -3962,6 +4240,147 @@ function findingsList(args) {
   if (malformed.length) {
     console.log(`Skipped ${malformed.length} malformed line(s): ${malformed.map((entry) => entry.line).join(", ")}`);
   }
+}
+
+function findingsHarvest(args) {
+  const packetPath = resolve(requireArg(args, "packet"));
+  const packet = readJson(packetPath);
+  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
+  const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
+  const reportPath = args.report ? resolve(args.report) : join(targetRepo, ".campaign-runtime/assembly-report.json");
+  const contextExists = existsSync(contextPath);
+  const reportExists = existsSync(reportPath);
+  const report = reportExists ? readJson(reportPath) : null;
+  const doctor = doctorPacket(packetPath, {
+    contextPath: contextExists ? contextPath : null,
+    reportPath: reportExists ? reportPath : null,
+  });
+  const artifactPaths = [
+    relFromDir(dirname(packetPath), packetPath),
+    contextExists ? relFromDir(dirname(packetPath), contextPath) : null,
+    reportExists ? relFromDir(dirname(packetPath), reportPath) : null,
+  ].filter(Boolean);
+
+  const proposals = proposeWorkflowFindingsFromArtifacts({
+    doctor,
+    report,
+    packet,
+    packetPath,
+    reportPath: reportExists ? reportPath : null,
+    artifactPaths,
+  });
+
+  let written = [];
+  const journalPath = resolveJournalPath(args);
+  if (args.write === true) {
+    written = proposals.map((finding) => appendFinding(journalPath, finding));
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify({ ok: true, action: "findings-harvest", journal: journalPath, write: args.write === true, count: proposals.length, proposals, written }, null, 2));
+    return;
+  }
+
+  console.log(`Workflow findings proposed: ${proposals.length}`);
+  console.log(`Journal: ${journalPath}`);
+  for (const finding of proposals) {
+    console.log(`- [${finding.stage}/${finding.kind}] ${finding.summary}`);
+  }
+  if (args.write === true) console.log(`Recorded ${written.length} finding(s).`);
+  else console.log("Dry run only. Pass --write to append these proposals to the local journal.");
+}
+
+function proposeWorkflowFindingsFromArtifacts({ doctor, report, packet, packetPath, reportPath, artifactPaths }) {
+  const findings = [];
+  const base = {
+    artifact_paths: artifactPaths.join(","),
+    packet_path: relFromDir(dirname(packetPath), packetPath),
+    assembly_report_path: reportPath ? relFromDir(dirname(packetPath), reportPath) : null,
+    map_id: packet.spec?.map_id,
+    campaign_slug: packet.campaign?.public_route_slug,
+    target_repo: packet.assembly?.target_repo,
+    template_family: packet.assembly?.template_family,
+    author_type: "system",
+    evidence_quality: "system_observed",
+    safe_to_share: true,
+  };
+
+  for (const issue of doctor.errors || []) {
+    findings.push(buildFinding({
+      ...base,
+      stage: stageFromIssueCode(issue.code),
+      kind: "blocker",
+      summary: `[${issue.code}] ${issue.message}`,
+      details: "Proposed by campaigns-os findings harvest from doctor errors.",
+      severity: "high",
+    }));
+  }
+
+  for (const issue of doctor.warnings || []) {
+    if (!harvestableWarning(issue.code)) continue;
+    findings.push(buildFinding({
+      ...base,
+      stage: stageFromIssueCode(issue.code),
+      kind: kindFromIssueCode(issue.code),
+      summary: `[${issue.code}] ${issue.message}`,
+      details: "Proposed by campaigns-os findings harvest from doctor warnings.",
+      severity: "medium",
+    }));
+  }
+
+  for (const [stage, record] of Object.entries(report?.stages || {})) {
+    for (const blocker of Array.isArray(record.blockers) ? record.blockers : []) {
+      findings.push(buildFinding({
+        ...base,
+        stage: normalizeFindingStage(stage),
+        kind: "blocker",
+        summary: `[${blocker.code || `stage.${stage}.blocker`}] ${blocker.message || `${stage} is blocked`}`,
+        details: "Proposed by campaigns-os findings harvest from assembly report blockers.",
+        severity: "high",
+      }));
+    }
+  }
+
+  return dedupeFindings(findings);
+}
+
+function harvestableWarning(code) {
+  return /^(adapter\.|source_html\.|context\.prompts_required|deploy\.preview_url|campaign\.allowed_domains_confirmed|scope\.|template_contract\.|frontmatter\.|qa\.proof_policy)/.test(String(code || ""));
+}
+
+function stageFromIssueCode(code) {
+  const normalized = String(code || "");
+  if (normalized.startsWith("adapter.") || normalized.startsWith("source_html.") || normalized.startsWith("template_contract.") || normalized.startsWith("frontmatter.")) return "build";
+  if (normalized.startsWith("deploy.")) return "deploy";
+  if (normalized.startsWith("qa.")) return "qa";
+  if (normalized.startsWith("scope.")) return "doctor";
+  return "doctor";
+}
+
+function kindFromIssueCode(code) {
+  const normalized = String(code || "");
+  if (normalized.includes("missing") || normalized.includes("prompts_required")) return "missing_prompt";
+  if (normalized.startsWith("adapter.") || normalized.startsWith("source_html.") || normalized.startsWith("template_contract.")) return "friction";
+  return "automation_gap";
+}
+
+function normalizeFindingStage(stage) {
+  if (stage === "prepare_build") return "start";
+  if (stage === "assembly") return "build";
+  if (FINDING_STAGES.includes(stage)) return stage;
+  return "overall";
+}
+
+function dedupeFindings(findings) {
+  const seen = new Set();
+  const result = [];
+  for (const finding of findings) {
+    const key = `${finding.stage}:${finding.kind}:${finding.summary}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(finding);
+  }
+  return result;
 }
 
 function findingsExport(args) {

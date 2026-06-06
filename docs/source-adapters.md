@@ -21,6 +21,35 @@ optional YAML frontmatter and optional Liquid filters/includes. Liquid is only
 needed where the page must call page-kit helpers such as `campaign_link`,
 `campaign_asset`, or `campaign_include`.
 
+## Adapter Decisions
+
+`prepare-build` records the reusable conversion contract in three places:
+
+- `packet.source_html.adapter_contract`
+- `context.adapter_decisions`
+- `report.adapter_decisions`
+
+These fields are intentionally machine-readable so doctor can name unfinished
+work instead of relying on chat history:
+
+- `raw_html_conversion_status`: wrapper stripping, frontmatter, asset moves,
+  script/style refs, CTA rewrites, route policy, and layout choice are still
+  `pending` until build records `completed` or `not_required`.
+- `source_asset_strategy`: page-kit campaigns should normally use
+  `pagekit_campaign_asset_root`, where `src/<slug>/assets/*` publishes as
+  `/<slug>/*`.
+- `commerce_shell_adoption`: runtime commerce pages should be
+  `template_clone_first_verified` or `sdk_surfaces_preserved` before a completed
+  build handoff. `custom_html_experimental` is a doctor blocker on runtime
+  pages.
+- `route_rewrite_policy`: record whether CampaignSpec routes and CTAs were
+  rewritten through campaign-aware routes/helpers.
+- `template_files_copied`: records the selected template family as an atomic
+  slice. A complete/verified slice covers `pages`, `_includes`, `_layouts`,
+  `assets/css`, `assets/js`, and `frontmatter_vocabulary`.
+- `config_script_strategy`: records how campaign config scripts load
+  (`campaign_asset`, `frontmatter_script`, `inline`, or `not_required`).
+
 Raw AI-generated HTML normally needs this conversion pass before build:
 
 1. Keep the page-owned body markup that represents the design intent.
