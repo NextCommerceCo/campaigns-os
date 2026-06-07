@@ -224,21 +224,39 @@ across runs, or create issues.
 `findings add` / `harvest` / `export` keep working unchanged and become the
 findings channel of the Run Record.
 
+## Run Sessions (ambient capture)
+
+Operators (and the agents driving them) should not have to thread `--run-id` /
+`--lifecycle-journal` on every command. A **run session** makes capture ambient:
+
+- `campaigns-os run start [--packet <p>]` mints one `run_id`, picks the
+  lifecycle journal, and writes `.campaign-runtime/run-session.json`.
+- Every command then auto-discovers that session (walking up from cwd) and
+  shares its `run_id` + journal **with no per-command flags**. An explicit
+  `--run-id` / `--lifecycle-journal` still wins; `CAMPAIGNS_OS_TELEMETRY`
+  consent still gates remit.
+- `campaigns-os run end` assembles the aggregated Run Record for the session
+  (consent-gated remit) and clears it. `run status` reports the active session.
+
+The session file is transient, machine-local, and lives under the
+scrubber-ignored `.campaign-runtime/`.
+
 ## Deferred (not v0)
 
 - Command-lifecycle instrumentation — **landed (T6).** A `withCommandLifecycle`
   wrapper times every command and captures its command name, argv shape, and
-  exit status; opt-in persistence (`--lifecycle-journal` / env
-  `CAMPAIGNS_OS_LIFECYCLE_LOG`) appends an entry to an append-only
-  `.campaign-runtime/command-lifecycle.jsonl`, and `run-record` embeds the
-  entry matching the run's `run_id` as the Run Record's optional `lifecycle`
-  block. The `stages[]` and `repair_loop_count` fields are present as hooks.
-- Stage timings and repair-loop count — the hooks exist (recorder `stage()` /
-  `recordRepairLoop()`, `lifecycle.stages` / `lifecycle.repair_loop_count`), but
-  populating them needs command boundaries marked across a full run and one
-  canonical `run_id` threaded through every command (only `run-record` and
-  manually-passed `--run-id` carry it today). That cross-command aggregation is
-  the remaining follow-up.
+  exit status. Persistence is active when an explicit `--lifecycle-journal` /
+  env `CAMPAIGNS_OS_LIFECYCLE_LOG`, or an ambient run session, is present;
+  entries append to `.campaign-runtime/command-lifecycle.jsonl`.
+- Stage timings and repair-loop count — **landed.** `run-record` aggregates the
+  whole lifecycle journal for a `run_id` (Tier 1): each command invocation
+  becomes a `lifecycle.stages[]` entry (with per-stage `exit_status`),
+  `repair_loop_count` counts command re-runs, and run-level timing spans the
+  earliest start to the latest finish. Heavy commands mark their own sub-phases
+  (Tier 2), which aggregate into `command:phase` stages. The cross-command
+  `run_id` is threaded automatically by the run session (Tier 3), so these
+  fields populate with real data from a normal "talk to your agent and build"
+  flow — no manual flag bookkeeping.
 - Internal ingestion / clustering / surface-mapping — internal tooling
   (ADR-019), not this package.
 
