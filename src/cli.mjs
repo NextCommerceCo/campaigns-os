@@ -39,6 +39,13 @@ import {
 } from "./consent.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
+  appendLifecycleEntry,
+  readLifecycleJournal,
+  resolveLifecycleJournalPath,
+  selectLifecycleForRun,
+  withCommandLifecycle,
+} from "./lifecycle.mjs";
+import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "./source-html-manifest.mjs";
@@ -162,7 +169,9 @@ Usage:
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
-  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
+
+  Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
 
 Examples:
@@ -188,6 +197,37 @@ export async function main(argv) {
   const args = parseArgs(argv);
   const command = args._[0] || "help";
 
+  // Wrap every command in the lifecycle instrumentation (T6): it captures the
+  // command, its argv shape, exit status, and timing. Re-throws unchanged so
+  // the CLI exit code is unaffected. Persistence to the lifecycle journal is
+  // OPT-IN (--lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG) and non-fatal —
+  // default behavior is identical to before.
+  const { lifecycle } = await withCommandLifecycle(
+    { command, argvShape: argvShape(args), runId: optionalString(args["run-id"]) },
+    () => dispatch(command, args),
+  );
+  persistLifecycleIfRequested(args, command, lifecycle);
+}
+
+// Append the command's lifecycle entry to the lifecycle journal only when the
+// operator/orchestrator opts in. Never throws — a lifecycle write must not
+// break a command (telemetry never blocks a build). `help` is a no-op command
+// and is not worth recording.
+function persistLifecycleIfRequested(args, command, lifecycle) {
+  if (command === "help") return;
+  const requested = isNonEmptyString(args["lifecycle-journal"]) || isNonEmptyString(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG);
+  if (!requested) return;
+  try {
+    const journalPath = isNonEmptyString(args["lifecycle-journal"])
+      ? resolve(args["lifecycle-journal"])
+      : resolve(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG);
+    appendLifecycleEntry(journalPath, lifecycle);
+  } catch {
+    // non-fatal
+  }
+}
+
+async function dispatch(command, args) {
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
@@ -4459,6 +4499,12 @@ async function runRecordCommand(args) {
   const runId = optionalString(args["run-id"]) || mintRunId();
   const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
 
+  // Embed the command-lifecycle signal for this run, if a lifecycle journal
+  // carries an entry stamped with this run_id (T6). Best-effort: no journal or
+  // no match => no lifecycle block (backward-compatible).
+  const lifecycleJournalPath = resolveLifecycleJournalPath(args, baseDir);
+  const lifecycle = selectLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId);
+
   const artifacts = [runRecordArtifactRef("build_packet", packetPath, PACKET_SCHEMA, baseDir)];
   if (contextExists) artifacts.push(runRecordArtifactRef("build_context", contextPath, CONTEXT_SCHEMA, baseDir));
   if (reportExists) artifacts.push(runRecordArtifactRef("assembly_report", reportPath, REPORT_SCHEMA, baseDir));
@@ -4500,6 +4546,7 @@ async function runRecordCommand(args) {
     surfaces: parseCommaList(args.surfaces),
     primarySurface: optionalString(args["primary-surface"]),
     surfaceConfidence: optionalString(args["surface-confidence"]),
+    lifecycle,
   });
 
   // Write before any network call so local capture does not depend on telemetry

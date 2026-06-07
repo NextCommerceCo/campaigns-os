@@ -206,6 +206,41 @@
     "surface_confidence": {
       "type": ["string", "null"],
       "description": "Optional free-form confidence hint for primary_surface, e.g. \"low\"."
+    },
+    "lifecycle": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Optional command-lifecycle signal for this run, captured by the command-lifecycle wrapper and correlated by run_id. v0 carries command/argv_shape/exit_status/timing; stages[] and repair_loop_count are hooks for when command boundaries are instrumented.",
+      "properties": {
+        "run_id": { "type": ["string", "null"] },
+        "command": { "type": "string" },
+        "argv_shape": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Flag names present, never their values."
+        },
+        "exit_status": { "type": ["integer", "null"] },
+        "started_at": { "type": ["string", "null"] },
+        "completed_at": { "type": ["string", "null"] },
+        "duration_ms": { "type": ["number", "null"] },
+        "stages": {
+          "type": "array",
+          "description": "Per-stage timings. Empty until command boundaries are instrumented (deferred field hook).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "duration_ms": { "type": ["number", "null"] }
+            }
+          }
+        },
+        "repair_loop_count": {
+          "type": ["integer", "null"],
+          "description": "Number of repair loops in the run. 0 until instrumented (deferred field hook)."
+        }
+      }
     }
   }
 }

@@ -189,6 +189,20 @@ export function validateRunRecord(record) {
     add("record.primary_surface", `unknown primary_surface "${record.primary_surface}". Allowed: ${RUN_RECORD_SURFACES.join(", ")}.`);
   }
 
+  if (record.lifecycle != null) {
+    const lc = record.lifecycle;
+    if (typeof lc !== "object" || Array.isArray(lc)) {
+      add("record.lifecycle", "lifecycle must be an object when present.");
+    } else {
+      if (lc.command != null && typeof lc.command !== "string") add("record.lifecycle.command", "command must be a string.");
+      if (lc.argv_shape != null && !isStringArray(lc.argv_shape)) add("record.lifecycle.argv_shape", "argv_shape must be an array of strings.");
+      if (lc.exit_status != null && !Number.isInteger(lc.exit_status)) add("record.lifecycle.exit_status", "exit_status must be an integer or null.");
+      if (lc.duration_ms != null && typeof lc.duration_ms !== "number") add("record.lifecycle.duration_ms", "duration_ms must be a number or null.");
+      if (lc.repair_loop_count != null && !Number.isInteger(lc.repair_loop_count)) add("record.lifecycle.repair_loop_count", "repair_loop_count must be an integer or null.");
+      if (lc.stages != null && !Array.isArray(lc.stages)) add("record.lifecycle.stages", "stages must be an array when present.");
+    }
+  }
+
   return { ok: errors.length === 0, errors };
 }
 
@@ -347,6 +361,7 @@ export function assembleRunRecord({
   surfaces = [],
   primarySurface = null,
   surfaceConfidence = null,
+  lifecycle = null,
   now = new Date(),
 } = {}) {
   const observations = {};
@@ -393,6 +408,7 @@ export function assembleRunRecord({
   if (cleanSurfaces.length) record.surfaces = cleanSurfaces;
   if (primarySurface) record.primary_surface = primarySurface;
   if (surfaceConfidence) record.surface_confidence = surfaceConfidence;
+  if (lifecycle && typeof lifecycle === "object" && !Array.isArray(lifecycle)) record.lifecycle = lifecycle;
 
   return record;
 }

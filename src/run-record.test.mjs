@@ -430,6 +430,61 @@ test("CLI: malformed findings journal lines are recorded in Run Record observati
   });
 });
 
+// --- T6: lifecycle embedding -----------------------------------------------
+
+test("assembleRunRecord embeds a lifecycle block when provided and validates", () => {
+  const record = assembleRunRecord(assembleArgs({
+    lifecycle: { run_id: "run_1_test", command: "doctor", argv_shape: ["--packet"], exit_status: 2, started_at: "t0", completed_at: "t1", duration_ms: 12, stages: [], repair_loop_count: 0 },
+  }));
+  assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
+  assert.equal(record.lifecycle.command, "doctor");
+  assert.equal(record.lifecycle.exit_status, 2);
+});
+
+test("assembleRunRecord omits lifecycle when none is provided (backward-compatible)", () => {
+  const record = assembleRunRecord(assembleArgs());
+  assert.equal("lifecycle" in record, false);
+  assert.equal(validateRunRecord(record).ok, true);
+});
+
+test("validateRunRecord rejects a malformed lifecycle block", () => {
+  assert.equal(validateRunRecord(minimalRecord({ lifecycle: "nope" })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ lifecycle: { command: 1 } })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ lifecycle: { exit_status: "2" } })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ lifecycle: { argv_shape: "x" } })).ok, false);
+});
+
+test("CLI: a lifecycle journal entry is captured then embedded into the Run Record by run_id (T6 loop)", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const lcJournal = join(dir, "lc.jsonl");
+    const run = (args) => {
+      try {
+        return execFileSync("node", [CLI, ...args], { encoding: "utf8" });
+      } catch (error) {
+        return String(error.stdout || ""); // doctor exits 2 — capture stdout anyway
+      }
+    };
+
+    // 1) A command runs with opt-in lifecycle persistence, stamped with run_id.
+    run(["doctor", "--packet", packetPath, "--run-id", "run_lc", "--lifecycle-journal", lcJournal, "--json"]);
+
+    // 2) run-record embeds the matching lifecycle entry.
+    const out = JSON.parse(execFileSync("node", [
+      CLI, "run-record", "--packet", packetPath, "--journal", join(dir, "wf.jsonl"),
+      "--run-id", "run_lc", "--lifecycle-journal", lcJournal, "--no-write", "--json",
+    ], { encoding: "utf8" }));
+
+    assert.ok(out.record.lifecycle, "expected a lifecycle block");
+    assert.equal(out.record.lifecycle.command, "doctor");
+    assert.equal(out.record.lifecycle.run_id, "run_lc");
+    assert.equal(out.record.lifecycle.exit_status, 2); // doctor flagged the synthetic packet
+    assert.ok(typeof out.record.lifecycle.duration_ms === "number");
+    assert.equal(validateRunRecord(out.record).ok, true);
+  });
+});
+
 test("CLI: findings stamped with a run_id form an EXACT Run Record snapshot (T2<->T5 loop)", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
