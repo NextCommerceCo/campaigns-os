@@ -22,7 +22,22 @@ import {
   FINDING_STAGES,
   readJournal,
   resolveJournalPath,
+  WORKFLOW_FINDING_SCHEMA,
 } from "./findings.mjs";
+import {
+  assembleRunRecord,
+  mintRunId,
+  writeRunRecord,
+} from "./run-record.mjs";
+import {
+  promptAndPersistConsent,
+  readConfig,
+  resolveConfigPath,
+  resolveConsent,
+  TELEMETRY_ENV_VAR,
+  writeConsentConfig,
+} from "./consent.mjs";
+import { remitRunRecord } from "./remit.mjs";
 import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
@@ -143,10 +158,12 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--no-post-verdict] [--output-dir qa-output] [--json]
   campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
-  campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [...context flags]
-  campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--write] [--json]
+  campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
+  campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
+  campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
 
 Examples:
   npm run campaigns-os -- start \\
@@ -247,6 +264,16 @@ export async function main(argv) {
 
   if (command === "findings") {
     await findingsCommand(args);
+    return;
+  }
+
+  if (command === "run-record") {
+    await runRecordCommand(args);
+    return;
+  }
+
+  if (command === "telemetry") {
+    telemetryCommand(args);
     return;
   }
 
@@ -4205,6 +4232,7 @@ async function findingsAdd(args) {
     packet_path: optionalString(args.packet),
     assembly_report_path: optionalString(args["report"]),
     qa_run_id: optionalString(args["qa-run-id"]),
+    run_id: optionalString(args["run-id"]),
     author_type: optionalString(args["author-type"]),
     evidence_quality: optionalString(args["evidence-quality"]),
     suggested_owner: optionalString(args["suggested-owner"]),
@@ -4268,6 +4296,7 @@ function findingsHarvest(args) {
     packetPath,
     reportPath: reportExists ? reportPath : null,
     artifactPaths,
+    runId: optionalString(args["run-id"]),
   });
 
   let written = [];
@@ -4290,7 +4319,7 @@ function findingsHarvest(args) {
   else console.log("Dry run only. Pass --write to append these proposals to the local journal.");
 }
 
-function proposeWorkflowFindingsFromArtifacts({ doctor, report, packet, packetPath, reportPath, artifactPaths }) {
+function proposeWorkflowFindingsFromArtifacts({ doctor, report, packet, packetPath, reportPath, artifactPaths, runId = null }) {
   const findings = [];
   const base = {
     artifact_paths: artifactPaths.join(","),
@@ -4300,6 +4329,10 @@ function proposeWorkflowFindingsFromArtifacts({ doctor, report, packet, packetPa
     campaign_slug: packet.campaign?.public_route_slug,
     target_repo: packet.assembly?.target_repo,
     template_family: packet.assembly?.template_family,
+    // Stamp the canonical run_id so the Run Record's findings snapshot is exact
+    // (selected by ID) rather than inferred from timestamps. Optional —
+    // harvesting without a run_id stays backward-compatible.
+    run_id: optionalString(runId),
     author_type: "system",
     evidence_quality: "system_observed",
     safe_to_share: true,
@@ -4393,6 +4426,223 @@ function findingsExport(args) {
     return;
   }
   process.stdout.write(exportSummaryMarkdown(findings));
+}
+
+// Run Telemetry capture + remit. Thin dispatch: read this run's artifacts with
+// the same readers `findings harvest` uses, hand the parsed structures to
+// run-record.mjs to assemble the manifest, then (consent-gated, non-fatal)
+// remit it. Capture is ALWAYS local; consent gates only the remit. See
+// docs/workflow-findings-sidecar.md.
+async function runRecordCommand(args) {
+  const packetPath = resolve(requireArg(args, "packet"));
+  const packet = readJson(packetPath);
+  const baseDir = dirname(packetPath);
+  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || baseDir;
+  const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
+  const reportPath = args.report ? resolve(args.report) : join(targetRepo, ".campaign-runtime/assembly-report.json");
+  const contextExists = existsSync(contextPath);
+  const reportExists = existsSync(reportPath);
+  const context = contextExists ? readJson(contextPath) : null;
+  const report = reportExists ? readJson(reportPath) : null;
+  const doctor = doctorPacket(packetPath, {
+    contextPath: contextExists ? contextPath : null,
+    reportPath: reportExists ? reportPath : null,
+  });
+
+  const qaVerdictPath = args["qa-verdict"] ? resolve(args["qa-verdict"]) : null;
+  const qaVerdictExists = qaVerdictPath != null && existsSync(qaVerdictPath);
+  const qaVerdict = qaVerdictExists ? readJson(qaVerdictPath) : null;
+
+  const journalPath = resolveJournalPath(args);
+  const journal = readJournal(journalPath);
+
+  const runId = optionalString(args["run-id"]) || mintRunId();
+  const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
+
+  const artifacts = [runRecordArtifactRef("build_packet", packetPath, PACKET_SCHEMA, baseDir)];
+  if (contextExists) artifacts.push(runRecordArtifactRef("build_context", contextPath, CONTEXT_SCHEMA, baseDir));
+  if (reportExists) artifacts.push(runRecordArtifactRef("assembly_report", reportPath, REPORT_SCHEMA, baseDir));
+  if (qaVerdictExists) artifacts.push(runRecordArtifactRef("qa_verdict", qaVerdictPath, optionalString(qaVerdict?.schema_version), baseDir));
+  if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
+
+  const write = args["no-write"] !== true;
+  // A pure local-inspection run (--no-write) or an explicit --no-remit never
+  // phones home, regardless of consent.
+  const remitDisabled = args["no-remit"] === true || !write;
+
+  // Resolve consent through the shared resolver every remitting command calls.
+  // When interactive, not in --json/agent mode, remit isn't disabled, and no
+  // explicit choice exists yet, ask once up front and persist it.
+  let consent = resolveConsent({ proxyBase });
+  if (!consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
+    consent = await promptAndPersistConsent({ proxyBase });
+  }
+
+  const record = assembleRunRecord({
+    runId,
+    packageVersion: packageVersion(),
+    command: "run-record",
+    argvShape: argvShape(args),
+    consent: { state: consent.state, source: consent.source },
+    identity: {
+      map_id: optionalString(packet.spec?.map_id),
+      campaign_slug: optionalString(packet.campaign?.public_route_slug),
+      template_family: optionalString(packet.assembly?.template_family),
+      entry_point_shape: "packet",
+    },
+    artifacts,
+    packet,
+    doctor,
+    report,
+    context,
+    qaVerdict,
+    journal,
+    surfaces: parseCommaList(args.surfaces),
+    primarySurface: optionalString(args["primary-surface"]),
+    surfaceConfidence: optionalString(args["surface-confidence"]),
+  });
+
+  // Write before any network call so local capture does not depend on telemetry
+  // being fast or reachable. If a crash lands before the final rewrite below,
+  // the durable record is explicitly pending instead of silently skipped.
+  const shouldAttemptRemit = !remitDisabled && consent.state === "on";
+  if (shouldAttemptRemit) {
+    record.remit_state = "pending";
+    record.remit_attempted = false;
+    record.remit_ok = null;
+    record.remit_error = null;
+    record.remit_endpoint = null;
+  }
+
+  const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
+
+  // Remit is consent-gated, non-fatal, bounded, and idempotent on run_id. Its
+  // outcome is stamped into the local record so a dropped send is visible, not silent.
+  const remitStatus = remitDisabled
+    ? { attempted: false, ok: null, error: null, endpoint: null }
+    : await remitRunRecord(record, { proxyBase, consent });
+  record.remit_attempted = remitStatus.attempted;
+  record.remit_ok = remitStatus.ok;
+  record.remit_error = remitStatus.error;
+  record.remit_endpoint = remitStatus.endpoint;
+  record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
+
+  if (write) writeRunRecord(record, { baseDir });
+
+  if (args.json) {
+    console.log(JSON.stringify({ ok: true, action: "run-record", written: write, record_path: recordPath, record }, null, 2));
+    return;
+  }
+  console.log(`Run Record assembled.`);
+  console.log(`Run ID: ${record.run_id}`);
+  console.log(`Consent: ${record.consent_state} (${record.consent_source})`);
+  console.log(`Artifacts referenced: ${record.artifacts.length}`);
+  console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
+  if (record.remit_attempted) {
+    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}`);
+  } else {
+    console.log(`Remit: skipped (consent ${record.consent_state}${remitDisabled ? ", disabled for this run" : ""}).`);
+  }
+  if (write) console.log(`Wrote: ${recordPath}`);
+  else console.log("Dry run only (--no-write). No record written, no remit.");
+}
+
+// Build one artifact reference {kind, path, schema_version, sha256}. The path
+// is relativized to the run root so no contributor filesystem layout leaks;
+// sha256 is best-effort (null when the file can't be hashed).
+function runRecordArtifactRef(kind, filePath, schemaVersion, baseDir) {
+  let sha256 = null;
+  try {
+    sha256 = sha256File(filePath);
+  } catch {
+    sha256 = null;
+  }
+  return {
+    kind,
+    path: artifactRefPath(kind, filePath, baseDir),
+    schema_version: schemaVersion || null,
+    sha256,
+  };
+}
+
+function artifactRefPath(kind, filePath, baseDir) {
+  const base = resolve(baseDir);
+  const fullPath = resolve(filePath);
+  const rel = relative(base, fullPath);
+  if (!rel) return ".";
+  if (rel.startsWith("..") || isAbsolute(rel)) return `external:${kind}`;
+  return rel.startsWith(".") ? rel : `./${rel}`;
+}
+
+const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["no-remit", "no-write", "proxy-base"]);
+
+// argv SHAPE = selected flag NAMES present, never their values (minimization).
+// Sorted for deterministic records; opt-out and endpoint flags stay private.
+function argvShape(args) {
+  return Object.keys(args)
+    .filter((key) => key !== "_")
+    .filter((key) => !ARGV_SHAPE_PRIVATE_FLAGS.has(key))
+    .map((key) => `--${key}`)
+    .sort();
+}
+
+function parseCommaList(value) {
+  if (!isNonEmptyString(value)) return [];
+  return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function packageVersion() {
+  return readJson(join(ROOT, "package.json")).version;
+}
+
+// Machine-level Run Telemetry consent. `status` reports the resolved state and
+// its source; `on`/`off` persist an explicit choice to the user-level config.
+// Consent gates REMIT only — local capture is unaffected.
+function telemetryCommand(args) {
+  const sub = args._[1] || "status";
+  const configPath = resolveConfigPath();
+
+  if (sub === "on" || sub === "off") {
+    const { configPath: written } = writeConsentConfig(sub, { configPath, proxyBase: DEFAULT_PROXY_BASE, source: "telemetry-command" });
+    const resolved = resolveConsent({ configPath });
+    if (args.json) {
+      console.log(JSON.stringify({ ok: true, action: `telemetry-${sub}`, config_path: written, state: resolved.state, source: resolved.source }, null, 2));
+      return;
+    }
+    console.log(`Telemetry ${sub.toUpperCase()}.`);
+    console.log(`Config: ${written}`);
+    console.log(`Resolved: ${resolved.state} (source: ${resolved.source})`);
+    if (resolved.source === "env") {
+      console.log(`Note: ${TELEMETRY_ENV_VAR} is set and overrides this file until unset.`);
+    }
+    return;
+  }
+
+  if (sub === "status") {
+    const resolved = resolveConsent({ configPath });
+    const { ok: configPresent } = readConfig(configPath);
+    if (args.json) {
+      console.log(JSON.stringify({
+        ok: true,
+        action: "telemetry-status",
+        config_path: configPath,
+        config_present: configPresent,
+        state: resolved.state,
+        source: resolved.source,
+        resolved: resolved.resolved,
+        env_override: process.env[TELEMETRY_ENV_VAR] ?? null,
+      }, null, 2));
+      return;
+    }
+    console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})`);
+    console.log(`Config: ${configPath}${configPresent ? "" : " (not set)"}`);
+    if (!resolved.resolved) {
+      console.log("No explicit choice yet — defaults OFF. Set with: campaigns-os telemetry on|off");
+    }
+    return;
+  }
+
+  throw new Error(`Unknown telemetry subcommand "${sub}". Use: status | on | off.`);
 }
 
 // Tiny Prompts: skippable one-line guidance at stage boundaries. They surface

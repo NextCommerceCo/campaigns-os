@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-run-record.v0.schema.json",
+  "title": "Campaigns OS Run Record v0",
+  "description": "A per-run manifest for one Campaigns OS run. Keyed by one canonical run_id. References source artifacts by {path, schema_version, sha256} and carries normalized observation arrays — it does NOT re-embed full artifact bodies (so it survives upstream schema drift). Capture is always local; consent gates remit only. See docs/workflow-findings-sidecar.md (Run Telemetry).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "package_version",
+    "command",
+    "argv_shape",
+    "created_at",
+    "consent_state",
+    "remit_attempted"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "campaigns-os-run-record/v0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The single canonical run identity, minted at the run boundary. Also the idempotency key for remit — the endpoint upserts on run_id so retries/reruns never double-count."
+    },
+    "package_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version of the @nextcommerce/campaigns-os package that produced this record."
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The command that ran, e.g. \"run-record\", \"start\", \"qa run\"."
+    },
+    "argv_shape": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The flag NAMES present on the command line (e.g. \"--packet\", \"--write\"), never their raw values. Shape only — minimization."
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO 8601 timestamp the record was assembled."
+    },
+    "consent_state": {
+      "type": "string",
+      "enum": ["on", "off"],
+      "description": "Resolved telemetry consent at capture time. Gates remit only; capture is always local."
+    },
+    "consent_source": {
+      "type": ["string", "null"],
+      "enum": ["env", "file", "default", null],
+      "description": "Where consent_state was resolved from. \"default\" means unknown/non-interactive — fails closed to off."
+    },
+    "remit_attempted": {
+      "type": "boolean",
+      "description": "Whether a remit POST was attempted for this run."
+    },
+    "remit_state": {
+      "type": "string",
+      "enum": ["skipped", "pending", "ok", "failed"],
+      "description": "Crash-safe lifecycle state for remit. pending means local capture completed before a consented remit finished; skipped means no remit was attempted."
+    },
+    "remit_ok": {
+      "type": ["boolean", "null"],
+      "description": "Whether the remit POST succeeded. null when no attempt was made."
+    },
+    "remit_error": {
+      "type": ["string", "null"],
+      "description": "Error message from a failed remit, so a dropped send is visible and not silent. null on success or no attempt."
+    },
+    "remit_endpoint": {
+      "type": ["string", "null"],
+      "pattern": "^/",
+      "description": "Endpoint path the run was remitted to, e.g. \"/api/runs\". null when no attempt was made."
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Best-effort run identity — the join keys that make telemetry useful. Missing identity never blocks capture.",
+      "properties": {
+        "map_id": { "type": ["string", "null"] },
+        "campaign_slug": { "type": ["string", "null"] },
+        "template_family": { "type": ["string", "null"] },
+        "entry_point_shape": {
+          "type": ["string", "null"],
+          "description": "How the run was entered, e.g. \"packet\", \"spec\", \"map-id\". Shape, not a raw path or id."
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "References to this run's source artifacts. References, not copies — this is what survives upstream schema drift. schema_version/sha256 are nullable for artifacts that are not on disk or whose hash could not be read.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "build_packet",
+              "build_context",
+              "assembly_report",
+              "qa_verdict",
+              "findings_journal"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Relativized-or-hashed path. Never an absolute contributor filesystem path."
+          },
+          "schema_version": { "type": ["string", "null"] },
+          "sha256": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Normalized observation arrays — the extracted structural signal. Codes/IDs/dispositions only, never raw artifact bodies.",
+      "properties": {
+        "doctor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": { "type": ["string", "null"] },
+            "error_codes": { "type": "array", "items": { "type": "string" } },
+            "warning_codes": { "type": "array", "items": { "type": "string" } },
+            "ready_count": { "type": ["integer", "null"] }
+          }
+        },
+        "spec_validation_rule_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "ruleId of every spec.validation violation that fired."
+        },
+        "adapter_decisions": {
+          "type": ["object", "null"],
+          "description": "Normalized adapter decision values (strategy enums), not source files."
+        },
+        "qa": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "disposition": { "type": ["string", "null"] },
+            "gap_classes": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Distinct assertion families that produced a QA exception (e.g. \"funnel-flow\", \"meta-tags\")."
+            }
+          }
+        },
+        "finding_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IDs of this run's Workflow Findings (the per-run findings snapshot, by reference). The journal is the single writer; this is an exact snapshot when findings carry run_id."
+        },
+        "findings_journal": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Integrity metadata for the findings journal snapshot. Present when malformed JSONL lines were skipped so the snapshot is visibly incomplete.",
+          "properties": {
+            "malformed_count": { "type": "integer" },
+            "malformed_lines": {
+              "type": "array",
+              "items": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "surfaces": {
+      "type": "array",
+      "description": "Improvement surfaces this run's signal should inform. A list, not an enum — real signal is rarely one surface.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "skill",
+          "cli",
+          "template",
+          "design-source",
+          "docs",
+          "spec-rule",
+          "platform"
+        ]
+      }
+    },
+    "primary_surface": {
+      "type": ["string", "null"],
+      "enum": [
+        "skill",
+        "cli",
+        "template",
+        "design-source",
+        "docs",
+        "spec-rule",
+        "platform",
+        null
+      ],
+      "description": "Optional best single-guess surface."
+    },
+    "surface_confidence": {
+      "type": ["string", "null"],
+      "description": "Optional free-form confidence hint for primary_surface, e.g. \"low\"."
+    }
+  }
+}

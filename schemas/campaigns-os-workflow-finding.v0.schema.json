@@ -103,6 +103,10 @@
     "qa_run_id": {
       "type": ["string", "null"]
     },
+    "run_id": {
+      "type": ["string", "null"],
+      "description": "Optional canonical Run Telemetry run_id. Lets a per-run Run Record snapshot this finding by ID exactly, rather than inferring run membership from timestamps. Backward-compatible: absent on findings captured before Run Telemetry."
+    },
     "author_type": {
       "type": "string",
       "enum": ["operator", "agent", "system"],

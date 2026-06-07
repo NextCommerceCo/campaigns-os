@@ -148,6 +148,33 @@ test("CLI: findings add appends, list reads, export emits markdown + json", () =
   });
 });
 
+test("run_id: stamped when provided, absent (backward-compatible) when not", () => {
+  const withRunId = minimalFinding({ run_id: "run_123_abcd" });
+  assert.equal(withRunId.run_id, "run_123_abcd");
+  assert.equal(validateWorkflowFinding(withRunId).ok, true);
+
+  const without = minimalFinding();
+  assert.equal("run_id" in without, false); // never invents a run_id
+  assert.equal(validateWorkflowFinding(without).ok, true);
+});
+
+test("run_id: validator rejects a non-string run_id but accepts null/absent", () => {
+  // buildFinding only stamps non-empty strings, so test the validator on a raw
+  // object to exercise the type guard directly.
+  assert.equal(validateWorkflowFinding({ ...minimalFinding(), run_id: 42 }).ok, false);
+  assert.equal(validateWorkflowFinding({ ...minimalFinding(), run_id: null }).ok, true);
+});
+
+test("CLI: findings add --run-id stamps the run_id onto the journal entry", () => {
+  withTempDir((dir) => {
+    const journal = join(dir, "wf.jsonl");
+    runCli(["findings", "add", "--journal", journal, "--stage", "qa", "--kind", "friction", "--summary", "slow step", "--run-id", "run_cli_xyz"]);
+    const { findings } = readJournal(journal);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].run_id, "run_cli_xyz");
+  });
+});
+
 test("CLI: findings add fails clearly when required flags are missing (non-interactive)", () => {
   withTempDir((dir) => {
     const journal = join(dir, "wf.jsonl");

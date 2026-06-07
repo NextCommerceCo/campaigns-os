@@ -98,6 +98,9 @@ export function validateWorkflowFinding(finding) {
   if (finding.safe_to_share != null && typeof finding.safe_to_share !== "boolean") {
     add("finding.safe_to_share", "safe_to_share must be a boolean when present.");
   }
+  if (finding.run_id != null && typeof finding.run_id !== "string") {
+    add("finding.run_id", "run_id must be a string or null when present.");
+  }
 
   return { ok: errors.length === 0, errors };
 }
@@ -156,6 +159,7 @@ export function buildFinding(input, { now = new Date() } = {}) {
     packet_path: input.packet_path,
     assembly_report_path: input.assembly_report_path,
     qa_run_id: input.qa_run_id,
+    run_id: input.run_id,
     suggested_owner: input.suggested_owner,
   };
   for (const [key, value] of Object.entries(optional)) {
