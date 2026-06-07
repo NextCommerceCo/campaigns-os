@@ -34,8 +34,11 @@ const defaultClock = {
   monotonic: () => performance.now(),
 };
 
+// Raw process.exitCode: an integer when a command set it (INCLUDING 0), or
+// undefined when unset. The wrapper coerces per path so an explicit 0 is
+// distinguishable from "unset" (the bug a plain `|| 0` / `|| 1` would hide).
 function defaultReadExitStatus() {
-  return Number.isInteger(process.exitCode) ? process.exitCode : 0;
+  return process.exitCode;
 }
 
 /**
@@ -106,14 +109,17 @@ export async function withCommandLifecycle({
   let exitStatus = 0;
   try {
     result = await fn(recorder);
-    exitStatus = readExitStatus();
+    // A clean return is exit 0 unless the command set process.exitCode.
+    const raw = readExitStatus();
+    exitStatus = Number.isInteger(raw) ? raw : 0;
   } catch (error) {
     thrown = error;
-    // Symmetric with the success path: a command may set process.exitCode before
-    // throwing (e.g. process.exitCode = N; throw ...). Prefer that, then the
-    // error's own exitCode, then 1 — so the recorded status matches the process.
-    const fromProcess = readExitStatus();
-    exitStatus = fromProcess || (Number.isInteger(error?.exitCode) ? error.exitCode : 1);
+    // Symmetric with the success path, but using an integer test (not `||`) so an
+    // explicit process.exitCode = 0 set before throwing is preserved rather than
+    // treated as falsy. An integer (incl. 0) wins; else the error's own exitCode;
+    // else 1.
+    const raw = readExitStatus();
+    exitStatus = Number.isInteger(raw) ? raw : (Number.isInteger(error?.exitCode) ? error.exitCode : 1);
   }
 
   const lifecycle = buildLifecycle({

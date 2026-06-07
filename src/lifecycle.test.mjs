@@ -85,6 +85,19 @@ test("withCommandLifecycle prefers process.exitCode over a thrown error's exitCo
   assert.equal(finished.exit_status, 5);
 });
 
+test("withCommandLifecycle preserves an explicit process.exitCode = 0 on the throw path (not falsy-coerced)", async () => {
+  // A command set process.exitCode = 0 then threw: record 0, NOT the error's code/1.
+  // Regression guard: a `||` here would treat 0 as falsy and mis-record it.
+  let finished = null;
+  await assert.rejects(
+    () => withCommandLifecycle(
+      { command: "doctor", argvShape: [], clock: fakeClock(), readExitStatus: () => 0, onFinish: (lc) => { finished = lc; } },
+      async () => { throw Object.assign(new Error("x"), { exitCode: 9 }); },
+    ),
+  );
+  assert.equal(finished.exit_status, 0);
+});
+
 test("withCommandLifecycle defaults a thrown error without exitCode to status 1", async () => {
   let finished = null;
   await assert.rejects(
