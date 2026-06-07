@@ -27,6 +27,7 @@ import {
 import {
   assembleRunRecord,
   mintRunId,
+  validateRunRecord,
   writeRunRecord,
 } from "./run-record.mjs";
 import {
@@ -4473,7 +4474,7 @@ async function runRecordCommand(args) {
   // Resolve consent through the shared resolver every remitting command calls.
   // When interactive, not in --json/agent mode, remit isn't disabled, and no
   // explicit choice exists yet, ask once up front and persist it.
-  let consent = resolveConsent();
+  let consent = resolveConsent({ proxyBase });
   if (!consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
     consent = await promptAndPersistConsent({ proxyBase });
   }
@@ -4502,8 +4503,19 @@ async function runRecordCommand(args) {
     surfaceConfidence: optionalString(args["surface-confidence"]),
   });
 
-  // Remit is consent-gated, non-fatal, and idempotent on run_id. Its outcome
-  // is stamped into the local record so a dropped send is visible, not silent.
+  // Validate and write before any network call: local capture must not depend on
+  // telemetry being fast or reachable. The final remit status is written back
+  // below so the durable record still shows dropped sends.
+  const preRemitValidation = validateRunRecord(record);
+  if (!preRemitValidation.ok) {
+    const detail = preRemitValidation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
+    throw new Error(`Run Record failed validation; refusing to remit or write: ${detail}`);
+  }
+
+  const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
+
+  // Remit is consent-gated, non-fatal, bounded, and idempotent on run_id. Its
+  // outcome is stamped into the local record so a dropped send is visible, not silent.
   const remitStatus = remitDisabled
     ? { attempted: false, ok: null, error: null, endpoint: null }
     : await remitRunRecord(record, { proxyBase, consent });
@@ -4512,7 +4524,7 @@ async function runRecordCommand(args) {
   record.remit_error = remitStatus.error;
   record.remit_endpoint = remitStatus.endpoint;
 
-  const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
+  if (write) writeRunRecord(record, { baseDir });
 
   if (args.json) {
     console.log(JSON.stringify({ ok: true, action: "run-record", written: write, record_path: recordPath, record }, null, 2));
@@ -4544,10 +4556,19 @@ function runRecordArtifactRef(kind, filePath, schemaVersion, baseDir) {
   }
   return {
     kind,
-    path: relFromDir(baseDir, filePath),
+    path: artifactRefPath(kind, filePath, baseDir),
     schema_version: schemaVersion || null,
     sha256,
   };
+}
+
+function artifactRefPath(kind, filePath, baseDir) {
+  const base = resolve(baseDir);
+  const fullPath = resolve(filePath);
+  const rel = relative(base, fullPath);
+  if (!rel) return ".";
+  if (rel.startsWith("..") || isAbsolute(rel)) return `external:${kind}`;
+  return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
 // argv SHAPE = the flag NAMES present, never their values (minimization).

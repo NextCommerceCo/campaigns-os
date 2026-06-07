@@ -139,6 +139,17 @@ export function validateRunRecord(record) {
       if (obs.finding_ids != null && !isStringArray(obs.finding_ids)) {
         add("record.observations.finding_ids", "finding_ids must be an array of strings.");
       }
+      if (obs.findings_journal != null) {
+        const j = obs.findings_journal;
+        if (typeof j !== "object" || Array.isArray(j)) {
+          add("record.observations.findings_journal", "findings_journal must be an object.");
+        } else {
+          if (j.malformed_count != null && !Number.isInteger(j.malformed_count)) add("record.observations.findings_journal.malformed_count", "malformed_count must be an integer.");
+          if (j.malformed_lines != null && (!Array.isArray(j.malformed_lines) || !j.malformed_lines.every(Number.isInteger))) {
+            add("record.observations.findings_journal.malformed_lines", "malformed_lines must be an array of integers.");
+          }
+        }
+      }
       if (obs.doctor != null) {
         const d = obs.doctor;
         if (typeof d !== "object" || Array.isArray(d)) {
@@ -336,6 +347,15 @@ export function assembleRunRecord({
   const qaObs = extractQaObservations(qaVerdict);
   if (qaObs) observations.qa = qaObs;
   observations.finding_ids = selectRunFindingIds(journal, runId);
+  const malformedJournalLines = Array.isArray(journal?.malformed)
+    ? journal.malformed.map((entry) => entry?.line).filter(Number.isInteger)
+    : [];
+  if (malformedJournalLines.length) {
+    observations.findings_journal = {
+      malformed_count: malformedJournalLines.length,
+      malformed_lines: malformedJournalLines,
+    };
+  }
 
   const record = {
     schema_version: RUN_RECORD_SCHEMA,

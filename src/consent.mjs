@@ -25,6 +25,18 @@ function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+export function normalizeConsentScope(value) {
+  if (!isNonEmptyString(value)) return null;
+  const raw = value.trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(raw);
+    const path = url.pathname.replace(/\/+$/, "");
+    return `${url.origin}${path}`;
+  } catch {
+    return raw;
+  }
+}
+
 function defaultWarn(message) {
   process.stderr.write(`${message}\n`);
 }
@@ -82,6 +94,17 @@ function fileConsentState(config) {
   return null;
 }
 
+function fileConsentScope(config) {
+  return normalizeConsentScope(config?.telemetry?.scope);
+}
+
+function scopeMatches(storedScope, requestedScope) {
+  const requested = normalizeConsentScope(requestedScope);
+  if (!requested) return true;
+  const stored = normalizeConsentScope(storedScope);
+  return Boolean(stored && stored === requested);
+}
+
 /**
  * Persist consent at user level. Records its own schema_version, the package
  * name, the proxy/endpoint scope, a timestamp, and the value source — so the
@@ -98,7 +121,7 @@ export function writeConsentConfig(state, {
     package: PACKAGE_NAME,
     telemetry: {
       enabled: state === "on",
-      scope: proxyBase || null,
+      scope: normalizeConsentScope(proxyBase),
       updated_at: now.toISOString(),
       source,
     },
@@ -117,6 +140,7 @@ export function writeConsentConfig(state, {
 export function resolveConsent({
   env = process.env,
   configPath = resolveConfigPath(),
+  proxyBase = null,
   warn = defaultWarn,
 } = {}) {
   const raw = env[TELEMETRY_ENV_VAR];
@@ -136,7 +160,23 @@ export function resolveConsent({
   }
   if (ok) {
     const fileState = fileConsentState(config);
-    if (fileState) return { state: fileState, source: "file", resolved: true };
+    if (fileState === "off") return { state: "off", source: "file", resolved: true };
+    if (fileState === "on") {
+      const storedScope = fileConsentScope(config);
+      const requestedScope = normalizeConsentScope(proxyBase);
+      if (scopeMatches(storedScope, requestedScope)) {
+        return { state: "on", source: "file", resolved: true, scope: storedScope };
+      }
+      warn(`[campaigns-os] telemetry consent at ${configPath} is scoped to ${storedScope || "(unscoped)"}, not ${requestedScope}; treating telemetry as OFF until this endpoint is confirmed.`);
+      return {
+        state: "off",
+        source: "default",
+        resolved: false,
+        scope_mismatch: true,
+        consent_scope: storedScope,
+        requested_scope: requestedScope,
+      };
+    }
   }
 
   // No env, no usable file → fail closed.
@@ -171,7 +211,7 @@ export async function promptAndPersistConsent({
   now = new Date(),
 } = {}) {
   // An explicit env/file decision is never overridden by a prompt.
-  const existing = resolveConsent({ env, configPath, warn: () => {} });
+  const existing = resolveConsent({ env, configPath, proxyBase, warn: () => {} });
   if (existing.resolved) return { ...existing, prompted: false };
   if (!isTTY) return { state: "off", source: "default", resolved: false, prompted: false };
 

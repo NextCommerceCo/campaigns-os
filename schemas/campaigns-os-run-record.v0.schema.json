@@ -152,6 +152,18 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "IDs of this run's Workflow Findings (the per-run findings snapshot, by reference). The journal is the single writer; this is an exact snapshot when findings carry run_id."
+        },
+        "findings_journal": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Integrity metadata for the findings journal snapshot. Present when malformed JSONL lines were skipped so the snapshot is visibly incomplete.",
+          "properties": {
+            "malformed_count": { "type": "integer" },
+            "malformed_lines": {
+              "type": "array",
+              "items": { "type": "integer" }
+            }
+          }
         }
       }
     },

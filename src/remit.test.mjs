@@ -61,6 +61,22 @@ test("remit throws on a non-2xx response", async () => {
   await assert.rejects(() => remit("/api/runs", {}, "https://proxy.test", { fetchImpl }), /Remit POST failed: 500/);
 });
 
+test("remit times out instead of hanging forever", async () => {
+  const fetchImpl = async () => new Promise(() => {});
+  await assert.rejects(
+    () => remit("/api/runs", {}, "https://proxy.test", { fetchImpl, timeoutMs: 5 }),
+    /Remit POST timed out after 5ms/,
+  );
+});
+
+test("remit bounds non-2xx response bodies included in errors", async () => {
+  const { fetchImpl } = recordingFetch(fakeResponse({ ok: false, status: 500, statusText: "Server Error", body: "x".repeat(100) }));
+  await assert.rejects(
+    () => remit("/api/runs", {}, "https://proxy.test", { fetchImpl, maxBodyBytes: 10 }),
+    /xxxxxxxxxx\.\.\.\[truncated to 10 bytes\]/,
+  );
+});
+
 test("remitRunRecord: consent OFF makes NO network call", async () => {
   const { fetchImpl, calls } = recordingFetch();
   const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: { state: "off" }, fetchImpl });

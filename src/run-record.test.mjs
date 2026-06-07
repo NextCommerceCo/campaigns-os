@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,6 +126,7 @@ test("validator rejects malformed observation arrays", () => {
   assert.equal(validateRunRecord(minimalRecord({ observations: { finding_ids: "wf_1" } })).ok, false);
   assert.equal(validateRunRecord(minimalRecord({ observations: { spec_validation_rule_ids: [1, 2] } })).ok, false);
   assert.equal(validateRunRecord(minimalRecord({ observations: { qa: { gap_classes: "funnel-flow" } } })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ observations: { findings_journal: { malformed_lines: ["1"] } } })).ok, false);
 });
 
 test("the published JSON Schema doc and the validator agree on the schema_version const", () => {
@@ -237,6 +238,21 @@ test("selectRunFindingIds matches on exact run_id, never timestamps", () => {
   assert.deepEqual(selectRunFindingIds(null, "R"), []);
 });
 
+test("assembleRunRecord marks malformed findings journal lines so snapshots are visibly incomplete", () => {
+  const record = assembleRunRecord(assembleArgs({
+    journal: {
+      findings: [{ id: "wf_a", run_id: "run_1_test" }],
+      malformed: [{ line: 2, raw: "{bad", error: "Unexpected token" }],
+    },
+  }));
+  assert.deepEqual(record.observations.finding_ids, ["wf_a"]);
+  assert.deepEqual(record.observations.findings_journal, {
+    malformed_count: 1,
+    malformed_lines: [2],
+  });
+  assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
+});
+
 test("writeRunRecord writes a valid record to the canonical path and round-trips", () => {
   withTempDir((dir) => {
     const record = assembleRunRecord(assembleArgs({ runId: "run_42_zz" }));
@@ -303,6 +319,91 @@ test("CLI: run-record writes the manifest to .campaign-runtime/run-records by de
     const onDisk = JSON.parse(readFileSync(expected, "utf8"));
     assert.equal(validateRunRecord(onDisk).ok, true);
     assert.equal(onDisk.run_id, "run_cli_test");
+  });
+});
+
+test("CLI: run-record rejects invalid surfaces before writing or remitting", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const env = { ...process.env, XDG_CONFIG_HOME: dir, CAMPAIGNS_OS_TELEMETRY: "on" };
+    let stderr = "";
+    try {
+      execFileSync("node", [
+        CLI, "run-record",
+        "--packet", packetPath,
+        "--run-id", "run_bad_surface",
+        "--surfaces", "bad",
+        "--proxy-base", "http://127.0.0.1:1",
+        "--json",
+      ], { encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
+      assert.fail("expected run-record to reject invalid surfaces");
+    } catch (error) {
+      stderr = String(error.stderr || "");
+    }
+    assert.match(stderr, /record\.surfaces/);
+    assert.equal(existsSync(resolveRunRecordPath("run_bad_surface", dir)), false);
+  });
+});
+
+test("CLI: artifact refs outside the run root use safe labels instead of ../ paths", () => {
+  const externalDir = mkdtempSync(join(tmpdir(), "campaigns-os-run-record-external-"));
+  try {
+    withTempDir((dir) => {
+      const packetPath = join(dir, "campaign-runtime.build.json");
+      const verdictPath = join(externalDir, "qa-verdict.json");
+      cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+      writeFileSync(verdictPath, JSON.stringify({ schema_version: "campaigns-os-qa-verdict/v0", disposition: "ready", exceptions: [] }));
+
+      const out = JSON.parse(execFileSync("node", [
+        CLI, "run-record",
+        "--packet", packetPath,
+        "--qa-verdict", verdictPath,
+        "--run-id", "run_external_ref",
+        "--no-remit",
+        "--json",
+      ], { encoding: "utf8" }));
+
+      const qaRef = out.record.artifacts.find((ref) => ref.kind === "qa_verdict");
+      assert.equal(qaRef.path, "external:qa_verdict");
+      assert.ok(qaRef.sha256);
+    });
+  } finally {
+    rmSync(externalDir, { recursive: true, force: true });
+  }
+});
+
+test("CLI: malformed findings journal lines are recorded in Run Record observations", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    const journal = join(dir, "wf.jsonl");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    writeFileSync(journal, `${JSON.stringify({
+      schema_version: "campaigns-os-workflow-finding/v0",
+      id: "wf_good",
+      created_at: "2026-06-07T00:00:00.000Z",
+      stage: "qa",
+      kind: "friction",
+      summary: "slow",
+      run_id: "run_malformed",
+      author_type: "operator",
+      evidence_quality: "operator_report",
+    })}\n{not-json}\n`);
+
+    const out = JSON.parse(execFileSync("node", [
+      CLI, "run-record",
+      "--packet", packetPath,
+      "--journal", journal,
+      "--run-id", "run_malformed",
+      "--no-remit",
+      "--json",
+    ], { encoding: "utf8" }));
+
+    assert.deepEqual(out.record.observations.finding_ids, ["wf_good"]);
+    assert.deepEqual(out.record.observations.findings_journal, {
+      malformed_count: 1,
+      malformed_lines: [2],
+    });
   });
 });
 

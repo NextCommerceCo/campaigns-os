@@ -76,6 +76,23 @@ test("resolveConsent: file is honored when no env override", async () => {
   });
 });
 
+test("resolveConsent: file consent is scoped to the proxy base it was granted for", async () => {
+  await withTempDir((dir) => {
+    const configPath = join(dir, "config.json");
+    writeConsentConfig("on", { configPath, proxyBase: "https://proxy-a.test/" });
+
+    const match = resolveConsent({ env: {}, configPath, proxyBase: "https://proxy-a.test", warn: quiet });
+    assert.deepEqual([match.state, match.source, match.resolved], ["on", "file", true]);
+
+    let warned = "";
+    const mismatch = resolveConsent({ env: {}, configPath, proxyBase: "https://proxy-b.test", warn: (message) => { warned = message; } });
+    assert.equal(mismatch.state, "off");
+    assert.equal(mismatch.resolved, false);
+    assert.equal(mismatch.scope_mismatch, true);
+    assert.match(warned, /scoped to https:\/\/proxy-a\.test/);
+  });
+});
+
 test("resolveConsent: malformed file is safe -> OFF + warns", async () => {
   await withTempDir((dir) => {
     const configPath = join(dir, "config.json");
