@@ -305,3 +305,26 @@ test("CLI: run-record writes the manifest to .campaign-runtime/run-records by de
     assert.equal(onDisk.run_id, "run_cli_test");
   });
 });
+
+test("CLI: findings stamped with a run_id form an EXACT Run Record snapshot (T2<->T5 loop)", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const journal = join(dir, "wf.jsonl");
+    const run = (args) => execFileSync("node", [CLI, ...args], { encoding: "utf8" });
+
+    // Two findings for THIS run, one for another run, one legacy (no run_id).
+    run(["findings", "add", "--journal", journal, "--stage", "qa", "--kind", "friction", "--summary", "a", "--run-id", "run_snap"]);
+    run(["findings", "add", "--journal", journal, "--stage", "build", "--kind", "idea", "--summary", "b", "--run-id", "run_snap"]);
+    run(["findings", "add", "--journal", journal, "--stage", "qa", "--kind", "friction", "--summary", "c", "--run-id", "run_other"]);
+    run(["findings", "add", "--journal", journal, "--stage", "overall", "--kind", "positive_signal", "--summary", "legacy"]);
+
+    const out = JSON.parse(run(["run-record", "--packet", packetPath, "--journal", journal, "--run-id", "run_snap", "--json"]));
+    const ids = out.record.observations.finding_ids;
+    const journalEntries = readFileSync(journal, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const expectedIds = journalEntries.filter((f) => f.run_id === "run_snap").map((f) => f.id);
+
+    assert.equal(ids.length, 2);
+    assert.deepEqual([...ids].sort(), [...expectedIds].sort()); // exact, not time-inferred
+  });
+});

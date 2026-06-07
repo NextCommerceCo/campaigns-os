@@ -158,8 +158,8 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--no-post-verdict] [--output-dir qa-output] [--json]
   campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
-  campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [...context flags]
-  campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--write] [--json]
+  campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
+  campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
   campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
@@ -4232,6 +4232,7 @@ async function findingsAdd(args) {
     packet_path: optionalString(args.packet),
     assembly_report_path: optionalString(args["report"]),
     qa_run_id: optionalString(args["qa-run-id"]),
+    run_id: optionalString(args["run-id"]),
     author_type: optionalString(args["author-type"]),
     evidence_quality: optionalString(args["evidence-quality"]),
     suggested_owner: optionalString(args["suggested-owner"]),
@@ -4295,6 +4296,7 @@ function findingsHarvest(args) {
     packetPath,
     reportPath: reportExists ? reportPath : null,
     artifactPaths,
+    runId: optionalString(args["run-id"]),
   });
 
   let written = [];
@@ -4317,7 +4319,7 @@ function findingsHarvest(args) {
   else console.log("Dry run only. Pass --write to append these proposals to the local journal.");
 }
 
-function proposeWorkflowFindingsFromArtifacts({ doctor, report, packet, packetPath, reportPath, artifactPaths }) {
+function proposeWorkflowFindingsFromArtifacts({ doctor, report, packet, packetPath, reportPath, artifactPaths, runId = null }) {
   const findings = [];
   const base = {
     artifact_paths: artifactPaths.join(","),
@@ -4327,6 +4329,10 @@ function proposeWorkflowFindingsFromArtifacts({ doctor, report, packet, packetPa
     campaign_slug: packet.campaign?.public_route_slug,
     target_repo: packet.assembly?.target_repo,
     template_family: packet.assembly?.template_family,
+    // Stamp the canonical run_id so the Run Record's findings snapshot is exact
+    // (selected by ID) rather than inferred from timestamps. Optional —
+    // harvesting without a run_id stays backward-compatible.
+    run_id: optionalString(runId),
     author_type: "system",
     evidence_quality: "system_observed",
     safe_to_share: true,
