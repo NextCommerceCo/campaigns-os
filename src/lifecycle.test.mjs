@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import {
+  aggregateLifecycleForRun,
   appendLifecycleEntry,
   LIFECYCLE_SCHEMA,
   lifecycleForRunRecord,
@@ -115,6 +116,21 @@ test("withCommandLifecycle: a throwing onFinish never masks the command result",
     async () => "still-ok",
   );
   assert.equal(result, "still-ok");
+});
+
+test("recorder.time records a named sub-phase, returns fn result, and records even on throw", async () => {
+  const { lifecycle } = await withCommandLifecycle(
+    { command: "start", argvShape: [], clock: fakeClock([0, 3, 9, 20, 50]), readExitStatus: () => 0 },
+    async (recorder) => {
+      const value = await recorder.time("resolve-spec", async () => "spec-path");
+      assert.equal(value, "spec-path");
+      try {
+        await recorder.time("prepare-build", async () => { throw new Error("boom"); });
+      } catch { /* phase still ran */ }
+    },
+  );
+  assert.deepEqual(lifecycle.stages.map((s) => s.name), ["resolve-spec", "prepare-build"]);
+  assert.ok(lifecycle.stages.every((s) => typeof s.duration_ms === "number"));
 });
 
 test("recorder hooks populate stages[] and repair_loop_count (the deferred-field hooks)", async () => {
@@ -237,4 +253,77 @@ test("lifecycleForRunRecord DROPS a stage missing its required name (never emits
   ]);
   // every emitted stage satisfies the schema's required:["name"]
   assert.ok(embedded.stages.every((s) => typeof s.name === "string"));
+});
+
+// --- Tier 1: aggregation --------------------------------------------------
+
+test("aggregateLifecycleForRun: one stage per command, repair_loop_count counts re-runs, span timing", () => {
+  const journal = { entries: [
+    { command: "doctor", argv_shape: ["--packet"], run_id: "R", exit_status: 2, duration_ms: 10, started_at: "2026-06-07T00:00:00.000Z", completed_at: "2026-06-07T00:00:00.010Z" },
+    { command: "start",  argv_shape: ["--spec"],   run_id: "R", exit_status: 0, duration_ms: 50, started_at: "2026-06-07T00:00:01.000Z", completed_at: "2026-06-07T00:00:01.050Z" },
+    { command: "doctor", argv_shape: ["--packet"], run_id: "R", exit_status: 0, duration_ms: 8,  started_at: "2026-06-07T00:00:02.000Z", completed_at: "2026-06-07T00:00:02.008Z" },
+    { command: "qa",     argv_shape: [],            run_id: "OTHER", exit_status: 0, duration_ms: 5 },
+  ] };
+  const agg = aggregateLifecycleForRun(journal, "R");
+  assert.equal(agg.run_id, "R");
+  assert.deepEqual(agg.stages.map((s) => s.name), ["doctor", "start", "doctor"]); // one per invocation, in order
+  assert.equal(agg.repair_loop_count, 1); // doctor ran twice => one repair loop
+  assert.equal(agg.exit_status, 0); // last entry for R
+  // multiple distinct commands => top-level command/argv_shape are null (stages[] carry the detail)
+  assert.equal(agg.command, null);
+  assert.deepEqual(agg.argv_shape, []);
+  // span = earliest start (00.000) to latest finish (02.008) = 2008ms, >= summed work (68)
+  assert.equal(agg.duration_ms, 2008);
+  assert.equal(agg.stages[0].exit_status, 2); // per-command exit preserved
+});
+
+test("aggregateLifecycleForRun: a run that is one command repeated keeps that command at top level", () => {
+  const journal = { entries: [
+    { command: "doctor", argv_shape: ["--packet"], run_id: "R", exit_status: 2, duration_ms: 10 },
+    { command: "doctor", argv_shape: ["--packet"], run_id: "R", exit_status: 0, duration_ms: 8 },
+  ] };
+  const agg = aggregateLifecycleForRun(journal, "R");
+  assert.equal(agg.command, "doctor"); // single distinct command => meaningful at top level
+  assert.deepEqual(agg.argv_shape, ["--packet"]);
+  assert.equal(agg.repair_loop_count, 1);
+});
+
+test("aggregateLifecycleForRun: single command stays backward-compatible (no span inflation)", () => {
+  const journal = { entries: [
+    { command: "doctor", argv_shape: ["--packet"], run_id: "R", exit_status: 2, duration_ms: 12, started_at: "2026-06-07T00:00:00.000Z", completed_at: "2026-06-07T00:00:00.012Z" },
+  ] };
+  const agg = aggregateLifecycleForRun(journal, "R");
+  assert.equal(agg.command, "doctor");
+  assert.equal(agg.exit_status, 2);
+  assert.equal(agg.repair_loop_count, 0);
+  assert.equal(agg.duration_ms, 12); // single command => trust its own monotonic duration, not the ms-rounded span
+  assert.deepEqual(agg.stages, [{ name: "doctor", duration_ms: 12, exit_status: 2 }]);
+});
+
+test("aggregateLifecycleForRun: a command's own sub-phases flatten into command:phase stages (Tier 2 shape)", () => {
+  const journal = { entries: [
+    { command: "start", argv_shape: [], run_id: "R", exit_status: 0, duration_ms: 30, stages: [{ name: "resolve-spec", duration_ms: 5 }, { name: "assembly", duration_ms: 20 }] },
+  ] };
+  const agg = aggregateLifecycleForRun(journal, "R");
+  assert.deepEqual(agg.stages.map((s) => s.name), ["start:resolve-spec", "start:assembly"]);
+  assert.equal(agg.stages[0].duration_ms, 5);
+});
+
+test("aggregateLifecycleForRun: excludeCommands drops the assembling command; no match => null", () => {
+  const journal = { entries: [
+    { command: "run-record", argv_shape: [], run_id: "R", exit_status: 0, duration_ms: 3 },
+  ] };
+  assert.equal(aggregateLifecycleForRun(journal, "R", { excludeCommands: ["run-record"] }), null);
+  assert.equal(aggregateLifecycleForRun(journal, "MISSING"), null);
+});
+
+test("aggregateLifecycleForRun: coerces corrupt fields into a schema-valid block (never throws)", () => {
+  const journal = { entries: [
+    { command: "doctor", run_id: "R", argv_shape: "not-an-array", exit_status: "two", duration_ms: "x" },
+  ] };
+  const agg = aggregateLifecycleForRun(journal, "R");
+  assert.deepEqual(agg.argv_shape, []);      // non-array coerced
+  assert.equal(agg.exit_status, null);        // non-integer coerced
+  assert.equal(agg.duration_ms, 0);           // non-number summed as 0
+  assert.equal(agg.stages[0].name, "doctor");
 });

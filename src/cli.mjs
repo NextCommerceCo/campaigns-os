@@ -40,12 +40,20 @@ import {
 } from "./consent.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
+  aggregateLifecycleForRun,
   appendLifecycleEntry,
+  LIFECYCLE_JOURNAL_REL_PATH,
+  NOOP_RECORDER,
   readLifecycleJournal,
-  resolveLifecycleJournalPath,
-  selectLifecycleForRun,
   withCommandLifecycle,
 } from "./lifecycle.mjs";
+import {
+  buildRunSession,
+  clearRunSession,
+  findRunSession,
+  mintSessionRunId,
+  writeRunSession,
+} from "./run-session.mjs";
 import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
@@ -174,6 +182,9 @@ Usage:
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
+  campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags
+  campaigns-os run status [--json]                                 # show the active run session, if any
+  campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it
 
 Examples:
   npm run campaigns-os -- start \\
@@ -198,35 +209,63 @@ export async function main(argv) {
   const args = parseArgs(argv);
   const command = args._[0] || "help";
 
+  // Ambient run session (Tier 3): when `run start` is active, every command
+  // shares its run_id WITHOUT --run-id. Explicit --run-id still wins. Resolved
+  // ONCE here and threaded through dispatch + persistence so the run_id a
+  // command is tagged with and the journal it writes to come from a single
+  // read (no TOCTOU skew if the session changes mid-run).
+  const ambient = ambientRunSession();
+
   // Wrap every command in the lifecycle instrumentation (T6): it captures the
   // command, its argv shape, exit status, and timing. Re-throws unchanged so
   // the CLI exit code is unaffected. Persistence runs via onFinish so it fires
   // on BOTH the success and error paths — a command that THROWS (the most
   // valuable failure telemetry) is recorded too, not just clean exits.
-  // Persistence is OPT-IN (--lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG)
-  // and non-fatal; with neither set, behavior is identical to before.
+  // Persistence is OPT-IN — an explicit --lifecycle-journal /
+  // CAMPAIGNS_OS_LIFECYCLE_LOG, or an active run session. With none, behavior
+  // is identical to before.
   await withCommandLifecycle(
     {
       command,
       argvShape: argvShape(args),
-      runId: optionalString(args["run-id"]),
-      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle),
+      runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
+      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle, ambient),
     },
-    () => dispatch(command, args),
+    (recorder) => dispatch(command, args, recorder, ambient),
   );
 }
 
-// Append the command's lifecycle entry to the lifecycle journal only when the
-// operator/orchestrator opts in. Never throws — a lifecycle write must not
-// break a command (telemetry never blocks a build). `help` is a no-op command
-// and is not worth recording. Read and write share one resolver
-// (resolveLifecycleJournalPath) so the journal a command WRITES is the journal
-// run-record READS for the same flag/env.
-function persistLifecycleIfRequested(args, command, lifecycle) {
-  if (command === "help") return;
-  if (!isNonEmptyString(args["lifecycle-journal"]) && !isNonEmptyString(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG)) return;
+function ambientRunSession() {
   try {
-    appendLifecycleEntry(resolveLifecycleJournalPath(args), lifecycle);
+    return findRunSession(process.cwd());
+  } catch {
+    return null;
+  }
+}
+
+// The lifecycle journal a command writes to: explicit flag > env > active run
+// session's journal > fallback. Read and write resolve identically, so the
+// journal a command WRITES is the journal run-record READS. `ambient` is the
+// session resolved once in main(); `fallbackDir` is used only by run-record's
+// read path (its baseDir default); persistence passes none, so with no
+// flag/env/session nothing is written (default behavior).
+function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = {}) {
+  if (isNonEmptyString(args["lifecycle-journal"])) return resolve(args["lifecycle-journal"]);
+  if (isNonEmptyString(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG)) return resolve(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG);
+  if (ambient && isNonEmptyString(ambient.session.lifecycle_journal)) return resolve(ambient.session.lifecycle_journal);
+  return fallbackDir ? join(resolve(fallbackDir), LIFECYCLE_JOURNAL_REL_PATH) : null;
+}
+
+// Append the command's lifecycle entry only when capture is active: an explicit
+// flag/env, or an ambient run session. Never throws — a lifecycle write must
+// not break a command (telemetry never blocks a build). `help` is a no-op
+// command and is not worth recording.
+function persistLifecycleIfRequested(args, command, lifecycle, ambient) {
+  if (command === "help") return;
+  const journalPath = resolveLifecycleJournal(args, { ambient });
+  if (!journalPath) return;
+  try {
+    appendLifecycleEntry(journalPath, lifecycle);
   } catch (error) {
     // Non-fatal, but leave a one-line breadcrumb on stderr so a capture failure
     // is observable rather than fully silent. stderr never pollutes --json stdout.
@@ -234,25 +273,28 @@ function persistLifecycleIfRequested(args, command, lifecycle) {
   }
 }
 
-async function dispatch(command, args) {
+async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null) {
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
   }
 
   if (command === "start") {
-    const resolved = await resolveSpecPath(args);
+    // Tier 2: mark sub-phases so the lifecycle journal entry carries per-phase
+    // timings (spec resolve vs the prepare+doctor+install build), which Tier 1
+    // aggregates into `start:resolve-spec` / `start:prepare-build` stages.
+    const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
     args.spec = resolved.specPath;
-    const result = prepareBuild(args, { runDoctor: true, installContext: true });
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: true, installContext: true }));
     result.spec_source = resolved;
     printPrepareResult(result, args);
     return;
   }
 
   if (command === "prepare-build") {
-    const resolved = await resolveSpecPath(args);
+    const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
     args.spec = resolved.specPath;
-    const result = prepareBuild(args, { runDoctor: false, installContext: false });
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: false, installContext: false }));
     result.spec_source = resolved;
     printPrepareResult(result, args);
     return;
@@ -315,12 +357,17 @@ async function dispatch(command, args) {
   }
 
   if (command === "run-record") {
-    await runRecordCommand(args);
+    await runRecordCommand(args, ambient);
     return;
   }
 
   if (command === "telemetry") {
     telemetryCommand(args);
+    return;
+  }
+
+  if (command === "run") {
+    await runSessionCommand(args, ambient);
     return;
   }
 
@@ -4475,12 +4522,100 @@ function findingsExport(args) {
   process.stdout.write(exportSummaryMarkdown(findings));
 }
 
+// Ambient run session (Tier 3): `run start | end | status`. A session shares
+// one run_id + one lifecycle journal across every command in the project
+// without per-command flags — the experience for "talk to your agent and
+// build". See src/run-session.mjs.
+async function runSessionCommand(args, ambient = null) {
+  const sub = args._[1] || "status";
+  if (sub === "start") return runSessionStart(args);
+  if (sub === "status") return runSessionStatus(args);
+  if (sub === "end") return runSessionEnd(args, ambient);
+  throw new Error(`Unknown run subcommand "${sub}". Use: start | end | status.`);
+}
+
+function runSessionStart(args) {
+  const rootDir = process.cwd();
+  const existing = findRunSession(rootDir);
+  if (existing && args.force !== true) {
+    throw new Error(
+      `A run session is already active (${existing.session.run_id}). End it with \`campaigns-os run end\`, or pass --force to replace it.`,
+    );
+  }
+  const runId = optionalString(args["run-id"]) || mintSessionRunId();
+  const lifecycleJournal = isNonEmptyString(args["lifecycle-journal"])
+    ? resolve(args["lifecycle-journal"])
+    : join(resolve(rootDir), LIFECYCLE_JOURNAL_REL_PATH);
+  const packet = optionalString(args.packet) ? resolve(args.packet) : null;
+  // The packet is remembered for the whole session, so a typo would only surface
+  // at `run end` after a full build. Warn now (non-fatal) if it isn't there yet.
+  if (packet && !existsSync(packet) && !args.json) {
+    console.warn(`Warning: --packet ${packet} does not exist yet; run end will need it (or pass --packet then).`);
+  }
+  const session = buildRunSession({ runId, lifecycleJournal, packet });
+  const sessionPath = writeRunSession(rootDir, session);
+
+  if (args.json) {
+    console.log(JSON.stringify({ ok: true, action: "run-start", session, session_path: sessionPath }, null, 2));
+    return;
+  }
+  console.log("Run session started.");
+  console.log(`Run ID: ${runId}`);
+  console.log(`Lifecycle journal: ${lifecycleJournal}`);
+  console.log("Every campaigns-os command in this project now auto-logs to this run — no per-command flags.");
+  console.log(`Finish with: campaigns-os run end${packet ? "" : " --packet <campaign-runtime.build.json>"}`);
+}
+
+function runSessionStatus(args) {
+  const found = findRunSession(process.cwd());
+  if (args.json) {
+    console.log(JSON.stringify({ ok: true, action: "run-status", active: Boolean(found), session: found?.session ?? null, session_path: found?.path ?? null }, null, 2));
+    return;
+  }
+  if (!found) {
+    console.log("No active run session. Start one with: campaigns-os run start");
+    return;
+  }
+  console.log(`Active run session: ${found.session.run_id}`);
+  console.log(`Lifecycle journal: ${found.session.lifecycle_journal}`);
+  console.log(`Started: ${found.session.started_at}`);
+  if (found.session.packet) console.log(`Packet: ${found.session.packet}`);
+}
+
+async function runSessionEnd(args, ambient = null) {
+  // Use the session resolved once in main() (single source of truth).
+  const found = ambient;
+  if (!found) {
+    throw new Error("No active run session to end. Start one with: campaigns-os run start.");
+  }
+  const { session, path: sessionPath } = found;
+  const packet = optionalString(args.packet) || session.packet;
+  if (!packet) {
+    throw new Error("run end needs a build packet. Pass --packet <campaign-runtime.build.json>, or set it at `run start --packet <path>`.");
+  }
+  // Reuse the full run-record path (aggregate lifecycle, consent-gated remit)
+  // with the session's run_id + journal, so `run end` is just "assemble the
+  // Run Record for this session and stop logging to it". The session is cleared
+  // only AFTER run-record succeeds — if it throws, the session stays active so
+  // the operator can fix the packet and re-run `run end`.
+  const endArgs = {
+    ...args,
+    _: ["run-record"],
+    packet,
+    "run-id": session.run_id,
+    "lifecycle-journal": session.lifecycle_journal,
+  };
+  await runRecordCommand(endArgs, found);
+  clearRunSession(sessionPath);
+  if (!args.json) console.log(`Run session ${session.run_id} ended; session cleared.`);
+}
+
 // Run Telemetry capture + remit. Thin dispatch: read this run's artifacts with
 // the same readers `findings harvest` uses, hand the parsed structures to
 // run-record.mjs to assemble the manifest, then (consent-gated, non-fatal)
 // remit it. Capture is ALWAYS local; consent gates only the remit. See
 // docs/workflow-findings-sidecar.md.
-async function runRecordCommand(args) {
+async function runRecordCommand(args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
   const baseDir = dirname(packetPath);
@@ -4503,20 +4638,21 @@ async function runRecordCommand(args) {
   const journalPath = resolveJournalPath(args);
   const journal = readJournal(journalPath);
 
-  const runId = optionalString(args["run-id"]) || mintRunId();
+  // run_id: explicit flag > active run session > freshly minted.
+  const runId = optionalString(args["run-id"]) || ambient?.session?.run_id || mintRunId();
   const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
 
-  // Embed the command-lifecycle signal for this run, if a lifecycle journal
-  // carries an entry stamped with this run_id (T6). Strictly BEST-EFFORT: an
-  // unreadable/directory/corrupt journal, or a malformed entry, must never
-  // break Run Record generation — on any problem we embed nothing. Exclude
-  // run-record's OWN entries so re-running it never shadows the build command's
-  // lifecycle, and validate the candidate so a corrupt entry can't produce a
-  // schema-invalid record at write time.
+  // Embed the aggregated command-lifecycle signal for this run from the
+  // lifecycle journal (Tier 1). Strictly BEST-EFFORT: an unreadable/directory/
+  // corrupt journal, or a malformed aggregate, must never break Run Record
+  // generation — on any problem we embed nothing. Exclude the session/telemetry
+  // commands' OWN entries (run-record, run) so they never appear as build
+  // stages, and validate the candidate so it can't produce a schema-invalid
+  // record at write time. Journal resolves flag > env > session > baseDir.
   let lifecycle = null;
   try {
-    const lifecycleJournalPath = resolveLifecycleJournalPath(args, baseDir);
-    const candidate = selectLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId, { excludeCommands: ["run-record"] });
+    const lifecycleJournalPath = resolveLifecycleJournal(args, { ambient, fallbackDir: baseDir });
+    const candidate = aggregateLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId, { excludeCommands: ["run-record", "run"] });
     if (candidate && validateRunRecordLifecycle(candidate).length === 0) lifecycle = candidate;
   } catch {
     lifecycle = null;

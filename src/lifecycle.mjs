@@ -50,16 +50,28 @@ function defaultReadExitStatus() {
 export function createLifecycleRecorder(clock = defaultClock) {
   const stages = [];
   let repairLoopCount = 0;
+  function stage(name) {
+    const t0 = clock.monotonic();
+    let stopped = false;
+    return function stop() {
+      if (stopped) return;
+      stopped = true;
+      stages.push({ name: String(name), duration_ms: Math.max(0, Math.round(clock.monotonic() - t0)) });
+    };
+  }
+  // Convenience: time `fn` as a named sub-phase. Records the stage even if fn
+  // throws (the phase still ran), then re-throws. Async-aware.
+  async function time(name, fn) {
+    const stop = stage(name);
+    try {
+      return await fn();
+    } finally {
+      stop();
+    }
+  }
   return {
-    stage(name) {
-      const t0 = clock.monotonic();
-      let stopped = false;
-      return function stop() {
-        if (stopped) return;
-        stopped = true;
-        stages.push({ name: String(name), duration_ms: Math.max(0, Math.round(clock.monotonic() - t0)) });
-      };
-    },
+    stage,
+    time,
     recordRepairLoop() {
       repairLoopCount += 1;
     },
@@ -68,6 +80,15 @@ export function createLifecycleRecorder(clock = defaultClock) {
     },
   };
 }
+
+// A no-op recorder for callers that run a command without lifecycle capture.
+// Same surface as createLifecycleRecorder(); records nothing.
+export const NOOP_RECORDER = {
+  stage: () => () => {},
+  time: async (_name, fn) => fn(),
+  recordRepairLoop: () => {},
+  snapshot: () => ({ stages: [], repair_loop_count: 0 }),
+};
 
 function buildLifecycle({ command, argvShape, runId, exitStatus, startedAt, completedAt, durationMs, recorder }) {
   const recorded = recorder ? recorder.snapshot() : { stages: [], repair_loop_count: 0 };
@@ -217,6 +238,9 @@ export function lifecycleForRunRecord(entry) {
   return out;
 }
 
+// Flag > env > cwd-default journal path. NOTE: the CLI uses a session-aware
+// resolver (resolveLifecycleJournal in cli.mjs) that also consults the active
+// run session; this base resolver is retained for direct programmatic use.
 export function resolveLifecycleJournalPath(args = {}, cwd = process.cwd(), env = process.env) {
   if (isNonEmptyString(args["lifecycle-journal"])) return resolve(args["lifecycle-journal"]);
   // Honor the env opt-in so the journal a command WRITES (via the same resolver)
@@ -274,11 +298,14 @@ export function readLifecycleJournal(journalPath) {
 }
 
 /**
- * Select the lifecycle to embed in a Run Record for `runId`: the LAST journal
- * entry stamped with that run_id (most recent wins), skipping any command in
- * `excludeCommands`. Returns null when none match — embedding is best-effort
- * and backward-compatible. `excludeCommands` lets run-record skip its OWN
- * entries so it never shadows the build command's lifecycle on a re-run.
+ * Select a single lifecycle entry for `runId`: the LAST matching journal entry
+ * (most recent wins), skipping any command in `excludeCommands`. Returns null
+ * when none match.
+ *
+ * NOTE: run-record now embeds the multi-entry AGGREGATE (aggregateLifecycleForRun)
+ * rather than a single entry, so this single-entry selector is no longer on the
+ * Run Record embed path; it (and lifecycleForRunRecord) are retained for direct
+ * programmatic use and are covered by their own tests.
  */
 export function selectLifecycleForRun(journal, runId, { excludeCommands = [] } = {}) {
   const entries = Array.isArray(journal?.entries) ? journal.entries : Array.isArray(journal) ? journal : [];
@@ -287,4 +314,96 @@ export function selectLifecycleForRun(journal, runId, { excludeCommands = [] } =
     if (entry && entry.run_id === runId && !excludeCommands.includes(entry.command)) match = entry;
   }
   return match ? lifecycleForRunRecord(match) : null;
+}
+
+function entriesForRun(journal, runId, excludeCommands) {
+  const entries = Array.isArray(journal?.entries) ? journal.entries : Array.isArray(journal) ? journal : [];
+  return entries.filter((entry) => entry && entry.run_id === runId && !excludeCommands.includes(entry.command));
+}
+
+/**
+ * Aggregate ALL lifecycle journal entries for `runId` into one run-level
+ * lifecycle block — the populated form of the deferred stage-timings /
+ * repair-loop fields. Each command invocation becomes a stage; when a command
+ * marked its own sub-phases (Tier 2), those become `command:phase` stages
+ * instead. `repair_loop_count` = re-runs of any command (a re-run is a repair
+ * loop: doctor -> fix -> doctor). Run-level timing spans the earliest start to
+ * the latest finish across commands. Returns null when no entry matches, so
+ * embedding stays best-effort and backward-compatible.
+ */
+export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] } = {}) {
+  const matching = entriesForRun(journal, runId, excludeCommands);
+  if (!matching.length) return null;
+
+  const stages = [];
+  const commandCounts = new Map();
+  let earliest = null;
+  let latest = null;
+  let durationSum = 0;
+  let explicitRepairLoops = 0;
+
+  // Only finite, parseable ISO timestamps participate in span timing; a junk
+  // string (e.g. a hand-edited journal) is ignored rather than emitted as a
+  // bogus started_at/completed_at.
+  const isParseableTimestamp = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
+
+  for (const entry of matching) {
+    const command = typeof entry.command === "string" ? entry.command : "(unknown)";
+    commandCounts.set(command, (commandCounts.get(command) || 0) + 1);
+    const exitStatus = Number.isInteger(entry.exit_status) ? entry.exit_status : null;
+    // A command may have recorded its own repair loops via recordRepairLoop().
+    if (Number.isInteger(entry.repair_loop_count)) explicitRepairLoops += entry.repair_loop_count;
+
+    const subStages = Array.isArray(entry.stages) && entry.stages.length
+      ? entry.stages.map((stage) => ({
+          name: `${command}:${typeof stage?.name === "string" ? stage.name : "stage"}`,
+          duration_ms: typeof stage?.duration_ms === "number" ? stage.duration_ms : null,
+          exit_status: exitStatus,
+        }))
+      : [{
+          name: command,
+          duration_ms: typeof entry.duration_ms === "number" ? entry.duration_ms : null,
+          exit_status: exitStatus,
+        }];
+    stages.push(...subStages);
+
+    if (typeof entry.duration_ms === "number") durationSum += entry.duration_ms;
+    if (isParseableTimestamp(entry.started_at) && (!earliest || entry.started_at < earliest)) earliest = entry.started_at;
+    if (isParseableTimestamp(entry.completed_at) && (!latest || entry.completed_at > latest)) latest = entry.completed_at;
+  }
+
+  // repair_loop_count = command re-runs (doctor -> fix -> doctor) PLUS any loops
+  // a command recorded explicitly. Re-runs are the v0 heuristic; explicit loops
+  // refine it once commands call recordRepairLoop().
+  let repairLoopCount = explicitRepairLoops;
+  for (const count of commandCounts.values()) if (count > 1) repairLoopCount += count - 1;
+
+  // Single command: trust its own monotonic duration. Multiple commands: prefer
+  // the wall-clock span (it includes the gaps between separate invocations), but
+  // never report less than the summed work.
+  let durationMs = durationSum;
+  if (matching.length > 1 && earliest && latest) {
+    const span = Date.parse(latest) - Date.parse(earliest);
+    if (Number.isFinite(span) && span >= durationSum) durationMs = span;
+  }
+
+  // Top-level command/argv_shape describe the RUN, not its earliest invocation.
+  // They are meaningful only when the run is a single distinct command; for a
+  // multi-command run (doctor -> start -> qa) they would mislead, so null them
+  // and let stages[] carry the per-command detail. exit_status is the LAST
+  // command's (the run's final outcome).
+  const first = matching[0];
+  const last = matching[matching.length - 1];
+  const singleCommand = commandCounts.size === 1 && typeof first.command === "string";
+  return {
+    run_id: runId,
+    command: singleCommand ? first.command : null,
+    argv_shape: singleCommand && isStringArray(first.argv_shape) ? first.argv_shape : [],
+    exit_status: Number.isInteger(last.exit_status) ? last.exit_status : null,
+    started_at: earliest,
+    completed_at: latest,
+    duration_ms: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
+    stages,
+    repair_loop_count: repairLoopCount,
+  };
 }

@@ -225,20 +225,21 @@
         "duration_ms": { "type": ["number", "null"] },
         "stages": {
           "type": "array",
-          "description": "Per-stage timings. Empty until command boundaries are instrumented (deferred field hook).",
+          "description": "Per-stage timings, populated by run-record aggregating the lifecycle journal for this run_id. One stage per command invocation (name = command), or `command:phase` when a command marked its own sub-phases.",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["name"],
             "properties": {
               "name": { "type": "string" },
-              "duration_ms": { "type": ["number", "null"] }
+              "duration_ms": { "type": ["number", "null"] },
+              "exit_status": { "type": ["integer", "null"] }
             }
           }
         },
         "repair_loop_count": {
           "type": ["integer", "null"],
-          "description": "Number of repair loops in the run. 0 until instrumented (deferred field hook)."
+          "description": "Re-runs of any command within the run (a re-run is a repair loop: doctor -> fix -> doctor). 0 when each command ran once."
         }
       }
     }

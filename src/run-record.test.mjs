@@ -480,7 +480,7 @@ test("CLI: an unreadable/directory lifecycle-journal path never breaks run-recor
   });
 });
 
-test("CLI: a corrupt-but-parseable lifecycle entry is dropped, never embedded into the record", () => {
+test("CLI: a corrupt-but-parseable lifecycle entry is coerced into a schema-valid block, never crashes the record", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
     cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
@@ -491,7 +491,46 @@ test("CLI: a corrupt-but-parseable lifecycle entry is dropped, never embedded in
       CLI, "run-record", "--packet", packetPath, "--journal", join(dir, "wf.jsonl"),
       "--run-id", "run_corrupt", "--lifecycle-journal", lcJournal, "--no-write", "--json",
     ], { encoding: "utf8" }));
-    assert.equal("lifecycle" in out.record, false); // corrupt entry dropped
+    // Aggregation coerces the bad fields rather than dropping good signal; the
+    // record stays schema-valid (the real safety property).
+    assert.equal(validateRunRecord(out.record).ok, true);
+    assert.deepEqual(out.record.lifecycle.argv_shape, []); // non-array coerced
+    assert.equal(out.record.lifecycle.stages[0].name, "doctor:stage"); // nameless sub-phase named
+  });
+});
+
+test("CLI: prepare-build sub-phases flow through the journal into the aggregated Run Record (Tier 2)", () => {
+  withTempDir((dir) => {
+    const lcJournal = join(dir, "lc.jsonl");
+    const target = join(dir, "target");
+    cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
+
+    // prepare-build marks resolve-spec + prepare-build sub-phases (Tier 2).
+    try {
+      execFileSync("node", [
+        CLI, "prepare-build",
+        "--spec", resolve(ROOT, "examples/campaignspec.v42.basic.json"),
+        "--source", resolve(ROOT, "examples/source-html"),
+        "--target", target,
+        "--template-family", "olympus",
+        "--run-id", "run_phases", "--lifecycle-journal", lcJournal,
+      ], { encoding: "utf8", stdio: "pipe" });
+    } catch { /* even on non-zero exit, the lifecycle entry (with stages) persists */ }
+
+    const { entries } = readLifecycleJournal(lcJournal);
+    const entry = entries.find((e) => e.command === "prepare-build");
+    assert.ok(entry, "expected a prepare-build lifecycle entry");
+    assert.deepEqual(entry.stages.map((s) => s.name), ["resolve-spec", "prepare-build"]);
+
+    // Tier 1 aggregation flattens them into `prepare-build:<phase>` Run Record stages.
+    const out = JSON.parse(execFileSync("node", [
+      CLI, "run-record", "--packet", join(target, "campaign-runtime.build.json"),
+      "--journal", join(dir, "wf.jsonl"), "--run-id", "run_phases",
+      "--lifecycle-journal", lcJournal, "--no-write", "--no-remit", "--json",
+    ], { encoding: "utf8" }));
+    const stageNames = out.record.lifecycle.stages.map((s) => s.name);
+    assert.ok(stageNames.includes("prepare-build:resolve-spec"), JSON.stringify(stageNames));
+    assert.ok(stageNames.includes("prepare-build:prepare-build"), JSON.stringify(stageNames));
     assert.equal(validateRunRecord(out.record).ok, true);
   });
 });

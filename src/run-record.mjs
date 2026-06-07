@@ -222,8 +222,9 @@ export function validateRunRecordLifecycle(lc) {
       lc.stages.forEach((stage, index) => {
         if (!stage || typeof stage !== "object" || Array.isArray(stage) || typeof stage.name !== "string") {
           add(`record.lifecycle.stages[${index}].name`, "each stage requires a string name (matches the published schema).");
-        } else if (stage.duration_ms != null && typeof stage.duration_ms !== "number") {
-          add(`record.lifecycle.stages[${index}].duration_ms`, "stage duration_ms must be a number or null.");
+        } else {
+          if (stage.duration_ms != null && typeof stage.duration_ms !== "number") add(`record.lifecycle.stages[${index}].duration_ms`, "stage duration_ms must be a number or null.");
+          if (stage.exit_status != null && !Number.isInteger(stage.exit_status)) add(`record.lifecycle.stages[${index}].exit_status`, "stage exit_status must be an integer or null.");
         }
       });
     }
