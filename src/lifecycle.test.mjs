@@ -118,6 +118,21 @@ test("withCommandLifecycle: a throwing onFinish never masks the command result",
   assert.equal(result, "still-ok");
 });
 
+test("recorder.time records a named sub-phase, returns fn result, and records even on throw", async () => {
+  const { lifecycle } = await withCommandLifecycle(
+    { command: "start", argvShape: [], clock: fakeClock([0, 3, 9, 20, 50]), readExitStatus: () => 0 },
+    async (recorder) => {
+      const value = await recorder.time("resolve-spec", async () => "spec-path");
+      assert.equal(value, "spec-path");
+      try {
+        await recorder.time("prepare-build", async () => { throw new Error("boom"); });
+      } catch { /* phase still ran */ }
+    },
+  );
+  assert.deepEqual(lifecycle.stages.map((s) => s.name), ["resolve-spec", "prepare-build"]);
+  assert.ok(lifecycle.stages.every((s) => typeof s.duration_ms === "number"));
+});
+
 test("recorder hooks populate stages[] and repair_loop_count (the deferred-field hooks)", async () => {
   const { lifecycle } = await withCommandLifecycle(
     { command: "next", argvShape: [], clock: fakeClock([0, 5, 12, 40]), readExitStatus: () => 0 },

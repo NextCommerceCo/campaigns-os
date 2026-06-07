@@ -42,6 +42,7 @@ import { remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
+  NOOP_RECORDER,
   readLifecycleJournal,
   resolveLifecycleJournalPath,
   withCommandLifecycle,
@@ -212,7 +213,7 @@ export async function main(argv) {
       runId: optionalString(args["run-id"]),
       onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle),
     },
-    () => dispatch(command, args),
+    (recorder) => dispatch(command, args, recorder),
   );
 }
 
@@ -234,25 +235,28 @@ function persistLifecycleIfRequested(args, command, lifecycle) {
   }
 }
 
-async function dispatch(command, args) {
+async function dispatch(command, args, recorder = NOOP_RECORDER) {
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
   }
 
   if (command === "start") {
-    const resolved = await resolveSpecPath(args);
+    // Tier 2: mark sub-phases so the lifecycle journal entry carries per-phase
+    // timings (spec resolve vs the prepare+doctor+install build), which Tier 1
+    // aggregates into `start:resolve-spec` / `start:prepare-build` stages.
+    const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
     args.spec = resolved.specPath;
-    const result = prepareBuild(args, { runDoctor: true, installContext: true });
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: true, installContext: true }));
     result.spec_source = resolved;
     printPrepareResult(result, args);
     return;
   }
 
   if (command === "prepare-build") {
-    const resolved = await resolveSpecPath(args);
+    const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
     args.spec = resolved.specPath;
-    const result = prepareBuild(args, { runDoctor: false, installContext: false });
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: false, installContext: false }));
     result.spec_source = resolved;
     printPrepareResult(result, args);
     return;

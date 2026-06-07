@@ -50,16 +50,28 @@ function defaultReadExitStatus() {
 export function createLifecycleRecorder(clock = defaultClock) {
   const stages = [];
   let repairLoopCount = 0;
+  function stage(name) {
+    const t0 = clock.monotonic();
+    let stopped = false;
+    return function stop() {
+      if (stopped) return;
+      stopped = true;
+      stages.push({ name: String(name), duration_ms: Math.max(0, Math.round(clock.monotonic() - t0)) });
+    };
+  }
+  // Convenience: time `fn` as a named sub-phase. Records the stage even if fn
+  // throws (the phase still ran), then re-throws. Async-aware.
+  async function time(name, fn) {
+    const stop = stage(name);
+    try {
+      return await fn();
+    } finally {
+      stop();
+    }
+  }
   return {
-    stage(name) {
-      const t0 = clock.monotonic();
-      let stopped = false;
-      return function stop() {
-        if (stopped) return;
-        stopped = true;
-        stages.push({ name: String(name), duration_ms: Math.max(0, Math.round(clock.monotonic() - t0)) });
-      };
-    },
+    stage,
+    time,
     recordRepairLoop() {
       repairLoopCount += 1;
     },
@@ -68,6 +80,15 @@ export function createLifecycleRecorder(clock = defaultClock) {
     },
   };
 }
+
+// A no-op recorder for callers that run a command without lifecycle capture.
+// Same surface as createLifecycleRecorder(); records nothing.
+export const NOOP_RECORDER = {
+  stage: () => () => {},
+  time: async (_name, fn) => fn(),
+  recordRepairLoop: () => {},
+  snapshot: () => ({ stages: [], repair_loop_count: 0 }),
+};
 
 function buildLifecycle({ command, argvShape, runId, exitStatus, startedAt, completedAt, durationMs, recorder }) {
   const recorded = recorder ? recorder.snapshot() : { stages: [], repair_loop_count: 0 };
