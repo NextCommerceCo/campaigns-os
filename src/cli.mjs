@@ -22,7 +22,13 @@ import {
   FINDING_STAGES,
   readJournal,
   resolveJournalPath,
+  WORKFLOW_FINDING_SCHEMA,
 } from "./findings.mjs";
+import {
+  assembleRunRecord,
+  mintRunId,
+  writeRunRecord,
+} from "./run-record.mjs";
 import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
@@ -147,6 +153,7 @@ Usage:
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--no-write] [--json]
 
 Examples:
   npm run campaigns-os -- start \\
@@ -247,6 +254,11 @@ export async function main(argv) {
 
   if (command === "findings") {
     await findingsCommand(args);
+    return;
+  }
+
+  if (command === "run-record") {
+    runRecordCommand(args);
     return;
   }
 
@@ -4393,6 +4405,117 @@ function findingsExport(args) {
     return;
   }
   process.stdout.write(exportSummaryMarkdown(findings));
+}
+
+// Run Telemetry capture. Thin dispatch: read this run's artifacts with the
+// same readers `findings harvest` uses, then hand the parsed structures to
+// run-record.mjs to assemble + write the manifest. Capture is always local;
+// consent-gated remit lands in a later task. See docs/workflow-findings-sidecar.md.
+function runRecordCommand(args) {
+  const packetPath = resolve(requireArg(args, "packet"));
+  const packet = readJson(packetPath);
+  const baseDir = dirname(packetPath);
+  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || baseDir;
+  const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
+  const reportPath = args.report ? resolve(args.report) : join(targetRepo, ".campaign-runtime/assembly-report.json");
+  const contextExists = existsSync(contextPath);
+  const reportExists = existsSync(reportPath);
+  const context = contextExists ? readJson(contextPath) : null;
+  const report = reportExists ? readJson(reportPath) : null;
+  const doctor = doctorPacket(packetPath, {
+    contextPath: contextExists ? contextPath : null,
+    reportPath: reportExists ? reportPath : null,
+  });
+
+  const qaVerdictPath = args["qa-verdict"] ? resolve(args["qa-verdict"]) : null;
+  const qaVerdictExists = qaVerdictPath != null && existsSync(qaVerdictPath);
+  const qaVerdict = qaVerdictExists ? readJson(qaVerdictPath) : null;
+
+  const journalPath = resolveJournalPath(args);
+  const journal = readJournal(journalPath);
+
+  const runId = optionalString(args["run-id"]) || mintRunId();
+
+  const artifacts = [runRecordArtifactRef("build_packet", packetPath, PACKET_SCHEMA, baseDir)];
+  if (contextExists) artifacts.push(runRecordArtifactRef("build_context", contextPath, CONTEXT_SCHEMA, baseDir));
+  if (reportExists) artifacts.push(runRecordArtifactRef("assembly_report", reportPath, REPORT_SCHEMA, baseDir));
+  if (qaVerdictExists) artifacts.push(runRecordArtifactRef("qa_verdict", qaVerdictPath, optionalString(qaVerdict?.schema_version), baseDir));
+  if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
+
+  const record = assembleRunRecord({
+    runId,
+    packageVersion: packageVersion(),
+    command: "run-record",
+    argvShape: argvShape(args),
+    consent: { state: "off", source: "default" },
+    identity: {
+      map_id: optionalString(packet.spec?.map_id),
+      campaign_slug: optionalString(packet.campaign?.public_route_slug),
+      template_family: optionalString(packet.assembly?.template_family),
+      entry_point_shape: "packet",
+    },
+    artifacts,
+    packet,
+    doctor,
+    report,
+    context,
+    qaVerdict,
+    journal,
+    surfaces: parseCommaList(args.surfaces),
+    primarySurface: optionalString(args["primary-surface"]),
+    surfaceConfidence: optionalString(args["surface-confidence"]),
+  });
+
+  const write = args["no-write"] !== true;
+  const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
+
+  if (args.json) {
+    console.log(JSON.stringify({ ok: true, action: "run-record", written: write, record_path: recordPath, record }, null, 2));
+    return;
+  }
+  console.log(`Run Record assembled.`);
+  console.log(`Run ID: ${record.run_id}`);
+  console.log(`Consent: ${record.consent_state} (${record.consent_source})`);
+  console.log(`Artifacts referenced: ${record.artifacts.length}`);
+  console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
+  if (write) console.log(`Wrote: ${recordPath}`);
+  else console.log("Dry run only (--no-write). No record written.");
+}
+
+// Build one artifact reference {kind, path, schema_version, sha256}. The path
+// is relativized to the run root so no contributor filesystem layout leaks;
+// sha256 is best-effort (null when the file can't be hashed).
+function runRecordArtifactRef(kind, filePath, schemaVersion, baseDir) {
+  let sha256 = null;
+  try {
+    sha256 = sha256File(filePath);
+  } catch {
+    sha256 = null;
+  }
+  return {
+    kind,
+    path: relFromDir(baseDir, filePath),
+    schema_version: schemaVersion || null,
+    sha256,
+  };
+}
+
+// argv SHAPE = the flag NAMES present, never their values (minimization).
+// Sorted for deterministic records.
+function argvShape(args) {
+  return Object.keys(args)
+    .filter((key) => key !== "_")
+    .map((key) => `--${key}`)
+    .sort();
+}
+
+function parseCommaList(value) {
+  if (!isNonEmptyString(value)) return [];
+  return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function packageVersion() {
+  return readJson(join(ROOT, "package.json")).version;
 }
 
 // Tiny Prompts: skippable one-line guidance at stage boundaries. They surface

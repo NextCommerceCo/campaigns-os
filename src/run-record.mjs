@@ -8,6 +8,10 @@
 // remit only (see consent.mjs). This module owns the schema validator and the
 // local assemble/write surface; it has no network or credential dependencies.
 
+import { randomBytes } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+
 export const RUN_RECORD_SCHEMA = "campaigns-os-run-record/v0";
 export const RUN_RECORDS_DIR_REL_PATH = ".campaign-runtime/run-records";
 
@@ -168,4 +172,210 @@ export function validateRunRecord(record) {
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Capture: mint a canonical run_id, assemble the manifest from already-read
+// artifacts (the CLI reuses the same readers `findings harvest` uses), and
+// write it to .campaign-runtime/run-records/<run_id>.json. Assembly is a pure
+// function over inputs so it is unit-testable without a packet on disk.
+// ---------------------------------------------------------------------------
+
+// Adapter decision enums worth capturing as normalized signal. The strategy
+// choices only — never the source file lists those decisions point at.
+const ADAPTER_DECISION_KEYS = [
+  "raw_html_conversion_status",
+  "source_asset_strategy",
+  "route_rewrite_policy",
+  "config_script_strategy",
+  "commerce_shell_adoption",
+];
+
+/**
+ * Mint the single canonical run_id at the run boundary. Threaded through the
+ * run so every artifact and finding correlates, and used as the remit
+ * idempotency key.
+ */
+export function mintRunId(now = new Date()) {
+  return `run_${now.getTime()}_${randomBytes(4).toString("hex")}`;
+}
+
+function sanitizeRunId(runId) {
+  return String(runId).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 128) || "unnamed";
+}
+
+/**
+ * Resolve where a Run Record is written: <baseDir>/.campaign-runtime/
+ * run-records/<run_id>.json. baseDir is the run root (the CLI passes the
+ * packet's directory) so the records sit next to the findings journal.
+ */
+export function resolveRunRecordPath(runId, baseDir = process.cwd()) {
+  return join(resolve(baseDir), RUN_RECORDS_DIR_REL_PATH, `${sanitizeRunId(runId)}.json`);
+}
+
+function extractDoctorObservations(doctor) {
+  if (!doctor || typeof doctor !== "object") return null;
+  const codes = (issues) => (Array.isArray(issues) ? issues : []).map((issue) => issue?.code).filter((code) => typeof code === "string");
+  return {
+    status: typeof doctor.status === "string" ? doctor.status : null,
+    error_codes: codes(doctor.errors),
+    warning_codes: codes(doctor.warnings),
+    ready_count: Array.isArray(doctor.ready) ? doctor.ready.length : null,
+  };
+}
+
+// spec.validation issues carry the per-violation rule identity in `detail`
+// (ruleId + path + data). Pull the rule IDs so a finding maps back to the
+// exact rule that fired.
+function extractSpecValidationRuleIds(doctor) {
+  if (!doctor || typeof doctor !== "object") return [];
+  const ids = [];
+  for (const issue of [...(doctor.errors || []), ...(doctor.warnings || [])]) {
+    if (issue?.code === "spec.validation" && typeof issue.detail?.ruleId === "string") {
+      ids.push(issue.detail.ruleId);
+    }
+  }
+  return [...new Set(ids)];
+}
+
+function extractQaObservations(verdict) {
+  if (!verdict || typeof verdict !== "object") return null;
+  const families = new Set();
+  for (const exception of Array.isArray(verdict.exceptions) ? verdict.exceptions : []) {
+    if (typeof exception?.family === "string") families.add(exception.family);
+  }
+  return {
+    disposition: typeof verdict.disposition === "string" ? verdict.disposition : null,
+    gap_classes: [...families],
+  };
+}
+
+// Adapter decisions live in (precedence): report.adapter_decisions ->
+// context.adapter_decisions -> packet.source_html.adapter_contract — the same
+// precedence the doctor uses when it validates them.
+function selectAdapterDecisions({ packet, report, context }) {
+  return (
+    report?.adapter_decisions
+    || context?.adapter_decisions
+    || packet?.source_html?.adapter_contract
+    || null
+  );
+}
+
+function extractAdapterDecisions(decisions) {
+  if (!decisions || typeof decisions !== "object" || Array.isArray(decisions)) return null;
+  const out = {};
+  for (const key of ADAPTER_DECISION_KEYS) {
+    if (typeof decisions[key] === "string") out[key] = decisions[key];
+  }
+  if (typeof decisions.template_files_copied?.status === "string") {
+    out.template_files_copied_status = decisions.template_files_copied.status;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * The per-run findings snapshot, by ID. Exact (not time-inferred): only
+ * findings explicitly stamped with this run_id are included. Findings
+ * captured before Run Telemetry (no run_id) are correctly excluded.
+ */
+export function selectRunFindingIds(journal, runId) {
+  const findings = Array.isArray(journal?.findings)
+    ? journal.findings
+    : Array.isArray(journal)
+      ? journal
+      : [];
+  return findings
+    .filter((finding) => typeof finding?.id === "string" && finding.run_id === runId)
+    .map((finding) => finding.id);
+}
+
+function normalizeIdentity(identity = {}) {
+  return {
+    map_id: identity.map_id ?? null,
+    campaign_slug: identity.campaign_slug ?? null,
+    template_family: identity.template_family ?? null,
+    entry_point_shape: identity.entry_point_shape ?? null,
+  };
+}
+
+/**
+ * Assemble a Run Record manifest from already-read inputs. Pure: the caller
+ * does the file reading (reusing the doctor / packet / report / verdict /
+ * journal readers) and passes the parsed structures in. Missing identity or
+ * absent artifacts never throw — capture is best-effort.
+ */
+export function assembleRunRecord({
+  runId,
+  packageVersion,
+  command,
+  argvShape = [],
+  consent = { state: "off", source: "default" },
+  remit = { attempted: false, ok: null, error: null, endpoint: null },
+  identity = {},
+  artifacts = [],
+  packet = null,
+  doctor = null,
+  report = null,
+  context = null,
+  qaVerdict = null,
+  journal = { findings: [] },
+  surfaces = [],
+  primarySurface = null,
+  surfaceConfidence = null,
+  now = new Date(),
+} = {}) {
+  const observations = {};
+  const doctorObs = extractDoctorObservations(doctor);
+  if (doctorObs) {
+    observations.doctor = doctorObs;
+    observations.spec_validation_rule_ids = extractSpecValidationRuleIds(doctor);
+  }
+  const adapter = extractAdapterDecisions(selectAdapterDecisions({ packet, report, context }));
+  if (adapter) observations.adapter_decisions = adapter;
+  const qaObs = extractQaObservations(qaVerdict);
+  if (qaObs) observations.qa = qaObs;
+  observations.finding_ids = selectRunFindingIds(journal, runId);
+
+  const record = {
+    schema_version: RUN_RECORD_SCHEMA,
+    run_id: runId,
+    package_version: packageVersion,
+    command,
+    argv_shape: Array.isArray(argvShape) ? argvShape : [],
+    created_at: now.toISOString(),
+    consent_state: consent?.state === "on" ? "on" : "off",
+    consent_source: consent?.source ?? null,
+    remit_attempted: Boolean(remit?.attempted),
+    remit_ok: remit?.ok ?? null,
+    remit_error: remit?.error ?? null,
+    remit_endpoint: remit?.endpoint ?? null,
+    identity: normalizeIdentity(identity),
+    artifacts: Array.isArray(artifacts) ? artifacts : [],
+    observations,
+  };
+
+  const cleanSurfaces = Array.isArray(surfaces) ? surfaces.filter(Boolean) : [];
+  if (cleanSurfaces.length) record.surfaces = cleanSurfaces;
+  if (primarySurface) record.primary_surface = primarySurface;
+  if (surfaceConfidence) record.surface_confidence = surfaceConfidence;
+
+  return record;
+}
+
+/**
+ * Validate then write a Run Record to its canonical path. Throws on an
+ * invalid record (a malformed manifest is a build-tooling bug, not run state
+ * to swallow). Returns the written path.
+ */
+export function writeRunRecord(record, { baseDir = process.cwd() } = {}) {
+  const validation = validateRunRecord(record);
+  if (!validation.ok) {
+    const detail = validation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
+    throw new Error(`Run Record failed validation; refusing to write: ${detail}`);
+  }
+  const path = resolveRunRecordPath(record.run_id, baseDir);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+  return path;
 }
