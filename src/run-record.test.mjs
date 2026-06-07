@@ -480,7 +480,7 @@ test("CLI: an unreadable/directory lifecycle-journal path never breaks run-recor
   });
 });
 
-test("CLI: a corrupt-but-parseable lifecycle entry is dropped, never embedded into the record", () => {
+test("CLI: a corrupt-but-parseable lifecycle entry is coerced into a schema-valid block, never crashes the record", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
     cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
@@ -491,8 +491,11 @@ test("CLI: a corrupt-but-parseable lifecycle entry is dropped, never embedded in
       CLI, "run-record", "--packet", packetPath, "--journal", join(dir, "wf.jsonl"),
       "--run-id", "run_corrupt", "--lifecycle-journal", lcJournal, "--no-write", "--json",
     ], { encoding: "utf8" }));
-    assert.equal("lifecycle" in out.record, false); // corrupt entry dropped
+    // Aggregation coerces the bad fields rather than dropping good signal; the
+    // record stays schema-valid (the real safety property).
     assert.equal(validateRunRecord(out.record).ok, true);
+    assert.deepEqual(out.record.lifecycle.argv_shape, []); // non-array coerced
+    assert.equal(out.record.lifecycle.stages[0].name, "doctor:stage"); // nameless sub-phase named
   });
 });
 

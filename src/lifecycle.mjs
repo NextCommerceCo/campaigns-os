@@ -288,3 +288,78 @@ export function selectLifecycleForRun(journal, runId, { excludeCommands = [] } =
   }
   return match ? lifecycleForRunRecord(match) : null;
 }
+
+function entriesForRun(journal, runId, excludeCommands) {
+  const entries = Array.isArray(journal?.entries) ? journal.entries : Array.isArray(journal) ? journal : [];
+  return entries.filter((entry) => entry && entry.run_id === runId && !excludeCommands.includes(entry.command));
+}
+
+/**
+ * Aggregate ALL lifecycle journal entries for `runId` into one run-level
+ * lifecycle block — the populated form of the deferred stage-timings /
+ * repair-loop fields. Each command invocation becomes a stage; when a command
+ * marked its own sub-phases (Tier 2), those become `command:phase` stages
+ * instead. `repair_loop_count` = re-runs of any command (a re-run is a repair
+ * loop: doctor -> fix -> doctor). Run-level timing spans the earliest start to
+ * the latest finish across commands. Returns null when no entry matches, so
+ * embedding stays best-effort and backward-compatible.
+ */
+export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] } = {}) {
+  const matching = entriesForRun(journal, runId, excludeCommands);
+  if (!matching.length) return null;
+
+  const stages = [];
+  const commandCounts = new Map();
+  let earliest = null;
+  let latest = null;
+  let durationSum = 0;
+
+  for (const entry of matching) {
+    const command = typeof entry.command === "string" ? entry.command : "(unknown)";
+    commandCounts.set(command, (commandCounts.get(command) || 0) + 1);
+    const exitStatus = Number.isInteger(entry.exit_status) ? entry.exit_status : null;
+
+    const subStages = Array.isArray(entry.stages) && entry.stages.length
+      ? entry.stages.map((stage) => ({
+          name: `${command}:${typeof stage?.name === "string" ? stage.name : "stage"}`,
+          duration_ms: typeof stage?.duration_ms === "number" ? stage.duration_ms : null,
+          exit_status: exitStatus,
+        }))
+      : [{
+          name: command,
+          duration_ms: typeof entry.duration_ms === "number" ? entry.duration_ms : null,
+          exit_status: exitStatus,
+        }];
+    stages.push(...subStages);
+
+    if (typeof entry.duration_ms === "number") durationSum += entry.duration_ms;
+    if (typeof entry.started_at === "string" && (!earliest || entry.started_at < earliest)) earliest = entry.started_at;
+    if (typeof entry.completed_at === "string" && (!latest || entry.completed_at > latest)) latest = entry.completed_at;
+  }
+
+  let repairLoopCount = 0;
+  for (const count of commandCounts.values()) if (count > 1) repairLoopCount += count - 1;
+
+  // Single command: trust its own monotonic duration. Multiple commands: prefer
+  // the wall-clock span (it includes the gaps between separate invocations), but
+  // never report less than the summed work.
+  let durationMs = durationSum;
+  if (matching.length > 1 && earliest && latest) {
+    const span = Date.parse(latest) - Date.parse(earliest);
+    if (Number.isFinite(span) && span >= durationSum) durationMs = span;
+  }
+
+  const first = matching[0];
+  const last = matching[matching.length - 1];
+  return {
+    run_id: runId,
+    command: typeof first.command === "string" ? first.command : null,
+    argv_shape: isStringArray(first.argv_shape) ? first.argv_shape : [],
+    exit_status: Number.isInteger(last.exit_status) ? last.exit_status : null,
+    started_at: earliest,
+    completed_at: latest,
+    duration_ms: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
+    stages,
+    repair_loop_count: repairLoopCount,
+  };
+}

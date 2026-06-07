@@ -40,10 +40,10 @@ import {
 } from "./consent.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
+  aggregateLifecycleForRun,
   appendLifecycleEntry,
   readLifecycleJournal,
   resolveLifecycleJournalPath,
-  selectLifecycleForRun,
   withCommandLifecycle,
 } from "./lifecycle.mjs";
 import {
@@ -4516,7 +4516,7 @@ async function runRecordCommand(args) {
   let lifecycle = null;
   try {
     const lifecycleJournalPath = resolveLifecycleJournalPath(args, baseDir);
-    const candidate = selectLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId, { excludeCommands: ["run-record"] });
+    const candidate = aggregateLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId, { excludeCommands: ["run-record"] });
     if (candidate && validateRunRecordLifecycle(candidate).length === 0) lifecycle = candidate;
   } catch {
     lifecycle = null;
