@@ -73,6 +73,18 @@ test("withCommandLifecycle records exit_status from a thrown error and re-throws
   assert.equal(finished.command, "qa");
 });
 
+test("withCommandLifecycle prefers process.exitCode over a thrown error's exitCode (symmetric paths)", async () => {
+  // A command set process.exitCode = 5 then threw: record 5, not the error's code or 1.
+  let finished = null;
+  await assert.rejects(
+    () => withCommandLifecycle(
+      { command: "doctor", argvShape: [], clock: fakeClock(), readExitStatus: () => 5, onFinish: (lc) => { finished = lc; } },
+      async () => { throw Object.assign(new Error("x"), { exitCode: 9 }); },
+    ),
+  );
+  assert.equal(finished.exit_status, 5);
+});
+
 test("withCommandLifecycle defaults a thrown error without exitCode to status 1", async () => {
   let finished = null;
   await assert.rejects(
@@ -194,4 +206,22 @@ test("lifecycleForRunRecord allowlists schema fields (drops schema_version and u
   assert.equal("evil_extra_key" in embedded, false); // additionalProperties:false stays satisfiable
   assert.equal(embedded.command, "doctor");
   assert.equal(embedded.run_id, "R");
+});
+
+test("lifecycleForRunRecord DROPS a stage missing its required name (never emits an invalid {} stage)", () => {
+  const embedded = lifecycleForRunRecord({
+    command: "start",
+    argv_shape: [],
+    stages: [
+      { name: "resolve-spec", duration_ms: 5 },
+      { duration_ms: 9 }, // no name — must be dropped, not kept as {}
+      { name: "assembly", duration_ms: 12, junk: "x" }, // unknown key stripped
+    ],
+  });
+  assert.deepEqual(embedded.stages, [
+    { name: "resolve-spec", duration_ms: 5 },
+    { name: "assembly", duration_ms: 12 },
+  ]);
+  // every emitted stage satisfies the schema's required:["name"]
+  assert.ok(embedded.stages.every((s) => typeof s.name === "string"));
 });

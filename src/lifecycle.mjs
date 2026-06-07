@@ -109,7 +109,11 @@ export async function withCommandLifecycle({
     exitStatus = readExitStatus();
   } catch (error) {
     thrown = error;
-    exitStatus = Number.isInteger(error?.exitCode) ? error.exitCode : 1;
+    // Symmetric with the success path: a command may set process.exitCode before
+    // throwing (e.g. process.exitCode = N; throw ...). Prefer that, then the
+    // error's own exitCode, then 1 — so the recorded status matches the process.
+    const fromProcess = readExitStatus();
+    exitStatus = fromProcess || (Number.isInteger(error?.exitCode) ? error.exitCode : 1);
   }
 
   const lifecycle = buildLifecycle({
@@ -192,17 +196,17 @@ export function lifecycleForRunRecord(entry) {
   for (const key of RUN_RECORD_LIFECYCLE_KEYS) {
     if (entry[key] !== undefined) out[key] = entry[key];
   }
-  // Normalize stage items to exactly {name, duration_ms} so an unknown key in a
-  // hand-edited journal can't violate the schema's nested additionalProperties:false.
+  // Normalize stage items to exactly {name, duration_ms}. FILTER (not map) so a
+  // stage missing its required `name` is dropped entirely rather than kept as an
+  // invalid `{}` — the schema requires `name`, and an unknown key can't survive.
   if (Array.isArray(out.stages)) {
-    out.stages = out.stages.map((stage) => {
-      const normalized = {};
-      if (stage && typeof stage === "object" && !Array.isArray(stage)) {
-        if (typeof stage.name === "string") normalized.name = stage.name;
+    out.stages = out.stages
+      .filter((stage) => stage && typeof stage === "object" && !Array.isArray(stage) && typeof stage.name === "string")
+      .map((stage) => {
+        const normalized = { name: stage.name };
         if (typeof stage.duration_ms === "number") normalized.duration_ms = stage.duration_ms;
-      }
-      return normalized;
-    });
+        return normalized;
+      });
   }
   return out;
 }
@@ -216,9 +220,15 @@ export function resolveLifecycleJournalPath(args = {}, cwd = process.cwd(), env 
 }
 
 /**
- * Append one validated lifecycle entry as one JSONL line (append-only, single
- * writer — mirrors the findings journal). Throws on an invalid entry so a bug
- * is caught, but callers that want non-fatal behavior (the CLI) wrap this.
+ * Append one validated lifecycle entry as one JSONL line. Throws on an invalid
+ * entry so a bug is caught; callers that want non-fatal behavior (the CLI) wrap
+ * this.
+ *
+ * Single-writer-per-run assumption: each entry is one append, but appendFileSync
+ * is only atomic for writes under PIPE_BUF, so two processes appending to the
+ * SAME journal concurrently can interleave. A journal is scoped to one run
+ * (one run-id, cleared by `run end`), so the normal path is a single writer.
+ * readLifecycleJournal tolerates the rare malformed line either way.
  */
 export function appendLifecycleEntry(journalPath, entry) {
   const validation = validateLifecycle(entry);
@@ -234,6 +244,10 @@ export function appendLifecycleEntry(journalPath, entry) {
 /**
  * Read the lifecycle journal. Returns `{ entries, malformed }`; malformed
  * lines are preserved rather than thrown, so one bad line never blocks the rest.
+ * Reads the whole file: journals are per-run and short-lived (a run session
+ * clears on `run end`), and run-record aggregation needs every entry for the
+ * run_id, so there is no last-N shortcut. Callers treat read failures as
+ * "no journal" (best-effort) — see the run-record embed path.
  */
 export function readLifecycleJournal(journalPath) {
   const resolved = resolve(journalPath);

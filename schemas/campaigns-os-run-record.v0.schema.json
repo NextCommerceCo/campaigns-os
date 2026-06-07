@@ -210,7 +210,7 @@
     "lifecycle": {
       "type": ["object", "null"],
       "additionalProperties": false,
-      "description": "Optional command-lifecycle signal for this run, captured by the command-lifecycle wrapper and correlated by run_id. v0 carries command/argv_shape/exit_status/timing; stages[] and repair_loop_count are hooks for when command boundaries are instrumented.",
+      "description": "Optional command-lifecycle signal for this run, correlated by run_id. See per-field descriptions.",
       "properties": {
         "run_id": { "type": ["string", "null"] },
         "command": { "type": "string" },
