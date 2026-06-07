@@ -27,6 +27,7 @@ import {
 import {
   assembleRunRecord,
   mintRunId,
+  validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
 import {
@@ -38,6 +39,13 @@ import {
   writeConsentConfig,
 } from "./consent.mjs";
 import { remitRunRecord } from "./remit.mjs";
+import {
+  appendLifecycleEntry,
+  readLifecycleJournal,
+  resolveLifecycleJournalPath,
+  selectLifecycleForRun,
+  withCommandLifecycle,
+} from "./lifecycle.mjs";
 import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
@@ -162,7 +170,9 @@ Usage:
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
-  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
+
+  Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
 
 Examples:
@@ -188,6 +198,43 @@ export async function main(argv) {
   const args = parseArgs(argv);
   const command = args._[0] || "help";
 
+  // Wrap every command in the lifecycle instrumentation (T6): it captures the
+  // command, its argv shape, exit status, and timing. Re-throws unchanged so
+  // the CLI exit code is unaffected. Persistence runs via onFinish so it fires
+  // on BOTH the success and error paths — a command that THROWS (the most
+  // valuable failure telemetry) is recorded too, not just clean exits.
+  // Persistence is OPT-IN (--lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG)
+  // and non-fatal; with neither set, behavior is identical to before.
+  await withCommandLifecycle(
+    {
+      command,
+      argvShape: argvShape(args),
+      runId: optionalString(args["run-id"]),
+      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle),
+    },
+    () => dispatch(command, args),
+  );
+}
+
+// Append the command's lifecycle entry to the lifecycle journal only when the
+// operator/orchestrator opts in. Never throws — a lifecycle write must not
+// break a command (telemetry never blocks a build). `help` is a no-op command
+// and is not worth recording. Read and write share one resolver
+// (resolveLifecycleJournalPath) so the journal a command WRITES is the journal
+// run-record READS for the same flag/env.
+function persistLifecycleIfRequested(args, command, lifecycle) {
+  if (command === "help") return;
+  if (!isNonEmptyString(args["lifecycle-journal"]) && !isNonEmptyString(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG)) return;
+  try {
+    appendLifecycleEntry(resolveLifecycleJournalPath(args), lifecycle);
+  } catch (error) {
+    // Non-fatal, but leave a one-line breadcrumb on stderr so a capture failure
+    // is observable rather than fully silent. stderr never pollutes --json stdout.
+    process.stderr.write(`[campaigns-os] lifecycle capture skipped: ${error.message}\n`);
+  }
+}
+
+async function dispatch(command, args) {
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
@@ -4459,6 +4506,22 @@ async function runRecordCommand(args) {
   const runId = optionalString(args["run-id"]) || mintRunId();
   const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
 
+  // Embed the command-lifecycle signal for this run, if a lifecycle journal
+  // carries an entry stamped with this run_id (T6). Strictly BEST-EFFORT: an
+  // unreadable/directory/corrupt journal, or a malformed entry, must never
+  // break Run Record generation — on any problem we embed nothing. Exclude
+  // run-record's OWN entries so re-running it never shadows the build command's
+  // lifecycle, and validate the candidate so a corrupt entry can't produce a
+  // schema-invalid record at write time.
+  let lifecycle = null;
+  try {
+    const lifecycleJournalPath = resolveLifecycleJournalPath(args, baseDir);
+    const candidate = selectLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId, { excludeCommands: ["run-record"] });
+    if (candidate && validateRunRecordLifecycle(candidate).length === 0) lifecycle = candidate;
+  } catch {
+    lifecycle = null;
+  }
+
   const artifacts = [runRecordArtifactRef("build_packet", packetPath, PACKET_SCHEMA, baseDir)];
   if (contextExists) artifacts.push(runRecordArtifactRef("build_context", contextPath, CONTEXT_SCHEMA, baseDir));
   if (reportExists) artifacts.push(runRecordArtifactRef("assembly_report", reportPath, REPORT_SCHEMA, baseDir));
@@ -4500,6 +4563,7 @@ async function runRecordCommand(args) {
     surfaces: parseCommaList(args.surfaces),
     primarySurface: optionalString(args["primary-surface"]),
     surfaceConfidence: optionalString(args["surface-confidence"]),
+    lifecycle,
   });
 
   // Write before any network call so local capture does not depend on telemetry
@@ -4577,13 +4641,19 @@ function artifactRefPath(kind, filePath, baseDir) {
 const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["no-remit", "no-write", "proxy-base"]);
 
 // argv SHAPE = selected flag NAMES present, never their values (minimization).
-// Sorted for deterministic records; opt-out and endpoint flags stay private.
+// Sorted + de-duplicated for deterministic records; opt-out and endpoint flags
+// stay private. A `--flag=value` token parses as a single key, so split on "="
+// and keep only the name — otherwise a value (e.g. --auth-cookie=SECRET) would
+// leak into a persisted, potentially-remitted shape, breaking the guarantee.
 function argvShape(args) {
-  return Object.keys(args)
-    .filter((key) => key !== "_")
-    .filter((key) => !ARGV_SHAPE_PRIVATE_FLAGS.has(key))
-    .map((key) => `--${key}`)
-    .sort();
+  const names = new Set();
+  for (const key of Object.keys(args)) {
+    if (key === "_") continue;
+    const name = key.split("=")[0];
+    if (ARGV_SHAPE_PRIVATE_FLAGS.has(name)) continue;
+    names.add(`--${name}`);
+  }
+  return [...names].sort();
 }
 
 function parseCommaList(value) {

@@ -189,7 +189,46 @@ export function validateRunRecord(record) {
     add("record.primary_surface", `unknown primary_surface "${record.primary_surface}". Allowed: ${RUN_RECORD_SURFACES.join(", ")}.`);
   }
 
+  if (record.lifecycle != null) {
+    for (const error of validateRunRecordLifecycle(record.lifecycle)) errors.push(error);
+  }
+
   return { ok: errors.length === 0, errors };
+}
+
+// Validate the embedded lifecycle block against the SAME rules the published
+// JSON schema enforces (types + stages[].name + numeric duration_ms). Exported
+// so the CLI can drop a corrupt/foreign lifecycle journal entry BEFORE assembly
+// rather than fail the whole Run Record at write time. Returns an error array.
+export function validateRunRecordLifecycle(lc) {
+  const errors = [];
+  const add = (code, message) => errors.push({ code, message });
+  if (typeof lc !== "object" || lc === null || Array.isArray(lc)) {
+    add("record.lifecycle", "lifecycle must be an object when present.");
+    return errors;
+  }
+  if (lc.command != null && typeof lc.command !== "string") add("record.lifecycle.command", "command must be a string.");
+  if (lc.run_id != null && typeof lc.run_id !== "string") add("record.lifecycle.run_id", "run_id must be a string or null.");
+  if (lc.argv_shape != null && !isStringArray(lc.argv_shape)) add("record.lifecycle.argv_shape", "argv_shape must be an array of strings.");
+  if (lc.exit_status != null && !Number.isInteger(lc.exit_status)) add("record.lifecycle.exit_status", "exit_status must be an integer or null.");
+  if (lc.started_at != null && typeof lc.started_at !== "string") add("record.lifecycle.started_at", "started_at must be a string or null.");
+  if (lc.completed_at != null && typeof lc.completed_at !== "string") add("record.lifecycle.completed_at", "completed_at must be a string or null.");
+  if (lc.duration_ms != null && typeof lc.duration_ms !== "number") add("record.lifecycle.duration_ms", "duration_ms must be a number or null.");
+  if (lc.repair_loop_count != null && !Number.isInteger(lc.repair_loop_count)) add("record.lifecycle.repair_loop_count", "repair_loop_count must be an integer or null.");
+  if (lc.stages != null) {
+    if (!Array.isArray(lc.stages)) {
+      add("record.lifecycle.stages", "stages must be an array when present.");
+    } else {
+      lc.stages.forEach((stage, index) => {
+        if (!stage || typeof stage !== "object" || Array.isArray(stage) || typeof stage.name !== "string") {
+          add(`record.lifecycle.stages[${index}].name`, "each stage requires a string name (matches the published schema).");
+        } else if (stage.duration_ms != null && typeof stage.duration_ms !== "number") {
+          add(`record.lifecycle.stages[${index}].duration_ms`, "stage duration_ms must be a number or null.");
+        }
+      });
+    }
+  }
+  return errors;
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +386,7 @@ export function assembleRunRecord({
   surfaces = [],
   primarySurface = null,
   surfaceConfidence = null,
+  lifecycle = null,
   now = new Date(),
 } = {}) {
   const observations = {};
@@ -393,6 +433,7 @@ export function assembleRunRecord({
   if (cleanSurfaces.length) record.surfaces = cleanSurfaces;
   if (primarySurface) record.primary_surface = primarySurface;
   if (surfaceConfidence) record.surface_confidence = surfaceConfidence;
+  if (lifecycle && typeof lifecycle === "object" && !Array.isArray(lifecycle)) record.lifecycle = lifecycle;
 
   return record;
 }

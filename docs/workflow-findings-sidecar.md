@@ -226,8 +226,19 @@ findings channel of the Run Record.
 
 ## Deferred (not v0)
 
-- Stage timings and repair-loop count — need command-lifecycle instrumentation
-  first (see scope cut above).
+- Command-lifecycle instrumentation — **landed (T6).** A `withCommandLifecycle`
+  wrapper times every command and captures its command name, argv shape, and
+  exit status; opt-in persistence (`--lifecycle-journal` / env
+  `CAMPAIGNS_OS_LIFECYCLE_LOG`) appends an entry to an append-only
+  `.campaign-runtime/command-lifecycle.jsonl`, and `run-record` embeds the
+  entry matching the run's `run_id` as the Run Record's optional `lifecycle`
+  block. The `stages[]` and `repair_loop_count` fields are present as hooks.
+- Stage timings and repair-loop count — the hooks exist (recorder `stage()` /
+  `recordRepairLoop()`, `lifecycle.stages` / `lifecycle.repair_loop_count`), but
+  populating them needs command boundaries marked across a full run and one
+  canonical `run_id` threaded through every command (only `run-record` and
+  manually-passed `--run-id` carry it today). That cross-command aggregation is
+  the remaining follow-up.
 - Internal ingestion / clustering / surface-mapping — internal tooling
   (ADR-019), not this package.
 
