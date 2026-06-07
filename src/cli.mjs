@@ -30,12 +30,14 @@ import {
   writeRunRecord,
 } from "./run-record.mjs";
 import {
+  promptAndPersistConsent,
   readConfig,
   resolveConfigPath,
   resolveConsent,
   TELEMETRY_ENV_VAR,
   writeConsentConfig,
 } from "./consent.mjs";
+import { remitRunRecord } from "./remit.mjs";
 import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
@@ -160,7 +162,7 @@ Usage:
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
-  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--no-write] [--json]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
 
 Examples:
@@ -266,7 +268,7 @@ export async function main(argv) {
   }
 
   if (command === "run-record") {
-    runRecordCommand(args);
+    await runRecordCommand(args);
     return;
   }
 
@@ -4420,11 +4422,12 @@ function findingsExport(args) {
   process.stdout.write(exportSummaryMarkdown(findings));
 }
 
-// Run Telemetry capture. Thin dispatch: read this run's artifacts with the
-// same readers `findings harvest` uses, then hand the parsed structures to
-// run-record.mjs to assemble + write the manifest. Capture is always local;
-// consent-gated remit lands in a later task. See docs/workflow-findings-sidecar.md.
-function runRecordCommand(args) {
+// Run Telemetry capture + remit. Thin dispatch: read this run's artifacts with
+// the same readers `findings harvest` uses, hand the parsed structures to
+// run-record.mjs to assemble the manifest, then (consent-gated, non-fatal)
+// remit it. Capture is ALWAYS local; consent gates only the remit. See
+// docs/workflow-findings-sidecar.md.
+async function runRecordCommand(args) {
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
   const baseDir = dirname(packetPath);
@@ -4448,6 +4451,7 @@ function runRecordCommand(args) {
   const journal = readJournal(journalPath);
 
   const runId = optionalString(args["run-id"]) || mintRunId();
+  const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
 
   const artifacts = [runRecordArtifactRef("build_packet", packetPath, PACKET_SCHEMA, baseDir)];
   if (contextExists) artifacts.push(runRecordArtifactRef("build_context", contextPath, CONTEXT_SCHEMA, baseDir));
@@ -4455,12 +4459,25 @@ function runRecordCommand(args) {
   if (qaVerdictExists) artifacts.push(runRecordArtifactRef("qa_verdict", qaVerdictPath, optionalString(qaVerdict?.schema_version), baseDir));
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
+  const write = args["no-write"] !== true;
+  // A pure local-inspection run (--no-write) or an explicit --no-remit never
+  // phones home, regardless of consent.
+  const remitDisabled = args["no-remit"] === true || !write;
+
+  // Resolve consent through the shared resolver every remitting command calls.
+  // When interactive, not in --json/agent mode, remit isn't disabled, and no
+  // explicit choice exists yet, ask once up front and persist it.
+  let consent = resolveConsent();
+  if (!consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
+    consent = await promptAndPersistConsent({ proxyBase });
+  }
+
   const record = assembleRunRecord({
     runId,
     packageVersion: packageVersion(),
     command: "run-record",
     argvShape: argvShape(args),
-    consent: { state: "off", source: "default" },
+    consent: { state: consent.state, source: consent.source },
     identity: {
       map_id: optionalString(packet.spec?.map_id),
       campaign_slug: optionalString(packet.campaign?.public_route_slug),
@@ -4479,7 +4496,16 @@ function runRecordCommand(args) {
     surfaceConfidence: optionalString(args["surface-confidence"]),
   });
 
-  const write = args["no-write"] !== true;
+  // Remit is consent-gated, non-fatal, and idempotent on run_id. Its outcome
+  // is stamped into the local record so a dropped send is visible, not silent.
+  const remitStatus = remitDisabled
+    ? { attempted: false, ok: null, error: null, endpoint: null }
+    : await remitRunRecord(record, { proxyBase, consent });
+  record.remit_attempted = remitStatus.attempted;
+  record.remit_ok = remitStatus.ok;
+  record.remit_error = remitStatus.error;
+  record.remit_endpoint = remitStatus.endpoint;
+
   const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
 
   if (args.json) {
@@ -4491,8 +4517,13 @@ function runRecordCommand(args) {
   console.log(`Consent: ${record.consent_state} (${record.consent_source})`);
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
+  if (record.remit_attempted) {
+    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}`);
+  } else {
+    console.log(`Remit: skipped (consent ${record.consent_state}${remitDisabled ? ", disabled for this run" : ""}).`);
+  }
   if (write) console.log(`Wrote: ${recordPath}`);
-  else console.log("Dry run only (--no-write). No record written.");
+  else console.log("Dry run only (--no-write). No record written, no remit.");
 }
 
 // Build one artifact reference {kind, path, schema_version, sha256}. The path

@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
 import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { remit } from "./remit.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
@@ -659,15 +660,12 @@ async function fetchSpec(mapId, proxyBase) {
   return body && body.ok && body.data ? body.data : body;
 }
 
+// QA verdict publish rides the shared remit rails (see src/remit.mjs). The
+// behavior is unchanged: POST to /api/qa/verdicts, parse the body, throw on a
+// non-2xx so the caller's "never fail the run if publish is unreachable"
+// try/catch still applies.
 async function postVerdict(verdict, proxyBase) {
-  const response = await fetch(`${proxyBase.replace(/\/+$/, "")}/api/qa/verdicts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(verdict),
-  });
-  const body = await response.text();
-  if (!response.ok) throw new Error(`Verdict POST failed: ${response.status} ${response.statusText} ${body}`);
-  return body ? JSON.parse(body) : { ok: true };
+  return remit("/api/qa/verdicts", verdict, proxyBase);
 }
 
 function assertion({ id, family, page, status, severity, expected, actual, evidence }) {
