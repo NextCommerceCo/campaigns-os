@@ -39,6 +39,7 @@ function minimalRecord(overrides = {}) {
     consent_state: "off",
     consent_source: "default",
     remit_attempted: false,
+    remit_state: "skipped",
     remit_ok: null,
     remit_error: null,
     remit_endpoint: null,
@@ -56,6 +57,7 @@ test("validator accepts a fully-populated record", () => {
     consent_state: "on",
     consent_source: "env",
     remit_attempted: true,
+    remit_state: "ok",
     remit_ok: true,
     remit_endpoint: "/api/runs",
     identity: {
@@ -127,6 +129,11 @@ test("validator rejects malformed observation arrays", () => {
   assert.equal(validateRunRecord(minimalRecord({ observations: { spec_validation_rule_ids: [1, 2] } })).ok, false);
   assert.equal(validateRunRecord(minimalRecord({ observations: { qa: { gap_classes: "funnel-flow" } } })).ok, false);
   assert.equal(validateRunRecord(minimalRecord({ observations: { findings_journal: { malformed_lines: ["1"] } } })).ok, false);
+});
+
+test("validator rejects invalid remit status fields", () => {
+  assert.equal(validateRunRecord(minimalRecord({ remit_state: "maybe" })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ remit_endpoint: "api/runs" })).ok, false);
 });
 
 test("the published JSON Schema doc and the validator agree on the schema_version const", () => {
@@ -214,6 +221,18 @@ test("assembleRunRecord with all signal absent is still a minimal valid record",
   assert.deepEqual(record.observations.finding_ids, []); // always exact, empty here
   assert.equal(record.consent_state, "off"); // defaults safe
   assert.equal(record.remit_attempted, false);
+  assert.equal(record.remit_state, "skipped");
+});
+
+test("assembleRunRecord carries an explicit pending remit sentinel", () => {
+  const record = assembleRunRecord(assembleArgs({
+    consent: { state: "on", source: "env" },
+    remit: { state: "pending", attempted: false, ok: null, error: null, endpoint: null },
+  }));
+  assert.equal(record.remit_state, "pending");
+  assert.equal(record.remit_attempted, false);
+  assert.equal(record.remit_ok, null);
+  assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
 });
 
 test("assembleRunRecord tolerates partial identity (missing fields -> null)", () => {
@@ -293,6 +312,7 @@ test("CLI: run-record assembles a valid record from a real packet (argv shape, n
   // argv_shape carries flag NAMES only — never the packet path value.
   assert.ok(record.argv_shape.includes("--packet"));
   assert.ok(!record.argv_shape.some((flag) => flag.includes("build-packet.basic.json")));
+  assert.equal(record.argv_shape.includes("--no-write"), false);
   // capture is always local; consent defaults OFF (safe) in v0 wiring.
   assert.equal(record.consent_state, "off");
 });
@@ -360,6 +380,7 @@ test("CLI: artifact refs outside the run root use safe labels instead of ../ pat
         "--packet", packetPath,
         "--qa-verdict", verdictPath,
         "--run-id", "run_external_ref",
+        "--proxy-base", "https://proxy.test",
         "--no-remit",
         "--json",
       ], { encoding: "utf8" }));
@@ -367,6 +388,8 @@ test("CLI: artifact refs outside the run root use safe labels instead of ../ pat
       const qaRef = out.record.artifacts.find((ref) => ref.kind === "qa_verdict");
       assert.equal(qaRef.path, "external:qa_verdict");
       assert.ok(qaRef.sha256);
+      assert.equal(out.record.argv_shape.includes("--no-remit"), false);
+      assert.equal(out.record.argv_shape.includes("--proxy-base"), false);
     });
   } finally {
     rmSync(externalDir, { recursive: true, force: true });

@@ -27,7 +27,6 @@ import {
 import {
   assembleRunRecord,
   mintRunId,
-  validateRunRecord,
   writeRunRecord,
 } from "./run-record.mjs";
 import {
@@ -4503,13 +4502,16 @@ async function runRecordCommand(args) {
     surfaceConfidence: optionalString(args["surface-confidence"]),
   });
 
-  // Validate and write before any network call: local capture must not depend on
-  // telemetry being fast or reachable. The final remit status is written back
-  // below so the durable record still shows dropped sends.
-  const preRemitValidation = validateRunRecord(record);
-  if (!preRemitValidation.ok) {
-    const detail = preRemitValidation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
-    throw new Error(`Run Record failed validation; refusing to remit or write: ${detail}`);
+  // Write before any network call so local capture does not depend on telemetry
+  // being fast or reachable. If a crash lands before the final rewrite below,
+  // the durable record is explicitly pending instead of silently skipped.
+  const shouldAttemptRemit = !remitDisabled && consent.state === "on";
+  if (shouldAttemptRemit) {
+    record.remit_state = "pending";
+    record.remit_attempted = false;
+    record.remit_ok = null;
+    record.remit_error = null;
+    record.remit_endpoint = null;
   }
 
   const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
@@ -4523,6 +4525,7 @@ async function runRecordCommand(args) {
   record.remit_ok = remitStatus.ok;
   record.remit_error = remitStatus.error;
   record.remit_endpoint = remitStatus.endpoint;
+  record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
 
   if (write) writeRunRecord(record, { baseDir });
 
@@ -4571,11 +4574,14 @@ function artifactRefPath(kind, filePath, baseDir) {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
-// argv SHAPE = the flag NAMES present, never their values (minimization).
-// Sorted for deterministic records.
+const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["no-remit", "no-write", "proxy-base"]);
+
+// argv SHAPE = selected flag NAMES present, never their values (minimization).
+// Sorted for deterministic records; opt-out and endpoint flags stay private.
 function argvShape(args) {
   return Object.keys(args)
     .filter((key) => key !== "_")
+    .filter((key) => !ARGV_SHAPE_PRIVATE_FLAGS.has(key))
     .map((key) => `--${key}`)
     .sort();
 }

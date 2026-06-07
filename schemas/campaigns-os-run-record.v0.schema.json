@@ -58,6 +58,11 @@
       "type": "boolean",
       "description": "Whether a remit POST was attempted for this run."
     },
+    "remit_state": {
+      "type": "string",
+      "enum": ["skipped", "pending", "ok", "failed"],
+      "description": "Crash-safe lifecycle state for remit. pending means local capture completed before a consented remit finished; skipped means no remit was attempted."
+    },
     "remit_ok": {
       "type": ["boolean", "null"],
       "description": "Whether the remit POST succeeded. null when no attempt was made."
@@ -68,6 +73,7 @@
     },
     "remit_endpoint": {
       "type": ["string", "null"],
+      "pattern": "^/",
       "description": "Endpoint path the run was remitted to, e.g. \"/api/runs\". null when no attempt was made."
     },
     "identity": {

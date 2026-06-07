@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import {
+  normalizeConsentScope,
   parseEnvConsent,
   promptAndPersistConsent,
   readConfig,
@@ -93,6 +94,23 @@ test("resolveConsent: file consent is scoped to the proxy base it was granted fo
   });
 });
 
+test("normalizeConsentScope repairs bare hosts and rejects malformed scopes", () => {
+  assert.equal(normalizeConsentScope("proxy.test/"), "https://proxy.test");
+  assert.equal(normalizeConsentScope("proxy.test/api/"), "https://proxy.test/api");
+  assert.equal(normalizeConsentScope("https://proxy.test/api/"), "https://proxy.test/api");
+  assert.equal(normalizeConsentScope("https://"), null);
+  assert.equal(normalizeConsentScope("bad value"), null);
+});
+
+test("writeConsentConfig rejects invalid states instead of coercing to off", async () => {
+  await withTempDir((dir) => {
+    assert.throws(
+      () => writeConsentConfig("maybe", { configPath: join(dir, "config.json") }),
+      /must be "on" or "off"/,
+    );
+  });
+});
+
 test("resolveConsent: malformed file is safe -> OFF + warns", async () => {
   await withTempDir((dir) => {
     const configPath = join(dir, "config.json");
@@ -126,6 +144,17 @@ test("writeConsentConfig + readConfig round-trip carries schema_version, package
     assert.equal(config.telemetry.scope, "https://example.test");
     assert.equal(config.telemetry.source, "telemetry-command");
     assert.equal(config.telemetry.updated_at, "2026-06-07T00:00:00.000Z");
+  });
+});
+
+test("writeConsentConfig repairs bare proxy host scopes", async () => {
+  await withTempDir((dir) => {
+    const configPath = join(dir, "config.json");
+    writeConsentConfig("on", { configPath, proxyBase: "proxy.test/" });
+    const { config } = readConfig(configPath);
+    assert.equal(config.telemetry.scope, "https://proxy.test");
+    const result = resolveConsent({ env: {}, configPath, proxyBase: "https://proxy.test", warn: quiet });
+    assert.equal(result.state, "on");
   });
 });
 

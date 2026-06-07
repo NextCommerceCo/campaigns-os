@@ -64,7 +64,11 @@ async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REMIT_MAX_
       }
       text += decoder.decode();
     } finally {
-      reader.releaseLock?.();
+      try {
+        reader.releaseLock?.();
+      } catch {
+        // Cleanup must not mask the transport or truncation error being reported.
+      }
     }
     return truncated ? `${text}...[truncated to ${max} bytes]` : text;
   }

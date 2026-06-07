@@ -77,6 +77,37 @@ test("remit bounds non-2xx response bodies included in errors", async () => {
   );
 });
 
+test("remit bounds streamed non-2xx response bodies and ignores releaseLock cleanup errors", async () => {
+  let reads = 0;
+  const response = {
+    ok: false,
+    status: 500,
+    statusText: "Server Error",
+    body: {
+      getReader() {
+        return {
+          async read() {
+            reads += 1;
+            if (reads === 1) return { done: false, value: Buffer.from("abcdefgh") };
+            if (reads === 2) return { done: false, value: Buffer.from("ijklmnop") };
+            return { done: true };
+          },
+          async cancel() {},
+          releaseLock() {
+            throw new Error("releaseLock boom");
+          },
+        };
+      },
+    },
+    text: async () => assert.fail("streaming response should not use text()"),
+  };
+  const { fetchImpl } = recordingFetch(response);
+  await assert.rejects(
+    () => remit("/api/runs", {}, "https://proxy.test", { fetchImpl, maxBodyBytes: 10 }),
+    /Remit POST failed: 500 Server Error abcdefghij\.\.\.\[truncated to 10 bytes\]/,
+  );
+});
+
 test("remitRunRecord: consent OFF makes NO network call", async () => {
   const { fetchImpl, calls } = recordingFetch();
   const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: { state: "off" }, fetchImpl });

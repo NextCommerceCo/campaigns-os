@@ -9,7 +9,7 @@
 // local assemble/write surface; it has no network or credential dependencies.
 
 import { randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 export const RUN_RECORD_SCHEMA = "campaigns-os-run-record/v0";
@@ -36,6 +36,7 @@ export const RUN_RECORD_ARTIFACT_KINDS = [
 ];
 
 export const RUN_RECORD_CONSENT_STATES = ["on", "off"];
+export const RUN_RECORD_REMIT_STATES = ["skipped", "pending", "ok", "failed"];
 
 // Required core. Strict here; permissive about optional sub-structures (the
 // validator checks shapes, not nested artifact bodies — those are referenced
@@ -101,6 +102,12 @@ export function validateRunRecord(record) {
   }
   if (record.remit_error != null && typeof record.remit_error !== "string") {
     add("record.remit_error", "remit_error must be a string or null.");
+  }
+  if (record.remit_endpoint != null && (!isNonEmptyString(record.remit_endpoint) || !record.remit_endpoint.startsWith("/"))) {
+    add("record.remit_endpoint", "remit_endpoint must be a path beginning with / or null.");
+  }
+  if (record.remit_state != null && !RUN_RECORD_REMIT_STATES.includes(record.remit_state)) {
+    add("record.remit_state", `remit_state must be one of: ${RUN_RECORD_REMIT_STATES.join(", ")}.`);
   }
 
   if (record.identity != null) {
@@ -310,6 +317,12 @@ function normalizeIdentity(identity = {}) {
   };
 }
 
+function normalizeRemitState(remit) {
+  if (RUN_RECORD_REMIT_STATES.includes(remit?.state)) return remit.state;
+  if (remit?.attempted) return remit.ok === true ? "ok" : "failed";
+  return "skipped";
+}
+
 /**
  * Assemble a Run Record manifest from already-read inputs. Pure: the caller
  * does the file reading (reusing the doctor / packet / report / verdict /
@@ -370,6 +383,7 @@ export function assembleRunRecord({
     remit_ok: remit?.ok ?? null,
     remit_error: remit?.error ?? null,
     remit_endpoint: remit?.endpoint ?? null,
+    remit_state: normalizeRemitState(remit),
     identity: normalizeIdentity(identity),
     artifacts: Array.isArray(artifacts) ? artifacts : [],
     observations,
@@ -396,6 +410,8 @@ export function writeRunRecord(record, { baseDir = process.cwd() } = {}) {
   }
   const path = resolveRunRecordPath(record.run_id, baseDir);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+  const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  writeFileSync(tmpPath, `${JSON.stringify(record, null, 2)}\n`);
+  renameSync(tmpPath, path);
   return path;
 }

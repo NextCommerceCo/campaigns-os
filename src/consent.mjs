@@ -27,18 +27,37 @@ function isNonEmptyString(value) {
 
 export function normalizeConsentScope(value) {
   if (!isNonEmptyString(value)) return null;
-  const raw = value.trim().replace(/\/+$/, "");
-  try {
-    const url = new URL(raw);
-    const path = url.pathname.replace(/\/+$/, "");
-    return `${url.origin}${path}`;
-  } catch {
-    return raw;
+  const raw = value.trim();
+  const normalizeUrl = (input) => {
+    try {
+      const url = new URL(input);
+      const path = url.pathname.replace(/\/+$/, "");
+      return `${url.origin}${path}`;
+    } catch {
+      return null;
+    }
+  };
+  const direct = normalizeUrl(raw);
+  if (direct) return direct;
+  if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(raw)) {
+    return normalizeUrl(`https://${raw}`);
+  }
+  return null;
+}
+
+function assertConsentState(state) {
+  if (state !== "on" && state !== "off") {
+    throw new Error('Telemetry consent state must be "on" or "off".');
   }
 }
 
 function defaultWarn(message) {
   process.stderr.write(`${message}\n`);
+}
+
+function configState(state) {
+  assertConsentState(state);
+  return state === "on";
 }
 
 /**
@@ -120,7 +139,7 @@ export function writeConsentConfig(state, {
     schema_version: TELEMETRY_CONFIG_SCHEMA,
     package: PACKAGE_NAME,
     telemetry: {
-      enabled: state === "on",
+      enabled: configState(state),
       scope: normalizeConsentScope(proxyBase),
       updated_at: now.toISOString(),
       source,
