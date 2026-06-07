@@ -112,15 +112,22 @@ test("findRunSession does NOT adopt a session ABOVE the project root (no cross-p
   });
 });
 
-test("findRunSession never honors a session located at the filesystem root or $HOME", () => {
-  // We can't write to those dirs in a test, but the guard is unit-checkable:
-  // a session whose dir equals the home/root sentinel returns null. Covered by
-  // the project-boundary test above for the realistic ancestor case; this just
-  // documents the home/root refusal exists. (See findRunSession dir === home/root.)
+test("findRunSession never honors a session at $HOME or an ANCESTOR of $HOME (injected home)", () => {
   withTempDir((dir) => {
-    // Sanity: a normal project-rooted session is honored (control).
-    writeRunSession(dir, buildRunSession({ runId: "run_ctrl", lifecycleJournal: "j" }));
-    assert.equal(findRunSession(dir).session.run_id, "run_ctrl");
+    // Session sits at `dir`; pretend $HOME is a subdir of it, making `dir` an
+    // ancestor of home (the /Users-style hole). It must be refused.
+    writeRunSession(dir, buildRunSession({ runId: "run_above_home", lifecycleJournal: "j" }));
+    const fakeHome = join(dir, "me");
+    mkdirSync(fakeHome, { recursive: true });
+    assert.equal(findRunSession(join(fakeHome, "scratch"), { home: fakeHome }), null); // ancestor-of-home refused
+    assert.equal(findRunSession(dir, { home: dir }), null); // dir === home refused
+
+    // Control: a normal project-rooted session below home IS honored.
+    const proj = join(fakeHome, "proj");
+    mkdirSync(proj, { recursive: true });
+    writeFileSync(join(proj, "package.json"), "{}\n");
+    writeRunSession(proj, buildRunSession({ runId: "run_ok", lifecycleJournal: "j" }));
+    assert.equal(findRunSession(proj, { home: fakeHome }).session.run_id, "run_ok");
   });
 });
 

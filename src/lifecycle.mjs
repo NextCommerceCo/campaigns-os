@@ -387,12 +387,18 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
     if (Number.isFinite(span) && span >= durationSum) durationMs = span;
   }
 
+  // Top-level command/argv_shape describe the RUN, not its earliest invocation.
+  // They are meaningful only when the run is a single distinct command; for a
+  // multi-command run (doctor -> start -> qa) they would mislead, so null them
+  // and let stages[] carry the per-command detail. exit_status is the LAST
+  // command's (the run's final outcome).
   const first = matching[0];
   const last = matching[matching.length - 1];
+  const singleCommand = commandCounts.size === 1 && typeof first.command === "string";
   return {
     run_id: runId,
-    command: typeof first.command === "string" ? first.command : null,
-    argv_shape: isStringArray(first.argv_shape) ? first.argv_shape : [],
+    command: singleCommand ? first.command : null,
+    argv_shape: singleCommand && isStringArray(first.argv_shape) ? first.argv_shape : [],
     exit_status: Number.isInteger(last.exit_status) ? last.exit_status : null,
     started_at: earliest,
     completed_at: latest,

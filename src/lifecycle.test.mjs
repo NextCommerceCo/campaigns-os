@@ -269,10 +269,23 @@ test("aggregateLifecycleForRun: one stage per command, repair_loop_count counts 
   assert.deepEqual(agg.stages.map((s) => s.name), ["doctor", "start", "doctor"]); // one per invocation, in order
   assert.equal(agg.repair_loop_count, 1); // doctor ran twice => one repair loop
   assert.equal(agg.exit_status, 0); // last entry for R
-  assert.equal(agg.command, "doctor"); // first entry for R
+  // multiple distinct commands => top-level command/argv_shape are null (stages[] carry the detail)
+  assert.equal(agg.command, null);
+  assert.deepEqual(agg.argv_shape, []);
   // span = earliest start (00.000) to latest finish (02.008) = 2008ms, >= summed work (68)
   assert.equal(agg.duration_ms, 2008);
   assert.equal(agg.stages[0].exit_status, 2); // per-command exit preserved
+});
+
+test("aggregateLifecycleForRun: a run that is one command repeated keeps that command at top level", () => {
+  const journal = { entries: [
+    { command: "doctor", argv_shape: ["--packet"], run_id: "R", exit_status: 2, duration_ms: 10 },
+    { command: "doctor", argv_shape: ["--packet"], run_id: "R", exit_status: 0, duration_ms: 8 },
+  ] };
+  const agg = aggregateLifecycleForRun(journal, "R");
+  assert.equal(agg.command, "doctor"); // single distinct command => meaningful at top level
+  assert.deepEqual(agg.argv_shape, ["--packet"]);
+  assert.equal(agg.repair_loop_count, 1);
 });
 
 test("aggregateLifecycleForRun: single command stays backward-compatible (no span inflation)", () => {

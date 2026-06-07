@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, join, parse, resolve } from "node:path";
+import { dirname, join, parse, resolve, sep } from "node:path";
 
 export const RUN_SESSION_SCHEMA = "campaigns-os-run-session/v0";
 export const RUN_SESSION_REL_PATH = ".campaign-runtime/run-session.json";
@@ -48,19 +48,23 @@ export function resolveRunSessionPath(rootDir = process.cwd()) {
  * hijacking unrelated commands:
  *  - the walk STOPS at the nearest project root (a dir with .git/package.json),
  *    so a session in an ancestor ABOVE the project is never adopted;
- *  - a session located at $HOME or the filesystem root is never honored (those
- *    are not project roots).
+ *  - a session located at $HOME, ANY ancestor of $HOME (e.g. /Users), or the
+ *    filesystem root is never honored — those are shared dirs, not project roots.
+ *
+ * `home` is injectable for tests.
  */
-export function findRunSession(cwd = process.cwd()) {
+export function findRunSession(cwd = process.cwd(), { home = homedir() } = {}) {
   let dir = resolve(cwd);
   const { root } = parse(dir);
-  const home = resolve(homedir());
+  const resolvedHome = resolve(home);
+  // True when `dir` is $HOME itself or a strict ancestor of it (e.g. /Users).
+  const isHomeOrAncestor = (d) => d === resolvedHome || resolvedHome.startsWith(d + sep);
   for (let depth = 0; depth < 64; depth += 1) {
     const candidate = join(dir, RUN_SESSION_REL_PATH);
     if (existsSync(candidate)) {
-      // A session at $HOME or the filesystem root is not a project session —
-      // honoring it would capture every command run anywhere beneath it.
-      if (dir === home || dir === root) return null;
+      // A session at the filesystem root, $HOME, or an ancestor of $HOME is not
+      // a project session — honoring it would capture every command beneath it.
+      if (dir === root || isHomeOrAncestor(dir)) return null;
       try {
         const session = JSON.parse(readFileSync(candidate, "utf8"));
         if (session && typeof session === "object" && !Array.isArray(session) && isNonEmptyString(session.run_id)) {
