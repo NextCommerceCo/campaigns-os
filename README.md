@@ -132,7 +132,7 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 - [Developer Evaluation](docs/developer-evaluation.md)
 - [QA And Test Orders](docs/qa-and-test-orders.md)
 - [Small PR Review Path](docs/small-pr-review-path.md)
-- [Workflow Findings Sidecar](docs/workflow-findings-sidecar.md) — local-first capture of workflow signals (the Learning Trail), separate from the formal proof trail; never phones home
+- [Run Telemetry](docs/workflow-findings-sidecar.md) — per-run Run Record (system signal + workflow findings) tagged by improvement surface; captured locally always, remitted to Next Commerce only with up-front opt-out consent
 - [Versioning](docs/versioning.md)
 
 ## Status
