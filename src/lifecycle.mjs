@@ -165,18 +165,53 @@ export function validateLifecycle(entry) {
   return { ok: errors.length === 0, errors };
 }
 
+// The exact fields the Run Record's `lifecycle` block allows (matches the
+// schema's lifecycle properties). Allowlisting on embed guarantees no extra
+// journal key leaks in and violates the schema's additionalProperties:false.
+const RUN_RECORD_LIFECYCLE_KEYS = [
+  "run_id",
+  "command",
+  "argv_shape",
+  "exit_status",
+  "started_at",
+  "completed_at",
+  "duration_ms",
+  "stages",
+  "repair_loop_count",
+];
+
 /**
- * The Run Record embeds a lifecycle WITHOUT its journal schema_version (that
- * belongs to the lifecycle journal, not the run-record envelope).
+ * Project a journal entry down to exactly the fields the Run Record's
+ * `lifecycle` block allows — drops the journal `schema_version` and any other
+ * key not in the schema, so an embedded block can never violate the published
+ * schema's additionalProperties:false.
  */
 export function lifecycleForRunRecord(entry) {
   if (!entry || typeof entry !== "object") return null;
-  const { schema_version, ...rest } = entry;
-  return rest;
+  const out = {};
+  for (const key of RUN_RECORD_LIFECYCLE_KEYS) {
+    if (entry[key] !== undefined) out[key] = entry[key];
+  }
+  // Normalize stage items to exactly {name, duration_ms} so an unknown key in a
+  // hand-edited journal can't violate the schema's nested additionalProperties:false.
+  if (Array.isArray(out.stages)) {
+    out.stages = out.stages.map((stage) => {
+      const normalized = {};
+      if (stage && typeof stage === "object" && !Array.isArray(stage)) {
+        if (typeof stage.name === "string") normalized.name = stage.name;
+        if (typeof stage.duration_ms === "number") normalized.duration_ms = stage.duration_ms;
+      }
+      return normalized;
+    });
+  }
+  return out;
 }
 
-export function resolveLifecycleJournalPath(args = {}, cwd = process.cwd()) {
+export function resolveLifecycleJournalPath(args = {}, cwd = process.cwd(), env = process.env) {
   if (isNonEmptyString(args["lifecycle-journal"])) return resolve(args["lifecycle-journal"]);
+  // Honor the env opt-in so the journal a command WRITES (via the same resolver)
+  // is the journal run-record READS, even without an explicit flag.
+  if (isNonEmptyString(env?.CAMPAIGNS_OS_LIFECYCLE_LOG)) return resolve(env.CAMPAIGNS_OS_LIFECYCLE_LOG);
   return join(resolve(cwd), LIFECYCLE_JOURNAL_REL_PATH);
 }
 
@@ -220,14 +255,16 @@ export function readLifecycleJournal(journalPath) {
 
 /**
  * Select the lifecycle to embed in a Run Record for `runId`: the LAST journal
- * entry stamped with that run_id (most recent wins). Returns null when none
- * match — embedding is best-effort and backward-compatible.
+ * entry stamped with that run_id (most recent wins), skipping any command in
+ * `excludeCommands`. Returns null when none match — embedding is best-effort
+ * and backward-compatible. `excludeCommands` lets run-record skip its OWN
+ * entries so it never shadows the build command's lifecycle on a re-run.
  */
-export function selectLifecycleForRun(journal, runId) {
+export function selectLifecycleForRun(journal, runId, { excludeCommands = [] } = {}) {
   const entries = Array.isArray(journal?.entries) ? journal.entries : Array.isArray(journal) ? journal : [];
   let match = null;
   for (const entry of entries) {
-    if (entry && entry.run_id === runId) match = entry;
+    if (entry && entry.run_id === runId && !excludeCommands.includes(entry.command)) match = entry;
   }
   return match ? lifecycleForRunRecord(match) : null;
 }

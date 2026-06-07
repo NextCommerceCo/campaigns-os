@@ -27,6 +27,7 @@ import {
 import {
   assembleRunRecord,
   mintRunId,
+  validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
 import {
@@ -199,31 +200,37 @@ export async function main(argv) {
 
   // Wrap every command in the lifecycle instrumentation (T6): it captures the
   // command, its argv shape, exit status, and timing. Re-throws unchanged so
-  // the CLI exit code is unaffected. Persistence to the lifecycle journal is
-  // OPT-IN (--lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG) and non-fatal —
-  // default behavior is identical to before.
-  const { lifecycle } = await withCommandLifecycle(
-    { command, argvShape: argvShape(args), runId: optionalString(args["run-id"]) },
+  // the CLI exit code is unaffected. Persistence runs via onFinish so it fires
+  // on BOTH the success and error paths — a command that THROWS (the most
+  // valuable failure telemetry) is recorded too, not just clean exits.
+  // Persistence is OPT-IN (--lifecycle-journal or CAMPAIGNS_OS_LIFECYCLE_LOG)
+  // and non-fatal; with neither set, behavior is identical to before.
+  await withCommandLifecycle(
+    {
+      command,
+      argvShape: argvShape(args),
+      runId: optionalString(args["run-id"]),
+      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle),
+    },
     () => dispatch(command, args),
   );
-  persistLifecycleIfRequested(args, command, lifecycle);
 }
 
 // Append the command's lifecycle entry to the lifecycle journal only when the
 // operator/orchestrator opts in. Never throws — a lifecycle write must not
 // break a command (telemetry never blocks a build). `help` is a no-op command
-// and is not worth recording.
+// and is not worth recording. Read and write share one resolver
+// (resolveLifecycleJournalPath) so the journal a command WRITES is the journal
+// run-record READS for the same flag/env.
 function persistLifecycleIfRequested(args, command, lifecycle) {
   if (command === "help") return;
-  const requested = isNonEmptyString(args["lifecycle-journal"]) || isNonEmptyString(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG);
-  if (!requested) return;
+  if (!isNonEmptyString(args["lifecycle-journal"]) && !isNonEmptyString(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG)) return;
   try {
-    const journalPath = isNonEmptyString(args["lifecycle-journal"])
-      ? resolve(args["lifecycle-journal"])
-      : resolve(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG);
-    appendLifecycleEntry(journalPath, lifecycle);
-  } catch {
-    // non-fatal
+    appendLifecycleEntry(resolveLifecycleJournalPath(args), lifecycle);
+  } catch (error) {
+    // Non-fatal, but leave a one-line breadcrumb on stderr so a capture failure
+    // is observable rather than fully silent. stderr never pollutes --json stdout.
+    process.stderr.write(`[campaigns-os] lifecycle capture skipped: ${error.message}\n`);
   }
 }
 
@@ -4500,10 +4507,20 @@ async function runRecordCommand(args) {
   const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
 
   // Embed the command-lifecycle signal for this run, if a lifecycle journal
-  // carries an entry stamped with this run_id (T6). Best-effort: no journal or
-  // no match => no lifecycle block (backward-compatible).
-  const lifecycleJournalPath = resolveLifecycleJournalPath(args, baseDir);
-  const lifecycle = selectLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId);
+  // carries an entry stamped with this run_id (T6). Strictly BEST-EFFORT: an
+  // unreadable/directory/corrupt journal, or a malformed entry, must never
+  // break Run Record generation — on any problem we embed nothing. Exclude
+  // run-record's OWN entries so re-running it never shadows the build command's
+  // lifecycle, and validate the candidate so a corrupt entry can't produce a
+  // schema-invalid record at write time.
+  let lifecycle = null;
+  try {
+    const lifecycleJournalPath = resolveLifecycleJournalPath(args, baseDir);
+    const candidate = selectLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId, { excludeCommands: ["run-record"] });
+    if (candidate && validateRunRecordLifecycle(candidate).length === 0) lifecycle = candidate;
+  } catch {
+    lifecycle = null;
+  }
 
   const artifacts = [runRecordArtifactRef("build_packet", packetPath, PACKET_SCHEMA, baseDir)];
   if (contextExists) artifacts.push(runRecordArtifactRef("build_context", contextPath, CONTEXT_SCHEMA, baseDir));
@@ -4624,13 +4641,19 @@ function artifactRefPath(kind, filePath, baseDir) {
 const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["no-remit", "no-write", "proxy-base"]);
 
 // argv SHAPE = selected flag NAMES present, never their values (minimization).
-// Sorted for deterministic records; opt-out and endpoint flags stay private.
+// Sorted + de-duplicated for deterministic records; opt-out and endpoint flags
+// stay private. A `--flag=value` token parses as a single key, so split on "="
+// and keep only the name — otherwise a value (e.g. --auth-cookie=SECRET) would
+// leak into a persisted, potentially-remitted shape, breaking the guarantee.
 function argvShape(args) {
-  return Object.keys(args)
-    .filter((key) => key !== "_")
-    .filter((key) => !ARGV_SHAPE_PRIVATE_FLAGS.has(key))
-    .map((key) => `--${key}`)
-    .sort();
+  const names = new Set();
+  for (const key of Object.keys(args)) {
+    if (key === "_") continue;
+    const name = key.split("=")[0];
+    if (ARGV_SHAPE_PRIVATE_FLAGS.has(name)) continue;
+    names.add(`--${name}`);
+  }
+  return [...names].sort();
 }
 
 function parseCommaList(value) {

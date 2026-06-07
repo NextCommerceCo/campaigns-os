@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   appendLifecycleEntry,
   LIFECYCLE_SCHEMA,
+  lifecycleForRunRecord,
   readLifecycleJournal,
   resolveLifecycleJournalPath,
   selectLifecycleForRun,
@@ -149,10 +150,48 @@ test("selectLifecycleForRun returns the LAST matching run_id entry, stripped of 
   assert.equal(selectLifecycleForRun({ entries: [] }, "R"), null);
 });
 
-test("resolveLifecycleJournalPath: explicit flag > baseDir default", () => {
-  assert.equal(resolveLifecycleJournalPath({ "lifecycle-journal": "/tmp/x.jsonl" }), resolve("/tmp/x.jsonl"));
+test("resolveLifecycleJournalPath: explicit flag > env > baseDir default", () => {
+  // flag wins over everything
   assert.equal(
-    resolveLifecycleJournalPath({}, "/tmp/run-root"),
+    resolveLifecycleJournalPath({ "lifecycle-journal": "/tmp/x.jsonl" }, "/tmp/run-root", { CAMPAIGNS_OS_LIFECYCLE_LOG: "/tmp/env.jsonl" }),
+    resolve("/tmp/x.jsonl"),
+  );
+  // env beats the baseDir default (so a writer's env path == run-record's read path)
+  assert.equal(
+    resolveLifecycleJournalPath({}, "/tmp/run-root", { CAMPAIGNS_OS_LIFECYCLE_LOG: "/tmp/env.jsonl" }),
+    resolve("/tmp/env.jsonl"),
+  );
+  // nothing set => baseDir default
+  assert.equal(
+    resolveLifecycleJournalPath({}, "/tmp/run-root", {}),
     resolve("/tmp/run-root/.campaign-runtime/command-lifecycle.jsonl"),
   );
+});
+
+test("selectLifecycleForRun: excludeCommands skips the assembling command's own entries", () => {
+  const journal = { entries: [
+    { command: "doctor", argv_shape: [], run_id: "R", exit_status: 2 },
+    { command: "run-record", argv_shape: [], run_id: "R", exit_status: 0 }, // self-entry, later
+  ] };
+  // Without exclusion, last-wins picks run-record (the shadow bug).
+  assert.equal(selectLifecycleForRun(journal, "R").command, "run-record");
+  // With exclusion, the real build command survives.
+  assert.equal(selectLifecycleForRun(journal, "R", { excludeCommands: ["run-record"] }).command, "doctor");
+});
+
+test("lifecycleForRunRecord allowlists schema fields (drops schema_version and unknown keys)", () => {
+  const embedded = lifecycleForRunRecord({
+    schema_version: LIFECYCLE_SCHEMA,
+    command: "doctor",
+    argv_shape: ["--packet"],
+    exit_status: 2,
+    run_id: "R",
+    evil_extra_key: "should not survive",
+    stages: [],
+    repair_loop_count: 0,
+  });
+  assert.equal("schema_version" in embedded, false);
+  assert.equal("evil_extra_key" in embedded, false); // additionalProperties:false stays satisfiable
+  assert.equal(embedded.command, "doctor");
+  assert.equal(embedded.run_id, "R");
 });
