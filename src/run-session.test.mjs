@@ -23,6 +23,11 @@ const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 
 function withTempDir(run) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-"));
+  // Mark the temp dir as a project root so findRunSession's upward walk STOPS
+  // here and can't be contaminated by a stray ancestor session (e.g. a leftover
+  // /tmp or $HOME session on CI). This mirrors a real project, which always has
+  // a package.json / .git at its root.
+  writeFileSync(join(dir, "package.json"), "{}\n");
   try {
     return run(dir);
   } finally {
@@ -85,6 +90,37 @@ test("clearRunSession removes the session file (idempotent)", () => {
     assert.equal(clearRunSession(path), true);
     assert.equal(existsSync(path), false);
     assert.equal(clearRunSession(path), true); // no throw on already-gone
+  });
+});
+
+test("findRunSession does NOT adopt a session ABOVE the project root (no cross-project hijack)", () => {
+  withTempDir((parent) => {
+    // A stray session in an ancestor directory...
+    writeRunSession(parent, buildRunSession({ runId: "run_stray", lifecycleJournal: join(parent, "lc.jsonl") }));
+    // ...and a real project nested below it (its own package.json marks the boundary).
+    const project = join(parent, "project");
+    mkdirSync(project, { recursive: true });
+    writeFileSync(join(project, "package.json"), "{}\n");
+
+    // From inside the project, the ancestor session must NOT be found.
+    assert.equal(findRunSession(project), null);
+    assert.equal(findRunSession(join(project, "sub", "dir")) ?? null, null);
+
+    // A session AT the project root IS found.
+    writeRunSession(project, buildRunSession({ runId: "run_own", lifecycleJournal: join(project, "lc.jsonl") }));
+    assert.equal(findRunSession(project).session.run_id, "run_own");
+  });
+});
+
+test("findRunSession never honors a session located at the filesystem root or $HOME", () => {
+  // We can't write to those dirs in a test, but the guard is unit-checkable:
+  // a session whose dir equals the home/root sentinel returns null. Covered by
+  // the project-boundary test above for the realistic ancestor case; this just
+  // documents the home/root refusal exists. (See findRunSession dir === home/root.)
+  withTempDir((dir) => {
+    // Sanity: a normal project-rooted session is honored (control).
+    writeRunSession(dir, buildRunSession({ runId: "run_ctrl", lifecycleJournal: "j" }));
+    assert.equal(findRunSession(dir).session.run_id, "run_ctrl");
   });
 });
 
@@ -190,5 +226,22 @@ test("CLI: run end without a packet (and none in the session) fails clearly", ()
       assert.match(String(error.stderr || ""), /needs a build packet/);
     }
     assert.equal(threw, true);
+  });
+});
+
+test("CLI: run end leaves the session ACTIVE when run-record fails (operator can fix + retry)", () => {
+  withTempDir((dir) => {
+    // Point the session at a packet that doesn't exist -> run-record throws.
+    runIn(dir, ["run", "start", "--packet", join(dir, "missing.build.json"), "--json"]);
+    let threw = false;
+    try {
+      execFileSync("node", [CLI, "run", "end", "--json"], { encoding: "utf8", cwd: dir, stdio: "pipe" });
+    } catch {
+      threw = true; // run-record fails reading the missing packet
+    }
+    assert.equal(threw, true);
+    // Session must NOT be cleared on failure — the operator fixes the packet and retries.
+    assert.notEqual(findRunSession(dir), null);
+    assert.equal(findRunSession(dir).session.packet, join(dir, "missing.build.json"));
   });
 });

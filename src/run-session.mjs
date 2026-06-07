@@ -14,13 +14,23 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 
 export const RUN_SESSION_SCHEMA = "campaigns-os-run-session/v0";
 export const RUN_SESSION_REL_PATH = ".campaign-runtime/run-session.json";
 
+// Files that mark a project root. Session discovery never climbs ABOVE the
+// nearest project root, so a stray session in an unrelated ancestor (e.g.
+// $HOME or a shared /tmp) can't hijack commands run inside a real project.
+const PROJECT_ROOT_MARKERS = [".git", "package.json"];
+
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isProjectRoot(dir) {
+  return PROJECT_ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)));
 }
 
 /** Canonical session path for a project root: <root>/.campaign-runtime/run-session.json */
@@ -33,13 +43,24 @@ export function resolveRunSessionPath(rootDir = process.cwd()) {
  * subdirectory still share the project's session. Best-effort: never throws; a
  * missing or malformed session file simply means "no active session".
  * Returns `{ session, path, dir }` or null.
+ *
+ * Scope is bounded to the project to prevent a stray ancestor session from
+ * hijacking unrelated commands:
+ *  - the walk STOPS at the nearest project root (a dir with .git/package.json),
+ *    so a session in an ancestor ABOVE the project is never adopted;
+ *  - a session located at $HOME or the filesystem root is never honored (those
+ *    are not project roots).
  */
 export function findRunSession(cwd = process.cwd()) {
   let dir = resolve(cwd);
   const { root } = parse(dir);
+  const home = resolve(homedir());
   for (let depth = 0; depth < 64; depth += 1) {
     const candidate = join(dir, RUN_SESSION_REL_PATH);
     if (existsSync(candidate)) {
+      // A session at $HOME or the filesystem root is not a project session —
+      // honoring it would capture every command run anywhere beneath it.
+      if (dir === home || dir === root) return null;
       try {
         const session = JSON.parse(readFileSync(candidate, "utf8"));
         if (session && typeof session === "object" && !Array.isArray(session) && isNonEmptyString(session.run_id)) {
@@ -50,6 +71,9 @@ export function findRunSession(cwd = process.cwd()) {
       }
       return null;
     }
+    // Don't climb past the project boundary: the session must live within the
+    // project being built, not in an unrelated ancestor directory.
+    if (isProjectRoot(dir)) break;
     if (dir === root) break;
     dir = dirname(dir);
   }

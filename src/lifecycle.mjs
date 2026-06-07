@@ -238,6 +238,9 @@ export function lifecycleForRunRecord(entry) {
   return out;
 }
 
+// Flag > env > cwd-default journal path. NOTE: the CLI uses a session-aware
+// resolver (resolveLifecycleJournal in cli.mjs) that also consults the active
+// run session; this base resolver is retained for direct programmatic use.
 export function resolveLifecycleJournalPath(args = {}, cwd = process.cwd(), env = process.env) {
   if (isNonEmptyString(args["lifecycle-journal"])) return resolve(args["lifecycle-journal"]);
   // Honor the env opt-in so the journal a command WRITES (via the same resolver)
@@ -295,11 +298,14 @@ export function readLifecycleJournal(journalPath) {
 }
 
 /**
- * Select the lifecycle to embed in a Run Record for `runId`: the LAST journal
- * entry stamped with that run_id (most recent wins), skipping any command in
- * `excludeCommands`. Returns null when none match — embedding is best-effort
- * and backward-compatible. `excludeCommands` lets run-record skip its OWN
- * entries so it never shadows the build command's lifecycle on a re-run.
+ * Select a single lifecycle entry for `runId`: the LAST matching journal entry
+ * (most recent wins), skipping any command in `excludeCommands`. Returns null
+ * when none match.
+ *
+ * NOTE: run-record now embeds the multi-entry AGGREGATE (aggregateLifecycleForRun)
+ * rather than a single entry, so this single-entry selector is no longer on the
+ * Run Record embed path; it (and lifecycleForRunRecord) are retained for direct
+ * programmatic use and are covered by their own tests.
  */
 export function selectLifecycleForRun(journal, runId, { excludeCommands = [] } = {}) {
   const entries = Array.isArray(journal?.entries) ? journal.entries : Array.isArray(journal) ? journal : [];
@@ -334,11 +340,19 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
   let earliest = null;
   let latest = null;
   let durationSum = 0;
+  let explicitRepairLoops = 0;
+
+  // Only finite, parseable ISO timestamps participate in span timing; a junk
+  // string (e.g. a hand-edited journal) is ignored rather than emitted as a
+  // bogus started_at/completed_at.
+  const isParseableTimestamp = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
 
   for (const entry of matching) {
     const command = typeof entry.command === "string" ? entry.command : "(unknown)";
     commandCounts.set(command, (commandCounts.get(command) || 0) + 1);
     const exitStatus = Number.isInteger(entry.exit_status) ? entry.exit_status : null;
+    // A command may have recorded its own repair loops via recordRepairLoop().
+    if (Number.isInteger(entry.repair_loop_count)) explicitRepairLoops += entry.repair_loop_count;
 
     const subStages = Array.isArray(entry.stages) && entry.stages.length
       ? entry.stages.map((stage) => ({
@@ -354,11 +368,14 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
     stages.push(...subStages);
 
     if (typeof entry.duration_ms === "number") durationSum += entry.duration_ms;
-    if (typeof entry.started_at === "string" && (!earliest || entry.started_at < earliest)) earliest = entry.started_at;
-    if (typeof entry.completed_at === "string" && (!latest || entry.completed_at > latest)) latest = entry.completed_at;
+    if (isParseableTimestamp(entry.started_at) && (!earliest || entry.started_at < earliest)) earliest = entry.started_at;
+    if (isParseableTimestamp(entry.completed_at) && (!latest || entry.completed_at > latest)) latest = entry.completed_at;
   }
 
-  let repairLoopCount = 0;
+  // repair_loop_count = command re-runs (doctor -> fix -> doctor) PLUS any loops
+  // a command recorded explicitly. Re-runs are the v0 heuristic; explicit loops
+  // refine it once commands call recordRepairLoop().
+  let repairLoopCount = explicitRepairLoops;
   for (const count of commandCounts.values()) if (count > 1) repairLoopCount += count - 1;
 
   // Single command: trust its own monotonic duration. Multiple commands: prefer

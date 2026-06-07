@@ -210,7 +210,10 @@ export async function main(argv) {
   const command = args._[0] || "help";
 
   // Ambient run session (Tier 3): when `run start` is active, every command
-  // shares its run_id WITHOUT --run-id. Explicit --run-id still wins.
+  // shares its run_id WITHOUT --run-id. Explicit --run-id still wins. Resolved
+  // ONCE here and threaded through dispatch + persistence so the run_id a
+  // command is tagged with and the journal it writes to come from a single
+  // read (no TOCTOU skew if the session changes mid-run).
   const ambient = ambientRunSession();
 
   // Wrap every command in the lifecycle instrumentation (T6): it captures the
@@ -226,9 +229,9 @@ export async function main(argv) {
       command,
       argvShape: argvShape(args),
       runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
-      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle),
+      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle, ambient),
     },
-    (recorder) => dispatch(command, args, recorder),
+    (recorder) => dispatch(command, args, recorder, ambient),
   );
 }
 
@@ -242,13 +245,13 @@ function ambientRunSession() {
 
 // The lifecycle journal a command writes to: explicit flag > env > active run
 // session's journal > fallback. Read and write resolve identically, so the
-// journal a command WRITES is the journal run-record READS. `fallbackDir` is
-// used only by run-record's read path (its baseDir default); persistence
-// passes none, so with no flag/env/session nothing is written (default behavior).
-function resolveLifecycleJournal(args, { fallbackDir = null } = {}) {
+// journal a command WRITES is the journal run-record READS. `ambient` is the
+// session resolved once in main(); `fallbackDir` is used only by run-record's
+// read path (its baseDir default); persistence passes none, so with no
+// flag/env/session nothing is written (default behavior).
+function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = {}) {
   if (isNonEmptyString(args["lifecycle-journal"])) return resolve(args["lifecycle-journal"]);
   if (isNonEmptyString(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG)) return resolve(process.env.CAMPAIGNS_OS_LIFECYCLE_LOG);
-  const ambient = ambientRunSession();
   if (ambient && isNonEmptyString(ambient.session.lifecycle_journal)) return resolve(ambient.session.lifecycle_journal);
   return fallbackDir ? join(resolve(fallbackDir), LIFECYCLE_JOURNAL_REL_PATH) : null;
 }
@@ -257,9 +260,9 @@ function resolveLifecycleJournal(args, { fallbackDir = null } = {}) {
 // flag/env, or an ambient run session. Never throws — a lifecycle write must
 // not break a command (telemetry never blocks a build). `help` is a no-op
 // command and is not worth recording.
-function persistLifecycleIfRequested(args, command, lifecycle) {
+function persistLifecycleIfRequested(args, command, lifecycle, ambient) {
   if (command === "help") return;
-  const journalPath = resolveLifecycleJournal(args);
+  const journalPath = resolveLifecycleJournal(args, { ambient });
   if (!journalPath) return;
   try {
     appendLifecycleEntry(journalPath, lifecycle);
@@ -270,7 +273,7 @@ function persistLifecycleIfRequested(args, command, lifecycle) {
   }
 }
 
-async function dispatch(command, args, recorder = NOOP_RECORDER) {
+async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null) {
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
@@ -354,7 +357,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER) {
   }
 
   if (command === "run-record") {
-    await runRecordCommand(args);
+    await runRecordCommand(args, ambient);
     return;
   }
 
@@ -364,7 +367,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER) {
   }
 
   if (command === "run") {
-    await runSessionCommand(args);
+    await runSessionCommand(args, ambient);
     return;
   }
 
@@ -4523,11 +4526,11 @@ function findingsExport(args) {
 // one run_id + one lifecycle journal across every command in the project
 // without per-command flags — the experience for "talk to your agent and
 // build". See src/run-session.mjs.
-async function runSessionCommand(args) {
+async function runSessionCommand(args, ambient = null) {
   const sub = args._[1] || "status";
   if (sub === "start") return runSessionStart(args);
   if (sub === "status") return runSessionStatus(args);
-  if (sub === "end") return runSessionEnd(args);
+  if (sub === "end") return runSessionEnd(args, ambient);
   throw new Error(`Unknown run subcommand "${sub}". Use: start | end | status.`);
 }
 
@@ -4544,6 +4547,11 @@ function runSessionStart(args) {
     ? resolve(args["lifecycle-journal"])
     : join(resolve(rootDir), LIFECYCLE_JOURNAL_REL_PATH);
   const packet = optionalString(args.packet) ? resolve(args.packet) : null;
+  // The packet is remembered for the whole session, so a typo would only surface
+  // at `run end` after a full build. Warn now (non-fatal) if it isn't there yet.
+  if (packet && !existsSync(packet) && !args.json) {
+    console.warn(`Warning: --packet ${packet} does not exist yet; run end will need it (or pass --packet then).`);
+  }
   const session = buildRunSession({ runId, lifecycleJournal, packet });
   const sessionPath = writeRunSession(rootDir, session);
 
@@ -4574,8 +4582,9 @@ function runSessionStatus(args) {
   if (found.session.packet) console.log(`Packet: ${found.session.packet}`);
 }
 
-async function runSessionEnd(args) {
-  const found = findRunSession(process.cwd());
+async function runSessionEnd(args, ambient = null) {
+  // Use the session resolved once in main() (single source of truth).
+  const found = ambient;
   if (!found) {
     throw new Error("No active run session to end. Start one with: campaigns-os run start.");
   }
@@ -4586,7 +4595,9 @@ async function runSessionEnd(args) {
   }
   // Reuse the full run-record path (aggregate lifecycle, consent-gated remit)
   // with the session's run_id + journal, so `run end` is just "assemble the
-  // Run Record for this session and stop logging to it".
+  // Run Record for this session and stop logging to it". The session is cleared
+  // only AFTER run-record succeeds — if it throws, the session stays active so
+  // the operator can fix the packet and re-run `run end`.
   const endArgs = {
     ...args,
     _: ["run-record"],
@@ -4594,7 +4605,7 @@ async function runSessionEnd(args) {
     "run-id": session.run_id,
     "lifecycle-journal": session.lifecycle_journal,
   };
-  await runRecordCommand(endArgs);
+  await runRecordCommand(endArgs, found);
   clearRunSession(sessionPath);
   if (!args.json) console.log(`Run session ${session.run_id} ended; session cleared.`);
 }
@@ -4604,7 +4615,7 @@ async function runSessionEnd(args) {
 // run-record.mjs to assemble the manifest, then (consent-gated, non-fatal)
 // remit it. Capture is ALWAYS local; consent gates only the remit. See
 // docs/workflow-findings-sidecar.md.
-async function runRecordCommand(args) {
+async function runRecordCommand(args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
   const baseDir = dirname(packetPath);
@@ -4628,7 +4639,7 @@ async function runRecordCommand(args) {
   const journal = readJournal(journalPath);
 
   // run_id: explicit flag > active run session > freshly minted.
-  const runId = optionalString(args["run-id"]) || ambientRunSession()?.session?.run_id || mintRunId();
+  const runId = optionalString(args["run-id"]) || ambient?.session?.run_id || mintRunId();
   const proxyBase = optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE;
 
   // Embed the aggregated command-lifecycle signal for this run from the
@@ -4640,7 +4651,7 @@ async function runRecordCommand(args) {
   // record at write time. Journal resolves flag > env > session > baseDir.
   let lifecycle = null;
   try {
-    const lifecycleJournalPath = resolveLifecycleJournal(args, { fallbackDir: baseDir });
+    const lifecycleJournalPath = resolveLifecycleJournal(args, { ambient, fallbackDir: baseDir });
     const candidate = aggregateLifecycleForRun(readLifecycleJournal(lifecycleJournalPath), runId, { excludeCommands: ["run-record", "run"] });
     if (candidate && validateRunRecordLifecycle(candidate).length === 0) lifecycle = candidate;
   } catch {
