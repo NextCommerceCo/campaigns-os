@@ -30,6 +30,13 @@ import {
   writeRunRecord,
 } from "./run-record.mjs";
 import {
+  readConfig,
+  resolveConfigPath,
+  resolveConsent,
+  TELEMETRY_ENV_VAR,
+  writeConsentConfig,
+} from "./consent.mjs";
+import {
   SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "./source-html-manifest.mjs";
@@ -154,6 +161,7 @@ Usage:
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
   campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--no-write] [--json]
+  campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
 
 Examples:
   npm run campaigns-os -- start \\
@@ -259,6 +267,11 @@ export async function main(argv) {
 
   if (command === "run-record") {
     runRecordCommand(args);
+    return;
+  }
+
+  if (command === "telemetry") {
+    telemetryCommand(args);
     return;
   }
 
@@ -4516,6 +4529,56 @@ function parseCommaList(value) {
 
 function packageVersion() {
   return readJson(join(ROOT, "package.json")).version;
+}
+
+// Machine-level Run Telemetry consent. `status` reports the resolved state and
+// its source; `on`/`off` persist an explicit choice to the user-level config.
+// Consent gates REMIT only — local capture is unaffected.
+function telemetryCommand(args) {
+  const sub = args._[1] || "status";
+  const configPath = resolveConfigPath();
+
+  if (sub === "on" || sub === "off") {
+    const { configPath: written } = writeConsentConfig(sub, { configPath, proxyBase: DEFAULT_PROXY_BASE, source: "telemetry-command" });
+    const resolved = resolveConsent({ configPath });
+    if (args.json) {
+      console.log(JSON.stringify({ ok: true, action: `telemetry-${sub}`, config_path: written, state: resolved.state, source: resolved.source }, null, 2));
+      return;
+    }
+    console.log(`Telemetry ${sub.toUpperCase()}.`);
+    console.log(`Config: ${written}`);
+    console.log(`Resolved: ${resolved.state} (source: ${resolved.source})`);
+    if (resolved.source === "env") {
+      console.log(`Note: ${TELEMETRY_ENV_VAR} is set and overrides this file until unset.`);
+    }
+    return;
+  }
+
+  if (sub === "status") {
+    const resolved = resolveConsent({ configPath });
+    const { ok: configPresent } = readConfig(configPath);
+    if (args.json) {
+      console.log(JSON.stringify({
+        ok: true,
+        action: "telemetry-status",
+        config_path: configPath,
+        config_present: configPresent,
+        state: resolved.state,
+        source: resolved.source,
+        resolved: resolved.resolved,
+        env_override: process.env[TELEMETRY_ENV_VAR] ?? null,
+      }, null, 2));
+      return;
+    }
+    console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})`);
+    console.log(`Config: ${configPath}${configPresent ? "" : " (not set)"}`);
+    if (!resolved.resolved) {
+      console.log("No explicit choice yet — defaults OFF. Set with: campaigns-os telemetry on|off");
+    }
+    return;
+  }
+
+  throw new Error(`Unknown telemetry subcommand "${sub}". Use: status | on | off.`);
 }
 
 // Tiny Prompts: skippable one-line guidance at stage boundaries. They surface
