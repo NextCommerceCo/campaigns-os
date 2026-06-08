@@ -1,6 +1,33 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
+export const ADAPTER_DECISION_REQUIRED_FIELDS = Object.freeze([
+  "raw_html_conversion_status",
+  "source_asset_strategy",
+  "commerce_shell_adoption",
+  "route_rewrite_policy",
+  "template_files_copied",
+  "config_script_strategy",
+  "wrapper_policy",
+  "frontmatter_policy",
+  "script_style_reference_policy",
+  "cta_rewrite_policy",
+  "layout_choice",
+]);
+
+export const ADAPTER_DECISION_STRATEGY_FIELDS = Object.freeze([
+  "raw_html_conversion_status",
+  "source_asset_strategy",
+  "route_rewrite_policy",
+  "config_script_strategy",
+  "commerce_shell_adoption",
+  "wrapper_policy",
+  "frontmatter_policy",
+  "script_style_reference_policy",
+  "cta_rewrite_policy",
+  "layout_choice",
+]);
+
 export const TEMPLATE_SLICE_REQUIRED_GROUPS = Object.freeze([
   "pages",
   "_includes",
@@ -10,6 +37,7 @@ export const TEMPLATE_SLICE_REQUIRED_GROUPS = Object.freeze([
   "frontmatter_vocabulary",
 ]);
 
+const TEMPLATE_FILES_COPIED_REQUIRED_FIELDS = Object.freeze(["status", "required_groups", "groups", "paths"]);
 const RUNTIME_PAGE_TYPES = new Set(["checkout", "select", "upsell", "downsell", "thankyou", "receipt"]);
 const RAW_HTML_CONVERSION_STATUSES = new Set(["pending", "in_progress", "completed", "not_required", "blocked"]);
 const SOURCE_ASSET_STRATEGIES = new Set(["pagekit_campaign_asset_root", "external_cdn", "raw_passthrough", "not_applicable", "unknown"]);
@@ -54,6 +82,11 @@ export function validateAdapterDecisionShape(decisions, location, warnings, read
     addIssue(warnings, location, `${location} must be an object when present.`);
     return;
   }
+  for (const field of ADAPTER_DECISION_REQUIRED_FIELDS) {
+    if (!(field in decisions)) {
+      addIssue(warnings, `${location}.${field}`, `${location}.${field} is missing; adapter decisions must carry every required public contract field.`);
+    }
+  }
   checkEnum(decisions.raw_html_conversion_status, RAW_HTML_CONVERSION_STATUSES, `${location}.raw_html_conversion_status`, warnings, addIssue);
   checkEnum(decisions.source_asset_strategy, SOURCE_ASSET_STRATEGIES, `${location}.source_asset_strategy`, warnings, addIssue);
   checkEnum(decisions.route_rewrite_policy, ROUTE_REWRITE_POLICIES, `${location}.route_rewrite_policy`, warnings, addIssue);
@@ -70,7 +103,15 @@ export function validateAdapterDecisionShape(decisions, location, warnings, read
     if (!isObject(copied)) {
       addIssue(warnings, `${location}.template_files_copied`, `${location}.template_files_copied must be an object when present.`);
     } else {
+      for (const field of TEMPLATE_FILES_COPIED_REQUIRED_FIELDS) {
+        if (!(field in copied)) {
+          addIssue(warnings, `${location}.template_files_copied.${field}`, `${location}.template_files_copied.${field} is missing; template slice proof must record status, required_groups, groups, and paths.`);
+        }
+      }
       checkEnum(copied.status, TEMPLATE_FILES_COPIED_STATUSES, `${location}.template_files_copied.status`, warnings, addIssue);
+      if (copied.required_groups != null && !Array.isArray(copied.required_groups)) {
+        addIssue(warnings, `${location}.template_files_copied.required_groups`, `${location}.template_files_copied.required_groups must be an array.`);
+      }
       if (copied.groups != null && !Array.isArray(copied.groups)) {
         addIssue(warnings, `${location}.template_files_copied.groups`, `${location}.template_files_copied.groups must be an array.`);
       }
@@ -110,7 +151,7 @@ export function validateAdapterSourceFiles({ decisions, sourceRoot, pages = [], 
   );
 }
 
-export function validateAdapterDecisionGates({ decisions, location, specPages = [], family, assemblyComplete, errors, warnings, ready, addIssue }) {
+export function validateAdapterDecisionGates({ decisions, location, specPages = [], family, assemblyComplete, targetRepo = null, errors, warnings, ready, addIssue }) {
   if (!isObject(decisions)) return;
   const runtimePages = specPages.filter((page) => RUNTIME_PAGE_TYPES.has(String(page.type || "").toLowerCase()));
   const familyAutomatable = isNonEmptyString(family) && family !== "undecided" && family !== "custom";
@@ -132,6 +173,21 @@ export function validateAdapterDecisionGates({ decisions, location, specPages = 
     if (decisions.config_script_strategy === "unknown") {
       addIssue(warnings, "adapter.config_script_strategy", `Assembly is recorded complete but ${location}.config_script_strategy is unknown. Record whether config scripts load via campaign assets, frontmatter scripts, inline config, or not_required.`);
     }
+    if (["preserve_document_wrappers", "unknown"].includes(decisions.wrapper_policy)) {
+      addIssue(warnings, "adapter.wrapper_policy", `Assembly is recorded complete with ${location}.wrapper_policy="${decisions.wrapper_policy}". Page-kit source should normally strip document wrappers unless preserving them is explicitly not_required.`);
+    }
+    if (["raw_passthrough", "unknown"].includes(decisions.frontmatter_policy)) {
+      addIssue(warnings, "adapter.frontmatter_policy", `Assembly is recorded complete with ${location}.frontmatter_policy="${decisions.frontmatter_policy}". Record how Page Kit YAML frontmatter was created or why it is not_required.`);
+    }
+    if (["raw_passthrough", "unknown"].includes(decisions.script_style_reference_policy)) {
+      addIssue(warnings, "adapter.script_style_reference_policy", `Assembly is recorded complete with ${location}.script_style_reference_policy="${decisions.script_style_reference_policy}". Record how scripts/styles load via frontmatter, campaign assets, inline blocks, or not_required.`);
+    }
+    if (["raw_passthrough", "unknown"].includes(decisions.cta_rewrite_policy)) {
+      addIssue(warnings, "adapter.cta_rewrite_policy", `Assembly is recorded complete with ${location}.cta_rewrite_policy="${decisions.cta_rewrite_policy}". Record how CTA destinations were rewritten from CampaignSpec routes before QA.`);
+    }
+    if (["raw_passthrough", "unknown"].includes(decisions.layout_choice)) {
+      addIssue(warnings, "adapter.layout_choice", `Assembly is recorded complete with ${location}.layout_choice="${decisions.layout_choice}". Record the Page Kit layout strategy before handoff.`);
+    }
   }
 
   if (runtimePages.length > 0 && familyAutomatable) {
@@ -152,7 +208,7 @@ export function validateAdapterDecisionGates({ decisions, location, specPages = 
   }
 
   if (assemblyComplete && familyAutomatable) {
-    validateTemplateFilesCopied(decisions.template_files_copied, location, warnings, ready, addIssue);
+    validateTemplateFilesCopied(decisions.template_files_copied, location, warnings, ready, addIssue, { targetRepo });
   }
 }
 
@@ -166,7 +222,7 @@ export function collectDocumentWrapperNames(content) {
   return wrappers;
 }
 
-function validateTemplateFilesCopied(copied, location, warnings, ready, addIssue) {
+function validateTemplateFilesCopied(copied, location, warnings, ready, addIssue, { targetRepo = null } = {}) {
   if (!isObject(copied)) {
     addIssue(warnings, "adapter.template_files_copied", `Assembly is recorded complete, but ${location}.template_files_copied is missing. Record the selected template family as an atomic slice: pages, _includes, _layouts, CSS, JS, and frontmatter vocabulary.`);
     return;
@@ -190,7 +246,37 @@ function validateTemplateFilesCopied(copied, location, warnings, ready, addIssue
     );
     return;
   }
+  if (!validateTemplateSlicePaths(copied, location, targetRepo, warnings, ready, addIssue)) return;
   ready.push("Template family slice copy/verification covers required page-kit dependency groups");
+}
+
+function validateTemplateSlicePaths(copied, location, targetRepo, warnings, ready, addIssue) {
+  const paths = Array.isArray(copied.paths) ? copied.paths.filter(isNonEmptyString) : [];
+  if (paths.length === 0) {
+    addIssue(warnings, "adapter.template_files_copied.paths", `Assembly is recorded complete, but ${location}.template_files_copied.paths is empty. Record the target repo paths that prove the template family slice exists.`);
+    return false;
+  }
+  if (!isNonEmptyString(targetRepo) || !existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) return true;
+
+  const missing = [];
+  const absolute = [];
+  for (const path of paths) {
+    if (/^(?:\/|[A-Za-z]:[\\/])/.test(path)) {
+      absolute.push(path);
+      continue;
+    }
+    const fullPath = resolve(targetRepo, path);
+    if (!existsSync(fullPath)) missing.push(path);
+  }
+  if (absolute.length) {
+    addIssue(warnings, "adapter.template_files_copied.paths", `${location}.template_files_copied.paths should be target-repo-relative, not absolute: ${absolute.slice(0, 5).join(", ")}.`);
+  }
+  if (missing.length) {
+    addIssue(warnings, "adapter.template_files_copied.paths", `${location}.template_files_copied.paths references missing target repo path(s): ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? `; plus ${missing.length - 8} more` : ""}.`);
+    return false;
+  }
+  ready.push("Template family slice paths exist in target repo");
+  return absolute.length === 0;
 }
 
 function checkEnum(value, allowed, code, warnings, addIssue) {

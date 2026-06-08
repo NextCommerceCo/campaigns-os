@@ -70,6 +70,10 @@ import {
   publicRouteForPage,
 } from "./source-html-intake.mjs";
 import {
+  readSourceHtmlManifestFile,
+  SOURCE_HTML_MANIFEST_SCHEMA,
+} from "./source-html-manifest.mjs";
+import {
   inspectBrandTheme,
   validateAssemblyReportThemeBlock,
   validateThemeContextBlock,
@@ -97,6 +101,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
 const CONTEXT_SCHEMA = "campaign-runtime-build-context/v0";
 const REPORT_SCHEMA = "campaign-runtime-assembly-report/v0";
+const PROOF_POLICY_REQUIRED_FIELDS = Object.freeze([
+  "browser_qa_required",
+  "typed_card_depth",
+  "localhost_development_domain_allowed",
+  "non_localhost_origin_allowlist_required",
+  "order_path_depth",
+  "operator_approval_state",
+]);
 
 // Default proxy base for `--map-id` spec retrieval. The Map Builder
 // (campaign-map.nextcommerce.com) is fronted by a backend service that
@@ -1411,10 +1423,7 @@ function validateAdapterContracts(packet, packetPath, spec, errors, warnings, re
   });
 
   const contextDecisions = buildState.context?.adapter_decisions;
-  validateAdapterDecisionShape(contextDecisions, "context.adapter_decisions", warnings, ready, { addIssue });
-
   const reportDecisions = buildState.report?.adapter_decisions;
-  validateAdapterDecisionShape(reportDecisions, "report.adapter_decisions", warnings, ready, { addIssue });
 
   const decisions = reportDecisions || contextDecisions || packetContract;
   validateAdapterDecisionGates({
@@ -1423,6 +1432,7 @@ function validateAdapterContracts(packet, packetPath, spec, errors, warnings, re
     specPages: activeSpecPages(spec),
     family: packet.assembly?.template_family,
     assemblyComplete: isStageComplete(buildState.report, "assembly"),
+    targetRepo: derived.target_repo,
     errors,
     warnings,
     ready,
@@ -1436,23 +1446,43 @@ function validateProofPolicy(packet, warnings, ready) {
     addIssue(warnings, "qa.proof_policy", "qa.proof_policy is missing. New packets make browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state explicit.");
     return;
   }
+  validateProofPolicyObject(policy, "qa.proof_policy", warnings, ready, { requireBrowserQa: true });
+}
+
+function validateProofPolicyObject(policy, location, warnings, ready, { requireBrowserQa = false } = {}) {
   if (!isObject(policy)) {
-    addIssue(warnings, "qa.proof_policy", "qa.proof_policy must be an object when present.");
+    addIssue(warnings, location, `${location} must be an object when present.`);
     return;
   }
-  if (policy.browser_qa_required !== true) {
-    addIssue(warnings, "qa.proof_policy.browser_qa_required", "Browser QA should stay explicit in the packet/report before launch proof.");
+  for (const field of PROOF_POLICY_REQUIRED_FIELDS) {
+    if (!(field in policy)) {
+      addIssue(warnings, `${location}.${field}`, `${location}.${field} is missing; proof policy must make browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state explicit.`);
+    }
+  }
+  if ("browser_qa_required" in policy && requireBrowserQa && policy.browser_qa_required !== true) {
+    addIssue(warnings, `${location}.browser_qa_required`, "Browser QA should stay explicit in the packet/report before launch proof.");
+  } else if (policy.browser_qa_required != null && typeof policy.browser_qa_required !== "boolean") {
+    addIssue(warnings, `${location}.browser_qa_required`, `${location}.browser_qa_required must be a boolean.`);
   }
   if (!isNonEmptyString(policy.typed_card_depth)) {
-    addIssue(warnings, "qa.proof_policy.typed_card_depth", "qa.proof_policy.typed_card_depth should name the intended typed-card depth, usually common.");
+    addIssue(warnings, `${location}.typed_card_depth`, `${location}.typed_card_depth should name the intended typed-card depth, usually common.`);
+  }
+  if ("localhost_development_domain_allowed" in policy && policy.localhost_development_domain_allowed !== true) {
+    addIssue(warnings, `${location}.localhost_development_domain_allowed`, `${location}.localhost_development_domain_allowed should be true; localhost on any port is the public Development-domain QA origin.`);
+  }
+  if ("non_localhost_origin_allowlist_required" in policy && policy.non_localhost_origin_allowlist_required !== true) {
+    addIssue(warnings, `${location}.non_localhost_origin_allowlist_required`, `${location}.non_localhost_origin_allowlist_required should be true; preview/production origins require SDK origin allowlist confirmation.`);
   }
   if (!isNonEmptyString(policy.order_path_depth)) {
-    addIssue(warnings, "qa.proof_policy.order_path_depth", "qa.proof_policy.order_path_depth should name checkout/upsell order-path depth.");
+    addIssue(warnings, `${location}.order_path_depth`, `${location}.order_path_depth should name checkout/upsell order-path depth.`);
   }
   if (!isNonEmptyString(policy.operator_approval_state)) {
-    addIssue(warnings, "qa.proof_policy.operator_approval_state", "qa.proof_policy.operator_approval_state should be explicit, e.g. not_required_global_test_cards.");
+    addIssue(warnings, `${location}.operator_approval_state`, `${location}.operator_approval_state should be explicit, e.g. not_required_global_test_cards.`);
   }
-  ready.push(`QA proof policy loaded: browser=${policy.browser_qa_required === true}, typed_card_depth=${policy.typed_card_depth || "unspecified"}, order_path_depth=${policy.order_path_depth || "unspecified"}`);
+  if (policy.qa_portal_publish_default != null && typeof policy.qa_portal_publish_default !== "boolean") {
+    addIssue(warnings, `${location}.qa_portal_publish_default`, `${location}.qa_portal_publish_default must be a boolean when present.`);
+  }
+  ready.push(`${location} loaded: browser=${policy.browser_qa_required === true}, typed_card_depth=${policy.typed_card_depth || "unspecified"}, order_path_depth=${policy.order_path_depth || "unspecified"}`);
 }
 
 export function validateSpecStoreProfile(spec, errors, warnings, ready) {
@@ -2509,6 +2539,7 @@ function coverageErrorDetail(page) {
 function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}) {
   const pages = packet.source_html?.pages || [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
+  validateSourceHtmlManifestAtRoot(sourceRoot, warnings, ready);
   const active = activeSpecPages(spec);
   const specPartialScope = spec?.build_scope?.mode === "partial";
   const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
@@ -2624,6 +2655,22 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
       ? `Partial build previewable routes: ${builtPages.map((page) => routeLabel(page.route)).join(", ")}`
       : "All mapped CampaignSpec pages are build candidates");
   }
+}
+
+function validateSourceHtmlManifestAtRoot(sourceRoot, warnings, ready) {
+  if (!isNonEmptyString(sourceRoot) || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
+  const result = readSourceHtmlManifestFile(sourceRoot);
+  if (!result.path) return;
+  if (result.validation && !result.validation.ok) {
+    const detail = result.validation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
+    addIssue(warnings, "source_html.manifest", `Source-html manifest failed ${SOURCE_HTML_MANIFEST_SCHEMA} validation: ${detail}. Re-run or fix the producer before relying on manifest-derived page mappings.`);
+    return;
+  }
+  if (result.warning) {
+    addIssue(warnings, "source_html.manifest", result.warning);
+    return;
+  }
+  ready.push(`Source-html manifest ${SOURCE_HTML_MANIFEST_SCHEMA} validated`);
 }
 
 // Helpers ported from the private build-packet doctor (ADR-003 step 2) so the
@@ -3016,12 +3063,11 @@ function validateAssemblyReport(report) {
 }
 
 function validateAssemblyProofPolicy(policy, warnings, ready) {
-  if (policy == null) return;
-  if (!isObject(policy)) {
-    addIssue(warnings, "report.proof_policy", "report.proof_policy must be an object when present.");
+  if (policy == null) {
+    addIssue(warnings, "report.proof_policy", "report.proof_policy is missing. Assembly Reports should mirror qa.proof_policy so browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state are inspectable.");
     return;
   }
-  ready.push("Assembly report proof_policy loaded");
+  validateProofPolicyObject(policy, "report.proof_policy", warnings, ready);
 }
 
 // The orchestration stage contract lives in orchestration-stage-contract.mjs so
@@ -3992,7 +4038,7 @@ function proposeWorkflowFindingsFromArtifacts({ doctor, report, packet, packetPa
     run_id: optionalString(runId),
     author_type: "system",
     evidence_quality: "system_observed",
-    safe_to_share: true,
+    safe_to_share: false,
   };
 
   for (const issue of doctor.errors || []) {

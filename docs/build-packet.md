@@ -64,14 +64,17 @@ Required adapter decisions:
 `template_files_copied` is intentionally group-based rather than prose-only:
 `pages`, `_includes`, `_layouts`, `assets/css`, `assets/js`, and
 `frontmatter_vocabulary`. Doctor warns when an assembly-complete report still
-shows `pending`/`partial` template copying or misses one of those groups.
+shows `pending`/`partial` template copying or misses one of those groups. When
+the status is `complete` or `verified_existing_slice`, `paths` must name
+target-repo-relative proof paths and doctor verifies those paths exist.
 
 Fresh packets also include `qa.proof_policy`, mirrored into
 `report.proof_policy`. It records browser QA requirement, typed-card depth,
 localhost Development-domain behavior, non-localhost SDK allowlist requirement,
 order path depth, and operator approval state. Test cards still need no
 permission gate; the explicit field prevents agents from re-litigating proof
-depth in chat.
+depth in chat. Doctor checks the full field set in both packet and report
+artifacts when present.
 
 ## CampaignSpec Retrieval (`--map-id`)
 
@@ -95,11 +98,15 @@ The fetched spec is treated identically to a `--spec`-supplied local file from t
 
 ## Source HTML Manifest Auto-Population
 
-When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`), `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching.
+When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`, published at `schemas/source-html-manifest.v0.schema.json`), `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching.
 
 Behavior:
 
-- The manifest is consumed only when its `schema_version` is `source-html-manifest/v0`. Unknown schema versions log a warning and fall back to filesystem matching so out-of-band tools cannot silently corrupt the packet.
+- The manifest is consumed only when it passes the `source-html-manifest/v0`
+  validator. Unknown schema versions, missing `page_id`/`path`, or malformed
+  `source_hash` values log a warning and fall back to filesystem matching so
+  out-of-band tools cannot silently corrupt the packet. Doctor also validates a
+  present manifest at the source root.
 - The manifest's `page_id` must match an active CampaignSpec page id. Manifest entries with no matching spec page surface as a `MANIFEST_EXTRA_PAGE` prompt (analogous to the existing `MISSING_SOURCE_PAGE` prompt) so the operator reconciles either the spec or the manifest before build.
 - Optional manifest `page_url` values must be unique after Page Kit route normalization. Duplicate values surface as `MANIFEST_DUPLICATE_PAGE_URL`; prepare-build keeps the first value for route fallback matching and asks the operator to deduplicate before build.
 - Path values are relative to the source HTML root (`<source>`), not to the `.campaigns-os/` directory that contains the manifest. For example, use `checkout/index.html`, not `../checkout/index.html`.

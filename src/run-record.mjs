@@ -11,6 +11,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { ADAPTER_DECISION_STRATEGY_FIELDS } from "./adapter-decision-contract.mjs";
 
 export const RUN_RECORD_SCHEMA = "campaigns-os-run-record/v0";
 export const RUN_RECORDS_DIR_REL_PATH = ".campaign-runtime/run-records";
@@ -239,16 +240,6 @@ export function validateRunRecordLifecycle(lc) {
 // function over inputs so it is unit-testable without a packet on disk.
 // ---------------------------------------------------------------------------
 
-// Adapter decision enums worth capturing as normalized signal. The strategy
-// choices only — never the source file lists those decisions point at.
-const ADAPTER_DECISION_KEYS = [
-  "raw_html_conversion_status",
-  "source_asset_strategy",
-  "route_rewrite_policy",
-  "config_script_strategy",
-  "commerce_shell_adoption",
-];
-
 /**
  * Mint the single canonical run_id at the run boundary. Threaded through the
  * run so every artifact and finding correlates, and used as the remit
@@ -323,7 +314,7 @@ function selectAdapterDecisions({ packet, report, context }) {
 function extractAdapterDecisions(decisions) {
   if (!decisions || typeof decisions !== "object" || Array.isArray(decisions)) return null;
   const out = {};
-  for (const key of ADAPTER_DECISION_KEYS) {
+  for (const key of ADAPTER_DECISION_STRATEGY_FIELDS) {
     if (typeof decisions[key] === "string") out[key] = decisions[key];
   }
   if (typeof decisions.template_files_copied?.status === "string") {

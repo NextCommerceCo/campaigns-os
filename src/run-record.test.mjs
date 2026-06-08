@@ -190,7 +190,18 @@ test("assembleRunRecord with doctor + report + verdict populates observation arr
       ],
       ready: ["a", "b", "c"],
     },
-    report: { adapter_decisions: { source_asset_strategy: "external_cdn", route_rewrite_policy: "raw_passthrough", template_files_copied: { status: "complete" } } },
+    report: {
+      adapter_decisions: {
+        source_asset_strategy: "external_cdn",
+        route_rewrite_policy: "raw_passthrough",
+        wrapper_policy: "strip_document_wrappers",
+        frontmatter_policy: "pagekit_yaml_frontmatter",
+        script_style_reference_policy: "frontmatter_or_campaign_asset",
+        cta_rewrite_policy: "campaignspec_routes_via_campaign_link",
+        layout_choice: "campaign_layout",
+        template_files_copied: { status: "complete" },
+      },
+    },
     qaVerdict: {
       disposition: "ready_with_exceptions",
       exceptions: [
@@ -207,6 +218,11 @@ test("assembleRunRecord with doctor + report + verdict populates observation arr
   assert.equal(record.observations.doctor.ready_count, 3);
   assert.deepEqual(record.observations.spec_validation_rule_ids, ["StoreProfileRequired"]);
   assert.equal(record.observations.adapter_decisions.source_asset_strategy, "external_cdn");
+  assert.equal(record.observations.adapter_decisions.wrapper_policy, "strip_document_wrappers");
+  assert.equal(record.observations.adapter_decisions.frontmatter_policy, "pagekit_yaml_frontmatter");
+  assert.equal(record.observations.adapter_decisions.script_style_reference_policy, "frontmatter_or_campaign_asset");
+  assert.equal(record.observations.adapter_decisions.cta_rewrite_policy, "campaignspec_routes_via_campaign_link");
+  assert.equal(record.observations.adapter_decisions.layout_choice, "campaign_layout");
   assert.equal(record.observations.adapter_decisions.template_files_copied_status, "complete");
   assert.equal(record.observations.qa.disposition, "ready_with_exceptions");
   assert.deepEqual(record.observations.qa.gap_classes, ["funnel-flow", "meta-tags"]); // distinct families

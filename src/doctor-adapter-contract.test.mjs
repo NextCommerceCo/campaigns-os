@@ -120,9 +120,21 @@ test("doctor skips missing optional artifact sidecars in the named check trace",
   withPreparedBuild(({ packetPath, contextPath }) => {
     const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--json"]);
     const checkIds = doctor.derived?.doctor_checks || [];
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
 
     assert.equal(checkIds.at(-1), "context.shape");
     assert.equal(checkIds.includes("assembly_report.shape"), false);
+    assert.equal(warningCodes.has("report.adapter_decisions"), false);
+  });
+});
+
+test("packet-only doctor does not warn about optional adapter sidecars", () => {
+  withPreparedBuild(({ packetPath }) => {
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("context.adapter_decisions"), false);
+    assert.equal(warningCodes.has("report.adapter_decisions"), false);
   });
 });
 
@@ -147,6 +159,41 @@ test("doctor warns on unknown adapter policy field values", () => {
   });
 });
 
+test("doctor warns when required adapter fields are missing", () => {
+  withPreparedBuild(({ packetPath }) => {
+    const packet = readJson(packetPath);
+    delete packet.source_html.adapter_contract.layout_choice;
+    delete packet.source_html.adapter_contract.template_files_copied.paths;
+    writeJson(packetPath, packet);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("source_html.adapter_contract.layout_choice"), true);
+    assert.equal(warningCodes.has("source_html.adapter_contract.template_files_copied.paths"), true);
+  });
+});
+
+test("doctor validates proof-policy setup and allowlist fields", () => {
+  withPreparedBuild(({ packetPath, reportPath }) => {
+    const packet = readJson(packetPath);
+    delete packet.qa.proof_policy.localhost_development_domain_allowed;
+    packet.qa.proof_policy.non_localhost_origin_allowlist_required = false;
+    writeJson(packetPath, packet);
+
+    const report = readJson(reportPath);
+    delete report.proof_policy.operator_approval_state;
+    writeJson(reportPath, report);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--report", reportPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("qa.proof_policy.localhost_development_domain_allowed"), true);
+    assert.equal(warningCodes.has("qa.proof_policy.non_localhost_origin_allowlist_required"), true);
+    assert.equal(warningCodes.has("report.proof_policy.operator_approval_state"), true);
+  });
+});
+
 test("doctor names unfinished adapter decisions after assembly is recorded complete", () => {
   withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
     markAssemblyCompleted(reportPath);
@@ -157,6 +204,26 @@ test("doctor names unfinished adapter decisions after assembly is recorded compl
     assert.equal(warningCodes.has("adapter.raw_html_conversion_status"), true);
     assert.equal(warningCodes.has("adapter.commerce_shell_adoption"), true);
     assert.equal(warningCodes.has("adapter.template_files_copied"), true);
+  });
+});
+
+test("doctor verifies declared template slice paths exist after assembly completes", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.adapter_decisions.raw_html_conversion_status = "completed";
+      report.adapter_decisions.commerce_shell_adoption = "template_clone_first_verified";
+      report.adapter_decisions.template_files_copied = {
+        status: "verified_existing_slice",
+        required_groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        paths: ["src/runtime-packet-demo", "src/runtime-packet-demo/_includes"],
+      };
+    });
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("adapter.template_files_copied.paths"), true);
   });
 });
 
@@ -181,6 +248,7 @@ test("findings harvest proposes locally and writes only with --write", () => {
     assert.equal(dryRun.action, "findings-harvest");
     assert.equal(dryRun.write, false);
     assert.ok(dryRun.count > 0);
+    assert.equal(dryRun.proposals.every((finding) => finding.safe_to_share === false), true);
     assert.equal(existsSync(journalPath), false);
 
     const written = runCliJson(["findings", "harvest", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--write", "--json"]);

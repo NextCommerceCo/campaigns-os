@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/source-html-manifest.v0.schema.json",
+  "title": "Campaigns OS Source HTML Manifest v0",
+  "description": "Producer-authored manifest consumed by Campaigns OS prepare-build. Paths are relative to the source HTML root, not the .campaigns-os directory.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "pages"],
+  "properties": {
+    "schema_version": {
+      "const": "source-html-manifest/v0"
+    },
+    "generated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generator": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Producer identity such as figma-sections-export@1.2.3 or reference-ai-producer@1.0.0."
+    },
+    "campaign_slug": {
+      "type": "string",
+      "minLength": 1
+    },
+    "root": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional producer hint. Manifest page paths still resolve relative to the source root passed to prepare-build."
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["page_id", "path"],
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Active CampaignSpec page id. This is the primary join key."
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Source-root-relative HTML file path."
+          },
+          "page_type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional producer page type used for fallback matching only."
+          },
+          "page_url": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional producer/spec route used for fallback matching after Page Kit route normalization."
+          },
+          "source_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Optional sha256 of the source HTML file at manifest generation time."
+          }
+        }
+      }
+    }
+  }
+}
