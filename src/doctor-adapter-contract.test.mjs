@@ -177,6 +177,7 @@ test("doctor warns when required adapter fields are missing", () => {
 test("doctor validates proof-policy setup and allowlist fields", () => {
   withPreparedBuild(({ packetPath, reportPath }) => {
     const packet = readJson(packetPath);
+    packet.qa.proof_policy.browser_qa_required = "yes";
     delete packet.qa.proof_policy.localhost_development_domain_allowed;
     packet.qa.proof_policy.non_localhost_origin_allowlist_required = false;
     writeJson(packetPath, packet);
@@ -187,7 +188,9 @@ test("doctor validates proof-policy setup and allowlist fields", () => {
 
     const doctor = runCliJson(["doctor", "--packet", packetPath, "--report", reportPath, "--json"]);
     const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+    const browserWarning = (doctor.warnings || []).find((issue) => issue.code === "qa.proof_policy.browser_qa_required");
 
+    assert.match(browserWarning.message, /must be a boolean/);
     assert.equal(warningCodes.has("qa.proof_policy.localhost_development_domain_allowed"), true);
     assert.equal(warningCodes.has("qa.proof_policy.non_localhost_origin_allowlist_required"), true);
     assert.equal(warningCodes.has("report.proof_policy.operator_approval_state"), true);
@@ -217,6 +220,70 @@ test("doctor verifies declared template slice paths exist after assembly complet
         required_groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
         groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
         paths: ["src/runtime-packet-demo", "src/runtime-packet-demo/_includes"],
+      };
+    });
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("adapter.template_files_copied.paths"), true);
+  });
+});
+
+test("doctor rejects template slice paths that escape the target repo", () => {
+  withPreparedBuild(({ dir, packetPath, contextPath, reportPath }) => {
+    mkdirSync(resolve(dir, "outside-slice"), { recursive: true });
+    markAssemblyCompleted(reportPath, (report) => {
+      report.adapter_decisions.raw_html_conversion_status = "completed";
+      report.adapter_decisions.commerce_shell_adoption = "template_clone_first_verified";
+      report.adapter_decisions.template_files_copied = {
+        status: "verified_existing_slice",
+        required_groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        paths: ["../outside-slice"],
+      };
+    });
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("adapter.template_files_copied.paths"), true);
+  });
+});
+
+test("doctor warns when template slice paths cannot be verified against target repo", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    const packet = readJson(packetPath);
+    packet.assembly.target_repo = "missing-target";
+    writeJson(packetPath, packet);
+    markAssemblyCompleted(reportPath, (report) => {
+      report.adapter_decisions.raw_html_conversion_status = "completed";
+      report.adapter_decisions.commerce_shell_adoption = "template_clone_first_verified";
+      report.adapter_decisions.template_files_copied = {
+        status: "verified_existing_slice",
+        required_groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        paths: ["src/checkout.html"],
+      };
+    });
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("adapter.template_files_copied.paths"), true);
+  });
+});
+
+test("doctor rejects UNC absolute template slice paths", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.adapter_decisions.raw_html_conversion_status = "completed";
+      report.adapter_decisions.commerce_shell_adoption = "template_clone_first_verified";
+      report.adapter_decisions.template_files_copied = {
+        status: "verified_existing_slice",
+        required_groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        groups: ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        paths: [String.raw`\\server\share\slice`],
       };
     });
 

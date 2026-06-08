@@ -1459,10 +1459,10 @@ function validateProofPolicyObject(policy, location, warnings, ready, { requireB
       addIssue(warnings, `${location}.${field}`, `${location}.${field} is missing; proof policy must make browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state explicit.`);
     }
   }
-  if ("browser_qa_required" in policy && requireBrowserQa && policy.browser_qa_required !== true) {
-    addIssue(warnings, `${location}.browser_qa_required`, "Browser QA should stay explicit in the packet/report before launch proof.");
-  } else if (policy.browser_qa_required != null && typeof policy.browser_qa_required !== "boolean") {
+  if (policy.browser_qa_required != null && typeof policy.browser_qa_required !== "boolean") {
     addIssue(warnings, `${location}.browser_qa_required`, `${location}.browser_qa_required must be a boolean.`);
+  } else if ("browser_qa_required" in policy && requireBrowserQa && policy.browser_qa_required !== true) {
+    addIssue(warnings, `${location}.browser_qa_required`, "Browser QA should stay explicit in the packet/report before launch proof.");
   }
   if (!isNonEmptyString(policy.typed_card_depth)) {
     addIssue(warnings, `${location}.typed_card_depth`, `${location}.typed_card_depth should name the intended typed-card depth, usually common.`);

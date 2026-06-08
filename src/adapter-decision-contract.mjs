@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 
 export const ADAPTER_DECISION_REQUIRED_FIELDS = Object.freeze([
   "raw_html_conversion_status",
@@ -256,27 +256,40 @@ function validateTemplateSlicePaths(copied, location, targetRepo, warnings, read
     addIssue(warnings, "adapter.template_files_copied.paths", `Assembly is recorded complete, but ${location}.template_files_copied.paths is empty. Record the target repo paths that prove the template family slice exists.`);
     return false;
   }
-  if (!isNonEmptyString(targetRepo) || !existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) return true;
+  if (!isNonEmptyString(targetRepo) || !existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) {
+    addIssue(warnings, "adapter.template_files_copied.paths", `${location}.template_files_copied.paths cannot be verified because assembly.target_repo is missing or is not a directory.`);
+    return false;
+  }
 
   const missing = [];
   const absolute = [];
+  const escaping = [];
+  const targetRoot = resolve(targetRepo);
   for (const path of paths) {
-    if (/^(?:\/|[A-Za-z]:[\\/])/.test(path)) {
+    if (isAbsoluteOrUncPath(path)) {
       absolute.push(path);
       continue;
     }
-    const fullPath = resolve(targetRepo, path);
+    const fullPath = resolve(targetRoot, path);
+    const relativePath = relative(targetRoot, fullPath);
+    if (relativePath.startsWith("..") || isAbsoluteOrUncPath(relativePath)) {
+      escaping.push(path);
+      continue;
+    }
     if (!existsSync(fullPath)) missing.push(path);
   }
   if (absolute.length) {
     addIssue(warnings, "adapter.template_files_copied.paths", `${location}.template_files_copied.paths should be target-repo-relative, not absolute: ${absolute.slice(0, 5).join(", ")}.`);
+  }
+  if (escaping.length) {
+    addIssue(warnings, "adapter.template_files_copied.paths", `${location}.template_files_copied.paths must stay inside the target repo: ${escaping.slice(0, 5).join(", ")}.`);
   }
   if (missing.length) {
     addIssue(warnings, "adapter.template_files_copied.paths", `${location}.template_files_copied.paths references missing target repo path(s): ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? `; plus ${missing.length - 8} more` : ""}.`);
     return false;
   }
   ready.push("Template family slice paths exist in target repo");
-  return absolute.length === 0;
+  return absolute.length === 0 && escaping.length === 0;
 }
 
 function checkEnum(value, allowed, code, warnings, addIssue) {
@@ -290,4 +303,8 @@ function isObject(value) {
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isAbsoluteOrUncPath(path) {
+  return /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(path);
 }
