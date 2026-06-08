@@ -101,6 +101,21 @@ Behavior:
 
 When the manifest is absent, prepare-build's behavior is unchanged — pages are matched by filesystem name slug as before.
 
+### Page Kit Target Projection
+
+`source_html.pages[].path` is source provenance. It names the producer/source-root-relative HTML file that should be consumed; it is not necessarily the file path to write under the Page Kit campaign directory.
+
+Fresh `prepare-build` output also writes `source_html.pages[].page_kit` for mapped pages. This block is the Page Kit target projection:
+
+- `target_path` is the page file relative to `assembly.output_dir` (`checkout.html`, `receipt.html`, etc.).
+- `output_path` is the same target file relative to `assembly.target_repo`.
+- `public_route` is the rendered campaign-rooted route Page Kit should produce.
+- `page_type` is the CPK runtime/analytics vocabulary (`product`, `checkout`, `upsell`, `receipt`), not the richer CampaignSpec or producer page type.
+- `frontmatter` names the Page Kit frontmatter fields the build should write or preserve.
+- `permalink_required` is true when Page Kit's filename-derived route would not match `public_route`.
+
+This prevents mixed-source manifests such as `checkout/index.html` from leaking producer folder structure into `src/<slug>/checkout/index.html`. Campaigns OS owns the Adapter from source/manifest/CampaignSpec into Page Kit shape; Page Kit remains the target.
+
 ### Per-page `source_hash` (Slice 6 drift detection)
 
 Each `manifest.pages[]` entry MAY carry a `source_hash` field — the sha256 hex digest of the source HTML file's contents at the moment the producer wrote the manifest. When present, prepare-build threads the hash onto the matching `packet.source_html.pages[]` mapping. Doctor reads the packet mapping at validate time, computes the current on-disk sha256 of the same file, and warns (`source_html.pages.source_hash`) when they diverge.

@@ -91,6 +91,15 @@ verifiable. Workflow Findings should help improve this Spec-centered flow rather
 than collect unrelated product complaints.
 _Avoid_: asset-first build, page-only development
 
+**Source HTML Intake**:
+The Campaigns OS step that normalizes prepared source HTML into a Build Packet
+mapping. Source HTML Intake keeps producer paths, CampaignSpec pages, and Page
+Kit target shape distinct: `source_html.pages[].path` records source provenance,
+while `source_html.pages[].page_kit` records the target page file, route, CPK
+`page_type`, and frontmatter projection.
+_Avoid_: copying manifest paths directly into Page Kit target paths, replacing
+CampaignSpec routes with source filenames
+
 **Finding Contribution**:
 An explicit Campaigns OS Operator action that shares selected local Workflow
 Findings beyond the current campaign workspace. A Finding Contribution is not

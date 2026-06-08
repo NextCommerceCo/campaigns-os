@@ -50,7 +50,19 @@
           "page_id": { "type": "string" },
           "source_path": { "type": ["string", "null"] },
           "skip_reason": { "type": ["string", "null"] },
-          "output_path": { "type": ["string", "null"] }
+          "output_path": { "type": ["string", "null"] },
+          "page_kit": {
+            "type": ["object", "null"],
+            "properties": {
+              "target_path": { "type": "string" },
+              "output_path": { "type": "string" },
+              "public_route": { "type": "string" },
+              "spec_route": { "type": "string" },
+              "page_type": { "enum": ["product", "checkout", "upsell", "receipt"] },
+              "permalink_required": { "type": "boolean" },
+              "frontmatter": { "type": "object" }
+            }
+          }
         }
       }
     },

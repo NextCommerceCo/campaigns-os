@@ -24,6 +24,10 @@ to an existing downstream route. In the Build Packet, map pages being built with
 `source_html.pages[].path` and mark intentionally untouched pages with
 `source_html.pages[].skip_reason`.
 
+For mapped pages, `source_html.pages[].path` is source provenance. Use
+`source_html.pages[].page_kit` for the Page Kit target file, public route, CPK
+`page_type`, and frontmatter projection.
+
 `doctor` classifies that as `derived.scope.mode = "partial"`. Mapped pages are
 route/visual-testable after deploy. Skipped checkout, upsell, downsell, or
 receipt pages keep checkout launch readiness and test-order proof blocked until

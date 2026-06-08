@@ -38,6 +38,12 @@ import {
   TELEMETRY_ENV_VAR,
   writeConsentConfig,
 } from "./consent.mjs";
+import {
+  createAdapterDecisions,
+  validateAdapterDecisionGates,
+  validateAdapterDecisionShape,
+  validateAdapterSourceFiles,
+} from "./adapter-decision-contract.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
@@ -55,9 +61,10 @@ import {
   writeRunSession,
 } from "./run-session.mjs";
 import {
-  SOURCE_HTML_MANIFEST_REL_PATH,
-  SOURCE_HTML_MANIFEST_SCHEMA,
-} from "./source-html-manifest.mjs";
+  createSourceHtmlIntake,
+  normalizePageKitRoute,
+  publicRouteForPage,
+} from "./source-html-intake.mjs";
 import {
   inspectBrandTheme,
   validateAssemblyReportThemeBlock,
@@ -132,24 +139,6 @@ const SDK_ROUTING_META_TAGS = [
   "next-upsell-accept-url",
   "next-upsell-decline-url",
 ];
-
-const TEMPLATE_SLICE_REQUIRED_GROUPS = Object.freeze([
-  "pages",
-  "_includes",
-  "_layouts",
-  "assets/css",
-  "assets/js",
-  "frontmatter_vocabulary",
-]);
-
-const RUNTIME_PAGE_TYPES = new Set(["checkout", "select", "upsell", "downsell", "thankyou", "receipt"]);
-
-const RAW_HTML_CONVERSION_STATUSES = new Set(["pending", "in_progress", "completed", "not_required", "blocked"]);
-const SOURCE_ASSET_STRATEGIES = new Set(["pagekit_campaign_asset_root", "external_cdn", "raw_passthrough", "not_applicable", "unknown"]);
-const ROUTE_REWRITE_POLICIES = new Set(["campaignspec_routes_via_campaign_link", "pagekit_public_routes", "raw_passthrough", "not_applicable", "unknown"]);
-const CONFIG_SCRIPT_STRATEGIES = new Set(["campaign_asset", "frontmatter_script", "inline", "not_required", "unknown"]);
-const COMMERCE_SHELL_ADOPTIONS = new Set(["not_required", "template_clone_first_required", "template_clone_first_verified", "sdk_surfaces_preserved", "custom_html_experimental"]);
-const TEMPLATE_FILES_COPIED_STATUSES = new Set(["pending", "complete", "verified_existing_slice", "partial", "not_applicable"]);
 
 const HELP = `Campaigns OS toolkit
 
@@ -419,37 +408,6 @@ function firstNonEmptyString(...values) {
   return null;
 }
 
-// Slice 4b: coerce Page.upsell_mv_tiers into a clean {min, max} pair for the
-// build packet. Returns null when the field is absent, malformed, or partial
-// — partial state should not flow into the packet; upstream validation
-// (AssemblyHintsShape) already warns the author when the spec carries a
-// half-state hint. Strict integer check (not Number()-coercion) so the
-// consumer posture matches the spec rule's: stringy "1" is malformed.
-function normalizedMvTiers(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const { min, max } = value;
-  if (!Number.isInteger(min) || !Number.isInteger(max)) return null;
-  if (min < 1 || max < 1) return null;
-  if (min > max) return null;
-  return { min, max };
-}
-
-// Slice 4e: coerce Page.variant_labels into a clean {primary, secondary?}
-// pair for the build packet. primary is required; secondary is optional
-// (single-attribute products only set primary). Drops the field entirely
-// when shape is malformed or primary is empty — upstream validation
-// (VariantLabelsShape) warns the author separately.
-function normalizedVariantLabels(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const primary = isNonEmptyString(value.primary) ? value.primary.trim() : null;
-  if (!primary) return null;
-  const out = { primary };
-  if (isNonEmptyString(value.secondary)) {
-    out.secondary = value.secondary.trim();
-  }
-  return out;
-}
-
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -622,14 +580,6 @@ function resolveFromFile(filePath, targetPath) {
   return resolve(dirname(resolve(filePath)), targetPath);
 }
 
-function slugify(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 function normalizeFunnels(spec) {
   if (Array.isArray(spec?.funnels)) return spec.funnels;
   if (Array.isArray(spec?.funnel_pages)) {
@@ -650,21 +600,6 @@ function activeSpecPages(spec) {
   return pages;
 }
 
-function normalizePageKitRoute(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (isAbsoluteHttpUrl(raw)) return raw;
-
-  const clean = raw
-    .replace(/[?#].*$/, "")
-    .replace(/^\/+/, "")
-    .replace(/\/?index\.html$/i, "")
-    .replace(/\.html$/i, "")
-    .replace(/^\/+|\/+$/g, "");
-
-  return clean ? `${clean}/` : "";
-}
-
 function isAbsoluteHttpUrl(value) {
   try {
     const url = new URL(value);
@@ -683,19 +618,6 @@ function hasHtmlExtensionRoute(value) {
   } catch {
     return /\.html$/i.test(raw.replace(/[?#].*$/, ""));
   }
-}
-
-function defaultRouteForType(type) {
-  if (type === "thankyou") return "receipt/";
-  if (["presell", "landing", "checkout", "upsell", "downsell"].includes(type)) return `${type}/`;
-  return `${type || "page"}/`;
-}
-
-function publicRouteForPage(page) {
-  if (isNonEmptyString(page.page_url)) return normalizePageKitRoute(page.page_url);
-  if (isNonEmptyString(page.url)) return page.url.trim();
-  if (page.is_entry) return "";
-  return defaultRouteForType(page.type);
 }
 
 function collectHtmlFiles(root) {
@@ -723,317 +645,6 @@ function collectHtmlFiles(root) {
 
   walk(resolvedRoot);
   return files.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-function pageMatchKeys(page, ordinal) {
-  const keys = new Set([
-    slugify(page.id),
-    slugify(page.label),
-    slugify(page.type),
-  ].filter(Boolean));
-  const sourceUrl = optionalString(page.page_url) || optionalString(page.url);
-  if (sourceUrl) {
-    const clean = sourceUrl.replace(/[?#].*$/, "").replace(/^\/+|\/+$/g, "");
-    if (clean) {
-      keys.add(slugify(clean));
-      keys.add(slugify(basename(clean, extname(clean))));
-    }
-  }
-  if (ordinal && page.type) keys.add(slugify(`${page.type}-${ordinal}`));
-  if (page.type === "thankyou") {
-    keys.add("receipt");
-    keys.add("thank-you");
-    keys.add("thankyou");
-  }
-  if (page.type === "landing" || page.type === "presell") keys.add("index");
-  if (page.type === "checkout") keys.add("checkout");
-  if (page.type === "upsell") keys.add("upsell");
-  if (page.type === "downsell") keys.add("downsell");
-  return [...keys];
-}
-
-/**
- * Read the source-html manifest from `<sourceRoot>/.campaigns-os/source-html-manifest.json`.
- * Returns `{ manifest, path, warning }`:
- * - `manifest` is the parsed JSON when present AND schema_version matches the supported version.
- * - `manifest` is `null` when the file is absent (caller falls back to filesystem matching).
- * - `warning` is set when the manifest exists but should be ignored (unknown schema, parse error, etc.).
- *
- * @param {string} sourceRoot Absolute filesystem path to the source HTML root.
- * @returns {{ manifest: object | null, path: string | null, warning: string | null }}
- */
-function readSourceHtmlManifest(sourceRoot) {
-  const manifestPath = resolve(sourceRoot, SOURCE_HTML_MANIFEST_REL_PATH);
-  if (!existsSync(manifestPath) || !statSync(manifestPath).isFile()) {
-    return { manifest: null, path: null, warning: null };
-  }
-  let manifest;
-  try {
-    manifest = readJson(manifestPath);
-  } catch (error) {
-    return {
-      manifest: null,
-      path: manifestPath,
-      warning: `Could not parse source-html manifest at ${manifestPath}: ${error.message}. Falling back to filesystem matching.`,
-    };
-  }
-  if (!isObject(manifest)) {
-    return {
-      manifest: null,
-      path: manifestPath,
-      warning: `Source-html manifest at ${manifestPath} is not a JSON object. Falling back to filesystem matching.`,
-    };
-  }
-  if (manifest.schema_version !== SOURCE_HTML_MANIFEST_SCHEMA) {
-    return {
-      manifest: null,
-      path: manifestPath,
-      warning: `Source-html manifest at ${manifestPath} has unsupported schema_version "${manifest.schema_version}". Expected "${SOURCE_HTML_MANIFEST_SCHEMA}". Falling back to filesystem matching.`,
-    };
-  }
-  return { manifest, path: manifestPath, warning: null };
-}
-
-/**
- * Map manifest entries to active CampaignSpec pages. Manifest `page_id` is the join key.
- * Produces the same `{ mappings, prompts, decisions }` shape as `matchSourcePages`, so the
- * downstream packet/context plumbing is unchanged.
- *
- * Manifest entries whose `page_id` does not appear in `specPages` surface as
- * `MANIFEST_EXTRA_PAGE` prompts (analogous to the existing `MISSING_SOURCE_PAGE` pattern)
- * so the operator can fix either the manifest or the spec.
- *
- * @param {Array<object>} specPages Active CampaignSpec pages.
- * @param {object} manifest Parsed source-html manifest.
- * @param {string} manifestPath Absolute manifest path (used in decision evidence).
- * @returns {{ mappings: Array<object>, prompts: Array<object>, decisions: Array<object> }}
- */
-function applyManifestToPages(specPages, manifest, manifestPath) {
-  const mappings = [];
-  const prompts = [];
-  const decisions = [];
-  const manifestPages = Array.isArray(manifest.pages) ? manifest.pages : [];
-  // Build a page_id → entry index. When the manifest contains duplicate page_id
-  // entries we keep the first occurrence (deterministic) AND surface each
-  // additional occurrence as a MANIFEST_DUPLICATE_PAGE prompt — silently
-  // dropping duplicates would mask manifest-emitter bugs and leave the operator
-  // wondering why their second entry never took effect.
-  const byPageId = new Map();
-  for (const entry of manifestPages) {
-    if (!entry || !isNonEmptyString(entry.page_id)) continue;
-    if (byPageId.has(entry.page_id)) {
-      const firstEntry = byPageId.get(entry.page_id);
-      prompts.push({
-        code: "MANIFEST_DUPLICATE_PAGE",
-        stage: "prepare_build",
-        message: `Source-html manifest has more than one entry for page_id "${entry.page_id}" (first path "${firstEntry.path || ""}", duplicate path "${entry.path || ""}"). Only the first entry is used. Deduplicate the manifest before build.`,
-        page_id: entry.page_id,
-      });
-      continue;
-    }
-    byPageId.set(entry.page_id, entry);
-  }
-
-  // Stable fallback indexes so the manifest survives Map Builder page_id churn.
-  // Map Builder mints fresh opaque page_ids (`page_<ts>_<n>`) on every new map
-  // and on funnel clone, so a manifest keyed only on page_id breaks whenever the
-  // spec is regenerated. We therefore also resolve by `page_url` (the stable
-  // public route) and by `page_type` + ordinal (stable position among same-type
-  // pages). page_id remains the highest-precedence key; these only fill gaps.
-  const byPageUrl = new Map();
-  const typeBuckets = new Map(); // page_type -> [entries] in manifest order
-  for (const entry of manifestPages) {
-    if (!entry || !isNonEmptyString(entry.path)) continue;
-    const url = optionalString(entry.page_url);
-    if (url !== null) {
-      const norm = normalizePageKitRoute(url);
-      if (!byPageUrl.has(norm)) byPageUrl.set(norm, entry);
-    }
-    const t = optionalString(entry.page_type);
-    if (t) {
-      if (!typeBuckets.has(t)) typeBuckets.set(t, []);
-      typeBuckets.get(t).push(entry);
-    }
-  }
-  // Per-type ordinal of each spec page (1-based position among same-type pages).
-  const typeOrdinals = new Map();
-  const typeSeen = new Map();
-  for (const page of specPages) {
-    const t = page.type || "page";
-    const n = (typeSeen.get(t) || 0) + 1;
-    typeSeen.set(t, n);
-    typeOrdinals.set(page.id, n);
-  }
-  const usedEntries = new Set();
-
-  const matchedIds = new Set();
-
-  for (const page of specPages) {
-    // Resolve in precedence order: exact page_id, then stable page_url, then
-    // page_type + ordinal. Record which key matched for the decision evidence.
-    let entry = byPageId.get(page.id);
-    let matchVia = "page_id";
-    if (!(entry && isNonEmptyString(entry.path))) {
-      const norm = normalizePageKitRoute(optionalString(page.page_url) || "");
-      const urlEntry = byPageUrl.get(norm);
-      if (urlEntry && isNonEmptyString(urlEntry.path) && !usedEntries.has(urlEntry)) {
-        entry = urlEntry;
-        matchVia = "page_url";
-      } else {
-        const bucket = typeBuckets.get(page.type) || [];
-        const ordinal = typeOrdinals.get(page.id) || 1;
-        const typeEntry = bucket[ordinal - 1];
-        if (typeEntry && isNonEmptyString(typeEntry.path) && !usedEntries.has(typeEntry)) {
-          entry = typeEntry;
-          matchVia = "page_type+ordinal";
-        }
-      }
-    }
-    if (entry && isNonEmptyString(entry.path)) {
-      usedEntries.add(entry);
-      const mapping = { page_id: page.id, path: entry.path };
-      if (isNonEmptyString(entry.page_type)) mapping.page_type = entry.page_type;
-      // Slice 4a Phase 2: per-page UI variant hint flows from the spec page
-      // onto the packet mapping so the build stage can read it without
-      // re-reading the spec. CLI/operator overrides at build time still win.
-      // Upstream spec validation warns when this is set on a non-upsell
-      // page; we surface it verbatim and let the build stage decide what
-      // to do with it.
-      const upsellPattern = optionalString(page.upsell_template_pattern);
-      if (upsellPattern) mapping.upsell_template_pattern = upsellPattern;
-      // Slice 4b: per-page MV tier range. Same flow as upsell_template_pattern
-      // — surface the spec hint onto the packet so the build stage doesn't
-      // re-parse the spec. normalizedMvTiers() drops partial/malformed
-      // shapes; the spec rule warns the author separately.
-      const mvTiers = normalizedMvTiers(page.upsell_mv_tiers);
-      if (mvTiers) mapping.upsell_mv_tiers = mvTiers;
-      // Slice 4e: per-page MV variant column labels. Same flow as the
-      // other hints. normalizedVariantLabels() drops partial/malformed
-      // shapes (empty primary, non-string secondary, etc.).
-      const variantLabels = normalizedVariantLabels(page.variant_labels);
-      if (variantLabels) mapping.variant_labels = variantLabels;
-      // Slice 6: source_hash drift detection. When the manifest carries a
-      // sha256 for the source file, thread it onto the packet so doctor can
-      // compare it to the on-disk file's actual hash at validate time. A
-      // mismatch means the file was edited after the manifest was written
-      // — useful signal for "design has drifted from what got handed off."
-      // Optional: producers that don't emit hashes (or pre-Slice-6 manifests)
-      // produce mappings without source_hash; doctor's drift check is silent
-      // in that case.
-      const sourceHash = optionalString(entry.source_hash);
-      if (sourceHash) mapping.source_hash = sourceHash;
-      mappings.push(mapping);
-      matchedIds.add(page.id);
-      decisions.push({
-        id: `dec_page_map_${page.id}`,
-        stage: "prepare_build",
-        decision_type: "deterministic_derivation",
-        decision: `mapped CampaignSpec page "${page.id}" to source file "${entry.path}" via source-html manifest (matched by ${matchVia})`,
-        confidence: matchVia === "page_id" ? "high" : "medium",
-        evidence: [`source-html manifest entry matched page "${page.id}" by ${matchVia}; path="${entry.path}" from ${manifestPath}`],
-      });
-    } else {
-      // Distinct from the filesystem-matching fallback skip_reason — operators
-      // debugging this need to know the manifest was consulted and simply
-      // didn't list the page, not that we never looked.
-      mappings.push({
-        page_id: page.id,
-        skip_reason: `No entry for "${page.id}" in source-html manifest at ${manifestPath}; add this page_id to the manifest, provide an explicit skip_reason in the packet, or remove the manifest to fall back to filesystem matching.`,
-      });
-      prompts.push({
-        code: "MISSING_SOURCE_PAGE",
-        stage: "prepare_build",
-        message: `Active CampaignSpec page "${page.id}" has no matching HTML file (source-html manifest did not list it).`,
-        page_id: page.id,
-      });
-    }
-  }
-
-  for (const entry of manifestPages) {
-    if (!entry || !isNonEmptyString(entry.page_id)) continue;
-    if (matchedIds.has(entry.page_id)) continue;
-    if (specPages.some((page) => page.id === entry.page_id)) continue;
-    // Don't flag entries that were consumed via the page_url / page_type+ordinal
-    // fallback (their page_id won't match a current spec page after a regen, but
-    // they did resolve to a page).
-    if (usedEntries.has(entry)) continue;
-    prompts.push({
-      code: "MANIFEST_EXTRA_PAGE",
-      stage: "prepare_build",
-      message: `Source-html manifest lists page_id "${entry.page_id}" (path "${entry.path || ""}") which is not an active CampaignSpec page. Reconcile the manifest or the spec before build.`,
-      page_id: entry.page_id,
-    });
-  }
-
-  return { mappings, prompts, decisions };
-}
-
-function matchSourcePages(specPages, htmlFiles) {
-  const used = new Set();
-  const mappings = [];
-  const prompts = [];
-  const decisions = [];
-  const counts = new Map();
-  const ordinals = new Map();
-
-  for (const page of specPages) {
-    const key = page.type || "page";
-    const next = (counts.get(key) || 0) + 1;
-    counts.set(key, next);
-    ordinals.set(page.id, next);
-  }
-
-  for (const page of specPages) {
-    const keys = pageMatchKeys(page, ordinals.get(page.id));
-    const candidates = htmlFiles.filter((file) => keys.includes(slugify(file.basename)));
-    const unused = candidates.filter((file) => !used.has(file.path));
-    const match = unused[0] || candidates[0] || null;
-    if (match) {
-      used.add(match.path);
-      const mapping = { page_id: page.id, path: match.path };
-      // Slice 4a Phase 2: see applyManifestToPages for rationale. Same
-      // pattern in both mapping functions so per-page hints flow through
-      // regardless of which path produced the mapping.
-      const upsellPattern = optionalString(page.upsell_template_pattern);
-      if (upsellPattern) mapping.upsell_template_pattern = upsellPattern;
-      // Slice 4b: see applyManifestToPages for rationale.
-      const mvTiers = normalizedMvTiers(page.upsell_mv_tiers);
-      if (mvTiers) mapping.upsell_mv_tiers = mvTiers;
-      // Slice 4e: see applyManifestToPages for rationale.
-      const variantLabels = normalizedVariantLabels(page.variant_labels);
-      if (variantLabels) mapping.variant_labels = variantLabels;
-      mappings.push(mapping);
-      decisions.push({
-        id: `dec_page_map_${page.id}`,
-        stage: "prepare_build",
-        decision_type: "deterministic_derivation",
-        decision: `mapped CampaignSpec page "${page.id}" to source file "${match.path}"`,
-        confidence: candidates.length === 1 ? "high" : "medium",
-        evidence: [`matched source filename against page keys: ${keys.join(", ")}`],
-      });
-    } else {
-      // Slice 5b/5c: when the spec page carries design_source, the absence of
-      // source HTML is a coverage error (producer hasn't run / handoff is
-      // incomplete), NOT a partial-build skip. Omit the mapping so doctor's
-      // validateSourceCoverage fires the design_source-aware coverageErrorMessage
-      // with producer-specific guidance (figma → run handoff; ai-generated →
-      // re-run the agent). Pages without design_source keep the existing
-      // skip_reason posture so template-stock / hand-authored builds can
-      // proceed in partial scope.
-      const hasDesignSource = isObject(page.design_source);
-      if (!hasDesignSource) {
-        mappings.push({ page_id: page.id, skip_reason: "No matching source HTML file found; provide a source file or an explicit skip reason before build." });
-      }
-      prompts.push({
-        code: "MISSING_SOURCE_PAGE",
-        stage: "prepare_build",
-        message: `Active CampaignSpec page "${page.id}" has no matching HTML file.`,
-        page_id: page.id,
-      });
-    }
-  }
-
-  return { mappings, prompts, decisions };
 }
 
 function campaignIdentity(spec, args) {
@@ -1069,28 +680,6 @@ function createStage(stage, status, extras = {}) {
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
-}
-
-function createAdapterDecisions({ commerceZoneFindings = [] } = {}) {
-  const shellRequired = commerceZoneFindings.some((finding) => finding?.requires_template_shell === true);
-  return {
-    raw_html_conversion_status: "pending",
-    source_asset_strategy: "pagekit_campaign_asset_root",
-    route_rewrite_policy: "campaignspec_routes_via_campaign_link",
-    config_script_strategy: "campaign_asset",
-    commerce_shell_adoption: shellRequired ? "template_clone_first_required" : "not_required",
-    wrapper_policy: "strip_document_wrappers",
-    frontmatter_policy: "pagekit_yaml_frontmatter",
-    script_style_reference_policy: "frontmatter_or_campaign_asset",
-    cta_rewrite_policy: "campaignspec_routes_via_campaign_link",
-    layout_choice: "campaign_layout",
-    template_files_copied: {
-      status: "pending",
-      required_groups: [...TEMPLATE_SLICE_REQUIRED_GROUPS],
-      groups: [],
-      paths: [],
-    },
-  };
 }
 
 function createProofPolicy() {
@@ -1129,14 +718,6 @@ function prepareBuild(args, options = {}) {
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
-  const manifestResult = readSourceHtmlManifest(sourceRoot);
-  const manifestWarnings = manifestResult.warning ? [manifestResult.warning] : [];
-  const matched = manifestResult.manifest
-    ? applyManifestToPages(activePages, manifestResult.manifest, manifestResult.path)
-    : matchSourcePages(activePages, htmlFiles);
-  if (manifestResult.warning) {
-    console.warn(`[campaigns-os prepare-build] ${manifestResult.warning}`);
-  }
   const explicitTemplateFamily = optionalString(args["template-family"]);
   const hintedTemplateFamily = preferredTemplateFamily(spec);
   const templateFamily = explicitTemplateFamily || hintedTemplateFamily || "undecided";
@@ -1145,6 +726,23 @@ function prepareBuild(args, options = {}) {
     ? [{ family: hintedTemplateFamily, source: "CampaignSpec preferred_template_family", confidence: "hint" }]
     : [];
   const outputDir = optionalString(args["output-dir"], `src/${publicRouteSlug}`);
+  const sourceIntake = createSourceHtmlIntake({
+    sourceRoot,
+    specPages: activePages,
+    htmlFiles,
+    publicRouteSlug,
+    outputDir,
+  });
+  const manifestResult = sourceIntake.manifestResult;
+  const manifestWarnings = sourceIntake.manifestWarnings;
+  const matched = {
+    mappings: sourceIntake.mappings,
+    prompts: sourceIntake.prompts,
+    decisions: sourceIntake.decisions,
+  };
+  if (manifestResult.warning) {
+    console.warn(`[campaigns-os prepare-build] ${manifestResult.warning}`);
+  }
   const liveUrlPath = optionalString(args["live-url-path"], `/${publicRouteSlug}/`);
   const commerceCatalog = optionalString(args["commerce-catalog"], join(ROOT, "contracts/commerce-surface-catalog.json"));
   const themePolicy = optionalString(args["theme-policy"], "inspect_only");
@@ -1249,7 +847,8 @@ function prepareBuild(args, options = {}) {
       page_id: mapping.page_id,
       source_path: mapping.path || null,
       skip_reason: mapping.skip_reason || null,
-      output_path: mapping.path ? portable(resolve(targetRepo, outputDir, mapping.path)) : null,
+      output_path: mapping.page_kit?.output_path ? portable(resolve(targetRepo, mapping.page_kit.output_path)) : null,
+      page_kit: mapping.page_kit || null,
     })),
     scaffold: {
       mode: existsSync(resolve(targetRepo, outputDir)) ? "existing" : "fresh",
@@ -1680,175 +1279,34 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
 
 function validateAdapterContracts(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const packetContract = packet.source_html?.adapter_contract;
-  validateAdapterDecisionShape(packetContract, "source_html.adapter_contract", warnings, ready);
-  validateAdapterSourceFiles(packetContract, packet, packetPath, warnings, ready);
+  validateAdapterDecisionShape(packetContract, "source_html.adapter_contract", warnings, ready, { addIssue });
+  validateAdapterSourceFiles({
+    decisions: packetContract,
+    sourceRoot: resolveFromFile(packetPath, packet.source_html?.root),
+    pages: packet.source_html?.pages || [],
+    warnings,
+    ready,
+    addIssue,
+  });
 
   const contextDecisions = buildState.context?.adapter_decisions;
-  validateAdapterDecisionShape(contextDecisions, "context.adapter_decisions", warnings, ready);
+  validateAdapterDecisionShape(contextDecisions, "context.adapter_decisions", warnings, ready, { addIssue });
 
   const reportDecisions = buildState.report?.adapter_decisions;
-  validateAdapterDecisionShape(reportDecisions, "report.adapter_decisions", warnings, ready);
+  validateAdapterDecisionShape(reportDecisions, "report.adapter_decisions", warnings, ready, { addIssue });
 
   const decisions = reportDecisions || contextDecisions || packetContract;
   validateAdapterDecisionGates({
     decisions,
     location: reportDecisions ? "report.adapter_decisions" : contextDecisions ? "context.adapter_decisions" : "source_html.adapter_contract",
-    spec,
+    specPages: activeSpecPages(spec),
     family: packet.assembly?.template_family,
     assemblyComplete: isStageComplete(buildState.report, "assembly"),
     errors,
     warnings,
     ready,
+    addIssue,
   });
-}
-
-function validateAdapterDecisionShape(decisions, location, warnings, ready) {
-  if (!decisions) {
-    addIssue(warnings, location, `${location} is missing; adapter choices are not doctor-able. New prepare-build runs write source_asset_strategy, commerce_shell_adoption, route_rewrite_policy, template_files_copied, config_script_strategy, and raw_html_conversion_status.`);
-    return;
-  }
-  if (!isObject(decisions)) {
-    addIssue(warnings, location, `${location} must be an object when present.`);
-    return;
-  }
-  checkEnum(decisions.raw_html_conversion_status, RAW_HTML_CONVERSION_STATUSES, `${location}.raw_html_conversion_status`, warnings);
-  checkEnum(decisions.source_asset_strategy, SOURCE_ASSET_STRATEGIES, `${location}.source_asset_strategy`, warnings);
-  checkEnum(decisions.route_rewrite_policy, ROUTE_REWRITE_POLICIES, `${location}.route_rewrite_policy`, warnings);
-  checkEnum(decisions.config_script_strategy, CONFIG_SCRIPT_STRATEGIES, `${location}.config_script_strategy`, warnings);
-  checkEnum(decisions.commerce_shell_adoption, COMMERCE_SHELL_ADOPTIONS, `${location}.commerce_shell_adoption`, warnings);
-
-  const copied = decisions.template_files_copied;
-  if (copied != null) {
-    if (!isObject(copied)) {
-      addIssue(warnings, `${location}.template_files_copied`, `${location}.template_files_copied must be an object when present.`);
-    } else {
-      checkEnum(copied.status, TEMPLATE_FILES_COPIED_STATUSES, `${location}.template_files_copied.status`, warnings);
-      if (copied.groups != null && !Array.isArray(copied.groups)) {
-        addIssue(warnings, `${location}.template_files_copied.groups`, `${location}.template_files_copied.groups must be an array.`);
-      }
-      if (copied.paths != null && !Array.isArray(copied.paths)) {
-        addIssue(warnings, `${location}.template_files_copied.paths`, `${location}.template_files_copied.paths must be an array.`);
-      }
-    }
-  }
-  ready.push(`${location} adapter decision fields loaded`);
-}
-
-function checkEnum(value, allowed, code, warnings) {
-  if (value == null) return;
-  if (!allowed.has(value)) addIssue(warnings, code, `${code} has unknown value "${value}".`);
-}
-
-function validateAdapterSourceFiles(decisions, packet, packetPath, warnings, ready) {
-  if (!isObject(decisions)) return;
-  const status = decisions.raw_html_conversion_status;
-  if (!["completed", "not_required"].includes(status)) return;
-
-  const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
-  if (!sourceRoot || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
-  const hits = [];
-  for (const page of packet.source_html?.pages || []) {
-    if (!page.path) continue;
-    const fullPath = resolve(sourceRoot, page.path);
-    if (!existsSync(fullPath) || !statSync(fullPath).isFile()) continue;
-    const content = readFileSync(fullPath, "utf8");
-    const wrappers = collectDocumentWrapperNames(content);
-    if (wrappers.length) hits.push({ path: page.path, wrappers });
-  }
-  if (!hits.length) {
-    ready.push("Source adapter wrapper check found no document wrappers in completed source pages");
-    return;
-  }
-  const sample = hits.slice(0, 4).map((hit) => `${hit.path} (${hit.wrappers.join(", ")})`).join("; ");
-  const more = hits.length > 4 ? `; plus ${hits.length - 4} more` : "";
-  addIssue(
-    warnings,
-    "source_html.raw_html_wrappers",
-    `source_html.adapter_contract.raw_html_conversion_status is "${status}", but mapped source HTML still contains document wrapper tags: ${sample}${more}. Strip <!doctype>, <html>, <head>, and <body> before treating the page as page-kit-ready source.`
-  );
-}
-
-function collectDocumentWrapperNames(content) {
-  const wrappers = [];
-  const text = String(content || "");
-  if (/<!doctype\b/i.test(text)) wrappers.push("doctype");
-  if (/<html(?:\s|>)/i.test(text)) wrappers.push("html");
-  if (/<head(?:\s|>)/i.test(text)) wrappers.push("head");
-  if (/<body(?:\s|>)/i.test(text)) wrappers.push("body");
-  return wrappers;
-}
-
-function validateAdapterDecisionGates({ decisions, location, spec, family, assemblyComplete, errors, warnings, ready }) {
-  if (!isObject(decisions)) return;
-  const runtimePages = activeSpecPages(spec).filter((page) => RUNTIME_PAGE_TYPES.has(String(page.type || "").toLowerCase()));
-  const familyAutomatable = isNonEmptyString(family) && family !== "undecided" && family !== "custom";
-
-  if (assemblyComplete) {
-    if (["pending", "in_progress", "blocked"].includes(decisions.raw_html_conversion_status)) {
-      addIssue(
-        warnings,
-        "adapter.raw_html_conversion_status",
-        `Assembly is recorded complete, but ${location}.raw_html_conversion_status is "${decisions.raw_html_conversion_status}". Record completed/not_required after wrapper stripping, frontmatter, asset moves, script/style refs, CTA rewrites, route policy, and layout choice are settled.`
-      );
-    }
-    if (["raw_passthrough", "unknown"].includes(decisions.source_asset_strategy)) {
-      addIssue(warnings, "adapter.source_asset_strategy", `Assembly is recorded complete with ${location}.source_asset_strategy="${decisions.source_asset_strategy}". Page-kit builds should normally use pagekit_campaign_asset_root so src/<slug>/assets/* publishes at /<slug>/*.`);
-    }
-    if (["raw_passthrough", "unknown"].includes(decisions.route_rewrite_policy)) {
-      addIssue(warnings, "adapter.route_rewrite_policy", `Assembly is recorded complete with ${location}.route_rewrite_policy="${decisions.route_rewrite_policy}". Record how CampaignSpec routes and CTA destinations were rewritten before QA.`);
-    }
-    if (decisions.config_script_strategy === "unknown") {
-      addIssue(warnings, "adapter.config_script_strategy", `Assembly is recorded complete but ${location}.config_script_strategy is unknown. Record whether config scripts load via campaign assets, frontmatter scripts, inline config, or not_required.`);
-    }
-  }
-
-  if (runtimePages.length > 0 && familyAutomatable) {
-    const adoption = decisions.commerce_shell_adoption;
-    if (adoption === "custom_html_experimental") {
-      addIssue(
-        errors,
-        "adapter.commerce_shell_adoption",
-        `Runtime commerce pages (${runtimePages.map((page) => page.id).join(", ")}) are marked custom_html_experimental for template family "${family}". Use template_clone_first_verified or sdk_surfaces_preserved before treating checkout/upsell/downsell/receipt as build-ready.`
-      );
-    } else if (assemblyComplete && !["template_clone_first_verified", "sdk_surfaces_preserved"].includes(adoption)) {
-      addIssue(
-        warnings,
-        "adapter.commerce_shell_adoption",
-        `Assembly is recorded complete, but ${location}.commerce_shell_adoption is "${adoption || "missing"}" for runtime commerce pages (${runtimePages.map((page) => page.id).join(", ")}). Commerce pages should be template-clone-first, then styled, with SDK-owned surfaces preserved.`
-      );
-    }
-  }
-
-  if (assemblyComplete && familyAutomatable) {
-    validateTemplateFilesCopied(decisions.template_files_copied, location, warnings, ready);
-  }
-}
-
-function validateTemplateFilesCopied(copied, location, warnings, ready) {
-  if (!isObject(copied)) {
-    addIssue(warnings, "adapter.template_files_copied", `Assembly is recorded complete, but ${location}.template_files_copied is missing. Record the selected template family as an atomic slice: pages, _includes, _layouts, CSS, JS, and frontmatter vocabulary.`);
-    return;
-  }
-  const status = copied.status || "missing";
-  if (!["complete", "verified_existing_slice", "not_applicable"].includes(status)) {
-    addIssue(warnings, "adapter.template_files_copied", `Assembly is recorded complete, but ${location}.template_files_copied.status is "${status}". Copy or verify the selected template family as one atomic slice, not individual commerce pages.`);
-    return;
-  }
-  if (status === "not_applicable") {
-    ready.push("Template slice copying marked not_applicable");
-    return;
-  }
-  const groups = new Set(Array.isArray(copied.groups) ? copied.groups.map(String) : []);
-  const missing = TEMPLATE_SLICE_REQUIRED_GROUPS.filter((group) => !groups.has(group));
-  if (missing.length) {
-    addIssue(
-      warnings,
-      "adapter.template_files_copied.groups",
-      `${location}.template_files_copied.status is "${status}", but required group(s) are missing: ${missing.join(", ")}. Atomic template slices include pages, _includes, _layouts, assets/css, assets/js, and frontmatter_vocabulary.`
-    );
-    return;
-  }
-  ready.push("Template family slice copy/verification covers required page-kit dependency groups");
 }
 
 function validateProofPolicy(packet, warnings, ready) {
@@ -3356,7 +2814,7 @@ function validateContext(context, errors, warnings, ready, derived) {
     }
   }
   validateCommerceZoneFindings(context.commerce_zone_findings, warnings, ready);
-  validateAdapterDecisionShape(context.adapter_decisions, "context.adapter_decisions", warnings, ready);
+  validateAdapterDecisionShape(context.adapter_decisions, "context.adapter_decisions", warnings, ready, { addIssue });
   if (context.scaffold?.required === true) {
     derived.scaffold_required = true;
     derived.scaffold_reason = context.scaffold.reason || "Build context says setup is required.";
@@ -3430,7 +2888,7 @@ function validateAssemblyReport(report) {
   for (const error of themeResult.errors) errors.push(error);
   for (const warning of themeResult.warnings) warnings.push(warning);
   ready.push(...themeResult.ready);
-  validateAdapterDecisionShape(report.adapter_decisions, "report.adapter_decisions", warnings, ready);
+  validateAdapterDecisionShape(report.adapter_decisions, "report.adapter_decisions", warnings, ready, { addIssue });
   validateAssemblyProofPolicy(report.proof_policy, warnings, ready);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
   return { ok: errors.length === 0, status, errors, warnings, ready };

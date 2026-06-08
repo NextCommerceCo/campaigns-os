@@ -143,7 +143,9 @@ per-page; `source_html.pages[]` is per-page).
   governs every mapping — including pages whose path points into a
   template-stock subdirectory. Operators with mixed sources should
   always write a manifest rather than relying on filesystem
-  fallback (which is all-or-nothing).
+  fallback (which is all-or-nothing). The manifest path remains source
+  provenance; `source_html.pages[].page_kit` carries the target Page Kit
+  file, route, CPK `page_type`, and frontmatter projection.
 - **Doctor behavior:** per-page error variants fire based on each
   page's `design_source.type`. A figma-marked landing page with no
   manifest entry gets the Figma error; a template-stock checkout
