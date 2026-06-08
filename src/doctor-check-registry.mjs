@@ -1,8 +1,10 @@
-function defineDoctorCheck({ id, phase = "doctor", run, when = null }) {
-  if (!isNonEmptyString(id)) throw new Error("Doctor check id is required.");
-  if (!isNonEmptyString(phase)) throw new Error(`Doctor check "${id}" needs a phase.`);
-  if (typeof run !== "function") throw new Error(`Doctor check "${id}" needs a run function.`);
-  if (when != null && typeof when !== "function") throw new Error(`Doctor check "${id}" has a non-function when predicate.`);
+function defineDoctorCheck({ id, phase = "doctor", run, when = null }, { registryId, index }) {
+  const location = `Doctor check registry "${registryId}" check at index ${index}`;
+  if (!isNonEmptyString(id)) throw new Error(`${location} needs a non-empty id.`);
+  const checkLabel = `Doctor check registry "${registryId}" check "${id}"`;
+  if (!isNonEmptyString(phase)) throw new Error(`${checkLabel} needs a phase.`);
+  if (typeof run !== "function") throw new Error(`${checkLabel} needs a run function.`);
+  if (when != null && typeof when !== "function") throw new Error(`${checkLabel} has a non-function when predicate.`);
 
   return Object.freeze({
     id: id.trim(),
@@ -19,7 +21,7 @@ export function createDoctorCheckRegistry(checks, { registryId = "doctor" } = {}
     if (!check || typeof check !== "object") {
       throw new Error(`Doctor check registry "${registryId}" has a non-object check at index ${index}.`);
     }
-    const doctorCheck = defineDoctorCheck(check);
+    const doctorCheck = defineDoctorCheck(check, { registryId, index });
     if (seen.has(doctorCheck.id)) {
       throw new Error(`Doctor check registry "${registryId}" has duplicate check id "${doctorCheck.id}".`);
     }
@@ -29,9 +31,11 @@ export function createDoctorCheckRegistry(checks, { registryId = "doctor" } = {}
   return Object.freeze(normalized);
 }
 
-export function runDoctorCheckRegistry(checks, context) {
+export function runDoctorCheckRegistry(checks, context, { phase = null } = {}) {
+  const phaseFilter = isNonEmptyString(phase) ? phase.trim() : null;
   const executed = [];
   for (const check of checks) {
+    if (phaseFilter && check.phase !== phaseFilter) continue;
     if (check.when && !check.when(context)) continue;
     check.run(context);
     executed.push(check.id);

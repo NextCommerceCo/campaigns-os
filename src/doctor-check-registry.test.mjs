@@ -53,6 +53,25 @@ test("doctor check registry skips checks whose predicate is false", () => {
   assert.deepEqual(runDoctorCheckRegistry(registry, { spec: null }), []);
 });
 
+test("doctor check registry can run only checks in a requested phase", () => {
+  const calls = [];
+  const registry = createDoctorCheckRegistry([
+    {
+      id: "packet.shape",
+      phase: "packet",
+      run: () => calls.push("packet.shape"),
+    },
+    {
+      id: "spec.routes",
+      phase: "spec",
+      run: () => calls.push("spec.routes"),
+    },
+  ]);
+
+  assert.deepEqual(runDoctorCheckRegistry(registry, {}, { phase: "spec" }), ["spec.routes"]);
+  assert.deepEqual(calls, ["spec.routes"]);
+});
+
 test("doctor check registry rejects duplicate ids", () => {
   assert.throws(
     () => createDoctorCheckRegistry([
@@ -60,5 +79,35 @@ test("doctor check registry rejects duplicate ids", () => {
       { id: "spec.routes", run: () => {} },
     ], { registryId: "packet" }),
     /duplicate check id "spec.routes"/
+  );
+});
+
+test("doctor check registry rejects invalid registry inputs with registry ids", () => {
+  assert.throws(
+    () => createDoctorCheckRegistry(null, { registryId: "packet" }),
+    /Doctor check registry "packet" must be an array/
+  );
+  assert.throws(
+    () => createDoctorCheckRegistry([null], { registryId: "packet" }),
+    /Doctor check registry "packet" has a non-object check at index 0/
+  );
+});
+
+test("doctor check registry rejects invalid check fields with registry ids", () => {
+  assert.throws(
+    () => createDoctorCheckRegistry([{ id: " ", run: () => {} }], { registryId: "packet" }),
+    /Doctor check registry "packet" check at index 0 needs a non-empty id/
+  );
+  assert.throws(
+    () => createDoctorCheckRegistry([{ id: "spec.routes", phase: " ", run: () => {} }], { registryId: "packet" }),
+    /Doctor check registry "packet" check "spec.routes" needs a phase/
+  );
+  assert.throws(
+    () => createDoctorCheckRegistry([{ id: "spec.routes" }], { registryId: "packet" }),
+    /Doctor check registry "packet" check "spec.routes" needs a run function/
+  );
+  assert.throws(
+    () => createDoctorCheckRegistry([{ id: "spec.routes", run: () => {}, when: true }], { registryId: "packet" }),
+    /Doctor check registry "packet" check "spec.routes" has a non-function when predicate/
   );
 });
