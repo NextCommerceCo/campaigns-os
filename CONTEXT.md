@@ -129,6 +129,13 @@ or browser QA after deploy evidence. An Expected Proof Step is guidance, not an
 automatic execution grant.
 _Avoid_: auto-run, hidden gate, silent proof
 
+**Doctor Check Registry**:
+The ordered Campaigns OS list of named doctor checks. The Doctor Check Registry
+keeps check identity, execution order, and skip predicates explicit so agents add
+or inspect doctor behavior by choosing a deterministic check slot instead of
+re-reading a long validation chain.
+_Avoid_: ad hoc doctor order, hidden validation side effect, LLM-chosen check path
+
 **Completeness Signal**:
 A Workflow Finding that notes an expected lifecycle step was not evidenced, such
 as build/polish evidence existing without a QA Verdict. A Completeness Signal
