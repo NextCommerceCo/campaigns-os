@@ -1114,6 +1114,7 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
     target_repo: null,
     target_output_dir: null,
     spec_path: null,
+    doctor_checks: [],
     scaffold_required: false,
     scaffold_reason: null,
     scope: {
@@ -1126,8 +1127,7 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
   };
 
   validatePacket(packet, packetPath, errors, warnings, ready, derived, { context, report });
-  if (context) validateContext(context, errors, warnings, ready, derived);
-  if (report) validateAssemblyReportShape(report, errors, warnings, ready);
+  runDoctorChecks(ARTIFACT_DOCTOR_CHECKS, { context, report, errors, warnings, ready, derived });
 
   const next = buildNextStep(errors, warnings, derived, report);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
@@ -1135,8 +1135,14 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
   return outputBaseDir ? relativizeDoctorOutput(result, outputBaseDir) : result;
 }
 
-// Doctor Check Registry: keep packet/spec/build check order as data so agents
-// add new checks in one deterministic slot instead of editing a long call chain.
+// Doctor Check Registry: keep packet/spec/build/artifact check order as data so
+// agents add new checks in one deterministic slot instead of editing a long call chain.
+function runDoctorChecks(checks, context, options = {}) {
+  const executed = runDoctorCheckRegistry(checks, context, options);
+  if (Array.isArray(context.derived?.doctor_checks)) context.derived.doctor_checks.push(...executed);
+  return executed;
+}
+
 const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "campaign-spec.rule-registry",
@@ -1222,6 +1228,21 @@ const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ packet, warnings, ready }) => validateProofPolicy(packet, warnings, ready),
   },
 ], { registryId: "packet.always" });
+
+const ARTIFACT_DOCTOR_CHECKS = createDoctorCheckRegistry([
+  {
+    id: "context.shape",
+    phase: "context",
+    when: ({ context }) => Boolean(context),
+    run: ({ context, errors, warnings, ready, derived }) => validateContext(context, errors, warnings, ready, derived),
+  },
+  {
+    id: "assembly_report.shape",
+    phase: "report",
+    when: ({ report }) => Boolean(report),
+    run: ({ report, errors, warnings, ready }) => validateAssemblyReportShape(report, errors, warnings, ready),
+  },
+], { registryId: "artifact.optional" });
 
 function validatePacket(packet, packetPath, errors, warnings, ready, derived, buildState = {}) {
   if (!isObject(packet)) {
@@ -1312,10 +1333,10 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
       addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
     }
     ready.push("Local CampaignSpec parsed");
-    runDoctorCheckRegistry(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
+    runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
   }
 
-  runDoctorCheckRegistry(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, errors, warnings, ready, derived, buildState });
+  runDoctorChecks(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, errors, warnings, ready, derived, buildState });
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
     const partialScope = derived.scope?.mode === "partial";

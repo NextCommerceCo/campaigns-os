@@ -94,6 +94,28 @@ test("prepare-build emits adapter decisions and proof policy in public artifacts
   });
 });
 
+test("doctor routes optional context and assembly report through named artifact checks", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    const context = readJson(contextPath);
+    context.source_adapter = "unknown_adapter";
+    writeJson(contextPath, context);
+
+    const report = readJson(reportPath);
+    report.proof_policy = "not-an-object";
+    writeJson(reportPath, report);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("context.source_adapter"), true);
+    assert.equal(warningCodes.has("report.proof_policy"), true);
+    assert.deepEqual(
+      (doctor.derived?.doctor_checks || []).filter((id) => id === "context.shape" || id === "assembly_report.shape"),
+      ["context.shape", "assembly_report.shape"]
+    );
+  });
+});
+
 test("doctor warns on unknown adapter policy field values", () => {
   withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
     const packet = readJson(packetPath);
