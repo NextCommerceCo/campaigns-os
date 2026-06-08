@@ -687,6 +687,13 @@ function createStage(stage, status, extras = {}) {
   };
 }
 
+/**
+ * Create the assembly-report stage ledger emitted by prepare-build.
+ *
+ * Every declared stage starts pending. `prepare_build` is immediately marked
+ * completed or blocked from the source/spec readiness result, while `setup` is
+ * pending only when starter scaffold adoption is required and skipped otherwise.
+ */
 function createInitialAssemblyReportStages({ scaffoldRequired, blockers, outputs }) {
   const stages = Object.fromEntries(
     ASSEMBLY_REPORT_STAGE_KEYS.map((stage) => [stage, createStage(stage, "pending")])

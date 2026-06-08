@@ -29,6 +29,11 @@ test("orchestration next stages all point at declared assembly report stages", (
   }
 });
 
+test("orchestration stage lookup rejects non-orchestrated CLI stages", () => {
+  assert.equal(nextStageContractForCliStage("prepare_build"), null);
+  assert.equal(reportKeyForCliStage("prepare_build"), null);
+});
+
 test("orchestration stage contracts are immutable and unique", () => {
   assert.equal(Object.isFrozen(ASSEMBLY_REPORT_STAGE_KEYS), true);
   assert.equal(Object.isFrozen(NEXT_STAGE_CONTRACTS), true);
@@ -36,5 +41,4 @@ test("orchestration stage contracts are immutable and unique", () => {
   assert.equal(new Set(ASSEMBLY_REPORT_STAGE_KEYS).size, ASSEMBLY_REPORT_STAGE_KEYS.length);
   assert.equal(new Set(NEXT_STAGE_ORDER).size, NEXT_STAGE_ORDER.length);
   assert.equal(new Set(NEXT_STAGE_CONTRACTS.map((contract) => contract.reportKey)).size, NEXT_STAGE_CONTRACTS.length);
-  assert.equal(nextStageContractForCliStage("prepare_build"), null);
 });

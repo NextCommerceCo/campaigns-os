@@ -12,27 +12,22 @@ export const NEXT_STAGE_CONTRACTS = Object.freeze([
   Object.freeze({
     cliStage: "setup",
     reportKey: "setup",
-    owner: "next-campaigns-setup",
   }),
   Object.freeze({
     cliStage: "build",
     reportKey: "assembly",
-    owner: "next-campaigns-build",
   }),
   Object.freeze({
     cliStage: "polish",
     reportKey: "polish",
-    owner: "next-campaigns-polish",
   }),
   Object.freeze({
     cliStage: "deploy",
     reportKey: "deploy",
-    owner: "operator",
   }),
   Object.freeze({
     cliStage: "qa",
     reportKey: "qa",
-    owner: "next-campaigns-qa",
   }),
 ]);
 
@@ -47,5 +42,5 @@ export function nextStageContractForCliStage(cliStage) {
 }
 
 export function reportKeyForCliStage(cliStage) {
-  return nextStageContractForCliStage(cliStage)?.reportKey || String(cliStage || "");
+  return nextStageContractForCliStage(cliStage)?.reportKey || null;
 }
