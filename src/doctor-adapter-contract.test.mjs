@@ -94,6 +94,38 @@ test("prepare-build emits adapter decisions and proof policy in public artifacts
   });
 });
 
+test("doctor routes optional context and assembly report through named artifact checks", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    const context = readJson(contextPath);
+    context.source_adapter = "unknown_adapter";
+    writeJson(contextPath, context);
+
+    const report = readJson(reportPath);
+    report.proof_policy = "not-an-object";
+    writeJson(reportPath, report);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("context.source_adapter"), true);
+    assert.equal(warningCodes.has("report.proof_policy"), true);
+    assert.deepEqual(
+      (doctor.derived?.doctor_checks || []).slice(-2),
+      ["context.shape", "assembly_report.shape"]
+    );
+  });
+});
+
+test("doctor skips missing optional artifact sidecars in the named check trace", () => {
+  withPreparedBuild(({ packetPath, contextPath }) => {
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--json"]);
+    const checkIds = doctor.derived?.doctor_checks || [];
+
+    assert.equal(checkIds.at(-1), "context.shape");
+    assert.equal(checkIds.includes("assembly_report.shape"), false);
+  });
+});
+
 test("doctor warns on unknown adapter policy field values", () => {
   withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
     const packet = readJson(packetPath);
