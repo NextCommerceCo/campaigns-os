@@ -3866,9 +3866,13 @@ async function findingsCommand(args, ambient = null) {
   const sub = args._[1] || "";
   if (sub === "add") return findingsAdd(args, ambient);
   if (sub === "harvest") return findingsHarvest(args, ambient);
-  if (sub === "list") return findingsList(args);
-  if (sub === "export") return findingsExport(args);
+  if (sub === "list") return findingsList(args, ambient);
+  if (sub === "export") return findingsExport(args, ambient);
   throw new Error(`Unknown findings subcommand "${sub}". Use: add | harvest | list | export.`);
+}
+
+function resolveFindingsJournalPath(args, ambient = null) {
+  return resolveJournalPath(args, ambient?.dir || process.cwd());
 }
 
 async function promptForFinding(current) {
@@ -3943,7 +3947,7 @@ async function findingsAdd(args, ambient = null) {
     artifact_paths: optionalString(args["artifact-paths"]),
   });
 
-  const journalPath = resolveJournalPath(args);
+  const journalPath = resolveFindingsJournalPath(args, ambient);
   appendFinding(journalPath, finding);
 
   if (args.json) {
@@ -3956,8 +3960,8 @@ async function findingsAdd(args, ambient = null) {
   console.log(`ID: ${finding.id}`);
 }
 
-function findingsList(args) {
-  const journalPath = resolveJournalPath(args);
+function findingsList(args, ambient = null) {
+  const journalPath = resolveFindingsJournalPath(args, ambient);
   const { findings, malformed } = readJournal(journalPath);
   if (args.json) {
     console.log(JSON.stringify({ ok: true, journal: journalPath, count: findings.length, findings, malformed }, null, 2));
@@ -4003,7 +4007,7 @@ function findingsHarvest(args, ambient = null) {
   });
 
   let written = [];
-  const journalPath = resolveJournalPath(args);
+  const journalPath = resolveFindingsJournalPath(args, ambient);
   if (args.write === true) {
     written = proposals.map((finding) => appendFinding(journalPath, finding));
   }
@@ -4119,8 +4123,8 @@ function dedupeFindings(findings) {
   return result;
 }
 
-function findingsExport(args) {
-  const journalPath = resolveJournalPath(args);
+function findingsExport(args, ambient = null) {
+  const journalPath = resolveFindingsJournalPath(args, ambient);
   const { findings } = readJournal(journalPath);
   // Structured JSON is explicit; Markdown summary is the default so a run
   // summary pastes straight into an issue tracker, PR, or chat.

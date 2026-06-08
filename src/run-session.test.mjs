@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -219,6 +219,27 @@ test("CLI: full ambient flow — run start -> prepare-build (no flags) -> run en
 
     // session is cleared after end
     assert.equal(findRunSession(target), null);
+  });
+});
+
+test("CLI: findings from subdirectories use the active session journal", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    mkdirSync(target, { recursive: true });
+    const packetPath = join(target, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+
+    const start = JSON.parse(runIn(target, ["run", "start", "--packet", packetPath, "--json"]));
+    const subdir = join(target, "subdir");
+    mkdirSync(subdir, { recursive: true });
+    const added = JSON.parse(runIn(subdir, ["findings", "add", "--stage", "qa", "--kind", "friction", "--summary", "subdir finding", "--json"]));
+
+    assert.equal(added.finding.run_id, start.session.run_id);
+    assert.equal(realpathSync(added.journal), realpathSync(join(target, ".campaign-runtime", "workflow-findings.jsonl")));
+    assert.equal(existsSync(join(subdir, ".campaign-runtime", "workflow-findings.jsonl")), false);
+
+    const end = JSON.parse(runIn(target, ["run", "end", "--no-remit", "--no-write", "--json"]));
+    assert.deepEqual(end.record.observations.finding_ids, [added.finding.id]);
   });
 });
 
