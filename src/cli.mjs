@@ -75,6 +75,11 @@ import {
   validateThemeContextBlock,
   writeThemeArtifacts,
 } from "./brand-theme.mjs";
+import {
+  ASSEMBLY_REPORT_STAGE_KEYS,
+  NEXT_STAGE_ORDER,
+  reportKeyForCliStage,
+} from "./orchestration-stage-contract.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -682,6 +687,25 @@ function createStage(stage, status, extras = {}) {
   };
 }
 
+/**
+ * Create the assembly-report stage ledger emitted by prepare-build.
+ *
+ * Every declared stage starts pending. `prepare_build` is immediately marked
+ * completed or blocked from the source/spec readiness result, while `setup` is
+ * pending only when starter scaffold adoption is required and skipped otherwise.
+ */
+function createInitialAssemblyReportStages({ scaffoldRequired, blockers, outputs }) {
+  const stages = Object.fromEntries(
+    ASSEMBLY_REPORT_STAGE_KEYS.map((stage) => [stage, createStage(stage, "pending")])
+  );
+  stages.prepare_build = createStage("prepare_build", blockers.length ? "blocked" : "completed", {
+    outputs,
+    blockers,
+  });
+  stages.setup = createStage("setup", scaffoldRequired ? "pending" : "skipped");
+  return stages;
+}
+
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -1032,18 +1056,11 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
       commerce_catalog_version: null,
       candidates: context.template.candidates,
     },
-    stages: {
-      prepare_build: createStage("prepare_build", blockers.length ? "blocked" : "completed", {
-        outputs: [portable(packetPath), portable(contextPath), portable(reportPath)],
-        blockers,
-      }),
-      doctor: createStage("doctor", "pending"),
-      setup: createStage("setup", scaffoldRequired ? "pending" : "skipped"),
-      assembly: createStage("assembly", "pending"),
-      polish: createStage("polish", "pending"),
-      deploy: createStage("deploy", "pending"),
-      qa: createStage("qa", "pending"),
-    },
+    stages: createInitialAssemblyReportStages({
+      scaffoldRequired,
+      blockers,
+      outputs: [portable(packetPath), portable(contextPath), portable(reportPath)],
+    }),
     decisions: context.decisions,
     adapter_decisions: cloneJson(context.adapter_decisions || createAdapterDecisions()),
     proof_policy: cloneJson(packet.qa?.proof_policy || createProofPolicy()),
@@ -2972,7 +2989,7 @@ function validateAssemblyReport(report) {
   if (!isObject(stages)) {
     addIssue(errors, "stages", "stages object is required.");
   } else {
-    for (const stage of ["prepare_build", "doctor", "setup", "assembly", "polish", "deploy", "qa"]) {
+    for (const stage of ASSEMBLY_REPORT_STAGE_KEYS) {
       if (!isObject(stages[stage])) {
         addIssue(errors, `stages.${stage}`, `${stage} stage is required.`);
         continue;
@@ -3007,21 +3024,9 @@ function validateAssemblyProofPolicy(policy, warnings, ready) {
   ready.push("Assembly report proof_policy loaded");
 }
 
-/**
- * Stage order for the orchestration loop. Pre-Slice-3-Phase-2 the agent had
- * to know this sequence; now `campaigns-os next` (no stage arg) self-decides
- * by walking this list and finding the first stage whose recorded status
- * isn't a terminal one.
- *
- * These are CLI stage names (what the user types as `next <stage>`). The
- * assembly report keys them slightly differently — the "build" CLI stage
- * maps to the "assembly" report key. reportKeyForCliStage() handles that.
- *
- * Frozen so a downstream caller can't accidentally mutate the loop order
- * or terminal-status set at runtime (these are pure module-level state).
- */
-const STAGE_ORDER = Object.freeze(["setup", "build", "polish", "deploy", "qa"]);
-
+// The orchestration stage contract lives in orchestration-stage-contract.mjs so
+// report producers, validators, and the `next` picker share one deterministic
+// source for stage order and CLI-stage/report-key translation.
 /**
  * Status values that count as terminal under PREFIX matching — so
  * "completed", "completed_with_warnings", and "completed_partial" all
@@ -3032,10 +3037,6 @@ const STAGE_ORDER = Object.freeze(["setup", "build", "polish", "deploy", "qa"]);
  */
 const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped"]);
 const STAGE_BLOCKED_STATUSES = Object.freeze(new Set(["blocked"]));
-
-function reportKeyForCliStage(cliStage) {
-  return cliStage === "build" ? "assembly" : cliStage;
-}
 
 /**
  * Predicate: is a polish status acceptable as a handoff into a downstream
@@ -3167,7 +3168,7 @@ function pickNextStage(report, doctor) {
     };
   }
 
-  for (const cliStage of STAGE_ORDER) {
+  for (const cliStage of NEXT_STAGE_ORDER) {
     const reportKey = reportKeyForCliStage(cliStage);
     const stage = report.stages[reportKey];
     if (!stage) {
