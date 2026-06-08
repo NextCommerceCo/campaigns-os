@@ -1137,9 +1137,12 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
 
 // Doctor Check Registry: keep packet/spec/build/artifact check order as data so
 // agents add new checks in one deterministic slot instead of editing a long call chain.
-function runDoctorChecks(checks, context, options = {}) {
-  const executed = runDoctorCheckRegistry(checks, context, options);
-  if (Array.isArray(context.derived?.doctor_checks)) context.derived.doctor_checks.push(...executed);
+function runDoctorChecks(checks, registryContext, options = {}) {
+  const executed = runDoctorCheckRegistry(checks, registryContext, options);
+  if (!isObject(registryContext?.derived) || !Array.isArray(registryContext.derived.doctor_checks)) {
+    throw new Error("Doctor check registry execution needs derived.doctor_checks for deterministic trace output.");
+  }
+  registryContext.derived.doctor_checks.push(...executed);
   return executed;
 }
 
@@ -1230,6 +1233,8 @@ const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
 ], { registryId: "packet.always" });
 
 const ARTIFACT_DOCTOR_CHECKS = createDoctorCheckRegistry([
+  // Artifact phases are deterministic labels for inspection/filtering; artifact
+  // presence is gated by `when` because context and report sidecars are optional.
   {
     id: "context.shape",
     phase: "context",

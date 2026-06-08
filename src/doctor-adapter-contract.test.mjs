@@ -110,9 +110,19 @@ test("doctor routes optional context and assembly report through named artifact 
     assert.equal(warningCodes.has("context.source_adapter"), true);
     assert.equal(warningCodes.has("report.proof_policy"), true);
     assert.deepEqual(
-      (doctor.derived?.doctor_checks || []).filter((id) => id === "context.shape" || id === "assembly_report.shape"),
+      (doctor.derived?.doctor_checks || []).slice(-2),
       ["context.shape", "assembly_report.shape"]
     );
+  });
+});
+
+test("doctor skips missing optional artifact sidecars in the named check trace", () => {
+  withPreparedBuild(({ packetPath, contextPath }) => {
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--json"]);
+    const checkIds = doctor.derived?.doctor_checks || [];
+
+    assert.equal(checkIds.at(-1), "context.shape");
+    assert.equal(checkIds.includes("assembly_report.shape"), false);
   });
 });
 
