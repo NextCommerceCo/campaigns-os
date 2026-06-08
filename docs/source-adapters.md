@@ -56,6 +56,16 @@ work instead of relying on chat history:
   `assets/css`, `assets/js`, and `frontmatter_vocabulary`.
 - `config_script_strategy`: records how campaign config scripts load
   (`campaign_asset`, `frontmatter_script`, `inline`, or `not_required`).
+- `wrapper_policy`: records whether document wrappers were stripped, preserved,
+  or not required.
+- `frontmatter_policy`: records whether Page Kit YAML frontmatter was created,
+  preserved, or intentionally not required.
+- `script_style_reference_policy`: records whether scripts/styles were moved to
+  frontmatter, campaign assets, inline blocks, or raw passthrough.
+- `cta_rewrite_policy`: records how CTA destinations were rewritten from
+  CampaignSpec routes.
+- `layout_choice`: records the Page Kit layout strategy used for the prepared
+  source.
 
 Raw AI-generated HTML normally needs this conversion pass before build:
 

@@ -143,8 +143,18 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
     if (!entry || !isNonEmptyString(entry.path)) continue;
     const url = optionalString(entry.page_url);
     if (url !== null) {
-      const norm = normalizePageKitRoute(url);
-      if (!byPageUrl.has(norm)) byPageUrl.set(norm, entry);
+      const norm = pageRouteForPageKit(url);
+      const firstEntry = byPageUrl.get(norm);
+      if (firstEntry) {
+        prompts.push({
+          code: "MANIFEST_DUPLICATE_PAGE_URL",
+          stage: "prepare_build",
+          message: `Source-html manifest has more than one entry for page_url "${url}" (first path "${firstEntry.path || ""}", duplicate path "${entry.path || ""}"). Only the first entry is used for page_url matching. Deduplicate page_url values before build.`,
+          page_url: norm,
+        });
+      } else {
+        byPageUrl.set(norm, entry);
+      }
     }
     const t = optionalString(entry.page_type);
     if (t) {
@@ -168,7 +178,7 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
     let entry = byPageId.get(page.id);
     let matchVia = "page_id";
     if (!(entry && isNonEmptyString(entry.path))) {
-      const norm = normalizePageKitRoute(optionalString(page.page_url) || "");
+      const norm = pageRouteForPageKit(optionalString(page.page_url) || optionalString(page.url) || "");
       const urlEntry = byPageUrl.get(norm);
       if (urlEntry && isNonEmptyString(urlEntry.path) && !usedEntries.has(urlEntry)) {
         entry = urlEntry;
@@ -402,7 +412,7 @@ function cpkPageTypeForSpecType(type) {
   if (type === "presell" || type === "landing") return "product";
   if (type === "thankyou" || type === "receipt") return "receipt";
   if (type === "upsell" || type === "downsell") return "upsell";
-  if (type === "checkout") return "checkout";
+  if (type === "checkout" || type === "select") return "checkout";
   return CPK_PAGE_TYPES.has(type) ? type : "product";
 }
 

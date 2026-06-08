@@ -82,10 +82,36 @@ test("prepare-build emits adapter decisions and proof policy in public artifacts
 
     assert.equal(packet.source_html.adapter_contract.source_asset_strategy, "pagekit_campaign_asset_root");
     assert.equal(packet.source_html.adapter_contract.raw_html_conversion_status, "pending");
+    assert.equal(packet.source_html.adapter_contract.wrapper_policy, "strip_document_wrappers");
+    assert.equal(packet.source_html.adapter_contract.frontmatter_policy, "pagekit_yaml_frontmatter");
+    assert.equal(packet.source_html.adapter_contract.script_style_reference_policy, "frontmatter_or_campaign_asset");
+    assert.equal(packet.source_html.adapter_contract.cta_rewrite_policy, "campaignspec_routes_via_campaign_link");
+    assert.equal(packet.source_html.adapter_contract.layout_choice, "campaign_layout");
     assert.equal(context.adapter_decisions.commerce_shell_adoption, "template_clone_first_required");
     assert.equal(report.adapter_decisions.template_files_copied.status, "pending");
     assert.equal(packet.qa.proof_policy.browser_qa_required, true);
     assert.equal(report.proof_policy.typed_card_depth, "common");
+  });
+});
+
+test("doctor warns on unknown adapter policy field values", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    const packet = readJson(packetPath);
+    packet.source_html.adapter_contract.wrapper_policy = "definitely_not_strip";
+    packet.source_html.adapter_contract.frontmatter_policy = "invent_frontmatter";
+    packet.source_html.adapter_contract.script_style_reference_policy = "mystery_loader";
+    packet.source_html.adapter_contract.cta_rewrite_policy = "clicks_go_somewhere";
+    packet.source_html.adapter_contract.layout_choice = "bespoke_shell";
+    writeJson(packetPath, packet);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("source_html.adapter_contract.wrapper_policy"), true);
+    assert.equal(warningCodes.has("source_html.adapter_contract.frontmatter_policy"), true);
+    assert.equal(warningCodes.has("source_html.adapter_contract.script_style_reference_policy"), true);
+    assert.equal(warningCodes.has("source_html.adapter_contract.cta_rewrite_policy"), true);
+    assert.equal(warningCodes.has("source_html.adapter_contract.layout_choice"), true);
   });
 });
 

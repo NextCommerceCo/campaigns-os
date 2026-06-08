@@ -5,6 +5,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import {
+  createSourceHtmlIntake,
+  publicRouteForPage,
+} from "./source-html-intake.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -138,4 +142,53 @@ test("prepare-build projects absolute page_url from its path, not its origin", (
     assert.equal(checkoutMapping.page_kit.public_route, "/runtime-packet-demo/checkout/step-1/");
     assert.equal(checkoutMapping.page_kit.frontmatter.permalink, "/runtime-packet-demo/checkout/step-1/");
   });
+});
+
+test("public route projection normalizes legacy url values as Page Kit routes", () => {
+  assert.equal(
+    publicRouteForPage({ type: "checkout", url: "https://preview.example.com/runtime-packet-demo/checkout.html?utm=test#top" }),
+    "runtime-packet-demo/checkout/"
+  );
+  assert.equal(publicRouteForPage({ type: "checkout", url: "checkout.html" }), "checkout/");
+});
+
+test("source-html manifest prompts for duplicate page_url values", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const manifestPath = resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json");
+    const manifest = readJson(manifestPath);
+    manifest.pages[0].page_url = "shared/";
+    manifest.pages[1].page_url = "https://preview.example.com/shared/?utm=1";
+    writeJson(manifestPath, manifest);
+
+    const result = runCliJson([
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+
+    assert.equal(result.context.prompts_required.some((prompt) => prompt.code === "MANIFEST_DUPLICATE_PAGE_URL"), true);
+  });
+});
+
+test("select spec pages project to checkout Page Kit page_type", () => {
+  const result = createSourceHtmlIntake({
+    sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+    specPages: [
+      {
+        id: "package-select",
+        type: "select",
+        page_url: "select/",
+      },
+    ],
+    htmlFiles: [{ path: "select.html", basename: "select" }],
+    publicRouteSlug: "runtime-packet-demo",
+    outputDir: "src/runtime-packet-demo",
+  });
+
+  assert.equal(result.mappings.length, 1);
+  assert.equal(result.mappings[0].page_kit.page_type, "checkout");
+  assert.equal(result.mappings[0].page_kit.frontmatter.page_type, "checkout");
 });

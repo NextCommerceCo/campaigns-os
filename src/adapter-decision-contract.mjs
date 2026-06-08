@@ -17,6 +17,11 @@ const ROUTE_REWRITE_POLICIES = new Set(["campaignspec_routes_via_campaign_link",
 const CONFIG_SCRIPT_STRATEGIES = new Set(["campaign_asset", "frontmatter_script", "inline", "not_required", "unknown"]);
 const COMMERCE_SHELL_ADOPTIONS = new Set(["not_required", "template_clone_first_required", "template_clone_first_verified", "sdk_surfaces_preserved", "custom_html_experimental"]);
 const TEMPLATE_FILES_COPIED_STATUSES = new Set(["pending", "complete", "verified_existing_slice", "partial", "not_applicable"]);
+const WRAPPER_POLICIES = new Set(["strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown"]);
+const FRONTMATTER_POLICIES = new Set(["pagekit_yaml_frontmatter", "raw_passthrough", "not_required", "unknown"]);
+const SCRIPT_STYLE_REFERENCE_POLICIES = new Set(["frontmatter_or_campaign_asset", "frontmatter", "campaign_asset", "inline", "raw_passthrough", "not_required", "unknown"]);
+const CTA_REWRITE_POLICIES = ROUTE_REWRITE_POLICIES;
+const LAYOUT_CHOICES = new Set(["campaign_layout", "page_layout", "raw_passthrough", "not_applicable", "unknown"]);
 
 export function createAdapterDecisions({ commerceZoneFindings = [] } = {}) {
   const shellRequired = commerceZoneFindings.some((finding) => finding?.requires_template_shell === true);
@@ -42,7 +47,7 @@ export function createAdapterDecisions({ commerceZoneFindings = [] } = {}) {
 
 export function validateAdapterDecisionShape(decisions, location, warnings, ready, { addIssue }) {
   if (!decisions) {
-    addIssue(warnings, location, `${location} is missing; adapter choices are not doctor-able. New prepare-build runs write source_asset_strategy, commerce_shell_adoption, route_rewrite_policy, template_files_copied, config_script_strategy, and raw_html_conversion_status.`);
+    addIssue(warnings, location, `${location} is missing; adapter choices are not doctor-able. New prepare-build runs write source_asset_strategy, commerce_shell_adoption, route_rewrite_policy, template_files_copied, config_script_strategy, raw_html_conversion_status, wrapper_policy, frontmatter_policy, script_style_reference_policy, cta_rewrite_policy, and layout_choice.`);
     return;
   }
   if (!isObject(decisions)) {
@@ -54,6 +59,11 @@ export function validateAdapterDecisionShape(decisions, location, warnings, read
   checkEnum(decisions.route_rewrite_policy, ROUTE_REWRITE_POLICIES, `${location}.route_rewrite_policy`, warnings, addIssue);
   checkEnum(decisions.config_script_strategy, CONFIG_SCRIPT_STRATEGIES, `${location}.config_script_strategy`, warnings, addIssue);
   checkEnum(decisions.commerce_shell_adoption, COMMERCE_SHELL_ADOPTIONS, `${location}.commerce_shell_adoption`, warnings, addIssue);
+  checkEnum(decisions.wrapper_policy, WRAPPER_POLICIES, `${location}.wrapper_policy`, warnings, addIssue);
+  checkEnum(decisions.frontmatter_policy, FRONTMATTER_POLICIES, `${location}.frontmatter_policy`, warnings, addIssue);
+  checkEnum(decisions.script_style_reference_policy, SCRIPT_STYLE_REFERENCE_POLICIES, `${location}.script_style_reference_policy`, warnings, addIssue);
+  checkEnum(decisions.cta_rewrite_policy, CTA_REWRITE_POLICIES, `${location}.cta_rewrite_policy`, warnings, addIssue);
+  checkEnum(decisions.layout_choice, LAYOUT_CHOICES, `${location}.layout_choice`, warnings, addIssue);
 
   const copied = decisions.template_files_copied;
   if (copied != null) {
