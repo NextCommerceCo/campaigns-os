@@ -1,13 +1,14 @@
-function defineDoctorCheck({ id, phase = "doctor", run, when = null }, { registryId, index }) {
+function defineDoctorCheck({ id, phase = "doctor", run, when = null }, { registryId = "doctor", index = "unknown" } = {}) {
   const location = `Doctor check registry "${registryId}" check at index ${index}`;
   if (!isNonEmptyString(id)) throw new Error(`${location} needs a non-empty id.`);
-  const checkLabel = `Doctor check registry "${registryId}" check "${id}"`;
+  const normalizedId = id.trim();
+  const checkLabel = `Doctor check registry "${registryId}" check "${normalizedId}"`;
   if (!isNonEmptyString(phase)) throw new Error(`${checkLabel} needs a phase.`);
   if (typeof run !== "function") throw new Error(`${checkLabel} needs a run function.`);
   if (when != null && typeof when !== "function") throw new Error(`${checkLabel} has a non-function when predicate.`);
 
   return Object.freeze({
-    id: id.trim(),
+    id: normalizedId,
     phase: phase.trim(),
     run,
     when,

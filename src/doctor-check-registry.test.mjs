@@ -72,6 +72,16 @@ test("doctor check registry can run only checks in a requested phase", () => {
   assert.deepEqual(calls, ["spec.routes"]);
 });
 
+test("doctor check registry treats blank phase filters as unfiltered", () => {
+  const registry = createDoctorCheckRegistry([
+    { id: "packet.shape", phase: "packet", run: () => {} },
+    { id: "spec.routes", phase: "spec", run: () => {} },
+  ]);
+
+  assert.deepEqual(runDoctorCheckRegistry(registry, {}, { phase: "" }), ["packet.shape", "spec.routes"]);
+  assert.deepEqual(runDoctorCheckRegistry(registry, {}, { phase: "unknown" }), []);
+});
+
 test("doctor check registry rejects duplicate ids", () => {
   assert.throws(
     () => createDoctorCheckRegistry([
@@ -83,6 +93,7 @@ test("doctor check registry rejects duplicate ids", () => {
 });
 
 test("doctor check registry rejects invalid registry inputs with registry ids", () => {
+  assert.deepEqual(createDoctorCheckRegistry([], { registryId: "packet" }), []);
   assert.throws(
     () => createDoctorCheckRegistry(null, { registryId: "packet" }),
     /Doctor check registry "packet" must be an array/
@@ -101,6 +112,10 @@ test("doctor check registry rejects invalid check fields with registry ids", () 
   assert.throws(
     () => createDoctorCheckRegistry([{ id: "spec.routes", phase: " ", run: () => {} }], { registryId: "packet" }),
     /Doctor check registry "packet" check "spec.routes" needs a phase/
+  );
+  assert.throws(
+    () => createDoctorCheckRegistry([{ id: " spec.routes " }], { registryId: "packet" }),
+    /Doctor check registry "packet" check "spec.routes" needs a run function/
   );
   assert.throws(
     () => createDoctorCheckRegistry([{ id: "spec.routes" }], { registryId: "packet" }),
