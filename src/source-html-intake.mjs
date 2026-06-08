@@ -66,10 +66,22 @@ export function normalizePageKitRoute(value) {
 }
 
 export function publicRouteForPage(page) {
-  if (isNonEmptyString(page?.page_url)) return normalizePageKitRoute(page.page_url);
-  if (isNonEmptyString(page?.url)) return page.url.trim();
+  if (isNonEmptyString(page?.page_url)) return pageRouteForPageKit(page.page_url);
+  if (isNonEmptyString(page?.url)) return pageRouteForPageKit(page.url);
   if (page?.is_entry) return "";
   return defaultRouteForSpecType(page?.type);
+}
+
+function pageRouteForPageKit(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (!isAbsoluteHttpUrl(raw)) return normalizePageKitRoute(raw);
+  try {
+    const url = new URL(raw);
+    return normalizePageKitRoute(url.pathname);
+  } catch {
+    return normalizePageKitRoute(raw);
+  }
 }
 
 function readSourceHtmlManifest(sourceRoot) {

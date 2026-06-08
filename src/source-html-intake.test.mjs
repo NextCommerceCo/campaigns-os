@@ -115,3 +115,27 @@ test("prepare-build separates source manifest paths from Page Kit target project
     assert.equal(projectionDecisions.length, 4);
   });
 });
+
+test("prepare-build projects absolute page_url from its path, not its origin", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const spec = readJson(specPath);
+    const checkout = spec.funnels[0].pages.find((page) => page.id === "checkout");
+    checkout.page_url = "https://preview.example.com/runtime-packet-demo/checkout/step-1/?utm=test";
+    writeJson(specPath, spec);
+
+    const result = runCliJson([
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+
+    const checkoutMapping = result.packet.source_html.pages.find((page) => page.page_id === "checkout");
+    assert.equal(checkoutMapping.page_kit.target_path, "step-1.html");
+    assert.equal(checkoutMapping.page_kit.output_path, "src/runtime-packet-demo/step-1.html");
+    assert.equal(checkoutMapping.page_kit.public_route, "/runtime-packet-demo/checkout/step-1/");
+    assert.equal(checkoutMapping.page_kit.frontmatter.permalink, "/runtime-packet-demo/checkout/step-1/");
+  });
+});
