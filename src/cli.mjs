@@ -1138,10 +1138,10 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
 // Doctor Check Registry: keep packet/spec/build/artifact check order as data so
 // agents add new checks in one deterministic slot instead of editing a long call chain.
 function runDoctorChecks(checks, registryContext, options = {}) {
-  const executed = runDoctorCheckRegistry(checks, registryContext, options);
   if (!isObject(registryContext?.derived) || !Array.isArray(registryContext.derived.doctor_checks)) {
     throw new Error("Doctor check registry execution needs derived.doctor_checks for deterministic trace output.");
   }
+  const executed = runDoctorCheckRegistry(checks, registryContext, options);
   registryContext.derived.doctor_checks.push(...executed);
   return executed;
 }
