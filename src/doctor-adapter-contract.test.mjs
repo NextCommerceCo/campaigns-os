@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -17,10 +17,10 @@ function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2));
 }
 
-function runCliJson(args) {
+function runCliJson(args, options = {}) {
   try {
     return JSON.parse(execFileSync(process.execPath, [CLI, ...args], {
-      cwd: ROOT,
+      cwd: options.cwd || ROOT,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, CAMPAIGNS_API_KEY: "" },
@@ -318,9 +318,11 @@ test("findings harvest proposes locally and writes only with --write", () => {
     assert.equal(dryRun.proposals.every((finding) => finding.safe_to_share === false), true);
     assert.equal(existsSync(journalPath), false);
 
-    const written = runCliJson(["findings", "harvest", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--write", "--json"]);
+    const started = runCliJson(["run", "start", "--packet", packetPath, "--json"], { cwd: dirname(packetPath) });
+    const written = runCliJson(["findings", "harvest", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--write", "--json"], { cwd: dirname(packetPath) });
     assert.equal(written.write, true);
     assert.ok(written.written.length > 0);
+    assert.ok(written.written.every((finding) => finding.run_id === started.session.run_id));
     assert.equal(existsSync(journalPath), true);
   });
 });

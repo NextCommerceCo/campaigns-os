@@ -362,7 +362,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
   }
 
   if (command === "findings") {
-    await findingsCommand(args);
+    await findingsCommand(args, ambient);
     return;
   }
 
@@ -3862,13 +3862,17 @@ function writeResult(result, args, failureCode) {
 // public-package owned; it never requires Linear access or NEXT internal
 // context, and it never phones home. See docs/workflow-findings-sidecar.md.
 
-async function findingsCommand(args) {
+async function findingsCommand(args, ambient = null) {
   const sub = args._[1] || "";
-  if (sub === "add") return findingsAdd(args);
-  if (sub === "harvest") return findingsHarvest(args);
-  if (sub === "list") return findingsList(args);
-  if (sub === "export") return findingsExport(args);
+  if (sub === "add") return findingsAdd(args, ambient);
+  if (sub === "harvest") return findingsHarvest(args, ambient);
+  if (sub === "list") return findingsList(args, ambient);
+  if (sub === "export") return findingsExport(args, ambient);
   throw new Error(`Unknown findings subcommand "${sub}". Use: add | harvest | list | export.`);
+}
+
+function resolveFindingsJournalPath(args, ambient = null) {
+  return resolveJournalPath(args, ambient?.dir || process.cwd());
 }
 
 async function promptForFinding(current) {
@@ -3885,7 +3889,7 @@ async function promptForFinding(current) {
   }
 }
 
-async function findingsAdd(args) {
+async function findingsAdd(args, ambient = null) {
   // Flags-first so agents and scripts can record findings without prompts.
   // When required flags are missing AND stdin is a TTY, fall back to a tiny
   // interactive prompt for only stage/kind/summary/details. When required
@@ -3935,7 +3939,7 @@ async function findingsAdd(args) {
     packet_path: optionalString(args.packet),
     assembly_report_path: optionalString(args["report"]),
     qa_run_id: optionalString(args["qa-run-id"]),
-    run_id: optionalString(args["run-id"]),
+    run_id: optionalString(args["run-id"]) || optionalString(ambient?.session?.run_id),
     author_type: optionalString(args["author-type"]),
     evidence_quality: optionalString(args["evidence-quality"]),
     suggested_owner: optionalString(args["suggested-owner"]),
@@ -3943,7 +3947,7 @@ async function findingsAdd(args) {
     artifact_paths: optionalString(args["artifact-paths"]),
   });
 
-  const journalPath = resolveJournalPath(args);
+  const journalPath = resolveFindingsJournalPath(args, ambient);
   appendFinding(journalPath, finding);
 
   if (args.json) {
@@ -3956,8 +3960,8 @@ async function findingsAdd(args) {
   console.log(`ID: ${finding.id}`);
 }
 
-function findingsList(args) {
-  const journalPath = resolveJournalPath(args);
+function findingsList(args, ambient = null) {
+  const journalPath = resolveFindingsJournalPath(args, ambient);
   const { findings, malformed } = readJournal(journalPath);
   if (args.json) {
     console.log(JSON.stringify({ ok: true, journal: journalPath, count: findings.length, findings, malformed }, null, 2));
@@ -3973,7 +3977,7 @@ function findingsList(args) {
   }
 }
 
-function findingsHarvest(args) {
+function findingsHarvest(args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
@@ -3999,11 +4003,11 @@ function findingsHarvest(args) {
     packetPath,
     reportPath: reportExists ? reportPath : null,
     artifactPaths,
-    runId: optionalString(args["run-id"]),
+    runId: optionalString(args["run-id"]) || optionalString(ambient?.session?.run_id),
   });
 
   let written = [];
-  const journalPath = resolveJournalPath(args);
+  const journalPath = resolveFindingsJournalPath(args, ambient);
   if (args.write === true) {
     written = proposals.map((finding) => appendFinding(journalPath, finding));
   }
@@ -4119,8 +4123,8 @@ function dedupeFindings(findings) {
   return result;
 }
 
-function findingsExport(args) {
-  const journalPath = resolveJournalPath(args);
+function findingsExport(args, ambient = null) {
+  const journalPath = resolveFindingsJournalPath(args, ambient);
   const { findings } = readJournal(journalPath);
   // Structured JSON is explicit; Markdown summary is the default so a run
   // summary pastes straight into an issue tracker, PR, or chat.

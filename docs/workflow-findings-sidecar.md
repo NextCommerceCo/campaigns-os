@@ -1,7 +1,7 @@
 # Run Telemetry
 
-Status: Design locked (eng review 2026-06-06) — schema-first build pending
-Date: 2026-06-06
+Status: Implemented v0 — Run Records, consent/remit, ambient run sessions, lifecycle timing, and repair-loop aggregation are live.
+Date: 2026-06-08
 
 > Supersedes the v0 "Workflow Findings Sidecar" framing. The sidecar was
 > local-only and never remitted; Run Telemetry keeps local capture but adds a
@@ -70,10 +70,10 @@ threaded through the run so every artifact and finding correlates. It is also
 the **idempotency key**: re-running or retrying remit for the same `run_id` must
 not double-count downstream (the endpoint upserts on `run_id`).
 
-> **v0 scope cut.** Stage timings and repair-loop count are **deferred** — they
-> are not reliably observable from current artifacts (statuses, not start/end
-> timings; no repair-loop artifact). They return when command-lifecycle
-> instrumentation lands. v0 does not claim signal it cannot measure.
+Stage timings and repair-loop count are captured from the command lifecycle
+journal when a run session or explicit lifecycle journal is active. They remain
+best-effort signal: telemetry records the commands Campaigns OS can observe, not
+every thought, browser click, or external editor action in an agent session.
 
 ### Validation
 
@@ -154,11 +154,15 @@ The Run Record is assembled from several local inputs, all correlated by
 - **System signal** — extracted from this run's doctor output, Assembly Report,
   and QA verdict (reusing the same artifact readers `findings harvest` uses).
 - **`findings harvest`** — proposes Workflow Findings from doctor blockers,
-  selected warnings, and report blockers; `--write` appends them. Harvested
-  system findings default to `safe_to_share: false` because raw doctor/report
-  messages can contain merchant URLs, source-copy snippets, or local artifact
-  references. An operator or redaction pass must approve sharing.
+  selected warnings, and report blockers; `--write` appends them. Under an
+  active run session, written findings inherit the session `run_id`; explicit
+  `--run-id` still wins. Harvested system findings default to
+  `safe_to_share: false` because raw doctor/report messages can contain
+  merchant URLs, source-copy snippets, or local artifact references. An operator
+  or redaction pass must approve sharing.
 - **`findings add`** — flags-first manual capture for operators and agents.
+  Under an active run session, new findings inherit the session `run_id`;
+  explicit `--run-id` still wins.
 - **Tiny Prompts** — skippable one-line stage-boundary prompts. Skipped prompts
   record nothing.
 
@@ -210,7 +214,10 @@ across runs, or create issues.
 - Do not record skipped Tiny Prompts.
 - Do not add a background retry daemon for failed remit.
 
-## Build Order
+## Implementation Sequence
+
+The core implementation is landed. This sequence is retained as an orientation
+map for the code paths and tests that own each slice.
 
 1. **Run Record schema** (`campaigns-os-run-record/v0`): envelope + canonical
    `run_id` + artifact-ref shape + normalized observation arrays + `surfaces[]`
@@ -224,8 +231,8 @@ across runs, or create issues.
 4. **Remit**: shared `remit()` helper, consent-gated, non-fatal, idempotent on
    `run_id`, with local remit status.
 
-`findings add` / `harvest` / `export` keep working unchanged and become the
-findings channel of the Run Record.
+`findings add` / `harvest` / `export` remain local-first and become the findings
+channel of the Run Record.
 
 ## Run Sessions (ambient capture)
 
@@ -235,9 +242,10 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
 - `campaigns-os run start [--packet <p>]` mints one `run_id`, picks the
   lifecycle journal, and writes `.campaign-runtime/run-session.json`.
 - Every command then auto-discovers that session (walking up from cwd) and
-  shares its `run_id` + journal **with no per-command flags**. An explicit
-  `--run-id` / `--lifecycle-journal` still wins; `CAMPAIGNS_OS_TELEMETRY`
-  consent still gates remit.
+  shares its `run_id` + journal **with no per-command flags**. Findings commands
+  also inherit the active `run_id` when writing findings. Explicit `--run-id` /
+  `--lifecycle-journal` still wins; `CAMPAIGNS_OS_TELEMETRY` consent still gates
+  remit.
 - `campaigns-os run end` assembles the aggregated Run Record for the session
   (consent-gated remit) and clears it. `run status` reports the active session.
 
