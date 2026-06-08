@@ -154,7 +154,10 @@ The Run Record is assembled from several local inputs, all correlated by
 - **System signal** — extracted from this run's doctor output, Assembly Report,
   and QA verdict (reusing the same artifact readers `findings harvest` uses).
 - **`findings harvest`** — proposes Workflow Findings from doctor blockers,
-  selected warnings, and report blockers; `--write` appends them.
+  selected warnings, and report blockers; `--write` appends them. Harvested
+  system findings default to `safe_to_share: false` because raw doctor/report
+  messages can contain merchant URLs, source-copy snippets, or local artifact
+  references. An operator or redaction pass must approve sharing.
 - **`findings add`** — flags-first manual capture for operators and agents.
 - **Tiny Prompts** — skippable one-line stage-boundary prompts. Skipped prompts
   record nothing.

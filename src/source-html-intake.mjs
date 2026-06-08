@@ -1,8 +1,6 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import {
-  SOURCE_HTML_MANIFEST_REL_PATH,
-  SOURCE_HTML_MANIFEST_SCHEMA,
+  readSourceHtmlManifestFile,
 } from "./source-html-manifest.mjs";
 
 const CPK_PAGE_TYPES = new Set(["product", "checkout", "upsell", "receipt"]);
@@ -14,7 +12,7 @@ export function createSourceHtmlIntake({
   publicRouteSlug,
   outputDir,
 }) {
-  const manifestResult = readSourceHtmlManifest(sourceRoot);
+  const manifestResult = readSourceHtmlManifestFile(sourceRoot);
   const matched = manifestResult.manifest
     ? applyManifestToPages(specPages, manifestResult.manifest, manifestResult.path)
     : matchSourcePages(specPages, htmlFiles);
@@ -82,38 +80,6 @@ function pageRouteForPageKit(value) {
   } catch {
     return normalizePageKitRoute(raw);
   }
-}
-
-function readSourceHtmlManifest(sourceRoot) {
-  const manifestPath = resolve(sourceRoot, SOURCE_HTML_MANIFEST_REL_PATH);
-  if (!existsSync(manifestPath) || !statSync(manifestPath).isFile()) {
-    return { manifest: null, path: null, warning: null };
-  }
-  let manifest;
-  try {
-    manifest = readJson(manifestPath);
-  } catch (error) {
-    return {
-      manifest: null,
-      path: manifestPath,
-      warning: `Could not parse source-html manifest at ${manifestPath}: ${error.message}. Falling back to filesystem matching.`,
-    };
-  }
-  if (!isObject(manifest)) {
-    return {
-      manifest: null,
-      path: manifestPath,
-      warning: `Source-html manifest at ${manifestPath} is not a JSON object. Falling back to filesystem matching.`,
-    };
-  }
-  if (manifest.schema_version !== SOURCE_HTML_MANIFEST_SCHEMA) {
-    return {
-      manifest: null,
-      path: manifestPath,
-      warning: `Source-html manifest at ${manifestPath} has unsupported schema_version "${manifest.schema_version}". Expected "${SOURCE_HTML_MANIFEST_SCHEMA}". Falling back to filesystem matching.`,
-    };
-  }
-  return { manifest, path: manifestPath, warning: null };
 }
 
 function applyManifestToPages(specPages, manifest, manifestPath) {
@@ -482,10 +448,6 @@ function slugify(value) {
     .replace(/['"]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
 }
 
 function isObject(value) {

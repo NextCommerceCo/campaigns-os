@@ -9,6 +9,11 @@ import {
   createSourceHtmlIntake,
   publicRouteForPage,
 } from "./source-html-intake.mjs";
+import {
+  readSourceHtmlManifestFile,
+  SOURCE_HTML_MANIFEST_SCHEMA,
+  validateSourceHtmlManifest,
+} from "./source-html-manifest.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -170,6 +175,38 @@ test("source-html manifest prompts for duplicate page_url values", () => {
     ]);
 
     assert.equal(result.context.prompts_required.some((prompt) => prompt.code === "MANIFEST_DUPLICATE_PAGE_URL"), true);
+  });
+});
+
+test("source-html manifest validator rejects missing page paths", () => {
+  const validation = validateSourceHtmlManifest({
+    schema_version: "source-html-manifest/v0",
+    pages: [{ page_id: "landing" }],
+  });
+
+  assert.equal(validation.ok, false);
+  assert.equal(validation.errors.some((error) => error.code === "manifest.pages[0].path"), true);
+});
+
+test("published source-html manifest schema agrees with runtime constant", () => {
+  const schema = readJson(resolve(ROOT, "schemas/source-html-manifest.v0.schema.json"));
+
+  assert.equal(schema.properties.schema_version.const, SOURCE_HTML_MANIFEST_SCHEMA);
+});
+
+test("source-html manifest reader reports schema validation failures", () => {
+  withIntakeFixture(({ sourceRoot }) => {
+    const manifestPath = resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json");
+    const manifest = readJson(manifestPath);
+    manifest.pages[0].source_hash = "not-a-sha";
+    writeJson(manifestPath, manifest);
+
+    const result = readSourceHtmlManifestFile(sourceRoot);
+
+    assert.equal(result.manifest, null);
+    assert.match(result.warning, /failed source-html-manifest\/v0 validation/);
+    assert.equal(result.validation.ok, false);
+    assert.equal(result.validation.errors.some((error) => error.code === "manifest.pages[0].source_hash"), true);
   });
 });
 
