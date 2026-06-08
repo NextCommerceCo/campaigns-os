@@ -77,6 +77,12 @@ clear `skip_reason`. Doctor will surface those pages under `derived.scope`,
 label mapped routes as previewable, and keep checkout launch/test-order proof
 blocked when runtime pages are out of scope.
 
+`source_html.pages[].path` is the source/provenance path. Use
+`source_html.pages[].page_kit` for the Page Kit target file, public route, CPK
+`page_type`, and frontmatter projection. This matters for mixed sources where a
+producer path such as `checkout/index.html` should still target
+`src/<slug>/checkout.html` unless the CampaignSpec route requires a permalink.
+
 ## Prepare Raw HTML Source
 
 `html_funnel` source files should be page-kit-ready source, not full browser

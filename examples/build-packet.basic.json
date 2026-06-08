@@ -18,19 +18,66 @@
     "pages": [
       {
         "page_id": "landing",
-        "path": "landing.html"
+        "path": "landing.html",
+        "page_kit": {
+          "target_path": "landing.html",
+          "output_path": "src/runtime-packet-demo/landing.html",
+          "public_route": "/runtime-packet-demo/landing/",
+          "spec_route": "landing/",
+          "page_type": "product",
+          "permalink_required": false,
+          "frontmatter": {
+            "page_type": "product",
+            "next_url": "/runtime-packet-demo/checkout/"
+          }
+        }
       },
       {
         "page_id": "checkout",
-        "path": "checkout.html"
+        "path": "checkout.html",
+        "page_kit": {
+          "target_path": "checkout.html",
+          "output_path": "src/runtime-packet-demo/checkout.html",
+          "public_route": "/runtime-packet-demo/checkout/",
+          "spec_route": "checkout/",
+          "page_type": "checkout",
+          "permalink_required": false,
+          "frontmatter": {
+            "page_type": "checkout",
+            "next_url": "/runtime-packet-demo/upsell/"
+          }
+        }
       },
       {
         "page_id": "upsell",
-        "path": "upsell.html"
+        "path": "upsell.html",
+        "page_kit": {
+          "target_path": "upsell.html",
+          "output_path": "src/runtime-packet-demo/upsell.html",
+          "public_route": "/runtime-packet-demo/upsell/",
+          "spec_route": "upsell/",
+          "page_type": "upsell",
+          "permalink_required": false,
+          "frontmatter": {
+            "page_type": "upsell",
+            "next_url": "/runtime-packet-demo/receipt/"
+          }
+        }
       },
       {
         "page_id": "receipt",
-        "path": "receipt.html"
+        "path": "receipt.html",
+        "page_kit": {
+          "target_path": "receipt.html",
+          "output_path": "src/runtime-packet-demo/receipt.html",
+          "public_route": "/runtime-packet-demo/receipt/",
+          "spec_route": "receipt/",
+          "page_type": "receipt",
+          "permalink_required": false,
+          "frontmatter": {
+            "page_type": "receipt"
+          }
+        }
       }
     ],
     "adapter_contract": {

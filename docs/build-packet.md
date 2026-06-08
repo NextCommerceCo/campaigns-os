@@ -55,6 +55,11 @@ Required adapter decisions:
 | `route_rewrite_policy` | How page links, CTAs, and SDK routing values were rewritten from CampaignSpec routes. |
 | `template_files_copied` | Whether the selected template family was copied/verified as one atomic page-kit slice. |
 | `config_script_strategy` | How campaign config scripts are loaded. |
+| `wrapper_policy` | Whether document wrappers are stripped, preserved, or not required. |
+| `frontmatter_policy` | How Page Kit YAML frontmatter is created or preserved. |
+| `script_style_reference_policy` | How scripts/styles move into frontmatter, campaign assets, inline blocks, or passthrough. |
+| `cta_rewrite_policy` | How CTA destinations are rewritten from CampaignSpec routes. |
+| `layout_choice` | Which Page Kit layout strategy wraps the prepared source. |
 
 `template_files_copied` is intentionally group-based rather than prose-only:
 `pages`, `_includes`, `_layouts`, `assets/css`, `assets/js`, and
@@ -96,10 +101,41 @@ Behavior:
 
 - The manifest is consumed only when its `schema_version` is `source-html-manifest/v0`. Unknown schema versions log a warning and fall back to filesystem matching so out-of-band tools cannot silently corrupt the packet.
 - The manifest's `page_id` must match an active CampaignSpec page id. Manifest entries with no matching spec page surface as a `MANIFEST_EXTRA_PAGE` prompt (analogous to the existing `MISSING_SOURCE_PAGE` prompt) so the operator reconciles either the spec or the manifest before build.
+- Optional manifest `page_url` values must be unique after Page Kit route normalization. Duplicate values surface as `MANIFEST_DUPLICATE_PAGE_URL`; prepare-build keeps the first value for route fallback matching and asks the operator to deduplicate before build.
 - Path values are relative to the source HTML root (`<source>`), not to the `.campaigns-os/` directory that contains the manifest. For example, use `checkout/index.html`, not `../checkout/index.html`.
 - The build context records `source.manifest` with `schema_version`, `generator`, `generated_at`, and `page_count`, and the assembly decision log records evidence citing the manifest file.
 
 When the manifest is absent, prepare-build's behavior is unchanged — pages are matched by filesystem name slug as before.
+
+### Page Kit Target Projection
+
+`source_html.pages[].path` is source provenance. It names the producer/source-root-relative HTML file that should be consumed; it is not necessarily the file path to write under the Page Kit campaign directory.
+
+Fresh `prepare-build` output also writes `source_html.pages[].page_kit` for mapped pages. This block is the Page Kit target projection:
+
+- `target_path` is the page file relative to `assembly.output_dir` (`checkout.html`, `receipt.html`, etc.).
+- `output_path` is the same target file relative to `assembly.target_repo`.
+- `public_route` is the rendered campaign-rooted route Page Kit should produce.
+- `page_type` is the CPK runtime/analytics vocabulary (`product`, `checkout`, `upsell`, `receipt`), not the richer CampaignSpec or producer page type. CampaignSpec `select` pages project as CPK `checkout` because they are pre-checkout runtime selection surfaces.
+- `frontmatter` names the Page Kit frontmatter fields the build should write or preserve.
+- `permalink_required` is true when Page Kit's filename-derived route would not match `public_route`.
+
+`page_map[].output_path` in the Build Context is the same Page Kit target path,
+not `source_html.pages[].path` appended under `assembly.output_dir`. Build agents
+should read `source_path` for producer provenance and `page_kit.output_path` for
+the file to write.
+
+CampaignSpec `page_url` and legacy `url` values are interpreted as Page Kit
+routes during projection. That normalization strips `.html`/`index.html`,
+removes query/fragment values, converts absolute preview URLs to their path, and
+normalizes trailing slashes before deriving target files and frontmatter routes.
+
+This prevents mixed-source manifests such as `checkout/index.html` from leaking producer folder structure into `src/<slug>/checkout/index.html`. Campaigns OS owns the Adapter from source/manifest/CampaignSpec into Page Kit shape; Page Kit remains the target.
+
+`target_path` intentionally uses the terminal route segment (`checkout/step-1/`
+projects to `step-1.html`). If two routes collapse to the same target filename,
+prepare-build emits `PAGE_KIT_TARGET_CONFLICT`; change one CampaignSpec route
+before build instead of letting an agent choose a destination.
 
 ### Per-page `source_hash` (Slice 6 drift detection)
 

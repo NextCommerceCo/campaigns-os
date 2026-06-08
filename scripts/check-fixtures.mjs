@@ -755,6 +755,12 @@ try {
     upsell: "upsell-step.html",
     receipt: "receipt-step.html",
   };
+  const expectedPageKitTypes = {
+    landing: "product",
+    checkout: "checkout",
+    upsell: "upsell",
+    receipt: "receipt",
+  };
   for (const [pageId, expected] of Object.entries(expectedPaths)) {
     const mapping = generatedPacket.source_html.pages.find((page) => page.page_id === pageId);
     if (!mapping || mapping.path !== expected) {
@@ -762,6 +768,12 @@ try {
     }
     if (mapping.page_type !== ({ landing: "landing", checkout: "checkout", upsell: "upsell", receipt: "thankyou" })[pageId]) {
       throw new Error(`source-html manifest fixture: expected ${pageId} page_type carried through, got ${mapping.page_type}`);
+    }
+    if (mapping.page_kit?.target_path !== `${pageId}.html`) {
+      throw new Error(`source-html manifest fixture: expected ${pageId} page_kit.target_path=${pageId}.html, got ${JSON.stringify(mapping.page_kit)}`);
+    }
+    if (mapping.page_kit?.page_type !== expectedPageKitTypes[pageId]) {
+      throw new Error(`source-html manifest fixture: expected ${pageId} CPK page_type=${expectedPageKitTypes[pageId]}, got ${JSON.stringify(mapping.page_kit)}`);
     }
   }
 
@@ -935,6 +947,12 @@ try {
   ]);
 
   const generatedPacket = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+  const expectedTargets = {
+    landing: "landing.html",
+    checkout: "checkout.html",
+    upsell: "upsell.html",
+    receipt: "receipt.html",
+  };
   for (const producer of producers) {
     const mapping = generatedPacket.source_html.pages.find((p) => p.page_id === producer.pageId);
     if (!mapping) {
@@ -946,6 +964,12 @@ try {
     }
     if (mapping.page_type !== producer.pageType) {
       throw new Error(`mixed-source fixture: expected ${producer.pageId} page_type=${producer.pageType}, got ${mapping.page_type}`);
+    }
+    if (mapping.page_kit?.target_path !== expectedTargets[producer.pageId]) {
+      throw new Error(`mixed-source fixture: expected ${producer.pageId} Page Kit target ${expectedTargets[producer.pageId]}, got ${JSON.stringify(mapping.page_kit)}`);
+    }
+    if (mapping.page_kit?.output_path.includes(producer.dir)) {
+      throw new Error(`mixed-source fixture: Page Kit output_path should not include producer dir "${producer.dir}", got ${mapping.page_kit.output_path}`);
     }
   }
 

@@ -113,6 +113,51 @@
                 "pattern": "^[0-9a-f]{64}$",
                 "description": "Optional sha256 of the source HTML file at the time the manifest was written. Doctor compares this to the on-disk file's actual hash and warns on mismatch (Slice 6 drift detection)."
               },
+              "page_kit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["target_path", "output_path", "public_route", "spec_route", "page_type", "permalink_required", "frontmatter"],
+                "properties": {
+                  "target_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Target page file relative to assembly.output_dir. This is the Page Kit target shape; it is distinct from source_html.pages[].path, which remains producer/source provenance."
+                  },
+                  "output_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Target page file relative to assembly.target_repo."
+                  },
+                  "public_route": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Rendered campaign-rooted public route Page Kit should produce for this page."
+                  },
+                  "spec_route": {
+                    "type": "string",
+                    "description": "CampaignSpec route after removing the public campaign slug, when present."
+                  },
+                  "page_type": {
+                    "enum": ["product", "checkout", "upsell", "receipt"],
+                    "description": "CPK runtime/analytics page_type. Preserve richer CampaignSpec or producer page types in source metadata instead."
+                  },
+                  "permalink_required": {
+                    "type": "boolean",
+                    "description": "True when Page Kit's default filename route would not match public_route and frontmatter.permalink should be written."
+                  },
+                  "frontmatter": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["page_type"],
+                    "properties": {
+                      "page_type": { "enum": ["product", "checkout", "upsell", "receipt"] },
+                      "permalink": { "type": "string", "minLength": 1 },
+                      "next_url": { "type": "string", "minLength": 1 },
+                      "decline_url": { "type": "string", "minLength": 1 }
+                    }
+                  }
+                }
+              },
               "skip_reason": { "type": "string", "minLength": 1 },
               "notes": { "type": ["string", "null"] }
             },
@@ -131,7 +176,12 @@
             "commerce_shell_adoption",
             "route_rewrite_policy",
             "template_files_copied",
-            "config_script_strategy"
+            "config_script_strategy",
+            "wrapper_policy",
+            "frontmatter_policy",
+            "script_style_reference_policy",
+            "cta_rewrite_policy",
+            "layout_choice"
           ],
           "properties": {
             "raw_html_conversion_status": { "enum": ["pending", "in_progress", "completed", "not_required", "blocked"] },
@@ -139,6 +189,11 @@
             "commerce_shell_adoption": { "enum": ["not_required", "template_clone_first_required", "template_clone_first_verified", "sdk_surfaces_preserved", "custom_html_experimental"] },
             "route_rewrite_policy": { "enum": ["campaignspec_routes_via_campaign_link", "pagekit_public_routes", "raw_passthrough", "not_applicable", "unknown"] },
             "config_script_strategy": { "enum": ["campaign_asset", "frontmatter_script", "inline", "not_required", "unknown"] },
+            "wrapper_policy": { "enum": ["strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown"] },
+            "frontmatter_policy": { "enum": ["pagekit_yaml_frontmatter", "raw_passthrough", "not_required", "unknown"] },
+            "script_style_reference_policy": { "enum": ["frontmatter_or_campaign_asset", "frontmatter", "campaign_asset", "inline", "raw_passthrough", "not_required", "unknown"] },
+            "cta_rewrite_policy": { "enum": ["campaignspec_routes_via_campaign_link", "pagekit_public_routes", "raw_passthrough", "not_applicable", "unknown"] },
+            "layout_choice": { "enum": ["campaign_layout", "page_layout", "raw_passthrough", "not_applicable", "unknown"] },
             "template_files_copied": {
               "type": "object",
               "additionalProperties": true,

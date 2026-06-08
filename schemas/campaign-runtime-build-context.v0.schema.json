@@ -50,7 +50,25 @@
           "page_id": { "type": "string" },
           "source_path": { "type": ["string", "null"] },
           "skip_reason": { "type": ["string", "null"] },
-          "output_path": { "type": ["string", "null"] }
+          "output_path": {
+            "type": ["string", "null"],
+            "description": "Page Kit target file path relative to the target repo. This mirrors page_kit.output_path; source_path remains producer provenance."
+          },
+          "page_kit": {
+            "type": ["object", "null"],
+            "properties": {
+              "target_path": { "type": "string" },
+              "output_path": {
+                "type": "string",
+                "description": "Page Kit target file path relative to the target repo."
+              },
+              "public_route": { "type": "string" },
+              "spec_route": { "type": "string" },
+              "page_type": { "enum": ["product", "checkout", "upsell", "receipt"] },
+              "permalink_required": { "type": "boolean" },
+              "frontmatter": { "type": "object" }
+            }
+          }
         }
       }
     },
@@ -175,7 +193,12 @@
         "commerce_shell_adoption",
         "route_rewrite_policy",
         "template_files_copied",
-        "config_script_strategy"
+        "config_script_strategy",
+        "wrapper_policy",
+        "frontmatter_policy",
+        "script_style_reference_policy",
+        "cta_rewrite_policy",
+        "layout_choice"
       ],
       "properties": {
         "raw_html_conversion_status": { "enum": ["pending", "in_progress", "completed", "not_required", "blocked"] },
@@ -183,6 +206,11 @@
         "commerce_shell_adoption": { "enum": ["not_required", "template_clone_first_required", "template_clone_first_verified", "sdk_surfaces_preserved", "custom_html_experimental"] },
         "route_rewrite_policy": { "enum": ["campaignspec_routes_via_campaign_link", "pagekit_public_routes", "raw_passthrough", "not_applicable", "unknown"] },
         "config_script_strategy": { "enum": ["campaign_asset", "frontmatter_script", "inline", "not_required", "unknown"] },
+        "wrapper_policy": { "enum": ["strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown"] },
+        "frontmatter_policy": { "enum": ["pagekit_yaml_frontmatter", "raw_passthrough", "not_required", "unknown"] },
+        "script_style_reference_policy": { "enum": ["frontmatter_or_campaign_asset", "frontmatter", "campaign_asset", "inline", "raw_passthrough", "not_required", "unknown"] },
+        "cta_rewrite_policy": { "enum": ["campaignspec_routes_via_campaign_link", "pagekit_public_routes", "raw_passthrough", "not_applicable", "unknown"] },
+        "layout_choice": { "enum": ["campaign_layout", "page_layout", "raw_passthrough", "not_applicable", "unknown"] },
         "template_files_copied": {
           "type": "object",
           "additionalProperties": true,

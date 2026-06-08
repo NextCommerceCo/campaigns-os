@@ -21,8 +21,41 @@
     ]
   },
   "page_map": [
-    { "page_id": "landing", "source_path": "landing.html", "skip_reason": null, "output_path": "src/example-campaign/landing.html" },
-    { "page_id": "checkout", "source_path": "checkout.html", "skip_reason": null, "output_path": "src/example-campaign/checkout.html" }
+    {
+      "page_id": "landing",
+      "source_path": "landing.html",
+      "skip_reason": null,
+      "output_path": "src/example-campaign/landing.html",
+      "page_kit": {
+        "target_path": "landing.html",
+        "output_path": "src/example-campaign/landing.html",
+        "public_route": "/example-campaign/landing/",
+        "spec_route": "landing/",
+        "page_type": "product",
+        "permalink_required": false,
+        "frontmatter": {
+          "page_type": "product",
+          "next_url": "/example-campaign/checkout/"
+        }
+      }
+    },
+    {
+      "page_id": "checkout",
+      "source_path": "checkout.html",
+      "skip_reason": null,
+      "output_path": "src/example-campaign/checkout.html",
+      "page_kit": {
+        "target_path": "checkout.html",
+        "output_path": "src/example-campaign/checkout.html",
+        "public_route": "/example-campaign/checkout/",
+        "spec_route": "checkout/",
+        "page_type": "checkout",
+        "permalink_required": false,
+        "frontmatter": {
+          "page_type": "checkout"
+        }
+      }
+    }
   ],
   "scaffold": {
     "mode": "fresh",
