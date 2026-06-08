@@ -29,8 +29,8 @@ function withTempDir(run) {
   }
 }
 
-function runCli(args) {
-  return execFileSync("node", [CLI, ...args], { encoding: "utf8" });
+function runCli(args, options = {}) {
+  return execFileSync("node", [CLI, ...args], { encoding: "utf8", cwd: options.cwd });
 }
 
 function minimalFinding(overrides = {}) {
@@ -172,6 +172,19 @@ test("CLI: findings add --run-id stamps the run_id onto the journal entry", () =
     const { findings } = readJournal(journal);
     assert.equal(findings.length, 1);
     assert.equal(findings[0].run_id, "run_cli_xyz");
+  });
+});
+
+test("CLI: findings add inherits the active run session id", () => {
+  withTempDir((dir) => {
+    const started = JSON.parse(runCli(["run", "start", "--json"], { cwd: dir }));
+    const result = JSON.parse(runCli(["findings", "add", "--stage", "qa", "--kind", "friction", "--summary", "slow step", "--json"], { cwd: dir }));
+    const journal = join(dir, ".campaign-runtime", "workflow-findings.jsonl");
+    const { findings } = readJournal(journal);
+
+    assert.equal(result.finding.run_id, started.session.run_id);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].run_id, started.session.run_id);
   });
 });
 
