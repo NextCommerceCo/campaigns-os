@@ -44,6 +44,10 @@ import {
   validateAdapterDecisionShape,
   validateAdapterSourceFiles,
 } from "./adapter-decision-contract.mjs";
+import {
+  createDoctorCheckRegistry,
+  runDoctorCheckRegistry,
+} from "./doctor-check-registry.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
@@ -1131,6 +1135,94 @@ function doctorPacket(packetPath, { contextPath = null, reportPath = null, outpu
   return outputBaseDir ? relativizeDoctorOutput(result, outputBaseDir) : result;
 }
 
+// Doctor Check Registry: keep packet/spec/build check order as data so agents
+// add new checks in one deterministic slot instead of editing a long call chain.
+const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
+  {
+    id: "campaign-spec.rule-registry",
+    phase: "spec",
+    run: ({ spec, errors, warnings }) => validateCampaignSpecRuleRegistry(spec, errors, warnings),
+  },
+  {
+    id: "spec.identity_export",
+    phase: "spec",
+    run: ({ spec, warnings, ready }) => validateSpecIdentityExport(spec, warnings, ready),
+  },
+  {
+    id: "spec.public_routes",
+    phase: "spec",
+    run: ({ spec, errors, ready }) => validateSpecPublicRoutes(spec, errors, ready),
+  },
+  {
+    id: "spec.store_profile",
+    phase: "spec",
+    run: ({ spec, errors, warnings, ready }) => validateSpecStoreProfile(spec, errors, warnings, ready),
+  },
+  {
+    id: "page_kit.sdk_version",
+    phase: "target",
+    run: ({ spec, packet, targetRepo, warnings, ready }) => validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready),
+  },
+  {
+    id: "spec.shipping_countries",
+    phase: "spec",
+    run: ({ spec, warnings, ready }) => validateSpecShippingCountries(spec, warnings, ready),
+  },
+  {
+    id: "spec.routing_meta_tags",
+    phase: "spec",
+    run: ({ spec, packet, warnings, ready, derived, buildState }) => validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState),
+  },
+  {
+    id: "source_html.coverage",
+    phase: "source",
+    run: ({ packet, packetPath, spec, errors, warnings, ready, derived }) => validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived),
+  },
+  {
+    id: "spec.package_availability",
+    phase: "spec",
+    run: ({ spec, warnings, ready }) => validateSpecPackageAvailability(spec, warnings, ready),
+  },
+  {
+    id: "built_output.pages",
+    phase: "built-output",
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: "built_output.sdk_meta_tags",
+    phase: "built-output",
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState),
+  },
+], { registryId: "packet.spec" });
+
+const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
+  {
+    id: "campaign.api_key",
+    phase: "packet",
+    run: ({ packet, spec, warnings, ready }) => validateCampaignsApiKey(packet, spec, warnings, ready),
+  },
+  {
+    id: "assembly.commerce_catalog",
+    phase: "template-contract",
+    run: ({ packet, packetPath, spec, errors, warnings, ready, derived, buildState }) => validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: "market_copy",
+    phase: "copy",
+    run: ({ spec, warnings, ready, derived }) => validateMarketSensitiveCopy(spec, warnings, ready, derived),
+  },
+  {
+    id: "source_html.adapter_contract",
+    phase: "source",
+    run: ({ packet, packetPath, spec, errors, warnings, ready, derived, buildState }) => validateAdapterContracts(packet, packetPath, spec, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: "qa.proof_policy",
+    phase: "qa",
+    run: ({ packet, warnings, ready }) => validateProofPolicy(packet, warnings, ready),
+  },
+], { registryId: "packet.always" });
+
 function validatePacket(packet, packetPath, errors, warnings, ready, derived, buildState = {}) {
   if (!isObject(packet)) {
     addIssue(errors, "packet.type", "Build Packet must be a JSON object.");
@@ -1220,46 +1312,10 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
       addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
     }
     ready.push("Local CampaignSpec parsed");
-    // ADR-003: run the shared campaign-spec rule registry — the single public
-    // source of CampaignSpec validation. specOnlyRules is the right preset
-    // here: the doctor runs without a deployed URL, so any rule requiring one
-    // is skipped. These pure spec-shape rules are complementary to the
-    // packet/build-aware spec checks below (which stay); both run so internal
-    // and agency users get identical spec-shape validation. Emitted under the
-    // single spec.validation code. The per-violation rule identity is preserved
-    // in `detail` (ruleId + JSON-pointer path + structured data) — additive, so
-    // text output is unchanged (printResult shows code+message) while JSON
-    // consumers and field-level UI can map a finding back to the exact rule and
-    // spec field. (ADR-003 D4.)
-    try {
-      for (const violation of runRules(normalizeCampaignSpec(spec), specOnlyRules)) {
-        addIssue(
-          violation.severity === "error" ? errors : warnings,
-          "spec.validation",
-          violation.message,
-          { ruleId: violation.ruleId, path: violation.path, data: violation.data }
-        );
-      }
-    } catch (error) {
-      addIssue(errors, "spec.validation", `CampaignSpec validation failed: ${error.message}`);
-    }
-    validateSpecIdentityExport(spec, warnings, ready);
-    validateSpecPublicRoutes(spec, errors, ready);
-    validateSpecStoreProfile(spec, errors, warnings, ready);
-    validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready);
-    validateSpecShippingCountries(spec, warnings, ready);
-    validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState);
-    validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived);
-    validateSpecPackageAvailability(spec, warnings, ready);
-    validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState);
-    validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState);
+    runDoctorCheckRegistry(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
   }
 
-  validateCampaignsApiKey(packet, spec, warnings, ready);
-  validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived, buildState);
-  validateMarketSensitiveCopy(spec, warnings, ready, derived);
-  validateAdapterContracts(packet, packetPath, spec, errors, warnings, ready, derived, buildState);
-  validateProofPolicy(packet, warnings, ready);
+  runDoctorCheckRegistry(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, errors, warnings, ready, derived, buildState });
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
     const partialScope = derived.scope?.mode === "partial";
@@ -1275,6 +1331,28 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   // transactions, so they need no per-packet permission. The packet qa.* booleans
   // are retained as informational metadata but no longer gate test orders or QA
   // stage progression.
+}
+
+function validateCampaignSpecRuleRegistry(spec, errors, warnings) {
+  // ADR-003: run the shared campaign-spec rule registry — the single public
+  // source of CampaignSpec validation. specOnlyRules is the right preset here:
+  // the doctor runs without a deployed URL, so any rule requiring one is
+  // skipped. These pure spec-shape rules are complementary to the
+  // packet/build-aware spec checks; both run so internal teams and agencies get
+  // identical spec-shape validation. Emitted under the single spec.validation
+  // code, with rule identity preserved in detail for JSON consumers.
+  try {
+    for (const violation of runRules(normalizeCampaignSpec(spec), specOnlyRules)) {
+      addIssue(
+        violation.severity === "error" ? errors : warnings,
+        "spec.validation",
+        violation.message,
+        { ruleId: violation.ruleId, path: violation.path, data: violation.data }
+      );
+    }
+  } catch (error) {
+    addIssue(errors, "spec.validation", `CampaignSpec validation failed: ${error.message}`);
+  }
 }
 
 function validateAdapterContracts(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
