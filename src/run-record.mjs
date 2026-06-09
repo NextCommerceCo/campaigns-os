@@ -178,6 +178,21 @@ export function validateRunRecord(record) {
     }
   }
 
+  if (record.agent_usage != null) {
+    const usage = record.agent_usage;
+    if (typeof usage !== "object" || Array.isArray(usage)) {
+      add("record.agent_usage", "agent_usage must be an object when present.");
+    } else {
+      for (const field of ["input_tokens", "output_tokens", "tool_output_tokens", "total_tokens", "elapsed_ms"]) {
+        if (usage[field] != null && (!Number.isInteger(usage[field]) || usage[field] < 0)) {
+          add(`record.agent_usage.${field}`, `${field} must be a non-negative integer when present.`);
+        }
+      }
+      if (usage.model != null && typeof usage.model !== "string") add("record.agent_usage.model", "model must be a string when present.");
+      if (usage.source != null && typeof usage.source !== "string") add("record.agent_usage.source", "source must be a string when present.");
+    }
+  }
+
   if (record.surfaces != null) {
     if (!Array.isArray(record.surfaces)) {
       add("record.surfaces", "surfaces must be an array when present.");
@@ -354,6 +369,17 @@ function normalizeRemitState(remit) {
   return "skipped";
 }
 
+function normalizeAgentUsage(usage) {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+  const out = {};
+  for (const field of ["input_tokens", "output_tokens", "tool_output_tokens", "total_tokens", "elapsed_ms"]) {
+    if (Number.isInteger(usage[field]) && usage[field] >= 0) out[field] = usage[field];
+  }
+  if (isNonEmptyString(usage.model)) out.model = usage.model.trim();
+  if (isNonEmptyString(usage.source)) out.source = usage.source.trim();
+  return Object.keys(out).length ? out : null;
+}
+
 /**
  * Assemble a Run Record manifest from already-read inputs. Pure: the caller
  * does the file reading (reusing the doctor / packet / report / verdict /
@@ -379,6 +405,7 @@ export function assembleRunRecord({
   primarySurface = null,
   surfaceConfidence = null,
   lifecycle = null,
+  agentUsage = null,
   now = new Date(),
 } = {}) {
   const observations = {};
@@ -426,6 +453,8 @@ export function assembleRunRecord({
   if (primarySurface) record.primary_surface = primarySurface;
   if (surfaceConfidence) record.surface_confidence = surfaceConfidence;
   if (lifecycle && typeof lifecycle === "object" && !Array.isArray(lifecycle)) record.lifecycle = lifecycle;
+  const normalizedUsage = normalizeAgentUsage(agentUsage);
+  if (normalizedUsage) record.agent_usage = normalizedUsage;
 
   return record;
 }

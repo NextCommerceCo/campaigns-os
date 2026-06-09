@@ -128,13 +128,38 @@ test("doctor skips missing optional artifact sidecars in the named check trace",
   });
 });
 
-test("packet-only doctor does not warn about optional adapter sidecars", () => {
-  withPreparedBuild(({ packetPath }) => {
+test("packet-only doctor auto-loads adjacent build sidecars when present", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    const context = readJson(contextPath);
+    context.source_adapter = "unknown_adapter";
+    writeJson(contextPath, context);
+
+    const report = readJson(reportPath);
+    report.proof_policy = "not-an-object";
+    writeJson(reportPath, report);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(warningCodes.has("context.source_adapter"), true);
+    assert.equal(warningCodes.has("report.proof_policy"), true);
+    assert.ok((doctor.derived?.doctor_checks || []).includes("context.shape"));
+    assert.ok((doctor.derived?.doctor_checks || []).includes("assembly_report.shape"));
+  });
+});
+
+test("packet-only doctor stays packet-scoped when adjacent sidecars are absent", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    rmSync(contextPath, { force: true });
+    rmSync(reportPath, { force: true });
+
     const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
     const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
 
     assert.equal(warningCodes.has("context.adapter_decisions"), false);
     assert.equal(warningCodes.has("report.adapter_decisions"), false);
+    assert.equal((doctor.derived?.doctor_checks || []).includes("context.shape"), false);
+    assert.equal((doctor.derived?.doctor_checks || []).includes("assembly_report.shape"), false);
   });
 });
 

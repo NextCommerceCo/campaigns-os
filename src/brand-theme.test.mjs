@@ -107,6 +107,35 @@ test("brand theme discovers linked CSS from mapped HTML and maps root-only next-
   });
 });
 
+test("brand theme infers safe CTA tokens from linked button CSS when root tokens are absent", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="styles/marketing.css"><main>Landing</main>`);
+    writeFileSync(join(source, "styles/marketing.css"), `
+.muted-card { background-color: #f6f6f6; }
+.cta-button {
+  background-color: #e4572e;
+  color: #ffffff;
+}
+`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+
+    assert.equal(result.status, "ready");
+    assert.equal(result.confidence, "medium");
+    assert.equal(result.context_theme.selected_source.source, "mapped_html_reference");
+    assert.ok(result.context_theme.mappings.some((mapping) => (
+      mapping.source === "--button-primary-bg"
+      && mapping.target === "--brand--color--cta-primary"
+      && mapping.value === "#e4572e"
+    )));
+    assert.match(result.css, /--brand--color--cta-primary: #e4572e;/);
+    assert.equal(result.context_theme.generated.can_generate, true);
+    assert.equal(result.context_theme.generated.can_auto_generate, false);
+  });
+});
+
 test("brand theme detects inline :root tokens from mapped HTML without workflow-order assumptions", () => {
   withTempDir((dir) => {
     const { source, packet, packetPath } = makePacket(dir);

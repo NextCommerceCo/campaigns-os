@@ -159,15 +159,61 @@ export function parseRootCustomProperties(content) {
   return { tokens, warnings };
 }
 
+function inferDesignIntentTokens(content) {
+  const tokens = {};
+  const rulePattern = /([^{}]+)\{([^{}]+)\}/g;
+  for (const match of content.matchAll(rulePattern)) {
+    const selector = match[1] || "";
+    if (!isCtaLikeSelector(selector)) continue;
+    for (const declaration of match[2].split(";")) {
+      const [rawName, ...rawValueParts] = declaration.split(":");
+      const name = String(rawName || "").trim().toLowerCase();
+      if (!["background", "background-color", "border-color"].includes(name)) continue;
+      const color = extractDeclarationColor(rawValueParts.join(":"));
+      if (!isStrongBrandColor(color)) continue;
+      tokens["--button-primary-bg"] ||= color;
+      tokens["--brand-cta"] ||= color;
+      break;
+    }
+    if (tokens["--button-primary-bg"]) break;
+  }
+  return tokens;
+}
+
+function isCtaLikeSelector(selector) {
+  return /(?:^|[.#\s:_-])(?:cta|button|btn|submit|checkout|cart|buy|order)(?:$|[.#\s:_-])/i.test(String(selector || ""));
+}
+
+function extractDeclarationColor(value) {
+  const cleaned = String(value || "").replace(/!important/gi, "").trim();
+  const exact = normalizeColor(cleaned);
+  if (exact) return exact;
+  const match = cleaned.match(/#[0-9a-f]{3,6}\b|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)/i);
+  return match ? normalizeColor(match[0]) : null;
+}
+
+function isStrongBrandColor(value) {
+  const rgb = colorToRgb(value);
+  if (!rgb) return false;
+  const max = Math.max(rgb.r, rgb.g, rgb.b);
+  const min = Math.min(rgb.r, rgb.g, rgb.b);
+  const spread = max - min;
+  if (max < 32 || min > 242) return false;
+  if (spread < 24) return false;
+  const saturation = max === 0 ? 0 : spread / max;
+  return saturation >= 0.16;
+}
+
 function candidateFromFile(path, role, source = "css_file", referencedBy = []) {
   const content = readFileSync(path, "utf8");
   const parsed = parseRootCustomProperties(content);
+  const inferred = inferDesignIntentTokens(content);
   return {
     source,
     path,
     role,
     hash: sha256File(path),
-    tokens: parsed.tokens,
+    tokens: { ...inferred, ...parsed.tokens },
     warnings: parsed.warnings,
     referenced_by: referencedBy,
   };

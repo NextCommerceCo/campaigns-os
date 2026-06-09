@@ -146,6 +146,61 @@ test("commerce structure assertion asks for manual review when contract has no s
   assert.equal(result.severity, "warn");
 });
 
+test("primary CTA assertion soft-fails unreadable route-driving controls", () => {
+  const { primaryCtaAssertionFromEvidence } = __qaBrowserTestHooks;
+  const page = { page_id: "presell", page_type: "presell", url: "https://example.test/presell/" };
+  const result = primaryCtaAssertionFromEvidence(page, {
+    ok: false,
+    reason: "low_contrast",
+    expected_url: "https://example.test/checkout/",
+    primary: {
+      selector: "a.cta",
+      text: "Continue",
+      href: "https://example.test/checkout/",
+      route_matches: true,
+      width: 160,
+      height: 48,
+      foreground: "#ffffff",
+      background: "#ffffff",
+      contrast_ratio: 1,
+      readable: false,
+      size_ok: true,
+    },
+    candidates: [],
+  });
+
+  assert.equal(result.id, "browser-primary-cta:presell");
+  assert.equal(result.status, "fail");
+  assert.equal(result.severity, "warn");
+  assert.match(result.actual, /low_contrast/);
+});
+
+test("primary CTA assertion passes readable route-driving controls", () => {
+  const { primaryCtaAssertionFromEvidence } = __qaBrowserTestHooks;
+  const result = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "landing" }, {
+    ok: true,
+    reason: "ok",
+    expected_url: "https://example.test/checkout/",
+    primary: {
+      selector: "a.cta",
+      text: "Shop now",
+      href: "https://example.test/checkout/",
+      route_matches: true,
+      width: 180,
+      height: 52,
+      foreground: "#ffffff",
+      background: "#113322",
+      contrast_ratio: 12,
+      readable: true,
+      size_ok: true,
+    },
+    candidates: [],
+  });
+
+  assert.equal(result.status, "pass");
+  assert.equal(result.severity, undefined);
+});
+
 test("promoted template families declare checkout commerce structure contracts", () => {
   const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
   const promotedFamilies = [

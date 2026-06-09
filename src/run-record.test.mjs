@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,6 +81,12 @@ test("validator accepts a fully-populated record", () => {
     surfaces: ["template", "cli"],
     primary_surface: "template",
     surface_confidence: "low",
+    agent_usage: {
+      total_tokens: 1234,
+      elapsed_ms: 5000,
+      model: "test-model",
+      source: "fixture",
+    },
   });
   const result = validateRunRecord(record);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
@@ -130,6 +136,14 @@ test("validator rejects malformed observation arrays", () => {
   assert.equal(validateRunRecord(minimalRecord({ observations: { spec_validation_rule_ids: [1, 2] } })).ok, false);
   assert.equal(validateRunRecord(minimalRecord({ observations: { qa: { gap_classes: "funnel-flow" } } })).ok, false);
   assert.equal(validateRunRecord(minimalRecord({ observations: { findings_journal: { malformed_lines: ["1"] } } })).ok, false);
+});
+
+test("validator rejects malformed agent usage fields", () => {
+  assert.equal(validateRunRecord(minimalRecord({ agent_usage: "nope" })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { total_tokens: -1 } })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { elapsed_ms: 1.5 } })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { model: 7 } })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { total_tokens: 12, elapsed_ms: 50 } })).ok, true);
 });
 
 test("validator rejects invalid remit status fields", () => {
@@ -332,6 +346,49 @@ test("CLI: run-record assembles a valid record from a real packet (argv shape, n
   assert.equal(record.argv_shape.includes("--no-write"), false);
   // capture is always local; consent defaults OFF (safe) in v0 wiring.
   assert.equal(record.consent_state, "off");
+});
+
+test("CLI: run-record infers the latest local QA verdict and records optional agent usage", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+    const targetRepo = join(dir, packet.assembly.target_repo);
+    const verdictDir = join(targetRepo, "qa-output", packet.spec.map_id);
+    mkdirSync(verdictDir, { recursive: true });
+    writeFileSync(join(verdictDir, "qa_run_latest.json"), JSON.stringify({
+      schema_version: "1.0",
+      run_id: "qa_run_latest",
+      campaign_slug: packet.spec.map_id,
+      completed_at: "2026-06-08T00:00:00.000Z",
+      disposition: "ready_with_exceptions",
+      assertions: [{ id: "browser-primary-cta:presell", family: "browser-runtime", status: "fail", severity: "warn", url: "https://preview.example/runtime-packet-demo/" }],
+      exceptions: [{ id: "browser-primary-cta:presell", family: "browser-runtime", status: "fail", severity: "warn" }],
+    }, null, 2));
+
+    const out = JSON.parse(execFileSync("node", [
+      CLI, "run-record",
+      "--packet", packetPath,
+      "--run-id", "run_auto_qa",
+      "--agent-total-tokens", "9876",
+      "--agent-elapsed-ms", "123456",
+      "--agent-model", "gpt-test",
+      "--agent-usage-source", "fixture",
+      "--no-write", "--json",
+    ], { encoding: "utf8" }));
+
+    const qaRef = out.record.artifacts.find((ref) => ref.kind === "qa_verdict");
+    assert.ok(qaRef);
+    assert.match(qaRef.path, /qa-output\/runtime-packet-demo-k9x2\/qa_run_latest\.json$/);
+    assert.equal(out.record.observations.qa.disposition, "ready_with_exceptions");
+    assert.deepEqual(out.record.observations.qa.gap_classes, ["browser-runtime"]);
+    assert.deepEqual(out.record.agent_usage, {
+      total_tokens: 9876,
+      elapsed_ms: 123456,
+      model: "gpt-test",
+      source: "fixture",
+    });
+  });
 });
 
 test("CLI: run-record writes the manifest to .campaign-runtime/run-records by default", () => {
