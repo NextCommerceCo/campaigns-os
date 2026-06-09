@@ -1,0 +1,286 @@
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
+
+export const SOURCE_ASSET_CRAWL_SCHEMA = "source-asset-crawl/v0";
+
+const ASSET_EXTENSIONS = new Set([
+  ".avif",
+  ".css",
+  ".eot",
+  ".gif",
+  ".ico",
+  ".jpeg",
+  ".jpg",
+  ".js",
+  ".json",
+  ".mjs",
+  ".mov",
+  ".mp3",
+  ".mp4",
+  ".otf",
+  ".pdf",
+  ".png",
+  ".svg",
+  ".ttf",
+  ".wav",
+  ".webm",
+  ".webp",
+  ".woff",
+  ".woff2",
+]);
+
+const SKIP_PROTOCOL_PATTERN = /^(?:about|blob|data|javascript|mailto|tel):/i;
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function toPosixPath(value) {
+  return String(value || "").replaceAll("\\", "/");
+}
+
+function relFromRoot(root, path) {
+  return toPosixPath(relative(resolve(root), resolve(path)));
+}
+
+function isInsideRoot(root, path) {
+  const rel = relative(resolve(root), resolve(path));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function cleanRef(value) {
+  const raw = String(value || "").trim().replace(/^["']|["']$/g, "");
+  if (!raw || raw.startsWith("#")) return null;
+  if (raw.startsWith("{{") || raw.startsWith("{%")) return null;
+  if (raw.startsWith("//")) return null;
+  if (SKIP_PROTOCOL_PATTERN.test(raw)) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "http:" || url.protocol === "https:") return null;
+  } catch {
+    // Relative or root-relative refs are the expected input.
+  }
+  return raw.split("#")[0].split("?")[0].trim();
+}
+
+function looksLikeAssetRef(value) {
+  const cleaned = cleanRef(value);
+  if (!cleaned) return false;
+  const pathname = cleaned.split(/[?#]/)[0];
+  if (/^\/?assets\//i.test(pathname)) return true;
+  if (/(^|\/)(images?|img|fonts?|css|js|media|products)\//i.test(pathname)) return true;
+  return ASSET_EXTENSIONS.has(extname(pathname).toLowerCase());
+}
+
+function splitSrcset(value) {
+  return String(value || "")
+    .split(",")
+    .map((part) => part.trim().split(/\s+/)[0])
+    .filter(Boolean);
+}
+
+function extractCssRefs(content) {
+  const refs = [];
+  const urlPattern = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
+  for (const match of content.matchAll(urlPattern)) {
+    refs.push({ raw: match[2], attribute: "url()" });
+  }
+  const importPattern = /@import\s+(?:url\()?["']?([^"')\s]+)["']?\)?/gi;
+  for (const match of content.matchAll(importPattern)) {
+    refs.push({ raw: match[1], attribute: "@import" });
+  }
+  return refs;
+}
+
+function extractHtmlRefs(content) {
+  const refs = [];
+  const attrPattern = /\b(src|href|poster|data-src|data-background|data-bg|content)\s*=\s*["']([^"']+)["']/gi;
+  for (const match of content.matchAll(attrPattern)) {
+    refs.push({ raw: match[2], attribute: match[1].toLowerCase() });
+  }
+
+  const srcsetPattern = /\b(srcset|imagesrcset)\s*=\s*["']([^"']+)["']/gi;
+  for (const match of content.matchAll(srcsetPattern)) {
+    for (const raw of splitSrcset(match[2])) refs.push({ raw, attribute: match[1].toLowerCase() });
+  }
+
+  const styleAttrPattern = /\bstyle\s*=\s*["']([^"']+)["']/gi;
+  for (const match of content.matchAll(styleAttrPattern)) {
+    for (const ref of extractCssRefs(match[1])) refs.push({ ...ref, attribute: `style:${ref.attribute}` });
+  }
+
+  const styleBlockPattern = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+  for (const match of content.matchAll(styleBlockPattern)) {
+    for (const ref of extractCssRefs(match[1])) refs.push({ ...ref, attribute: `style-block:${ref.attribute}` });
+  }
+  return refs;
+}
+
+function assetKindForRef(value) {
+  const ext = extname(String(value || "").split(/[?#]/)[0]).toLowerCase();
+  if ([".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif", ".svg", ".ico"].includes(ext)) return "image";
+  if ([".css"].includes(ext)) return "style";
+  if ([".js", ".mjs", ".json"].includes(ext)) return "script";
+  if ([".woff", ".woff2", ".ttf", ".otf", ".eot"].includes(ext)) return "font";
+  if ([".mp4", ".webm", ".mov", ".mp3", ".wav"].includes(ext)) return "media";
+  return "asset";
+}
+
+function resolveAssetRef(sourceRoot, originPath, rawRef) {
+  const cleaned = cleanRef(rawRef);
+  if (!cleaned || !looksLikeAssetRef(cleaned)) return null;
+
+  const rootRelative = cleaned.startsWith("/");
+  const normalized = cleaned.replace(/^\/+/, "");
+  const originDir = dirname(resolve(sourceRoot, originPath));
+  const primaryPath = rootRelative ? resolve(sourceRoot, normalized) : resolve(originDir, cleaned);
+  const fallbackPath = !rootRelative ? resolve(sourceRoot, normalized) : null;
+  const resolvedPath = existsSync(primaryPath) || !fallbackPath ? primaryPath : fallbackPath;
+  const sourcePath = isInsideRoot(sourceRoot, resolvedPath) ? relFromRoot(sourceRoot, resolvedPath) : null;
+  const pagekitAssetPath = sourcePath ? sourcePath.replace(/^assets\//i, "") : null;
+  const needsRewrite = rootRelative || /^\.?\.?\/?assets\//i.test(cleaned);
+
+  return {
+    raw: rawRef,
+    normalized,
+    asset_kind: assetKindForRef(normalized),
+    root_relative: rootRelative,
+    source_path: sourcePath,
+    source_exists: existsSync(resolvedPath) && statSync(resolvedPath).isFile(),
+    pagekit_asset_path: pagekitAssetPath,
+    rewrite_required: needsRewrite,
+    rewrite_hint: needsRewrite && pagekitAssetPath
+      ? `Rewrite source asset ref "${cleaned}" to the Page Kit campaign asset root, e.g. campaign_asset "${pagekitAssetPath}".`
+      : null,
+  };
+}
+
+function referenceKey(ref) {
+  return [
+    ref.normalized,
+    ref.source_path || "",
+    ref.asset_kind,
+    ref.root_relative ? "root" : "relative",
+  ].join("\u0000");
+}
+
+function addReference(referencesByKey, ref, referencedBy) {
+  const key = referenceKey(ref);
+  const existing = referencesByKey.get(key);
+  if (existing) {
+    const duplicate = existing.referenced_by.some((item) =>
+      item.path === referencedBy.path && item.attribute === referencedBy.attribute
+    );
+    if (!duplicate) existing.referenced_by.push(referencedBy);
+    return existing;
+  }
+  const next = { ...ref, referenced_by: [referencedBy] };
+  referencesByKey.set(key, next);
+  return next;
+}
+
+function scannedFile(path, kind, sourceRoot) {
+  const fullPath = resolve(sourceRoot, path);
+  return {
+    path,
+    kind,
+    bytes: statSync(fullPath).size,
+    sha256: sha256File(fullPath),
+  };
+}
+
+function pageIdsBySourcePath(pageMappings) {
+  const map = new Map();
+  for (const mapping of Array.isArray(pageMappings) ? pageMappings : []) {
+    if (!isNonEmptyString(mapping?.path) || !isNonEmptyString(mapping?.page_id)) continue;
+    const path = toPosixPath(mapping.path);
+    if (!map.has(path)) map.set(path, []);
+    map.get(path).push(mapping.page_id);
+  }
+  return map;
+}
+
+function summarizeWarnings(references) {
+  const warnings = [];
+  const rootAssetRefs = references.filter((ref) => ref.root_relative && /^assets\//i.test(ref.normalized));
+  const missingRefs = references.filter((ref) => !ref.source_exists);
+  if (rootAssetRefs.length > 0) {
+    warnings.push({
+      code: "source_asset.root_assets_path",
+      message: `${rootAssetRefs.length} source asset reference(s) use raw /assets/... paths. Rewrite these for Page Kit's campaign asset root during assembly.`,
+      sample: rootAssetRefs.slice(0, 6).map((ref) => ref.raw),
+    });
+  }
+  if (missingRefs.length > 0) {
+    warnings.push({
+      code: "source_asset.missing_file",
+      message: `${missingRefs.length} local source asset reference(s) did not resolve to files under the source root.`,
+      sample: missingRefs.slice(0, 6).map((ref) => ref.raw),
+    });
+  }
+  return warnings;
+}
+
+export function crawlSourceAssetPaths({ sourceRoot, htmlFiles = [], pageMappings = [] }) {
+  const root = resolve(sourceRoot);
+  const referencesByKey = new Map();
+  const scannedByPath = new Map();
+  const cssQueue = [];
+  const queuedCss = new Set();
+  const pageIds = pageIdsBySourcePath(pageMappings);
+
+  function enqueueCss(sourcePath) {
+    if (!sourcePath || queuedCss.has(sourcePath)) return;
+    if (!existsSync(resolve(root, sourcePath))) return;
+    queuedCss.add(sourcePath);
+    cssQueue.push(sourcePath);
+  }
+
+  function scanFile(sourcePath, kind) {
+    const fullPath = resolve(root, sourcePath);
+    if (!existsSync(fullPath) || !statSync(fullPath).isFile()) return;
+    if (!scannedByPath.has(sourcePath)) scannedByPath.set(sourcePath, scannedFile(sourcePath, kind, root));
+
+    const content = readFileSync(fullPath, "utf8");
+    const extracted = kind === "css" ? extractCssRefs(content) : extractHtmlRefs(content);
+    for (const item of extracted) {
+      const ref = resolveAssetRef(root, sourcePath, item.raw);
+      if (!ref) continue;
+      const stored = addReference(referencesByKey, ref, {
+        path: sourcePath,
+        kind,
+        attribute: item.attribute,
+        page_ids: pageIds.get(sourcePath) || [],
+      });
+      if (stored.asset_kind === "style" && stored.source_exists && stored.source_path) enqueueCss(stored.source_path);
+    }
+  }
+
+  const sourceHtmlPaths = [...new Set((htmlFiles || []).map((file) => toPosixPath(file.path)).filter(Boolean))];
+  for (const sourcePath of sourceHtmlPaths) scanFile(sourcePath, "html");
+  while (cssQueue.length > 0) scanFile(cssQueue.shift(), "css");
+
+  const references = [...referencesByKey.values()].sort((a, b) =>
+    String(a.source_path || a.normalized).localeCompare(String(b.source_path || b.normalized))
+  );
+  const scanned_files = [...scannedByPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+
+  return {
+    schema_version: SOURCE_ASSET_CRAWL_SCHEMA,
+    scanned_files,
+    references,
+    summary: {
+      scanned_file_count: scanned_files.length,
+      reference_count: references.length,
+      missing_count: references.filter((ref) => !ref.source_exists).length,
+      rewrite_required_count: references.filter((ref) => ref.rewrite_required).length,
+      root_assets_path_count: references.filter((ref) => ref.root_relative && /^assets\//i.test(ref.normalized)).length,
+    },
+    warnings: summarizeWarnings(references),
+  };
+}

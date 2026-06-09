@@ -96,6 +96,7 @@ The conversion process used in prior builds is:
 - Add page frontmatter for title, layout, route/meta values, and any source mapping notes.
 - Move shared CSS into the campaign asset tree or an include when it is reused; inline page-specific CSS only when the target page-kit style allows it.
 - Move local images/fonts/assets into the campaign asset tree and root paths with `campaign_asset` when needed. Page Kit publishes `src/<slug>/assets/config.js` as `/<slug>/config.js` and `src/<slug>/assets/products/foo.png` as `/<slug>/products/foo.png`; raw `/assets/...` paths from AI/exported HTML are source paths, not built campaign URLs.
+- Check `context.source.asset_crawl` in `.campaign-runtime/build-context.json` before rewriting assets. `prepare-build` crawls source HTML plus referenced local CSS, records raw refs, resolved source files, missing assets, and `pagekit_asset_path` hints so assembly does not have to rediscover `/assets/...` path behavior page by page.
 - Replace internal links/CTAs with CampaignSpec routes, usually via `campaign_link`.
 - Keep source landing/presell composition and copy intact when it is a real design.
 - Use starter-template SDK contracts for checkout, upsell, downsell, receipt, payment, totals, and submit controls.

@@ -61,6 +61,18 @@ Required adapter decisions:
 | `cta_rewrite_policy` | How CTA destinations are rewritten from CampaignSpec routes. |
 | `layout_choice` | Which Page Kit layout strategy wraps the prepared source. |
 
+Fresh build context also includes `source.asset_crawl`
+(`source-asset-crawl/v0`). `prepare-build` scans the source HTML files and
+referenced local CSS, then records each local image/font/CSS/JS asset ref with:
+
+- `raw` and `normalized` source refs;
+- `source_path` / `source_exists` resolution under the source root;
+- `pagekit_asset_path` for the campaign asset-root ref to use during assembly;
+- summarized warnings for raw `/assets/...` refs and missing local files.
+
+Use this inventory before moving assets into Page Kit. It is deliberately a
+context/report aid, not part of `source_html.pages[]` page binding.
+
 `template_files_copied` is intentionally group-based rather than prose-only:
 `pages`, `_includes`, `_layouts`, `assets/css`, `assets/js`, and
 `frontmatter_vocabulary`. Doctor warns when an assembly-complete report still

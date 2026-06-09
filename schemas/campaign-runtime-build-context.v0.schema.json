@@ -38,7 +38,19 @@
       "properties": {
         "root": { "type": "string" },
         "html_files": { "type": "array" },
-        "figma_manifest": { "type": ["object", "null"] }
+        "figma_manifest": { "type": ["object", "null"] },
+        "asset_crawl": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["schema_version", "scanned_files", "references", "summary", "warnings"],
+          "properties": {
+            "schema_version": { "const": "source-asset-crawl/v0" },
+            "scanned_files": { "type": "array" },
+            "references": { "type": "array" },
+            "summary": { "type": "object", "additionalProperties": true },
+            "warnings": { "type": "array" }
+          }
+        }
       }
     },
     "page_map": {
