@@ -14,6 +14,7 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
     mkdirSync(resolve(sourceRoot, "assets/products"), { recursive: true });
     mkdirSync(resolve(sourceRoot, "assets/fonts"), { recursive: true });
 
+    writeFileSync(resolve(dir, "outside.webp"), "outside\n");
     writeFileSync(resolve(sourceRoot, "assets/config.js"), "window.__CONFIG__ = {};\n");
     writeFileSync(resolve(sourceRoot, "assets/products/hero.webp"), "hero\n");
     writeFileSync(resolve(sourceRoot, "assets/products/card.webp"), "card\n");
@@ -31,6 +32,7 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
         '<img src="assets/products/hero.webp">',
         '<img src="https://cdn.example.com/remote.webp">',
         '<img src="/assets/products/missing.webp">',
+        '<img src="../outside.webp">',
       ].join("\n"),
     );
 
@@ -43,7 +45,8 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
     assert.equal(crawl.schema_version, "source-asset-crawl/v0");
     assert.equal(crawl.summary.scanned_file_count, 3);
     assert.equal(crawl.summary.root_assets_path_count, 2);
-    assert.equal(crawl.summary.missing_count, 1);
+    assert.equal(crawl.summary.missing_count, 2);
+    assert.equal(crawl.summary.outside_source_root_count, 1);
 
     const configRef = crawl.references.find((ref) => ref.raw === "/assets/config.js");
     assert.equal(configRef.source_path, "assets/config.js");
@@ -53,7 +56,9 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
 
     assert.ok(crawl.references.some((ref) => ref.source_path === "assets/products/card.webp"));
     assert.ok(crawl.references.some((ref) => ref.source_path === "assets/fonts/body.woff2"));
+    assert.ok(crawl.references.some((ref) => ref.raw === "../outside.webp" && ref.outside_source_root === true && ref.source_exists === false));
     assert.ok(crawl.warnings.some((warning) => warning.code === "source_asset.root_assets_path"));
+    assert.ok(crawl.warnings.some((warning) => warning.code === "source_asset.outside_source_root"));
     assert.ok(crawl.warnings.some((warning) => warning.code === "source_asset.missing_file"));
   } finally {
     rmSync(dir, { recursive: true, force: true });

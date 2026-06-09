@@ -141,7 +141,9 @@ function resolveAssetRef(sourceRoot, originPath, rawRef) {
   const primaryPath = rootRelative ? resolve(sourceRoot, normalized) : resolve(originDir, cleaned);
   const fallbackPath = !rootRelative ? resolve(sourceRoot, normalized) : null;
   const resolvedPath = existsSync(primaryPath) || !fallbackPath ? primaryPath : fallbackPath;
-  const sourcePath = isInsideRoot(sourceRoot, resolvedPath) ? relFromRoot(sourceRoot, resolvedPath) : null;
+  const insideSourceRoot = isInsideRoot(sourceRoot, resolvedPath);
+  const sourcePath = insideSourceRoot ? relFromRoot(sourceRoot, resolvedPath) : null;
+  const sourceExists = insideSourceRoot && existsSync(resolvedPath) && statSync(resolvedPath).isFile();
   const pagekitAssetPath = sourcePath ? sourcePath.replace(/^assets\//i, "") : null;
   const needsRewrite = rootRelative || /^\.?\.?\/?assets\//i.test(cleaned);
 
@@ -151,7 +153,8 @@ function resolveAssetRef(sourceRoot, originPath, rawRef) {
     asset_kind: assetKindForRef(normalized),
     root_relative: rootRelative,
     source_path: sourcePath,
-    source_exists: existsSync(resolvedPath) && statSync(resolvedPath).isFile(),
+    source_exists: sourceExists,
+    outside_source_root: !insideSourceRoot,
     pagekit_asset_path: pagekitAssetPath,
     rewrite_required: needsRewrite,
     rewrite_hint: needsRewrite && pagekitAssetPath
@@ -208,12 +211,20 @@ function pageIdsBySourcePath(pageMappings) {
 function summarizeWarnings(references) {
   const warnings = [];
   const rootAssetRefs = references.filter((ref) => ref.root_relative && /^assets\//i.test(ref.normalized));
-  const missingRefs = references.filter((ref) => !ref.source_exists);
+  const outsideRefs = references.filter((ref) => ref.outside_source_root);
+  const missingRefs = references.filter((ref) => !ref.source_exists && !ref.outside_source_root);
   if (rootAssetRefs.length > 0) {
     warnings.push({
       code: "source_asset.root_assets_path",
       message: `${rootAssetRefs.length} source asset reference(s) use raw /assets/... paths. Rewrite these for Page Kit's campaign asset root during assembly.`,
       sample: rootAssetRefs.slice(0, 6).map((ref) => ref.raw),
+    });
+  }
+  if (outsideRefs.length > 0) {
+    warnings.push({
+      code: "source_asset.outside_source_root",
+      message: `${outsideRefs.length} source asset reference(s) resolve outside the source root. Move these files into the source handoff before assembly.`,
+      sample: outsideRefs.slice(0, 6).map((ref) => ref.raw),
     });
   }
   if (missingRefs.length > 0) {
@@ -278,6 +289,7 @@ export function crawlSourceAssetPaths({ sourceRoot, htmlFiles = [], pageMappings
       scanned_file_count: scanned_files.length,
       reference_count: references.length,
       missing_count: references.filter((ref) => !ref.source_exists).length,
+      outside_source_root_count: references.filter((ref) => ref.outside_source_root).length,
       rewrite_required_count: references.filter((ref) => ref.rewrite_required).length,
       root_assets_path_count: references.filter((ref) => ref.root_relative && /^assets\//i.test(ref.normalized)).length,
     },

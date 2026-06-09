@@ -68,7 +68,8 @@ referenced local CSS, then records each local image/font/CSS/JS asset ref with:
 - `raw` and `normalized` source refs;
 - `source_path` / `source_exists` resolution under the source root;
 - `pagekit_asset_path` for the campaign asset-root ref to use during assembly;
-- summarized warnings for raw `/assets/...` refs and missing local files.
+- summarized warnings for raw `/assets/...` refs, missing local files, and
+  refs that escape the source root.
 
 Use this inventory before moving assets into Page Kit. It is deliberately a
 context/report aid, not part of `source_html.pages[]` page binding.

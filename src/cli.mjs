@@ -1105,11 +1105,17 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
 function sourceAssetWarningsForReport(assetCrawl) {
   const warnings = Array.isArray(assetCrawl?.warnings) ? assetCrawl.warnings : [];
   return warnings.map((warning) => ({
-    code: warning.code === "source_asset.root_assets_path" ? "SOURCE_ASSET_REWRITE" : "SOURCE_ASSET_MISSING",
+    code: sourceAssetReportWarningCode(warning.code),
     stage: "assembly",
     message: warning.message,
     sample: warning.sample || [],
   }));
+}
+
+function sourceAssetReportWarningCode(code) {
+  if (code === "source_asset.root_assets_path") return "SOURCE_ASSET_REWRITE";
+  if (code === "source_asset.outside_source_root") return "SOURCE_ASSET_ESCAPE";
+  return "SOURCE_ASSET_MISSING";
 }
 
 function doctorCommand(args) {
