@@ -131,6 +131,8 @@ async function runPageBrowserChecks(context, page, args) {
       evidence: { title, body_present: bodyPresent },
     }));
 
+    assertions.push(...await primaryCtaVisualAssertions(browserPage, page));
+
     if (page.page_type === "upsell") {
       assertions.push(...await renderedUpsellControlAssertions(browserPage, page));
     }
@@ -284,6 +286,194 @@ function sdkDebuggerEligible(page) {
   const pageType = String(page.page_type || "").toLowerCase();
   const metaPageType = String(page.expected_meta_tags?.["next-page-type"] || "").toLowerCase();
   return SDK_DEBUGGER_PAGE_TYPES.includes(pageType) || SDK_DEBUGGER_PAGE_TYPES.includes(metaPageType);
+}
+
+async function primaryCtaVisualAssertions(browserPage, page) {
+  if (!primaryCtaCheckEligible(page)) return [];
+  const evidence = await inspectPrimaryCta(browserPage, page.expected_next_url);
+  return [primaryCtaAssertionFromEvidence(page, evidence)];
+}
+
+function primaryCtaCheckEligible(page) {
+  if (!page?.expected_next_url) return false;
+  const pageType = String(page.page_type || "").toLowerCase();
+  return !["checkout", "upsell", "downsell", "thankyou", "receipt"].includes(pageType);
+}
+
+async function inspectPrimaryCta(browserPage, expectedUrl) {
+  return browserPage.evaluate((routeUrl) => {
+    const CTA_SELECTOR = [
+      "a[href]",
+      "button",
+      "[role='button']",
+      "[data-next-action]",
+      "[data-next-checkout-action]",
+      "[data-next-add-to-cart]",
+    ].join(", ");
+
+    const trim = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const compactPath = (value) => String(value || "").replace(/\/+$/, "") || "/";
+    const expected = (() => {
+      try {
+        return new URL(routeUrl, location.href);
+      } catch {
+        return null;
+      }
+    })();
+    const parseColor = (value) => {
+      const raw = String(value || "").trim().toLowerCase();
+      if (!raw || raw === "transparent") return null;
+      const rgb = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(\d?(?:\.\d+)?|1(?:\.0+)?))?\s*\)$/);
+      if (!rgb) return null;
+      const parts = rgb.slice(1, 4).map((part) => Number(part));
+      if (parts.some((part) => !Number.isFinite(part) || part < 0 || part > 255)) return null;
+      const alpha = rgb[4] === undefined ? 1 : Number(rgb[4]);
+      return { r: parts[0], g: parts[1], b: parts[2], a: Number.isFinite(alpha) ? alpha : 1 };
+    };
+    const hex = (color) => color ? `#${[color.r, color.g, color.b].map((part) => Math.round(part).toString(16).padStart(2, "0")).join("")}` : null;
+    const luminance = (color) => {
+      const channel = (value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+    };
+    const contrast = (a, b) => {
+      if (!a || !b) return null;
+      const light = Math.max(luminance(a), luminance(b));
+      const dark = Math.min(luminance(a), luminance(b));
+      return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
+    };
+    const effectiveBackground = (element) => {
+      let current = element;
+      while (current && current.nodeType === Node.ELEMENT_NODE) {
+        const style = getComputedStyle(current);
+        const color = parseColor(style.backgroundColor);
+        if (color && color.a > 0.05) {
+          return { color, source: current === element ? "element" : current.tagName.toLowerCase() };
+        }
+        current = current.parentElement;
+      }
+      return { color: { r: 255, g: 255, b: 255, a: 1 }, source: "assumed_canvas" };
+    };
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== "none"
+        && style.visibility !== "hidden"
+        && Number(style.opacity || "1") > 0.01;
+    };
+    const selectorFor = (element) => {
+      const tag = element.tagName.toLowerCase();
+      const id = element.id ? `#${element.id}` : "";
+      const classes = String(element.className || "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 4)
+        .map((name) => `.${name}`)
+        .join("");
+      return `${tag}${id}${classes}`;
+    };
+    const hrefFor = (element) => {
+      if (element instanceof HTMLAnchorElement && element.href) return element.href;
+      const attr = element.getAttribute("href")
+        || element.getAttribute("data-href")
+        || element.getAttribute("data-next-href")
+        || element.closest("form")?.getAttribute("action");
+      if (!attr) return null;
+      try {
+        return new URL(attr, location.href).href;
+      } catch {
+        return attr;
+      }
+    };
+    const routeMatches = (href) => {
+      if (!href || !expected) return false;
+      try {
+        const actual = new URL(href, location.href);
+        return compactPath(actual.pathname) === compactPath(expected.pathname);
+      } catch {
+        return false;
+      }
+    };
+
+    const candidates = Array.from(document.querySelectorAll(CTA_SELECTOR))
+      .filter(isVisible)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        const fg = parseColor(style.color);
+        const bg = effectiveBackground(element);
+        const ratio = contrast(fg, bg.color);
+        const href = hrefFor(element);
+        const label = trim(element.innerText || element.textContent || element.getAttribute("aria-label"));
+        return {
+          selector: selectorFor(element),
+          text: label.slice(0, 120),
+          href,
+          route_matches: routeMatches(href),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          foreground: hex(fg),
+          background: hex(bg.color),
+          background_source: bg.source,
+          contrast_ratio: ratio,
+          readable: typeof ratio === "number" && ratio >= 4.5,
+          size_ok: rect.width >= 40 && rect.height >= 20,
+        };
+      })
+      .filter((candidate) => candidate.text || candidate.href);
+
+    const routeCandidates = candidates
+      .filter((candidate) => candidate.route_matches)
+      .sort((a, b) => {
+        if (a.readable !== b.readable) return a.readable ? -1 : 1;
+        if (a.size_ok !== b.size_ok) return a.size_ok ? -1 : 1;
+        return (b.contrast_ratio || 0) - (a.contrast_ratio || 0);
+      });
+    const primary = routeCandidates[0] || null;
+    const ok = Boolean(primary?.readable && primary?.size_ok);
+    const reason = ok
+      ? "ok"
+      : !routeCandidates.length
+        ? "missing_route_cta"
+        : primary?.size_ok === false
+          ? "cta_too_small"
+          : "low_contrast";
+
+    return {
+      ok,
+      reason,
+      expected_url: routeUrl,
+      primary,
+      candidates: candidates.slice(0, 8),
+    };
+  }, expectedUrl).catch((error) => ({
+    ok: false,
+    reason: "inspection_error",
+    expected_url: expectedUrl,
+    error: error instanceof Error ? error.message : String(error),
+    candidates: [],
+  }));
+}
+
+function primaryCtaAssertionFromEvidence(page, evidence) {
+  const ok = evidence?.ok === true;
+  const reason = evidence?.reason || "unknown";
+  return assertion({
+    id: `browser-primary-cta:${page.page_id}`,
+    family: "browser-runtime",
+    page,
+    status: ok ? STATUS.PASS : STATUS.FAIL,
+    severity: ok ? undefined : SEVERITY.WARN,
+    expected: "visible readable primary CTA linked to the expected next route",
+    actual: ok
+      ? `CTA visible (${evidence.primary?.width || 0}x${evidence.primary?.height || 0}, contrast ${evidence.primary?.contrast_ratio || "n/a"})`
+      : reason,
+    evidence,
+  });
 }
 
 async function renderedUpsellControlAssertions(browserPage, page) {
@@ -1603,6 +1793,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   acceptedUpsellProof,
   upsellAcceptStepFailures,
   commerceStructureAssertionFromEvidence,
+  primaryCtaAssertionFromEvidence,
   isOrderUpsellsUrl,
   testEmail,
   testOrderPaths,

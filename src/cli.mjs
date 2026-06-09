@@ -188,7 +188,7 @@ Usage:
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
-  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
@@ -1094,9 +1094,10 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
 
 function doctorCommand(args) {
   const packetPath = resolve(requireArg(args, "packet"));
+  const explicitSidecarArgs = Boolean(args.context || args.report);
   return doctorPacket(packetPath, {
-    contextPath: args.context ? resolve(args.context) : null,
-    reportPath: args.report ? resolve(args.report) : null,
+    contextPath: args.context ? resolve(args.context) : explicitSidecarArgs ? null : undefined,
+    reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   });
 }
@@ -1127,10 +1128,21 @@ function themeCommand(args) {
   return { ...written, css: undefined };
 }
 
-function doctorPacket(packetPath, { contextPath = null, reportPath = null, outputBaseDir = null } = {}) {
+function inferredBuildSidecarPaths(packet, packetPath) {
+  const targetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(resolve(packetPath));
+  return {
+    contextPath: join(targetRepo, ".campaign-runtime/build-context.json"),
+    reportPath: join(targetRepo, ".campaign-runtime/assembly-report.json"),
+  };
+}
+
+function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
   const packet = readJson(packetPath);
-  const context = readJsonIfExists(contextPath);
-  const report = readJsonIfExists(reportPath);
+  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
+  const resolvedContextPath = contextPath === undefined ? sidecars.contextPath : contextPath;
+  const resolvedReportPath = reportPath === undefined ? sidecars.reportPath : reportPath;
+  const context = readJsonIfExists(resolvedContextPath);
+  const report = readJsonIfExists(resolvedReportPath);
   const errors = [];
   const warnings = [];
   const ready = [];
@@ -4244,12 +4256,15 @@ async function runRecordCommand(args, ambient = null) {
     reportPath: reportExists ? reportPath : null,
   });
 
-  const qaVerdictPath = args["qa-verdict"] ? resolve(args["qa-verdict"]) : null;
+  const qaVerdictPath = args["qa-verdict"]
+    ? resolve(args["qa-verdict"])
+    : inferQaVerdictPath({ packet, report, reportPath: reportExists ? reportPath : null, targetRepo, baseDir });
   const qaVerdictExists = qaVerdictPath != null && existsSync(qaVerdictPath);
   const qaVerdict = qaVerdictExists ? readJson(qaVerdictPath) : null;
 
   const journalPath = resolveJournalPath(args);
   const journal = readJournal(journalPath);
+  const agentUsage = parseAgentUsageArgs(args);
 
   // run_id: explicit flag > active run session > freshly minted.
   const runId = optionalString(args["run-id"]) || ambient?.session?.run_id || mintRunId();
@@ -4313,6 +4328,7 @@ async function runRecordCommand(args, ambient = null) {
     primarySurface: optionalString(args["primary-surface"]),
     surfaceConfidence: optionalString(args["surface-confidence"]),
     lifecycle,
+    agentUsage,
   });
 
   // Write before any network call so local capture does not depend on telemetry
@@ -4387,6 +4403,117 @@ function artifactRefPath(kind, filePath, baseDir) {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+function inferQaVerdictPath({ packet, report, reportPath = null, targetRepo = null, baseDir = null } = {}) {
+  const candidates = [];
+  const add = (path, source) => {
+    if (!isNonEmptyString(path)) return;
+    const resolvedPath = resolve(path);
+    try {
+      if (!existsSync(resolvedPath) || !statSync(resolvedPath).isFile()) return;
+      const verdict = readJson(resolvedPath);
+      if (!isObject(verdict)) return;
+      candidates.push({
+        path: resolvedPath,
+        source,
+        verdict,
+        mtimeMs: statSync(resolvedPath).mtimeMs,
+      });
+    } catch {
+      // QA verdict inference is best-effort; malformed side artifacts should not
+      // make run-record fail.
+    }
+  };
+
+  const reportBasePath = reportPath || (targetRepo ? join(targetRepo, ".campaign-runtime/assembly-report.json") : null);
+  for (const path of qaVerdictPathHints(report)) {
+    add(reportBasePath ? resolveFromFile(reportBasePath, path) : path, "assembly_report");
+  }
+
+  const roots = [...new Set([targetRepo, baseDir].filter(isNonEmptyString).map((path) => resolve(path)))];
+  const slugs = [...new Set([
+    optionalString(packet?.spec?.map_id),
+    optionalString(packet?.campaign?.public_route_slug),
+  ].filter(Boolean))];
+  for (const root of roots) {
+    for (const slug of slugs) {
+      addQaVerdictsFromDirectory(candidates, join(root, "qa-output", slug), "qa_output", packet);
+    }
+  }
+
+  candidates.sort((a, b) => {
+    const scoreDelta = qaVerdictCandidateScore(b, packet) - qaVerdictCandidateScore(a, packet);
+    if (scoreDelta !== 0) return scoreDelta;
+    return qaVerdictCandidateTime(b) - qaVerdictCandidateTime(a);
+  });
+  return candidates[0]?.path || null;
+}
+
+function qaVerdictPathHints(report) {
+  const paths = [];
+  const visit = (value) => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (isObject(value)) {
+      for (const [key, item] of Object.entries(value)) {
+        if (typeof item === "string" && /(?:path|file|verdict|output)$/i.test(key)) visit(item);
+        else if (key === "outputs" || key === "artifacts" || key === "qa") visit(item);
+      }
+      return;
+    }
+    if (typeof value === "string" && /\.json(?:[?#].*)?$/i.test(value.trim())) paths.push(value.trim());
+  };
+  visit(report?.qa || null);
+  visit(report?.stages?.qa || null);
+  return [...new Set(paths)];
+}
+
+function addQaVerdictsFromDirectory(candidates, dirPath, source, packet) {
+  try {
+    if (!existsSync(dirPath) || !statSync(dirPath).isDirectory()) return;
+    for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const path = join(dirPath, entry.name);
+      const verdict = readJson(path);
+      if (!isObject(verdict)) continue;
+      candidates.push({
+        path: resolve(path),
+        source,
+        verdict,
+        mtimeMs: statSync(path).mtimeMs,
+      });
+    }
+  } catch {
+    // Best-effort: unreadable qa-output directories should not block capture.
+  }
+}
+
+function qaVerdictCandidateScore(candidate, packet) {
+  const verdict = candidate?.verdict || {};
+  const expectedMapId = optionalString(packet?.spec?.map_id);
+  const expectedSlug = optionalString(packet?.campaign?.public_route_slug);
+  let score = 0;
+  if (expectedMapId && verdict.campaign_slug === expectedMapId) score += 100;
+  if (expectedSlug && verdict.campaign_slug === expectedSlug) score += 80;
+  if (verdict.schema_version === "1.0" || verdict.schema_version === "campaigns-os-qa-verdict/v0") score += 10;
+  const deployOrigins = [
+    optionalString(packet?.deploy?.preview_url),
+    optionalString(packet?.deploy?.production_url),
+  ].filter(Boolean);
+  const assertionUrls = Array.isArray(verdict.assertions)
+    ? verdict.assertions.map((assertion) => optionalString(assertion?.url)).filter(Boolean)
+    : [];
+  if (deployOrigins.some((origin) => assertionUrls.some((url) => url.startsWith(origin)))) score += 25;
+  return score;
+}
+
+function qaVerdictCandidateTime(candidate) {
+  const completedAt = Date.parse(candidate?.verdict?.completed_at || "");
+  if (Number.isFinite(completedAt)) return completedAt;
+  return Number(candidate?.mtimeMs || 0);
+}
+
 const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["no-remit", "no-write", "proxy-base"]);
 
 // argv SHAPE = selected flag NAMES present, never their values (minimization).
@@ -4408,6 +4535,35 @@ function argvShape(args) {
 function parseCommaList(value) {
   if (!isNonEmptyString(value)) return [];
   return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function parseAgentUsageArgs(args) {
+  const fields = {
+    "agent-input-tokens": "input_tokens",
+    "agent-output-tokens": "output_tokens",
+    "agent-tool-output-tokens": "tool_output_tokens",
+    "agent-total-tokens": "total_tokens",
+    "agent-elapsed-ms": "elapsed_ms",
+  };
+  const usage = {};
+  for (const [flag, field] of Object.entries(fields)) {
+    if (!(flag in args)) continue;
+    usage[field] = parseNonNegativeIntegerFlag(args[flag], flag);
+  }
+  if (isNonEmptyString(args["agent-model"])) usage.model = args["agent-model"].trim();
+  if (isNonEmptyString(args["agent-usage-source"])) usage.source = args["agent-usage-source"].trim();
+  return Object.keys(usage).length ? usage : null;
+}
+
+function parseNonNegativeIntegerFlag(value, flag) {
+  if (value === true || value === false || value == null || String(value).trim() === "") {
+    throw new Error(`--${flag} requires a non-negative integer value.`);
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`--${flag} must be a non-negative integer.`);
+  }
+  return parsed;
 }
 
 function packageVersion() {
