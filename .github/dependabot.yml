@@ -30,6 +30,11 @@ updates:
           - "*"
     commit-message:
       prefix: "deps"
+    ignore:
+      # TypeScript majors carry breaking type-check changes — bump deliberately,
+      # not on Dependabot's schedule. Minor/patch + security updates still flow.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Example/fixture page-kit (internal next-campaign-page-kit).
   - package-ecosystem: "npm"
