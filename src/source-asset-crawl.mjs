@@ -32,6 +32,17 @@ const ASSET_EXTENSIONS = new Set([
 
 const SKIP_PROTOCOL_PATTERN = /^(?:about|blob|data|javascript|mailto|tel):/i;
 const DEFAULT_MAX_CSS_FILES = 256;
+const HTML_ASSET_ATTRIBUTES = new Set([
+  "content",
+  "data-background",
+  "data-bg",
+  "data-src",
+  "href",
+  "imagesrcset",
+  "poster",
+  "src",
+  "srcset",
+]);
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -120,18 +131,12 @@ function extractHtmlRefs(content) {
     refs.push({ raw, attribute: attr });
   }
 
-  const quotedAttrPattern = /\b(src|href|poster|data-src|data-background|data-bg|content|srcset|imagesrcset)\s*=\s*(["'])(.*?)\2/gi;
-  const unquotedAttrPattern = /\b(src|href|poster|data-src|data-background|data-bg|content|srcset|imagesrcset)\s*=\s*([^\s"'=<>`]+)/gi;
-  const styleAttrPattern = /\bstyle\s*=\s*["']([^"']+)["']/gi;
   for (const tag of tags) {
-    for (const match of tag.matchAll(quotedAttrPattern)) {
-      addRef(match[3], match[1]);
-    }
-    for (const match of maskQuotedAttributeValues(tag).matchAll(unquotedAttrPattern)) {
-      addRef(match[2], match[1]);
-    }
-    for (const match of tag.matchAll(styleAttrPattern)) {
-      for (const ref of extractCssRefs(match[1])) refs.push({ ...ref, attribute: `style:${ref.attribute}` });
+    for (const attr of extractHtmlTagAttributes(tag)) {
+      if (HTML_ASSET_ATTRIBUTES.has(attr.name)) addRef(attr.value, attr.name);
+      if (attr.name === "style") {
+        for (const ref of extractCssRefs(attr.value)) refs.push({ ...ref, attribute: `style:${ref.attribute}` });
+      }
     }
   }
 
@@ -140,6 +145,52 @@ function extractHtmlRefs(content) {
     for (const ref of extractCssRefs(match[1])) refs.push({ ...ref, attribute: `style-block:${ref.attribute}` });
   }
   return refs;
+}
+
+function extractHtmlTagAttributes(tag) {
+  const attrs = [];
+  const text = String(tag || "");
+  let index = 0;
+
+  if (text[index] !== "<") return attrs;
+  index += 1;
+  while (index < text.length && /\s/.test(text[index])) index += 1;
+  while (index < text.length && !/[\s/>]/.test(text[index])) index += 1;
+
+  while (index < text.length) {
+    while (index < text.length && /\s/.test(text[index])) index += 1;
+    if (index >= text.length || text[index] === ">") break;
+    if (text[index] === "/" || text[index] === "?") {
+      index += 1;
+      continue;
+    }
+
+    const nameStart = index;
+    while (index < text.length && !/[\s=/>]/.test(text[index])) index += 1;
+    const name = text.slice(nameStart, index).toLowerCase();
+    while (index < text.length && /\s/.test(text[index])) index += 1;
+
+    let value = "";
+    if (text[index] === "=") {
+      index += 1;
+      while (index < text.length && /\s/.test(text[index])) index += 1;
+      const quote = text[index];
+      if (quote === "\"" || quote === "'") {
+        index += 1;
+        const valueStart = index;
+        while (index < text.length && text[index] !== quote) index += 1;
+        value = text.slice(valueStart, index);
+        if (text[index] === quote) index += 1;
+      } else {
+        const valueStart = index;
+        while (index < text.length && !/[\s>]/.test(text[index])) index += 1;
+        value = text.slice(valueStart, index);
+      }
+    }
+
+    if (name) attrs.push({ name, value });
+  }
+  return attrs;
 }
 
 function extractHtmlTags(content) {
@@ -177,10 +228,6 @@ function extractHtmlTags(content) {
     }
   }
   return tags;
-}
-
-function maskQuotedAttributeValues(tag) {
-  return String(tag || "").replace(/=\s*(["'])([\s\S]*?)\1/g, "=");
 }
 
 function assetKindForRef(value) {
