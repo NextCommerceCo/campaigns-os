@@ -1,11 +1,13 @@
-// Workflow Findings Sidecar — local Finding Capture for the Campaigns OS
-// Learning Trail. See docs/workflow-findings-sidecar.md.
+// Workflow Findings — the human/agent findings channel within Run Telemetry
+// (the "Findings Sidecar" lane). See docs/workflow-findings-sidecar.md (Run
+// Telemetry); the Run Record embeds a per-run snapshot of these findings.
 //
-// This module owns the PUBLIC capture surface only: validate, append, list,
-// and export Workflow Findings. It deliberately does NOT cluster, route,
-// create Linear issues, or phone home — that is internal aggregation's job.
-// Capturing a finding must never require Linear access or NEXT internal
-// context, so this module has no network or credential dependencies.
+// This module owns local finding capture only: validate, append, list, and
+// export Workflow Findings. It deliberately does NOT cluster, route, create
+// Linear issues, or remit — remit lives behind consent in remit.mjs /
+// run-record.mjs, and aggregation is internal tooling's job. Capturing a
+// finding must never require Linear access or NEXT internal context, so this
+// module has no network or credential dependencies.
 
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
