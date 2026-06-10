@@ -1115,7 +1115,19 @@ function sourceAssetWarningsForReport(assetCrawl) {
 function sourceAssetReportWarningCode(code) {
   if (code === "source_asset.root_assets_path") return "SOURCE_ASSET_REWRITE";
   if (code === "source_asset.outside_source_root") return "SOURCE_ASSET_ESCAPE";
-  return "SOURCE_ASSET_MISSING";
+  if (code === "source_asset.missing_file") return "SOURCE_ASSET_MISSING";
+  if (typeof code === "string" && code.startsWith("source_asset.")) {
+    return `SOURCE_ASSET_${toConstantCase(code.slice("source_asset.".length))}`;
+  }
+  return "SOURCE_ASSET_WARNING";
+}
+
+function toConstantCase(value) {
+  const normalized = String(value || "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+  return normalized || "WARNING";
 }
 
 function doctorCommand(args) {

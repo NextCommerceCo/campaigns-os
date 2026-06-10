@@ -31,13 +31,14 @@ const ASSET_EXTENSIONS = new Set([
 ]);
 
 const SKIP_PROTOCOL_PATTERN = /^(?:about|blob|data|javascript|mailto|tel):/i;
+const DEFAULT_MAX_CSS_FILES = 256;
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function sha256File(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+function sha256Content(content) {
+  return createHash("sha256").update(content).digest("hex");
 }
 
 function toPosixPath(value) {
@@ -54,7 +55,7 @@ function isInsideRoot(root, path) {
 }
 
 function cleanRef(value) {
-  const raw = String(value || "").trim().replace(/^["']|["']$/g, "");
+  const raw = decodeHtmlEntities(String(value || "").trim().replace(/^["']|["']$/g, ""));
   if (!raw || raw.startsWith("#")) return null;
   if (raw.startsWith("{{") || raw.startsWith("{%")) return null;
   if (raw.startsWith("//")) return null;
@@ -66,6 +67,15 @@ function cleanRef(value) {
     // Relative or root-relative refs are the expected input.
   }
   return raw.split("#")[0].split("?")[0].trim();
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
 }
 
 function looksLikeAssetRef(value) {
@@ -99,14 +109,24 @@ function extractCssRefs(content) {
 
 function extractHtmlRefs(content) {
   const refs = [];
-  const attrPattern = /\b(src|href|poster|data-src|data-background|data-bg|content)\s*=\s*["']([^"']+)["']/gi;
-  for (const match of content.matchAll(attrPattern)) {
-    refs.push({ raw: match[2], attribute: match[1].toLowerCase() });
+
+  function addRef(raw, attribute) {
+    const attr = attribute.toLowerCase();
+    if (attr === "srcset" || attr === "imagesrcset") {
+      for (const item of splitSrcset(raw)) refs.push({ raw: item, attribute: attr });
+      return;
+    }
+    refs.push({ raw, attribute: attr });
   }
 
-  const srcsetPattern = /\b(srcset|imagesrcset)\s*=\s*["']([^"']+)["']/gi;
-  for (const match of content.matchAll(srcsetPattern)) {
-    for (const raw of splitSrcset(match[2])) refs.push({ raw, attribute: match[1].toLowerCase() });
+  const quotedAttrPattern = /\b(src|href|poster|data-src|data-background|data-bg|content|srcset|imagesrcset)\s*=\s*(["'])(.*?)\2/gi;
+  for (const match of content.matchAll(quotedAttrPattern)) {
+    addRef(match[3], match[1]);
+  }
+
+  const unquotedAttrPattern = /\b(src|href|poster|data-src|data-background|data-bg|content|srcset|imagesrcset)\s*=\s*([^\s"'=<>`]+)/gi;
+  for (const match of content.matchAll(unquotedAttrPattern)) {
+    addRef(match[2], match[1]);
   }
 
   const styleAttrPattern = /\bstyle\s*=\s*["']([^"']+)["']/gi;
@@ -140,10 +160,13 @@ function resolveAssetRef(sourceRoot, originPath, rawRef) {
   const originDir = dirname(resolve(sourceRoot, originPath));
   const primaryPath = rootRelative ? resolve(sourceRoot, normalized) : resolve(originDir, cleaned);
   const fallbackPath = !rootRelative ? resolve(sourceRoot, normalized) : null;
-  const resolvedPath = existsSync(primaryPath) || !fallbackPath ? primaryPath : fallbackPath;
+  const primaryExists = safeIsFile(primaryPath);
+  const fallbackExists = fallbackPath ? safeIsFile(fallbackPath) : false;
+  const sourceRootFallback = !primaryExists && fallbackExists;
+  const resolvedPath = primaryExists ? primaryPath : sourceRootFallback ? fallbackPath : primaryPath;
   const insideSourceRoot = isInsideRoot(sourceRoot, resolvedPath);
   const sourcePath = insideSourceRoot ? relFromRoot(sourceRoot, resolvedPath) : null;
-  const sourceExists = insideSourceRoot && existsSync(resolvedPath) && statSync(resolvedPath).isFile();
+  const sourceExists = insideSourceRoot && (primaryExists || sourceRootFallback);
   const pagekitAssetPath = sourcePath ? sourcePath.replace(/^assets\//i, "") : null;
   const needsRewrite = rootRelative || /^\.?\.?\/?assets\//i.test(cleaned);
 
@@ -155,12 +178,21 @@ function resolveAssetRef(sourceRoot, originPath, rawRef) {
     source_path: sourcePath,
     source_exists: sourceExists,
     outside_source_root: !insideSourceRoot,
+    source_root_fallback: sourceRootFallback,
     pagekit_asset_path: pagekitAssetPath,
     rewrite_required: needsRewrite,
     rewrite_hint: needsRewrite && pagekitAssetPath
       ? `Rewrite source asset ref "${cleaned}" to the Page Kit campaign asset root, e.g. campaign_asset "${pagekitAssetPath}".`
       : null,
   };
+}
+
+function safeIsFile(path) {
+  try {
+    return existsSync(path) && statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function referenceKey(ref) {
@@ -187,13 +219,41 @@ function addReference(referencesByKey, ref, referencedBy) {
   return next;
 }
 
-function scannedFile(path, kind, sourceRoot) {
-  const fullPath = resolve(sourceRoot, path);
+function scannedFile(path, kind, stats, content) {
   return {
     path,
     kind,
-    bytes: statSync(fullPath).size,
-    sha256: sha256File(fullPath),
+    bytes: stats.size,
+    sha256: sha256Content(content),
+  };
+}
+
+function readScannableFile(path, kind, sourceRoot) {
+  const fullPath = resolve(sourceRoot, path);
+  let stats;
+  try {
+    stats = statSync(fullPath);
+  } catch (error) {
+    return { ok: false, warning: scanWarning(path, error) };
+  }
+  if (!stats.isFile()) return { ok: false, warning: null };
+  try {
+    const content = readFileSync(fullPath);
+    return {
+      ok: true,
+      content: content.toString("utf8"),
+      file: scannedFile(path, kind, stats, content),
+    };
+  } catch (error) {
+    return { ok: false, warning: scanWarning(path, error) };
+  }
+}
+
+function scanWarning(path, error) {
+  return {
+    code: "source_asset.scan_file_error",
+    message: `Could not scan source asset file "${path}": ${error.message}`,
+    sample: [path],
   };
 }
 
@@ -211,6 +271,7 @@ function pageIdsBySourcePath(pageMappings) {
 function summarizeWarnings(references) {
   const warnings = [];
   const rootAssetRefs = references.filter((ref) => ref.root_relative && /^assets\//i.test(ref.normalized));
+  const fallbackRefs = references.filter((ref) => ref.source_root_fallback);
   const outsideRefs = references.filter((ref) => ref.outside_source_root);
   const missingRefs = references.filter((ref) => !ref.source_exists && !ref.outside_source_root);
   if (rootAssetRefs.length > 0) {
@@ -218,6 +279,13 @@ function summarizeWarnings(references) {
       code: "source_asset.root_assets_path",
       message: `${rootAssetRefs.length} source asset reference(s) use raw /assets/... paths. Rewrite these for Page Kit's campaign asset root during assembly.`,
       sample: rootAssetRefs.slice(0, 6).map((ref) => ref.raw),
+    });
+  }
+  if (fallbackRefs.length > 0) {
+    warnings.push({
+      code: "source_asset.source_root_fallback",
+      message: `${fallbackRefs.length} source asset reference(s) resolved through the source-root fallback instead of the HTML-file-relative path. Confirm these refs are intended before assembly.`,
+      sample: fallbackRefs.slice(0, 6).map((ref) => ref.raw),
     });
   }
   if (outsideRefs.length > 0) {
@@ -237,28 +305,41 @@ function summarizeWarnings(references) {
   return warnings;
 }
 
-export function crawlSourceAssetPaths({ sourceRoot, htmlFiles = [], pageMappings = [] }) {
+export function crawlSourceAssetPaths({ sourceRoot, htmlFiles = [], pageMappings = [], maxCssFiles = DEFAULT_MAX_CSS_FILES }) {
   const root = resolve(sourceRoot);
   const referencesByKey = new Map();
   const scannedByPath = new Map();
   const cssQueue = [];
   const queuedCss = new Set();
+  const scanWarnings = [];
   const pageIds = pageIdsBySourcePath(pageMappings);
 
   function enqueueCss(sourcePath) {
     if (!sourcePath || queuedCss.has(sourcePath)) return;
     if (!existsSync(resolve(root, sourcePath))) return;
+    if (queuedCss.size >= maxCssFiles) {
+      if (!scanWarnings.some((warning) => warning.code === "source_asset.css_queue_truncated")) {
+        scanWarnings.push({
+          code: "source_asset.css_queue_truncated",
+          message: `Source asset CSS crawl reached the ${maxCssFiles} file cap. Remaining CSS imports were skipped.`,
+          sample: [sourcePath],
+        });
+      }
+      return;
+    }
     queuedCss.add(sourcePath);
     cssQueue.push(sourcePath);
   }
 
   function scanFile(sourcePath, kind) {
-    const fullPath = resolve(root, sourcePath);
-    if (!existsSync(fullPath) || !statSync(fullPath).isFile()) return;
-    if (!scannedByPath.has(sourcePath)) scannedByPath.set(sourcePath, scannedFile(sourcePath, kind, root));
+    const scanned = readScannableFile(sourcePath, kind, root);
+    if (!scanned.ok) {
+      if (scanned.warning) scanWarnings.push(scanned.warning);
+      return;
+    }
+    if (!scannedByPath.has(sourcePath)) scannedByPath.set(sourcePath, scanned.file);
 
-    const content = readFileSync(fullPath, "utf8");
-    const extracted = kind === "css" ? extractCssRefs(content) : extractHtmlRefs(content);
+    const extracted = kind === "css" ? extractCssRefs(scanned.content) : extractHtmlRefs(scanned.content);
     for (const item of extracted) {
       const ref = resolveAssetRef(root, sourcePath, item.raw);
       if (!ref) continue;
@@ -290,9 +371,10 @@ export function crawlSourceAssetPaths({ sourceRoot, htmlFiles = [], pageMappings
       reference_count: references.length,
       missing_count: references.filter((ref) => !ref.source_exists).length,
       outside_source_root_count: references.filter((ref) => ref.outside_source_root).length,
+      source_root_fallback_count: references.filter((ref) => ref.source_root_fallback).length,
       rewrite_required_count: references.filter((ref) => ref.rewrite_required).length,
       root_assets_path_count: references.filter((ref) => ref.root_relative && /^assets\//i.test(ref.normalized)).length,
     },
-    warnings: summarizeWarnings(references),
+    warnings: [...scanWarnings, ...summarizeWarnings(references)],
   };
 }

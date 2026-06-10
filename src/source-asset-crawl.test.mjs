@@ -18,6 +18,8 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
     writeFileSync(resolve(sourceRoot, "assets/config.js"), "window.__CONFIG__ = {};\n");
     writeFileSync(resolve(sourceRoot, "assets/products/hero.webp"), "hero\n");
     writeFileSync(resolve(sourceRoot, "assets/products/card.webp"), "card\n");
+    writeFileSync(resolve(sourceRoot, "assets/products/unquoted.webp"), "unquoted\n");
+    writeFileSync(resolve(sourceRoot, "assets/products/entity&.webp"), "entity\n");
     writeFileSync(resolve(sourceRoot, "assets/fonts/body.woff2"), "font\n");
     writeFileSync(resolve(sourceRoot, "assets/css/more.css"), ".icon{background:url('../products/card.webp')}\n");
     writeFileSync(
@@ -30,6 +32,8 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
         '<script src="/assets/config.js"></script>',
         '<link rel="stylesheet" href="./assets/css/site.css">',
         '<img src="assets/products/hero.webp">',
+        '<img src=assets/products/unquoted.webp>',
+        '<img src="assets/products/entity&amp;.webp">',
         '<img src="https://cdn.example.com/remote.webp">',
         '<img src="/assets/products/missing.webp">',
         '<img src="../outside.webp">',
@@ -55,11 +59,63 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
     assert.deepEqual(configRef.referenced_by[0].page_ids, ["landing"]);
 
     assert.ok(crawl.references.some((ref) => ref.source_path === "assets/products/card.webp"));
+    assert.ok(crawl.references.some((ref) => ref.source_path === "assets/products/unquoted.webp"));
+    assert.ok(crawl.references.some((ref) => ref.source_path === "assets/products/entity&.webp"));
     assert.ok(crawl.references.some((ref) => ref.source_path === "assets/fonts/body.woff2"));
     assert.ok(crawl.references.some((ref) => ref.raw === "../outside.webp" && ref.outside_source_root === true && ref.source_exists === false));
     assert.ok(crawl.warnings.some((warning) => warning.code === "source_asset.root_assets_path"));
     assert.ok(crawl.warnings.some((warning) => warning.code === "source_asset.outside_source_root"));
     assert.ok(crawl.warnings.some((warning) => warning.code === "source_asset.missing_file"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("crawlSourceAssetPaths warns on source-root fallback and capped CSS imports", () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "campaigns-os-source-assets-"));
+  try {
+    const sourceRoot = resolve(dir, "source");
+    mkdirSync(resolve(sourceRoot, "nested"), { recursive: true });
+    mkdirSync(resolve(sourceRoot, "assets/css"), { recursive: true });
+    mkdirSync(resolve(sourceRoot, "assets/products"), { recursive: true });
+
+    writeFileSync(resolve(sourceRoot, "assets/products/one.webp"), "one\n");
+    writeFileSync(
+      resolve(sourceRoot, "assets/css/one.css"),
+      "@import './two.css'; .one{background:url('../products/one.webp')}\n",
+    );
+    writeFileSync(resolve(sourceRoot, "assets/css/two.css"), ".two{}\n");
+    writeFileSync(resolve(sourceRoot, "nested/landing.html"), '<link rel="stylesheet" href="assets/css/one.css">');
+
+    const crawl = crawlSourceAssetPaths({
+      sourceRoot,
+      htmlFiles: [{ path: "nested/landing.html" }],
+      pageMappings: [{ page_id: "landing", path: "nested/landing.html" }],
+      maxCssFiles: 1,
+    });
+
+    assert.equal(crawl.summary.source_root_fallback_count, 1);
+    assert.equal(crawl.references.some((ref) => ref.raw === "assets/css/one.css" && ref.source_root_fallback === true), true);
+    assert.equal(crawl.warnings.some((warning) => warning.code === "source_asset.source_root_fallback"), true);
+    assert.equal(crawl.warnings.some((warning) => warning.code === "source_asset.css_queue_truncated"), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("crawlSourceAssetPaths reports scan failures without throwing", () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "campaigns-os-source-assets-"));
+  try {
+    const sourceRoot = resolve(dir, "source");
+    mkdirSync(sourceRoot, { recursive: true });
+
+    const crawl = crawlSourceAssetPaths({
+      sourceRoot,
+      htmlFiles: [{ path: "missing.html" }],
+    });
+
+    assert.equal(crawl.summary.scanned_file_count, 0);
+    assert.equal(crawl.warnings.some((warning) => warning.code === "source_asset.scan_file_error"), true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
