@@ -109,6 +109,7 @@ function extractCssRefs(content) {
 
 function extractHtmlRefs(content) {
   const refs = [];
+  const tags = extractHtmlTags(content);
 
   function addRef(raw, attribute) {
     const attr = attribute.toLowerCase();
@@ -120,18 +121,18 @@ function extractHtmlRefs(content) {
   }
 
   const quotedAttrPattern = /\b(src|href|poster|data-src|data-background|data-bg|content|srcset|imagesrcset)\s*=\s*(["'])(.*?)\2/gi;
-  for (const match of content.matchAll(quotedAttrPattern)) {
-    addRef(match[3], match[1]);
-  }
-
   const unquotedAttrPattern = /\b(src|href|poster|data-src|data-background|data-bg|content|srcset|imagesrcset)\s*=\s*([^\s"'=<>`]+)/gi;
-  for (const match of content.matchAll(unquotedAttrPattern)) {
-    addRef(match[2], match[1]);
-  }
-
   const styleAttrPattern = /\bstyle\s*=\s*["']([^"']+)["']/gi;
-  for (const match of content.matchAll(styleAttrPattern)) {
-    for (const ref of extractCssRefs(match[1])) refs.push({ ...ref, attribute: `style:${ref.attribute}` });
+  for (const tag of tags) {
+    for (const match of tag.matchAll(quotedAttrPattern)) {
+      addRef(match[3], match[1]);
+    }
+    for (const match of maskQuotedAttributeValues(tag).matchAll(unquotedAttrPattern)) {
+      addRef(match[2], match[1]);
+    }
+    for (const match of tag.matchAll(styleAttrPattern)) {
+      for (const ref of extractCssRefs(match[1])) refs.push({ ...ref, attribute: `style:${ref.attribute}` });
+    }
   }
 
   const styleBlockPattern = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
@@ -139,6 +140,47 @@ function extractHtmlRefs(content) {
     for (const ref of extractCssRefs(match[1])) refs.push({ ...ref, attribute: `style-block:${ref.attribute}` });
   }
   return refs;
+}
+
+function extractHtmlTags(content) {
+  const tags = [];
+  const text = String(content || "");
+  let tagStart = -1;
+  let quote = null;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (tagStart === -1) {
+      if (char === "<" && /[!/a-z?]/i.test(text[index + 1] || "")) tagStart = index;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char !== ">") continue;
+
+    const tag = text.slice(tagStart, index + 1);
+    tags.push(tag);
+    const tagName = tag.match(/^<\s*([a-z0-9:-]+)/i)?.[1]?.toLowerCase();
+    tagStart = -1;
+    if (tagName === "script" || tagName === "style") {
+      const closePattern = new RegExp(`</\\s*${tagName}\\s*>`, "ig");
+      closePattern.lastIndex = index + 1;
+      const closeMatch = closePattern.exec(text);
+      if (closeMatch) index = closeMatch.index + closeMatch[0].length - 1;
+    }
+  }
+  return tags;
+}
+
+function maskQuotedAttributeValues(tag) {
+  return String(tag || "").replace(/=\s*(["'])([\s\S]*?)\1/g, "=");
 }
 
 function assetKindForRef(value) {

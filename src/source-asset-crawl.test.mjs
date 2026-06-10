@@ -34,6 +34,8 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
         '<img src="assets/products/hero.webp">',
         '<img src=assets/products/unquoted.webp>',
         '<img src="assets/products/entity&amp;.webp">',
+        '<div data-original="<img src=assets/products/ghost.webp>"></div>',
+        '<script>const tpl = `<img src=assets/products/script.webp>`;</script>',
         '<img src="https://cdn.example.com/remote.webp">',
         '<img src="/assets/products/missing.webp">',
         '<img src="../outside.webp">',
@@ -61,6 +63,8 @@ test("crawlSourceAssetPaths inventories source assets and Page Kit rewrite hints
     assert.ok(crawl.references.some((ref) => ref.source_path === "assets/products/card.webp"));
     assert.ok(crawl.references.some((ref) => ref.source_path === "assets/products/unquoted.webp"));
     assert.ok(crawl.references.some((ref) => ref.source_path === "assets/products/entity&.webp"));
+    assert.equal(crawl.references.some((ref) => ref.raw === "assets/products/ghost.webp"), false);
+    assert.equal(crawl.references.some((ref) => ref.raw === "assets/products/script.webp"), false);
     assert.ok(crawl.references.some((ref) => ref.source_path === "assets/fonts/body.woff2"));
     assert.ok(crawl.references.some((ref) => ref.raw === "../outside.webp" && ref.outside_source_root === true && ref.source_exists === false));
     assert.ok(crawl.warnings.some((warning) => warning.code === "source_asset.root_assets_path"));
