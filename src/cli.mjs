@@ -73,6 +73,7 @@ import {
   readSourceHtmlManifestFile,
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "./source-html-manifest.mjs";
+import { crawlSourceAssetPaths } from "./source-asset-crawl.mjs";
 import {
   inspectBrandTheme,
   validateAssemblyReportThemeBlock,
@@ -789,6 +790,11 @@ function prepareBuild(args, options = {}) {
   const blockers = matched.prompts.map((prompt) => ({ code: prompt.code, stage: prompt.stage, message: prompt.message }));
   const portable = (path) => relFromDir(targetRepo, path);
   const commerceZoneFindings = inspectCommerceZones(sourceRoot, htmlFiles);
+  const sourceAssetCrawl = crawlSourceAssetPaths({
+    sourceRoot,
+    htmlFiles,
+    pageMappings: matched.mappings,
+  });
   const adapterDecisions = createAdapterDecisions({ commerceZoneFindings });
   const proofPolicy = createProofPolicy();
 
@@ -882,6 +888,7 @@ function prepareBuild(args, options = {}) {
           }
         : null,
       manifest_warnings: manifestWarnings,
+      asset_crawl: sourceAssetCrawl,
     },
     page_map: matched.mappings.map((mapping) => ({
       page_id: mapping.page_id,
@@ -1079,9 +1086,12 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
     theme: assemblyThemeFromContext(context.theme),
     evidence: [],
     blockers,
-    warnings: context.commerce_zone_findings.length
-      ? [{ code: "SOURCE_COMMERCE_REVIEW", stage: "assembly", message: "Source HTML contains possible commerce zones. Preserve catalog-owned runtime surfaces." }]
-      : [],
+    warnings: [
+      ...(context.commerce_zone_findings.length
+        ? [{ code: "SOURCE_COMMERCE_REVIEW", stage: "assembly", message: "Source HTML contains possible commerce zones. Preserve catalog-owned runtime surfaces." }]
+        : []),
+      ...sourceAssetWarningsForReport(context.source?.asset_crawl),
+    ],
     next: blockers.length
       ? { stage: "collect-inputs", owner: "operator", action: "Resolve source/page blockers before build." }
       : {
@@ -1090,6 +1100,34 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
           action: scaffoldRequired ? "Run setup before build." : "Run build with this packet and context.",
         },
   };
+}
+
+function sourceAssetWarningsForReport(assetCrawl) {
+  const warnings = Array.isArray(assetCrawl?.warnings) ? assetCrawl.warnings : [];
+  return warnings.map((warning) => ({
+    code: sourceAssetReportWarningCode(warning.code),
+    stage: "assembly",
+    message: warning.message,
+    sample: warning.sample || [],
+  }));
+}
+
+function sourceAssetReportWarningCode(code) {
+  if (code === "source_asset.root_assets_path") return "SOURCE_ASSET_REWRITE";
+  if (code === "source_asset.outside_source_root") return "SOURCE_ASSET_ESCAPE";
+  if (code === "source_asset.missing_file") return "SOURCE_ASSET_MISSING";
+  if (typeof code === "string" && code.startsWith("source_asset.")) {
+    return `SOURCE_ASSET_${toConstantCase(code.slice("source_asset.".length))}`;
+  }
+  return "SOURCE_ASSET_WARNING";
+}
+
+function toConstantCase(value) {
+  const normalized = String(value || "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+  return normalized || "WARNING";
 }
 
 function doctorCommand(args) {

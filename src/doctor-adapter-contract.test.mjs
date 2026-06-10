@@ -37,9 +37,12 @@ function withPreparedBuild(run) {
     const sourceRoot = resolve(dir, "source-html");
     const targetRepo = resolve(dir, "target-page-kit");
     mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(resolve(sourceRoot, "assets/products"), { recursive: true });
     mkdirSync(targetRepo, { recursive: true });
     writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
-    writeFileSync(resolve(sourceRoot, "landing.html"), "<section>Landing</section>");
+    writeFileSync(resolve(sourceRoot, "assets/config.js"), "window.__NEXT_CAMPAIGN__ = {};\n");
+    writeFileSync(resolve(sourceRoot, "assets/products/hero.png"), "hero\n");
+    writeFileSync(resolve(sourceRoot, "landing.html"), '<script src="/assets/config.js"></script><img src="assets/products/hero.png"><section>Landing</section>');
     writeFileSync(resolve(sourceRoot, "checkout.html"), '<section data-commerce-zone="checkout-form"></section>');
     writeFileSync(resolve(sourceRoot, "upsell.html"), '<section data-commerce-zone="upsell-offer"></section>');
     writeFileSync(resolve(sourceRoot, "receipt.html"), '<section data-commerce-zone="receipt-summary"></section>');
@@ -91,6 +94,9 @@ test("prepare-build emits adapter decisions and proof policy in public artifacts
     assert.equal(report.adapter_decisions.template_files_copied.status, "pending");
     assert.equal(packet.qa.proof_policy.browser_qa_required, true);
     assert.equal(report.proof_policy.typed_card_depth, "common");
+    assert.equal(context.source.asset_crawl.schema_version, "source-asset-crawl/v0");
+    assert.equal(context.source.asset_crawl.summary.root_assets_path_count, 1);
+    assert.equal(report.warnings.some((warning) => warning.code === "SOURCE_ASSET_REWRITE"), true);
   });
 });
 
