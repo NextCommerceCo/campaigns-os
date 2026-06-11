@@ -140,8 +140,9 @@
       "exit-intent-popup",
       "data-template=\"exit-intent\"",
       "data-exit-intent-action",
-      "data-coupon-code=\"EXIT",
-      "data-coupon-code=\"SAVE"
+      "data-coupon-code=\"EXIT5\"",
+      "data-coupon-code=\"EXIT10\"",
+      "data-coupon-code=\"SAVE10\""
     ],
     "blank_widget_literals": [
       "data-coupon-code=\"\"",

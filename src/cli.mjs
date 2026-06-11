@@ -1345,7 +1345,6 @@ function runPricingCssHideCheck({ packet, derived, warnings, ready }) {
     return;
   }
   if (!contract?.pricing_surfaces?.forbidden_css_hides?.length) {
-    if (isAutomatableTemplateFamily(family)) return;
     ready.push(`Pricing CSS scan not applicable for template family "${family || "(none)"}" (no brand contract with forbidden_css_hides)`);
     return;
   }
@@ -2923,7 +2922,12 @@ function loadTemplateFamilyBrandContract(family, errors, warnings, { required = 
       addIssue(
         errors,
         "template_contract.brand_contract",
-        `Template family "${family}" has no brand/residue/pricing contract at contracts/template-brand-contract.${family}.v0.json. Add the contract before treating this family as promoted/agent-ready.`
+        `Template family "${family}" has no brand/residue/pricing contract at contracts/template-brand-contract.${family}.v0.json. Add the contract before treating this family as promoted/agent-ready.`,
+        {
+          template_family: family,
+          reason: "missing_file",
+          contract_path: `contracts/template-brand-contract.${family}.v0.json`,
+        },
       );
     }
     return contract;
@@ -2931,10 +2935,19 @@ function loadTemplateFamilyBrandContract(family, errors, warnings, { required = 
     addIssue(
       required ? errors : warnings,
       "template_contract.brand_contract",
-      `Template brand contract for "${family}" failed to load: ${error.message}`
+      `Template brand contract for "${family}" failed to load: ${error.message}`,
+      templateBrandContractErrorDetail(error, family),
     );
     return null;
   }
+}
+
+function templateBrandContractErrorDetail(error, family) {
+  return {
+    template_family: family || null,
+    reason: typeof error?.code === "string" ? error.code : "load_error",
+    message: error instanceof Error ? error.message : String(error),
+  };
 }
 
 export function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
@@ -3052,7 +3065,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
   }
 }
 
-function validateTemplateFamilyInventory(contract, errors, ready) {
+export function validateTemplateFamilyInventory(contract, errors, ready) {
   const inventory = contract.family_inventory;
   if (!isObject(inventory)) {
     addIssue(errors, "template_contract.family_inventory", `Template brand contract for "${contract.family}" is missing family_inventory.`);
@@ -3070,12 +3083,20 @@ function validateTemplateFamilyInventory(contract, errors, ready) {
     "exit_pop",
     "qa_selectors",
   ];
-  const missing = required.filter((key) => inventory[key] === undefined || inventory[key] === null);
+  const missing = required.filter((key) => !hasPopulatedInventoryValue(inventory[key]));
   if (missing.length) {
-    addIssue(errors, "template_contract.family_inventory", `Template brand contract for "${contract.family}" family_inventory is missing: ${missing.join(", ")}.`);
+    addIssue(errors, "template_contract.family_inventory", `Template brand contract for "${contract.family}" family_inventory is missing or empty: ${missing.join(", ")}.`);
     return;
   }
   ready.push(`Template family inventory matrix loaded for ${contract.family}`);
+}
+
+function hasPopulatedInventoryValue(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isObject(value)) return Object.values(value).some((entry) => hasPopulatedInventoryValue(entry));
+  return true;
 }
 
 function validateExitPopContract(contract, spec, family, warnings, ready, derived, buildState = {}) {

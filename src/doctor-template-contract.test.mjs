@@ -5,18 +5,18 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { validateCommerceCatalog } from "./cli.mjs";
+import { validateCommerceCatalog, validateTemplateFamilyInventory } from "./cli.mjs";
 
 const codes = (issues) => issues.map((issue) => issue.code);
 
 // Run validateCommerceCatalog against a temp catalog + the given spec/contract,
 // returning the emitted errors/warnings.
-function run({ contract, spec, agentContractVersion = 1, family = "olympus" }) {
+function run({ contract, spec, agentContractVersion = 1, family = "olympus", targetHtml = null }) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-tmpl-contract-"));
   try {
     const catalog = {
@@ -34,7 +34,16 @@ function run({ contract, spec, agentContractVersion = 1, family = "olympus" }) {
     const errors = [];
     const warnings = [];
     const ready = [];
-    validateCommerceCatalog(packet, join(dir, "packet.json"), spec, errors, warnings, ready);
+    const derived = {};
+    const buildState = {};
+    if (targetHtml !== null) {
+      const outputDir = join(dir, "out");
+      mkdirSync(outputDir, { recursive: true });
+      writeFileSync(join(outputDir, "index.html"), targetHtml);
+      derived.target_output_dir = outputDir;
+      buildState.report = { stages: { assembly: { status: "completed" } } };
+    }
+    validateCommerceCatalog(packet, join(dir, "packet.json"), spec, errors, warnings, ready, derived, buildState);
     return { errors, warnings, ready };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -123,6 +132,7 @@ test("template_contract.brand_contract errors when a promoted catalog family has
     spec: specWith([{ id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] }]),
   });
   assert.ok(codes(errors).includes("template_contract.brand_contract"));
+  assert.equal(errors.find((issue) => issue.code === "template_contract.brand_contract").detail.reason, "missing_file");
 });
 
 test("limos default exit-pop warns when CampaignSpec has no governed offer surface", () => {
@@ -162,6 +172,48 @@ test("limos default exit-pop still warns when exit_intent is declared away from 
     ]),
   });
   assert.ok(codes(warnings).includes("template_contract.exit_pop"));
+});
+
+test("limos exit-pop residue scan anchors coupon code literals", () => {
+  const spec = specWith([{ id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] }]);
+  const similarCode = run({
+    family: "limos",
+    contract: checkoutContract,
+    spec,
+    targetHtml: '<button data-coupon-code="EXIT10BONUS">Apply</button>',
+  });
+  assert.equal(codes(similarCode.warnings).includes("template_contract.exit_pop_residue"), false);
+
+  const defaultCode = run({
+    family: "limos",
+    contract: checkoutContract,
+    spec,
+    targetHtml: '<button data-coupon-code="EXIT10">Apply</button>',
+  });
+  assert.ok(codes(defaultCode.warnings).includes("template_contract.exit_pop_residue"));
+});
+
+test("template family inventory rejects empty required values", () => {
+  const errors = [];
+  const ready = [];
+  validateTemplateFamilyInventory({
+    family: "fixture",
+    family_inventory: {
+      supported_pages: [],
+      required_sdk_anchors: {},
+      theme_insertion_point: " ",
+      default_color_residue: [],
+      pricing_presentation: "",
+      bundle_picker: "",
+      order_bump: "",
+      upsell_downsell: "",
+      exit_pop: {},
+      qa_selectors: [],
+    },
+  }, errors, ready);
+  assert.ok(codes(errors).includes("template_contract.family_inventory"));
+  assert.match(errors[0].message, /supported_pages/);
+  assert.equal(ready.length, 0);
 });
 
 test("ported checks are exempt for a custom family (matches the private doctor)", () => {

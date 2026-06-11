@@ -23,27 +23,45 @@ export function loadTemplateBrandContract(family) {
   if (!path || !existsSync(path)) return null;
   const contract = loadTemplateBrandContractFile(path);
   if (contract.family !== family) {
-    throw new Error(`Template brand contract ${path} declares family "${contract.family}"; expected "${family}".`);
+    throw templateBrandContractError("family_mismatch", `Template brand contract ${path} declares family "${contract.family}"; expected "${family}".`);
   }
   return contract;
 }
 
 function loadTemplateBrandContractFile(path, seen = new Set()) {
-  if (seen.has(path)) throw new Error(`Template brand contract extends cycle at ${path}.`);
+  if (seen.has(path)) throw templateBrandContractError("extends_cycle", `Template brand contract extends cycle at ${path}.`);
   seen.add(path);
-  const contract = JSON.parse(readFileSync(path, "utf8"));
-  if (contract.schema_version !== TEMPLATE_BRAND_CONTRACT_SCHEMA) {
-    throw new Error(
-      `Template brand contract ${path} has schema_version "${contract.schema_version}"; expected "${TEMPLATE_BRAND_CONTRACT_SCHEMA}".`,
+  let contract = null;
+  try {
+    contract = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw templateBrandContractError(
+      "parse_error",
+      `Template brand contract ${path} failed to parse: ${error instanceof Error ? error.message : String(error)}.`,
+      error,
+    );
+  }
+  if (!isPlainObject(contract) || contract.schema_version !== TEMPLATE_BRAND_CONTRACT_SCHEMA) {
+    throw templateBrandContractError(
+      "schema_mismatch",
+      `Template brand contract ${path} has schema_version "${contract?.schema_version}"; expected "${TEMPLATE_BRAND_CONTRACT_SCHEMA}".`,
     );
   }
   const parentRef = typeof contract.extends === "string" && contract.extends.trim() ? contract.extends.trim() : null;
   if (!parentRef) return contract;
   const parentPath = join(dirname(path), parentRef);
   if (!existsSync(parentPath)) {
-    throw new Error(`Template brand contract ${path} extends missing file "${parentRef}".`);
+    throw templateBrandContractError("extends_missing_parent", `Template brand contract ${path} extends missing file "${parentRef}".`);
   }
-  return mergeContractObjects(loadTemplateBrandContractFile(parentPath, seen), contract);
+  const merged = mergeContractObjects(loadTemplateBrandContractFile(parentPath, seen), contract);
+  delete merged.extends;
+  return merged;
+}
+
+function templateBrandContractError(code, message, cause = undefined) {
+  const error = new Error(message, cause ? { cause } : undefined);
+  error.code = code;
+  return error;
 }
 
 function mergeContractObjects(parent, child) {

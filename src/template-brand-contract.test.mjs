@@ -14,7 +14,7 @@ test("demeter contract loads and declares the starter defaults", () => {
   const contract = loadTemplateBrandContract("demeter");
   assert.equal(contract.schema_version, TEMPLATE_BRAND_CONTRACT_SCHEMA);
   assert.equal(contract.family, "demeter");
-  assert.equal(contract.extends, "template-brand-contract.shared-commerce.v0.json");
+  assert.equal(contract.extends, undefined);
   assert.equal(contract.brand_tokens.forbidden_default_values["--brand--color--primary"], "#3c7dff");
   assert.equal(contract.brand_tokens.forbidden_default_values["--brand--color--primary-dark"], "#0a265c");
   assert.equal(contract.css_load_order.core_stylesheet, "next-core.css");

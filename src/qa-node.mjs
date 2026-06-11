@@ -289,8 +289,19 @@ function residueSeverityForThemeGate(status) {
 
 function templateBrandContractAssertion(resolved) {
   const family = stringArg(resolved?.templateFamily);
-  if (!family || family === "undecided" || family === "custom") return null;
+  if (!family) return null;
   const page = { page_id: "campaign" };
+  if (family === "undecided" || family === "custom") {
+    return assertion({
+      id: `template-brand-contract:${family}`,
+      family: "template_residue",
+      page,
+      status: STATUS.SKIPPED,
+      expected: "selected template family has a brand/residue/pricing contract, or is intentionally exempt",
+      actual: `family is ${family}; brand/residue/pricing contract not asserted`,
+      evidence: { template_family: family, reason: "doctor exempts undecided/custom template families" },
+    });
+  }
   if (resolved.brandContractStatus === "loaded") {
     return assertion({
       id: `template-brand-contract:${family}`,
@@ -1273,4 +1284,5 @@ export const __qaNodeTestHooks = Object.freeze({
   residueSeverityForThemeGate,
   supportedPaymentMethodsFromSpec,
   themeGateSummary,
+  templateBrandContractAssertion,
 });
