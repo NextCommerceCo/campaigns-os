@@ -4101,6 +4101,8 @@ function toolingCommand(args) {
     actions.push("Update this checkout before running a dogfood build: git pull --ff-only (or wt sync in a worktree).");
   } else if (git.status !== "ok") {
     warnings.push(`Git freshness unavailable: ${git.reason}.`);
+  } else if (!git.upstream) {
+    warnings.push("No git upstream is configured for this checkout; remote freshness is advisory only.");
   }
 
   if (staleSkills.length) {
@@ -4116,7 +4118,8 @@ function toolingCommand(args) {
     warnings.push("This checkout has uncommitted changes; verify they are intentional before publishing or comparing freshness.");
   }
 
-  const ok = (git.status !== "ok" || git.behind === 0) && staleSkills.length === 0;
+  const gitBlocks = git.status === "ok" && Number.isFinite(git.behind) && git.behind > 0;
+  const ok = !gitBlocks && staleSkills.length === 0;
   return {
     ok,
     status: ok ? "ready" : "attention_required",
