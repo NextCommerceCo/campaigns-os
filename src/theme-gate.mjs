@@ -125,7 +125,7 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
   return result(
     "blocked",
     "theme_gate.generatable_not_applied",
-    "theme inspect proved a brand theme can be generated, but it has not been generated and applied to commerce pages. Demeter-family commerce pages consume --brand--* tokens; without the brand layer they ship the starter palette.",
+    "theme inspect proved a brand theme can be generated, but it has not been generated and applied to commerce pages. Starter-template commerce families consume --brand--* tokens; without the brand layer they ship the starter palette.",
     [
       {
         id: "theme_generate",

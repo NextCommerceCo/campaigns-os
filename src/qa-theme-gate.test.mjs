@@ -5,7 +5,14 @@ import { fileURLToPath } from "node:url";
 import { __qaNodeTestHooks, GATE_SUPPRESSED_FAMILIES } from "./qa-node.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 
-const { themeGateAssertion, themeGateScopeFromTopologies, residueSeverityForThemeGate, supportedPaymentMethodsFromSpec, themeGateSummary } = __qaNodeTestHooks;
+const {
+  themeGateAssertion,
+  themeGateScopeFromTopologies,
+  residueSeverityForThemeGate,
+  supportedPaymentMethodsFromSpec,
+  themeGateSummary,
+  templateBrandContractAssertion,
+} = __qaNodeTestHooks;
 
 const commerceTopologies = [{
   funnel_id: "default",
@@ -137,4 +144,15 @@ test("theme gate summary keeps waiver and required actions only when present", (
   assert.deepEqual(Object.keys(blocked), ["status", "code", "reason", "required_actions"]);
   const pass = themeGateSummary({ status: "pass", code: "theme_gate.applied", reason: "r", waiver: null, required_actions: [] });
   assert.deepEqual(Object.keys(pass), ["status", "code", "reason"]);
+});
+
+test("custom and undecided families emit visible skipped brand-contract assertions", () => {
+  const custom = templateBrandContractAssertion({ templateFamily: "custom", brandContractStatus: "none" });
+  assert.equal(custom.status, "skipped");
+  assert.equal(custom.family, "template_residue");
+  assert.match(custom.actual, /family is custom/);
+
+  const undecided = templateBrandContractAssertion({ templateFamily: "undecided", brandContractStatus: "none" });
+  assert.equal(undecided.status, "skipped");
+  assert.equal(undecided.evidence.reason, "doctor exempts undecided/custom template families");
 });

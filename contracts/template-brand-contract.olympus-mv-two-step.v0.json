@@ -1,0 +1,28 @@
+{
+  "schema_version": "template-brand-contract/v0",
+  "family": "olympus-mv-two-step",
+  "extends": "template-brand-contract.shared-commerce.v0.json",
+  "description": "Brand contract for the Olympus MV two-step select-then-checkout starter-template family.",
+  "family_inventory": {
+    "supported_pages": ["landing", "presell", "select", "checkout", "upsell", "receipt"],
+    "required_sdk_anchors": {
+      "select": ["data-next-bundle-selector", "data-next-bundle-card"],
+      "checkout": ["data-next-bundle-slots-for", "data-next-bundle-slot-template-id", "data-next-payment-method", "data-next-cart-summary"],
+      "upsell": ["data-next-upsell", "data-next-bundle-selector", "data-next-bundle-slots-for"],
+      "receipt": ["data-next-order-items"]
+    },
+    "theme_insertion_point": "Load brand-theme.css from frontmatter styles after css/next-core.css on select, checkout, upsell, downsell, and receipt pages.",
+    "default_color_residue": ["#3c7dff", "#0a265c"],
+    "pricing_presentation": "Select-step bundle cards and checkout MV slots use SDK display modes for compare/current, unit-plus-total, savings, and full-price presentations.",
+    "bundle_picker": "Two-step flow: select page chooses cart/package, checkout stage resolves configurable variant slots.",
+    "order_bump": "Optional bump variants are valid only when prepurchase packages exist and must not sync line total unless specified.",
+    "upsell_downsell": "MV and bundle upsell includes use upsell_offer, upsell_mv_tiers, or upsell_bundle_tiers with visible price rows.",
+    "exit_pop": {
+      "default_included": false,
+      "include": "exit-intent-popup.html",
+      "default_coupon_codes": ["SAVE10"],
+      "behavior": "Available include only; strip unless CampaignSpec checkout exit_intent or promo_code_input maps an offer/code."
+    },
+    "qa_selectors": [".checkout-wrapper", ".submit-button", ".os-card.next-selected", ".price-wrapper", ".brand-logo"]
+  }
+}

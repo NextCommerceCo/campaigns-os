@@ -1,0 +1,29 @@
+{
+  "schema_version": "template-brand-contract/v0",
+  "family": "shop-three-step",
+  "extends": "template-brand-contract.shared-commerce.v0.json",
+  "description": "Brand contract for the Shop three-step information/shipping/billing starter-template family.",
+  "family_inventory": {
+    "supported_pages": ["landing", "presell", "information", "shipping", "billing", "upsell", "receipt"],
+    "required_sdk_anchors": {
+      "information": ["next-success-url"],
+      "shipping": ["data-next-shipping-id"],
+      "billing": ["data-next-payment-method", "data-next-payment-form"],
+      "upsell": ["data-next-upsell", "data-next-bundle-selector"],
+      "receipt": ["data-next-order-items"]
+    },
+    "theme_insertion_point": "Load brand-theme.css from frontmatter styles after css/next-core.css on information, shipping, billing, upsell, downsell, and receipt pages.",
+    "default_color_residue": ["#3c7dff", "#0a265c"],
+    "pricing_presentation": "Billing and upsell surfaces use SDK cart/order displays; shipping prices come from window.next.getShippingMethods(), not static Olympus-style shipping_methods frontmatter.",
+    "bundle_picker": "No checkout bundle picker; the family uses a multi-step shop flow with dynamic shipping before billing.",
+    "order_bump": "No promoted order-bump contract yet; unsupported bump widgets must be removed unless the family contract is promoted.",
+    "upsell_downsell": "Shop three-step upsells currently include inline refs plus upsell_offer/upsell_bundle_tiers mapping hints; both must be replaced from CampaignSpec/API.",
+    "exit_pop": {
+      "default_included": false,
+      "include": null,
+      "default_coupon_codes": [],
+      "behavior": "No promoted exit-pop include in the three-step family; any copied exit widget must be stripped unless CampaignSpec maps an offer/code."
+    },
+    "qa_selectors": [".checkout-wrapper", ".submit-button", ".price-wrapper", ".brand-logo", "[data-next-shipping-id]"]
+  }
+}

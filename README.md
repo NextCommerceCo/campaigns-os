@@ -24,6 +24,7 @@ Run these commands from a local checkout of the public toolkit repo
 
 ```bash
 npm install
+npm run campaigns-os -- tooling status
 npm run campaigns-os -- start \
   --spec examples/campaignspec.v42.basic.json \
   --source examples/source-html \
@@ -57,6 +58,7 @@ design markup separate from SDK-owned commerce controls.
 ## Important Commands
 
 ```bash
+npm run campaigns-os -- tooling status
 npm run campaigns-os -- install-skills --dry-run
 npm run campaigns-os -- install-skills --platform codex --dry-run
 npm run skills -- status
@@ -75,6 +77,13 @@ npm run campaigns-os -- findings add --stage overall --kind positive_signal --su
 npm run campaigns-os -- findings harvest --packet <packet.json>
 npm run campaigns-os -- findings export --summary
 ```
+
+Run `tooling status` before a build session to verify the local checkout,
+package metadata, CLI entrypoint, and installed Campaigns OS skills agree. The
+package is currently private/local-checkout based, so npm does not
+automatically make agent skills current; when skills are stale, run
+`npm run campaigns-os -- install-skills --platform all` and restart local agent
+sessions.
 
 Run `npm run qa:install-browser` once after install/update and before any QA
 command that uses `--browser` or `--test-order`. It installs the Chromium binary

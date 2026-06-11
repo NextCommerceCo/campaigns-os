@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -13,11 +14,48 @@ test("demeter contract loads and declares the starter defaults", () => {
   const contract = loadTemplateBrandContract("demeter");
   assert.equal(contract.schema_version, TEMPLATE_BRAND_CONTRACT_SCHEMA);
   assert.equal(contract.family, "demeter");
+  assert.equal(contract.extends, undefined);
   assert.equal(contract.brand_tokens.forbidden_default_values["--brand--color--primary"], "#3c7dff");
   assert.equal(contract.brand_tokens.forbidden_default_values["--brand--color--primary-dark"], "#0a265c");
   assert.equal(contract.css_load_order.core_stylesheet, "next-core.css");
   assert.ok(contract.qa_inspection.computed_style_checks.length >= 3);
-  assert.deepEqual(contract.pricing_surfaces.modes, ["full_price", "discounted", "compare_at", "unit_total", "unit_only"]);
+  assert.deepEqual(contract.pricing_surfaces.modes, ["full_price", "compare_at_current", "unit_price_plus_total", "savings_badge_amount", "code_discounted_post_checkout"]);
+  assert.equal(contract.pricing_surfaces.legacy_aliases.discounted, "compare_at_current");
+  assert.equal(contract.family_inventory.bundle_picker.includes("Editorial tier selector"), true);
+});
+
+test("every catalog family has a loadable brand/residue/pricing contract and inventory matrix", () => {
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  for (const family of Object.keys(catalog.families).sort()) {
+    const contract = loadTemplateBrandContract(family);
+    assert.ok(contract, `${family} should have a template brand contract`);
+    assert.equal(contract.family, family);
+    assert.equal(contract.brand_tokens.forbidden_default_values["--brand--color--primary"], "#3c7dff");
+    assert.ok(contract.pricing_surfaces.forbidden_css_hides.includes(".price-wrapper"));
+    for (const key of [
+      "supported_pages",
+      "required_sdk_anchors",
+      "theme_insertion_point",
+      "default_color_residue",
+      "pricing_presentation",
+      "bundle_picker",
+      "order_bump",
+      "upsell_downsell",
+      "exit_pop",
+      "qa_selectors",
+    ]) {
+      assert.ok(contract.family_inventory[key], `${family} family_inventory.${key} should be declared`);
+    }
+  }
+});
+
+test("non-Demeter families inherit residue and pricing rules", () => {
+  const olympus = loadTemplateBrandContract("olympus");
+  const limos = loadTemplateBrandContract("limos");
+  assert.deepEqual(forbiddenComputedColors(olympus).map((color) => color.rgb), ["rgb(60, 125, 255)", "rgb(10, 38, 92)"]);
+  assert.ok(findForbiddenPriceHides(olympus, ".price-display { display:none }").length === 1);
+  assert.equal(limos.family_inventory.exit_pop.default_included, true);
+  assert.deepEqual(limos.family_inventory.exit_pop.default_coupon_codes, ["EXIT10", "SAVE10"]);
 });
 
 test("unknown family returns null instead of throwing", () => {

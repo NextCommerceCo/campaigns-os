@@ -61,6 +61,10 @@ machine-checkable `agentContract.qaStructure` selectors in the commerce surface
 catalog. If the family contract is silent, the assertion returns
 `manual_review`, not `pass`; if declared required structure is missing, it
 soft-fails with warning severity so the verdict becomes `ready_with_exceptions`.
+Promoted template families must also have
+`contracts/template-brand-contract.<family>.v0.json`; QA emits a blocker if the
+selected family is missing its brand/residue/pricing contract instead of
+silently skipping starter-palette and pricing checks.
 It is owned by this package through the `playwright` dependency; QA must not
 rely on external browser skills or local agent tooling.
 

@@ -626,6 +626,27 @@ try {
   if (!allDryRun.skills?.every((skill) => skill.platform)) {
     throw new Error("install-skills --platform all should annotate each skill with its target platform.");
   }
+
+  const toolingStatusTmp = resolve(skillsTmp, "tooling-status-target");
+  const staleToolingStatus = runCliJsonAllowFailure(["tooling", "status", "--target", toolingStatusTmp, "--json"]);
+  if (staleToolingStatus.ok !== false || staleToolingStatus.status !== "attention_required") {
+    throw new Error("tooling status should require attention when installed skills are stale or missing.");
+  }
+  if (staleToolingStatus.skills?.stale_count !== dryRun.skills.length) {
+    throw new Error("tooling status should surface the stale/missing skill count.");
+  }
+  if (!staleToolingStatus.actions?.some((action) => action.includes("install-skills"))) {
+    throw new Error("tooling status should provide an exact install-skills remediation.");
+  }
+
+  runCliJson(["install-skills", "--target", toolingStatusTmp, "--json"]);
+  const readyToolingStatus = runCliJson(["tooling", "status", "--target", toolingStatusTmp, "--json"]);
+  if (readyToolingStatus.ok !== true || readyToolingStatus.status !== "ready") {
+    throw new Error("tooling status should be ready when target skills match bundled skills.");
+  }
+  if (readyToolingStatus.package?.name !== "@nextcommerce/campaigns-os") {
+    throw new Error("tooling status should include the local package identity.");
+  }
 } finally {
   rmSync(skillsTmp, { recursive: true, force: true });
 }

@@ -287,6 +287,47 @@ function residueSeverityForThemeGate(status) {
   return status === "waived" || status === "not_applicable" ? SEVERITY.WARN : SEVERITY.BLOCKER;
 }
 
+function templateBrandContractAssertion(resolved) {
+  const family = stringArg(resolved?.templateFamily);
+  if (!family) return null;
+  const page = { page_id: "campaign" };
+  if (family === "undecided" || family === "custom") {
+    return assertion({
+      id: `template-brand-contract:${family}`,
+      family: "template_residue",
+      page,
+      status: STATUS.SKIPPED,
+      expected: "selected template family has a brand/residue/pricing contract, or is intentionally exempt",
+      actual: `family is ${family}; brand/residue/pricing contract not asserted`,
+      evidence: { template_family: family, reason: "doctor exempts undecided/custom template families" },
+    });
+  }
+  if (resolved.brandContractStatus === "loaded") {
+    return assertion({
+      id: `template-brand-contract:${family}`,
+      family: "template_residue",
+      page,
+      status: STATUS.PASS,
+      expected: "selected template family has a brand/residue/pricing contract",
+      actual: `loaded for ${family}`,
+      evidence: { template_family: family },
+    });
+  }
+  return assertion({
+    id: `template-brand-contract:${family}`,
+    family: "template_residue",
+    page,
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    expected: "selected template family has a brand/residue/pricing contract",
+    actual: resolved.brandContractStatus || "none",
+    evidence: {
+      template_family: family,
+      next_step: `Add contracts/template-brand-contract.${family}.v0.json before treating this family as promoted/agent-ready.`,
+    },
+  });
+}
+
 function supportedPaymentMethodsFromSpec(spec) {
   const campaign = spec?.campaign || {};
   const normalizeMethod = (method) =>
@@ -415,6 +456,8 @@ async function runQa(args) {
   }
 
   const assertions = [themeGateAssertion(gate)];
+  const contractAssertion = templateBrandContractAssertion(resolved);
+  if (contractAssertion) assertions.push(contractAssertion);
   for (const topology of resolved.topologies) {
     for (const page of topology.pages) {
       assertions.push(...await runPageChecks(page, args));
@@ -1255,4 +1298,5 @@ export const __qaNodeTestHooks = Object.freeze({
   residueSeverityForThemeGate,
   supportedPaymentMethodsFromSpec,
   themeGateSummary,
+  templateBrandContractAssertion,
 });

@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
+  accessSync,
+  constants as fsConstants,
   cpSync,
   existsSync,
   mkdirSync,
@@ -11,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runQaCli } from "./qa-node.mjs";
 import {
@@ -82,6 +85,10 @@ import {
   writeThemeArtifacts,
 } from "./brand-theme.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
+import {
+  evaluatePageKitBuildSummary,
+  PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
+} from "./page-kit-build-summary.mjs";
 import {
   findForbiddenPriceHides,
   loadTemplateBrandContract,
@@ -190,6 +197,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
+  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # repo/package/skill freshness preflight
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next --packet <json> [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
@@ -387,6 +395,12 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     if (args.platform === true) throw new Error("Missing value for --platform");
     const result = installSkills(args.target, Boolean(args["dry-run"]), args.platform);
     writeResult(result, args, 0);
+    return;
+  }
+
+  if (command === "tooling") {
+    const result = toolingCommand(args);
+    writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
@@ -1387,7 +1401,7 @@ function runPricingCssHideCheck({ packet, derived, warnings, ready, report = nul
       addIssue(
         warnings,
         "template_contract.price_css_hide",
-        `Campaign CSS ${name} hides a pricing surface: "${hit.selector}" sets display:none on ${hit.target}. Use the template's pricing mode (full_price/discounted/compare_at/unit_total/unit_only) instead of hiding price rows; browser QA blocks upsells with zero visible price rows.`,
+        `Campaign CSS ${name} hides a pricing surface: "${hit.selector}" sets display:none on ${hit.target}. Use the template's declared pricing modes instead of hiding price rows; browser QA blocks upsells with zero visible price rows.`,
       );
     }
   }
@@ -1462,6 +1476,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "built_output.sdk_meta_tags",
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: "built_output.build_summary",
+    phase: "built-output",
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuildSummary(spec, packet, errors, warnings, ready, derived, buildState),
   },
 ], { registryId: "packet.spec" });
 
@@ -2107,6 +2126,21 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
   }
 
   if (checked > 0) ready.push(`Built HTML structure and commerce refs checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
+}
+
+function validateBuildSummary(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const result = evaluatePageKitBuildSummary({
+    targetRepo,
+    publicRouteSlug,
+    activePages: activeSpecPages(spec),
+    assemblyComplete: isStageComplete(buildState.report, "assembly"),
+    builtPathForPage: (page) => builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived),
+  });
+  for (const issue of result.errors) addIssue(errors, issue.code, issue.message, issue.detail ?? null);
+  for (const issue of result.warnings) addIssue(warnings, issue.code, issue.message, issue.detail ?? null);
+  ready.push(...result.ready);
 }
 
 function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, publicRouteSlug, errors, warnings, assemblyComplete) {
@@ -2929,12 +2963,51 @@ function offerRefsFromEntries(entries) {
     .map((value) => String(value));
 }
 
+function isAutomatableTemplateFamily(family) {
+  return isNonEmptyString(family) && family !== "undecided" && family !== "custom";
+}
+
+function loadTemplateFamilyBrandContract(family, errors, warnings, { required = false } = {}) {
+  try {
+    const contract = loadTemplateBrandContract(family);
+    if (!contract && required) {
+      addIssue(
+        errors,
+        "template_contract.brand_contract",
+        `Template family "${family}" has no brand/residue/pricing contract at contracts/template-brand-contract.${family}.v0.json. Add the contract before treating this family as promoted/agent-ready.`,
+        {
+          template_family: family,
+          reason: "missing_file",
+          contract_path: `contracts/template-brand-contract.${family}.v0.json`,
+        },
+      );
+    }
+    return contract;
+  } catch (error) {
+    addIssue(
+      required ? errors : warnings,
+      "template_contract.brand_contract",
+      `Template brand contract for "${family}" failed to load: ${error.message}`,
+      templateBrandContractErrorDetail(error, family),
+    );
+    return null;
+  }
+}
+
+function templateBrandContractErrorDetail(error, family) {
+  return {
+    template_family: family || null,
+    reason: typeof error?.code === "string" ? error.code : "load_error",
+    message: error instanceof Error ? error.message : String(error),
+  };
+}
+
 export function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const family = packet.assembly?.template_family;
   // Match the private doctor (build-packet.js): the ported template_contract.*
   // checks below do not apply to non-automatable families. The pre-existing
   // agentContract / demo_ref / shipping checks keep running for all families.
-  const familyAutomatable = isNonEmptyString(family) && family !== "undecided" && family !== "custom";
+  const familyAutomatable = isAutomatableTemplateFamily(family);
   const catalogInfo = packet.assembly?.commerce_catalog || {};
   if (catalogInfo.required !== true) return;
   const catalogPath = resolveFromFile(packetPath, catalogInfo.path || "../contracts/commerce-surface-catalog.json");
@@ -2957,6 +3030,11 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     return;
   }
   ready.push(`Template agentContract loaded for ${family}`);
+  const brandContract = loadTemplateFamilyBrandContract(family, errors, warnings, { required: familyAutomatable });
+  if (brandContract) {
+    ready.push(`Template brand/residue/pricing contract loaded for ${family}`);
+    validateTemplateFamilyInventory(brandContract, errors, ready);
+  }
   if (familyAutomatable && contract.status && contract.status !== "agent-ready") {
     addIssue(warnings, "template_contract.status", `Template family "${family}" contract status is "${contract.status}"; treat this as guided assembly, not full automation.`);
   }
@@ -3035,6 +3113,86 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
         `Template family "${family}" exposes upsell frontmatter, but active upsell/downsell pages have no package or offer refs to replace demo values.`
       );
     }
+    validateExitPopContract(brandContract, spec, family, warnings, ready, derived, buildState);
+  }
+}
+
+export function validateTemplateFamilyInventory(contract, errors, ready) {
+  const inventory = contract.family_inventory;
+  if (!isObject(inventory)) {
+    addIssue(errors, "template_contract.family_inventory", `Template brand contract for "${contract.family}" is missing family_inventory.`);
+    return;
+  }
+  const required = [
+    "supported_pages",
+    "required_sdk_anchors",
+    "theme_insertion_point",
+    "default_color_residue",
+    "pricing_presentation",
+    "bundle_picker",
+    "order_bump",
+    "upsell_downsell",
+    "exit_pop",
+    "qa_selectors",
+  ];
+  const missing = required.filter((key) => !hasPopulatedInventoryValue(inventory[key]));
+  if (missing.length) {
+    addIssue(errors, "template_contract.family_inventory", `Template brand contract for "${contract.family}" family_inventory is missing or empty: ${missing.join(", ")}.`);
+    return;
+  }
+  ready.push(`Template family inventory matrix loaded for ${contract.family}`);
+}
+
+function hasPopulatedInventoryValue(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isObject(value)) return Object.values(value).some((entry) => hasPopulatedInventoryValue(entry));
+  return true;
+}
+
+function validateExitPopContract(contract, spec, family, warnings, ready, derived, buildState = {}) {
+  const exitPop = contract?.exit_pop;
+  if (!exitPop || !spec) return;
+  const hasGovernedOfferSurface = activeSpecPages(spec).some((page) => (
+    page?.type === "checkout" && (page?.exit_intent?.enabled === true || page?.promo_code_input?.enabled === true)
+  ));
+  if (hasGovernedOfferSurface) {
+    ready.push(`${family} exit-pop/promo-code behavior is governed by CampaignSpec offer-surface fields`);
+    return;
+  }
+
+  const inventoryExitPop = contract.family_inventory?.exit_pop;
+  if (!isStageComplete(buildState.report, "assembly")) {
+    if (inventoryExitPop?.default_included === true) {
+      addIssue(
+        warnings,
+        "template_contract.exit_pop",
+        `Template family "${family}" includes an exit-pop by default, but active CampaignSpec checkout pages do not define exit_intent or promo_code_input. Strip the widget or wire a mapped offer/code through the SDK coupon path during build.`
+      );
+    }
+    return;
+  }
+
+  const targetOutputDir = derived.target_output_dir;
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return;
+  const residueHits = collectLiteralMatches(targetOutputDir, exitPop.residue_literals || []);
+  if (residueHits.length) {
+    addIssue(
+      warnings,
+      "template_contract.exit_pop_residue",
+      `Assembly is recorded complete, but target output contains exit-pop/template offer residue while CampaignSpec has no checkout exit_intent or promo_code_input: ${summarizeCopyMatches(residueHits)}. Strip it or add a mapped offer surface.`
+    );
+  } else {
+    ready.push(`Built target output has no ungoverned ${family} exit-pop residue`);
+  }
+  const blankHits = collectLiteralMatches(targetOutputDir, exitPop.blank_widget_literals || []);
+  if (blankHits.length) {
+    addIssue(
+      warnings,
+      "template_contract.exit_pop_blank_widget",
+      `Assembly is recorded complete, but target output still contains default/blank exit-pop widget copy or coupon placeholders: ${summarizeCopyMatches(blankHits)}.`
+    );
   }
 }
 
@@ -3756,7 +3914,8 @@ Rules:
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
 - For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
-- Run page-kit build and SDK/template lint, then update the assembly report before polish. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.`;
+- Run page-kit build and SDK/template lint, then update the assembly report before polish. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
+- Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.`;
 }
 
 function setupPrompt(packetPath, contextPath, reportPath, packet) {
@@ -3867,6 +4026,12 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
   if (codes.has("frontmatter.demoOnlyValues") || codes.has("frontmatter.replaceFromSpecOrApi")) {
     actions.push("Use the template agentContract to replace demo values from CampaignSpec/API.");
+  }
+  if (codes.has("template_contract.brand_contract") || codes.has("template_contract.family_inventory")) {
+    actions.push("Add or repair the selected family's contracts/template-brand-contract.<family>.v0.json, then rerun campaigns-os doctor --packet <packet>.");
+  }
+  if (codes.has("template_contract.exit_pop") || codes.has("template_contract.exit_pop_residue") || codes.has("template_contract.exit_pop_blank_widget")) {
+    actions.push("Strip the default exit-pop widget or wire CampaignSpec checkout exit_intent/promo_code_input to the SDK coupon path before QA.");
   }
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");
@@ -4075,6 +4240,172 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
       ? "Dry run only; no skill files were written."
       : "Restart local agent sessions to pick up new or updated skills.",
   };
+}
+
+function toolingCommand(args) {
+  const action = args._[1] || "status";
+  if (action !== "status") throw new Error(`Unknown tooling command: ${action}`);
+  if (args.target === true) throw new Error("Missing value for --target");
+  if (args.platform === true) throw new Error("Missing value for --platform");
+
+  const pkg = readJson(join(ROOT, "package.json"));
+  const skillStatus = installSkills(args.target, true, args.platform || "all");
+  const staleSkills = (skillStatus.skills || []).filter((skill) => skill.action !== "unchanged");
+  const git = localGitStatus(ROOT);
+  const cli = localCliStatus(pkg);
+  const packageStatus = {
+    name: pkg.name || null,
+    version: pkg.version || null,
+    private: Boolean(pkg.private),
+    registry: pkg.private
+      ? {
+          checked: false,
+          status: "not_applicable_private_package",
+          note: "This checkout is private; npm does not automatically provide latest tooling.",
+        }
+      : {
+          checked: false,
+          status: "not_checked",
+          note: "Registry freshness is not checked by tooling status; compare package manager lockfiles in the consuming repo.",
+        },
+  };
+  const actions = [];
+  const warnings = [];
+
+  if (git.status === "ok" && git.behind > 0) {
+    actions.push("Update this checkout before running a dogfood build: git pull --ff-only (or wt sync in a worktree).");
+  } else if (git.status !== "ok") {
+    warnings.push(`Git freshness unavailable: ${git.reason}.`);
+  } else if (!git.upstream) {
+    warnings.push("No git upstream is configured for this checkout; remote freshness is advisory only.");
+  }
+
+  if (staleSkills.length) {
+    const skillArgs = args.target ? ["--target", args.target] : ["--platform", args.platform || "all"];
+    actions.push(`Refresh installed skills: npm run campaigns-os -- install-skills ${skillArgs.join(" ")}. Restart local agent sessions afterwards.`);
+  }
+
+  if (cli.global_binary.status === "not_found") {
+    warnings.push("No global campaigns-os binary was found; use `npm run campaigns-os -- ...` from this checkout or `node ./bin/campaigns-os.mjs ...`.");
+  }
+
+  if (git.status === "ok" && git.dirty) {
+    warnings.push("This checkout has uncommitted changes; verify they are intentional before publishing or comparing freshness.");
+  }
+
+  const gitBlocks = git.status === "ok" && Number.isFinite(git.behind) && git.behind > 0;
+  const ok = !gitBlocks && staleSkills.length === 0;
+  return {
+    ok,
+    status: ok ? "ready" : "attention_required",
+    package: packageStatus,
+    git,
+    cli,
+    skills: {
+      ok: staleSkills.length === 0,
+      stale_count: staleSkills.length,
+      status: skillStatus,
+    },
+    actions,
+    warnings,
+  };
+}
+
+function localCliStatus(pkg) {
+  const binRel = isObject(pkg.bin)
+    ? pkg.bin["campaigns-os"]
+    : typeof pkg.bin === "string"
+      ? pkg.bin
+      : null;
+  const localBin = binRel ? resolve(ROOT, binRel) : null;
+  const globalPath = findExecutableOnPath("campaigns-os");
+  return {
+    local_bin: localBin,
+    local_bin_exists: Boolean(localBin && existsSync(localBin)),
+    invocation: "npm run campaigns-os -- <command>",
+    global_binary: globalPath
+      ? { status: "found", path: globalPath }
+      : { status: "not_found", path: null },
+  };
+}
+
+function localGitStatus(root) {
+  const inside = runCommand("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]);
+  if (!inside.ok) return { status: "unavailable", reason: "git rev-parse failed", error: inside.error };
+  if (inside.stdout !== "true") return { status: "unavailable", reason: "not a git worktree" };
+
+  const head = runCommand("git", ["-C", root, "rev-parse", "--short", "HEAD"]);
+  if (!head.ok) return { status: "unavailable", reason: "git HEAD could not be resolved", error: head.error };
+
+  const branch = runCommand("git", ["-C", root, "branch", "--show-current"]);
+  const upstream = runCommand("git", ["-C", root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
+  const dirty = runCommand("git", ["-C", root, "status", "--porcelain"]);
+  if (!dirty.ok) return { status: "unavailable", reason: "git status failed", error: dirty.error };
+  let ahead = null;
+  let behind = null;
+  const upstreamName = upstream.ok ? upstream.stdout : "";
+  if (upstreamName) {
+    const counts = runCommand("git", ["-C", root, "rev-list", "--left-right", "--count", `HEAD...${upstreamName}`]);
+    if (!counts.ok) return { status: "unavailable", reason: "git ahead/behind comparison failed", error: counts.error };
+    const [left, right] = counts.stdout.split(/\s+/).map((value) => Number.parseInt(value, 10));
+    ahead = Number.isFinite(left) ? left : null;
+    behind = Number.isFinite(right) ? right : null;
+  }
+
+  return {
+    status: "ok",
+    root,
+    branch: branch.ok && branch.stdout ? branch.stdout : null,
+    head: head.stdout || null,
+    upstream: upstreamName || null,
+    ahead,
+    behind,
+    dirty: dirty.stdout.length > 0,
+    note: upstreamName
+      ? "Freshness is compared to the locally fetched upstream ref; run git fetch first for a network-current answer."
+      : "No upstream configured; compare this checkout manually before relying on it.",
+  };
+}
+
+function runCommand(command, args) {
+  try {
+    return {
+      ok: true,
+      stdout: execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: typeof error.stdout === "string" ? error.stdout.trim() : "",
+      error: error.message || String(error),
+    };
+  }
+}
+
+function findExecutableOnPath(name) {
+  const pathEnv = process.env.PATH || "";
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+    : [""];
+  for (const dir of pathEnv.split(delimiter).filter(Boolean)) {
+    for (const ext of extensions) {
+      const candidate = join(dir, process.platform === "win32" && !name.toLowerCase().endsWith(ext.toLowerCase()) ? `${name}${ext}` : name);
+      if (isExecutableFile(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function isExecutableFile(candidate) {
+  if (!existsSync(candidate)) return false;
+  if (process.platform === "win32") return true;
+  try {
+    accessSync(candidate, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function installSkillsToTarget({ sourceDir, target, dryRun }) {
@@ -5096,13 +5427,17 @@ function printResult(result) {
     console.log("Ready:");
     for (const item of result.ready) console.log(`- ${item}`);
   }
+  if (result.actions?.length) {
+    console.log("Actions:");
+    for (const action of result.actions) console.log(`- ${action}`);
+  }
   if (result.errors?.length) {
     console.log("Errors:");
-    for (const issue of result.errors) console.log(`- [${issue.code}] ${issue.message}`);
+    for (const issue of result.errors) console.log(`- ${formatIssueSummary(issue)}`);
   }
   if (result.warnings?.length) {
     console.log("Warnings:");
-    for (const issue of result.warnings) console.log(`- [${issue.code}] ${issue.message}`);
+    for (const issue of result.warnings) console.log(`- ${formatIssueSummary(issue)}`);
   }
   if (result.next) {
     console.log("Next:");
@@ -5114,6 +5449,13 @@ function printResult(result) {
     console.log(result.prompt);
   }
   if (result.note) console.log(result.note);
+}
+
+function formatIssueSummary(issue) {
+  if (typeof issue === "string") return issue;
+  if (issue?.code && issue?.message) return `[${issue.code}] ${issue.message}`;
+  if (issue?.message) return issue.message;
+  return String(issue);
 }
 
 function formatSkillInstallSummary(skill) {
