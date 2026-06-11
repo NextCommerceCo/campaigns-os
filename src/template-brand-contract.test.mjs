@@ -101,6 +101,24 @@ test("normalizeCssColor treats near-invisible alpha as no visible color", () => 
   assert.equal(normalizeCssColor("rgba(60,125,255,0.5)"), "rgb(60, 125, 255)", "half-transparent starter blue still ships the palette");
 });
 
+test("findForbiddenPriceHides handles statement at-rules before a rule", () => {
+  const contract = loadTemplateBrandContract("demeter");
+  const css = `@charset "utf-8"; @import url(base.css); .price-wrapper { display: none; }`;
+  const hits = findForbiddenPriceHides(contract, css);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].selector, ".price-wrapper");
+});
+
+test("findForbiddenPriceHides matches on CSS token boundaries, not substrings", () => {
+  const contract = loadTemplateBrandContract("demeter");
+  const css = `
+.summary_price-row { display: none; }
+.summary_price.cc-sm { display: none; }
+`;
+  const hits = findForbiddenPriceHides(contract, css);
+  assert.deepEqual(hits.map((hit) => hit.selector), [".summary_price.cc-sm"], "longer identifiers must not substring-match a target");
+});
+
 test("findForbiddenPriceHides ignores price selectors without display:none", () => {
   const contract = loadTemplateBrandContract("demeter");
   assert.deepEqual(findForbiddenPriceHides(contract, ".price-wrapper { color: black; }"), []);

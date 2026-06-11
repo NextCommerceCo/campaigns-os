@@ -326,11 +326,23 @@ test("writeRunRecord refuses to write an invalid record", () => {
 test("CLI: run-record assembles a valid record from a real packet (argv shape, no values)", () => {
   // Dry run against the in-repo example packet — exercises the full wiring
   // (doctor read, artifact refs, assembly) without writing into the repo.
-  const out = JSON.parse(execFileSync("node", [
-    CLI, "run-record",
-    "--packet", resolve(ROOT, "examples/build-packet.basic.json"),
-    "--no-write", "--json",
-  ], { encoding: "utf8" }));
+  // Consent resolution is isolated from the operator's machine (empty
+  // XDG_CONFIG_HOME, env override cleared) so the asserted default-OFF state
+  // holds even on a machine that opted into telemetry.
+  const isolatedConfigHome = mkdtempSync(join(tmpdir(), "campaigns-os-consent-isolation-"));
+  let out;
+  try {
+    out = JSON.parse(execFileSync("node", [
+      CLI, "run-record",
+      "--packet", resolve(ROOT, "examples/build-packet.basic.json"),
+      "--no-write", "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, XDG_CONFIG_HOME: isolatedConfigHome, CAMPAIGNS_OS_TELEMETRY: "" },
+    }));
+  } finally {
+    rmSync(isolatedConfigHome, { recursive: true, force: true });
+  }
 
   assert.equal(out.ok, true);
   assert.equal(out.written, false);

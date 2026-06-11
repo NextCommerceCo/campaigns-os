@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   cpSync,
   existsSync,
@@ -493,7 +493,7 @@ function writeJson(path, value) {
 function writeJsonAtomic(path, value) {
   const resolved = resolve(path);
   mkdirSync(dirname(resolved), { recursive: true });
-  const tmp = `${resolved}.${process.pid}.${Date.now()}.tmp`;
+  const tmp = `${resolved}.${randomUUID()}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
   renameSync(tmp, resolved);
 }
@@ -1349,9 +1349,15 @@ function runPricingCssHideCheck({ packet, derived, warnings, ready }) {
     return;
   }
   const outputDir = derived.target_output_dir;
-  if (!outputDir || !existsSync(outputDir)) return;
+  if (!outputDir || !existsSync(outputDir)) {
+    ready.push("Pricing CSS scan skipped: target output directory does not exist yet (runs after setup/build)");
+    return;
+  }
   const cssDir = join(outputDir, "assets/css");
-  if (!existsSync(cssDir)) return;
+  if (!existsSync(cssDir)) {
+    ready.push("Pricing CSS scan skipped: campaign assets/css directory does not exist yet");
+    return;
+  }
   const coreStylesheet = contract.css_load_order?.core_stylesheet || "next-core.css";
   const campaignCssFiles = readdirSync(cssDir)
     .filter((name) => name.endsWith(".css") && name !== coreStylesheet && name !== "brand-theme.css");

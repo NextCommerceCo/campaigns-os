@@ -367,6 +367,20 @@ function updateQaPolicy(args) {
   };
 }
 
+// Every assertion family a non-blocked run can emit beyond theme_gate. A
+// gate-blocked verdict carries one skipped audit assertion per family so the
+// verdict shape never drifts for consumers walking assertions[] by family.
+// Keep in sync with runPageChecks + runBrowserChecks emitters.
+const GATE_SUPPRESSED_FAMILIES = Object.freeze([
+  "funnel-flow",
+  "meta-tags",
+  "api-metadata",
+  "browser-runtime",
+  "template_residue",
+  "pricing",
+  "browser-test-order",
+]);
+
 async function runQa(args) {
   const resolved = await resolveQaInputs(args);
   const startedAt = new Date().toISOString();
@@ -392,9 +406,7 @@ async function runQa(args) {
       startedAt,
       assertions: [
         themeGateAssertion(gate),
-        skippedByGate("funnel-flow", "funnel-flow.blocked_by_gate"),
-        skippedByGate("browser-runtime", "browser-runtime.blocked_by_gate"),
-        skippedByGate("browser-test-order", "browser-test-order.blocked_by_gate"),
+        ...GATE_SUPPRESSED_FAMILIES.map((family) => skippedByGate(family, `${family}.blocked_by_gate`)),
       ],
       testOrders: [],
     });
