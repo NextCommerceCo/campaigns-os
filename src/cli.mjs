@@ -83,6 +83,10 @@ import {
 } from "./brand-theme.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import {
+  evaluatePageKitBuildSummary,
+  PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
+} from "./page-kit-build-summary.mjs";
+import {
   findForbiddenPriceHides,
   loadTemplateBrandContract,
 } from "./template-brand-contract.mjs";
@@ -1445,6 +1449,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState),
   },
+  {
+    id: "built_output.build_summary",
+    phase: "built-output",
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuildSummary(spec, packet, errors, warnings, ready, derived, buildState),
+  },
 ], { registryId: "packet.spec" });
 
 const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
@@ -2089,6 +2098,21 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
   }
 
   if (checked > 0) ready.push(`Built HTML structure and commerce refs checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
+}
+
+function validateBuildSummary(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const result = evaluatePageKitBuildSummary({
+    targetRepo,
+    publicRouteSlug,
+    activePages: activeSpecPages(spec),
+    assemblyComplete: isStageComplete(buildState.report, "assembly"),
+    builtPathForPage: (page) => builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived),
+  });
+  for (const issue of result.errors) addIssue(errors, issue.code, issue.message, issue.detail ?? null);
+  for (const issue of result.warnings) addIssue(warnings, issue.code, issue.message, issue.detail ?? null);
+  ready.push(...result.ready);
 }
 
 function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, publicRouteSlug, errors, warnings, assemblyComplete) {
@@ -3738,7 +3762,8 @@ Rules:
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
 - For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
-- Run page-kit build and SDK/template lint, then update the assembly report before polish. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.`;
+- Run page-kit build and SDK/template lint, then update the assembly report before polish. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
+- Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.`;
 }
 
 function setupPrompt(packetPath, contextPath, reportPath, packet) {

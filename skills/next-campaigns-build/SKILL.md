@@ -42,6 +42,7 @@ Build rules:
 - After page-kit build, inspect rendered `_site` output: body exists, Campaign Cart runtime markers exist, `sdk_hints.meta_tags` rendered, route meta points at the campaign root, and copied funnel attribution/runtime baggage is gone.
 - For `shop-three-step`, shipping methods are dynamic through `window.next.getShippingMethods()`; do not add static Olympus-style `shipping_methods` frontmatter.
 - Run page-kit build and SDK/template lint available in the target repo.
+- Capture the machine-readable build summary as an artifact: `npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json` (requires `next-campaign-page-kit` >= 0.1.4). Doctor's `built_output.build_summary` check verifies per-page build status and Page Kit shape warnings (`NESTED_NO_PERMALINK`, `DUPLICATE_OUTPUT`, `MISSING_FRONTMATTER`, `LAYOUT_NOT_FOUND`, `NO_CAMPAIGN`) from this artifact. If the installed page-kit predates `--json`, record that in the assembly report instead of skipping silently.
 - Update the assembly report with commands, evidence, warnings, blockers, and next owner. If a brand theme was applied, record `report.theme.status`, `css_path`, `commerce_pages`, `load_order=after-next-core`, evidence, and any first repair-loop defect.
 
 Build does not replace polish or QA. Hand off to `next-campaigns-polish` when the campaign is runnable.
