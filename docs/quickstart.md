@@ -11,11 +11,18 @@ git clone https://github.com/NextCommerceCo/campaigns-os.git
 cd campaigns-os
 npm install
 npm run campaigns-os -- --help
+npm run campaigns-os -- tooling status
 ```
 
 When working from a local checkout, replace `campaigns-os ...` examples with
 `npm run campaigns-os -- ...`. The package binary is `campaigns-os` when the
 tool is installed or linked into your shell.
+
+`tooling status` is the preflight for "am I current?". It checks the local
+package identity, git/upstream state, CLI entrypoint, and installed Campaigns OS
+skills. Today the toolkit runs from a local/private checkout rather than a
+public npm dist-tag, so a fresh git pull does not automatically refresh copied
+agent skills.
 
 ## Install Skills
 
@@ -38,6 +45,15 @@ campaigns-os install-skills --platform codex
 campaigns-os install-skills --platform agents
 campaigns-os install-skills --platform all --dry-run
 ```
+
+If `tooling status` reports stale skills, run:
+
+```bash
+npm run campaigns-os -- install-skills --platform all
+```
+
+Restart local agent sessions after updating skills so the new instructions are
+loaded.
 
 From a local checkout, `./skills.sh status` previews every known local target
 and `./skills.sh install codex` refreshes Codex skills. Use `--target <dir>` to

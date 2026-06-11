@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
+  accessSync,
+  constants as fsConstants,
   cpSync,
   existsSync,
   mkdirSync,
@@ -11,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runQaCli } from "./qa-node.mjs";
 import {
@@ -190,6 +193,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
+  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # repo/package/skill freshness preflight
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next --packet <json> [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
@@ -387,6 +391,12 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     if (args.platform === true) throw new Error("Missing value for --platform");
     const result = installSkills(args.target, Boolean(args["dry-run"]), args.platform);
     writeResult(result, args, 0);
+    return;
+  }
+
+  if (command === "tooling") {
+    const result = toolingCommand(args);
+    writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
@@ -4059,6 +4069,172 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
   };
 }
 
+function toolingCommand(args) {
+  const action = args._[1] || "status";
+  if (action !== "status") throw new Error(`Unknown tooling command: ${action}`);
+  if (args.target === true) throw new Error("Missing value for --target");
+  if (args.platform === true) throw new Error("Missing value for --platform");
+
+  const pkg = readJson(join(ROOT, "package.json"));
+  const skillStatus = installSkills(args.target, true, args.platform || "all");
+  const staleSkills = (skillStatus.skills || []).filter((skill) => skill.action !== "unchanged");
+  const git = localGitStatus(ROOT);
+  const cli = localCliStatus(pkg);
+  const packageStatus = {
+    name: pkg.name || null,
+    version: pkg.version || null,
+    private: Boolean(pkg.private),
+    registry: pkg.private
+      ? {
+          checked: false,
+          status: "not_applicable_private_package",
+          note: "This checkout is private; npm does not automatically provide latest tooling.",
+        }
+      : {
+          checked: false,
+          status: "not_checked",
+          note: "Registry freshness is not checked by tooling status; compare package manager lockfiles in the consuming repo.",
+        },
+  };
+  const actions = [];
+  const warnings = [];
+
+  if (git.status === "ok" && git.behind > 0) {
+    actions.push("Update this checkout before running a dogfood build: git pull --ff-only (or wt sync in a worktree).");
+  } else if (git.status !== "ok") {
+    warnings.push(`Git freshness unavailable: ${git.reason}.`);
+  } else if (!git.upstream) {
+    warnings.push("No git upstream is configured for this checkout; remote freshness is advisory only.");
+  }
+
+  if (staleSkills.length) {
+    const skillArgs = args.target ? ["--target", args.target] : ["--platform", args.platform || "all"];
+    actions.push(`Refresh installed skills: npm run campaigns-os -- install-skills ${skillArgs.join(" ")}. Restart local agent sessions afterwards.`);
+  }
+
+  if (cli.global_binary.status === "not_found") {
+    warnings.push("No global campaigns-os binary was found; use `npm run campaigns-os -- ...` from this checkout or `node ./bin/campaigns-os.mjs ...`.");
+  }
+
+  if (git.status === "ok" && git.dirty) {
+    warnings.push("This checkout has uncommitted changes; verify they are intentional before publishing or comparing freshness.");
+  }
+
+  const gitBlocks = git.status === "ok" && Number.isFinite(git.behind) && git.behind > 0;
+  const ok = !gitBlocks && staleSkills.length === 0;
+  return {
+    ok,
+    status: ok ? "ready" : "attention_required",
+    package: packageStatus,
+    git,
+    cli,
+    skills: {
+      ok: staleSkills.length === 0,
+      stale_count: staleSkills.length,
+      status: skillStatus,
+    },
+    actions,
+    warnings,
+  };
+}
+
+function localCliStatus(pkg) {
+  const binRel = isObject(pkg.bin)
+    ? pkg.bin["campaigns-os"]
+    : typeof pkg.bin === "string"
+      ? pkg.bin
+      : null;
+  const localBin = binRel ? resolve(ROOT, binRel) : null;
+  const globalPath = findExecutableOnPath("campaigns-os");
+  return {
+    local_bin: localBin,
+    local_bin_exists: Boolean(localBin && existsSync(localBin)),
+    invocation: "npm run campaigns-os -- <command>",
+    global_binary: globalPath
+      ? { status: "found", path: globalPath }
+      : { status: "not_found", path: null },
+  };
+}
+
+function localGitStatus(root) {
+  const inside = runCommand("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]);
+  if (!inside.ok) return { status: "unavailable", reason: "git rev-parse failed", error: inside.error };
+  if (inside.stdout !== "true") return { status: "unavailable", reason: "not a git worktree" };
+
+  const head = runCommand("git", ["-C", root, "rev-parse", "--short", "HEAD"]);
+  if (!head.ok) return { status: "unavailable", reason: "git HEAD could not be resolved", error: head.error };
+
+  const branch = runCommand("git", ["-C", root, "branch", "--show-current"]);
+  const upstream = runCommand("git", ["-C", root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
+  const dirty = runCommand("git", ["-C", root, "status", "--porcelain"]);
+  if (!dirty.ok) return { status: "unavailable", reason: "git status failed", error: dirty.error };
+  let ahead = null;
+  let behind = null;
+  const upstreamName = upstream.ok ? upstream.stdout : "";
+  if (upstreamName) {
+    const counts = runCommand("git", ["-C", root, "rev-list", "--left-right", "--count", `HEAD...${upstreamName}`]);
+    if (!counts.ok) return { status: "unavailable", reason: "git ahead/behind comparison failed", error: counts.error };
+    const [left, right] = counts.stdout.split(/\s+/).map((value) => Number.parseInt(value, 10));
+    ahead = Number.isFinite(left) ? left : null;
+    behind = Number.isFinite(right) ? right : null;
+  }
+
+  return {
+    status: "ok",
+    root,
+    branch: branch.ok && branch.stdout ? branch.stdout : null,
+    head: head.stdout || null,
+    upstream: upstreamName || null,
+    ahead,
+    behind,
+    dirty: dirty.stdout.length > 0,
+    note: upstreamName
+      ? "Freshness is compared to the locally fetched upstream ref; run git fetch first for a network-current answer."
+      : "No upstream configured; compare this checkout manually before relying on it.",
+  };
+}
+
+function runCommand(command, args) {
+  try {
+    return {
+      ok: true,
+      stdout: execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: typeof error.stdout === "string" ? error.stdout.trim() : "",
+      error: error.message || String(error),
+    };
+  }
+}
+
+function findExecutableOnPath(name) {
+  const pathEnv = process.env.PATH || "";
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+    : [""];
+  for (const dir of pathEnv.split(delimiter).filter(Boolean)) {
+    for (const ext of extensions) {
+      const candidate = join(dir, process.platform === "win32" && !name.toLowerCase().endsWith(ext.toLowerCase()) ? `${name}${ext}` : name);
+      if (isExecutableFile(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function isExecutableFile(candidate) {
+  if (!existsSync(candidate)) return false;
+  if (process.platform === "win32") return true;
+  try {
+    accessSync(candidate, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function installSkillsToTarget({ sourceDir, target, dryRun }) {
   const targetDir = target.target_directory;
   const entries = readdirSync(sourceDir, { withFileTypes: true })
@@ -5078,13 +5254,17 @@ function printResult(result) {
     console.log("Ready:");
     for (const item of result.ready) console.log(`- ${item}`);
   }
+  if (result.actions?.length) {
+    console.log("Actions:");
+    for (const action of result.actions) console.log(`- ${action}`);
+  }
   if (result.errors?.length) {
     console.log("Errors:");
-    for (const issue of result.errors) console.log(`- [${issue.code}] ${issue.message}`);
+    for (const issue of result.errors) console.log(`- ${formatIssueSummary(issue)}`);
   }
   if (result.warnings?.length) {
     console.log("Warnings:");
-    for (const issue of result.warnings) console.log(`- [${issue.code}] ${issue.message}`);
+    for (const issue of result.warnings) console.log(`- ${formatIssueSummary(issue)}`);
   }
   if (result.next) {
     console.log("Next:");
@@ -5096,6 +5276,13 @@ function printResult(result) {
     console.log(result.prompt);
   }
   if (result.note) console.log(result.note);
+}
+
+function formatIssueSummary(issue) {
+  if (typeof issue === "string") return issue;
+  if (issue?.code && issue?.message) return `[${issue.code}] ${issue.message}`;
+  if (issue?.message) return issue.message;
+  return String(issue);
 }
 
 function formatSkillInstallSummary(skill) {
