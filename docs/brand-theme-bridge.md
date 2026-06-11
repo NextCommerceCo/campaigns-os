@@ -54,6 +54,33 @@ Existing `brand-theme.css` is not overwritten without `--force`. If the source
 hash changes, source tokens disappear, or current confidence drops, Campaigns OS
 marks the existing artifact stale and tells the operator to regenerate or skip.
 
+## Theme Gate
+
+Theme discovery used to be advisory: `theme inspect` could prove a brand layer
+was generatable, doctor could surface `needs_review`, and an agent could still
+carry the starter palette through polish, deploy, and a green QA verdict. The
+theme gate makes the decision deterministic.
+
+When `theme inspect` reports `can_generate: true` and the campaign ships
+commerce pages (checkout/upsell/downsell/receipt), the gate **blocks**
+`next polish`, `next deploy`, `next qa`, and `qa run` until one of:
+
+- the brand layer is generated and recorded as applied
+  (`report.theme.status: applied`, `load_order: after-next-core`), or
+- an explicit waiver is recorded:
+  `campaigns-os theme waive --packet <p> --reason "<why>"`, or
+  `qa run --theme-waive "<reason>"` for a one-off run, or
+- theme policy is `off` for the run.
+
+The gate result lives at `doctor.derived.theme_gate` and in every `next`
+response's `gates` array, with `required_actions` carrying the exact commands.
+A waiver does not silence QA: template-residue checks still run at warn
+severity so the shipped palette stays visible in the verdict.
+
+Per-family expectations (required token overrides, starter defaults that count
+as residue, CSS load order, QA selectors, pricing-surface modes) live in
+`contracts/template-brand-contract.<family>.v0.json`.
+
 ## Build And Polish Handoff
 
 Build agents should read `context.theme` before styling checkout, upsell,

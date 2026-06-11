@@ -155,6 +155,22 @@
             { "type": "null" },
             { "$ref": "#/$defs/themeIssue" }
           ]
+        },
+        "waiver": {
+          "description": "Explicit operator waiver of the theme gate (ship commerce pages without the generatable brand layer), with a recorded reason. Written by `campaigns-os theme waive`.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["reason"],
+              "properties": {
+                "reason": { "type": "string", "minLength": 1 },
+                "waived_by": { "type": ["string", "null"] },
+                "waived_at": { "type": ["string", "null"] }
+              }
+            }
+          ]
         }
       }
     },

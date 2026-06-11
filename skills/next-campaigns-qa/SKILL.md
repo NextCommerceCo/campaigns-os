@@ -31,6 +31,10 @@ Inputs:
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
+- Theme gate: `qa run` refuses to run when a generatable brand theme is not applied to commerce pages and no waiver exists. Apply the brand layer or record a waiver (`campaigns-os theme waive` / `qa run --theme-waive "<reason>"`); do not bypass the gate another way. A waived run still reports template-residue findings at warn severity.
+- Template residue is a QA dimension, not advice: when the family has a brand contract (`contracts/template-brand-contract.<family>.v0.json`), browser QA inspects computed styles on commerce surfaces and fails pages that still render starter defaults (Demeter blue `#3c7dff`/`#0a265c`, starter `next-logo.png`, paypal/klarna chrome absent from the spec).
+- Pricing visibility is a blocker: an upsell/downsell offer with zero visible price rows fails QA. Pricing surfaces render via template pricing modes (`full_price`, `discounted`, `compare_at`, `unit_total`, `unit_only`), never via campaign CSS `display:none` on price wrappers.
+- Typed-card runs emit a per-step ladder (`[qa:test-order] step=... status=...`) with bounded per-step and per-path timeouts, and always produce a verdict — a hung or crashed path is a blocked verdict with the step ladder as evidence, not a silent exit. Read the last completed step before re-running.
 - Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA plus typed-card proof with `--test-order common` by default. Test orders need no permission step. Pause only for missing inputs, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
 - QA runs publish to the QA portal by default, so the QA tab/dashboard carries the full audit log and the run prints its portal link — report that link as the run reference. Pass `--no-post-verdict` (or `--local-only`) only for offline / dev / CI runs; those stay local-only under `qa-output/` and must not be reported as dashboard-visible.

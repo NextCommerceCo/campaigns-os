@@ -4,6 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
 import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { remit } from "./remit.mjs";
+import { evaluateThemeGate } from "./theme-gate.mjs";
+import { loadTemplateBrandContract } from "./template-brand-contract.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
@@ -47,6 +49,10 @@ Options:
   --preview-url <url>             qa policy set: persist packet deploy.preview_url.
   --production-url <url>          qa policy set: persist packet deploy.production_url.
   --deploy-target <target>        qa policy set: persist packet deploy.target.
+  --step-timeout-ms <ms>          Typed-card test-order per-step timeout. Default: 45000.
+  --order-timeout-ms <ms>         Typed-card test-order per-path overall timeout. Default: 240000.
+  --theme-waive <reason>          Waive a blocked theme gate for this run with an explicit operator reason
+                                  (recorded in the verdict; downgrades template-residue blockers to warnings).
   --test-card <number>            Test card number for browser checkout. Default: Discover sandbox card 6011...1117.
   --test-cvv <cvv>                Test card CVV. Default: 123.
   --test-exp-month <mm>           Test card expiration month. Default: 12.
@@ -122,7 +128,12 @@ async function resolveQaInputs(args) {
     || null;
   const commerceStructureContract = loadCommerceStructureContract({ packet, packetPath, templateFamily });
   const topologies = extractTopologies(normalized, { baseUrl, publicRouteSlug, templateFamily, commerceStructureContract });
+  const themeGate = resolveThemeGate({ packetPath, topologies, waive: stringArg(args["theme-waive"]) });
+  const brandContract = loadBrandContract(templateFamily);
   return {
+    themeGate,
+    brandContract: brandContract.contract,
+    brandContractStatus: brandContract.status,
     packetPath,
     packet,
     mapId,
@@ -166,6 +177,139 @@ function loadCommerceStructureContract({ packet, packetPath, templateFamily }) {
   }
 }
 
+// Theme gate pre-flight: the deterministic stage gate QA shares with doctor/next.
+// Inputs are the packet-adjacent .campaign-runtime artifacts; when doctor output
+// is missing, commerce scope is derived from the spec topologies already in hand.
+function resolveThemeGate({ packetPath, topologies, waive }) {
+  const report = loadRuntimeArtifact(packetPath, "assembly-report.json");
+  const context = loadRuntimeArtifact(packetPath, "build-context.json");
+  const doctor = loadRuntimeArtifact(packetPath, "doctor-output.json");
+  const scope = doctor?.derived?.scope || themeGateScopeFromTopologies(topologies);
+  const gate = evaluateThemeGate({
+    reportTheme: report?.theme || null,
+    contextTheme: context?.theme || null,
+    scope,
+    packetPath,
+    waive: waive || null,
+  });
+  // Audit the scope source: a direct `qa run` without a prior doctor run is a
+  // legitimate CI path, but its commerce-page scope comes from spec
+  // topologies rather than the doctor's richer derived scope. Make that
+  // visible in the gate (and therefore in the verdict) instead of deciding
+  // from an unstated source.
+  gate.scope_source = doctor?.derived?.scope ? "doctor_derived_scope" : "spec_topologies";
+  return gate;
+}
+
+function loadRuntimeArtifact(packetPath, name) {
+  if (!packetPath) return null;
+  const path = join(dirname(resolve(packetPath)), ".campaign-runtime", name);
+  if (!existsSync(path)) return null;
+  try {
+    return readJson(path);
+  } catch {
+    return null;
+  }
+}
+
+const THEME_GATE_COMMERCE_TYPES = new Set(["checkout", "upsell", "downsell", "receipt", "thankyou"]);
+
+function themeGateScopeFromTopologies(topologies = []) {
+  const built_pages = [];
+  for (const topology of topologies) {
+    for (const page of topology?.pages || []) {
+      const type = String(page?.page_type || "").toLowerCase();
+      if (!THEME_GATE_COMMERCE_TYPES.has(type)) continue;
+      built_pages.push({ page_id: page.page_id, type, role: "runtime" });
+    }
+  }
+  return { built_pages };
+}
+
+function loadBrandContract(templateFamily) {
+  if (!templateFamily) return { contract: null, status: "no_template_family" };
+  try {
+    const contract = loadTemplateBrandContract(templateFamily);
+    return { contract, status: contract ? "loaded" : "none" };
+  } catch (error) {
+    return { contract: null, status: `error: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+// Map a theme gate result to its verdict assertion. Blocked gates produce the
+// single blocker assertion the verdict carries; every other status produces an
+// audit-trail pass assertion so the gate decision is visible in the verdict.
+function themeGateAssertion(gate) {
+  const page = { page_id: "campaign" };
+  if (gate.status === "blocked") {
+    return assertion({
+      id: gate.code,
+      family: "theme_gate",
+      page,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "brand layer applied to commerce pages, or an explicit operator waiver",
+      actual: gate.reason,
+      evidence: {
+        reason: gate.reason,
+        commerce_pages: gate.commerce_pages,
+        required_actions: gate.required_actions,
+        scope_source: gate.scope_source || null,
+      },
+    });
+  }
+  if (gate.status === "waived") {
+    return assertion({
+      id: gate.code,
+      family: "theme_gate",
+      page,
+      status: STATUS.PASS,
+      expected: "brand layer applied to commerce pages, or an explicit operator waiver",
+      actual: gate.reason,
+      evidence: { waiver: gate.waiver, commerce_pages: gate.commerce_pages, scope_source: gate.scope_source || null },
+    });
+  }
+  return assertion({
+    id: gate.code,
+    family: "theme_gate",
+    page,
+    status: STATUS.PASS,
+    expected: "theme gate pass or not applicable",
+    actual: gate.reason,
+    evidence: { code: gate.code, commerce_pages: gate.commerce_pages, scope_source: gate.scope_source || null },
+  });
+}
+
+// Template-residue findings stay blockers while the gate is live; a waived (or
+// inapplicable) gate means the operator accepted the starter palette, so the
+// same findings downgrade to warnings rather than re-blocking the run.
+function residueSeverityForThemeGate(status) {
+  return status === "waived" || status === "not_applicable" ? SEVERITY.WARN : SEVERITY.BLOCKER;
+}
+
+function supportedPaymentMethodsFromSpec(spec) {
+  const campaign = spec?.campaign || {};
+  const normalizeMethod = (method) =>
+    String(method && typeof method === "object" ? method.code : method).toLowerCase().replace(/[\s-]+/g, "_");
+  const declared = [
+    ...(Array.isArray(campaign.available_payment_methods) ? campaign.available_payment_methods : []),
+    ...(Array.isArray(campaign.available_express_payment_methods) ? campaign.available_express_payment_methods : []),
+  ].map(normalizeMethod).filter(Boolean);
+  // null means the spec does not declare its methods (unknown != empty); chrome
+  // residue checks only run against an explicit declaration, like doctor R2-B5.
+  return declared.length ? [...new Set(declared)] : null;
+}
+
+function themeGateSummary(gate) {
+  return {
+    status: gate.status,
+    code: gate.code,
+    reason: gate.reason,
+    ...(gate.waiver ? { waiver: gate.waiver } : {}),
+    ...(gate.required_actions?.length ? { required_actions: gate.required_actions } : {}),
+  };
+}
+
 function serializeThrownValue(error) {
   const diagnostic = { message: String(error) };
   if (error && typeof error === "object") {
@@ -192,6 +336,7 @@ function resolvePayload(resolved) {
       slug: resolved.spec.campaign?.slug || null,
       ref_id: resolved.spec.campaign?.ref_id || null,
     },
+    theme_gate: themeGateSummary(resolved.themeGate),
     funnels: resolved.topologies,
   };
 }
@@ -226,17 +371,54 @@ async function runQa(args) {
   const resolved = await resolveQaInputs(args);
   const startedAt = new Date().toISOString();
   const runId = generateRunId();
-  const assertions = [];
+  const gate = resolved.themeGate;
+  // Blocked theme gate refuses the whole run: the verdict carries the gate
+  // blocker plus skipped audit assertions for every suppressed check family,
+  // so the verdict shape stays stable for consumers (exit code 4).
+  if (gate.status === "blocked") {
+    const skippedByGate = (family, id) => assertion({
+      id,
+      family,
+      page: { page_id: "campaign" },
+      status: STATUS.SKIPPED,
+      expected: `${family} checks executed`,
+      actual: "Skipped: theme gate is blocked; no browser or test-order checks ran.",
+      evidence: { blocked_by: gate.code },
+    });
+    return finalizeQaRun({
+      args,
+      resolved,
+      runId,
+      startedAt,
+      assertions: [
+        themeGateAssertion(gate),
+        skippedByGate("funnel-flow", "funnel-flow.blocked_by_gate"),
+        skippedByGate("browser-runtime", "browser-runtime.blocked_by_gate"),
+        skippedByGate("browser-test-order", "browser-test-order.blocked_by_gate"),
+      ],
+      testOrders: [],
+    });
+  }
+
+  const assertions = [themeGateAssertion(gate)];
   for (const topology of resolved.topologies) {
     for (const page of topology.pages) {
       assertions.push(...await runPageChecks(page, args));
     }
   }
   if (args.browser === true) {
-    assertions.push(...await runBrowserChecks(resolved.topologies, args));
+    assertions.push(...await runBrowserChecks(resolved.topologies, args, {
+      brandContract: resolved.brandContract,
+      residueSeverity: residueSeverityForThemeGate(gate.status),
+      supportedPaymentMethods: supportedPaymentMethodsFromSpec(resolved.spec),
+    }));
   }
 
   const testOrders = await maybeRunTestOrders({ args, resolved, runId, assertions });
+  return finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders });
+}
+
+async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders }) {
   const verdict = createVerdict({
     runId,
     mapId: resolved.mapId,
@@ -283,6 +465,7 @@ async function runQa(args) {
     post_error: postError,
     publish_skipped: !shouldPublish,
     counts: countAssertions(verdict.assertions),
+    theme_gate: themeGateSummary(resolved.themeGate),
     verdict,
   };
 }
@@ -708,6 +891,7 @@ function output(value, args) {
     console.log(`Run ID: ${value.run_id}`);
     console.log(`Disposition: ${value.verdict.disposition}`);
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
+    printThemeGateLines(value.theme_gate);
     console.log(`Local copy: ${value.local_path}`);
     if (value.posted?.ok && value.dashboard_url) {
       console.log(`QA portal: ${value.dashboard_url}`);
@@ -727,11 +911,24 @@ function output(value, args) {
     console.log(`\n${funnel.funnel_name} (${funnel.funnel_id}, ${funnel.weight}%)`);
     for (const page of funnel.pages) console.log(`- [${page.page_type}] ${page.label}: ${page.url || "(missing)"}`);
   }
+  console.log("");
+  printThemeGateLines(value.theme_gate);
   const nextProofLines = qaResolveNextProofLines(value);
   if (nextProofLines.length) {
     console.log("");
     for (const line of nextProofLines) console.log(line);
   }
+}
+
+function printThemeGateLines(themeGate) {
+  if (!themeGate) return;
+  console.log(`Theme gate: ${themeGate.status} (${themeGate.code}) — ${themeGate.reason}`);
+  if (themeGate.status !== "blocked") return;
+  console.log("Required actions:");
+  for (const action of themeGate.required_actions || []) {
+    console.log(`  - ${action.command || action.description}`);
+  }
+  console.log("Or rerun with --theme-waive \"<reason>\" to record an ephemeral waiver for this run.");
 }
 
 export function qaResolveNextProofLines(value) {
@@ -1037,3 +1234,11 @@ function extractApiError(raw) {
   if (typeof raw.message === "string") return raw.message;
   return null;
 }
+
+export const __qaNodeTestHooks = Object.freeze({
+  themeGateAssertion,
+  themeGateScopeFromTopologies,
+  residueSeverityForThemeGate,
+  supportedPaymentMethodsFromSpec,
+  themeGateSummary,
+});

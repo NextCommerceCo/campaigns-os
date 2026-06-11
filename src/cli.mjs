@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -80,6 +81,19 @@ import {
   validateThemeContextBlock,
   writeThemeArtifacts,
 } from "./brand-theme.mjs";
+import { evaluateThemeGate } from "./theme-gate.mjs";
+import {
+  findForbiddenPriceHides,
+  loadTemplateBrandContract,
+} from "./template-brand-contract.mjs";
+import {
+  appendDeviation,
+  buildRecommendation,
+  detectDeviation,
+  DEVIATION_JOURNAL_REL_PATH,
+  expectedCommandsForStage,
+  readDeviations,
+} from "./deviation.mjs";
 import {
   ASSEMBLY_REPORT_STAGE_KEYS,
   NEXT_STAGE_ORDER,
@@ -173,10 +187,11 @@ Usage:
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
+  campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
-  campaigns-os next --packet <json> [--json]                       # self-decide next stage from report state
+  campaigns-os next --packet <json> [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next polish --packet <json> --report <json> [--json]
@@ -194,8 +209,11 @@ Usage:
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags
-  campaigns-os run status [--json]                                 # show the active run session, if any
+  campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it
+
+  Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
+  Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
   npm run campaigns-os -- start \\
@@ -282,6 +300,32 @@ function persistLifecycleIfRequested(args, command, lifecycle, ambient) {
     // is observable rather than fully silent. stderr never pollutes --json stdout.
     process.stderr.write(`[campaigns-os] lifecycle capture skipped: ${error.message}\n`);
   }
+  persistDeviationIfDetected(args, command, lifecycle, ambient);
+}
+
+// Deviation telemetry: compare every pipeline-advancing command against the
+// active session's last `next` recommendation. A mismatch appends one entry to
+// .campaign-runtime/agent-deviations.jsonl — measurement, not a block. An
+// intentional detour can carry --deviation-reason "<why>". Never throws.
+function persistDeviationIfDetected(args, command, lifecycle, ambient) {
+  if (!ambient?.session?.last_recommendation) return;
+  try {
+    const entry = detectDeviation({
+      lastRecommendation: ambient.session.last_recommendation,
+      command,
+      argvShape: lifecycle?.argv_shape || [],
+      runId: ambient.session.run_id || null,
+      deviationReason: optionalString(args["deviation-reason"]) || null,
+    });
+    if (!entry) return;
+    const journalPath = join(ambient.dir, DEVIATION_JOURNAL_REL_PATH);
+    appendDeviation(journalPath, entry);
+    process.stderr.write(
+      `[campaigns-os] deviation recorded: \`${command}\` ran while next recommended stage "${entry.recommended_stage}" (expected: ${entry.recommended_commands.join(", ") || "none"}). Declare intent with --deviation-reason, or follow \`campaigns-os next\`.\n`,
+    );
+  } catch {
+    // telemetry never blocks a command
+  }
 }
 
 async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null) {
@@ -351,7 +395,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     // stage from the current report + doctor state. Existing form with an
     // explicit stage (`next build`, `next polish`, etc.) is unchanged.
     const stage = args._[1] || null;
-    const result = nextStage(stage, args);
+    const result = nextStage(stage, args, ambient);
     writeResult(result, args, result.ok ? 0 : 2);
     printNextTinyPrompt(result, args);
     return;
@@ -441,6 +485,17 @@ function readJsonIfExists(path) {
 function writeJson(path, value) {
   mkdirSync(dirname(resolve(path)), { recursive: true });
   writeFileSync(resolve(path), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+// Atomic JSON write (tmp + rename) for artifacts other commands may read
+// concurrently — a torn assembly report would defeat the gate decision it
+// records. Matches the run-session write discipline.
+function writeJsonAtomic(path, value) {
+  const resolved = resolve(path);
+  mkdirSync(dirname(resolved), { recursive: true });
+  const tmp = `${resolved}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
+  renameSync(tmp, resolved);
 }
 
 /**
@@ -1142,9 +1197,10 @@ function doctorCommand(args) {
 
 function themeCommand(args) {
   const subcommand = args._[1] || "inspect";
-  if (!["inspect", "generate"].includes(subcommand)) {
-    throw new Error(`Unknown theme subcommand "${subcommand}". Use: inspect | generate.`);
+  if (!["inspect", "generate", "waive"].includes(subcommand)) {
+    throw new Error(`Unknown theme subcommand "${subcommand}". Use: inspect | generate | waive.`);
   }
+  if (subcommand === "waive") return themeWaive(args);
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
   const context = readJsonIfExists(args.context ? resolve(args.context) : null);
@@ -1164,6 +1220,41 @@ function themeCommand(args) {
     force: args.force === true,
   });
   return { ...written, css: undefined };
+}
+
+// `theme waive`: the ONLY sanctioned way to ship commerce pages without a
+// generatable brand layer. Records who/why/when on the assembly report so the
+// theme gate (next/doctor/qa) reads one explicit decision instead of an agent
+// improvising past advisory prose.
+function themeWaive(args) {
+  const packetPath = resolve(requireArg(args, "packet"));
+  const packet = readJson(packetPath);
+  const reason = optionalString(args.reason);
+  if (!reason) throw new Error("theme waive requires --reason \"<why the starter palette is acceptable for this campaign>\".");
+  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
+  const reportPath = args.report ? resolve(args.report) : sidecars.reportPath;
+  const report = readJsonIfExists(reportPath);
+  if (!report) throw new Error(`theme waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
+  const waiver = {
+    reason,
+    waived_by: optionalString(args["waived-by"], "operator"),
+    waived_at: new Date().toISOString(),
+  };
+  report.theme = report.theme && isObject(report.theme)
+    ? { ...report.theme, waiver }
+    : { status: "skipped", css_path: null, load_order: "not-applied", commerce_pages: [], evidence: [], warnings: [], repair_loop_defect: null, waiver };
+  report.theme.evidence = [
+    ...(Array.isArray(report.theme.evidence) ? report.theme.evidence : []),
+    `Theme gate waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`,
+  ];
+  writeJsonAtomic(reportPath, report);
+  return {
+    ok: true,
+    action: "theme-waive",
+    waiver,
+    report_path: reportPath,
+    note: "The theme gate now reports waived for this campaign. Browser QA still runs template-residue checks at warn severity so the shipped palette stays visible in the verdict.",
+  };
 }
 
 function inferredBuildSidecarPaths(packet, packetPath) {
@@ -1208,10 +1299,83 @@ function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefi
   validatePacket(packet, packetPath, errors, warnings, ready, derived, { context, report });
   runDoctorChecks(ARTIFACT_DOCTOR_CHECKS, { context, report, errors, warnings, ready, derived });
 
+  // Theme gate: evaluated once here so `next`, QA, and run telemetry all read
+  // the same decision from derived.theme_gate. The doctor reports a blocked
+  // gate as a WARNING (not an error) because the fix happens during the build
+  // stage — but `next polish|deploy|qa` and `qa run` treat the same gate
+  // result as a hard blocker.
+  const themeGate = evaluateThemeGate({
+    reportTheme: report?.theme || null,
+    contextTheme: context?.theme || null,
+    scope: derived.scope,
+    packetPath,
+  });
+  derived.theme_gate = themeGate;
+  if (themeGate.status === "blocked") {
+    const commands = themeGate.required_actions.filter((action) => action.command).map((action) => action.command);
+    addIssue(warnings, themeGate.code, `${themeGate.reason} Polish/deploy/QA are gated until resolved.${commands.length ? ` Run: ${commands.join(" | ")}` : ""}`);
+  } else if (themeGate.status === "waived") {
+    ready.push(`Theme gate waived: ${themeGate.waiver?.reason || "(no reason recorded)"}`);
+  } else if (themeGate.status === "pass") {
+    ready.push("Theme gate passed: brand layer applied after next-core.css on commerce pages.");
+  }
+  runPricingCssHideCheck({ packet, derived, warnings, ready });
+
   const next = buildNextStep(errors, warnings, derived, report);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
   const result = { ok: errors.length === 0, status, errors, warnings, ready, derived, next };
   return outputBaseDir ? relativizeDoctorOutput(result, outputBaseDir) : result;
+}
+
+// Pricing surfaces are rendered by mode-driven partials, never hidden with
+// campaign CSS — a display:none on a price wrapper is how the recovery-relief
+// dogfood run shipped a full-price upsell with NO visible price. Deterministic
+// static scan: campaign-owned CSS files (not the family core stylesheet, not
+// the generated brand layer) must not display:none any selector the family
+// brand contract lists under pricing_surfaces.forbidden_css_hides. Doctor
+// reports a warning with the exact rule; browser QA enforces the outcome
+// (zero visible price rows) as a blocker.
+function runPricingCssHideCheck({ packet, derived, warnings, ready }) {
+  const family = packet?.assembly?.template_family;
+  let contract = null;
+  try {
+    contract = loadTemplateBrandContract(family);
+  } catch (error) {
+    addIssue(warnings, "template_contract.brand_contract", `Template brand contract for "${family}" failed to load: ${error.message}`);
+    return;
+  }
+  if (!contract?.pricing_surfaces?.forbidden_css_hides?.length) {
+    ready.push(`Pricing CSS scan not applicable for template family "${family || "(none)"}" (no brand contract with forbidden_css_hides)`);
+    return;
+  }
+  const outputDir = derived.target_output_dir;
+  if (!outputDir || !existsSync(outputDir)) return;
+  const cssDir = join(outputDir, "assets/css");
+  if (!existsSync(cssDir)) return;
+  const coreStylesheet = contract.css_load_order?.core_stylesheet || "next-core.css";
+  const campaignCssFiles = readdirSync(cssDir)
+    .filter((name) => name.endsWith(".css") && name !== coreStylesheet && name !== "brand-theme.css");
+  let hideCount = 0;
+  for (const name of campaignCssFiles) {
+    const cssPath = join(cssDir, name);
+    let cssText = "";
+    try {
+      cssText = readFileSync(cssPath, "utf8");
+    } catch {
+      continue;
+    }
+    for (const hit of findForbiddenPriceHides(contract, cssText)) {
+      hideCount += 1;
+      addIssue(
+        warnings,
+        "template_contract.price_css_hide",
+        `Campaign CSS ${name} hides a pricing surface: "${hit.selector}" sets display:none on ${hit.target}. Use the template's pricing mode (full_price/discounted/compare_at/unit_total/unit_only) instead of hiding price rows; browser QA blocks upsells with zero visible price rows.`,
+      );
+    }
+  }
+  if (hideCount === 0 && campaignCssFiles.length) {
+    ready.push(`Campaign CSS has no display:none rules on ${family} pricing surfaces`);
+  }
 }
 
 // Doctor Check Registry: keep packet/spec/build/artifact check order as data so
@@ -3298,7 +3462,7 @@ function pickNextStage(report, doctor) {
   };
 }
 
-function nextStage(stage, args) {
+function nextStage(stage, args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
@@ -3309,6 +3473,18 @@ function nextStage(stage, args) {
     contextPath: existsSync(contextPath) ? contextPath : null,
     reportPath: report ? reportPath : null,
   });
+  const themeGate = doctor.derived?.theme_gate || null;
+  // Every return path runs through this finalizer so the machine-readable
+  // contract is uniform: `gates` (pass/blocked/waived/not_applicable per
+  // gate) and `next_actions` (exact commands — not prose) are always present,
+  // and the recommendation is recorded on the active run session for
+  // deviation telemetry.
+  const finalize = (result) => {
+    result.gates = buildNextGates({ doctor, report, themeGate });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, ambient });
+    recordNextRecommendation(ambient, result);
+    return result;
+  };
   const errors = [];
   const warnings = [...doctor.warnings];
   const ready = [...doctor.ready];
@@ -3323,7 +3499,7 @@ function nextStage(stage, args) {
   if (!stage) {
     picked = pickNextStage(report, doctor);
     if (picked.stage === "doctor-blocked") {
-      return {
+      return finalize({
         ok: false,
         status: "blocked",
         stage: "doctor-blocked",
@@ -3332,11 +3508,11 @@ function nextStage(stage, args) {
         warnings,
         ready,
         prompt: "Resolve the doctor errors above before continuing. Re-run `campaigns-os doctor --packet <path>` to confirm, then `campaigns-os next --packet <path>` to advance.",
-      };
+      });
     }
     if (picked.stage === "prepare-build") {
       addPrepareBuildGateErrors(errors, report);
-      return {
+      return finalize({
         ok: false,
         status: "blocked",
         stage: "prepare-build",
@@ -3346,10 +3522,10 @@ function nextStage(stage, args) {
         ready,
         prompt: "Resolve the prepare-build blockers recorded in the assembly report, then rerun `campaigns-os prepare-build` or `campaigns-os start` before continuing.",
         stage_blocked: true,
-      };
+      });
     }
     if (picked.stage === "done") {
-      return {
+      return finalize({
         ok: true,
         status: "ready",
         stage: "done",
@@ -3357,8 +3533,8 @@ function nextStage(stage, args) {
         errors,
         warnings,
         ready,
-        prompt: "Pipeline complete. All stages in the assembly report are in a terminal status. If you need to re-run a stage, set its status back to \"pending\" in the report and call `next` again.",
-      };
+        prompt: "Pipeline complete. All stages in the assembly report are in a terminal status. If you need to re-run a stage, set its status back to \"pending\" in the report and call `next` again. If a run session is active, finish it with `campaigns-os run end` so the Run Record is assembled and the session closes.",
+      });
     }
     stage = picked.stage;
   }
@@ -3378,6 +3554,7 @@ function nextStage(stage, args) {
     if (!report) addIssue(errors, "next.polish.report", "Assembly report is required before polish.");
     const assemblyStatus = report?.stages?.assembly?.status || "";
     if (!assemblyStatus.startsWith("completed")) addIssue(errors, "next.polish.assembly", `Assembly status is "${assemblyStatus || "missing"}"; polish expects completed assembly or an explicit blocked/skipped handoff.`);
+    addThemeGateErrors(errors, themeGate, "polish");
     prompt = polishPrompt(packetPath, reportPath, packet);
   } else if (stage === "deploy") {
     addPrepareBuildGateErrors(errors, report);
@@ -3388,6 +3565,7 @@ function nextStage(stage, args) {
     if (!polishHandoffReady(report?.stages?.polish?.status)) {
       addIssue(errors, "next.deploy.polish", `Polish status is "${report?.stages?.polish?.status || "missing"}"; record completed/skipped before deploy, or resolve a blocked polish stage first.`);
     }
+    addThemeGateErrors(errors, themeGate, "deploy");
     prompt = deployPrompt(packetPath, reportPath, packet);
   } else if (stage === "qa") {
     addPrepareBuildGateErrors(errors, report);
@@ -3397,6 +3575,7 @@ function nextStage(stage, args) {
     if (!polishHandoffReady(report?.stages?.polish?.status)) {
       addIssue(errors, "next.qa.polish", `Polish status is "${report?.stages?.polish?.status || "missing"}"; record completed/skipped before QA, or resolve a blocked polish stage first.`);
     }
+    addThemeGateErrors(errors, themeGate, "qa");
     prompt = qaPrompt(packetPath, reportPath, packet);
   } else {
     throw new Error(`Unknown next stage: ${stage}`);
@@ -3418,7 +3597,121 @@ function nextStage(stage, args) {
     result.picked_reason = picked.reason;
     if (picked.blocked) result.stage_blocked = true;
   }
-  return result;
+  return finalize(result);
+}
+
+// Theme gate enforcement for stages past build. A blocked theme gate is an
+// ERROR (status "blocked") at polish/deploy/qa: the brand layer is applied
+// during build, so once a generatable theme exists the pipeline must not
+// advance past build until it is applied or explicitly waived. Mirrors the
+// dogfood failure where "needs_review" stayed advisory and starter-blue
+// commerce pages shipped through polish, deploy, and a green QA verdict.
+function addThemeGateErrors(errors, themeGate, stage) {
+  if (!themeGate || themeGate.status !== "blocked") return;
+  const commands = themeGate.required_actions.filter((action) => action.command).map((action) => action.command);
+  addIssue(
+    errors,
+    `next.${stage}.theme_gate`,
+    `${themeGate.reason}${commands.length ? ` Run: ${commands.join(" | ")}` : ""}`,
+    { theme_gate: themeGate },
+  );
+}
+
+// Gate summary every `next` response carries: one entry per gate with a
+// deterministic status, so an agent reads gate state from data instead of
+// parsing error prose.
+function buildNextGates({ doctor, report, themeGate }) {
+  const prepareBuildGate = prepareBuildGateIssue(report);
+  return [
+    {
+      id: "doctor",
+      status: doctor.ok ? "pass" : "blocked",
+      reason: doctor.ok ? "Doctor has no blocking errors." : `Doctor reported ${doctor.errors.length} blocker(s).`,
+    },
+    {
+      id: "prepare_build",
+      status: prepareBuildGate ? "blocked" : "pass",
+      reason: prepareBuildGate ? prepareBuildGate.reason : "prepare_build stage is terminal.",
+    },
+    {
+      id: "theme_gate",
+      status: themeGate?.status || "not_applicable",
+      reason: themeGate?.reason || "No theme gate evaluation available.",
+      code: themeGate?.code || null,
+      waiver: themeGate?.waiver || null,
+      required_actions: themeGate?.required_actions || [],
+    },
+  ];
+}
+
+// Executable next actions: exact commands (or explicitly-manual steps), never
+// prose-only guidance. Ordering is the execution order an agent should follow.
+function buildNextActions({ result, packetPath, packet, themeGate, ambient }) {
+  const actions = [];
+  const push = (id, kind, command, description) => actions.push({ id, kind, command, description, stage: result.stage });
+  if (result.stage === "doctor-blocked") {
+    push("doctor_recheck", "command", `campaigns-os doctor --packet ${packetPath} --json`, "Re-run the doctor after resolving the listed errors.");
+    return actions;
+  }
+  if (result.stage === "prepare-build") {
+    push("rerun_prepare_build", "command", `campaigns-os start --map-id ${packet.spec?.map_id || "<map-id>"}`, "Rerun prepare-build/start with the original spec, source, and target inputs to clear the recorded blockers.");
+    return actions;
+  }
+  // A blocked theme gate owns the action list for any post-build stage: the
+  // gate's required actions ARE the next actions.
+  if (themeGate?.status === "blocked" && ["polish", "deploy", "qa"].includes(result.stage)) {
+    for (const action of themeGate.required_actions) {
+      push(`theme_gate.${action.id}`, action.kind, action.command, action.description);
+    }
+    push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after resolving the theme gate to advance.");
+    return actions;
+  }
+  if (result.stage === "setup") {
+    push("setup_skill", "skill", "next-campaigns-setup", "Prepare the target page-kit structure and agent context, then record stages.setup in the assembly report.");
+  } else if (result.stage === "build") {
+    push("build_skill", "skill", "next-campaigns-build", "Assemble the campaign per the build prompt, then record stages.assembly in the assembly report.");
+    if (themeGate?.status === "blocked") {
+      for (const action of themeGate.required_actions) {
+        push(`theme_gate.${action.id}`, action.kind, action.command, `${action.description} (Required before polish/deploy/QA.)`);
+      }
+    }
+  } else if (result.stage === "polish") {
+    push("polish_skill", "skill", "next-campaigns-polish", "Run the visual polish pass, capture desktop/mobile evidence, then record stages.polish in the assembly report.");
+  } else if (result.stage === "deploy") {
+    push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"}, then record deploy.preview_url (or production_url) on the packet and stages.deploy in the assembly report.`);
+    push("advance", "command", `campaigns-os next --packet ${packetPath} --json`, "Advance to QA once the deploy URL is recorded.");
+  } else if (result.stage === "qa") {
+    const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
+    push("install_browser", "command", "npm run qa:install-browser", "Install the Playwright browser once after install/update.");
+    push("qa_run", "command", `campaigns-os qa run --packet ${packetPath} --base-url ${url} --browser --test-order common`, "Run browser + typed-card QA and publish the verdict.");
+  } else if (result.stage === "done") {
+    if (ambient) {
+      push("run_end", "command", `campaigns-os run end${ambient.session?.packet ? "" : ` --packet ${packetPath}`}`, "Close the active run session: assemble the aggregated Run Record and clear run-session.json.");
+    }
+  }
+  return actions;
+}
+
+// Record the recommendation on the active run session so deviation telemetry
+// can compare "what next said" against "what the agent actually ran".
+// Best-effort: telemetry never blocks orchestration.
+function recordNextRecommendation(ambient, result) {
+  if (!ambient) return;
+  try {
+    const expected = expectedCommandsForStage(result.stage, result.next_actions || []);
+    const session = {
+      ...ambient.session,
+      last_recommendation: buildRecommendation({
+        stage: result.stage,
+        status: result.status,
+        expectedCommands: expected,
+      }),
+    };
+    writeRunSession(ambient.dir, session);
+    ambient.session = session;
+  } catch {
+    // non-fatal
+  }
 }
 
 function buildPrompt(packetPath, contextPath, reportPath, packet) {
@@ -4231,8 +4524,9 @@ function runSessionStart(args) {
 
 function runSessionStatus(args) {
   const found = findRunSession(process.cwd());
+  const progress = found ? runSessionProgress(found) : null;
   if (args.json) {
-    console.log(JSON.stringify({ ok: true, action: "run-status", active: Boolean(found), session: found?.session ?? null, session_path: found?.path ?? null }, null, 2));
+    console.log(JSON.stringify({ ok: true, action: "run-status", active: Boolean(found), session: found?.session ?? null, session_path: found?.path ?? null, progress }, null, 2));
     return;
   }
   if (!found) {
@@ -4243,6 +4537,47 @@ function runSessionStatus(args) {
   console.log(`Lifecycle journal: ${found.session.lifecycle_journal}`);
   console.log(`Started: ${found.session.started_at}`);
   if (found.session.packet) console.log(`Packet: ${found.session.packet}`);
+  if (progress) {
+    if (progress.incomplete_stages.length) {
+      console.log(`Incomplete stages: ${progress.incomplete_stages.map((stage) => `${stage.stage} (${stage.status || "pending"})`).join(", ")}`);
+    } else {
+      console.log("All assembly-report stages are terminal.");
+    }
+    if (progress.deviations > 0) console.log(`Agent deviations recorded: ${progress.deviations} (see ${DEVIATION_JOURNAL_REL_PATH})`);
+    console.log(`Next command: ${progress.next_command}`);
+  } else {
+    console.log("Next command: campaigns-os next --packet <campaign-runtime.build.json> --json (no packet recorded on this session)");
+  }
+}
+
+// Session progress: incomplete assembly-report stages, the deviation count,
+// and the exact next command. Read-only and best-effort; the status command
+// must never fail because an artifact is missing or torn.
+function runSessionProgress(found) {
+  const packetPath = found.session.packet;
+  if (!isNonEmptyString(packetPath) || !existsSync(packetPath)) return null;
+  try {
+    const packet = readJson(packetPath);
+    const sidecars = inferredBuildSidecarPaths(packet, packetPath);
+    const report = readJsonIfExists(sidecars.reportPath);
+    const incomplete = [];
+    for (const key of ASSEMBLY_REPORT_STAGE_KEYS) {
+      const status = String(report?.stages?.[key]?.status || "");
+      if (!STAGE_TERMINAL_STATUS_PREFIXES.some((prefix) => status.startsWith(prefix))) {
+        incomplete.push({ stage: key, status: status || null });
+      }
+    }
+    const deviations = readDeviations(join(found.dir, DEVIATION_JOURNAL_REL_PATH)).length;
+    return {
+      incomplete_stages: incomplete,
+      deviations,
+      next_command: incomplete.length
+        ? `campaigns-os next --packet ${packetPath} --json`
+        : `campaigns-os run end --packet ${packetPath}`,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function runSessionEnd(args, ambient = null) {
@@ -4678,6 +5013,17 @@ function printDoctorTinyPrompt(result, args) {
 
 function printNextTinyPrompt(result, args) {
   if (args.json) return;
+  // A blocked gate owns the tiny prompt: print the exact commands so the
+  // operator/agent acts on data, not on remembering doctrine.
+  const blockedGate = (result.gates || []).find((gate) => gate.status === "blocked" && gate.id === "theme_gate");
+  if (blockedGate) {
+    console.log("");
+    console.log("Theme gate is BLOCKING this stage. Resolve it with:");
+    for (const action of result.next_actions || []) {
+      console.log(`  - ${action.command || action.description}`);
+    }
+    return;
+  }
   if (result.stage !== "qa") return;
   console.log("");
   console.log("Next expected proof: browser QA + typed-card proof. Run: campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common");
