@@ -1,7 +1,13 @@
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { forbiddenComputedColors, normalizeCssColor } from "./template-brand-contract.mjs";
 
 const DEFAULT_BROWSER_TIMEOUT_MS = 30000;
 const DEFAULT_SETTLE_TIMEOUT_MS = 5000;
+const DEFAULT_STEP_TIMEOUT_MS = 45000;
+const DEFAULT_ORDER_TIMEOUT_MS = 240000;
+// Grace on the outer race so per-step timeouts get first chance to record cleanly.
+const ORDER_TIMEOUT_GRACE_MS = 5000;
+const HOSTED_CHECKOUT_PATH = "/accounts/complete-order/";
 const DEFAULT_TEST_CARD = "6011111111111117";
 const DEFAULT_TEST_CVV = "123";
 const DEFAULT_TEST_EXP_MONTH = "12";
@@ -18,7 +24,7 @@ const DEFAULT_QA_TEST_EMAIL = "qa-test@campaigns-os.test";
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 const ORDER_UPSELLS_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/upsells\/?(?:[?#].*)?$/i;
 
-export async function runBrowserChecks(topologies, args = {}) {
+export async function runBrowserChecks(topologies, args = {}, options = {}) {
   const browser = await launchChromium(args);
   const context = await browser.newContext({
     viewport: viewportFromArgs(args),
@@ -29,7 +35,7 @@ export async function runBrowserChecks(topologies, args = {}) {
     const assertions = [];
     for (const topology of topologies) {
       for (const page of topology.pages) {
-        assertions.push(...await runPageBrowserChecks(context, page, args));
+        assertions.push(...await runPageBrowserChecks(context, page, args, options));
       }
     }
     return assertions;
@@ -72,6 +78,19 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       orders.push(result.order);
       assertions.push(testOrderAssertion(checkoutPage, path, result));
     }
+  } catch (error) {
+    // Convert runner-level surprises into a blocker assertion so the run still
+    // writes a verdict instead of exiting with no evidence at all.
+    assertions.push(assertion({
+      id: "browser-test-order:runner",
+      family: "browser-test-order",
+      page: checkoutPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "typed-card test-order runner completes every planned path",
+      actual: error instanceof Error ? error.message : String(error),
+      evidence: { planned_paths: paths, completed_paths: orders.map((order) => order.path) },
+    }));
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
@@ -80,7 +99,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   return { orders, assertions };
 }
 
-async function runPageBrowserChecks(context, page, args) {
+async function runPageBrowserChecks(context, page, args, options = {}) {
   const assertions = [];
   if (!page.url) {
     assertions.push(assertion({
@@ -139,6 +158,8 @@ async function runPageBrowserChecks(context, page, args) {
     if (page.page_type === "checkout") {
       assertions.push(...await checkoutPaymentSurfaceAssertions(browserPage, page));
     }
+    assertions.push(...await templateResidueAssertions(browserPage, page, options));
+    assertions.push(...await pricingVisibilityAssertions(browserPage, page, options));
     assertions.push(...await sdkDebuggerAssertions(context, page, args));
 
     if (pageErrors.length) {
@@ -867,31 +888,526 @@ async function checkoutOrderBumpEvidence(browserPage) {
   })).catch(() => ({ toggles: [] }));
 }
 
+// --- Template brand residue + pricing visibility (template-brand-contract driven) ---
+// Browser collectors gather raw computed-style/visibility evidence; pure
+// functions below turn that evidence into assertions so the decisions are
+// testable without Playwright.
+
+const RESIDUE_PAGE_TYPES = ["checkout", "upsell", "downsell", "receipt"];
+
+function contractPageType(page) {
+  const type = String(page?.page_type || "").toLowerCase();
+  return type === "thankyou" ? "receipt" : type;
+}
+
+async function templateResidueAssertions(browserPage, page, options = {}) {
+  const contract = options.brandContract;
+  const pageType = contractPageType(page);
+  if (!contract || !RESIDUE_PAGE_TYPES.includes(pageType)) return [];
+  const severity = options.residueSeverity || SEVERITY.BLOCKER;
+  const assertions = [];
+
+  const forbidden = forbiddenComputedColors(contract);
+  const styleChecks = (contract.qa_inspection?.computed_style_checks || [])
+    .filter((check) => (check.page_types || []).includes(pageType));
+  if (forbidden.length && styleChecks.length) {
+    const evidence = await collectComputedStyleEvidence(browserPage, styleChecks);
+    assertions.push(...computedStyleResidueAssertions({ page, evidence, forbidden, severity }));
+  }
+
+  const logo = contract.default_residue?.logo;
+  if (logo?.selector && (logo.page_types || []).includes(pageType)) {
+    const sources = await collectLogoSources(browserPage, logo.selector);
+    assertions.push(logoResidueAssertion({ page, logo, sources, severity }));
+  }
+
+  const chrome = contract.default_residue?.payment_chrome;
+  const supported = options.supportedPaymentMethods;
+  if (chrome && Array.isArray(supported) && supported.length) {
+    const unsupported = (chrome.methods || []).filter((method) => !supported.includes(method));
+    if (unsupported.length) {
+      const html = await browserPage.content().catch(() => "");
+      for (const method of unsupported) {
+        const artifacts = methodPaymentArtifacts(chrome, method);
+        const visibleMatches = await collectVisibleSelectorMatches(browserPage, artifacts.selectors);
+        assertions.push(paymentChromeResidueAssertion({
+          page,
+          method,
+          artifacts,
+          visibleMatches,
+          referencedAssets: referencedAssetBasenames(html, artifacts.assets),
+          severity,
+        }));
+      }
+    }
+  }
+
+  return assertions;
+}
+
+async function collectComputedStyleEvidence(browserPage, checks) {
+  const input = checks.map((check) => ({
+    id: check.id,
+    selector: check.selector,
+    properties: check.properties || [],
+    optional: check.optional === true,
+  }));
+  return browserPage.evaluate((entries) => entries.map((entry) => {
+    let element = null;
+    try {
+      element = document.querySelector(entry.selector);
+    } catch {
+      element = null;
+    }
+    if (!element) return { ...entry, found: false, properties: {} };
+    const style = getComputedStyle(element);
+    const properties = {};
+    for (const property of entry.properties) properties[property] = style.getPropertyValue(property);
+    return { ...entry, found: true, properties };
+  }), input).catch(() => input.map((entry) => ({ ...entry, found: false, properties: {}, inspection_error: true })));
+}
+
+function computedStyleResidueAssertions({ page, evidence, forbidden, severity }) {
+  return evidence.map((entry) => {
+    if (!entry.found) {
+      return assertion({
+        id: `template-residue:${page.page_id}:style:${entry.id}`,
+        family: "template_residue",
+        page,
+        status: entry.optional ? STATUS.SKIPPED : STATUS.WARN,
+        severity: entry.optional ? undefined : SEVERITY.WARN,
+        expected: `selector present for computed-style residue inspection: ${entry.selector}`,
+        actual: "selector not found",
+        evidence: {
+          selector: entry.selector,
+          page_url: page.url,
+          note: entry.optional ? "optional contract selector" : "Selector drift is a contract bug, not a campaign blocker.",
+        },
+      });
+    }
+    const hits = [];
+    for (const [property, raw] of Object.entries(entry.properties || {})) {
+      const normalized = normalizeCssColor(raw);
+      const match = normalized ? forbidden.find((color) => color.rgb === normalized) : null;
+      if (match) hits.push({ property, actual: String(raw).trim(), token: match.token, rgb: match.rgb });
+    }
+    if (!hits.length) {
+      return assertion({
+        id: `template-residue:${page.page_id}:style:${entry.id}`,
+        family: "template_residue",
+        page,
+        status: STATUS.PASS,
+        expected: "no starter-default palette on inspected commerce surface",
+        actual: "campaign palette applied",
+        evidence: { selector: entry.selector, properties: entry.properties, page_url: page.url },
+      });
+    }
+    const first = hits[0];
+    return assertion({
+      id: `template-residue:${page.page_id}:style:${entry.id}`,
+      family: "template_residue",
+      page,
+      status: STATUS.FAIL,
+      severity,
+      expected: `not ${first.rgb} (starter default ${first.token})`,
+      actual: first.actual,
+      evidence: {
+        selector: entry.selector,
+        property: first.property,
+        expected: `not ${first.rgb} (starter default ${first.token})`,
+        actual: first.actual,
+        page_url: page.url,
+        matches: hits,
+      },
+    });
+  });
+}
+
+async function collectLogoSources(browserPage, selector) {
+  return browserPage.evaluate((target) => {
+    try {
+      return Array.from(document.querySelectorAll(target))
+        .map((element) => element.getAttribute("src") || element.currentSrc || "")
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }, selector).catch(() => []);
+}
+
+function logoResidueAssertion({ page, logo, sources, severity }) {
+  const basename = String(logo.asset || "").split("/").pop();
+  const offenders = basename ? sources.filter((src) => String(src).includes(basename)) : [];
+  const status = offenders.length ? STATUS.FAIL : sources.length ? STATUS.PASS : STATUS.SKIPPED;
+  return assertion({
+    id: `template-residue:${page.page_id}:logo`,
+    family: "template_residue",
+    page,
+    status,
+    severity: status === STATUS.FAIL ? severity : undefined,
+    expected: `campaign brand logo, not starter ${basename}`,
+    actual: offenders.length
+      ? `starter logo asset still referenced (${offenders.length} element(s))`
+      : sources.length
+        ? "no starter logo asset referenced"
+        : "no logo element matched the contract selector",
+    evidence: { selector: logo.selector, asset: logo.asset, sources: sources.slice(0, 5), page_url: page.url },
+  });
+}
+
+// Selectors/assets belonging to one payment method, plus shared chrome assets
+// (those naming no contract method, e.g. upsell-payment-logos.svg) which count
+// as implied residue for any unsupported method per the contract rule.
+function methodPaymentArtifacts(chrome, method) {
+  const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+  const token = compact(method);
+  const methodTokens = (chrome.methods || []).map(compact).filter(Boolean);
+  const selectors = (chrome.selectors || []).filter((selector) => compact(selector).includes(token));
+  const assets = (chrome.assets || []).filter((asset) => {
+    const normalized = compact(asset);
+    if (normalized.includes(token)) return true;
+    return !methodTokens.some((candidate) => normalized.includes(candidate));
+  });
+  return { selectors, assets };
+}
+
+async function collectVisibleSelectorMatches(browserPage, selectors) {
+  if (!selectors.length) return [];
+  return browserPage.evaluate((targets) => {
+    const visible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const matches = [];
+    for (const selector of targets) {
+      try {
+        const count = Array.from(document.querySelectorAll(selector)).filter(visible).length;
+        if (count > 0) matches.push({ selector, visible_count: count });
+      } catch {
+        // invalid selector: contract bug surfaced elsewhere
+      }
+    }
+    return matches;
+  }, selectors).catch(() => []);
+}
+
+function referencedAssetBasenames(html, assets) {
+  const text = typeof html === "string" ? html : "";
+  const basenames = [...new Set(assets.map((asset) => String(asset || "").split("/").pop()).filter(Boolean))];
+  return basenames.filter((basename) => text.includes(basename));
+}
+
+function paymentChromeResidueAssertion({ page, method, artifacts, visibleMatches, referencedAssets, severity }) {
+  const offending = visibleMatches.length > 0 || referencedAssets.length > 0;
+  return assertion({
+    id: `template-residue:${page.page_id}:payment-chrome:${method}`,
+    family: "template_residue",
+    page,
+    status: offending ? STATUS.FAIL : STATUS.PASS,
+    severity: offending ? severity : undefined,
+    expected: `no ${method} chrome: method is not in CampaignSpec available_payment_methods/available_express_payment_methods`,
+    actual: offending
+      ? `residue found: ${[...visibleMatches.map((match) => match.selector), ...referencedAssets].join(", ")}`
+      : `no ${method} chrome rendered or referenced`,
+    evidence: {
+      method,
+      selectors: artifacts.selectors,
+      assets: artifacts.assets,
+      visible_matches: visibleMatches,
+      referenced_assets: referencedAssets,
+      page_url: page.url,
+    },
+  });
+}
+
+async function pricingVisibilityAssertions(browserPage, page, options = {}) {
+  const surfaces = options.brandContract?.pricing_surfaces?.surfaces;
+  if (!surfaces) return [];
+  const pageType = contractPageType(page);
+  if (["upsell", "downsell"].includes(pageType)) {
+    const selectors = surfaces.upsell?.price_row_selectors || [];
+    if (!selectors.length) return [];
+    const visibleCount = await countVisiblePriceRows(browserPage, selectors);
+    return [upsellPriceVisibilityAssertion({ page, selectors, visibleCount })];
+  }
+  if (pageType === "checkout") {
+    const selectors = surfaces.checkout_bundle?.price_row_selectors || [];
+    if (!selectors.length) return [];
+    const visibleCount = await countVisiblePriceRows(browserPage, selectors);
+    return [checkoutPriceVisibilityAssertion({ page, selectors, visibleCount })];
+  }
+  return [];
+}
+
+// Visible = non-zero bounding box, display != none, visibility != hidden. This
+// is what caught nothing in the dogfood run: a campaign CSS rule display:none'd
+// the only price row on a full-price upsell and 48/48 checks still passed.
+async function countVisiblePriceRows(browserPage, selectors) {
+  return browserPage.evaluate((targets) => {
+    const visible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const seen = new Set();
+    let count = 0;
+    for (const selector of targets) {
+      try {
+        for (const element of document.querySelectorAll(selector)) {
+          if (seen.has(element)) continue;
+          seen.add(element);
+          if (visible(element)) count += 1;
+        }
+      } catch {
+        // invalid selector: contract bug surfaced elsewhere
+      }
+    }
+    return count;
+  }, selectors).catch(() => 0);
+}
+
+function upsellPriceVisibilityAssertion({ page, selectors, visibleCount }) {
+  const ok = visibleCount >= 1;
+  return assertion({
+    id: "pricing.upsell_price_visible",
+    family: "pricing",
+    page,
+    status: ok ? STATUS.PASS : STATUS.FAIL,
+    severity: ok ? undefined : SEVERITY.BLOCKER,
+    expected: "at least one visible price row on the upsell offer",
+    actual: `${visibleCount} visible price row(s)`,
+    evidence: { selectors, visible_count: visibleCount, page_url: page.url },
+  });
+}
+
+function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount }) {
+  const ok = visibleCount >= 1;
+  return assertion({
+    id: "pricing.checkout_price_visible",
+    family: "pricing",
+    page,
+    status: ok ? STATUS.PASS : STATUS.FAIL,
+    severity: ok ? undefined : SEVERITY.WARN,
+    expected: "at least one visible checkout bundle price row",
+    actual: `${visibleCount} visible price row(s)`,
+    evidence: { selectors, visible_count: visibleCount, page_url: page.url },
+  });
+}
+
+// --- Typed-card step ladder ---
+// Every test-order path executes as an ordered ladder of named, individually
+// timed and bounded steps. Steps append to the ladder the moment they finish,
+// so a crash or timeout still leaves the ladder up to the failure point — the
+// 446s-hang-then-exit-1-with-nothing failure mode is structurally impossible.
+
+const TEST_ORDER_STEP_LADDER = Object.freeze([
+  "opened_checkout",
+  "selected_bundle",
+  "bump_state",
+  "customer_fields_filled",
+  "card_fields_filled",
+  "cart_created",
+  "hosted_redirect_observed",
+  "order_submitted",
+  "upsell_action",
+  "receipt_reached",
+]);
+
+function formatStepEvent(entry) {
+  return `[qa:test-order] step=${entry.step} status=${entry.status} ${entry.duration_ms}ms`;
+}
+
+function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), now = () => Date.now() } = {}) {
+  const steps = [];
+  const record = (step, status, { startedAt = null, durationMs = 0, detail = null, error = null } = {}) => {
+    const entry = {
+      step,
+      status,
+      started_at: startedAt || new Date(now()).toISOString(),
+      duration_ms: Math.max(0, Math.round(durationMs)),
+      ...(detail ? { detail } : {}),
+      ...(error ? { error } : {}),
+    };
+    steps.push(entry);
+    emit(formatStepEvent(entry));
+    return entry;
+  };
+  return {
+    steps,
+    has: (step) => steps.some((entry) => entry.step === step),
+    ok: (step, detail = null) => record(step, "ok", { detail }),
+    skip: (step, reason) => record(step, "skipped", { detail: reason }),
+    // Run a step with a bounded timeout. A resolved string becomes the step
+    // detail; a resolved { skip } object records the step as skipped.
+    async run(step, fn, { timeoutMs, detail = null } = {}) {
+      const startedMs = now();
+      const startedAt = new Date(startedMs).toISOString();
+      try {
+        const value = await withStepTimeout(fn(), timeoutMs, step);
+        if (value && typeof value === "object" && typeof value.skip === "string") {
+          record(step, "skipped", { startedAt, durationMs: now() - startedMs, detail: value.skip });
+          return value;
+        }
+        record(step, "ok", { startedAt, durationMs: now() - startedMs, detail: typeof value === "string" ? value : detail });
+        return value;
+      } catch (error) {
+        const timedOut = error?.code === "step_timeout";
+        record(step, timedOut ? "timeout" : "failed", {
+          startedAt,
+          durationMs: now() - startedMs,
+          detail,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+  };
+}
+
+function withStepTimeout(promise, timeoutMs, label) {
+  const stepTimeoutError = (message) => {
+    const error = new Error(message);
+    error.code = "step_timeout";
+    return error;
+  };
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return Promise.reject(stepTimeoutError(`step ${label} aborted: order timeout budget exhausted`));
+  }
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(stepTimeoutError(`step ${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+// Hosted checkout handoff: the platform redirects to <store>/accounts/complete-order/
+// on a different origin. The old page object must not be filled past this point.
+function hostedRedirectInfo(currentUrl, checkoutUrl) {
+  try {
+    const current = new URL(String(currentUrl));
+    if (!current.pathname.includes(HOSTED_CHECKOUT_PATH)) return null;
+    const checkout = new URL(String(checkoutUrl));
+    if (current.origin === checkout.origin) return null;
+    return { origin: current.origin, redacted_url: `${current.origin}${current.pathname}` };
+  } catch {
+    return null;
+  }
+}
+
+function safePageUrl(page) {
+  try {
+    return page.url();
+  } catch {
+    return null;
+  }
+}
+
+function ensurePageFillable(page, checkoutUrl) {
+  if (page.isClosed()) {
+    throw new Error("page closed before fill; aborting remaining locator actions");
+  }
+  const hosted = hostedRedirectInfo(safePageUrl(page), checkoutUrl);
+  if (hosted) {
+    const error = new Error(`page navigated to hosted checkout (${hosted.redacted_url}); aborting locator fills`);
+    error.hostedRedirect = hosted;
+    throw error;
+  }
+}
+
+function skipRemainingSteps(ladder, stepNames, reason) {
+  for (const step of stepNames) {
+    if (!ladder.has(step)) ladder.skip(step, reason);
+  }
+}
+
 async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runId) {
-  const page = await context.newPage();
-  page.setDefaultTimeout(numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
-  const events = captureCheckoutEvents(page);
+  const orderTimeoutMs = numberArg(args["order-timeout-ms"], DEFAULT_ORDER_TIMEOUT_MS);
+  const ladder = createStepLadder();
+  let page = null;
+  let events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
   const email = testEmail(args);
 
   try {
-    await gotoAndSettle(page, checkoutPage.url, args);
+    page = await context.newPage();
+    page.setDefaultTimeout(numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
+    events = captureCheckoutEvents(page);
+    // The outer race is the hard guarantee: whatever hangs inside the path,
+    // this returns and the run writes a verdict instead of dying with nothing.
+    return await withStepTimeout(
+      executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args, deadline: Date.now() + orderTimeoutMs }),
+      orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
+      `order-path:${path}`,
+    );
+  } catch (error) {
+    return failedTestOrderResult({ path, email, error, events, ladder, page });
+  } finally {
+    await page?.close().catch(() => {});
+  }
+}
+
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args, deadline }) {
+  const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
+  const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
+  const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
+
+  await ladder.run("opened_checkout", () => gotoAndSettle(page, checkoutPage.url, args), { timeoutMs: budget() });
+  await ladder.run("selected_bundle", async () => {
     await selectRequestedCart(page, args);
     await advanceToCheckoutForm(page);
-    await fillCheckoutFields(page, args, email);
-    await fillPaymentFields(page, args);
-    await submitCheckout(page);
-    await waitForCheckoutResult(page);
+    return parseCart(args.cart).length ? `requested cart ${args.cart}` : "default bundle selection";
+  }, { timeoutMs: budget() });
+  await ladder.run("bump_state", async () => {
+    const bump = await checkoutOrderBumpEvidence(page);
+    if (!bump.toggles.length) return { skip: "no order bump toggles on checkout" };
+    return `${bump.toggles.length} bump toggle(s), ${bump.toggles.filter((toggle) => toggle.active).length} active`;
+  }, { timeoutMs: budget() });
 
-    const order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
-    const stepFailures = [];
-    const upsellSteps = testOrderSteps(path);
+  try {
+    await ladder.run("customer_fields_filled", async () => {
+      ensurePageFillable(page, checkoutPage.url);
+      await fillCheckoutFields(page, args, email);
+    }, { timeoutMs: budget() });
+    await ladder.run("card_fields_filled", async () => {
+      ensurePageFillable(page, checkoutPage.url);
+      await fillPaymentFields(page, args);
+    }, { timeoutMs: budget() });
+    await ladder.run("cart_created", async () => {
+      const seen = events.responses.some((response) => /\/api\/v1\/carts\/?/i.test(response.url));
+      return seen ? "cart API response observed" : { skip: "no cart API call observed; checkout posts the order directly" };
+    }, { timeoutMs: budget() });
+    await ladder.run("order_submitted", async () => {
+      ensurePageFillable(page, checkoutPage.url);
+      await submitCheckout(page);
+      await waitForCheckoutResult(page);
+    }, { timeoutMs: budget() });
+  } catch (error) {
+    const hosted = error?.hostedRedirect || hostedNow();
+    if (!hosted) throw error;
+    return hostedRedirectOutcome({ page, events, email, checkoutPage, args, path, ladder, hosted });
+  }
 
-    if (order.ok && upsellSteps.length) {
-      order.upsell_steps = [];
-    }
+  const hostedAfterSubmit = hostedNow();
+  if (hostedAfterSubmit) {
+    return hostedRedirectOutcome({ page, events, email, checkoutPage, args, path, ladder, hosted: hostedAfterSubmit });
+  }
+  ladder.skip("hosted_redirect_observed", "no hosted checkout redirect observed");
 
-    for (let stepIndex = 0; order.ok && stepIndex < upsellSteps.length; stepIndex += 1) {
-      const step = upsellSteps[stepIndex];
+  const order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
+  order.evidence.steps = ladder.steps;
+  const stepFailures = [];
+  const upsellSteps = testOrderSteps(path);
+
+  if (order.ok && upsellSteps.length) {
+    order.upsell_steps = [];
+  }
+  if (!upsellSteps.length) ladder.skip("upsell_action", "path has no upsell steps");
+
+  for (let stepIndex = 0; order.ok && stepIndex < upsellSteps.length; stepIndex += 1) {
+    const step = upsellSteps[stepIndex];
+    await ladder.run("upsell_action", async () => {
       const initialLineItems = order.receipt_line_items.slice();
       const initialUpsellMutationCount = upsellMutationCount(events);
       await waitForUpsellPageReady(page, args);
@@ -900,7 +1416,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runI
       delete upsell.api_response_order_body;
       order.upsell = upsell;
       order.upsell_steps.push(upsell);
-      order.final_url = page.url();
+      order.final_url = safePageUrl(page);
       const refreshed = await buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody });
       order.final_receipt_line_items = refreshed.receipt_line_items;
       if (refreshed.receipt_line_items.length) {
@@ -928,41 +1444,92 @@ async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runI
         upsell.verification = proof;
         if (!proof.ok) stepFailures.push(`step ${stepIndex + 1}: ${proof.reason}`);
       }
-    }
+      return `step ${stepIndex + 1}: ${step}`;
+    }, { timeoutMs: budget() });
+  }
 
-    const acceptedSteps = (order.upsell_steps || []).filter((step) => step.path === "accept");
-    if (acceptedSteps.length) {
-      order.verification.accepted_upsell_line_present = acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
-      order.verification.upsell_api_response_seen = acceptedSteps.every((step) => step.verification?.upsell_api_response_seen === true);
-      order.verification.accepted_upsell_matches = acceptedSteps.map((step) => step.verification?.accepted_upsell_match).filter(Boolean);
-    }
-    if (stepFailures.length) order.verification.upsell_step_failures = stepFailures;
+  const finalUrl = safePageUrl(page) || "";
+  if (/receipt|thank/i.test(finalUrl)) {
+    ladder.ok("receipt_reached", redactUrlQuery(finalUrl));
+  } else {
+    ladder.skip("receipt_reached", `path ended at ${redactUrlQuery(finalUrl) || "(unknown url)"}`);
+  }
 
-    const ok = order.ok && stepFailures.length === 0;
-    return {
-      ok,
-      error: ok ? null : order.error || order.upsell?.error || stepFailures.join("; ") || "accepted upsell did not appear in final order lines",
-      order,
-      events: sanitizedEvents(events),
-    };
-  } catch (error) {
-    return {
+  const acceptedSteps = (order.upsell_steps || []).filter((step) => step.path === "accept");
+  if (acceptedSteps.length) {
+    order.verification.accepted_upsell_line_present = acceptedSteps.every((step) => step.verification?.accepted_upsell_line_present === true);
+    order.verification.upsell_api_response_seen = acceptedSteps.every((step) => step.verification?.upsell_api_response_seen === true);
+    order.verification.accepted_upsell_matches = acceptedSteps.map((step) => step.verification?.accepted_upsell_match).filter(Boolean);
+  }
+  if (stepFailures.length) order.verification.upsell_step_failures = stepFailures;
+
+  const ok = order.ok && stepFailures.length === 0;
+  return {
+    ok,
+    error: ok ? null : order.error || order.upsell?.error || stepFailures.join("; ") || "accepted upsell did not appear in final order lines",
+    order,
+    events: sanitizedEvents(events),
+  };
+}
+
+// Hosted checkout is platform-owned: reaching it is the terminal step for the
+// path in v0 — recorded as manual_review, not a hard fail.
+async function hostedRedirectOutcome({ page, events, email, checkoutPage, args, path, ladder, hosted }) {
+  ladder.ok("hosted_redirect_observed", `redirected to hosted checkout: ${hosted.redacted_url}`);
+  skipRemainingSteps(
+    ladder,
+    ["order_submitted", "upsell_action", "receipt_reached"],
+    "hosted checkout flow is platform-owned; typed-card runner stops at the handoff",
+  );
+  let order;
+  try {
+    order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
+  } catch {
+    order = {
+      path,
       ok: false,
-      error: error instanceof Error ? error.message : String(error),
-      order: {
-        path,
-        ok: false,
-        next_order_id: null,
-        ref_id: null,
-        qa_email: email ? "[redacted-qa-email]" : null,
-        final_url: page.url(),
-        verification: { verified: false, error: error instanceof Error ? error.message : String(error) },
-        evidence: { events: sanitizedEvents(events) },
-      },
-      events: sanitizedEvents(events),
+      next_order_id: null,
+      ref_id: null,
+      qa_email: email ? "[redacted-qa-email]" : null,
+      checkout_url: checkoutPage.url,
+      final_url: safePageUrl(page),
+      verification: { verified: false },
+      evidence: {},
     };
-  } finally {
-    await page.close().catch(() => {});
+  }
+  order.ok = false;
+  order.outcome = "manual_review";
+  order.hosted_checkout_url = hosted.redacted_url;
+  order.verification = { ...order.verification, verified: false, hosted_redirect: true };
+  order.evidence = { ...order.evidence, steps: ladder.steps, events: sanitizedEvents(events) };
+  return { ok: false, manual_review: true, error: null, order, events: sanitizedEvents(events) };
+}
+
+function failedTestOrderResult({ path, email, error, events, ladder, page }) {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    ok: false,
+    error: message,
+    order: {
+      path,
+      ok: false,
+      next_order_id: null,
+      ref_id: null,
+      qa_email: email ? "[redacted-qa-email]" : null,
+      final_url: page ? safePageUrl(page) : null,
+      verification: { verified: false, error: message },
+      evidence: { steps: ladder.steps, events: sanitizedEvents(events) },
+    },
+    events: sanitizedEvents(events),
+  };
+}
+
+function redactUrlQuery(value) {
+  try {
+    const url = new URL(String(value));
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return String(value || "").split("?")[0] || null;
   }
 }
 
@@ -1164,6 +1731,23 @@ async function clickUpsellPath(page, path, _options = {}) {
 }
 
 function testOrderAssertion(page, path, result) {
+  if (result.manual_review) {
+    return assertion({
+      id: `browser-test-order:${path}`,
+      family: "browser-test-order",
+      page,
+      status: STATUS.MANUAL_REVIEW,
+      severity: SEVERITY.WARN,
+      expected: "test order created through deployed checkout page",
+      actual: `hosted checkout redirect observed: ${result.order?.hosted_checkout_url || "(unknown)"}`,
+      evidence: {
+        hosted_checkout_url: result.order?.hosted_checkout_url || null,
+        final_url: result.order?.final_url,
+        steps: result.order?.evidence?.steps,
+        note: "Hosted checkout flow is platform-owned; verify the hosted completion manually.",
+      },
+    });
+  }
   return assertion({
     id: `browser-test-order:${path}`,
     family: "browser-test-order",
@@ -1187,6 +1771,7 @@ function testOrderAssertion(page, path, result) {
         }
       : {
           final_url: result.order?.final_url,
+          steps: result.order?.evidence?.steps,
           events: result.events,
         },
   });
@@ -1797,4 +2382,17 @@ export const __qaBrowserTestHooks = Object.freeze({
   isOrderUpsellsUrl,
   testEmail,
   testOrderPaths,
+  TEST_ORDER_STEP_LADDER,
+  createStepLadder,
+  formatStepEvent,
+  hostedRedirectInfo,
+  redactUrlQuery,
+  computedStyleResidueAssertions,
+  logoResidueAssertion,
+  methodPaymentArtifacts,
+  referencedAssetBasenames,
+  paymentChromeResidueAssertion,
+  upsellPriceVisibilityAssertion,
+  checkoutPriceVisibilityAssertion,
+  testOrderAssertion,
 });

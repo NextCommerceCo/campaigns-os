@@ -873,11 +873,26 @@ export function validateAssemblyReportThemeBlock(theme) {
       errors.push(issue("report.theme.repair_loop_defect", "report.theme.repair_loop_defect must be null or an object when present."));
     }
   }
+  if (theme.waiver !== undefined && theme.waiver !== null) {
+    if (!isObject(theme.waiver) || !isNonEmptyString(theme.waiver.reason)) {
+      errors.push(issue("report.theme.waiver", "report.theme.waiver must be null or an object with a non-empty reason string."));
+    }
+  }
+  // needs_review is an unresolved decision, never a green signal: it means a
+  // generatable brand layer exists but nobody generated/applied/waived it.
+  // Surfacing it under `ready` is exactly how the recovery-relief dogfood run
+  // shipped starter-blue commerce pages, so it reports as a warning instead.
+  if (errors.length === 0 && theme.status === "needs_review" && !theme.waiver) {
+    warnings.push(issue(
+      "report.theme.needs_review",
+      "Assembly report theme is needs_review: a generatable brand theme has not been generated/applied. The theme gate blocks polish/deploy/QA for commerce-page campaigns until report.theme is applied (load_order after-next-core) or explicitly waived (campaigns-os theme waive).",
+    ));
+  }
   return {
     ok: errors.length === 0,
     errors,
     warnings,
-    ready: errors.length ? [] : [`Assembly report theme ${theme.status || "unknown"}`],
+    ready: errors.length || theme.status === "needs_review" ? [] : [`Assembly report theme ${theme.status || "unknown"}`],
   };
 }
 

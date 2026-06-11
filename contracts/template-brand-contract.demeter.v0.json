@@ -1,0 +1,130 @@
+{
+  "schema_version": "template-brand-contract/v0",
+  "family": "demeter",
+  "description": "Brand contract for the Demeter starter-template family. Declares which brand tokens a campaign must override, which starter defaults count as residue on shipped commerce pages, the CSS load-order rule for the generated brand layer, and the selectors QA inspects to prove the brand layer actually applied.",
+  "brand_tokens": {
+    "consumed_namespace": "--brand--*",
+    "required_overrides": [
+      "--brand--color--primary",
+      "--brand--color--primary-dark"
+    ],
+    "recommended_overrides": [
+      "--brand--color--cta-primary",
+      "--brand--color--primary-light",
+      "--brand--color--primary-lighter",
+      "--brand--color--rating-star"
+    ],
+    "forbidden_default_values": {
+      "--brand--color--primary": "#3c7dff",
+      "--brand--color--primary-dark": "#0a265c"
+    },
+    "note": "Demeter commerce pages consume --brand--* tokens from next-core.css. Campaign-namespace tokens (e.g. --rr-*) style custom presell/landing markup only; they never restyle SDK commerce surfaces. A campaign that defines its own token namespace without overriding --brand--* ships the starter palette."
+  },
+  "css_load_order": {
+    "core_stylesheet": "next-core.css",
+    "brand_layer": "brand-theme.css",
+    "rule": "brand_layer_after_core",
+    "applies_to_page_types": ["checkout", "upsell", "downsell", "receipt"]
+  },
+  "default_residue": {
+    "logo": {
+      "asset": "images/next-logo.png",
+      "selector": "img.brand-logo",
+      "page_types": ["checkout", "upsell", "downsell", "receipt"],
+      "rule": "Campaign brand logo must replace the starter next-logo.png on commerce pages unless the CampaignSpec store branding intentionally keeps it."
+    },
+    "payment_chrome": {
+      "methods": ["paypal", "klarna"],
+      "selectors": [
+        ".payment-method__icon--paypal-logo",
+        ".payment-method__icon--paypal-txt",
+        ".payment-method__icon--klarna-logo"
+      ],
+      "assets": [
+        "images/paypal.svg",
+        "images/paypal-logo.svg",
+        "images/paypal-txt.svg",
+        "images/klarna-logo.svg",
+        "images/upsell-payment-logos.svg"
+      ],
+      "rule": "Remove unless the method is listed in CampaignSpec available_payment_methods / available_express_payment_methods. Template chrome outside the SDK payment-method include (e.g. upsell-payment-logos.svg) counts as implied payment-method residue."
+    }
+  },
+  "qa_inspection": {
+    "forbidden_computed_colors": [
+      { "hex": "#3c7dff", "rgb": "rgb(60, 125, 255)", "token": "--brand--color--primary" },
+      { "hex": "#0a265c", "rgb": "rgb(10, 38, 92)", "token": "--brand--color--primary-dark" }
+    ],
+    "computed_style_checks": [
+      {
+        "id": "checkout_submit_button",
+        "page_types": ["checkout"],
+        "selector": ".submit-button",
+        "properties": ["background-color", "border-color"],
+        "optional": false
+      },
+      {
+        "id": "selected_bundle_card",
+        "page_types": ["checkout"],
+        "selector": ".os-card.next-selected",
+        "properties": ["border-color", "outline-color"],
+        "optional": true
+      },
+      {
+        "id": "announcement_bar",
+        "page_types": ["checkout"],
+        "selector": ".announcement",
+        "properties": ["background-color"],
+        "optional": true
+      },
+      {
+        "id": "bump_outline",
+        "page_types": ["checkout"],
+        "selector": "[data-next-package-sync='false'], .bump-offer, .order-bump",
+        "properties": ["border-color", "outline-color"],
+        "optional": true
+      },
+      {
+        "id": "upsell_accept_cta",
+        "page_types": ["upsell", "downsell"],
+        "selector": "[data-next-action='accept'], a[href*='upsell-accept'], .submit-button",
+        "properties": ["background-color"],
+        "optional": false
+      }
+    ]
+  },
+  "pricing_surfaces": {
+    "modes": ["full_price", "discounted", "compare_at", "unit_total", "unit_only"],
+    "rule": "Pricing surfaces render via mode-driven partial arguments, never via campaign CSS that hides price rows. Campaign stylesheets must not apply display:none to price wrappers or SDK price displays.",
+    "forbidden_css_hides": [
+      ".price-wrapper",
+      ".prices-text-wrapper",
+      ".price-display",
+      ".cart-price",
+      ".summary_price",
+      "[data-next-display*='price']"
+    ],
+    "surfaces": {
+      "checkout_bundle": {
+        "default_mode": "discounted",
+        "price_row_selectors": [".price-wrapper", ".cart-price"]
+      },
+      "bump": {
+        "default_mode": "full_price",
+        "price_row_selectors": [".price-wrapper"]
+      },
+      "upsell": {
+        "default_mode": "full_price",
+        "price_row_selectors": [".price-wrapper", ".price-display"],
+        "visible_price_rows_by_mode": {
+          "full_price": 1,
+          "discounted": 2,
+          "compare_at": 2,
+          "unit_total": 2,
+          "unit_only": 1
+        },
+        "note": "A full_price upsell shows exactly one visible price row adjacent to the accept control. Zero visible price rows on an upsell offer is a blocker: the buyer cannot see what they are accepting."
+      }
+    }
+  }
+}

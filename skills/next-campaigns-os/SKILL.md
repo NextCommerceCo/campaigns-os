@@ -24,7 +24,7 @@ Workflow:
 
 1. Confirm the campaign was configured in Campaigns App and exported from Campaign Map Builder as current CampaignSpec JSON. Current authoring is v4.3+ while preserving the v4.2 `funnels[]` topology as the compatibility shape.
 2. Run `campaigns-os start` or `campaigns-os prepare-build` with a local CampaignSpec, prepared HTML/assets source, target page-kit repo, and explicit template family.
-3. Treat brand-theme discovery as optional evidence, not a required input. `start` / `prepare-build` run it in inspect-only mode by default and record `context.theme`; use `campaigns-os theme inspect` or `campaigns-os theme generate` when a checkout/upsell brand bridge is relevant.
+3. Brand-theme discovery runs in inspect-only mode by default and records `context.theme`. When it proves a brand theme is generatable and the campaign ships commerce pages, the theme gate BLOCKS polish/deploy/QA until the brand layer is applied after `next-core.css` or explicitly waived (`campaigns-os theme waive --packet <p> --reason "<why>"`). Run `campaigns-os theme generate` and apply it during build; do not defer the decision.
 4. Run `campaigns-os doctor --packet <packet>`.
 5. If doctor returns `collect-inputs`, stop and resolve the named blockers.
 6. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
@@ -73,7 +73,9 @@ Rules:
 - Keep offer application surfaces out of pricing logic: they validate/apply codes through SDK/API, while Campaigns API/SDK own repricing, totals, and discount rows.
 - Starter-template `agentContract` owns reusable commerce structure and protected SDK surfaces.
 - Designed source owns visual composition and page-level content.
-- Brand-theme evidence is workflow-order neutral. Do not assume a Figma export came first; consume `context.theme` and `.campaign-runtime/theme/theme-report.json` when present, and keep missing/low-confidence theme as a warning unless the task explicitly requires theme application.
+- Brand-theme evidence is workflow-order neutral. Do not assume a Figma export came first; consume `context.theme` and `.campaign-runtime/theme/theme-report.json` when present. A truly missing/ungeneratable theme stays a warning, but a generatable-and-unapplied theme on a commerce-page campaign is a gate: apply it or waive it explicitly before polish/deploy/QA.
+- Follow `campaigns-os next` literally. Every `next` response carries `gates` (doctor, prepare_build, theme_gate) and `next_actions` with exact commands — execute those instead of improvising. With an active run session, pipeline-advancing commands that don't match the last `next` recommendation are recorded to `.campaign-runtime/agent-deviations.jsonl`; declare an intentional detour with `--deviation-reason "<why>"`.
+- Close the loop: when `next` reports `done` (or QA has published its verdict and the PR is up), finish with `campaigns-os run end` so the Run Record is assembled and the run session clears. `campaigns-os run status` shows incomplete stages and the exact next command at any point.
 - Do not copy demo refs or unsupported optional surfaces into the target campaign.
 - Use SDK conditionals such as `cart.hasCoupon("CODE")` for code-specific presentation; do not mutate visible prices from campaign-specific JavaScript.
 - Build Packet, Build Context, and Assembly Report paths should be repo-relative when possible so handoff artifacts can be committed without machine-local absolute paths.

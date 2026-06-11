@@ -6,6 +6,41 @@ separate from internal orchestration, QA defects, and implementation artifacts.
 
 ## Language
 
+**Theme Gate**:
+The deterministic decision point that blocks `next polish|deploy|qa` and
+`qa run` when theme inspect proved a brand theme is generatable, the campaign
+ships commerce pages, and the brand layer is neither applied (after
+`next-core.css`) nor explicitly waived. Evaluated once in the doctor
+(`derived.theme_gate`) and consumed identically by `next` and QA. A waiver
+(`theme waive` / `--theme-waive`) is the only sanctioned bypass and is recorded
+on the Assembly Report with a reason.
+_Avoid_: advisory warning, recommendation, soft check
+
+**Template Brand Contract**:
+A per-family contract file (`contracts/template-brand-contract.<family>.v0.json`)
+declaring required `--brand--*` token overrides, starter defaults that count as
+shipped residue (palette hexes, starter logo, unsupported payment chrome), the
+CSS load-order rule for the brand layer, the selectors browser QA inspects for
+applied brand tokens, and pricing-surface modes. QA reads it to fail "still
+visually the starter template" deterministically.
+_Avoid_: style guide, design tokens doc, theme report
+
+**Pricing Mode**:
+The declarative way a pricing surface (checkout bundle, bump, upsell) renders
+its price rows: `full_price`, `discounted`, `compare_at`, `unit_total`, or
+`unit_only`. Partials render the right rows for the mode; campaign CSS must
+never hide price rows with `display:none`. A full-price upsell shows exactly
+one visible price row; zero visible price rows is a QA blocker.
+_Avoid_: CSS cleanup, price hiding, discount styling
+
+**Deviation Telemetry**:
+The sidecar journal (`.campaign-runtime/agent-deviations.jsonl`) that records
+when a pipeline-advancing command does not match the last `campaigns-os next`
+recommendation on an active run session: recommended stage/commands, actual
+command, and an optional `--deviation-reason`. It measures "the agent ignored
+the orchestrator"; hard enforcement lives in the gates, not here.
+_Avoid_: audit log, compliance gate, blocker
+
 **Run Telemetry**:
 The Campaigns OS surface that captures what happened on each run and, with
 consent, remits it to NEXT so the toolchain improves over time. Capture is
