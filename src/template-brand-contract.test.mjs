@@ -119,6 +119,22 @@ test("findForbiddenPriceHides matches on CSS token boundaries, not substrings", 
   assert.deepEqual(hits.map((hit) => hit.selector), [".summary_price.cc-sm"], "longer identifiers must not substring-match a target");
 });
 
+test("findForbiddenPriceHides boundary handles compound, Unicode, and attribute selectors", () => {
+  const fakeContract = (targets) => ({ pricing_surfaces: { forbidden_css_hides: targets } });
+  // Compound selector: the leading "." may follow an ident char.
+  assert.equal(findForbiddenPriceHides(fakeContract([".price-wrapper"]), "div.price-wrapper { display: none; }").length, 1);
+  // Unicode identifier continuation: ".price" must not match inside ".priceΑ"
+  // or ".price-événement" (code points >= U+0080 are CSS ident chars).
+  assert.equal(findForbiddenPriceHides(fakeContract([".price"]), ".priceΑ { display: none; }").length, 0);
+  assert.equal(findForbiddenPriceHides(fakeContract([".price"]), ".price-événement { display: none; }").length, 0);
+  assert.equal(findForbiddenPriceHides(fakeContract([".price"]), ".price { display: none; }").length, 1);
+  // Attribute selector targets are self-delimited by their brackets.
+  assert.equal(
+    findForbiddenPriceHides(fakeContract(["[data-next-display*='price']"]), ".x [data-next-display*='price'] { display: none; }").length,
+    1,
+  );
+});
+
 test("findForbiddenPriceHides ignores price selectors without display:none", () => {
   const contract = loadTemplateBrandContract("demeter");
   assert.deepEqual(findForbiddenPriceHides(contract, ".price-wrapper { color: black; }"), []);

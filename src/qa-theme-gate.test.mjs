@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { __qaNodeTestHooks } from "./qa-node.mjs";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { __qaNodeTestHooks, GATE_SUPPRESSED_FAMILIES } from "./qa-node.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 
 const { themeGateAssertion, themeGateScopeFromTopologies, residueSeverityForThemeGate, supportedPaymentMethodsFromSpec, themeGateSummary } = __qaNodeTestHooks;
@@ -110,6 +112,24 @@ test("supported payment methods read both spec lists, normalize object/string fo
   // unknown != empty: undeclared methods mean chrome residue checks do not run
   assert.equal(supportedPaymentMethodsFromSpec({ campaign: {} }), null);
   assert.equal(supportedPaymentMethodsFromSpec(null), null);
+});
+
+test("GATE_SUPPRESSED_FAMILIES matches the families the QA runner actually emits", () => {
+  // Drift guard: collect every `family: "..."` literal from the two emitter
+  // modules. Adding a new assertion family without updating the suppressed
+  // list (or vice versa) fails here instead of silently changing the
+  // gate-blocked verdict shape.
+  const emitted = new Set();
+  for (const module of ["./qa-node.mjs", "./qa-browser.mjs"]) {
+    const source = readFileSync(fileURLToPath(new URL(module, import.meta.url)), "utf8");
+    for (const match of source.matchAll(/family:\s*"([a-z_-]+)"/g)) emitted.add(match[1]);
+  }
+  emitted.delete("theme_gate"); // the gate's own assertion is never suppressed
+  assert.deepEqual(
+    [...emitted].sort(),
+    [...GATE_SUPPRESSED_FAMILIES].sort(),
+    "GATE_SUPPRESSED_FAMILIES must equal the set of non-theme_gate families emitted by qa-node.mjs + qa-browser.mjs",
+  );
 });
 
 test("theme gate summary keeps waiver and required actions only when present", () => {

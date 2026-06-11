@@ -370,8 +370,10 @@ function updateQaPolicy(args) {
 // Every assertion family a non-blocked run can emit beyond theme_gate. A
 // gate-blocked verdict carries one skipped audit assertion per family so the
 // verdict shape never drifts for consumers walking assertions[] by family.
-// Keep in sync with runPageChecks + runBrowserChecks emitters.
-const GATE_SUPPRESSED_FAMILIES = Object.freeze([
+// Drift against the actual emitters is enforced by a test that collects the
+// `family:` literals from qa-node.mjs + qa-browser.mjs and asserts set
+// equality — adding an emitter without updating this list fails CI.
+export const GATE_SUPPRESSED_FAMILIES = Object.freeze([
   "funnel-flow",
   "meta-tags",
   "api-metadata",

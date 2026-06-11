@@ -1319,7 +1319,7 @@ function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefi
   } else if (themeGate.status === "pass") {
     ready.push("Theme gate passed: brand layer applied after next-core.css on commerce pages.");
   }
-  runPricingCssHideCheck({ packet, derived, warnings, ready });
+  runPricingCssHideCheck({ packet, derived, warnings, ready, report });
 
   const next = buildNextStep(errors, warnings, derived, report);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
@@ -1335,7 +1335,7 @@ function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefi
 // brand contract lists under pricing_surfaces.forbidden_css_hides. Doctor
 // reports a warning with the exact rule; browser QA enforces the outcome
 // (zero visible price rows) as a blocker.
-function runPricingCssHideCheck({ packet, derived, warnings, ready }) {
+function runPricingCssHideCheck({ packet, derived, warnings, ready, report = null }) {
   const family = packet?.assembly?.template_family;
   let contract = null;
   try {
@@ -1348,14 +1348,26 @@ function runPricingCssHideCheck({ packet, derived, warnings, ready }) {
     ready.push(`Pricing CSS scan not applicable for template family "${family || "(none)"}" (no brand contract with forbidden_css_hides)`);
     return;
   }
+  // Missing campaign output is normal before setup/build (audit ready-line),
+  // but anomalous once the assembly stage is recorded terminal — at that
+  // point a missing dir means the scan that should have covered built CSS
+  // never ran, which the operator must see as a warning, not a footnote.
+  const assemblyDone = stageIsTerminal(report?.stages?.assembly?.status);
+  const skipScan = (reason) => {
+    if (assemblyDone) {
+      addIssue(warnings, "template_contract.price_css_scan_skipped", `Pricing CSS scan did NOT run although assembly is recorded terminal: ${reason}. Check assembly.target_repo / output_dir configuration.`);
+    } else {
+      ready.push(`Pricing CSS scan skipped: ${reason} (runs after setup/build)`);
+    }
+  };
   const outputDir = derived.target_output_dir;
   if (!outputDir || !existsSync(outputDir)) {
-    ready.push("Pricing CSS scan skipped: target output directory does not exist yet (runs after setup/build)");
+    skipScan("target output directory does not exist");
     return;
   }
   const cssDir = join(outputDir, "assets/css");
   if (!existsSync(cssDir)) {
-    ready.push("Pricing CSS scan skipped: campaign assets/css directory does not exist yet");
+    skipScan("campaign assets/css directory does not exist");
     return;
   }
   const coreStylesheet = contract.css_load_order?.core_stylesheet || "next-core.css";
