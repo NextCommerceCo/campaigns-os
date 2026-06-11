@@ -166,8 +166,12 @@ export function writeConsentConfig(state, {
 /**
  * The shared resolver every remitting command calls. Returns
  * `{ state: "on"|"off", source: "env"|"file"|"default", resolved }`.
- * `resolved` is false only when the state is the fail-closed default (no env,
- * no usable file) — an interactive command may then prompt to set it.
+ * With no env and no usable file, the CANONICAL endpoint resolves to the
+ * announced default: `{ state: "on", source: "default", resolved: true,
+ * default_on: true }`. `resolved` is false only for the remaining
+ * fail-closed defaults — a malformed config file, a scope mismatch, or a
+ * non-canonical endpoint with no explicit choice — where an interactive
+ * command may then prompt to set it.
  */
 export function resolveConsent({
   env = process.env,

@@ -31,8 +31,9 @@ The Workflow Findings Sidecar was deliberately local-only. Run Telemetry keeps
 the local trail but changes the contribution model:
 
 - **Capture is always local.** The Run Record is written regardless of consent.
-- **Consent gates remit, not capture.** A single up-front opt-out decides only
-  whether records are sent. Opt-outs lose nothing locally.
+- **Consent gates remit, not capture.** A machine-level opt-out decides only
+  whether records are sent (default ON for the canonical NEXT endpoint,
+  announced at remit time). Opt-outs lose nothing locally.
 - **The unit is the Run Record, not a single finding.** Findings (manual and
   harvested) are one channel within it.
 
