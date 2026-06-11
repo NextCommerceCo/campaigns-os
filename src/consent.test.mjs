@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import {
-  __consentTestHooks,
   announceDefaultOnTelemetry,
   normalizeConsentScope,
   parseEnvConsent,
@@ -85,20 +84,18 @@ test("resolveConsent: a non-empty proxyBase that fails to normalize is NOT grant
   });
 });
 
+// Single test owns the process-wide latch: the first call must announce
+// (covering the null-endpoint canonical fallback in the same breath), every
+// later call must be suppressed. No reset hook exists — the latch is
+// deliberately once-per-process, so the test asserts exactly that.
 test("announceDefaultOnTelemetry fires exactly once per process and names the endpoint", () => {
-  __consentTestHooks.resetDefaultOnAnnouncement();
   const lines = [];
   const write = (line) => lines.push(line);
-  assert.equal(announceDefaultOnTelemetry("https://campaign-map.nextcommerce.com", { write }), true);
-  assert.equal(announceDefaultOnTelemetry("https://campaign-map.nextcommerce.com", { write }), false);
+  assert.equal(announceDefaultOnTelemetry(null, { write }), true, "first call announces; null endpoint falls back to canonical");
+  assert.equal(announceDefaultOnTelemetry("https://other.example.com", { write }), false, "second call is suppressed regardless of endpoint");
   assert.equal(lines.length, 1);
   assert.match(lines[0], /campaign-map\.nextcommerce\.com/);
   assert.match(lines[0], /telemetry off/);
-  // Endpoint falls back to the canonical scope when omitted.
-  __consentTestHooks.resetDefaultOnAnnouncement();
-  assert.equal(announceDefaultOnTelemetry(null, { write }), true);
-  assert.match(lines[1], /campaign-map\.nextcommerce\.com/);
-  __consentTestHooks.resetDefaultOnAnnouncement();
 });
 
 test("resolveConsent: env beats file (both directions)", async () => {

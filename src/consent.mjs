@@ -228,8 +228,11 @@ export function resolveConsent({
   // A non-empty proxyBase that fails to normalize is NOT canonical — it
   // stays fail-closed like any other unapproved endpoint. The remit-time
   // announcement names the endpoint explicitly.
+  // (An absent proxyBase always normalizes to a null requestedScope, so the
+  // two cases below are disjoint: absent → canonical fallback; present →
+  // must normalize to the canonical scope exactly.)
   const proxyBaseAbsent = !isNonEmptyString(proxyBase);
-  if ((proxyBaseAbsent && requestedScope === null) || requestedScope === CANONICAL_REMIT_SCOPE) {
+  if (proxyBaseAbsent || requestedScope === CANONICAL_REMIT_SCOPE) {
     return { state: "on", source: "default", resolved: true, default_on: true, scope: CANONICAL_REMIT_SCOPE };
   }
   return { state: "off", source: "default", resolved: false };
@@ -249,12 +252,6 @@ export function announceDefaultOnTelemetry(endpoint, { write = (line) => process
   write(`[campaigns-os] Run telemetry is ON by default: anonymized run records are sent to ${endpoint || CANONICAL_REMIT_SCOPE} to improve templates, tooling, and guidance. Disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off.\n`);
   return true;
 }
-
-export const __consentTestHooks = Object.freeze({
-  resetDefaultOnAnnouncement() {
-    defaultOnAnnounced = false;
-  },
-});
 
 async function defaultAsk(question) {
   const { createInterface } = await import("node:readline/promises");
