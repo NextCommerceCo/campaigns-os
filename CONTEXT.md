@@ -6,6 +6,17 @@ separate from internal orchestration, QA defects, and implementation artifacts.
 
 ## Language
 
+**Certified Template Family**:
+A template family present in the commerce surface catalog AND carrying a
+template brand contract — the set the OS can automate end-to-end with
+deterministic assembly, residue QA, and pricing contracts. `start`/
+`prepare-build` accept only certified families by default; building on
+anything else requires `--allow-uncertified-template "<reason>"`, recorded on
+the Build Packet as `assembly.template_certification.waiver`. NEXT provides
+the rails: the certified set grows by shipping new contracted families, not
+by loosening the gate.
+_Avoid_: supported template, known family, template allowlist
+
 **Theme Gate**:
 The deterministic decision point that blocks `next polish|deploy|qa` and
 `qa run` when theme inspect proved a brand theme is generatable, the campaign
@@ -175,13 +186,17 @@ chat history.
 _Avoid_: undocumented adapter prose, hidden source conversion choices
 
 **Telemetry Consent**:
-The machine/user-level opt-out that decides whether Run Records are remitted.
-Consent belongs to the operator, not the campaign: it is asked once up front,
-changeable any time (`telemetry status|on|off`), and overridable by the
-`CAMPAIGNS_OS_TELEMETRY` env var (unknown values fail closed). Consent gates
-**remit only** — capture is always local — and an unknown, non-interactive
-context defaults to off. Never remit without an explicit yes.
-_Avoid_: per-finding approval, campaign-scoped consent, silent default-on
+The machine/user-level opt-OUT that decides whether Run Records are remitted.
+Consent belongs to the operator, not the campaign: changeable any time
+(`telemetry status|on|off`) and overridable by the `CAMPAIGNS_OS_TELEMETRY`
+env var (unknown values fail closed). Consent gates **remit only** — capture
+is always local. The default is ON for the canonical NEXT endpoint only,
+announced at remit time with the endpoint and the opt-out command; any other
+endpoint (staging, self-hosted) stays fail-closed until explicitly
+consented, and a malformed config file resolves OFF rather than letting the
+default override an unreadable prior choice.
+_Avoid_: per-finding approval, campaign-scoped consent, SILENT default-on
+(the default is announced, never quiet)
 
 **Remit**:
 The consent-gated send of a Run Record to NEXT, over the same rails as QA verdict

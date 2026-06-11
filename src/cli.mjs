@@ -35,6 +35,7 @@ import {
   writeRunRecord,
 } from "./run-record.mjs";
 import {
+  announceDefaultOnTelemetry,
   promptAndPersistConsent,
   readConfig,
   resolveConfigPath,
@@ -150,6 +151,30 @@ const KNOWN_TEMPLATE_FAMILIES = new Set([
   "custom",
 ]);
 
+// Certified template families: present in the commerce surface catalog AND
+// carrying a template brand contract. The OS automates certified families
+// only — "NEXT provides the rails": deterministic assembly, residue QA, and
+// pricing contracts all assume a certified family. "custom" (or any family
+// outside the catalog) is an explicit operator decision recorded as a
+// waiver, never a default road the agent can wander onto.
+// Recomputed per call (a handful of small JSON reads) so long-lived
+// processes never serve a stale certified set after contract edits.
+function certifiedTemplateFamilies() {
+  const catalog = readJson(join(ROOT, "contracts/commerce-surface-catalog.json"));
+  const certified = Object.keys(catalog.families || {}).filter((family) => {
+    try {
+      return loadTemplateBrandContract(family) !== null;
+    } catch {
+      return false;
+    }
+  });
+  return new Set(certified);
+}
+
+function isCertifiedTemplateFamily(family) {
+  return certifiedTemplateFamilies().has(String(family || ""));
+}
+
 const KNOWN_DEPLOY_TARGETS = new Set([
   "netlify",
   "cloudflare-pages",
@@ -189,8 +214,10 @@ Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                     [--allow-uncertified-template "<reason>"] [--no-run-session]
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                             [--allow-uncertified-template "<reason>"] [--no-run-session]
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
@@ -221,6 +248,8 @@ Usage:
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
+  Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
+  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session); Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
@@ -261,14 +290,20 @@ export async function main(argv) {
   // Persistence is OPT-IN — an explicit --lifecycle-journal /
   // CAMPAIGNS_OS_LIFECYCLE_LOG, or an active run session. With none, behavior
   // is identical to before.
+  //
+  // `sessionHolder` is per-invocation, NOT module state: when start/
+  // prepare-build auto-open a run session mid-command, they publish it here
+  // so onFinish persists this command's own lifecycle entry into the new
+  // session — without two interleaved invocations ever sharing a session.
+  const sessionHolder = { current: ambient, autoStarted: false };
   await withCommandLifecycle(
     {
       command,
       argvShape: argvShape(args),
       runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
-      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle, ambient),
+      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle, sessionHolder),
     },
-    (recorder) => dispatch(command, args, recorder, ambient),
+    (recorder) => dispatch(command, args, recorder, ambient, sessionHolder),
   );
 }
 
@@ -276,6 +311,51 @@ function ambientRunSession() {
   try {
     return findRunSession(process.cwd());
   } catch {
+    return null;
+  }
+}
+
+// Telemetry is ambient by default: `start`/`prepare-build` open the run
+// session themselves (in the TARGET repo, where the build happens), arm the
+// initial recommendation for deviation telemetry, and tell the operator how
+// to finish. The dogfood evidence demanded this: agents reliably run the
+// entry point and skip the bookkeeping, so the bookkeeping cannot depend on
+// them. `--no-run-session` opts a run out (CI fixtures, throwaway runs);
+// an already-active session is never replaced. The session lands on the
+// caller-supplied --target (the directory the operator named), never a path
+// derived from packet location, so an overridden packet path cannot split
+// the session from the build.
+function autoStartRunSession(prepareResult, args, ambient, sessionHolder) {
+  if (args["no-run-session"] === true || ambient) return null;
+  try {
+    const packetPath = prepareResult?.packetPath;
+    const targetRepo = optionalString(args.target) ? resolve(args.target) : null;
+    if (!packetPath || !targetRepo) return null;
+    if (findRunSession(targetRepo)) return null;
+    const runId = mintSessionRunId();
+    const session = {
+      ...buildRunSession({
+        runId,
+        lifecycleJournal: join(targetRepo, LIFECYCLE_JOURNAL_REL_PATH),
+        packet: resolve(packetPath),
+      }),
+      last_recommendation: buildRecommendation({
+        stage: "doctor",
+        status: "ready",
+        expectedCommands: ["start", "prepare-build", "theme"],
+      }),
+    };
+    const sessionPath = writeRunSession(targetRepo, session);
+    if (sessionHolder) {
+      sessionHolder.current = { session, path: sessionPath, dir: targetRepo };
+      sessionHolder.autoStarted = true;
+    }
+    process.stderr.write(`[campaigns-os] Run session ${runId} started automatically (run telemetry is ambient; finish with \`campaigns-os run end\`, opt out per-run with --no-run-session).\n`);
+    return sessionHolder?.current || null;
+  } catch (error) {
+    // Telemetry never blocks a build, but a failed session write must be
+    // distinguishable from a clean skip.
+    process.stderr.write(`[campaigns-os] run session auto-start skipped: ${error.message}\n`);
     return null;
   }
 }
@@ -297,18 +377,31 @@ function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = 
 // flag/env, or an ambient run session. Never throws — a lifecycle write must
 // not break a command (telemetry never blocks a build). `help` is a no-op
 // command and is not worth recording.
-function persistLifecycleIfRequested(args, command, lifecycle, ambient) {
+function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
   if (command === "help") return;
+  const ambient = sessionHolder?.current || null;
+  // A session auto-started DURING this command (start/prepare-build) is
+  // published into sessionHolder by autoStartRunSession; this command's own
+  // entry is the run's first record. Its run_id was unknown when the
+  // lifecycle wrapper started (the session did not exist yet), so stamp a
+  // local copy now — otherwise run-record aggregation by run_id would
+  // silently exclude the run's entry-point command. This stamp pairs with
+  // autoStartRunSession: if that call ever moves out of dispatch, the
+  // holder stays the single handoff point.
+  let entry = lifecycle;
+  if (sessionHolder?.autoStarted && !entry.run_id && ambient?.session?.run_id) {
+    entry = { ...entry, run_id: ambient.session.run_id };
+  }
   const journalPath = resolveLifecycleJournal(args, { ambient });
   if (!journalPath) return;
   try {
-    appendLifecycleEntry(journalPath, lifecycle);
+    appendLifecycleEntry(journalPath, entry);
   } catch (error) {
     // Non-fatal, but leave a one-line breadcrumb on stderr so a capture failure
     // is observable rather than fully silent. stderr never pollutes --json stdout.
     process.stderr.write(`[campaigns-os] lifecycle capture skipped: ${error.message}\n`);
   }
-  persistDeviationIfDetected(args, command, lifecycle, ambient);
+  persistDeviationIfDetected(args, command, entry, ambient);
 }
 
 // Deviation telemetry: compare every pipeline-advancing command against the
@@ -336,7 +429,7 @@ function persistDeviationIfDetected(args, command, lifecycle, ambient) {
   }
 }
 
-async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null) {
+async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null, sessionHolder = null) {
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
@@ -350,6 +443,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     args.spec = resolved.specPath;
     const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: true, installContext: true }));
     result.spec_source = resolved;
+    autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
     return;
   }
@@ -359,6 +453,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     args.spec = resolved.specPath;
     const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: false, installContext: false }));
     result.spec_source = resolved;
+    autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
     return;
   }
@@ -832,6 +927,25 @@ function prepareBuild(args, options = {}) {
   const hintedTemplateFamily = preferredTemplateFamily(spec);
   const templateFamily = explicitTemplateFamily || hintedTemplateFamily || "undecided";
   const templateLocked = Boolean(explicitTemplateFamily) && templateFamily !== "undecided" && templateFamily !== "auto";
+  // Certified-template gate, enforced at the entry point: a decided family
+  // must be certified (commerce catalog + brand contract) or the operator
+  // must record the uncertified decision explicitly. Failing HERE — before
+  // any packet exists — keeps "build on an uncertified template" from ever
+  // being a default road.
+  const uncertifiedReason = optionalString(args["allow-uncertified-template"]);
+  const familyDecided = templateFamily !== "undecided" && templateFamily !== "auto";
+  const familyCertified = familyDecided && isCertifiedTemplateFamily(templateFamily);
+  if (familyDecided && !familyCertified && !uncertifiedReason) {
+    throw new Error(
+      `Template family "${templateFamily}" is not certified. Certified families: ${[...certifiedTemplateFamilies()].sort().join(", ")}. ` +
+      `Pick a certified family, or pass --allow-uncertified-template "<reason>" to record an explicit waiver (deterministic assembly, residue QA, and pricing contracts will not cover the build).`,
+    );
+  }
+  const templateCertification = familyDecided
+    ? familyCertified
+      ? { certified: true }
+      : { certified: false, waiver: { reason: uncertifiedReason, waived_by: optionalString(args["waived-by"], "operator"), waived_at: new Date().toISOString() } }
+    : null;
   const templateCandidates = hintedTemplateFamily
     ? [{ family: hintedTemplateFamily, source: "CampaignSpec preferred_template_family", confidence: "hint" }]
     : [];
@@ -903,6 +1017,7 @@ function prepareBuild(args, options = {}) {
         confidence: templateLocked ? "high" : "none",
         evidence: templateLocked ? ["prepare-build --template-family"] : [],
       },
+      template_certification: templateCertification,
       commerce_catalog: {
         required: true,
         family: templateLocked ? templateFamily : null,
@@ -1557,6 +1672,25 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
 
   if (packet.assembly?.template_family === "undecided" || packet.assembly?.template_lock?.locked !== true) {
     addIssue(errors, "assembly.template_lock", "Template family must be explicitly locked before commerce wiring.");
+  }
+
+  // Certified-template gate: a decided family must be certified (catalog +
+  // brand contract) or carry an explicit uncertified waiver. Uncertified
+  // families have no deterministic assembly path, no residue QA, and no
+  // pricing contract — the OS cannot stand behind the output, so the
+  // decision to leave the rails is recorded, never improvised.
+  const decidedFamily = packet.assembly?.template_family;
+  if (isNonEmptyString(decidedFamily) && decidedFamily !== "undecided") {
+    if (isCertifiedTemplateFamily(decidedFamily)) {
+      ready.push(`Template family "${decidedFamily}" is certified (commerce catalog + brand contract)`);
+    } else {
+      const waiver = packet.assembly?.template_certification?.waiver;
+      if (waiver && isNonEmptyString(waiver.reason)) {
+        addIssue(warnings, "assembly.template_certification", `Template family "${decidedFamily}" is NOT certified; proceeding under recorded waiver: ${waiver.reason}. Deterministic assembly, residue QA, and pricing contracts do not cover this family.`);
+      } else {
+        addIssue(errors, "assembly.template_certification", `Template family "${decidedFamily}" is not certified. Certified families: ${[...certifiedTemplateFamilies()].sort().join(", ")}. Pick a certified family, or rerun prepare-build with --allow-uncertified-template "<reason>" to record an explicit waiver.`);
+      }
+    }
   }
 
   const deployUrl = packet.deploy?.preview_url || packet.deploy?.production_url;
@@ -5025,6 +5159,12 @@ async function runRecordCommand(args, ambient = null) {
   let consent = resolveConsent({ proxyBase });
   if (!consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
     consent = await promptAndPersistConsent({ proxyBase });
+  }
+  // Default-on consent is announced, never silent: the operator learns the
+  // remit is happening, the exact endpoint receiving it, and how to turn it
+  // off. Once per process so agent loops don't train operators to ignore it.
+  if (consent.default_on === true && !remitDisabled) {
+    announceDefaultOnTelemetry(consent.scope || proxyBase);
   }
 
   const record = assembleRunRecord({

@@ -31,8 +31,9 @@ The Workflow Findings Sidecar was deliberately local-only. Run Telemetry keeps
 the local trail but changes the contribution model:
 
 - **Capture is always local.** The Run Record is written regardless of consent.
-- **Consent gates remit, not capture.** A single up-front opt-out decides only
-  whether records are sent. Opt-outs lose nothing locally.
+- **Consent gates remit, not capture.** A machine-level opt-out decides only
+  whether records are sent (default ON for the canonical NEXT endpoint,
+  announced at remit time). Opt-outs lose nothing locally.
 - **The unit is the Run Record, not a single finding.** Findings (manual and
   harvested) are one channel within it.
 
@@ -113,8 +114,11 @@ command calls** — not a one-time `start` prompt that later commands bypass.
 - **Env override** — `CAMPAIGNS_OS_TELEMETRY` accepts `1|true|on` /
   `0|false|off`; it beats the file (CI/automation). An **unknown** value
   fails closed (no remit) with a warning, never a silent guess.
-- **Unknown + non-interactive** (no file, no env, no TTY) → **OFF**. Never remit
-  without an explicit yes.
+- **No file, no env** → **ON for the canonical NEXT endpoint only**, announced
+  at remit time with the endpoint and the opt-out command. A non-canonical
+  `--proxy-base` (staging, self-hosted) stays **OFF** until explicitly
+  consented, and a malformed config file resolves **OFF** — the default never
+  overrides an unreadable prior choice.
 
 Consent gates **remit only**. With consent off, runs still write the local Run
 Record and `findings`/`export` still work. No run is ever blocked on telemetry,

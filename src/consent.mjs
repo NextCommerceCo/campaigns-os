@@ -1,12 +1,15 @@
-// Run Telemetry consent — machine/user-level opt-out, resolved through one
+// Run Telemetry consent — machine/user-level opt-OUT, resolved through one
 // shared resolver that EVERY remitting command calls (not a start-only
 // prompt). See docs/workflow-findings-sidecar.md (Consent).
 //
 // Consent gates REMIT only. Local capture (the Run Record) always happens.
-// Resolution precedence: env override > user-level config file > fail-closed
-// default OFF. An unknown env value fails closed (no remit) with a warning,
-// never a silent guess. Unknown + non-interactive (no file, no env, no TTY)
-// is OFF — we never remit without an explicit yes.
+// Resolution precedence: env override > user-level config file > default.
+// The DEFAULT is ON for the canonical NEXT endpoint only (announced at remit
+// time with the endpoint and the opt-out command); any other endpoint stays
+// fail-closed until explicitly consented. An unknown env value fails closed
+// (no remit) with a warning, never a silent guess; a malformed config file
+// also resolves OFF — an unreadable prior choice is never overridden by the
+// default.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -43,6 +46,16 @@ export function normalizeConsentScope(value) {
     return normalizeUrl(`https://${raw}`);
   }
   return null;
+}
+
+// The canonical NEXT remit endpoint. Default-on consent applies ONLY to this
+// scope; any other proxy base needs an explicit operator choice. Stored in
+// NORMALIZED form (and asserted at module load) so a scheme change, typo, or
+// trailing slash here cannot silently flip the default; compare requested
+// scopes against this export, never against a string literal.
+export const CANONICAL_REMIT_SCOPE = normalizeConsentScope("https://campaign-map.nextcommerce.com");
+if (!CANONICAL_REMIT_SCOPE) {
+  throw new Error("CANONICAL_REMIT_SCOPE failed to normalize; default-on consent would misfire.");
 }
 
 function assertConsentState(state) {
@@ -153,8 +166,12 @@ export function writeConsentConfig(state, {
 /**
  * The shared resolver every remitting command calls. Returns
  * `{ state: "on"|"off", source: "env"|"file"|"default", resolved }`.
- * `resolved` is false only when the state is the fail-closed default (no env,
- * no usable file) — an interactive command may then prompt to set it.
+ * With no env and no usable file, the CANONICAL endpoint resolves to the
+ * announced default: `{ state: "on", source: "default", resolved: true,
+ * default_on: true }`. `resolved` is false only for the remaining
+ * fail-closed defaults — a malformed config file, a scope mismatch, or a
+ * non-canonical endpoint with no explicit choice — where an interactive
+ * command may then prompt to set it.
  */
 export function resolveConsent({
   env = process.env,
@@ -164,6 +181,9 @@ export function resolveConsent({
 } = {}) {
   const raw = env[TELEMETRY_ENV_VAR];
   const parsed = parseEnvConsent(raw);
+  // Normalized once; both the file-scope branch and the default branch
+  // compare against this same value.
+  const requestedScope = normalizeConsentScope(proxyBase);
   if (parsed.unknown) {
     warn(`[campaigns-os] ${TELEMETRY_ENV_VAR}="${raw}" is not a recognized value (use 1|true|on|0|false|off). Telemetry remit is OFF for safety.`);
     return { state: "off", source: "env", resolved: true };
@@ -182,7 +202,6 @@ export function resolveConsent({
     if (fileState === "off") return { state: "off", source: "file", resolved: true };
     if (fileState === "on") {
       const storedScope = fileConsentScope(config);
-      const requestedScope = normalizeConsentScope(proxyBase);
       if (scopeMatches(storedScope, requestedScope)) {
         return { state: "on", source: "file", resolved: true, scope: storedScope };
       }
@@ -198,8 +217,40 @@ export function resolveConsent({
     }
   }
 
-  // No env, no usable file → fail closed.
+  // No env, no usable file → default ON for the canonical NEXT endpoint.
+  // Run Telemetry is how the toolchain improves (capture is always local;
+  // this gates only the remit), so an operator who never expressed a choice
+  // shares by default and opts out with `campaigns-os telemetry off` or
+  // CAMPAIGNS_OS_TELEMETRY=off. The grant is exactly two cases:
+  //   1. proxyBase ABSENT (null/undefined/empty) — remitting commands fall
+  //      back to the canonical default endpoint, so the scope IS canonical;
+  //   2. proxyBase normalizes to the canonical scope.
+  // A non-empty proxyBase that fails to normalize is NOT canonical — it
+  // stays fail-closed like any other unapproved endpoint. The remit-time
+  // announcement names the endpoint explicitly.
+  // (An absent proxyBase always normalizes to a null requestedScope, so the
+  // two cases below are disjoint: absent → canonical fallback; present →
+  // must normalize to the canonical scope exactly.)
+  const proxyBaseAbsent = !isNonEmptyString(proxyBase);
+  if (proxyBaseAbsent || requestedScope === CANONICAL_REMIT_SCOPE) {
+    return { state: "on", source: "default", resolved: true, default_on: true, scope: CANONICAL_REMIT_SCOPE };
+  }
   return { state: "off", source: "default", resolved: false };
+}
+
+// Announce default-on telemetry at most once per process, naming the exact
+// endpoint so the operator knows where the data goes before it goes there.
+// Once-per-PROCESS is the designed semantic: the CLI is one-shot, so this is
+// once per command for normal usage, while a long-lived harness importing
+// remitting commands directly gets one announcement per process instead of
+// stderr noise on every record. The injectable `write` keeps the contract
+// testable without exposing the latch.
+let defaultOnAnnounced = false;
+export function announceDefaultOnTelemetry(endpoint, { write = (line) => process.stderr.write(line) } = {}) {
+  if (defaultOnAnnounced) return false;
+  defaultOnAnnounced = true;
+  write(`[campaigns-os] Run telemetry is ON by default: anonymized run records are sent to ${endpoint || CANONICAL_REMIT_SCOPE} to improve templates, tooling, and guidance. Disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off.\n`);
+  return true;
 }
 
 async function defaultAsk(question) {
@@ -214,9 +265,12 @@ async function defaultAsk(question) {
 
 /**
  * The up-front, ask-once prompt. Only prompts when interactive (TTY) AND no
- * explicit choice exists yet; persists the answer so later runs don't re-ask.
- * Non-interactive callers get the fail-closed default OFF without blocking —
- * telemetry never blocks a build. `ask` is injectable for tests.
+ * resolved state exists yet — which, under default-on for the canonical
+ * endpoint, means the prompt effectively fires only for NON-canonical remit
+ * scopes (staging/self-hosted) that need an explicit yes. Persists the
+ * answer so later runs don't re-ask. Non-interactive unresolved callers stay
+ * fail-closed OFF without blocking — telemetry never blocks a build. `ask`
+ * is injectable for tests.
  *
  * The [Y/n] capitalization makes "on" the default for an empty Enter, matching
  * the design's plainly-worded prompt.
