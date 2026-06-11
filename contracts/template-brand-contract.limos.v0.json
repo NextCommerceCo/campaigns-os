@@ -1,0 +1,27 @@
+{
+  "schema_version": "template-brand-contract/v0",
+  "family": "limos",
+  "extends": "template-brand-contract.shared-commerce.v0.json",
+  "description": "Brand contract for the Limos single-offer quantity-stepper starter-template family.",
+  "family_inventory": {
+    "supported_pages": ["landing", "presell", "checkout", "upsell", "receipt"],
+    "required_sdk_anchors": {
+      "checkout": ["data-next-bundle-selector", "data-next-bundle-card", "data-next-bundle-qty-for", "data-next-payment-method", "data-next-payment-form"],
+      "upsell": ["data-next-upsell", "data-next-bundle-selector"],
+      "receipt": ["data-next-order-items", "data-next-skeleton"]
+    },
+    "theme_insertion_point": "Load brand-theme.css from frontmatter styles after css/next-core.css on checkout, upsell, downsell, and receipt pages.",
+    "default_color_residue": ["#3c7dff", "#0a265c"],
+    "pricing_presentation": "Single-offer quantity selector and upsell includes support full-price, compare/current, unit-plus-total, and savings presentations through SDK display nodes.",
+    "bundle_picker": "Quantity-stepper-first single offer selector with data-next-bundle-qty-for controls; do not force Olympus tier cards into checkout.",
+    "order_bump": "Optional order-bump variants are valid only when prepurchase packages exist.",
+    "upsell_downsell": "Offer includes use upsell_offer or upsell_bundle_tiers with a visible price row above the accept CTA.",
+    "exit_pop": {
+      "default_included": true,
+      "include": "exit-intent-popup.html",
+      "default_coupon_codes": ["EXIT10", "SAVE10"],
+      "behavior": "The starter checkout includes exit-intent-popup.html by default; strip it or wire it to CampaignSpec checkout exit_intent/promo_code_input before launch."
+    },
+    "qa_selectors": [".checkout-wrapper", ".submit-button", ".price-wrapper", ".brand-logo", ".exit-intent-popup"]
+  }
+}

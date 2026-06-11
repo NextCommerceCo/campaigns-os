@@ -3,8 +3,8 @@
 // and the selectors QA inspects to prove the brand layer applied.
 //
 // Contract files live at contracts/template-brand-contract.<family>.v0.json.
-// A family without a contract file simply has no brand contract yet — loaders
-// return null and callers treat brand checks as not_applicable for it.
+// Family contracts may `extends` a shared contract file in the same directory;
+// arrays and scalar values replace parent values, object values merge.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,16 +21,63 @@ export function templateBrandContractPath(family) {
 export function loadTemplateBrandContract(family) {
   const path = templateBrandContractPath(family);
   if (!path || !existsSync(path)) return null;
-  const contract = JSON.parse(readFileSync(path, "utf8"));
-  if (contract.schema_version !== TEMPLATE_BRAND_CONTRACT_SCHEMA) {
-    throw new Error(
-      `Template brand contract ${path} has schema_version "${contract.schema_version}"; expected "${TEMPLATE_BRAND_CONTRACT_SCHEMA}".`,
-    );
-  }
+  const contract = loadTemplateBrandContractFile(path);
   if (contract.family !== family) {
-    throw new Error(`Template brand contract ${path} declares family "${contract.family}"; expected "${family}".`);
+    throw templateBrandContractError("family_mismatch", `Template brand contract ${path} declares family "${contract.family}"; expected "${family}".`);
   }
   return contract;
+}
+
+function loadTemplateBrandContractFile(path, seen = new Set()) {
+  if (seen.has(path)) throw templateBrandContractError("extends_cycle", `Template brand contract extends cycle at ${path}.`);
+  seen.add(path);
+  let contract = null;
+  try {
+    contract = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw templateBrandContractError(
+      "parse_error",
+      `Template brand contract ${path} failed to parse: ${error instanceof Error ? error.message : String(error)}.`,
+      error,
+    );
+  }
+  if (!isPlainObject(contract) || contract.schema_version !== TEMPLATE_BRAND_CONTRACT_SCHEMA) {
+    throw templateBrandContractError(
+      "schema_mismatch",
+      `Template brand contract ${path} has schema_version "${contract?.schema_version}"; expected "${TEMPLATE_BRAND_CONTRACT_SCHEMA}".`,
+    );
+  }
+  const parentRef = typeof contract.extends === "string" && contract.extends.trim() ? contract.extends.trim() : null;
+  if (!parentRef) return contract;
+  const parentPath = join(dirname(path), parentRef);
+  if (!existsSync(parentPath)) {
+    throw templateBrandContractError("extends_missing_parent", `Template brand contract ${path} extends missing file "${parentRef}".`);
+  }
+  const merged = mergeContractObjects(loadTemplateBrandContractFile(parentPath, seen), contract);
+  delete merged.extends;
+  return merged;
+}
+
+function templateBrandContractError(code, message, cause = undefined) {
+  const error = new Error(message, cause ? { cause } : undefined);
+  error.code = code;
+  return error;
+}
+
+function mergeContractObjects(parent, child) {
+  const merged = { ...parent };
+  for (const [key, value] of Object.entries(child)) {
+    if (isPlainObject(value) && isPlainObject(parent?.[key])) {
+      merged[key] = mergeContractObjects(parent[key], value);
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 // Normalize a CSS color to a comparable form. Computed styles come back as
