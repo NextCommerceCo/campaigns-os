@@ -243,8 +243,8 @@ export function resolveConsent({
 // Once-per-PROCESS is the designed semantic: the CLI is one-shot, so this is
 // once per command for normal usage, while a long-lived harness importing
 // remitting commands directly gets one announcement per process instead of
-// stderr noise on every record. The test hook makes that contract testable
-// instead of structural.
+// stderr noise on every record. The injectable `write` keeps the contract
+// testable without exposing the latch.
 let defaultOnAnnounced = false;
 export function announceDefaultOnTelemetry(endpoint, { write = (line) => process.stderr.write(line) } = {}) {
   if (defaultOnAnnounced) return false;
