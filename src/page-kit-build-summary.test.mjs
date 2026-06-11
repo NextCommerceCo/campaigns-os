@@ -142,8 +142,28 @@ test("build summary: shape warnings surface per page; DUPLICATE_OUTPUT escalates
       },
     });
     const result = evaluatePageKitBuildSummary({ targetRepo, publicRouteSlug: SLUG, assemblyComplete: true });
-    assert.deepEqual(codes(result.errors), ["built_output.build_page_warning"]);
+    assert.deepEqual(codes(result.errors), ["built_output.build_page_warning_escalated"]);
     assert.match(result.errors[0].message, /DUPLICATE_OUTPUT/);
+    assert.deepEqual(codes(result.warnings), ["built_output.build_page_warning"]);
+    assert.match(result.warnings[0].message, /NESTED_NO_PERMALINK/);
+  });
+});
+
+test("build summary: a failed page's shape warnings survive alongside the error", () => {
+  withTempDir((dir) => {
+    const targetRepo = scaffoldTargetRepo(dir, {
+      summary: {
+        pages: [
+          summaryPage({
+            status: "error",
+            errors: [{ code: "RENDER_FAILED", message: "Liquid render failed" }],
+            warnings: [{ code: "NESTED_NO_PERMALINK", message: "nested page file without permalink" }],
+          }),
+        ],
+      },
+    });
+    const result = evaluatePageKitBuildSummary({ targetRepo, publicRouteSlug: SLUG, assemblyComplete: true });
+    assert.deepEqual(codes(result.errors), ["built_output.build_page_error"]);
     assert.deepEqual(codes(result.warnings), ["built_output.build_page_warning"]);
     assert.match(result.warnings[0].message, /NESTED_NO_PERMALINK/);
   });

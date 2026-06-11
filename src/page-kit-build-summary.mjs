@@ -23,8 +23,19 @@ export const PAGE_KIT_BUILD_SUMMARY_MIN_PAGE_KIT = "0.1.4";
 
 // Page Kit shape warnings that mean the rendered funnel can silently differ
 // from what the author intended; once assembly is complete these escalate to
-// the same severity as a failed page.
+// the same severity as a failed page. Exact-match against the page-kit
+// warning-code contract (lib/engine/build.js in NextCommerceCo/campaign-page-kit);
+// when page-kit adds a funnel-corrupting code, it must be added here explicitly —
+// unknown codes deliberately stay non-blocking warnings.
 const ESCALATED_WARNING_CODES = new Set(["DUPLICATE_OUTPUT", "NO_CAMPAIGN"]);
+
+function safeMtimeMs(path) {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+}
 
 export function readPageKitBuildSummary(targetRepo) {
   const path = join(targetRepo, PAGE_KIT_BUILD_SUMMARY_REL_PATH);
@@ -92,11 +103,12 @@ export function evaluatePageKitBuildSummary({
 
   // Staleness: if any built page for this campaign is newer than the summary,
   // the summary describes an older build and its verdicts cannot be trusted.
-  if (typeof builtPathForPage === "function") {
-    const summaryMtime = statSync(path).mtimeMs;
+  const summaryMtime = typeof builtPathForPage === "function" ? safeMtimeMs(path) : null;
+  if (summaryMtime !== null) {
     const staleSources = activePages
       .map((page) => builtPathForPage(page))
-      .filter((builtPath) => builtPath && existsSync(builtPath) && statSync(builtPath).mtimeMs > summaryMtime + 1);
+      .map((builtPath) => (builtPath ? safeMtimeMs(builtPath) : null))
+      .filter((builtMtime) => builtMtime !== null && builtMtime > summaryMtime + 1);
     if (staleSources.length > 0) {
       warnings.push({
         code: "built_output.build_summary_stale",
@@ -136,14 +148,16 @@ export function evaluatePageKitBuildSummary({
           `${pageErrors.map((e) => e.message || e.code).join("; ") || "status=error"}.`,
         detail: { input_file: page.inputFile, url: page.url ?? null, errors: pageErrors },
       });
-      continue;
+      // Fall through: a page that fails to render can still carry shape
+      // warnings (e.g. NESTED_NO_PERMALINK) that must survive the error.
     }
 
     for (const warning of pageWarnings) {
       flagged += 1;
-      const target = ESCALATED_WARNING_CODES.has(warning.code) ? issueTarget : warnings;
+      const escalated = ESCALATED_WARNING_CODES.has(warning.code);
+      const target = escalated ? issueTarget : warnings;
       target.push({
-        code: "built_output.build_page_warning",
+        code: escalated ? "built_output.build_page_warning_escalated" : "built_output.build_page_warning",
         message:
           `Page Kit flagged "${page.inputFile}"${page.url ? ` (${page.url})` : ""}: [${warning.code}] ${warning.message}`,
         detail: { input_file: page.inputFile, url: page.url ?? null, warning_code: warning.code },
