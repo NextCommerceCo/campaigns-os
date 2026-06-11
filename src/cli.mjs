@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runQaCli } from "./qa-node.mjs";
 import {
@@ -4106,8 +4106,8 @@ function toolingCommand(args) {
   }
 
   if (staleSkills.length) {
-    const platformArg = args.target ? ` --target ${args.target}` : ` --platform ${args.platform || "all"}`;
-    actions.push(`Refresh installed skills: npm run campaigns-os -- install-skills${platformArg}. Restart local agent sessions afterwards.`);
+    const skillArgs = args.target ? ["--target", args.target] : ["--platform", args.platform || "all"];
+    actions.push(`Refresh installed skills: npm run campaigns-os -- install-skills ${skillArgs.join(" ")}. Restart local agent sessions afterwards.`);
   }
 
   if (cli.global_binary.status === "not_found") {
@@ -4143,7 +4143,7 @@ function localCliStatus(pkg) {
       ? pkg.bin
       : null;
   const localBin = binRel ? resolve(ROOT, binRel) : null;
-  const globalPath = captureStdout("which", ["campaigns-os"]);
+  const globalPath = findExecutableOnPath("campaigns-os");
   return {
     local_bin: localBin,
     local_bin_exists: Boolean(localBin && existsSync(localBin)),
@@ -4155,18 +4155,24 @@ function localCliStatus(pkg) {
 }
 
 function localGitStatus(root) {
-  const inside = captureStdout("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]);
-  if (inside !== "true") return { status: "unavailable", reason: "not a git worktree" };
+  const inside = runCommand("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]);
+  if (!inside.ok) return { status: "unavailable", reason: "git rev-parse failed", error: inside.error };
+  if (inside.stdout !== "true") return { status: "unavailable", reason: "not a git worktree" };
 
-  const head = captureStdout("git", ["-C", root, "rev-parse", "--short", "HEAD"]);
-  const branch = captureStdout("git", ["-C", root, "branch", "--show-current"]);
-  const upstream = captureStdout("git", ["-C", root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
-  const dirty = captureStdout("git", ["-C", root, "status", "--porcelain"]).length > 0;
+  const head = runCommand("git", ["-C", root, "rev-parse", "--short", "HEAD"]);
+  if (!head.ok) return { status: "unavailable", reason: "git HEAD could not be resolved", error: head.error };
+
+  const branch = runCommand("git", ["-C", root, "branch", "--show-current"]);
+  const upstream = runCommand("git", ["-C", root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
+  const dirty = runCommand("git", ["-C", root, "status", "--porcelain"]);
+  if (!dirty.ok) return { status: "unavailable", reason: "git status failed", error: dirty.error };
   let ahead = null;
   let behind = null;
-  if (upstream) {
-    const counts = captureStdout("git", ["-C", root, "rev-list", "--left-right", "--count", `HEAD...${upstream}`]);
-    const [left, right] = counts.split(/\s+/).map((value) => Number.parseInt(value, 10));
+  const upstreamName = upstream.ok ? upstream.stdout : "";
+  if (upstreamName) {
+    const counts = runCommand("git", ["-C", root, "rev-list", "--left-right", "--count", `HEAD...${upstreamName}`]);
+    if (!counts.ok) return { status: "unavailable", reason: "git ahead/behind comparison failed", error: counts.error };
+    const [left, right] = counts.stdout.split(/\s+/).map((value) => Number.parseInt(value, 10));
     ahead = Number.isFinite(left) ? left : null;
     behind = Number.isFinite(right) ? right : null;
   }
@@ -4174,24 +4180,46 @@ function localGitStatus(root) {
   return {
     status: "ok",
     root,
-    branch: branch || null,
-    head: head || null,
-    upstream: upstream || null,
+    branch: branch.ok && branch.stdout ? branch.stdout : null,
+    head: head.stdout || null,
+    upstream: upstreamName || null,
     ahead,
     behind,
-    dirty,
-    note: upstream
+    dirty: dirty.stdout.length > 0,
+    note: upstreamName
       ? "Freshness is compared to the locally fetched upstream ref; run git fetch first for a network-current answer."
       : "No upstream configured; compare this checkout manually before relying on it.",
   };
 }
 
-function captureStdout(command, args) {
+function runCommand(command, args) {
   try {
-    return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return "";
+    return {
+      ok: true,
+      stdout: execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: typeof error.stdout === "string" ? error.stdout.trim() : "",
+      error: error.message || String(error),
+    };
   }
+}
+
+function findExecutableOnPath(name) {
+  const pathEnv = process.env.PATH || "";
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+    : [""];
+  for (const dir of pathEnv.split(delimiter).filter(Boolean)) {
+    for (const ext of extensions) {
+      const candidate = join(dir, process.platform === "win32" && !name.toLowerCase().endsWith(ext.toLowerCase()) ? `${name}${ext}` : name);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
 }
 
 function installSkillsToTarget({ sourceDir, target, dryRun }) {
