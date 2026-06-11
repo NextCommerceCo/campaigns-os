@@ -156,9 +156,9 @@ const KNOWN_TEMPLATE_FAMILIES = new Set([
 // pricing contracts all assume a certified family. "custom" (or any family
 // outside the catalog) is an explicit operator decision recorded as a
 // waiver, never a default road the agent can wander onto.
-let certifiedFamiliesCache = null;
+// Recomputed per call (a handful of small JSON reads) so long-lived
+// processes never serve a stale certified set after contract edits.
 function certifiedTemplateFamilies() {
-  if (certifiedFamiliesCache) return certifiedFamiliesCache;
   const catalog = readJson(join(ROOT, "contracts/commerce-surface-catalog.json"));
   const certified = Object.keys(catalog.families || {}).filter((family) => {
     try {
@@ -167,8 +167,7 @@ function certifiedTemplateFamilies() {
       return false;
     }
   });
-  certifiedFamiliesCache = Object.freeze(new Set(certified));
-  return certifiedFamiliesCache;
+  return new Set(certified);
 }
 
 function isCertifiedTemplateFamily(family) {
@@ -290,14 +289,20 @@ export async function main(argv) {
   // Persistence is OPT-IN — an explicit --lifecycle-journal /
   // CAMPAIGNS_OS_LIFECYCLE_LOG, or an active run session. With none, behavior
   // is identical to before.
+  //
+  // `sessionHolder` is per-invocation, NOT module state: when start/
+  // prepare-build auto-open a run session mid-command, they publish it here
+  // so onFinish persists this command's own lifecycle entry into the new
+  // session — without two interleaved invocations ever sharing a session.
+  const sessionHolder = { current: ambient, autoStarted: false };
   await withCommandLifecycle(
     {
       command,
       argvShape: argvShape(args),
       runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
-      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle, ambient),
+      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle, sessionHolder),
     },
-    (recorder) => dispatch(command, args, recorder, ambient),
+    (recorder) => dispatch(command, args, recorder, ambient, sessionHolder),
   );
 }
 
@@ -315,22 +320,22 @@ function ambientRunSession() {
 // to finish. The dogfood evidence demanded this: agents reliably run the
 // entry point and skip the bookkeeping, so the bookkeeping cannot depend on
 // them. `--no-run-session` opts a run out (CI fixtures, throwaway runs);
-// an already-active session is never replaced.
-let autoStartedRunSession = null;
-
-function autoStartRunSession(prepareResult, args, ambient) {
+// an already-active session is never replaced. The session lands on the
+// caller-supplied --target (the directory the operator named), never a path
+// derived from packet location, so an overridden packet path cannot split
+// the session from the build.
+function autoStartRunSession(prepareResult, args, ambient, sessionHolder) {
   if (args["no-run-session"] === true || ambient) return null;
   try {
     const packetPath = prepareResult?.packetPath;
-    const packet = prepareResult?.packet;
-    if (!packetPath || !packet) return null;
-    const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(resolve(packetPath));
+    const targetRepo = optionalString(args.target) ? resolve(args.target) : null;
+    if (!packetPath || !targetRepo) return null;
     if (findRunSession(targetRepo)) return null;
     const runId = mintSessionRunId();
     const session = {
       ...buildRunSession({
         runId,
-        lifecycleJournal: join(resolve(targetRepo), LIFECYCLE_JOURNAL_REL_PATH),
+        lifecycleJournal: join(targetRepo, LIFECYCLE_JOURNAL_REL_PATH),
         packet: resolve(packetPath),
       }),
       last_recommendation: buildRecommendation({
@@ -340,11 +345,17 @@ function autoStartRunSession(prepareResult, args, ambient) {
       }),
     };
     const sessionPath = writeRunSession(targetRepo, session);
-    autoStartedRunSession = { session, path: sessionPath, dir: resolve(targetRepo) };
+    if (sessionHolder) {
+      sessionHolder.current = { session, path: sessionPath, dir: targetRepo };
+      sessionHolder.autoStarted = true;
+    }
     process.stderr.write(`[campaigns-os] Run session ${runId} started automatically (run telemetry is ambient; finish with \`campaigns-os run end\`, opt out per-run with --no-run-session).\n`);
-    return autoStartedRunSession;
-  } catch {
-    return null; // telemetry never blocks a build
+    return sessionHolder?.current || null;
+  } catch (error) {
+    // Telemetry never blocks a build, but a failed session write must be
+    // distinguishable from a clean skip.
+    process.stderr.write(`[campaigns-os] run session auto-start skipped: ${error.message}\n`);
+    return null;
   }
 }
 
@@ -365,27 +376,31 @@ function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = 
 // flag/env, or an ambient run session. Never throws — a lifecycle write must
 // not break a command (telemetry never blocks a build). `help` is a no-op
 // command and is not worth recording.
-function persistLifecycleIfRequested(args, command, lifecycle, ambient) {
+function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
   if (command === "help") return;
-  // A session auto-started DURING this command (start/prepare-build) should
-  // capture this command's own entry too — it is the run's first record.
-  // The run_id was unknown when the lifecycle wrapper started (the session
-  // did not exist yet), so stamp it now; otherwise run-record aggregation by
-  // run_id would silently exclude the run's entry-point command.
-  if (!ambient && autoStartedRunSession) {
-    ambient = autoStartedRunSession;
-    if (!lifecycle.run_id && ambient.session?.run_id) lifecycle = { ...lifecycle, run_id: ambient.session.run_id };
+  const ambient = sessionHolder?.current || null;
+  // A session auto-started DURING this command (start/prepare-build) is
+  // published into sessionHolder by autoStartRunSession; this command's own
+  // entry is the run's first record. Its run_id was unknown when the
+  // lifecycle wrapper started (the session did not exist yet), so stamp a
+  // local copy now — otherwise run-record aggregation by run_id would
+  // silently exclude the run's entry-point command. This stamp pairs with
+  // autoStartRunSession: if that call ever moves out of dispatch, the
+  // holder stays the single handoff point.
+  let entry = lifecycle;
+  if (sessionHolder?.autoStarted && !entry.run_id && ambient?.session?.run_id) {
+    entry = { ...entry, run_id: ambient.session.run_id };
   }
   const journalPath = resolveLifecycleJournal(args, { ambient });
   if (!journalPath) return;
   try {
-    appendLifecycleEntry(journalPath, lifecycle);
+    appendLifecycleEntry(journalPath, entry);
   } catch (error) {
     // Non-fatal, but leave a one-line breadcrumb on stderr so a capture failure
     // is observable rather than fully silent. stderr never pollutes --json stdout.
     process.stderr.write(`[campaigns-os] lifecycle capture skipped: ${error.message}\n`);
   }
-  persistDeviationIfDetected(args, command, lifecycle, ambient);
+  persistDeviationIfDetected(args, command, entry, ambient);
 }
 
 // Deviation telemetry: compare every pipeline-advancing command against the
@@ -413,7 +428,7 @@ function persistDeviationIfDetected(args, command, lifecycle, ambient) {
   }
 }
 
-async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null) {
+async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null, sessionHolder = null) {
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
@@ -427,7 +442,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     args.spec = resolved.specPath;
     const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: true, installContext: true }));
     result.spec_source = resolved;
-    autoStartRunSession(result, args, ambient);
+    autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
     return;
   }
@@ -437,7 +452,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     args.spec = resolved.specPath;
     const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: false, installContext: false }));
     result.spec_source = resolved;
-    autoStartRunSession(result, args, ambient);
+    autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
     return;
   }
@@ -5075,6 +5090,15 @@ async function runSessionEnd(args, ambient = null) {
   if (!args.json) console.log(`Run session ${session.run_id} ended; session cleared.`);
 }
 
+// Announce default-on telemetry at most once per process, naming the exact
+// endpoint so the operator knows where the data goes before it goes there.
+let defaultOnTelemetryAnnounced = false;
+function announceDefaultOnTelemetry(endpoint) {
+  if (defaultOnTelemetryAnnounced) return;
+  defaultOnTelemetryAnnounced = true;
+  process.stderr.write(`[campaigns-os] Run telemetry is ON by default: anonymized run records are sent to ${endpoint} to improve templates, tooling, and guidance. Disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off.\n`);
+}
+
 // Run Telemetry capture + remit. Thin dispatch: read this run's artifacts with
 // the same readers `findings harvest` uses, hand the parsed structures to
 // run-record.mjs to assemble the manifest, then (consent-gated, non-fatal)
@@ -5145,9 +5169,10 @@ async function runRecordCommand(args, ambient = null) {
     consent = await promptAndPersistConsent({ proxyBase });
   }
   // Default-on consent is announced, never silent: the operator learns the
-  // remit is happening and exactly how to turn it off.
+  // remit is happening, the exact endpoint receiving it, and how to turn it
+  // off. Once per process so agent loops don't train operators to ignore it.
   if (consent.default_on === true && !remitDisabled) {
-    process.stderr.write("[campaigns-os] Run telemetry is ON by default (improves templates, tooling, and guidance). Disable with `campaigns-os telemetry off` or CAMPAIGNS_OS_TELEMETRY=off.\n");
+    announceDefaultOnTelemetry(consent.scope || proxyBase);
   }
 
   const record = assembleRunRecord({
