@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
+  accessSync,
+  constants as fsConstants,
   cpSync,
   existsSync,
   mkdirSync,
@@ -4216,10 +4218,21 @@ function findExecutableOnPath(name) {
   for (const dir of pathEnv.split(delimiter).filter(Boolean)) {
     for (const ext of extensions) {
       const candidate = join(dir, process.platform === "win32" && !name.toLowerCase().endsWith(ext.toLowerCase()) ? `${name}${ext}` : name);
-      if (existsSync(candidate)) return candidate;
+      if (isExecutableFile(candidate)) return candidate;
     }
   }
   return null;
+}
+
+function isExecutableFile(candidate) {
+  if (!existsSync(candidate)) return false;
+  if (process.platform === "win32") return true;
+  try {
+    accessSync(candidate, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function installSkillsToTarget({ sourceDir, target, dryRun }) {
