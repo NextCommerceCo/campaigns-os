@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import {
+  __consentTestHooks,
+  announceDefaultOnTelemetry,
   normalizeConsentScope,
   parseEnvConsent,
   promptAndPersistConsent,
@@ -68,6 +70,35 @@ test("resolveConsent: default-on never applies to a non-canonical endpoint", asy
     assert.equal(result.source, "default");
     assert.equal(result.resolved, false, "non-canonical remit scope stays fail-closed until explicitly consented");
   });
+});
+
+test("resolveConsent: a non-empty proxyBase that fails to normalize is NOT granted default-on", async () => {
+  await withTempDir((dir) => {
+    const result = resolveConsent({
+      env: {},
+      configPath: join(dir, "config.json"),
+      proxyBase: "::::not a url::::",
+      warn: quiet,
+    });
+    assert.equal(result.state, "off", "an unparseable endpoint must not inherit canonical consent");
+    assert.equal(result.resolved, false);
+  });
+});
+
+test("announceDefaultOnTelemetry fires exactly once per process and names the endpoint", () => {
+  __consentTestHooks.resetDefaultOnAnnouncement();
+  const lines = [];
+  const write = (line) => lines.push(line);
+  assert.equal(announceDefaultOnTelemetry("https://campaign-map.nextcommerce.com", { write }), true);
+  assert.equal(announceDefaultOnTelemetry("https://campaign-map.nextcommerce.com", { write }), false);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /campaign-map\.nextcommerce\.com/);
+  assert.match(lines[0], /telemetry off/);
+  // Endpoint falls back to the canonical scope when omitted.
+  __consentTestHooks.resetDefaultOnAnnouncement();
+  assert.equal(announceDefaultOnTelemetry(null, { write }), true);
+  assert.match(lines[1], /campaign-map\.nextcommerce\.com/);
+  __consentTestHooks.resetDefaultOnAnnouncement();
 });
 
 test("resolveConsent: env beats file (both directions)", async () => {

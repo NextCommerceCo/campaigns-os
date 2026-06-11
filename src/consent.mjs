@@ -221,17 +221,40 @@ export function resolveConsent({
   // Run Telemetry is how the toolchain improves (capture is always local;
   // this gates only the remit), so an operator who never expressed a choice
   // shares by default and opts out with `campaigns-os telemetry off` or
-  // CAMPAIGNS_OS_TELEMETRY=off. A null proxyBase counts as canonical because
-  // remitting commands fall back to the canonical default endpoint; the
-  // remit-time announcement names that endpoint explicitly. Scope safety
-  // still holds: a NON-canonical proxy base (staging, self-hosted) gets no
-  // default consent — remitting to an endpoint nobody approved stays
-  // fail-closed.
-  if (!requestedScope || requestedScope === CANONICAL_REMIT_SCOPE) {
+  // CAMPAIGNS_OS_TELEMETRY=off. The grant is exactly two cases:
+  //   1. proxyBase ABSENT (null/undefined/empty) — remitting commands fall
+  //      back to the canonical default endpoint, so the scope IS canonical;
+  //   2. proxyBase normalizes to the canonical scope.
+  // A non-empty proxyBase that fails to normalize is NOT canonical — it
+  // stays fail-closed like any other unapproved endpoint. The remit-time
+  // announcement names the endpoint explicitly.
+  const proxyBaseAbsent = !isNonEmptyString(proxyBase);
+  if ((proxyBaseAbsent && requestedScope === null) || requestedScope === CANONICAL_REMIT_SCOPE) {
     return { state: "on", source: "default", resolved: true, default_on: true, scope: CANONICAL_REMIT_SCOPE };
   }
   return { state: "off", source: "default", resolved: false };
 }
+
+// Announce default-on telemetry at most once per process, naming the exact
+// endpoint so the operator knows where the data goes before it goes there.
+// Once-per-PROCESS is the designed semantic: the CLI is one-shot, so this is
+// once per command for normal usage, while a long-lived harness importing
+// remitting commands directly gets one announcement per process instead of
+// stderr noise on every record. The test hook makes that contract testable
+// instead of structural.
+let defaultOnAnnounced = false;
+export function announceDefaultOnTelemetry(endpoint, { write = (line) => process.stderr.write(line) } = {}) {
+  if (defaultOnAnnounced) return false;
+  defaultOnAnnounced = true;
+  write(`[campaigns-os] Run telemetry is ON by default: anonymized run records are sent to ${endpoint || CANONICAL_REMIT_SCOPE} to improve templates, tooling, and guidance. Disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off.\n`);
+  return true;
+}
+
+export const __consentTestHooks = Object.freeze({
+  resetDefaultOnAnnouncement() {
+    defaultOnAnnounced = false;
+  },
+});
 
 async function defaultAsk(question) {
   const { createInterface } = await import("node:readline/promises");

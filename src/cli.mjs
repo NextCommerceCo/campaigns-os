@@ -35,6 +35,7 @@ import {
   writeRunRecord,
 } from "./run-record.mjs";
 import {
+  announceDefaultOnTelemetry,
   promptAndPersistConsent,
   readConfig,
   resolveConfigPath,
@@ -5088,15 +5089,6 @@ async function runSessionEnd(args, ambient = null) {
   await runRecordCommand(endArgs, found);
   clearRunSession(sessionPath);
   if (!args.json) console.log(`Run session ${session.run_id} ended; session cleared.`);
-}
-
-// Announce default-on telemetry at most once per process, naming the exact
-// endpoint so the operator knows where the data goes before it goes there.
-let defaultOnTelemetryAnnounced = false;
-function announceDefaultOnTelemetry(endpoint) {
-  if (defaultOnTelemetryAnnounced) return;
-  defaultOnTelemetryAnnounced = true;
-  process.stderr.write(`[campaigns-os] Run telemetry is ON by default: anonymized run records are sent to ${endpoint} to improve templates, tooling, and guidance. Disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off.\n`);
 }
 
 // Run Telemetry capture + remit. Thin dispatch: read this run's artifacts with
