@@ -56,6 +56,7 @@ function withPreparedBuild(run) {
       "--source", sourceRoot,
       "--target", targetRepo,
       "--template-family", "olympus",
+      "--no-run-session",
       "--json",
     ]);
 

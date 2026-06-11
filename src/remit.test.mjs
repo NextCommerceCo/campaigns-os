@@ -146,12 +146,13 @@ test("remitRunRecord: a non-2xx response is also swallowed into ok:false", async
   assert.match(status.error, /503/);
 });
 
-test("CLI: run-record with consent OFF (default) skips remit and still writes the record", () => {
+test("CLI: run-record with consent explicitly OFF skips remit and still writes the record", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
     cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
-    const env = { ...process.env, XDG_CONFIG_HOME: dir };
-    delete env.CAMPAIGNS_OS_TELEMETRY;
+    // Consent now defaults ON for the canonical endpoint, so the skip-remit
+    // path needs an explicit operator OFF.
+    const env = { ...process.env, XDG_CONFIG_HOME: dir, CAMPAIGNS_OS_TELEMETRY: "off" };
 
     const out = JSON.parse(execFileSync("node", [
       CLI, "run-record", "--packet", packetPath, "--journal", join(dir, "wf.jsonl"), "--run-id", "run_off", "--json",
@@ -161,6 +162,27 @@ test("CLI: run-record with consent OFF (default) skips remit and still writes th
     assert.equal(out.record.consent_state, "off");
     assert.equal(out.record.remit_attempted, false);
     assert.equal(out.record.remit_ok, null);
+  });
+});
+
+test("CLI: default-on consent never applies to a non-canonical proxy base", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const env = { ...process.env, XDG_CONFIG_HOME: dir };
+    delete env.CAMPAIGNS_OS_TELEMETRY;
+
+    // Unconsented non-canonical endpoint: remit must NOT be attempted even
+    // though the default is now ON (scope safety). 127.0.0.1:1 would refuse
+    // instantly if it were attempted — the assertion is on attempted=false.
+    const out = JSON.parse(execFileSync("node", [
+      CLI, "run-record", "--packet", packetPath, "--journal", join(dir, "wf.jsonl"),
+      "--run-id", "run_scope", "--proxy-base", "http://127.0.0.1:1", "--json",
+    ], { encoding: "utf8", env }));
+
+    assert.equal(out.written, true);
+    assert.equal(out.record.consent_state, "off");
+    assert.equal(out.record.remit_attempted, false);
   });
 });
 

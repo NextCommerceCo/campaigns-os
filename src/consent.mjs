@@ -25,6 +25,10 @@ function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+// The canonical NEXT remit endpoint. Default-on consent applies ONLY to this
+// scope; any other proxy base needs an explicit operator choice.
+export const CANONICAL_REMIT_SCOPE = "https://campaign-map.nextcommerce.com";
+
 export function normalizeConsentScope(value) {
   if (!isNonEmptyString(value)) return null;
   const raw = value.trim();
@@ -198,7 +202,17 @@ export function resolveConsent({
     }
   }
 
-  // No env, no usable file → fail closed.
+  // No env, no usable file → default ON for the canonical NEXT endpoint.
+  // Run Telemetry is how the toolchain improves (capture is always local;
+  // this gates only the remit), so an operator who never expressed a choice
+  // shares by default and opts out with `campaigns-os telemetry off` or
+  // CAMPAIGNS_OS_TELEMETRY=off. Scope safety still holds: a NON-canonical
+  // proxy base (staging, self-hosted) gets no default consent — remitting to
+  // an endpoint nobody approved stays fail-closed.
+  const requestedScope = normalizeConsentScope(proxyBase);
+  if (!requestedScope || requestedScope === CANONICAL_REMIT_SCOPE) {
+    return { state: "on", source: "default", resolved: true, default_on: true, scope: CANONICAL_REMIT_SCOPE };
+  }
   return { state: "off", source: "default", resolved: false };
 }
 

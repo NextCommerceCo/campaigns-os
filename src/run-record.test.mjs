@@ -327,8 +327,9 @@ test("CLI: run-record assembles a valid record from a real packet (argv shape, n
   // Dry run against the in-repo example packet — exercises the full wiring
   // (doctor read, artifact refs, assembly) without writing into the repo.
   // Consent resolution is isolated from the operator's machine (empty
-  // XDG_CONFIG_HOME, env override cleared) so the asserted default-OFF state
-  // holds even on a machine that opted into telemetry.
+  // XDG_CONFIG_HOME, env override cleared) so the asserted DEFAULT state
+  // holds regardless of this machine's choice. --no-write disables remit,
+  // so default-on consent cannot phone home from this test.
   const isolatedConfigHome = mkdtempSync(join(tmpdir(), "campaigns-os-consent-isolation-"));
   let out;
   try {
@@ -356,8 +357,9 @@ test("CLI: run-record assembles a valid record from a real packet (argv shape, n
   assert.ok(record.argv_shape.includes("--packet"));
   assert.ok(!record.argv_shape.some((flag) => flag.includes("build-packet.basic.json")));
   assert.equal(record.argv_shape.includes("--no-write"), false);
-  // capture is always local; consent defaults OFF (safe) in v0 wiring.
-  assert.equal(record.consent_state, "off");
+  // capture is always local; remit consent defaults ON for the canonical
+  // endpoint (announced, opt-out via `telemetry off`).
+  assert.equal(record.consent_state, "on");
 });
 
 test("CLI: run-record infers the latest local QA verdict and records optional agent usage", () => {

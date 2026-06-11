@@ -46,12 +46,27 @@ test("parseEnvConsent recognizes exactly 1|true|on / 0|false|off (case-insensiti
   assert.equal(banana.unknown, true);
 });
 
-test("resolveConsent: file missing -> OFF (fail-closed default, unresolved)", async () => {
+test("resolveConsent: file missing -> ON by default for the canonical endpoint", async () => {
   await withTempDir((dir) => {
     const result = resolveConsent({ env: {}, configPath: join(dir, "config.json"), warn: quiet });
+    assert.equal(result.state, "on");
+    assert.equal(result.source, "default");
+    assert.equal(result.resolved, true);
+    assert.equal(result.default_on, true);
+  });
+});
+
+test("resolveConsent: default-on never applies to a non-canonical endpoint", async () => {
+  await withTempDir((dir) => {
+    const result = resolveConsent({
+      env: {},
+      configPath: join(dir, "config.json"),
+      proxyBase: "https://staging.example.com",
+      warn: quiet,
+    });
     assert.equal(result.state, "off");
     assert.equal(result.source, "default");
-    assert.equal(result.resolved, false);
+    assert.equal(result.resolved, false, "non-canonical remit scope stays fail-closed until explicitly consented");
   });
 });
 
@@ -169,12 +184,28 @@ test("resolveConfigPath honors XDG_CONFIG_HOME", () => {
   );
 });
 
-test("promptAndPersistConsent: non-interactive never prompts and stays OFF", async () => {
+test("promptAndPersistConsent: canonical scope is default-on, so no prompt fires", async () => {
   await withTempDir(async (dir) => {
     let asked = false;
     const result = await promptAndPersistConsent({
       configPath: join(dir, "config.json"),
       env: {},
+      isTTY: true,
+      ask: async () => { asked = true; return "y"; },
+    });
+    assert.equal(asked, false, "default-on is already resolved; nothing to ask");
+    assert.equal(result.state, "on");
+    assert.equal(result.prompted, false);
+  });
+});
+
+test("promptAndPersistConsent: non-interactive non-canonical scope stays OFF without prompting", async () => {
+  await withTempDir(async (dir) => {
+    let asked = false;
+    const result = await promptAndPersistConsent({
+      configPath: join(dir, "config.json"),
+      env: {},
+      proxyBase: "https://staging.example.com",
       isTTY: false,
       ask: async () => { asked = true; return "y"; },
     });
@@ -184,14 +215,15 @@ test("promptAndPersistConsent: non-interactive never prompts and stays OFF", asy
   });
 });
 
-test("promptAndPersistConsent: interactive empty answer defaults ON and persists", async () => {
+test("promptAndPersistConsent: interactive non-canonical scope prompts; empty answer defaults ON and persists", async () => {
   await withTempDir(async (dir) => {
     const configPath = join(dir, "config.json");
-    const result = await promptAndPersistConsent({ configPath, env: {}, isTTY: true, ask: async () => "" });
+    const proxyBase = "https://staging.example.com";
+    const result = await promptAndPersistConsent({ configPath, env: {}, proxyBase, isTTY: true, ask: async () => "" });
     assert.equal(result.state, "on");
     assert.equal(result.prompted, true);
     // persisted, so a later resolve reads it from file without re-asking
-    assert.deepEqual([resolveConsent({ env: {}, configPath, warn: quiet }).state], ["on"]);
+    assert.deepEqual([resolveConsent({ env: {}, configPath, proxyBase, warn: quiet }).state], ["on"]);
   });
 });
 
@@ -225,14 +257,14 @@ test("CLI: telemetry on/off/status round-trips via XDG_CONFIG_HOME", async () =>
   });
 });
 
-test("CLI: telemetry status defaults OFF when nothing is configured", async () => {
+test("CLI: telemetry status defaults ON when nothing is configured", async () => {
   await withTempDir((dir) => {
     const env = { ...process.env, XDG_CONFIG_HOME: dir };
     delete env[TELEMETRY_ENV_VAR];
     const status = JSON.parse(execFileSync("node", [CLI, "telemetry", "status", "--json"], { encoding: "utf8", env }));
-    assert.equal(status.state, "off");
+    assert.equal(status.state, "on");
     assert.equal(status.source, "default");
-    assert.equal(status.resolved, false);
+    assert.equal(status.resolved, true);
     assert.equal(status.config_present, false);
   });
 });

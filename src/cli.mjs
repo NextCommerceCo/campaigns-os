@@ -150,6 +150,31 @@ const KNOWN_TEMPLATE_FAMILIES = new Set([
   "custom",
 ]);
 
+// Certified template families: present in the commerce surface catalog AND
+// carrying a template brand contract. The OS automates certified families
+// only — "NEXT provides the rails": deterministic assembly, residue QA, and
+// pricing contracts all assume a certified family. "custom" (or any family
+// outside the catalog) is an explicit operator decision recorded as a
+// waiver, never a default road the agent can wander onto.
+let certifiedFamiliesCache = null;
+function certifiedTemplateFamilies() {
+  if (certifiedFamiliesCache) return certifiedFamiliesCache;
+  const catalog = readJson(join(ROOT, "contracts/commerce-surface-catalog.json"));
+  const certified = Object.keys(catalog.families || {}).filter((family) => {
+    try {
+      return loadTemplateBrandContract(family) !== null;
+    } catch {
+      return false;
+    }
+  });
+  certifiedFamiliesCache = Object.freeze(new Set(certified));
+  return certifiedFamiliesCache;
+}
+
+function isCertifiedTemplateFamily(family) {
+  return certifiedTemplateFamilies().has(String(family || ""));
+}
+
 const KNOWN_DEPLOY_TARGETS = new Set([
   "netlify",
   "cloudflare-pages",
@@ -189,8 +214,10 @@ Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                     [--allow-uncertified-template "<reason>"] [--no-run-session]
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                             [--allow-uncertified-template "<reason>"] [--no-run-session]
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
@@ -221,6 +248,8 @@ Usage:
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
+  Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
+  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session); Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
@@ -280,6 +309,45 @@ function ambientRunSession() {
   }
 }
 
+// Telemetry is ambient by default: `start`/`prepare-build` open the run
+// session themselves (in the TARGET repo, where the build happens), arm the
+// initial recommendation for deviation telemetry, and tell the operator how
+// to finish. The dogfood evidence demanded this: agents reliably run the
+// entry point and skip the bookkeeping, so the bookkeeping cannot depend on
+// them. `--no-run-session` opts a run out (CI fixtures, throwaway runs);
+// an already-active session is never replaced.
+let autoStartedRunSession = null;
+
+function autoStartRunSession(prepareResult, args, ambient) {
+  if (args["no-run-session"] === true || ambient) return null;
+  try {
+    const packetPath = prepareResult?.packetPath;
+    const packet = prepareResult?.packet;
+    if (!packetPath || !packet) return null;
+    const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(resolve(packetPath));
+    if (findRunSession(targetRepo)) return null;
+    const runId = mintSessionRunId();
+    const session = {
+      ...buildRunSession({
+        runId,
+        lifecycleJournal: join(resolve(targetRepo), LIFECYCLE_JOURNAL_REL_PATH),
+        packet: resolve(packetPath),
+      }),
+      last_recommendation: buildRecommendation({
+        stage: "doctor",
+        status: "ready",
+        expectedCommands: ["start", "prepare-build", "theme"],
+      }),
+    };
+    const sessionPath = writeRunSession(targetRepo, session);
+    autoStartedRunSession = { session, path: sessionPath, dir: resolve(targetRepo) };
+    process.stderr.write(`[campaigns-os] Run session ${runId} started automatically (run telemetry is ambient; finish with \`campaigns-os run end\`, opt out per-run with --no-run-session).\n`);
+    return autoStartedRunSession;
+  } catch {
+    return null; // telemetry never blocks a build
+  }
+}
+
 // The lifecycle journal a command writes to: explicit flag > env > active run
 // session's journal > fallback. Read and write resolve identically, so the
 // journal a command WRITES is the journal run-record READS. `ambient` is the
@@ -299,6 +367,15 @@ function resolveLifecycleJournal(args, { ambient = null, fallbackDir = null } = 
 // command and is not worth recording.
 function persistLifecycleIfRequested(args, command, lifecycle, ambient) {
   if (command === "help") return;
+  // A session auto-started DURING this command (start/prepare-build) should
+  // capture this command's own entry too — it is the run's first record.
+  // The run_id was unknown when the lifecycle wrapper started (the session
+  // did not exist yet), so stamp it now; otherwise run-record aggregation by
+  // run_id would silently exclude the run's entry-point command.
+  if (!ambient && autoStartedRunSession) {
+    ambient = autoStartedRunSession;
+    if (!lifecycle.run_id && ambient.session?.run_id) lifecycle = { ...lifecycle, run_id: ambient.session.run_id };
+  }
   const journalPath = resolveLifecycleJournal(args, { ambient });
   if (!journalPath) return;
   try {
@@ -350,6 +427,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     args.spec = resolved.specPath;
     const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: true, installContext: true }));
     result.spec_source = resolved;
+    autoStartRunSession(result, args, ambient);
     printPrepareResult(result, args);
     return;
   }
@@ -359,6 +437,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     args.spec = resolved.specPath;
     const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: false, installContext: false }));
     result.spec_source = resolved;
+    autoStartRunSession(result, args, ambient);
     printPrepareResult(result, args);
     return;
   }
@@ -832,6 +911,25 @@ function prepareBuild(args, options = {}) {
   const hintedTemplateFamily = preferredTemplateFamily(spec);
   const templateFamily = explicitTemplateFamily || hintedTemplateFamily || "undecided";
   const templateLocked = Boolean(explicitTemplateFamily) && templateFamily !== "undecided" && templateFamily !== "auto";
+  // Certified-template gate, enforced at the entry point: a decided family
+  // must be certified (commerce catalog + brand contract) or the operator
+  // must record the uncertified decision explicitly. Failing HERE — before
+  // any packet exists — keeps "build on an uncertified template" from ever
+  // being a default road.
+  const uncertifiedReason = optionalString(args["allow-uncertified-template"]);
+  const familyDecided = templateFamily !== "undecided" && templateFamily !== "auto";
+  const familyCertified = familyDecided && isCertifiedTemplateFamily(templateFamily);
+  if (familyDecided && !familyCertified && !uncertifiedReason) {
+    throw new Error(
+      `Template family "${templateFamily}" is not certified. Certified families: ${[...certifiedTemplateFamilies()].sort().join(", ")}. ` +
+      `Pick a certified family, or pass --allow-uncertified-template "<reason>" to record an explicit waiver (deterministic assembly, residue QA, and pricing contracts will not cover the build).`,
+    );
+  }
+  const templateCertification = familyDecided
+    ? familyCertified
+      ? { certified: true }
+      : { certified: false, waiver: { reason: uncertifiedReason, waived_by: optionalString(args["waived-by"], "operator"), waived_at: new Date().toISOString() } }
+    : null;
   const templateCandidates = hintedTemplateFamily
     ? [{ family: hintedTemplateFamily, source: "CampaignSpec preferred_template_family", confidence: "hint" }]
     : [];
@@ -903,6 +1001,7 @@ function prepareBuild(args, options = {}) {
         confidence: templateLocked ? "high" : "none",
         evidence: templateLocked ? ["prepare-build --template-family"] : [],
       },
+      template_certification: templateCertification,
       commerce_catalog: {
         required: true,
         family: templateLocked ? templateFamily : null,
@@ -1557,6 +1656,25 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
 
   if (packet.assembly?.template_family === "undecided" || packet.assembly?.template_lock?.locked !== true) {
     addIssue(errors, "assembly.template_lock", "Template family must be explicitly locked before commerce wiring.");
+  }
+
+  // Certified-template gate: a decided family must be certified (catalog +
+  // brand contract) or carry an explicit uncertified waiver. Uncertified
+  // families have no deterministic assembly path, no residue QA, and no
+  // pricing contract — the OS cannot stand behind the output, so the
+  // decision to leave the rails is recorded, never improvised.
+  const decidedFamily = packet.assembly?.template_family;
+  if (isNonEmptyString(decidedFamily) && decidedFamily !== "undecided") {
+    if (isCertifiedTemplateFamily(decidedFamily)) {
+      ready.push(`Template family "${decidedFamily}" is certified (commerce catalog + brand contract)`);
+    } else {
+      const waiver = packet.assembly?.template_certification?.waiver;
+      if (waiver && isNonEmptyString(waiver.reason)) {
+        addIssue(warnings, "assembly.template_certification", `Template family "${decidedFamily}" is NOT certified; proceeding under recorded waiver: ${waiver.reason}. Deterministic assembly, residue QA, and pricing contracts do not cover this family.`);
+      } else {
+        addIssue(errors, "assembly.template_certification", `Template family "${decidedFamily}" is not certified. Certified families: ${[...certifiedTemplateFamilies()].sort().join(", ")}. Pick a certified family, or rerun prepare-build with --allow-uncertified-template "<reason>" to record an explicit waiver.`);
+      }
+    }
   }
 
   const deployUrl = packet.deploy?.preview_url || packet.deploy?.production_url;
@@ -5025,6 +5143,11 @@ async function runRecordCommand(args, ambient = null) {
   let consent = resolveConsent({ proxyBase });
   if (!consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
     consent = await promptAndPersistConsent({ proxyBase });
+  }
+  // Default-on consent is announced, never silent: the operator learns the
+  // remit is happening and exactly how to turn it off.
+  if (consent.default_on === true && !remitDisabled) {
+    process.stderr.write("[campaigns-os] Run telemetry is ON by default (improves templates, tooling, and guidance). Disable with `campaigns-os telemetry off` or CAMPAIGNS_OS_TELEMETRY=off.\n");
   }
 
   const record = assembleRunRecord({

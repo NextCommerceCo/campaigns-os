@@ -6,6 +6,17 @@ separate from internal orchestration, QA defects, and implementation artifacts.
 
 ## Language
 
+**Certified Template Family**:
+A template family present in the commerce surface catalog AND carrying a
+template brand contract — the set the OS can automate end-to-end with
+deterministic assembly, residue QA, and pricing contracts. `start`/
+`prepare-build` accept only certified families by default; building on
+anything else requires `--allow-uncertified-template "<reason>"`, recorded on
+the Build Packet as `assembly.template_certification.waiver`. NEXT provides
+the rails: the certified set grows by shipping new contracted families, not
+by loosening the gate.
+_Avoid_: supported template, known family, template allowlist
+
 **Theme Gate**:
 The deterministic decision point that blocks `next polish|deploy|qa` and
 `qa run` when theme inspect proved a brand theme is generatable, the campaign
