@@ -51,12 +51,12 @@ export function themeWaiverFrom(reportTheme, ephemeralWaiver = null) {
 export function evaluateThemeGate({ reportTheme = null, contextTheme = null, scope = null, packetPath = null, waive = null } = {}) {
   const packetArg = packetPath || "<campaign-runtime.build.json>";
   const commercePages = commercePagesFromScope(scope).map((page) => page.page_id || page.route || page.type);
-  const result = (status, code, reason, requiredActions = []) => ({
+  const result = (status, code, reason, requiredActions = [], waiver = null) => ({
     status,
     code,
     reason,
     commerce_pages: commercePages,
-    waiver: null,
+    waiver,
     required_actions: requiredActions,
   });
 
@@ -70,16 +70,14 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
 
   const waiver = themeWaiverFrom(reportTheme, waive);
   if (waiver) {
-    const waived = result("waived", "theme_gate.waived", `Theme gate waived: ${waiver.reason}`);
-    waived.waiver = waiver;
-    return waived;
+    return result("waived", "theme_gate.waived", `Theme gate waived: ${waiver.reason}`, [], waiver);
   }
 
-  const status = String(reportTheme?.status || "");
+  const reportStatus = String(reportTheme?.status || "");
   const loadOrder = String(reportTheme?.load_order || "");
   const canGenerate = contextTheme?.generated?.can_generate === true;
 
-  if (status === "applied") {
+  if (reportStatus === "applied") {
     if (loadOrder !== "after-next-core") {
       return result(
         "blocked",
@@ -98,11 +96,11 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
     return result("pass", "theme_gate.applied", "Brand theme is applied after next-core.css on commerce pages.");
   }
 
-  if (status === "skipped" && !canGenerate) {
+  if (reportStatus === "skipped" && !canGenerate) {
     return result("pass", "theme_gate.nothing_generatable", "No generatable brand theme was found; the gate passes without a brand layer.");
   }
 
-  if (!canGenerate && !status) {
+  if (!canGenerate && !reportStatus) {
     return result("not_applicable", "theme_gate.no_theme_context", "No theme context exists for this campaign; run prepare-build/theme inspect to populate it.");
   }
 
@@ -112,7 +110,7 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
     return result(
       "blocked",
       "theme_gate.needs_decision",
-      `Assembly report theme status is "${status || "missing"}" and no generatable brand theme exists; record an applied brand layer or waive the gate with a reason.`,
+      `Assembly report theme status is "${reportStatus || "missing"}" and no generatable brand theme exists; record an applied brand layer or waive the gate with a reason.`,
       [
         {
           id: "waive_theme",

@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -484,6 +485,17 @@ function readJsonIfExists(path) {
 function writeJson(path, value) {
   mkdirSync(dirname(resolve(path)), { recursive: true });
   writeFileSync(resolve(path), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+// Atomic JSON write (tmp + rename) for artifacts other commands may read
+// concurrently — a torn assembly report would defeat the gate decision it
+// records. Matches the run-session write discipline.
+function writeJsonAtomic(path, value) {
+  const resolved = resolve(path);
+  mkdirSync(dirname(resolved), { recursive: true });
+  const tmp = `${resolved}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
+  renameSync(tmp, resolved);
 }
 
 /**
@@ -1235,7 +1247,7 @@ function themeWaive(args) {
     ...(Array.isArray(report.theme.evidence) ? report.theme.evidence : []),
     `Theme gate waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`,
   ];
-  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeJsonAtomic(reportPath, report);
   return {
     ok: true,
     action: "theme-waive",
@@ -1332,7 +1344,10 @@ function runPricingCssHideCheck({ packet, derived, warnings, ready }) {
     addIssue(warnings, "template_contract.brand_contract", `Template brand contract for "${family}" failed to load: ${error.message}`);
     return;
   }
-  if (!contract?.pricing_surfaces?.forbidden_css_hides?.length) return;
+  if (!contract?.pricing_surfaces?.forbidden_css_hides?.length) {
+    ready.push(`Pricing CSS scan not applicable for template family "${family || "(none)"}" (no brand contract with forbidden_css_hides)`);
+    return;
+  }
   const outputDir = derived.target_output_dir;
   if (!outputDir || !existsSync(outputDir)) return;
   const cssDir = join(outputDir, "assets/css");

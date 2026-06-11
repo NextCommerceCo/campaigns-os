@@ -56,6 +56,51 @@ test("findForbiddenPriceHides flags the exact CSS hack from the dogfood run", ()
   assert.match(hits[0].selector, /rr-full-price/);
 });
 
+test("findForbiddenPriceHides sees through @media and @supports wrappers", () => {
+  const contract = loadTemplateBrandContract("demeter");
+  const css = `
+@media (max-width: 768px) {
+  .rr-mobile .price-wrapper { display: none !important; }
+}
+@supports (display: grid) {
+  @media screen {
+    .price-display { display:none }
+  }
+}
+@media print { .rr-hero { color: black; } }
+`;
+  const hits = findForbiddenPriceHides(contract, css);
+  assert.deepEqual(
+    hits.map((hit) => hit.target).sort(),
+    [".price-display", ".price-wrapper"],
+    "at-rule nesting must not bypass the price-hide scan",
+  );
+});
+
+test("findForbiddenPriceHides handles CSS nesting with parent selector context", () => {
+  const contract = loadTemplateBrandContract("demeter");
+  const css = `.rr-full-price { color: red; .price-wrapper { display: none; } }`;
+  const hits = findForbiddenPriceHides(contract, css);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].target, ".price-wrapper");
+  assert.match(hits[0].selector, /rr-full-price/);
+});
+
+test("findForbiddenPriceHides ignores comments and declaration-only at-rules", () => {
+  const contract = loadTemplateBrandContract("demeter");
+  const css = `
+/* .price-wrapper { display: none; } */
+@font-face { font-family: X; src: url(x.woff2); }
+.price-wrapper { font-weight: 700; }
+`;
+  assert.deepEqual(findForbiddenPriceHides(contract, css), []);
+});
+
+test("normalizeCssColor treats near-invisible alpha as no visible color", () => {
+  assert.equal(normalizeCssColor("rgba(60,125,255,0.01)"), null, "alpha hack reads as invisible, not as a pass");
+  assert.equal(normalizeCssColor("rgba(60,125,255,0.5)"), "rgb(60, 125, 255)", "half-transparent starter blue still ships the palette");
+});
+
 test("findForbiddenPriceHides ignores price selectors without display:none", () => {
   const contract = loadTemplateBrandContract("demeter");
   assert.deepEqual(findForbiddenPriceHides(contract, ".price-wrapper { color: black; }"), []);

@@ -185,13 +185,20 @@ function resolveThemeGate({ packetPath, topologies, waive }) {
   const context = loadRuntimeArtifact(packetPath, "build-context.json");
   const doctor = loadRuntimeArtifact(packetPath, "doctor-output.json");
   const scope = doctor?.derived?.scope || themeGateScopeFromTopologies(topologies);
-  return evaluateThemeGate({
+  const gate = evaluateThemeGate({
     reportTheme: report?.theme || null,
     contextTheme: context?.theme || null,
     scope,
     packetPath,
     waive: waive || null,
   });
+  // Audit the scope source: a direct `qa run` without a prior doctor run is a
+  // legitimate CI path, but its commerce-page scope comes from spec
+  // topologies rather than the doctor's richer derived scope. Make that
+  // visible in the gate (and therefore in the verdict) instead of deciding
+  // from an unstated source.
+  gate.scope_source = doctor?.derived?.scope ? "doctor_derived_scope" : "spec_topologies";
+  return gate;
 }
 
 function loadRuntimeArtifact(packetPath, name) {
@@ -247,6 +254,7 @@ function themeGateAssertion(gate) {
         reason: gate.reason,
         commerce_pages: gate.commerce_pages,
         required_actions: gate.required_actions,
+        scope_source: gate.scope_source || null,
       },
     });
   }
@@ -258,7 +266,7 @@ function themeGateAssertion(gate) {
       status: STATUS.PASS,
       expected: "brand layer applied to commerce pages, or an explicit operator waiver",
       actual: gate.reason,
-      evidence: { waiver: gate.waiver, commerce_pages: gate.commerce_pages },
+      evidence: { waiver: gate.waiver, commerce_pages: gate.commerce_pages, scope_source: gate.scope_source || null },
     });
   }
   return assertion({
@@ -268,7 +276,7 @@ function themeGateAssertion(gate) {
     status: STATUS.PASS,
     expected: "theme gate pass or not applicable",
     actual: gate.reason,
-    evidence: { code: gate.code, commerce_pages: gate.commerce_pages },
+    evidence: { code: gate.code, commerce_pages: gate.commerce_pages, scope_source: gate.scope_source || null },
   });
 }
 
@@ -364,10 +372,32 @@ async function runQa(args) {
   const startedAt = new Date().toISOString();
   const runId = generateRunId();
   const gate = resolved.themeGate;
-  // Blocked theme gate refuses the whole run: the verdict carries the single
-  // blocker assertion plus the exact commands that unblock it (exit code 4).
+  // Blocked theme gate refuses the whole run: the verdict carries the gate
+  // blocker plus skipped audit assertions for every suppressed check family,
+  // so the verdict shape stays stable for consumers (exit code 4).
   if (gate.status === "blocked") {
-    return finalizeQaRun({ args, resolved, runId, startedAt, assertions: [themeGateAssertion(gate)], testOrders: [] });
+    const skippedByGate = (family, id) => assertion({
+      id,
+      family,
+      page: { page_id: "campaign" },
+      status: STATUS.SKIPPED,
+      expected: `${family} checks executed`,
+      actual: "Skipped: theme gate is blocked; no browser or test-order checks ran.",
+      evidence: { blocked_by: gate.code },
+    });
+    return finalizeQaRun({
+      args,
+      resolved,
+      runId,
+      startedAt,
+      assertions: [
+        themeGateAssertion(gate),
+        skippedByGate("funnel-flow", "funnel-flow.blocked_by_gate"),
+        skippedByGate("browser-runtime", "browser-runtime.blocked_by_gate"),
+        skippedByGate("browser-test-order", "browser-test-order.blocked_by_gate"),
+      ],
+      testOrders: [],
+    });
   }
 
   const assertions = [themeGateAssertion(gate)];

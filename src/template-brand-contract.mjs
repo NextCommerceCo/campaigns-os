@@ -47,7 +47,12 @@ export function normalizeCssColor(value) {
   }
   const rgb = v.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/);
   if (rgb) {
-    if (rgb[4] !== undefined && Number(rgb[4]) === 0) return null; // fully transparent: not a visible color
+    // Near-invisible alpha is not a shipped color (and an alpha hack to dodge
+    // the forbidden-palette check, e.g. rgba(60,125,255,0.01), should read as
+    // "no visible color" — which residue checks treat as suspicious anyway).
+    // Above the threshold the alpha is dropped: a half-transparent starter
+    // blue still ships the starter palette.
+    if (rgb[4] !== undefined && Number(rgb[4]) < 0.1) return null;
     return `rgb(${rgb[1]}, ${rgb[2]}, ${rgb[3]})`;
   }
   return null;
@@ -68,31 +73,62 @@ export function forbiddenComputedColors(contract) {
 }
 
 // Scan campaign CSS text for rules that hide pricing surfaces with
-// display:none. Returns one finding per offending selector. This is a
-// deliberately simple, deterministic scan: a selector listed in the
-// contract's forbidden_css_hides that appears in a rule whose declaration
-// block contains display:none.
+// display:none. Returns one finding per offending selector occurrence.
+//
+// Deliberately a brace-depth walker, not a flat regex: a flat
+// `selector { decls }` regex cannot see inside `@media` / `@supports` /
+// `@container` blocks, so a mobile-only price hide would bypass the scan —
+// the exact escape this check exists to close. The walker recurses into
+// at-rule and CSS-nesting blocks and matches targets against the full
+// selector context (ancestor preludes joined with the leaf selector). It is
+// still a lint, not a full CSS parser; pathological inputs (braces inside
+// attribute-selector strings) may mis-scan, which is acceptable for a
+// deterministic warning surface.
 export function findForbiddenPriceHides(contract, cssText) {
   const targets = contract?.pricing_surfaces?.forbidden_css_hides;
   if (!Array.isArray(targets) || !targets.length || typeof cssText !== "string") return [];
   const findings = [];
-  // Match each rule: selector list + declaration block.
-  const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
-  let match;
-  while ((match = rulePattern.exec(cssText)) !== null) {
-    const selectorList = match[1].trim();
-    const declarations = match[2];
-    if (!/display\s*:\s*none/i.test(declarations)) continue;
-    for (const target of targets) {
-      // Substring match on the selector list; targets are class/attr
-      // selectors so this stays precise enough without a CSS parser.
-      if (selectorList.includes(target)) {
-        findings.push({
-          target,
-          selector: selectorList.replace(/\s+/g, " "),
-        });
+  const stripped = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+  scanCssBlock(stripped, [], targets, findings);
+  return findings;
+}
+
+function scanCssBlock(text, contextPreludes, targets, findings) {
+  let index = 0;
+  while (index < text.length) {
+    const open = text.indexOf("{", index);
+    if (open === -1) return;
+    const prelude = text.slice(index, open).split(";").pop().trim();
+    let depth = 1;
+    let cursor = open + 1;
+    while (cursor < text.length && depth > 0) {
+      if (text[cursor] === "{") depth += 1;
+      else if (text[cursor] === "}") depth -= 1;
+      cursor += 1;
+    }
+    const body = text.slice(open + 1, cursor - (depth === 0 ? 1 : 0));
+    if (prelude.startsWith("@")) {
+      // Conditional group rules (@media/@supports/@container/@layer) nest
+      // full rules: recurse without adding selector context. Declaration-only
+      // at-rules (@font-face, @page) cannot hide price rows; recursing into
+      // them is harmless because they contain no nested selectors.
+      scanCssBlock(body, contextPreludes, targets, findings);
+    } else {
+      const nestedStart = body.indexOf("{");
+      // Own declarations = body text outside any nested blocks (CSS nesting).
+      const ownDeclarations = nestedStart === -1 ? body : body.slice(0, body.lastIndexOf(";", nestedStart) + 1);
+      const selectorContext = [...contextPreludes, prelude].join(" ").replace(/\s+/g, " ").trim();
+      if (/display\s*:\s*none/i.test(ownDeclarations)) {
+        for (const target of targets) {
+          if (selectorContext.includes(target)) {
+            findings.push({ target, selector: selectorContext });
+          }
+        }
+      }
+      if (nestedStart !== -1) {
+        scanCssBlock(body, [...contextPreludes, prelude], targets, findings);
       }
     }
+    index = cursor;
   }
-  return findings;
 }

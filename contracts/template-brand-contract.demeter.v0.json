@@ -47,7 +47,8 @@
         "images/klarna-logo.svg",
         "images/upsell-payment-logos.svg"
       ],
-      "rule": "Remove unless the method is listed in CampaignSpec available_payment_methods / available_express_payment_methods. Template chrome outside the SDK payment-method include (e.g. upsell-payment-logos.svg) counts as implied payment-method residue."
+      "rule": "Remove unless the method is listed in CampaignSpec available_payment_methods / available_express_payment_methods. Template chrome outside the SDK payment-method include (e.g. upsell-payment-logos.svg) counts as implied payment-method residue.",
+      "note": "paypal intentionally has two selectors (icon + txt wordmark): QA fails if ANY of a method's selectors remain visible, so removing one but not the other still fails. Assets naming no method (upsell-payment-logos.svg) count as residue for every unsupported method."
     }
   },
   "qa_inspection": {

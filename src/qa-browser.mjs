@@ -927,9 +927,14 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
     const unsupported = (chrome.methods || []).filter((method) => !supported.includes(method));
     if (unsupported.length) {
       const html = await browserPage.content().catch(() => "");
+      // One evaluate for ALL unsupported methods' selectors; partition the
+      // visibility results per method in JS to keep browser round-trips flat.
+      const artifactsByMethod = new Map(unsupported.map((method) => [method, methodPaymentArtifacts(chrome, method)]));
+      const allSelectors = [...new Set([...artifactsByMethod.values()].flatMap((artifacts) => artifacts.selectors))];
+      const allVisibleMatches = await collectVisibleSelectorMatches(browserPage, allSelectors);
       for (const method of unsupported) {
-        const artifacts = methodPaymentArtifacts(chrome, method);
-        const visibleMatches = await collectVisibleSelectorMatches(browserPage, artifacts.selectors);
+        const artifacts = artifactsByMethod.get(method);
+        const visibleMatches = allVisibleMatches.filter((match) => artifacts.selectors.includes(match.selector));
         assertions.push(paymentChromeResidueAssertion({
           page,
           method,
