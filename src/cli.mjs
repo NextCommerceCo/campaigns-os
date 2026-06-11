@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
@@ -190,6 +191,7 @@ Usage:
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
+  campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # repo/package/skill freshness preflight
   campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
   campaigns-os next --packet <json> [--json]                       # self-decide next stage; returns gates[] + next_actions[] (exact commands) alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
@@ -387,6 +389,12 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null)
     if (args.platform === true) throw new Error("Missing value for --platform");
     const result = installSkills(args.target, Boolean(args["dry-run"]), args.platform);
     writeResult(result, args, 0);
+    return;
+  }
+
+  if (command === "tooling") {
+    const result = toolingCommand(args);
+    writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
@@ -4059,6 +4067,130 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
   };
 }
 
+function toolingCommand(args) {
+  const action = args._[1] || "status";
+  if (action !== "status") throw new Error(`Unknown tooling command: ${action}`);
+  if (args.target === true) throw new Error("Missing value for --target");
+  if (args.platform === true) throw new Error("Missing value for --platform");
+
+  const pkg = readJson(join(ROOT, "package.json"));
+  const skillStatus = installSkills(args.target, true, args.platform || "all");
+  const staleSkills = (skillStatus.skills || []).filter((skill) => skill.action !== "unchanged");
+  const git = localGitStatus(ROOT);
+  const cli = localCliStatus(pkg);
+  const packageStatus = {
+    name: pkg.name || null,
+    version: pkg.version || null,
+    private: Boolean(pkg.private),
+    registry: pkg.private
+      ? {
+          checked: false,
+          status: "not_applicable_private_package",
+          note: "This checkout is private; npm does not automatically provide latest tooling.",
+        }
+      : {
+          checked: false,
+          status: "not_checked",
+          note: "Registry freshness is not checked by tooling status; compare package manager lockfiles in the consuming repo.",
+        },
+  };
+  const actions = [];
+  const warnings = [];
+
+  if (git.status === "ok" && git.behind > 0) {
+    actions.push("Update this checkout before running a dogfood build: git pull --ff-only (or wt sync in a worktree).");
+  } else if (git.status !== "ok") {
+    warnings.push(`Git freshness unavailable: ${git.reason}.`);
+  }
+
+  if (staleSkills.length) {
+    const platformArg = args.target ? ` --target ${args.target}` : ` --platform ${args.platform || "all"}`;
+    actions.push(`Refresh installed skills: npm run campaigns-os -- install-skills${platformArg}. Restart local agent sessions afterwards.`);
+  }
+
+  if (cli.global_binary.status === "not_found") {
+    warnings.push("No global campaigns-os binary was found; use `npm run campaigns-os -- ...` from this checkout or `node ./bin/campaigns-os.mjs ...`.");
+  }
+
+  if (git.status === "ok" && git.dirty) {
+    warnings.push("This checkout has uncommitted changes; verify they are intentional before publishing or comparing freshness.");
+  }
+
+  const ok = (git.status !== "ok" || git.behind === 0) && staleSkills.length === 0;
+  return {
+    ok,
+    status: ok ? "ready" : "attention_required",
+    package: packageStatus,
+    git,
+    cli,
+    skills: {
+      ok: staleSkills.length === 0,
+      stale_count: staleSkills.length,
+      status: skillStatus,
+    },
+    actions,
+    warnings,
+  };
+}
+
+function localCliStatus(pkg) {
+  const binRel = isObject(pkg.bin)
+    ? pkg.bin["campaigns-os"]
+    : typeof pkg.bin === "string"
+      ? pkg.bin
+      : null;
+  const localBin = binRel ? resolve(ROOT, binRel) : null;
+  const globalPath = captureStdout("which", ["campaigns-os"]);
+  return {
+    local_bin: localBin,
+    local_bin_exists: Boolean(localBin && existsSync(localBin)),
+    invocation: "npm run campaigns-os -- <command>",
+    global_binary: globalPath
+      ? { status: "found", path: globalPath }
+      : { status: "not_found", path: null },
+  };
+}
+
+function localGitStatus(root) {
+  const inside = captureStdout("git", ["-C", root, "rev-parse", "--is-inside-work-tree"]);
+  if (inside !== "true") return { status: "unavailable", reason: "not a git worktree" };
+
+  const head = captureStdout("git", ["-C", root, "rev-parse", "--short", "HEAD"]);
+  const branch = captureStdout("git", ["-C", root, "branch", "--show-current"]);
+  const upstream = captureStdout("git", ["-C", root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
+  const dirty = captureStdout("git", ["-C", root, "status", "--porcelain"]).length > 0;
+  let ahead = null;
+  let behind = null;
+  if (upstream) {
+    const counts = captureStdout("git", ["-C", root, "rev-list", "--left-right", "--count", `HEAD...${upstream}`]);
+    const [left, right] = counts.split(/\s+/).map((value) => Number.parseInt(value, 10));
+    ahead = Number.isFinite(left) ? left : null;
+    behind = Number.isFinite(right) ? right : null;
+  }
+
+  return {
+    status: "ok",
+    root,
+    branch: branch || null,
+    head: head || null,
+    upstream: upstream || null,
+    ahead,
+    behind,
+    dirty,
+    note: upstream
+      ? "Freshness is compared to the locally fetched upstream ref; run git fetch first for a network-current answer."
+      : "No upstream configured; compare this checkout manually before relying on it.",
+  };
+}
+
+function captureStdout(command, args) {
+  try {
+    return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+}
+
 function installSkillsToTarget({ sourceDir, target, dryRun }) {
   const targetDir = target.target_directory;
   const entries = readdirSync(sourceDir, { withFileTypes: true })
@@ -5078,13 +5210,17 @@ function printResult(result) {
     console.log("Ready:");
     for (const item of result.ready) console.log(`- ${item}`);
   }
+  if (result.actions?.length) {
+    console.log("Actions:");
+    for (const action of result.actions) console.log(`- ${action}`);
+  }
   if (result.errors?.length) {
     console.log("Errors:");
-    for (const issue of result.errors) console.log(`- [${issue.code}] ${issue.message}`);
+    for (const issue of result.errors) console.log(`- ${formatIssueSummary(issue)}`);
   }
   if (result.warnings?.length) {
     console.log("Warnings:");
-    for (const issue of result.warnings) console.log(`- [${issue.code}] ${issue.message}`);
+    for (const issue of result.warnings) console.log(`- ${formatIssueSummary(issue)}`);
   }
   if (result.next) {
     console.log("Next:");
@@ -5096,6 +5232,13 @@ function printResult(result) {
     console.log(result.prompt);
   }
   if (result.note) console.log(result.note);
+}
+
+function formatIssueSummary(issue) {
+  if (typeof issue === "string") return issue;
+  if (issue?.code && issue?.message) return `[${issue.code}] ${issue.message}`;
+  if (issue?.message) return issue.message;
+  return String(issue);
 }
 
 function formatSkillInstallSummary(skill) {
