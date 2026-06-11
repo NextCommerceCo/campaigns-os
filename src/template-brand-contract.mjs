@@ -140,11 +140,37 @@ export function findForbiddenPriceHides(contract, cssText) {
   return findings;
 }
 
+// Token-boundary match: the target must not be a substring of a longer CSS
+// identifier, so ".summary_price" matches ".summary_price.cc-sm" but not
+// ".summary_price-row", and a future ".price" target cannot blanket-match
+// every ".price-*" class. CSS identifiers also allow code points >= U+0080,
+// so those count as identifier characters too (".price" must not match
+// inside ".priceΑ" or ".price-événement").
+const CSS_IDENT_CHAR = "A-Za-z0-9_\\u0080-\\uFFFF-";
+
+function selectorContextMatches(context, target) {
+  const raw = String(target);
+  const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const identChar = new RegExp(`^[${CSS_IDENT_CHAR}]$`, "u");
+  // Boundary guards apply only where the target itself starts/ends with an
+  // identifier character. A target starting with "." or "[" is already
+  // delimited by that symbol — and the symbol may legally follow an ident
+  // char in compound selectors (div.price-wrapper), so a blanket lookbehind
+  // would miss those.
+  const pre = identChar.test(raw[0] || "") ? `(?<![${CSS_IDENT_CHAR}])` : "";
+  const post = identChar.test(raw[raw.length - 1] || "") ? `(?![${CSS_IDENT_CHAR}])` : "";
+  return new RegExp(`${pre}${escaped}${post}`, "u").test(context);
+}
+
 function scanCssBlock(text, contextPreludes, targets, findings) {
   let index = 0;
   while (index < text.length) {
     const open = text.indexOf("{", index);
     if (open === -1) return;
+    // Statement at-rules (`@import url(x);`, `@charset "utf-8";`) end with a
+    // semicolon and never open a block, so the next rule's prelude is the
+    // text AFTER the last `;` — slicing without the split would misread
+    // `@import x; .foo { … }` as an at-rule named "@import x; .foo".
     const prelude = text.slice(index, open).split(";").pop().trim();
     let depth = 1;
     let cursor = open + 1;
@@ -167,7 +193,7 @@ function scanCssBlock(text, contextPreludes, targets, findings) {
       const selectorContext = [...contextPreludes, prelude].join(" ").replace(/\s+/g, " ").trim();
       if (/display\s*:\s*none/i.test(ownDeclarations)) {
         for (const target of targets) {
-          if (selectorContext.includes(target)) {
+          if (selectorContextMatches(selectorContext, target)) {
             findings.push({ target, selector: selectorContext });
           }
         }
