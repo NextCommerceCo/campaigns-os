@@ -116,6 +116,54 @@ test("template_contract.catalog_version warns when agentContractVersion is not 1
   assert.ok(codes(warnings).includes("template_contract.catalog_version"));
 });
 
+test("template_contract.brand_contract errors when a promoted catalog family has no residue/pricing contract", () => {
+  const { errors } = run({
+    family: "fixture-promoted-family",
+    contract: checkoutContract,
+    spec: specWith([{ id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] }]),
+  });
+  assert.ok(codes(errors).includes("template_contract.brand_contract"));
+});
+
+test("limos default exit-pop warns when CampaignSpec has no governed offer surface", () => {
+  const { warnings } = run({
+    family: "limos",
+    contract: checkoutContract,
+    spec: specWith([{ id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] }]),
+  });
+  assert.ok(codes(warnings).includes("template_contract.exit_pop"));
+});
+
+test("limos default exit-pop is clean when CampaignSpec owns checkout exit_intent", () => {
+  const { warnings } = run({
+    family: "limos",
+    contract: checkoutContract,
+    spec: specWith([{
+      id: "checkout",
+      type: "checkout",
+      packages: [{ ref_id: "1" }],
+      exit_intent: { enabled: true, offer_ref_id: "offer-10", offer_code: "EXIT10" },
+    }]),
+  });
+  assert.equal(codes(warnings).includes("template_contract.exit_pop"), false);
+});
+
+test("limos default exit-pop still warns when exit_intent is declared away from checkout", () => {
+  const { warnings } = run({
+    family: "limos",
+    contract: checkoutContract,
+    spec: specWith([
+      {
+        id: "landing",
+        type: "landing",
+        exit_intent: { enabled: true, offer_ref_id: "offer-10", offer_code: "EXIT10" },
+      },
+      { id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] },
+    ]),
+  });
+  assert.ok(codes(warnings).includes("template_contract.exit_pop"));
+});
+
 test("ported checks are exempt for a custom family (matches the private doctor)", () => {
   // custom + agentContractVersion:2 + no checkout packages would trip
   // catalog_version + packages for an automatable family; custom is exempt.

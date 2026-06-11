@@ -72,6 +72,7 @@ Rules:
 - Treat checkout `exit_intent` and `promo_code_input` as optional CampaignSpec launch contracts. If present, build must wire the mapped offer surface and QA must exercise the accept/apply path.
 - Keep offer application surfaces out of pricing logic: they validate/apply codes through SDK/API, while Campaigns API/SDK own repricing, totals, and discount rows.
 - Starter-template `agentContract` owns reusable commerce structure and protected SDK surfaces.
+- Promoted starter-template families must also have `contracts/template-brand-contract.<family>.v0.json` with family inventory, brand/residue, pricing, and exit-pop rules. Missing family contracts are gates, not advisory gaps.
 - Designed source owns visual composition and page-level content.
 - Brand-theme evidence is workflow-order neutral. Do not assume a Figma export came first; consume `context.theme` and `.campaign-runtime/theme/theme-report.json` when present. A truly missing/ungeneratable theme stays a warning, but a generatable-and-unapplied theme on a commerce-page campaign is a gate: apply it or waive it explicitly before polish/deploy/QA.
 - Follow `campaigns-os next` literally. Every `next` response carries `gates` (doctor, prepare_build, theme_gate) and `next_actions` with exact commands — execute those instead of improvising. With an active run session, pipeline-advancing commands that don't match the last `next` recommendation are recorded to `.campaign-runtime/agent-deviations.jsonl`; declare an intentional detour with `--deviation-reason "<why>"`.

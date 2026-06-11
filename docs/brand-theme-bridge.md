@@ -78,8 +78,12 @@ A waiver does not silence QA: template-residue checks still run at warn
 severity so the shipped palette stays visible in the verdict.
 
 Per-family expectations (required token overrides, starter defaults that count
-as residue, CSS load order, QA selectors, pricing-surface modes) live in
-`contracts/template-brand-contract.<family>.v0.json`.
+as residue, CSS load order, QA selectors, pricing-surface modes, exit-pop
+residue, and the family inventory matrix) live in
+`contracts/template-brand-contract.<family>.v0.json`. Promoted families in the
+commerce surface catalog must have one; doctor and QA treat a missing contract
+as a blocker instead of silently skipping residue checks.
+See `docs/template-family-contracts.md` for the current family inventory matrix.
 
 ## Build And Polish Handoff
 

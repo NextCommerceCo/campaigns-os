@@ -1345,6 +1345,7 @@ function runPricingCssHideCheck({ packet, derived, warnings, ready }) {
     return;
   }
   if (!contract?.pricing_surfaces?.forbidden_css_hides?.length) {
+    if (isAutomatableTemplateFamily(family)) return;
     ready.push(`Pricing CSS scan not applicable for template family "${family || "(none)"}" (no brand contract with forbidden_css_hides)`);
     return;
   }
@@ -1369,7 +1370,7 @@ function runPricingCssHideCheck({ packet, derived, warnings, ready }) {
       addIssue(
         warnings,
         "template_contract.price_css_hide",
-        `Campaign CSS ${name} hides a pricing surface: "${hit.selector}" sets display:none on ${hit.target}. Use the template's pricing mode (full_price/discounted/compare_at/unit_total/unit_only) instead of hiding price rows; browser QA blocks upsells with zero visible price rows.`,
+        `Campaign CSS ${name} hides a pricing surface: "${hit.selector}" sets display:none on ${hit.target}. Use the template's declared pricing modes instead of hiding price rows; browser QA blocks upsells with zero visible price rows.`,
       );
     }
   }
@@ -2911,12 +2912,37 @@ function offerRefsFromEntries(entries) {
     .map((value) => String(value));
 }
 
+function isAutomatableTemplateFamily(family) {
+  return isNonEmptyString(family) && family !== "undecided" && family !== "custom";
+}
+
+function loadTemplateFamilyBrandContract(family, errors, warnings, { required = false } = {}) {
+  try {
+    const contract = loadTemplateBrandContract(family);
+    if (!contract && required) {
+      addIssue(
+        errors,
+        "template_contract.brand_contract",
+        `Template family "${family}" has no brand/residue/pricing contract at contracts/template-brand-contract.${family}.v0.json. Add the contract before treating this family as promoted/agent-ready.`
+      );
+    }
+    return contract;
+  } catch (error) {
+    addIssue(
+      required ? errors : warnings,
+      "template_contract.brand_contract",
+      `Template brand contract for "${family}" failed to load: ${error.message}`
+    );
+    return null;
+  }
+}
+
 export function validateCommerceCatalog(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const family = packet.assembly?.template_family;
   // Match the private doctor (build-packet.js): the ported template_contract.*
   // checks below do not apply to non-automatable families. The pre-existing
   // agentContract / demo_ref / shipping checks keep running for all families.
-  const familyAutomatable = isNonEmptyString(family) && family !== "undecided" && family !== "custom";
+  const familyAutomatable = isAutomatableTemplateFamily(family);
   const catalogInfo = packet.assembly?.commerce_catalog || {};
   if (catalogInfo.required !== true) return;
   const catalogPath = resolveFromFile(packetPath, catalogInfo.path || "../contracts/commerce-surface-catalog.json");
@@ -2939,6 +2965,11 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     return;
   }
   ready.push(`Template agentContract loaded for ${family}`);
+  const brandContract = loadTemplateFamilyBrandContract(family, errors, warnings, { required: familyAutomatable });
+  if (brandContract) {
+    ready.push(`Template brand/residue/pricing contract loaded for ${family}`);
+    validateTemplateFamilyInventory(brandContract, errors, ready);
+  }
   if (familyAutomatable && contract.status && contract.status !== "agent-ready") {
     addIssue(warnings, "template_contract.status", `Template family "${family}" contract status is "${contract.status}"; treat this as guided assembly, not full automation.`);
   }
@@ -3017,6 +3048,78 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
         `Template family "${family}" exposes upsell frontmatter, but active upsell/downsell pages have no package or offer refs to replace demo values.`
       );
     }
+    validateExitPopContract(brandContract, spec, family, warnings, ready, derived, buildState);
+  }
+}
+
+function validateTemplateFamilyInventory(contract, errors, ready) {
+  const inventory = contract.family_inventory;
+  if (!isObject(inventory)) {
+    addIssue(errors, "template_contract.family_inventory", `Template brand contract for "${contract.family}" is missing family_inventory.`);
+    return;
+  }
+  const required = [
+    "supported_pages",
+    "required_sdk_anchors",
+    "theme_insertion_point",
+    "default_color_residue",
+    "pricing_presentation",
+    "bundle_picker",
+    "order_bump",
+    "upsell_downsell",
+    "exit_pop",
+    "qa_selectors",
+  ];
+  const missing = required.filter((key) => inventory[key] === undefined || inventory[key] === null);
+  if (missing.length) {
+    addIssue(errors, "template_contract.family_inventory", `Template brand contract for "${contract.family}" family_inventory is missing: ${missing.join(", ")}.`);
+    return;
+  }
+  ready.push(`Template family inventory matrix loaded for ${contract.family}`);
+}
+
+function validateExitPopContract(contract, spec, family, warnings, ready, derived, buildState = {}) {
+  const exitPop = contract?.exit_pop;
+  if (!exitPop || !spec) return;
+  const hasGovernedOfferSurface = activeSpecPages(spec).some((page) => (
+    page?.type === "checkout" && (page?.exit_intent?.enabled === true || page?.promo_code_input?.enabled === true)
+  ));
+  if (hasGovernedOfferSurface) {
+    ready.push(`${family} exit-pop/promo-code behavior is governed by CampaignSpec offer-surface fields`);
+    return;
+  }
+
+  const inventoryExitPop = contract.family_inventory?.exit_pop;
+  if (!isStageComplete(buildState.report, "assembly")) {
+    if (inventoryExitPop?.default_included === true) {
+      addIssue(
+        warnings,
+        "template_contract.exit_pop",
+        `Template family "${family}" includes an exit-pop by default, but active CampaignSpec checkout pages do not define exit_intent or promo_code_input. Strip the widget or wire a mapped offer/code through the SDK coupon path during build.`
+      );
+    }
+    return;
+  }
+
+  const targetOutputDir = derived.target_output_dir;
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return;
+  const residueHits = collectLiteralMatches(targetOutputDir, exitPop.residue_literals || []);
+  if (residueHits.length) {
+    addIssue(
+      warnings,
+      "template_contract.exit_pop_residue",
+      `Assembly is recorded complete, but target output contains exit-pop/template offer residue while CampaignSpec has no checkout exit_intent or promo_code_input: ${summarizeCopyMatches(residueHits)}. Strip it or add a mapped offer surface.`
+    );
+  } else {
+    ready.push(`Built target output has no ungoverned ${family} exit-pop residue`);
+  }
+  const blankHits = collectLiteralMatches(targetOutputDir, exitPop.blank_widget_literals || []);
+  if (blankHits.length) {
+    addIssue(
+      warnings,
+      "template_contract.exit_pop_blank_widget",
+      `Assembly is recorded complete, but target output still contains default/blank exit-pop widget copy or coupon placeholders: ${summarizeCopyMatches(blankHits)}.`
+    );
   }
 }
 
@@ -3849,6 +3952,12 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
   if (codes.has("frontmatter.demoOnlyValues") || codes.has("frontmatter.replaceFromSpecOrApi")) {
     actions.push("Use the template agentContract to replace demo values from CampaignSpec/API.");
+  }
+  if (codes.has("template_contract.brand_contract") || codes.has("template_contract.family_inventory")) {
+    actions.push("Add or repair the selected family's contracts/template-brand-contract.<family>.v0.json, then rerun campaigns-os doctor --packet <packet>.");
+  }
+  if (codes.has("template_contract.exit_pop") || codes.has("template_contract.exit_pop_residue") || codes.has("template_contract.exit_pop_blank_widget")) {
+    actions.push("Strip the default exit-pop widget or wire CampaignSpec checkout exit_intent/promo_code_input to the SDK coupon path before QA.");
   }
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");
