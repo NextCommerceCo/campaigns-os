@@ -65,8 +65,8 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "payment_methods_allowed": { "type": "array", "items": { "enum": ["card", "paypal", "apple_pay", "google_pay", "klarna", "afterpay", "shop_pay"] } },
-        "hidden_payment_methods": { "type": "array", "items": { "enum": ["card", "paypal", "apple_pay", "google_pay", "klarna", "afterpay", "shop_pay"] } },
+        "payment_methods_allowed": { "type": "array", "items": { "enum": ["card", "paypal", "apple_pay", "google_pay", "klarna", "afterpay", "sezzle", "shop_pay", "amazon_pay", "venmo", "cash_app"] } },
+        "hidden_payment_methods": { "type": "array", "items": { "enum": ["card", "paypal", "apple_pay", "google_pay", "klarna", "afterpay", "sezzle", "shop_pay", "amazon_pay", "venmo", "cash_app"] } },
         "order_bump": { "type": "object", "additionalProperties": true },
         "guarantees": { "type": "object", "additionalProperties": true }
       }

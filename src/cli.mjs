@@ -1045,7 +1045,7 @@ function prepareBuild(args, options = {}) {
   if (buildBrief.inputPath && buildBrief.artifact?._meta) {
     buildBrief.artifact._meta.input_path = relFromFile(briefPath, buildBrief.inputPath);
   }
-  const buildBriefPrompts = buildBrief.questions.map((question) => ({
+  const buildBriefPrompts = buildBrief.mode === "prepared" ? [] : buildBrief.questions.map((question) => ({
     code: `BUILD_BRIEF_${toConstantCase(question.id)}`,
     stage: "prepare_build",
     message: question.question,

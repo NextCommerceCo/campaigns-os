@@ -85,9 +85,21 @@ const PAYMENT_METHOD_ALIASES = new Map([
   ["google pay", "google_pay"],
   ["klarna", "klarna"],
   ["afterpay", "afterpay"],
+  ["sezzle", "sezzle"],
   ["shop_pay", "shop_pay"],
   ["shop pay", "shop_pay"],
+  ["amazonpay", "amazon_pay"],
+  ["amazon_pay", "amazon_pay"],
+  ["amazon pay", "amazon_pay"],
+  ["venmo", "venmo"],
+  ["cashapp", "cash_app"],
+  ["cash_app", "cash_app"],
+  ["cash app", "cash_app"],
 ]);
+
+const ORDER_BUMP_KEYS = new Set(["order_bump", "order_bumps"]);
+const ORDER_BUMP_VALUE_KEYS = new Set(["role", "type", "kind", "surface", "placement", "slot", "page_type"]);
+const ORDER_BUMP_VALUES = new Set(["order_bump", "order_bumps", "prepurchase", "pre_purchase"]);
 
 const COLOR_WORDS = Object.freeze([
   "black",
@@ -171,13 +183,7 @@ export function createCampaignBuildBriefArtifact({
     commerceZoneFindings,
   });
 
-  normalized.status = errors.length
-    ? "invalid"
-    : evaluation.questions.length
-      ? "needs_answers"
-      : "complete";
-  normalized.questions = evaluation.questions;
-  normalized.gates = [
+  const gates = [
     ...errors.map((error) => ({
       code: error.code,
       severity: "blocker",
@@ -186,10 +192,18 @@ export function createCampaignBuildBriefArtifact({
     })),
     ...evaluation.gates,
   ];
+  const blockerGates = gates.filter((gate) => gate.severity === "blocker");
+  normalized.status = errors.length
+    ? "invalid"
+    : evaluation.questions.length || blockerGates.length
+      ? "needs_answers"
+      : "complete";
+  normalized.questions = evaluation.questions;
+  normalized.gates = gates;
 
   const blocking = mode === "prepared"
-    ? normalized.gates.filter((gate) => gate.severity === "blocker")
-    : normalized.gates.filter((gate) => gate.severity === "blocker" && gate.block_guided === true);
+    ? blockerGates
+    : [];
 
   return {
     mode,
@@ -223,7 +237,7 @@ export function validateCampaignBuildBriefArtifact(brief, { spec = null } = {}) 
   const gates = Array.isArray(brief.gates) ? brief.gates : [];
   const blockerGates = gates.filter((gate) => gate?.severity === "blocker");
 
-  if (brief.status === "complete" && questions.length === 0 && blockerGates.length === 0) {
+  if (!errors.length && brief.status === "complete" && questions.length === 0 && blockerGates.length === 0) {
     ready.push("Campaign Build Brief is complete: merchandising/design presentation truth is available.");
   } else if (mode === "prepared") {
     for (const gate of blockerGates) {
@@ -334,8 +348,7 @@ function draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFami
   const variantSignals = collectVariantSignals(spec, sourceAssetCrawl);
   const paymentMethods = collectSpecPaymentMethods(spec);
   const hasExitPop = activePages?.some((page) => page?.type === "checkout" && page?.exit_intent?.enabled === true) === true;
-  const hasOrderBump = JSON.stringify(spec || {}).toLowerCase().includes("order_bump")
-    || JSON.stringify(spec || {}).toLowerCase().includes("prepurchase");
+  const hasOrderBump = hasOrderBumpSignals(spec);
 
   return {
     schema_version: BUILD_BRIEF_SCHEMA,
@@ -561,24 +574,24 @@ function normalizeCommerceSurfaces(commerce = {}) {
 function normalizeResiduePolicy(policy = {}) {
   const value = objectOrEmpty(policy);
   return {
+    ...value,
     block_placeholders: value.block_placeholders !== false,
     block_template_favicon: value.block_template_favicon !== false,
     block_demo_payment_methods: value.block_demo_payment_methods !== false,
     block_lorem_ipsum: value.block_lorem_ipsum !== false,
     block_unapproved_tracking_claims: value.block_unapproved_tracking_claims !== false,
-    ...value,
   };
 }
 
 function normalizeQaPolicy(policy = {}) {
   const value = objectOrEmpty(policy);
   return {
+    ...value,
     require_desktop_mobile_screenshots: value.require_desktop_mobile_screenshots !== false,
     require_checkout_flow: value.require_checkout_flow !== false,
     require_post_purchase_flow: value.require_post_purchase_flow !== false,
     fail_on_visible_placeholders: value.fail_on_visible_placeholders !== false,
     compare_live_runtime_data_to_spec: value.compare_live_runtime_data_to_spec !== false,
-    ...value,
   };
 }
 
@@ -593,7 +606,7 @@ function collectVariantSignals(spec, sourceAssetCrawl) {
     if (ref.asset_kind !== "image") continue;
     const text = `${ref.source_path || ""} ${ref.normalized || ""}`.toLowerCase();
     const matches = COLOR_WORDS.filter((color) => new RegExp(`(^|[^a-z])${escapeRegExp(color)}([^a-z]|$)`, "i").test(text));
-    if (matches.length) signals.add(matches.join(" "));
+    for (const color of matches) signals.add(color);
   }
   return [...signals].filter(Boolean).sort();
 }
@@ -625,6 +638,27 @@ function hasPromoSignals(spec) {
     }
   });
   return found;
+}
+
+function hasOrderBumpSignals(value, keyPath = []) {
+  if (Array.isArray(value)) {
+    return value.some((item, index) => hasOrderBumpSignals(item, [...keyPath, String(index)]));
+  }
+  if (isObject(value)) {
+    for (const [key, item] of Object.entries(value)) {
+      if (ORDER_BUMP_KEYS.has(normalizeToken(key)) && isMeaningfulSignal(item)) return true;
+      if (hasOrderBumpSignals(item, [...keyPath, key])) return true;
+    }
+    return false;
+  }
+
+  const key = keyPath[keyPath.length - 1] || "";
+  const normalizedKey = normalizeToken(key);
+  if (value === true && ORDER_BUMP_VALUES.has(normalizedKey)) return true;
+  if (typeof value !== "string") return false;
+
+  const normalizedValue = normalizeToken(value);
+  return ORDER_BUMP_VALUE_KEYS.has(normalizedKey) && ORDER_BUMP_VALUES.has(normalizedValue);
 }
 
 function hasRegulatedSignals(spec) {
@@ -659,13 +693,17 @@ function normalizePaymentList(value) {
 }
 
 function normalizePaymentMethod(value) {
-  const normalized = String(value || "")
+  const normalized = normalizeToken(value);
+  return PAYMENT_METHOD_ALIASES.get(normalized) || null;
+}
+
+function normalizeToken(value) {
+  return String(value || "")
     .trim()
     .replace(/([a-z])([A-Z])/g, "$1_$2")
     .replace(/[^a-z0-9]+/gi, "_")
     .replace(/^_+|_+$/g, "")
     .toLowerCase();
-  return PAYMENT_METHOD_ALIASES.get(normalized) || null;
 }
 
 function normalizeStringArray(value) {
@@ -700,6 +738,14 @@ function isObject(value) {
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isMeaningfulSignal(value) {
+  if (value == null || value === false) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isObject(value)) return Object.keys(value).length > 0;
+  if (typeof value === "string") return value.trim().length > 0 && !["false", "none", "no"].includes(value.trim().toLowerCase());
+  return true;
 }
 
 function escapeRegExp(value) {
