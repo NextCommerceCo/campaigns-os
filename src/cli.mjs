@@ -3405,7 +3405,16 @@ function validateBuiltContractResidue(contract, warnings, ready, derived, spec =
       ready.push(`Built target output has no promo discount claims above CampaignSpec max (${formatPercent(maxDiscount)})`);
     }
   } else {
-    ready.push("Built target output promo discount claim scan skipped because CampaignSpec has no percentage discount values");
+    const discountClaims = collectDiscountClaimMatches(targetOutputDir);
+    if (discountClaims.length) {
+      addIssue(
+        warnings,
+        "template_contract.discount_claim_unverified",
+        `Assembly is recorded complete, but built output contains promo discount percentage claims without explicit CampaignSpec percentage discount values: ${summarizeCopyMatches(discountClaims)}. Confirm the intended business logic with the build request/merchant notes or remove the claims before launch.`
+      );
+    } else {
+      ready.push("Built target output has no promo discount percentage claims requiring CampaignSpec verification");
+    }
   }
 }
 
@@ -3522,14 +3531,14 @@ function addPercentValue(values, value) {
   if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) values.push(parsed);
 }
 
-function collectOverstatedDiscountClaimMatches(root, maxDiscount) {
+function collectDiscountClaimMatches(root) {
   const claimPattern = /\b(?:save(?:\s+up\s+to)?\s+(\d{1,3}(?:\.\d+)?)\s*(?:%|\bpercent\b)|(\d{1,3}(?:\.\d+)?)\s*(?:%|\bpercent\b)\s*(?:off|discount)\b)/gi;
   const matches = [];
   for (const file of collectBuiltTextFiles(root)) {
     const content = readFileSync(join(root, file.path), "utf8");
     for (const match of content.matchAll(claimPattern)) {
       const claimed = Number.parseFloat(match[1] || match[2]);
-      if (!Number.isFinite(claimed) || claimed <= maxDiscount + DISCOUNT_CLAIM_TOLERANCE) continue;
+      if (!Number.isFinite(claimed)) continue;
       matches.push({
         surface: "target",
         path: file.path,
@@ -3537,11 +3546,16 @@ function collectOverstatedDiscountClaimMatches(root, maxDiscount) {
         label: `${formatPercent(claimed)} claim`,
         text: match[0],
         claimed_percent: claimed,
-        max_spec_percent: maxDiscount,
       });
     }
   }
   return matches;
+}
+
+function collectOverstatedDiscountClaimMatches(root, maxDiscount) {
+  return collectDiscountClaimMatches(root)
+    .filter((match) => match.claimed_percent > maxDiscount + DISCOUNT_CLAIM_TOLERANCE)
+    .map((match) => ({ ...match, max_spec_percent: maxDiscount }));
 }
 
 function formatPercent(value) {
@@ -4341,6 +4355,9 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
   if (codes.has("template_contract.exit_pop") || codes.has("template_contract.exit_pop_residue") || codes.has("template_contract.exit_pop_blank_widget")) {
     actions.push("Strip the default exit-pop widget or wire CampaignSpec checkout exit_intent/promo_code_input to the SDK coupon path before QA.");
+  }
+  if (codes.has("template_contract.discount_claim_unverified")) {
+    actions.push("Confirm any rendered promo discount percentage claims against the build request, merchant notes, or CampaignSpec before launch.");
   }
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");

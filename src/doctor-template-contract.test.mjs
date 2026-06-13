@@ -308,7 +308,7 @@ test("built residue scan allows real max discount copy and non-discount percenta
   assert.ok(ready.some((note) => note.includes("no promo discount claims above CampaignSpec max (40%)")));
 });
 
-test("built residue scan reports skipped discount claim gate when spec has no percentage discount", () => {
+test("built residue scan warns on percentage discount claims with no CampaignSpec percentage discount", () => {
   const spec = specWith([{
     id: "checkout",
     type: "checkout",
@@ -323,7 +323,26 @@ test("built residue scan reports skipped discount claim gate when spec has no pe
   });
 
   assert.equal(codes(warnings).includes("template_contract.discount_claim_residue"), false);
-  assert.ok(ready.some((note) => note.includes("promo discount claim scan skipped")));
+  assert.ok(codes(warnings).includes("template_contract.discount_claim_unverified"));
+  assert.match(warnings.find((warning) => warning.code === "template_contract.discount_claim_unverified").message, /without explicit CampaignSpec percentage discount values/);
+});
+
+test("built residue scan is ready when spec and output have no percentage discount claims", () => {
+  const spec = specWith([{
+    id: "checkout",
+    type: "checkout",
+    packages: [{ ref_id: "1" }],
+  }]);
+  const { warnings, ready } = run({
+    contract: checkoutContract,
+    spec,
+    targetFiles: {
+      "index.html": "Secure checkout with summer savings.",
+    },
+  });
+
+  assert.equal(codes(warnings).includes("template_contract.discount_claim_unverified"), false);
+  assert.ok(ready.some((note) => note.includes("no promo discount percentage claims requiring CampaignSpec verification")));
 });
 
 test("template family inventory rejects empty required values", () => {
