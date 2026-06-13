@@ -833,6 +833,35 @@ function collectHtmlFiles(root) {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+const BUILT_TEXT_EXTENSIONS = new Set([".html", ".css", ".js", ".mjs", ".json"]);
+const BUILT_TEXT_SCAN_IGNORED_DIRS = new Set(["node_modules", ".git", "_includes", "_layouts"]);
+const DISCOUNT_CLAIM_TOLERANCE = 0.01;
+
+function collectBuiltTextFiles(root) {
+  const files = [];
+  const resolvedRoot = resolve(root);
+  if (!existsSync(resolvedRoot) || !statSync(resolvedRoot).isDirectory()) return files;
+
+  function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (BUILT_TEXT_SCAN_IGNORED_DIRS.has(entry.name)) continue;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile() && BUILT_TEXT_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+        files.push({
+          path: relative(resolvedRoot, fullPath),
+          name: entry.name,
+          bytes: statSync(fullPath).size,
+        });
+      }
+    }
+  }
+
+  walk(resolvedRoot);
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
 function campaignIdentity(spec, args) {
   const mapId = optionalString(args["map-id"])
     || optionalString(spec.spec_identity?.map_id)
@@ -3174,7 +3203,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
   }
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
   if (assemblyComplete) {
-    validateBuiltContractResidue(contract, warnings, ready, derived);
+    validateBuiltContractResidue(contract, warnings, ready, derived, spec);
   } else {
     for (const value of contract.frontmatter?.demoOnlyValues || []) {
       addIssue(warnings, "frontmatter.demoOnlyValues", `Replace demo-only starter value before launch: ${value}`);
@@ -3330,7 +3359,7 @@ function validateExitPopContract(contract, spec, family, warnings, ready, derive
   }
 }
 
-function validateBuiltContractResidue(contract, warnings, ready, derived) {
+function validateBuiltContractResidue(contract, warnings, ready, derived, spec = null) {
   const targetOutputDir = derived.target_output_dir;
   if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) {
     addIssue(warnings, "frontmatter.build_state", "Assembly is recorded complete, but doctor cannot scan the target output directory for remaining starter contract residue.");
@@ -3344,13 +3373,49 @@ function validateBuiltContractResidue(contract, warnings, ready, derived) {
   const hits = collectLiteralMatches(targetOutputDir, literalValues);
   if (!hits.length) {
     ready.push("Built target output has no obvious demo-only or unsupported starter contract residue");
-    return;
+  } else {
+    addIssue(
+      warnings,
+      "frontmatter.build_residue",
+      `Assembly is recorded complete, but target output still contains starter contract residue: ${summarizeCopyMatches(hits)}.`
+    );
   }
-  addIssue(
-    warnings,
-    "frontmatter.build_residue",
-    `Assembly is recorded complete, but target output still contains starter contract residue: ${summarizeCopyMatches(hits)}.`
-  );
+
+  const genericHits = collectGenericTemplateResidueMatches(targetOutputDir);
+  if (genericHits.length) {
+    addIssue(
+      warnings,
+      "template_contract.literal_residue",
+      `Assembly is recorded complete, but built output still contains generic starter/template placeholders: ${summarizeCopyMatches(genericHits)}. Replace these from CampaignSpec/API or remove dead template references before QA.`
+    );
+  } else {
+    ready.push("Built target output has no generic starter placeholder or promo-code residue");
+  }
+
+  const maxDiscount = maxSpecDiscountPercent(spec);
+  if (maxDiscount !== null) {
+    const discountHits = collectOverstatedDiscountClaimMatches(targetOutputDir, maxDiscount);
+    if (discountHits.length) {
+      addIssue(
+        warnings,
+        "template_contract.discount_claim_residue",
+        `Assembly is recorded complete, but built output claims discount percentages above the CampaignSpec maximum (${formatPercent(maxDiscount)}): ${summarizeCopyMatches(discountHits)}. Generate promo/banner/timer copy from actual offers and vouchers.`
+      );
+    } else {
+      ready.push(`Built target output has no promo discount claims above CampaignSpec max (${formatPercent(maxDiscount)})`);
+    }
+  } else {
+    const discountClaims = collectDiscountClaimMatches(targetOutputDir);
+    if (discountClaims.length) {
+      addIssue(
+        warnings,
+        "template_contract.discount_claim_unverified",
+        `Assembly is recorded complete, but built output contains promo discount percentage claims without explicit CampaignSpec percentage discount values: ${summarizeCopyMatches(discountClaims)}. Confirm the intended business logic with the build request/merchant notes or remove the claims before launch.`
+      );
+    } else {
+      ready.push("Built target output has no promo discount percentage claims requiring CampaignSpec verification");
+    }
+  }
 }
 
 function collectLiteralMatches(root, values) {
@@ -3372,6 +3437,130 @@ function collectLiteralMatches(root, values) {
     }
   }
   return matches;
+}
+
+const GENERIC_TEMPLATE_RESIDUE_PATTERNS = [
+  { id: "promo_code_placeholder", label: "XXCODE", pattern: /\bXXCODE\b/gi },
+  { id: "package_title_placeholder", label: "Package Title", pattern: /\bPackage Title\b/g },
+  { id: "product_title_placeholder", label: "Product Title", pattern: /\bProduct Title\b/g },
+  { id: "spec_ref_placeholder", label: "SPEC_*_REF", pattern: /\bSPEC_[A-Z0-9_]*_REF\b/g },
+  { id: "starter_logo_asset", label: "next-logo.png", pattern: /\bnext-logo\.(?:png|svg|webp)\b/g },
+];
+
+function collectGenericTemplateResidueMatches(root) {
+  return collectPatternMatches(root, GENERIC_TEMPLATE_RESIDUE_PATTERNS);
+}
+
+function collectPatternMatches(root, patterns) {
+  if (!patterns.length) return [];
+  const matches = [];
+  const compiledPatterns = patterns.map((entry) => {
+    const flags = entry.pattern.flags.includes("g") ? entry.pattern.flags : `${entry.pattern.flags}g`;
+    return { ...entry, regex: new RegExp(entry.pattern.source, flags) };
+  });
+  for (const file of collectBuiltTextFiles(root)) {
+    const content = readFileSync(join(root, file.path), "utf8");
+    for (const entry of compiledPatterns) {
+      entry.regex.lastIndex = 0;
+      for (const match of content.matchAll(entry.regex)) {
+        matches.push({
+          surface: "target",
+          path: file.path,
+          line: lineNumberAt(content, match.index || 0),
+          label: entry.label,
+          text: match[0],
+          kind: entry.id,
+        });
+      }
+    }
+  }
+  return matches;
+}
+
+function maxSpecDiscountPercent(spec) {
+  if (!spec || typeof spec !== "object") return null;
+  const values = [];
+
+  function visit(value, key = "") {
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, key);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+
+    if (isPercentDiscountBenefit(value, key)) {
+      addPercentValue(values, value.value);
+    }
+
+    for (const [entryKey, entryValue] of Object.entries(value)) {
+      if (isDiscountPercentKey(entryKey)) addPercentValue(values, entryValue);
+      visit(entryValue, entryKey);
+    }
+  }
+
+  visit(spec);
+  return values.length ? Math.max(...values) : null;
+}
+
+function isPercentDiscountBenefit(value, key) {
+  if (!isObject(value) || !Object.hasOwn(value, "value")) return false;
+  const type = normalizeSpecKey(value.type || "");
+  if (!/(?:^|_)(?:percent|percentage)(?:_|$)/.test(type)) return false;
+  const context = normalizeSpecKey(key);
+  if (context === "benefit") return true;
+  return /(?:^|_)(?:discount|saving|savings|save|off|offer|promo|coupon|voucher|package)(?:_|$)/.test(type);
+}
+
+function isDiscountPercentKey(key) {
+  const normalized = normalizeSpecKey(key);
+  const mentionsPercent = /(?:^|_)(?:percent|percentage)(?:_|$)/.test(normalized);
+  const mentionsOffer = /(?:^|_)(?:discount|saving|savings|save|off|offer|promo|coupon|voucher)(?:_|$)/.test(normalized);
+  return mentionsPercent && mentionsOffer;
+}
+
+function normalizeSpecKey(value) {
+  return String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-z0-9]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
+function addPercentValue(values, value) {
+  const parsed = Number.parseFloat(String(value ?? "").replace("%", "").trim());
+  if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) values.push(parsed);
+}
+
+function collectDiscountClaimMatches(root) {
+  const claimPattern = /\b(?:save(?:\s+up\s+to)?\s+(\d{1,3}(?:\.\d+)?)\s*(?:%|\bpercent\b)|(\d{1,3}(?:\.\d+)?)\s*(?:%|\bpercent\b)\s*(?:off|discount)\b)/gi;
+  const matches = [];
+  for (const file of collectBuiltTextFiles(root)) {
+    const content = readFileSync(join(root, file.path), "utf8");
+    for (const match of content.matchAll(claimPattern)) {
+      const claimed = Number.parseFloat(match[1] || match[2]);
+      if (!Number.isFinite(claimed)) continue;
+      matches.push({
+        surface: "target",
+        path: file.path,
+        line: lineNumberAt(content, match.index || 0),
+        label: `${formatPercent(claimed)} claim`,
+        text: match[0],
+        claimed_percent: claimed,
+      });
+    }
+  }
+  return matches;
+}
+
+function collectOverstatedDiscountClaimMatches(root, maxDiscount) {
+  return collectDiscountClaimMatches(root)
+    .filter((match) => match.claimed_percent > maxDiscount + DISCOUNT_CLAIM_TOLERANCE)
+    .map((match) => ({ ...match, max_spec_percent: maxDiscount }));
+}
+
+function formatPercent(value) {
+  const rounded = Math.round(value * 100) / 100;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)}%`;
 }
 
 function contractMentionsShipping(contract) {
@@ -4166,6 +4355,9 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
   if (codes.has("template_contract.exit_pop") || codes.has("template_contract.exit_pop_residue") || codes.has("template_contract.exit_pop_blank_widget")) {
     actions.push("Strip the default exit-pop widget or wire CampaignSpec checkout exit_intent/promo_code_input to the SDK coupon path before QA.");
+  }
+  if (codes.has("template_contract.discount_claim_unverified")) {
+    actions.push("Confirm any rendered promo discount percentage claims against the build request, merchant notes, or CampaignSpec before launch.");
   }
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");
