@@ -30,6 +30,7 @@ export const RUN_RECORD_SURFACES = [
 
 export const RUN_RECORD_ARTIFACT_KINDS = [
   "build_packet",
+  "build_brief",
   "build_context",
   "assembly_report",
   "qa_verdict",

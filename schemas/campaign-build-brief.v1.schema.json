@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaign-build-brief.v1.schema.json",
+  "title": "Campaigns OS Campaign Build Brief v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "const": "campaigns-os-build-brief/v1" },
+    "status": { "enum": ["complete", "needs_answers", "invalid"] },
+    "campaign_intent": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "audience": { "type": ["string", "null"] },
+        "conversion_goal": { "type": ["string", "null"] },
+        "tone": { "type": ["string", "null"] },
+        "compliance": { "type": ["object", "null"], "additionalProperties": true }
+      }
+    },
+    "design_authority": {
+      "type": "object",
+      "description": "Page-id keyed map describing whether each page follows the provided design, selected template, or an adapted source."
+    },
+    "brand": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "commerce_palette_source": { "type": ["string", "null"] },
+        "primary_accent": { "type": ["string", "null"] },
+        "cta_style": { "type": ["string", "null"] },
+        "avoid": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sold_variants": { "type": "array", "items": { "type": "string" } },
+        "allow_other_variant_colors": { "type": ["boolean", "null"] },
+        "prefer": { "type": "array", "items": { "type": "string" } },
+        "avoid": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "offer_presentation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "bundle_cards": { "type": "object", "additionalProperties": true },
+        "post_purchase": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "promo_urgency": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "header_claim_source": { "type": ["string", "null"] },
+        "timer_label": { "type": ["string", "null"] },
+        "show_promo_code_in_timer": { "type": ["boolean", "null"] },
+        "exit_pop": { "type": "object", "additionalProperties": true },
+        "forbid_placeholders": { "type": "boolean" }
+      }
+    },
+    "commerce_surfaces": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "payment_methods_allowed": { "type": "array", "items": { "enum": ["card", "paypal", "apple_pay", "google_pay", "klarna", "afterpay", "shop_pay"] } },
+        "hidden_payment_methods": { "type": "array", "items": { "enum": ["card", "paypal", "apple_pay", "google_pay", "klarna", "afterpay", "shop_pay"] } },
+        "order_bump": { "type": "object", "additionalProperties": true },
+        "guarantees": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "canonical_display": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "product_name_source": { "type": ["string", "null"] },
+        "allow_runtime_name_override": { "type": "boolean" },
+        "manual_overrides": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "template_residue_policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "block_placeholders": { "type": "boolean" },
+        "block_template_favicon": { "type": "boolean" },
+        "block_demo_payment_methods": { "type": "boolean" },
+        "block_lorem_ipsum": { "type": "boolean" },
+        "block_unapproved_tracking_claims": { "type": "boolean" }
+      }
+    },
+    "qa_policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "require_desktop_mobile_screenshots": { "type": "boolean" },
+        "require_checkout_flow": { "type": "boolean" },
+        "require_post_purchase_flow": { "type": "boolean" },
+        "fail_on_visible_placeholders": { "type": "boolean" },
+        "compare_live_runtime_data_to_spec": { "type": "boolean" }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "priority", "field", "question"],
+        "properties": {
+          "id": { "type": "string" },
+          "priority": { "type": "integer" },
+          "field": { "type": "string" },
+          "question": { "type": "string" },
+          "reason": { "type": "string" },
+          "options": { "type": "array", "items": { "type": "string" } },
+          "blocking": { "type": "boolean" }
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["code", "severity", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "enum": ["blocker", "warning"] },
+          "field": { "type": ["string", "null"] },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

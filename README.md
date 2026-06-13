@@ -8,12 +8,13 @@ This toolkit gives campaign developers and AI coding tools a clear path for asse
 2. Create or review the Campaign Map in [Campaign Map Builder](https://campaign-map.nextcommerce.com).
 3. Export a local CampaignSpec JSON.
 4. Bring prepared HTML/CSS/assets for the campaign pages.
-5. Create and doctor a Build Packet.
-6. Hand off to `next-campaigns-build`.
-7. Run build/lint, then `next-campaigns-polish`.
-8. Deploy a preview.
-9. Install the Campaigns OS Playwright browser once with `npm run qa:install-browser`, then run `next-campaigns-qa`.
-10. Record launch blockers and follow-up work.
+5. Provide or generate a [Campaign Build Brief](./docs/campaign-build-brief.md) for merchandising/design presentation decisions.
+6. Create and doctor a Build Packet.
+7. Hand off to `next-campaigns-build`.
+8. Run build/lint, then `next-campaigns-polish`.
+9. Deploy a preview.
+10. Install the Campaigns OS Playwright browser once with `npm run qa:install-browser`, then run `next-campaigns-qa`.
+11. Record launch blockers and follow-up work.
 
 The toolkit is contract-backed: starter templates describe which parts are reusable page structure, which parts are live commerce wiring, and which demo values must be replaced for a real campaign. That helps AI tools avoid common mistakes like carrying over sample package IDs, copying shipping options from the wrong template shape, or editing SDK-owned checkout surfaces as plain HTML.
 
@@ -62,7 +63,7 @@ npm run campaigns-os -- tooling status
 npm run campaigns-os -- install-skills --dry-run
 npm run campaigns-os -- install-skills --platform codex --dry-run
 npm run skills -- status
-npm run campaigns-os -- prepare-build --spec <spec.json> --source <html-dir> --target <page-kit-repo> --template-family <family>
+npm run campaigns-os -- prepare-build --spec <spec.json> --source <html-dir> --target <page-kit-repo> --template-family <family> --brief <campaign-build-brief.yaml>
 npm run campaigns-os -- doctor --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- theme inspect --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- theme generate --packet <page-kit-repo>/campaign-runtime.build.json --json

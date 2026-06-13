@@ -102,6 +102,7 @@
             "type": "string",
             "enum": [
               "build_packet",
+              "build_brief",
               "build_context",
               "assembly_report",
               "qa_verdict",

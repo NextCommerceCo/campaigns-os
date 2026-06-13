@@ -219,6 +219,25 @@
         }
       }
     },
+    "build_brief": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "mode", "status", "normalized_path"],
+      "properties": {
+        "schema_version": { "const": "campaigns-os-build-brief/v1" },
+        "mode": { "enum": ["prepared", "guided_draft"] },
+        "status": { "enum": ["complete", "needs_answers", "invalid"] },
+        "input_path": { "type": ["string", "null"] },
+        "normalized_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Packet-relative path to .campaign-runtime/input/campaign-build-brief.normalized.json."
+        },
+        "question_count": { "type": "integer", "minimum": 0 },
+        "gate_count": { "type": "integer", "minimum": 0 }
+      },
+      "description": "Durable Campaign Build Brief reference. CampaignSpec remains operational truth; this brief is merchandising/design presentation truth."
+    },
     "assembly": {
       "type": "object",
       "additionalProperties": false,
