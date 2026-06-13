@@ -833,6 +833,33 @@ function collectHtmlFiles(root) {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+const BUILT_TEXT_EXTENSIONS = new Set([".html", ".css", ".js", ".mjs", ".json"]);
+
+function collectBuiltTextFiles(root) {
+  const files = [];
+  const resolvedRoot = resolve(root);
+  if (!existsSync(resolvedRoot) || !statSync(resolvedRoot).isDirectory()) return files;
+
+  function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile() && BUILT_TEXT_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+        files.push({
+          path: relative(resolvedRoot, fullPath),
+          name: entry.name,
+          bytes: statSync(fullPath).size,
+        });
+      }
+    }
+  }
+
+  walk(resolvedRoot);
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
 function campaignIdentity(spec, args) {
   const mapId = optionalString(args["map-id"])
     || optionalString(spec.spec_identity?.map_id)
@@ -3174,7 +3201,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
   }
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
   if (assemblyComplete) {
-    validateBuiltContractResidue(contract, warnings, ready, derived);
+    validateBuiltContractResidue(contract, warnings, ready, derived, spec);
   } else {
     for (const value of contract.frontmatter?.demoOnlyValues || []) {
       addIssue(warnings, "frontmatter.demoOnlyValues", `Replace demo-only starter value before launch: ${value}`);
@@ -3330,7 +3357,7 @@ function validateExitPopContract(contract, spec, family, warnings, ready, derive
   }
 }
 
-function validateBuiltContractResidue(contract, warnings, ready, derived) {
+function validateBuiltContractResidue(contract, warnings, ready, derived, spec = null) {
   const targetOutputDir = derived.target_output_dir;
   if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) {
     addIssue(warnings, "frontmatter.build_state", "Assembly is recorded complete, but doctor cannot scan the target output directory for remaining starter contract residue.");
@@ -3344,13 +3371,38 @@ function validateBuiltContractResidue(contract, warnings, ready, derived) {
   const hits = collectLiteralMatches(targetOutputDir, literalValues);
   if (!hits.length) {
     ready.push("Built target output has no obvious demo-only or unsupported starter contract residue");
-    return;
+  } else {
+    addIssue(
+      warnings,
+      "frontmatter.build_residue",
+      `Assembly is recorded complete, but target output still contains starter contract residue: ${summarizeCopyMatches(hits)}.`
+    );
   }
-  addIssue(
-    warnings,
-    "frontmatter.build_residue",
-    `Assembly is recorded complete, but target output still contains starter contract residue: ${summarizeCopyMatches(hits)}.`
-  );
+
+  const genericHits = collectGenericTemplateResidueMatches(targetOutputDir);
+  if (genericHits.length) {
+    addIssue(
+      warnings,
+      "template_contract.literal_residue",
+      `Assembly is recorded complete, but built output still contains generic starter/template placeholders: ${summarizeCopyMatches(genericHits)}. Replace these from CampaignSpec/API or remove dead template references before QA.`
+    );
+  } else {
+    ready.push("Built target output has no generic starter placeholder or promo-code residue");
+  }
+
+  const maxDiscount = maxSpecDiscountPercent(spec);
+  if (maxDiscount !== null) {
+    const discountHits = collectOverstatedDiscountClaimMatches(targetOutputDir, maxDiscount);
+    if (discountHits.length) {
+      addIssue(
+        warnings,
+        "template_contract.discount_claim_residue",
+        `Assembly is recorded complete, but built output claims discount percentages above the CampaignSpec maximum (${formatPercent(maxDiscount)}): ${summarizeCopyMatches(discountHits)}. Generate promo/banner/timer copy from actual offers and vouchers.`
+      );
+    } else {
+      ready.push(`Built target output has no promo discount claims above CampaignSpec max (${formatPercent(maxDiscount)})`);
+    }
+  }
 }
 
 function collectLiteralMatches(root, values) {
@@ -3372,6 +3424,98 @@ function collectLiteralMatches(root, values) {
     }
   }
   return matches;
+}
+
+const GENERIC_TEMPLATE_RESIDUE_PATTERNS = [
+  { id: "promo_code_placeholder", label: "XXCODE", pattern: /\bXXCODE\b/g },
+  { id: "package_title_placeholder", label: "Package Title", pattern: /\bPackage Title\b/g },
+  { id: "product_title_placeholder", label: "Product Title", pattern: /\bProduct Title\b/g },
+  { id: "spec_ref_placeholder", label: "SPEC_*_REF", pattern: /\bSPEC_[A-Z0-9_]*_REF\b/g },
+  { id: "starter_logo_asset", label: "next-logo.png", pattern: /\bnext-logo\.(?:png|svg|webp)\b/g },
+];
+
+function collectGenericTemplateResidueMatches(root) {
+  return collectPatternMatches(root, GENERIC_TEMPLATE_RESIDUE_PATTERNS);
+}
+
+function collectPatternMatches(root, patterns) {
+  if (!patterns.length) return [];
+  const matches = [];
+  for (const file of collectBuiltTextFiles(root)) {
+    const content = readFileSync(join(root, file.path), "utf8");
+    for (const entry of patterns) {
+      const flags = entry.pattern.flags.includes("g") ? entry.pattern.flags : `${entry.pattern.flags}g`;
+      const regex = new RegExp(entry.pattern.source, flags);
+      for (const match of content.matchAll(regex)) {
+        matches.push({
+          surface: "target",
+          path: file.path,
+          line: lineNumberAt(content, match.index || 0),
+          label: entry.label,
+          text: match[0],
+          kind: entry.id,
+        });
+      }
+    }
+  }
+  return matches;
+}
+
+function maxSpecDiscountPercent(spec) {
+  if (!spec || typeof spec !== "object") return null;
+  const values = [];
+
+  function visit(value, key = "") {
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, key);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+
+    if (isObject(value.benefit) && /percentage/i.test(String(value.benefit.type || ""))) {
+      addPercentValue(values, value.benefit.value);
+    }
+
+    for (const [entryKey, entryValue] of Object.entries(value)) {
+      if (/(?:discount|percent|percentage)/i.test(entryKey)) addPercentValue(values, entryValue);
+      visit(entryValue, entryKey);
+    }
+  }
+
+  visit(spec);
+  return values.length ? Math.max(...values) : null;
+}
+
+function addPercentValue(values, value) {
+  const parsed = Number.parseFloat(String(value ?? "").replace("%", "").trim());
+  if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) values.push(parsed);
+}
+
+function collectOverstatedDiscountClaimMatches(root, maxDiscount) {
+  const claimPattern = /\b(\d{1,3}(?:\.\d+)?)\s*%\s*(?:off|discount)\b/gi;
+  const matches = [];
+  for (const file of collectBuiltTextFiles(root)) {
+    const content = readFileSync(join(root, file.path), "utf8");
+    for (const match of content.matchAll(claimPattern)) {
+      const claimed = Number.parseFloat(match[1]);
+      if (!Number.isFinite(claimed) || claimed <= maxDiscount + 0.01) continue;
+      matches.push({
+        surface: "target",
+        path: file.path,
+        line: lineNumberAt(content, match.index || 0),
+        label: `${formatPercent(claimed)} claim`,
+        text: match[0],
+        claimed_percent: claimed,
+        max_spec_percent: maxDiscount,
+      });
+    }
+  }
+  return matches;
+}
+
+function formatPercent(value) {
+  const rounded = Math.round(value * 100) / 100;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)}%`;
 }
 
 function contractMentionsShipping(contract) {

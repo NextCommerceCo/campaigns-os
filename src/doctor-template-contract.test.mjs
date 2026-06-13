@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { validateCommerceCatalog, validateTemplateFamilyInventory } from "./cli.mjs";
@@ -16,7 +16,7 @@ const codes = (issues) => issues.map((issue) => issue.code);
 
 // Run validateCommerceCatalog against a temp catalog + the given spec/contract,
 // returning the emitted errors/warnings.
-function run({ contract, spec, agentContractVersion = 1, family = "olympus", targetHtml = null }) {
+function run({ contract, spec, agentContractVersion = 1, family = "olympus", targetHtml = null, targetFiles = null }) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-tmpl-contract-"));
   try {
     const catalog = {
@@ -40,6 +40,16 @@ function run({ contract, spec, agentContractVersion = 1, family = "olympus", tar
       const outputDir = join(dir, "out");
       mkdirSync(outputDir, { recursive: true });
       writeFileSync(join(outputDir, "index.html"), targetHtml);
+      derived.target_output_dir = outputDir;
+      buildState.report = { stages: { assembly: { status: "completed" } } };
+    }
+    if (targetFiles !== null) {
+      const outputDir = join(dir, "out");
+      mkdirSync(outputDir, { recursive: true });
+      for (const [relPath, content] of Object.entries(targetFiles)) {
+        mkdirSync(join(outputDir, dirname(relPath)), { recursive: true });
+        writeFileSync(join(outputDir, relPath), content);
+      }
       derived.target_output_dir = outputDir;
       buildState.report = { stages: { assembly: { status: "completed" } } };
     }
@@ -191,6 +201,70 @@ test("limos exit-pop residue scan anchors coupon code literals", () => {
     targetHtml: '<button data-coupon-code="EXIT10">Apply</button>',
   });
   assert.ok(codes(defaultCode.warnings).includes("template_contract.exit_pop_residue"));
+});
+
+test("built residue scan catches generic promo and package placeholders across HTML and JS", () => {
+  const spec = specWith([{
+    id: "checkout",
+    type: "checkout",
+    packages: [{ ref_id: "1" }],
+    offers: [{ benefit: { type: "package_percentage", value: "40.00" } }],
+  }]);
+  const { warnings } = run({
+    contract: checkoutContract,
+    spec,
+    targetFiles: {
+      "index.html": '<span data-next-display="package.name">Package Title</span><div data-next-shipping-id="SPEC_FREE_SHIPPING_REF"></div>',
+      "js/promo-banner.js": "const fallback = { promoCode: 'XXCODE' };",
+    },
+  });
+
+  assert.ok(codes(warnings).includes("template_contract.literal_residue"));
+  const issue = warnings.find((warning) => warning.code === "template_contract.literal_residue");
+  assert.match(issue.message, /Package Title/);
+  assert.match(issue.message, /SPEC_\*_REF/);
+  assert.match(issue.message, /XXCODE/);
+});
+
+test("built residue scan catches promo discount claims above CampaignSpec max", () => {
+  const spec = specWith([{
+    id: "checkout",
+    type: "checkout",
+    packages: [{ ref_id: "1" }],
+    offers: [
+      { benefit: { type: "package_percentage", value: "33.33" } },
+      { benefit: { type: "package_percentage", value: "40.00" } },
+    ],
+  }]);
+  const { warnings } = run({
+    contract: checkoutContract,
+    spec,
+    targetFiles: {
+      "js/promo-banner.js": "bannerTextSec: 'GET UP TO 69% OFF NOW!'",
+    },
+  });
+
+  assert.ok(codes(warnings).includes("template_contract.discount_claim_residue"));
+  assert.match(warnings.find((warning) => warning.code === "template_contract.discount_claim_residue").message, /CampaignSpec maximum \(40%\)/);
+});
+
+test("built residue scan allows real max discount copy and non-discount percentage copy", () => {
+  const spec = specWith([{
+    id: "checkout",
+    type: "checkout",
+    packages: [{ ref_id: "1" }],
+    offers: [{ benefit: { type: "package_percentage", value: "40.00" } }],
+  }]);
+  const { warnings, ready } = run({
+    contract: checkoutContract,
+    spec,
+    targetFiles: {
+      "index.html": "GET UP TO 40% OFF NOW! 100% Encrypted & Secure Checkout",
+    },
+  });
+
+  assert.equal(codes(warnings).includes("template_contract.discount_claim_residue"), false);
+  assert.ok(ready.some((note) => note.includes("no promo discount claims above CampaignSpec max (40%)")));
 });
 
 test("template family inventory rejects empty required values", () => {
