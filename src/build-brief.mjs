@@ -97,9 +97,10 @@ const PAYMENT_METHOD_ALIASES = new Map([
   ["cash app", "cash_app"],
 ]);
 
-const ORDER_BUMP_KEYS = new Set(["order_bump", "order_bumps"]);
+const ORDER_BUMP_KEYS = new Set(["order_bump", "order_bumps", "prepurchase", "pre_purchase"]);
 const ORDER_BUMP_VALUE_KEYS = new Set(["role", "type", "kind", "surface", "placement", "slot", "page_type"]);
 const ORDER_BUMP_VALUES = new Set(["order_bump", "order_bumps", "prepurchase", "pre_purchase"]);
+const DISABLED_SIGNAL_VALUES = new Set(["false", "none", "no", "0", "off", "disabled", "disable", "inactive"]);
 
 const COLOR_WORDS = Object.freeze([
   "black",
@@ -641,24 +642,39 @@ function hasPromoSignals(spec) {
 }
 
 function hasOrderBumpSignals(value, keyPath = []) {
+  const key = keyPath[keyPath.length - 1] || "";
+  const normalizedKey = normalizeToken(key);
+  if (ORDER_BUMP_KEYS.has(normalizedKey)) {
+    if (isDisabledSignal(value)) return false;
+    if (isObject(value) && Object.hasOwn(value, "enabled") && isDisabledSignal(value.enabled)) return false;
+    if ((Array.isArray(value) || isObject(value)) && hasNestedOrderBumpSignals(value, keyPath)) return true;
+    return isMeaningfulSignal(value);
+  }
+
   if (Array.isArray(value)) {
     return value.some((item, index) => hasOrderBumpSignals(item, [...keyPath, String(index)]));
   }
   if (isObject(value)) {
     for (const [key, item] of Object.entries(value)) {
-      if (ORDER_BUMP_KEYS.has(normalizeToken(key)) && isMeaningfulSignal(item)) return true;
       if (hasOrderBumpSignals(item, [...keyPath, key])) return true;
     }
     return false;
   }
 
-  const key = keyPath[keyPath.length - 1] || "";
-  const normalizedKey = normalizeToken(key);
-  if (value === true && ORDER_BUMP_VALUES.has(normalizedKey)) return true;
   if (typeof value !== "string") return false;
 
   const normalizedValue = normalizeToken(value);
   return ORDER_BUMP_VALUE_KEYS.has(normalizedKey) && ORDER_BUMP_VALUES.has(normalizedValue);
+}
+
+function hasNestedOrderBumpSignals(value, keyPath) {
+  if (Array.isArray(value)) {
+    return value.some((item, index) => hasOrderBumpSignals(item, [...keyPath, String(index)]));
+  }
+  if (isObject(value)) {
+    return Object.entries(value).some(([key, item]) => hasOrderBumpSignals(item, [...keyPath, key]));
+  }
+  return false;
 }
 
 function hasRegulatedSignals(spec) {
@@ -741,11 +757,17 @@ function isNonEmptyString(value) {
 }
 
 function isMeaningfulSignal(value) {
-  if (value == null || value === false) return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (isObject(value)) return Object.keys(value).length > 0;
-  if (typeof value === "string") return value.trim().length > 0 && !["false", "none", "no"].includes(value.trim().toLowerCase());
+  if (isDisabledSignal(value)) return false;
+  if (Array.isArray(value)) return value.some(isMeaningfulSignal);
+  if (isObject(value)) return Object.values(value).some(isMeaningfulSignal);
   return true;
+}
+
+function isDisabledSignal(value) {
+  if (value == null || value === false) return true;
+  if (typeof value === "number") return value === 0;
+  if (typeof value === "string") return value.trim().length === 0 || DISABLED_SIGNAL_VALUES.has(normalizeToken(value));
+  return false;
 }
 
 function escapeRegExp(value) {

@@ -259,6 +259,30 @@ test("guided drafts infer order bumps from structured roles only", () => {
   });
   assert.equal(copyOnly.artifact.commerce_surfaces.order_bump.enabled, false);
 
+  const disabledString = createCampaignBuildBriefArtifact({
+    spec: {
+      order_bump: "off",
+    },
+  });
+  assert.equal(disabledString.artifact.commerce_surfaces.order_bump.enabled, false);
+
+  const disabledObject = createCampaignBuildBriefArtifact({
+    spec: {
+      order_bump: {
+        enabled: false,
+        title: "Add one more",
+      },
+    },
+  });
+  assert.equal(disabledObject.artifact.commerce_surfaces.order_bump.enabled, false);
+
+  const prepurchaseKey = createCampaignBuildBriefArtifact({
+    spec: {
+      prepurchase: true,
+    },
+  });
+  assert.equal(prepurchaseKey.artifact.commerce_surfaces.order_bump.enabled, true);
+
   const structuredRole = createCampaignBuildBriefArtifact({
     spec: {
       packages: [
@@ -267,6 +291,19 @@ test("guided drafts infer order bumps from structured roles only", () => {
     },
   });
   assert.equal(structuredRole.artifact.commerce_surfaces.order_bump.enabled, true);
+
+  const nestedStructuredRole = createCampaignBuildBriefArtifact({
+    spec: {
+      checkout: {
+        order_bump: {
+          copy: {
+            role: "prepurchase",
+          },
+        },
+      },
+    },
+  });
+  assert.equal(nestedStructuredRole.artifact.commerce_surfaces.order_bump.enabled, true);
 });
 
 test("guided drafts preserve common wallet payment aliases", () => {
