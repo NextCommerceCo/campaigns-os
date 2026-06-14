@@ -188,7 +188,8 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
 - **Non-fatal** — a failed POST never blocks or fails the run (mirrors "never
   fail the run if publish is unreachable").
 - **Idempotent** — payload carries `run_id`; the endpoint upserts so retries /
-  reruns do not double-count. Proposed endpoint: `/api/runs`.
+  reruns do not double-count. Endpoint: `/api/runs` (implemented; receives at the
+  canonical remit scope).
 - **Durable status** — the local Run Record records `remit_attempted`,
   `remit_ok`, and `error` so a dropped send is visible, not silent. No
   background retry daemon.
