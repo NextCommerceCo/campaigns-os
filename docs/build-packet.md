@@ -7,6 +7,7 @@ It answers:
 - Which CampaignSpec and Map ID are we building?
 - Which public route slug and campaign directory are expected?
 - Where are the prepared HTML/assets?
+- Which Campaign Build Brief is the merchandising/design presentation truth?
 - Which target page-kit repo should be updated?
 - Which starter template family is locked?
 - Which commerce catalog/contract should the agent read?
@@ -28,6 +29,7 @@ campaign-runtime.build.json
 .campaign-runtime/assembly-report.json
 .campaign-runtime/doctor-output.json
 .campaign-runtime/theme/theme-report.json
+.campaign-runtime/input/campaign-build-brief.normalized.json
 ```
 
 Commit durable packet/context/report artifacts when they represent a real build handoff. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.
@@ -38,6 +40,13 @@ Commit durable packet/context/report artifacts when they represent a real build 
 in `inspect_only` mode. The optional theme evidence lives in `context.theme`,
 `report.theme`, and `.campaign-runtime/theme/theme-report.json`. The Build
 Packet itself does not gain required theme fields in v0.
+
+`start` / `prepare-build` also accept `--brief <campaign-build-brief.yaml|json>`
+and auto-discover `campaign-build-brief.yaml`, `.yml`, or `.json` from the
+source root or target repo. When none is present, Campaigns OS creates a guided
+draft at `.campaign-runtime/input/campaign-build-brief.normalized.json`.
+See [Campaign Build Brief](./campaign-build-brief.md) for the schema and
+prepared/guided behavior.
 
 ## Adapter And Proof Fields
 

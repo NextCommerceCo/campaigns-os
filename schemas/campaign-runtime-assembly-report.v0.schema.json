@@ -117,6 +117,19 @@
       }
     },
     "decisions": { "type": "array" },
+    "build_brief": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "schema_version": { "const": "campaigns-os-build-brief/v1" },
+        "mode": { "enum": ["prepared", "guided_draft"] },
+        "status": { "enum": ["complete", "needs_answers", "invalid"] },
+        "normalized_path": { "type": "string" },
+        "question_count": { "type": "integer", "minimum": 0 },
+        "gate_count": { "type": "integer", "minimum": 0 }
+      },
+      "description": "Campaign Build Brief summary mirrored from Build Context for build/polish/QA handoff continuity."
+    },
     "adapter_decisions": { "$ref": "#/$defs/adapterDecisions" },
     "proof_policy": {
       "type": "object",

@@ -53,6 +53,23 @@
         }
       }
     },
+    "build_brief": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "mode", "status", "normalized_path", "question_count", "gate_count"],
+      "properties": {
+        "schema_version": { "const": "campaigns-os-build-brief/v1" },
+        "mode": { "enum": ["prepared", "guided_draft"] },
+        "status": { "enum": ["complete", "needs_answers", "invalid"] },
+        "input_path": { "type": ["string", "null"] },
+        "normalized_path": { "type": "string", "minLength": 1 },
+        "question_count": { "type": "integer", "minimum": 0 },
+        "gate_count": { "type": "integer", "minimum": 0 },
+        "questions": { "type": "array" },
+        "gates": { "type": "array" }
+      },
+      "description": "Campaign Build Brief handoff summary. The normalized full artifact lives at normalized_path."
+    },
     "page_map": {
       "type": "array",
       "items": {

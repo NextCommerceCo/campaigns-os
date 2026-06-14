@@ -1,0 +1,95 @@
+schema_version: campaigns-os-build-brief/v1
+
+campaign_intent:
+  audience: busy households buying a practical single-product gadget
+  conversion_goal: single-product direct response funnel
+  tone: clear, practical, benefit-led
+
+design_authority:
+  landing:
+    source: provided_design_export
+    reference: landing.html
+  checkout:
+    source: template_adapted_to_landing
+    reference: selected checkout template with landing palette
+  upsell:
+    source: template_adapted_to_checkout
+    reference: selected post-purchase template
+  receipt:
+    source: template
+    reference: selected receipt template
+
+brand:
+  commerce_palette_source: landing
+  primary_accent: brand navy
+  cta_style: high-contrast yellow button with dark text
+  avoid:
+    - unapproved accent colors
+    - template-default brand colors
+
+media:
+  sold_variants:
+    - matte black
+  allow_other_variant_colors: false
+  prefer:
+    - clean product renders
+    - lifestyle images without embedded text
+    - images that match the selected product variant
+  avoid:
+    - foreign-language text overlays
+    - wrong product color
+    - blurry stock-like crops
+
+offer_presentation:
+  bundle_cards:
+    primary_price: discounted_unit_price
+    show_total: multi_pack_only
+    show_compare_price: false
+    savings_badge: rounded_percentage
+    hide_duplicate_discount_copy: true
+  post_purchase:
+    show_voucher_code: when_customer_needs_to_see_it
+    show_retail_price: true
+    show_shipping: if_charged
+
+promo_urgency:
+  header_claim_source: campaign_offers
+  timer_label: Limited-time offer
+  show_promo_code_in_timer: false
+  exit_pop:
+    enabled: true
+    code_source: campaign_spec
+  forbid_placeholders: true
+
+commerce_surfaces:
+  payment_methods_allowed:
+    - card
+    - paypal
+    - apple_pay
+    - google_pay
+  hidden_payment_methods:
+    - klarna
+  order_bump:
+    enabled: true
+    display_style: compact_switch
+  guarantees:
+    use_campaign_or_merchant_policy_copy: true
+
+canonical_display:
+  product_name_source: campaign_spec
+  allow_runtime_name_override: false
+  manual_overrides: {}
+
+template_residue_policy:
+  block_placeholders: true
+  block_template_favicon: true
+  block_demo_payment_methods: true
+  block_lorem_ipsum: true
+  block_unapproved_tracking_claims: true
+
+qa_policy:
+  require_desktop_mobile_screenshots: true
+  require_checkout_flow: true
+  require_post_purchase_flow: true
+  fail_on_visible_placeholders: true
+  compare_live_runtime_data_to_spec: true

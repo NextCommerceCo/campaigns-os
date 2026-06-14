@@ -95,6 +95,13 @@ import {
   loadTemplateBrandContract,
 } from "./template-brand-contract.mjs";
 import {
+  BUILD_BRIEF_NORMALIZED_REL_PATH,
+  BUILD_BRIEF_SCHEMA,
+  createCampaignBuildBriefArtifact,
+  inferBuildBriefPath,
+  validateCampaignBuildBriefArtifact,
+} from "./build-brief.mjs";
+import {
   appendDeviation,
   buildRecommendation,
   detectDeviation,
@@ -213,11 +220,14 @@ const HELP = `Campaigns OS toolkit
 Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
-                     [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                     [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session]
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
-                             [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                             [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--allow-uncertified-template "<reason>"] [--no-run-session]
+  campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
+                     [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                     [--allow-uncertified-template "<reason>"] [--no-run-session]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
@@ -452,6 +462,16 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
     args.spec = resolved.specPath;
     const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: false, installContext: false }));
+    result.spec_source = resolved;
+    autoStartRunSession(result, args, ambient, sessionHolder);
+    printPrepareResult(result, args);
+    return;
+  }
+
+  if (command === "build") {
+    const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
+    args.spec = resolved.specPath;
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: true, installContext: false }));
     result.spec_source = resolved;
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
@@ -940,6 +960,7 @@ function prepareBuild(args, options = {}) {
   const contextPath = resolve(args["context-out"] || join(targetRepo, ".campaign-runtime/build-context.json"));
   const reportPath = resolve(args["report-out"] || join(targetRepo, ".campaign-runtime/assembly-report.json"));
   const doctorOutPath = resolve(args["doctor-out"] || join(targetRepo, ".campaign-runtime/doctor-output.json"));
+  const briefPath = resolve(args["brief-out"] || join(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
   const spec = readJson(specPath);
   const { mapId, publicRouteSlug } = campaignIdentity(spec, args);
   if (!mapId) throw new Error("CampaignSpec has no map ID. Re-export a saved Map Builder spec with spec_identity.map_id before assembly; use --map-id only for legacy diagnostics.");
@@ -999,7 +1020,6 @@ function prepareBuild(args, options = {}) {
   const liveUrlPath = optionalString(args["live-url-path"], `/${publicRouteSlug}/`);
   const commerceCatalog = optionalString(args["commerce-catalog"], join(ROOT, "contracts/commerce-surface-catalog.json"));
   const themePolicy = optionalString(args["theme-policy"], "inspect_only");
-  const blockers = matched.prompts.map((prompt) => ({ code: prompt.code, stage: prompt.stage, message: prompt.message }));
   const portable = (path) => relFromDir(targetRepo, path);
   const commerceZoneFindings = inspectCommerceZones(sourceRoot, htmlFiles);
   const sourceAssetCrawl = crawlSourceAssetPaths({
@@ -1007,6 +1027,51 @@ function prepareBuild(args, options = {}) {
     htmlFiles,
     pageMappings: matched.mappings,
   });
+  const briefDiscovery = inferBuildBriefPath({
+    explicitPath: optionalString(args.brief),
+    sourceRoot,
+    targetRepo,
+  });
+  const buildBrief = createCampaignBuildBriefArtifact({
+    inputPath: briefDiscovery?.path || null,
+    inputSource: briefDiscovery?.source || null,
+    spec,
+    activePages,
+    pageMappings: matched.mappings,
+    templateFamily,
+    sourceAssetCrawl,
+    commerceZoneFindings,
+  });
+  if (buildBrief.inputPath && buildBrief.artifact?._meta) {
+    buildBrief.artifact._meta.input_path = relFromFile(briefPath, buildBrief.inputPath);
+  }
+  const buildBriefPrompts = buildBrief.mode === "prepared" ? [] : buildBrief.questions.map((question) => ({
+    code: `BUILD_BRIEF_${toConstantCase(question.id)}`,
+    stage: "prepare_build",
+    message: question.question,
+    detail: {
+      field: question.field,
+      reason: question.reason,
+      options: question.options,
+      blocking: question.blocking,
+    },
+  }));
+  const sourceBlockers = matched.prompts.map((prompt) => ({ code: prompt.code, stage: prompt.stage, message: prompt.message }));
+  const briefBlockers = buildBrief.blockers.map((gate) => ({
+    code: gate.code,
+    stage: "prepare_build",
+    message: gate.message,
+    field: gate.field || null,
+  }));
+  const briefQuestionBlockers = buildBrief.mode === "prepared"
+    ? buildBrief.questions.map((question) => ({
+        code: `BUILD_BRIEF_${toConstantCase(question.id)}`,
+        stage: "prepare_build",
+        message: question.question,
+        field: question.field,
+      }))
+    : [];
+  const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers];
   const adapterDecisions = createAdapterDecisions({ commerceZoneFindings });
   const proofPolicy = createProofPolicy();
 
@@ -1029,6 +1094,15 @@ function prepareBuild(args, options = {}) {
       root: relFromFile(packetPath, sourceRoot),
       pages: matched.mappings,
       adapter_contract: cloneJson(adapterDecisions),
+    },
+    build_brief: {
+      schema_version: BUILD_BRIEF_SCHEMA,
+      mode: buildBrief.mode,
+      status: buildBrief.artifact.status,
+      input_path: buildBrief.inputPath ? relFromFile(packetPath, buildBrief.inputPath) : null,
+      normalized_path: relFromFile(packetPath, briefPath),
+      question_count: buildBrief.questions.length,
+      gate_count: buildBrief.gates.length,
     },
     assembly: {
       implementation: "next-campaigns-build",
@@ -1103,6 +1177,17 @@ function prepareBuild(args, options = {}) {
       manifest_warnings: manifestWarnings,
       asset_crawl: sourceAssetCrawl,
     },
+    build_brief: {
+      schema_version: BUILD_BRIEF_SCHEMA,
+      mode: buildBrief.mode,
+      status: buildBrief.artifact.status,
+      input_path: buildBrief.inputPath ? portable(buildBrief.inputPath) : null,
+      normalized_path: portable(briefPath),
+      question_count: buildBrief.questions.length,
+      gate_count: buildBrief.gates.length,
+      questions: buildBrief.questions,
+      gates: buildBrief.gates,
+    },
     page_map: matched.mappings.map((mapping) => ({
       page_id: mapping.page_id,
       source_path: mapping.path || null,
@@ -1129,7 +1214,7 @@ function prepareBuild(args, options = {}) {
     },
     adapter_decisions: cloneJson(adapterDecisions),
     commerce_zone_findings: commerceZoneFindings,
-    prompts_required: matched.prompts,
+    prompts_required: [...matched.prompts, ...buildBriefPrompts],
     decisions: matched.decisions,
   };
 
@@ -1160,6 +1245,7 @@ function prepareBuild(args, options = {}) {
   const report = createAssemblyReport({ packetPath, contextPath, reportPath, specPath, sourceRoot, sourceKind, targetRepo, packet, context, blockers });
 
   writeJson(packetPath, packet);
+  writeJson(briefPath, buildBrief.artifact);
   writeJson(contextPath, context);
   writeJson(reportPath, report);
 
@@ -1170,7 +1256,7 @@ function prepareBuild(args, options = {}) {
     writeJson(doctorOutPath, doctor);
   }
 
-  return { packetPath, contextPath, reportPath, doctorOutPath, packet, context, report, doctor };
+  return { packetPath, contextPath, reportPath, doctorOutPath, briefPath, packet, context, report, doctor };
 }
 
 export function inspectCommerceZones(sourceRoot, htmlFiles) {
@@ -1277,6 +1363,7 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
     inputs: {
       packet_path: portable(packetPath),
       context_path: portable(contextPath),
+      build_brief_path: context.build_brief?.normalized_path || null,
       spec_path: portable(specPath),
       source: { kind: sourceKind, root: portable(sourceRoot) },
       target_repo: ".",
@@ -1291,9 +1378,10 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
     stages: createInitialAssemblyReportStages({
       scaffoldRequired,
       blockers,
-      outputs: [portable(packetPath), portable(contextPath), portable(reportPath)],
+      outputs: [portable(packetPath), portable(contextPath), context.build_brief?.normalized_path, portable(reportPath)].filter(Boolean),
     }),
     decisions: context.decisions,
+    build_brief: cloneJson(context.build_brief || {}),
     adapter_decisions: cloneJson(context.adapter_decisions || createAdapterDecisions()),
     proof_policy: cloneJson(packet.qa?.proof_policy || createProofPolicy()),
     theme: assemblyThemeFromContext(context.theme),
@@ -1302,6 +1390,9 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
     warnings: [
       ...(context.commerce_zone_findings.length
         ? [{ code: "SOURCE_COMMERCE_REVIEW", stage: "assembly", message: "Source HTML contains possible commerce zones. Preserve catalog-owned runtime surfaces." }]
+        : []),
+      ...(context.build_brief?.mode === "guided_draft" && context.build_brief?.question_count > 0
+        ? [{ code: "BUILD_BRIEF_GUIDED_QUESTIONS", stage: "prepare_build", message: `Generated Campaign Build Brief draft has ${context.build_brief.question_count} high-impact question(s) to confirm before first-shot assembly.` }]
         : []),
       ...sourceAssetWarningsForReport(context.source?.asset_crawl),
     ],
@@ -1654,6 +1745,11 @@ const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
     phase: "qa",
     run: ({ packet, warnings, ready }) => validateProofPolicy(packet, warnings, ready),
   },
+  {
+    id: "build_brief.artifact",
+    phase: "brief",
+    run: ({ packet, packetPath, spec, context, errors, warnings, ready }) => validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready),
+  },
 ], { registryId: "packet.always" });
 
 const ARTIFACT_DOCTOR_CHECKS = createDoctorCheckRegistry([
@@ -1784,7 +1880,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
   }
 
-  runDoctorChecks(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, errors, warnings, ready, derived, buildState });
+  runDoctorChecks(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, context: buildState.context, report: buildState.report, errors, warnings, ready, derived, buildState });
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
     const partialScope = derived.scope?.mode === "partial";
@@ -1861,6 +1957,32 @@ function validateProofPolicy(packet, warnings, ready) {
     return;
   }
   validateProofPolicyObject(policy, "qa.proof_policy", warnings, ready, { requireBrowserQa: true });
+}
+
+function validateBuildBrief(packet, packetPath, spec, context, errors, warnings, ready) {
+  const briefRef = packet.build_brief || context?.build_brief || null;
+  const normalizedPath = optionalString(packet.build_brief?.normalized_path)
+    || optionalString(context?.build_brief?.normalized_path);
+  if (!briefRef || !normalizedPath) {
+    addIssue(warnings, "build_brief.missing", "No Campaign Build Brief artifact is referenced. Existing builds may continue, but new build intake should provide or generate .campaign-runtime/input/campaign-build-brief.normalized.json so business/design decisions are durable.");
+    return;
+  }
+
+  const resolvedPath = resolveFromFile(packetPath, normalizedPath);
+  if (!resolvedPath || !existsSync(resolvedPath)) {
+    addIssue(errors, "build_brief.normalized_path", `Campaign Build Brief normalized artifact is missing: ${normalizedPath}`);
+    return;
+  }
+
+  const brief = readJson(resolvedPath);
+  const result = validateCampaignBuildBriefArtifact(brief, { spec });
+  for (const issue of result.errors) errors.push(issue);
+  for (const issue of result.warnings) warnings.push(issue);
+  ready.push(...result.ready);
+
+  if (context?.build_brief?.status && brief.status && context.build_brief.status !== brief.status) {
+    addIssue(warnings, "build_brief.context_status", `Build context says brief status is "${context.build_brief.status}" but normalized artifact says "${brief.status}". Rerun prepare-build to refresh the handoff.`);
+  }
 }
 
 function validateProofPolicyObject(policy, location, warnings, ready, { requireBrowserQa = false } = {}) {
@@ -4214,16 +4336,19 @@ function recordNextRecommendation(ambient, result) {
 }
 
 function buildPrompt(packetPath, contextPath, reportPath, packet) {
+  const briefPath = packet.build_brief?.normalized_path || "(missing; generate or confirm Campaign Build Brief before business-sensitive assembly)";
   return `Use next-campaigns-build for this Campaigns OS handoff.
 
 Read first:
 - Build Packet: ${packetPath}
 - Build Context: ${contextPath || "(use packet-adjacent .campaign-runtime/build-context.json if present)"}
 - Assembly Report: ${reportPath || "(use packet-adjacent .campaign-runtime/assembly-report.json if present)"}
+- Campaign Build Brief: ${briefPath}
 - Template family: ${packet.assembly.template_family}
 
 Rules:
 - Treat CampaignSpec/API as the source for package, shipping, voucher, payment, tracking, footer, and SEO values.
+- Treat the Campaign Build Brief as the merchandising/design presentation truth: page authority, palette/CTA style, variant media rules, pricing display strategy, promo/urgency language, payment/trust surfaces, display-name policy, residue policy, and QA expectations. Agents may resolve implementation uncertainty; unresolved brief questions are business uncertainty and should be asked or recorded, not guessed.
 - Read the selected template family's agentContract and sharedFrontmatterVocabulary before commerce wiring.
 - Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Page Kit publishes src/<slug>/assets/config.js as /<slug>/config.js and src/<slug>/assets/products/foo.png as /<slug>/products/foo.png; do not leave raw /assets/... or /<slug>/assets/... references in rendered pages.
 - Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
@@ -4242,12 +4367,14 @@ Rules:
 }
 
 function setupPrompt(packetPath, contextPath, reportPath, packet) {
+  const briefPath = packet.build_brief?.normalized_path || "(missing)";
   return `Use next-campaigns-setup for this Campaigns OS handoff.
 
 Read first:
 - Build Packet: ${packetPath}
 - Build Context: ${contextPath}
 - Assembly Report: ${reportPath}
+- Campaign Build Brief: ${briefPath}
 - Target repo: ${packet.assembly.target_repo}
 - Output dir: ${packet.assembly.output_dir}
 
@@ -4261,14 +4388,16 @@ Do not wire checkout, upsell, receipt, payment, package, voucher, or shipping be
 }
 
 function polishPrompt(packetPath, reportPath, packet) {
+  const briefPath = packet.build_brief?.normalized_path || "(missing)";
   return `Use next-campaigns-polish for this built campaign.
 
 Read first:
 - Build Packet: ${packetPath}
 - Assembly Report: ${reportPath}
+- Campaign Build Brief: ${briefPath}
 - Template family: ${packet.assembly.template_family}
 
-Compare source against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, capture desktop/mobile evidence, and record polish as completed, skipped, or blocked before QA.
+Compare source and Campaign Build Brief decisions against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, capture desktop/mobile evidence, and record polish as completed, skipped, or blocked before QA.
 
 If report.theme/context.theme exists, verify source token parity for primary color, CTA, surface, text, font/radius when present, and verify brand-theme.css loads after next-core.css on commerce pages. If the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.`;
 }
@@ -4297,19 +4426,21 @@ If the deploy is blocked (non-localhost allowed-domain not yet added, CI permiss
 
 function qaPrompt(packetPath, reportPath, packet) {
   const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
+  const briefPath = packet.build_brief?.normalized_path || "(missing)";
   return `Use next-campaigns-qa for this deployed campaign.
 
 Map ID: ${packet.spec.map_id}
 Base URL: ${url}
 Build Packet: ${packetPath}
 Assembly Report: ${reportPath}
+Campaign Build Brief: ${briefPath}
 Browser install command:
 npm run qa:install-browser
 
 Node QA command:
 campaigns-os qa run --packet ${packetPath} --base-url ${url} --browser --test-order common
 
-Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Test Orders use global test cards that bypass the payment gateway and create no transactions, so they are safe to run any time and need no permission flags, packet policy, or merchant setup. Localhost on any port is a globally allowed Development domain for SDK initialization and suppresses Campaigns analytics events; non-localhost preview/production origins still need the SDK origin allowlist. Use --test-order common for the default 3-5 shape sample (checkout, plus accept/decline when there are upsells), an explicit path such as accept-decline-accept for a targeted matrix, or --test-order full for every permutation; then click rendered SDK upsell accept/decline controls for upsell proof. Reuse one test customer email via --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL (a real monitored inbox in internal runs) so repeated QA does not litter the customer list.
+Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Compare visible placeholders, payment methods, variant media, promo/urgency copy, pricing presentation, and trust/guarantee claims against the Campaign Build Brief. Test Orders use global test cards that bypass the payment gateway and create no transactions, so they are safe to run any time and need no permission flags, packet policy, or merchant setup. Localhost on any port is a globally allowed Development domain for SDK initialization and suppresses Campaigns analytics events; non-localhost preview/production origins still need the SDK origin allowlist. Use --test-order common for the default 3-5 shape sample (checkout, plus accept/decline when there are upsells), an explicit path such as accept-decline-accept for a targeted matrix, or --test-order full for every permutation; then click rendered SDK upsell accept/decline controls for upsell proof. Reuse one test customer email via --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL (a real monitored inbox in internal runs) so repeated QA does not litter the customer list.
 
 Launch readiness note: Campaigns OS can prove the campaign build, SDK wiring, browser behavior, and typed-card order paths. It does not prove the merchant is ready for real shoppers. Before launch, confirm the production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and any merchant-side configuration. Treat those as real-shopper readiness items, not Campaigns OS build blockers.
 
@@ -5335,6 +5466,8 @@ async function runRecordCommand(args, ambient = null) {
   }
 
   const artifacts = [runRecordArtifactRef("build_packet", packetPath, PACKET_SCHEMA, baseDir)];
+  const buildBriefPath = resolveFromFile(packetPath, packet.build_brief?.normalized_path);
+  if (buildBriefPath && existsSync(buildBriefPath)) artifacts.push(runRecordArtifactRef("build_brief", buildBriefPath, BUILD_BRIEF_SCHEMA, baseDir));
   if (contextExists) artifacts.push(runRecordArtifactRef("build_context", contextPath, CONTEXT_SCHEMA, baseDir));
   if (reportExists) artifacts.push(runRecordArtifactRef("assembly_report", reportPath, REPORT_SCHEMA, baseDir));
   if (qaVerdictExists) artifacts.push(runRecordArtifactRef("qa_verdict", qaVerdictPath, optionalString(qaVerdict?.schema_version), baseDir));
@@ -5730,6 +5863,10 @@ function printPrepareResult(result, args) {
     }
   }
   console.log(`Packet: ${result.packetPath}`);
+  if (result.briefPath) {
+    const brief = result.context?.build_brief;
+    console.log(`Brief: ${result.briefPath}${brief ? ` (${brief.mode}, ${brief.status}, questions=${brief.question_count})` : ""}`);
+  }
   console.log(`Context: ${result.contextPath}`);
   console.log(`Report: ${result.reportPath}`);
   if (result.doctor) {
