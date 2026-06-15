@@ -31,6 +31,7 @@ import {
 import {
   assembleRunRecord,
   mintRunId,
+  RUN_RECORD_SURFACES,
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
@@ -5421,6 +5422,7 @@ async function runSessionEnd(args, ambient = null) {
 // docs/workflow-findings-sidecar.md.
 async function runRecordCommand(args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
+  const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
   const baseDir = dirname(packetPath);
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || baseDir;
@@ -5511,7 +5513,7 @@ async function runRecordCommand(args, ambient = null) {
     context,
     qaVerdict,
     journal,
-    surfaces: parseCommaList(args.surfaces),
+    surfaces: parsedSurfaces,
     primarySurface: optionalString(args["primary-surface"]),
     surfaceConfidence: optionalString(args["surface-confidence"]),
     lifecycle,
@@ -5722,6 +5724,15 @@ function argvShape(args) {
 function parseCommaList(value) {
   if (!isNonEmptyString(value)) return [];
   return value.split(",").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function parseRunRecordSurfaces(value) {
+  const surfaces = parseCommaList(value);
+  const unknown = surfaces.filter((surface) => !RUN_RECORD_SURFACES.includes(surface));
+  if (unknown.length) {
+    throw new Error(`Unknown --surfaces value(s): ${unknown.join(", ")}. Use one of: ${RUN_RECORD_SURFACES.join(", ")}.`);
+  }
+  return surfaces;
 }
 
 function parseAgentUsageArgs(args) {
