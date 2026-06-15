@@ -241,6 +241,8 @@ test("assembleRunRecord with doctor + report + verdict populates observation arr
   assert.equal(record.observations.qa.disposition, "ready_with_exceptions");
   assert.deepEqual(record.observations.qa.gap_classes, ["funnel-flow", "meta-tags"]); // distinct families
   assert.deepEqual(record.observations.finding_ids, ["wf_a"]); // exact: only this run's findings
+  assert.deepEqual(record.surfaces, ["platform", "design-source", "spec-rule"]);
+  assert.equal(record.primary_surface, "design-source");
 });
 
 test("assembleRunRecord with all signal absent is still a minimal valid record", () => {
@@ -253,6 +255,53 @@ test("assembleRunRecord with all signal absent is still a minimal valid record",
   assert.equal(record.consent_state, "off"); // defaults safe
   assert.equal(record.remit_attempted, false);
   assert.equal(record.remit_state, "skipped");
+  assert.equal(record.surfaces, undefined);
+  assert.equal(record.primary_surface, undefined);
+});
+
+test("assembleRunRecord auto-derives improvement surfaces from run observations and findings", () => {
+  const record = assembleRunRecord(assembleArgs({
+    doctor: {
+      status: "ready_with_warnings",
+      errors: [{ code: "template_contract.status", message: "x" }],
+      warnings: [{ code: "spec.validation", message: "y", detail: { ruleId: "OfferRequired" } }],
+      ready: [],
+    },
+    qaVerdict: {
+      disposition: "ready_with_exceptions",
+      exceptions: [{ family: "browser-runtime", status: "fail" }],
+    },
+    journal: {
+      findings: [
+        { id: "wf_docs", run_id: "run_1_test", stage: "overall", kind: "docs_gap" },
+        { id: "wf_cli", run_id: "run_1_test", stage: "next", kind: "automation_gap" },
+        { id: "wf_other", run_id: "other", stage: "qa", kind: "friction" },
+      ],
+    },
+  }));
+
+  assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
+  assert.deepEqual(record.surfaces, ["platform", "template", "spec-rule", "cli", "docs"]);
+  assert.equal(record.primary_surface, "cli");
+});
+
+test("assembleRunRecord merges explicit surfaces with derived surfaces and lets explicit primary win", () => {
+  const record = assembleRunRecord(assembleArgs({
+    doctor: {
+      status: "blocked",
+      errors: [{ code: "spec.validation", message: "x", detail: { ruleId: "StoreProfileRequired" } }],
+      warnings: [],
+      ready: [],
+    },
+    surfaces: ["skill"],
+    primarySurface: "skill",
+    surfaceConfidence: "operator",
+  }));
+
+  assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
+  assert.deepEqual(record.surfaces, ["skill", "spec-rule"]);
+  assert.equal(record.primary_surface, "skill");
+  assert.equal(record.surface_confidence, "operator");
 });
 
 test("assembleRunRecord carries an explicit pending remit sentinel", () => {
@@ -396,6 +445,7 @@ test("CLI: run-record infers the latest local QA verdict and records optional ag
     assert.match(qaRef.path, /qa-output\/runtime-packet-demo-k9x2\/qa_run_latest\.json$/);
     assert.equal(out.record.observations.qa.disposition, "ready_with_exceptions");
     assert.deepEqual(out.record.observations.qa.gap_classes, ["browser-runtime"]);
+    assert.ok(out.record.surfaces.includes("platform"), JSON.stringify(out.record.surfaces));
     assert.deepEqual(out.record.agent_usage, {
       total_tokens: 9876,
       elapsed_ms: 123456,

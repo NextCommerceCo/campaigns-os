@@ -339,20 +339,22 @@ function extractAdapterDecisions(decisions) {
   return Object.keys(out).length ? out : null;
 }
 
+function selectRunFindings(journal, runId) {
+  const findings = Array.isArray(journal?.findings)
+    ? journal.findings
+    : Array.isArray(journal)
+      ? journal
+      : [];
+  return findings.filter((finding) => typeof finding?.id === "string" && finding.run_id === runId);
+}
+
 /**
  * The per-run findings snapshot, by ID. Exact (not time-inferred): only
  * findings explicitly stamped with this run_id are included. Findings
  * captured before Run Telemetry (no run_id) are correctly excluded.
  */
 export function selectRunFindingIds(journal, runId) {
-  const findings = Array.isArray(journal?.findings)
-    ? journal.findings
-    : Array.isArray(journal)
-      ? journal
-      : [];
-  return findings
-    .filter((finding) => typeof finding?.id === "string" && finding.run_id === runId)
-    .map((finding) => finding.id);
+  return selectRunFindings(journal, runId).map((finding) => finding.id);
 }
 
 function normalizeIdentity(identity = {}) {
@@ -379,6 +381,135 @@ function normalizeAgentUsage(usage) {
   if (isNonEmptyString(usage.model)) out.model = usage.model.trim();
   if (isNonEmptyString(usage.source)) out.source = usage.source.trim();
   return Object.keys(out).length ? out : null;
+}
+
+const PRIMARY_SURFACE_PRIORITY = ["platform", "template", "design-source", "spec-rule", "cli", "skill", "docs"];
+
+function addSurface(counts, surface) {
+  if (!RUN_RECORD_SURFACES.includes(surface)) return;
+  counts.set(surface, (counts.get(surface) || 0) + 1);
+}
+
+function surfaceFromOwner(value) {
+  if (!isNonEmptyString(value)) return null;
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
+  if (RUN_RECORD_SURFACES.includes(normalized)) return normalized;
+  const aliases = {
+    design: "design-source",
+    source: "design-source",
+    "source-html": "design-source",
+    spec: "spec-rule",
+    rule: "spec-rule",
+    rules: "spec-rule",
+    "spec-rules": "spec-rule",
+    doc: "docs",
+    documentation: "docs",
+    tooling: "cli",
+    tool: "cli",
+    automation: "cli",
+    templates: "template",
+  };
+  return aliases[normalized] || null;
+}
+
+function addIssueSurfaces(counts, code) {
+  if (!isNonEmptyString(code)) return;
+  const normalized = code.trim();
+  if (normalized === "spec.validation" || normalized.startsWith("scope.") || normalized.startsWith("build_brief.")) {
+    addSurface(counts, "spec-rule");
+  }
+  if (normalized.startsWith("adapter.") || normalized.startsWith("source_html.") || normalized === "context.prompts_required") {
+    addSurface(counts, "design-source");
+  }
+  if (normalized.startsWith("template_contract.") || normalized.startsWith("frontmatter.")) {
+    addSurface(counts, "template");
+  }
+  if (normalized.startsWith("qa.") || normalized.startsWith("report.proof_policy") || normalized.startsWith("deploy.") || normalized === "campaign.allowed_domains_confirmed") {
+    addSurface(counts, "platform");
+  }
+}
+
+function addFindingSurfaces(counts, finding) {
+  const ownerSurface = surfaceFromOwner(finding?.suggested_owner);
+  if (ownerSurface) addSurface(counts, ownerSurface);
+
+  switch (finding?.kind) {
+    case "docs_gap":
+      addSurface(counts, "docs");
+      break;
+    case "missing_prompt":
+      addSurface(counts, "skill");
+      break;
+    case "automation_gap":
+      addSurface(counts, "cli");
+      break;
+  }
+
+  switch (finding?.stage) {
+    case "setup":
+    case "build":
+    case "polish":
+      addSurface(counts, "template");
+      break;
+    case "deploy":
+    case "qa":
+    case "test-order":
+      addSurface(counts, "platform");
+      break;
+    case "intake":
+    case "start":
+      addSurface(counts, "design-source");
+      break;
+    case "doctor":
+      addSurface(counts, "spec-rule");
+      break;
+    case "next":
+      addSurface(counts, "cli");
+      break;
+  }
+}
+
+function deriveSurfaceCounts({ doctor, adapter, qaObs, journal, runId }) {
+  const counts = new Map();
+
+  for (const issue of [...(doctor?.errors || []), ...(doctor?.warnings || [])]) {
+    addIssueSurfaces(counts, issue?.code);
+  }
+  if (adapter) addSurface(counts, "design-source");
+  if (qaObs && (qaObs.disposition || qaObs.gap_classes.length)) addSurface(counts, "platform");
+
+  for (const finding of selectRunFindings(journal, runId)) {
+    addFindingSurfaces(counts, finding);
+  }
+
+  return counts;
+}
+
+function rankSurface(surface, counts) {
+  const priority = PRIMARY_SURFACE_PRIORITY.indexOf(surface);
+  return {
+    count: counts.get(surface) || 0,
+    priority: priority === -1 ? PRIMARY_SURFACE_PRIORITY.length : priority,
+  };
+}
+
+function selectPrimarySurface(surfaces, counts) {
+  return [...surfaces].sort((a, b) => {
+    const left = rankSurface(a, counts);
+    const right = rankSurface(b, counts);
+    return right.count - left.count || left.priority - right.priority || a.localeCompare(b);
+  })[0] || null;
+}
+
+function uniqueEntries(entries) {
+  const out = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    if (!entry || seen.has(entry)) continue;
+    seen.add(entry);
+    out.push(entry);
+  }
+  return out;
 }
 
 /**
@@ -449,9 +580,18 @@ export function assembleRunRecord({
     observations,
   };
 
+  const surfaceCounts = deriveSurfaceCounts({ doctor, adapter, qaObs, journal, runId });
+  const inferredSurfaces = PRIMARY_SURFACE_PRIORITY.filter((surface) => surfaceCounts.has(surface));
   const cleanSurfaces = Array.isArray(surfaces) ? surfaces.filter(Boolean) : [];
-  if (cleanSurfaces.length) record.surfaces = cleanSurfaces;
-  if (primarySurface) record.primary_surface = primarySurface;
+  const combinedSurfaces = uniqueEntries([...cleanSurfaces, ...inferredSurfaces]);
+  if (combinedSurfaces.length) record.surfaces = combinedSurfaces;
+  if (primarySurface) {
+    record.primary_surface = primarySurface;
+  } else {
+    const explicitPrimary = cleanSurfaces.find((surface) => RUN_RECORD_SURFACES.includes(surface));
+    const inferredPrimary = explicitPrimary || selectPrimarySurface(inferredSurfaces, surfaceCounts);
+    if (inferredPrimary) record.primary_surface = inferredPrimary;
+  }
   if (surfaceConfidence) record.surface_confidence = surfaceConfidence;
   if (lifecycle && typeof lifecycle === "object" && !Array.isArray(lifecycle)) record.lifecycle = lifecycle;
   const normalizedUsage = normalizeAgentUsage(agentUsage);
