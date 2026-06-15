@@ -385,6 +385,21 @@ function normalizeAgentUsage(usage) {
 
 const PRIMARY_SURFACE_PRIORITY = ["platform", "template", "design-source", "spec-rule", "cli", "skill", "docs"];
 
+const ADAPTER_DECISION_SURFACE_FIELDS = {
+  designSource: [
+    "source_asset_strategy",
+    "route_rewrite_policy",
+    "wrapper_policy",
+    "script_style_reference_policy",
+    "cta_rewrite_policy",
+  ],
+  template: [
+    "frontmatter_policy",
+    "layout_choice",
+    "template_files_copied_status",
+  ],
+};
+
 function addSurface(counts, surface) {
   if (!RUN_RECORD_SURFACES.includes(surface)) return;
   counts.set(surface, (counts.get(surface) || 0) + 1);
@@ -469,14 +484,26 @@ function addFindingSurfaces(counts, finding) {
   }
 }
 
+function addAdapterDecisionSurfaces(counts, adapter) {
+  if (!adapter) return;
+  if (ADAPTER_DECISION_SURFACE_FIELDS.designSource.some((field) => adapter[field] != null)) {
+    addSurface(counts, "design-source");
+  }
+  if (ADAPTER_DECISION_SURFACE_FIELDS.template.some((field) => adapter[field] != null)) {
+    addSurface(counts, "template");
+  }
+}
+
 function deriveSurfaceCounts({ doctor, adapter, qaObs, journal, runId }) {
   const counts = new Map();
 
+  // Counts are signal-strength hints for primary-surface selection, not exact
+  // event tallies; one run can legitimately emit several signals for a surface.
   for (const issue of [...(doctor?.errors || []), ...(doctor?.warnings || [])]) {
     addIssueSurfaces(counts, issue?.code);
   }
-  if (adapter) addSurface(counts, "design-source");
-  if (qaObs && (qaObs.disposition || qaObs.gap_classes.length)) addSurface(counts, "platform");
+  addAdapterDecisionSurfaces(counts, adapter);
+  if (qaObs && (qaObs.disposition || qaObs.gap_classes?.length)) addSurface(counts, "platform");
 
   for (const finding of selectRunFindings(journal, runId)) {
     addFindingSurfaces(counts, finding);
@@ -485,7 +512,16 @@ function deriveSurfaceCounts({ doctor, adapter, qaObs, journal, runId }) {
   return counts;
 }
 
-function rankSurface(surface, counts) {
+function rankSurface(surface, counts, preferredSurfaces) {
+  const base = rankSurfaceByPriority(surface, counts);
+  const preferredIndex = preferredSurfaces.indexOf(surface);
+  return {
+    ...base,
+    preferredIndex: preferredIndex === -1 ? Number.POSITIVE_INFINITY : preferredIndex,
+  };
+}
+
+function rankSurfaceByPriority(surface, counts) {
   const priority = PRIMARY_SURFACE_PRIORITY.indexOf(surface);
   return {
     count: counts.get(surface) || 0,
@@ -493,11 +529,14 @@ function rankSurface(surface, counts) {
   };
 }
 
-function selectPrimarySurface(surfaces, counts) {
+function selectPrimarySurface(surfaces, counts, preferredSurfaces = []) {
   return [...surfaces].sort((a, b) => {
-    const left = rankSurface(a, counts);
-    const right = rankSurface(b, counts);
-    return right.count - left.count || left.priority - right.priority || a.localeCompare(b);
+    const left = rankSurface(a, counts, preferredSurfaces);
+    const right = rankSurface(b, counts, preferredSurfaces);
+    return right.count - left.count
+      || left.preferredIndex - right.preferredIndex
+      || left.priority - right.priority
+      || a.localeCompare(b);
   })[0] || null;
 }
 
@@ -585,11 +624,12 @@ export function assembleRunRecord({
   const cleanSurfaces = Array.isArray(surfaces) ? surfaces.filter(Boolean) : [];
   const combinedSurfaces = uniqueEntries([...cleanSurfaces, ...inferredSurfaces]);
   if (combinedSurfaces.length) record.surfaces = combinedSurfaces;
-  if (primarySurface) {
-    record.primary_surface = primarySurface;
+  if (isNonEmptyString(primarySurface)) {
+    record.primary_surface = primarySurface.trim();
   } else {
-    const explicitPrimary = cleanSurfaces.find((surface) => RUN_RECORD_SURFACES.includes(surface));
-    const inferredPrimary = explicitPrimary || selectPrimarySurface(inferredSurfaces, surfaceCounts);
+    const explicitSurfaces = cleanSurfaces.filter((surface) => RUN_RECORD_SURFACES.includes(surface));
+    const candidateSurfaces = combinedSurfaces.filter((surface) => RUN_RECORD_SURFACES.includes(surface));
+    const inferredPrimary = selectPrimarySurface(candidateSurfaces, surfaceCounts, explicitSurfaces);
     if (inferredPrimary) record.primary_surface = inferredPrimary;
   }
   if (surfaceConfidence) record.surface_confidence = surfaceConfidence;

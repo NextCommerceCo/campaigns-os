@@ -241,7 +241,7 @@ test("assembleRunRecord with doctor + report + verdict populates observation arr
   assert.equal(record.observations.qa.disposition, "ready_with_exceptions");
   assert.deepEqual(record.observations.qa.gap_classes, ["funnel-flow", "meta-tags"]); // distinct families
   assert.deepEqual(record.observations.finding_ids, ["wf_a"]); // exact: only this run's findings
-  assert.deepEqual(record.surfaces, ["platform", "design-source", "spec-rule"]);
+  assert.deepEqual(record.surfaces, ["platform", "template", "design-source", "spec-rule"]);
   assert.equal(record.primary_surface, "design-source");
 });
 
@@ -302,6 +302,36 @@ test("assembleRunRecord merges explicit surfaces with derived surfaces and lets 
   assert.deepEqual(record.surfaces, ["skill", "spec-rule"]);
   assert.equal(record.primary_surface, "skill");
   assert.equal(record.surface_confidence, "operator");
+});
+
+test("assembleRunRecord uses explicit surfaces as tie-breakers, not stronger-signal overrides", () => {
+  const record = assembleRunRecord(assembleArgs({
+    doctor: {
+      status: "blocked",
+      errors: [{ code: "spec.validation", message: "x", detail: { ruleId: "StoreProfileRequired" } }],
+      warnings: [],
+      ready: [],
+    },
+    surfaces: ["skill", "docs"],
+  }));
+
+  assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
+  assert.deepEqual(record.surfaces, ["skill", "docs", "spec-rule"]);
+  assert.equal(record.primary_surface, "spec-rule");
+});
+
+test("assembleRunRecord maps template-only adapter decisions to template, not design-source", () => {
+  const record = assembleRunRecord(assembleArgs({
+    report: {
+      adapter_decisions: {
+        layout_choice: "campaign_layout",
+      },
+    },
+  }));
+
+  assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
+  assert.deepEqual(record.surfaces, ["template"]);
+  assert.equal(record.primary_surface, "template");
 });
 
 test("assembleRunRecord carries an explicit pending remit sentinel", () => {
