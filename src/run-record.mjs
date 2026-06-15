@@ -385,19 +385,18 @@ function normalizeAgentUsage(usage) {
 
 const PRIMARY_SURFACE_PRIORITY = ["platform", "template", "design-source", "spec-rule", "cli", "skill", "docs"];
 
-const ADAPTER_DECISION_SURFACE_FIELDS = {
-  designSource: [
-    "source_asset_strategy",
-    "route_rewrite_policy",
-    "wrapper_policy",
-    "script_style_reference_policy",
-    "cta_rewrite_policy",
-  ],
-  template: [
-    "frontmatter_policy",
-    "layout_choice",
-    "template_files_copied_status",
-  ],
+const ADAPTER_DECISION_SURFACE_BY_FIELD = {
+  raw_html_conversion_status: "design-source",
+  source_asset_strategy: "design-source",
+  route_rewrite_policy: "design-source",
+  wrapper_policy: "design-source",
+  script_style_reference_policy: "design-source",
+  cta_rewrite_policy: "design-source",
+  config_script_strategy: "template",
+  commerce_shell_adoption: "template",
+  frontmatter_policy: "template",
+  layout_choice: "template",
+  template_files_copied_status: "template",
 };
 
 function addSurface(counts, surface) {
@@ -486,11 +485,8 @@ function addFindingSurfaces(counts, finding) {
 
 function addAdapterDecisionSurfaces(counts, adapter) {
   if (!adapter) return;
-  if (ADAPTER_DECISION_SURFACE_FIELDS.designSource.some((field) => adapter[field] != null)) {
-    addSurface(counts, "design-source");
-  }
-  if (ADAPTER_DECISION_SURFACE_FIELDS.template.some((field) => adapter[field] != null)) {
-    addSurface(counts, "template");
+  for (const [field, surface] of Object.entries(ADAPTER_DECISION_SURFACE_BY_FIELD)) {
+    if (adapter[field] != null) addSurface(counts, surface);
   }
 }
 
@@ -621,7 +617,9 @@ export function assembleRunRecord({
 
   const surfaceCounts = deriveSurfaceCounts({ doctor, adapter, qaObs, journal, runId });
   const inferredSurfaces = PRIMARY_SURFACE_PRIORITY.filter((surface) => surfaceCounts.has(surface));
-  const cleanSurfaces = Array.isArray(surfaces) ? surfaces.filter(Boolean) : [];
+  const cleanSurfaces = Array.isArray(surfaces)
+    ? surfaces.filter(isNonEmptyString).map((surface) => surface.trim()).filter((surface) => RUN_RECORD_SURFACES.includes(surface))
+    : [];
   const combinedSurfaces = uniqueEntries([...cleanSurfaces, ...inferredSurfaces]);
   if (combinedSurfaces.length) record.surfaces = combinedSurfaces;
   if (isNonEmptyString(primarySurface)) {

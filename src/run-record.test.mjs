@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import {
+  ADAPTER_DECISION_STRATEGY_FIELDS,
+  createAdapterDecisions,
+} from "./adapter-decision-contract.mjs";
+import {
   assembleRunRecord,
   mintRunId,
   resolveRunRecordPath,
@@ -320,6 +324,16 @@ test("assembleRunRecord uses explicit surfaces as tie-breakers, not stronger-sig
   assert.equal(record.primary_surface, "spec-rule");
 });
 
+test("assembleRunRecord filters unknown explicit surfaces but still uses valid entries", () => {
+  const record = assembleRunRecord(assembleArgs({
+    surfaces: ["bogus", "skill"],
+  }));
+
+  assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
+  assert.deepEqual(record.surfaces, ["skill"]);
+  assert.equal(record.primary_surface, "skill");
+});
+
 test("assembleRunRecord maps template-only adapter decisions to template, not design-source", () => {
   const record = assembleRunRecord(assembleArgs({
     report: {
@@ -332,6 +346,19 @@ test("assembleRunRecord maps template-only adapter decisions to template, not de
   assert.equal(validateRunRecord(record).ok, true, JSON.stringify(validateRunRecord(record).errors));
   assert.deepEqual(record.surfaces, ["template"]);
   assert.equal(record.primary_surface, "template");
+});
+
+test("assembleRunRecord maps every adapter decision strategy field to an improvement surface", () => {
+  for (const field of ADAPTER_DECISION_STRATEGY_FIELDS) {
+    const record = assembleRunRecord(assembleArgs({
+      report: {
+        adapter_decisions: { [field]: createAdapterDecisions()[field] || "fixture" },
+      },
+    }));
+
+    assert.equal(validateRunRecord(record).ok, true, `${field}: ${JSON.stringify(validateRunRecord(record).errors)}`);
+    assert.ok(record.surfaces?.length, `${field} should map to at least one surface`);
+  }
 });
 
 test("assembleRunRecord carries an explicit pending remit sentinel", () => {
@@ -529,7 +556,7 @@ test("CLI: run-record rejects invalid surfaces before writing or remitting", () 
     } catch (error) {
       stderr = String(error.stderr || "");
     }
-    assert.match(stderr, /record\.surfaces/);
+    assert.match(stderr, /Unknown --surfaces value/);
     assert.equal(existsSync(resolveRunRecordPath("run_bad_surface", dir)), false);
   });
 });
