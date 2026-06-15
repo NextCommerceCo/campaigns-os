@@ -5422,6 +5422,7 @@ async function runSessionEnd(args, ambient = null) {
 // docs/workflow-findings-sidecar.md.
 async function runRecordCommand(args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
+  const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
   const baseDir = dirname(packetPath);
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || baseDir;
@@ -5493,7 +5494,6 @@ async function runRecordCommand(args, ambient = null) {
     announceDefaultOnTelemetry(consent.scope || proxyBase);
   }
 
-  const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const record = assembleRunRecord({
     runId,
     packageVersion: packageVersion(),
