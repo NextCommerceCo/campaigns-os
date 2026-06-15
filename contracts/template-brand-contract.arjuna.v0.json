@@ -27,7 +27,8 @@
     "forbidden_computed_colors": [
       { "hex": "#3c7dff", "rgb": "rgb(60, 125, 255)", "token": "--brand--color--primary (next-core default; brand-theme.css did not load)" },
       { "hex": "#0a265c", "rgb": "rgb(10, 38, 92)", "token": "--brand--color--primary-dark (next-core default; brand-theme.css did not load)" },
-      { "hex": "#18181b", "rgb": "rgb(24, 24, 27)", "token": "--brand--color--primary (Arjuna starter default; per-campaign brand override missing)" }
+      { "hex": "#18181b", "rgb": "rgb(24, 24, 27)", "token": "--brand--color--primary (Arjuna starter default; per-campaign brand override missing)" },
+      { "hex": "#fffef2", "rgb": "rgb(255, 254, 242)", "token": "--brand--color--surface (Arjuna starter default; per-campaign brand override missing)" }
     ]
   }
 }
