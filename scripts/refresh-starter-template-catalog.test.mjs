@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { adaptCatalogForCampaignsOs, mergeLocalQaStructure } from "./refresh-starter-template-catalog.mjs";
+import { adaptCatalogForCampaignsOs, mergeLocalQaStructure, preserveLocalOnlyFamilies } from "./refresh-starter-template-catalog.mjs";
+
+test("catalog refresh preserves private families absent from the public source (no arjuna clobber)", () => {
+  const sourceCatalog = {
+    families: {
+      olympus: { agentContract: { fixtures: [] } },
+    },
+  };
+  const existingCatalog = {
+    families: {
+      olympus: { agentContract: { fixtures: [] } },
+      arjuna: { description: "private family", agentContract: { status: "agent-ready", qaStructure: { checkout: {} } } },
+    },
+  };
+  const adapted = preserveLocalOnlyFamilies(adaptCatalogForCampaignsOs(sourceCatalog), existingCatalog);
+  assert.ok(adapted.families.arjuna, "arjuna survives a public refresh");
+  assert.equal(adapted.families.arjuna.description, "private family");
+  assert.ok(adapted.families.olympus, "public families still present");
+});
 
 test("catalog refresh preserves local qaStructure when upstream catalog has none", () => {
   const sourceCatalog = {

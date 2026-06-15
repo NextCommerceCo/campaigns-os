@@ -1,0 +1,33 @@
+{
+  "schema_version": "template-brand-contract/v0",
+  "family": "arjuna",
+  "extends": "template-brand-contract.shared-commerce.v0.json",
+  "description": "Brand contract for the Arjuna (Adsbranded) hero-media checkout family. Private family: source lives in the Adsbranded private template repo.",
+  "family_inventory": {
+    "supported_pages": ["landing", "presell", "checkout", "upsell", "receipt"],
+    "required_sdk_anchors": {
+      "checkout": ["data-next-bundle-selector", "data-next-bundle-card", "data-next-cart-summary", "data-next-payment-method", "data-next-payment-form", "data-next-express-checkout"],
+      "upsell": ["data-next-upsell", "data-next-bundle-selector", "data-next-bundle-card"],
+      "receipt": ["data-next-order-items"]
+    },
+    "theme_insertion_point": "Load brand-theme.css from frontmatter styles after css/next-core.css on checkout, upsell, downsell, and receipt pages.",
+    "default_color_residue": ["#18181b", "rgb(255,254,242)"],
+    "pricing_presentation": "Tiered bundle cards (/ea unit + diagonal compare strike) and bundle upsells support compare/current, savings, unit-plus-total, and full-price modes via SDK display nodes.",
+    "bundle_picker": "Tiered .os-card cards with data-next-bundle-selector/-card anchors; selected state is #F3FFDA fill + 3px solid #000 (Arjuna starter default — a built campaign must re-skin this to its brand).",
+    "order_bump": "Single coverage bump (bump-coverage.html) using data-next-bump + data-next-package-toggle; quantity sync via data-next-product-sync (SDK >=0.4.25).",
+    "upsell_downsell": "Bundle stepper/tier-pills/tier-cards upsells require a visible price row above the accept CTA.",
+    "exit_pop": {
+      "default_included": false,
+      "include": "exit-intent-popup.html",
+      "behavior": "Available include only; strip unless CampaignSpec checkout exit_intent or promo_code_input maps an offer/code."
+    },
+    "qa_selectors": [".checkout-wrapper", ".submit-button", ".os-card.next-selected", ".banner-img-wrapper", ".brand-logo"]
+  },
+  "qa_inspection": {
+    "forbidden_computed_colors": [
+      { "hex": "#3c7dff", "rgb": "rgb(60, 125, 255)", "token": "--brand--color--primary (next-core default; brand-theme.css did not load)" },
+      { "hex": "#0a265c", "rgb": "rgb(10, 38, 92)", "token": "--brand--color--primary-dark (next-core default; brand-theme.css did not load)" },
+      { "hex": "#18181b", "rgb": "rgb(24, 24, 27)", "token": "--brand--color--primary (Arjuna starter default; per-campaign brand override missing)" }
+    ]
+  }
+}

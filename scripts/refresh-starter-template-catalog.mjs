@@ -110,6 +110,26 @@ export function mergeLocalQaStructure(adaptedCatalog, sourceCatalog, existingCat
   return adaptedCatalog;
 }
 
+// Families maintained directly in campaigns-os — private template families like
+// `arjuna`, whose source lives in a private repo — are not present in the PUBLIC
+// source catalog this script pulls. A refresh rebuilds `families` from the source,
+// so without this step those local-only entries would be silently dropped. Carry
+// any family that exists in the current target but not in the refreshed source
+// through untouched (along with its locally-authored brand contract + fixtures,
+// which live outside the source catalog and are never overwritten by a refresh).
+export function preserveLocalOnlyFamilies(adaptedCatalog, existingCatalog) {
+  if (!existingCatalog || typeof existingCatalog !== "object") return adaptedCatalog;
+  if (!adaptedCatalog.families || typeof adaptedCatalog.families !== "object") {
+    adaptedCatalog.families = {};
+  }
+  for (const [family, existingFamily] of Object.entries(existingCatalog.families || {})) {
+    if (!Object.prototype.hasOwnProperty.call(adaptedCatalog.families, family)) {
+      adaptedCatalog.families[family] = structuredClone(existingFamily);
+    }
+  }
+  return adaptedCatalog;
+}
+
 function collectSourceFixturePaths(catalog) {
   const paths = new Set();
   for (const family of Object.values(catalog.families || {})) {
@@ -178,7 +198,10 @@ async function main() {
   });
   const sourceCatalog = JSON.parse(rawCatalog);
   const existingCatalog = readExistingCatalog(args.targetCatalog);
-  const adaptedCatalog = mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog);
+  const adaptedCatalog = preserveLocalOnlyFamilies(
+    mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog),
+    existingCatalog,
+  );
 
   if (!args.dryRun) {
     writeText(args.targetCatalog, `${JSON.stringify(adaptedCatalog, null, 2)}\n`);

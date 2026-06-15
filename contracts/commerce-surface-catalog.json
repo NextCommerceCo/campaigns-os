@@ -449,6 +449,320 @@
         ]
       }
     },
+    "arjuna": {
+      "description": "Adsbranded single-step checkout with hero media (video or product gallery), a left social-proof rail (benefit icons + testimonials + UGC video), tiered bundle cards with a lime/black selected state, and a delivery-estimate + scarcity summary block. Private family — source lives in the Adsbranded private template repo, not the public starter-templates repo.",
+      "frontmatterStatus": "partial",
+      "strongSignals": [
+        "arjuna in spec, path, or export metadata",
+        "hero media with badge overlays (.banner-img-wrapper, [data-component=\"swiper\"]) above or beside the form",
+        "left social-proof rail (benefit icons + testimonials + UGC video) beside the checkout form",
+        "tiered os-card bundle selector with a #F3FFDA lime + 3px solid #000 selected state",
+        "delivery-estimate + high-demand/scarcity block inside the order summary"
+      ],
+      "canonicalSurfaces": {
+        "mainSelector": "tiered-bundle-selector",
+        "orderSummary": "cart-summary",
+        "payment": "payment-methods",
+        "expressCheckout": "express-checkout-inline",
+        "orderBump": "bump-coverage",
+        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards",
+        "receipt": "receipt-skeleton",
+        "heroMedia": "hero-media",
+        "socialProof": "left-content",
+        "deliveryScarcity": "delivery-scarcity"
+      },
+      "frontmatterInputsObserved": [
+        "packages",
+        "shipping_methods",
+        "bundles",
+        "order_bump",
+        "order_bump_variant",
+        "hero_video",
+        "media_badges",
+        "media_type",
+        "benefit_icons",
+        "testimonials",
+        "ugc_video",
+        "delivery_estimate",
+        "scarcity_note",
+        "swiper_slides",
+        "swiper_thumbs",
+        "upsell_offer",
+        "upsell_bundle_tiers",
+        "payment_flags",
+        "progress_style"
+      ],
+      "agentContract": {
+        "status": "agent-ready",
+        "templateRole": "Adsbranded hero-media single-step checkout with a left social-proof rail and tiered bundle cards.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "campaign currency/language/payment/tracking",
+            "checkout page packages/offers",
+            "shipping_methods[]",
+            "upsell/receipt routing"
+          ],
+          "campaignsApi": [
+            "packages[].ref_id",
+            "shipping_options[].ref_id",
+            "payment method capability"
+          ],
+          "starterTemplate": [
+            "stable SDK DOM shape",
+            "family-local includes",
+            "page frontmatter contract"
+          ]
+        },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "packages.main_package",
+            "shipping_methods.standard",
+            "bundles[].quantity",
+            "bundles[].shipping_method"
+          ],
+          "optionalWhenSupported": [
+            "shipping_methods.free",
+            "order_bump_variant",
+            "media_type",
+            "hero_video",
+            "media_badges",
+            "swiper_slides",
+            "swiper_thumbs",
+            "benefit_icons",
+            "testimonials",
+            "ugc_video",
+            "delivery_estimate",
+            "scarcity_note",
+            "payment_flags",
+            "progress_style",
+            "upsell_offer",
+            "upsell_bundle_tiers"
+          ],
+          "demoOnlyValues": [
+            "packages.main_package=1",
+            "shipping_methods.standard=2",
+            "shipping_methods.free=1",
+            "upsell_offer.package_id=3",
+            "upsell_bundle_tiers packageId=3"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.*",
+            "shipping_methods.*",
+            "bundles[].shipping_method",
+            "order_bump.*.package_id",
+            "order_bump.coverage.sync_product_id",
+            "upsell_offer.*",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json"
+          ],
+          "removeWhenUnsupported": [
+            "bundles[].shipping_method when no tier-specific shipping exists",
+            "bump-coverage when no coverage package exists",
+            "testimonials/ugc_video when assets are absent",
+            "upsell pages not present in the funnel"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "hero media",
+            "partials": [
+              "hero-media.html",
+              "swiper-gallery.html"
+            ],
+            "ownedInputs": [
+              "media_type",
+              "hero_video",
+              "media_badges",
+              "swiper_slides",
+              "swiper_thumbs"
+            ],
+            "sdkRoots": []
+          },
+          {
+            "name": "social-proof rail",
+            "partials": [
+              "left-content.html"
+            ],
+            "ownedInputs": [
+              "benefit_icons",
+              "testimonials",
+              "ugc_video"
+            ],
+            "sdkRoots": []
+          },
+          {
+            "name": "tiered bundle selector",
+            "partials": [
+              "bundle-selector.html"
+            ],
+            "ownedInputs": [
+              "packages",
+              "shipping_methods",
+              "bundles"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-card"
+            ]
+          },
+          {
+            "name": "payment shell",
+            "partials": [
+              "payment-methods.html",
+              "express-checkout-inline.html"
+            ],
+            "ownedInputs": [
+              "payment_flags"
+            ],
+            "sdkRoots": [
+              "data-next-payment-method",
+              "data-next-payment-form",
+              "data-next-express-checkout"
+            ]
+          },
+          {
+            "name": "order bump",
+            "partials": [
+              "bump-coverage.html"
+            ],
+            "ownedInputs": [
+              "packages",
+              "order_bump"
+            ],
+            "sdkRoots": [
+              "data-next-bump",
+              "data-next-package-toggle",
+              "data-next-product-sync"
+            ]
+          },
+          {
+            "name": "order summary + delivery",
+            "partials": [
+              "cart-summary.html",
+              "delivery-scarcity.html"
+            ],
+            "ownedInputs": [
+              "delivery_estimate",
+              "scarcity_note"
+            ],
+            "sdkRoots": [
+              "data-next-cart-summary"
+            ]
+          },
+          {
+            "name": "Arjuna bundle upsell pages",
+            "partials": [
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-cards-offer.html",
+              "upsell-bundle-tier-pills-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card"
+            ]
+          }
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Arjuna checkout must adopt the Arjuna shell (hero media + left social-proof rail + right form/summary), not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Arjuna checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "hero media",
+                "selector": ".banner-img-wrapper, [data-component=\"swiper\"]"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "bundle card",
+                "selector": "[data-next-bundle-card]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          },
+          "upsell": {
+            "description": "Rendered Arjuna upsell must render the Arjuna upsell offer shell with a visible bundle offer and accept control.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "upsell offer root",
+                "selector": "[data-next-upsell]"
+              },
+              {
+                "name": "upsell offer header",
+                "selector": ".upsell-header"
+              },
+              {
+                "name": "upsell bundle card",
+                "selector": "[data-next-bundle-card]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible upsell offer",
+                "selector": "[data-next-bundle-card]"
+              }
+            ]
+          },
+          "receipt": {
+            "description": "Rendered Arjuna receipt must render order items and totals under the Arjuna receipt shell.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "receipt order items",
+                "selector": "[data-next-order-items]"
+              },
+              {
+                "name": "order summary",
+                "selector": ".order-summary, [data-next-cart-summary]"
+              },
+              {
+                "name": "order totals",
+                "selector": ".order-totals"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible receipt order items",
+                "selector": "[data-next-order-items]"
+              }
+            ]
+          }
+        },
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/arjuna-tiered-standard-free.json"
+        ],
+        "agentNotes": [
+          "Use Arjuna only when the design really has the hero-media + left social-proof rail shape; do not default here from a generic checkout.",
+          "Arjuna is a private family: campaign-init resolves its source from the Adsbranded private template repo via the template-source registry (authenticated). It is intentionally absent from the public templates.json and picker."
+        ]
+      }
+    },
     "limos": {
       "description": "Single-step checkout with dense offer framing and native bundle quantity controls.",
       "frontmatterStatus": "partial",
