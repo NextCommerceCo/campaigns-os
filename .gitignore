@@ -4,3 +4,8 @@ node_modules/
 coverage/
 dist/
 npm-debug.log*
+
+# Local QA verdict output (`campaigns-os qa run` default --output-dir).
+# Redundant with the QA portal for published runs; only unique for offline/CI runs.
+# Ignored so QA runs are never accidentally committed into PRs.
+qa-output/
