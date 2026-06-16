@@ -451,13 +451,14 @@
     },
     "arjuna": {
       "private": true,
-      "description": "Adsbranded single-step checkout with hero media (video or product gallery), a left social-proof rail (benefit icons + testimonials + UGC video), tiered bundle cards with a lime/black selected state, and a delivery-estimate + scarcity summary block. Private family — source lives in the Adsbranded private template repo, not the public starter-templates repo.",
+      "description": "Adsbranded CRO-opinionated single-step checkout. Deterministic family defaults (baked, not optional): a single large product-image hero (carousel/video opt-in), a left social-proof rail (benefit icons + testimonials + UGC video), tiered bundle cards with a per-unit /ea + diagonal-compare + visible-savings price shape and a lime/black single-select state (keyed on .next-selected only), an inline promo-code display wired to the SDK coupon path, and a delivery-estimate + scarcity summary block. Tri-font signature (Inter/Roboto/Poppins) collapsible to single-font in one line. Private family — source lives in the Adsbranded private template repo, not the public starter-templates repo.",
       "frontmatterStatus": "partial",
       "strongSignals": [
         "arjuna in spec, path, or export metadata",
-        "hero media with badge overlays (.banner-img-wrapper, [data-component=\"swiper\"]) above or beside the form",
+        "single large product-image hero (.banner-img inside .banner-img-wrapper) with badge overlays — carousel ([data-component=\"swiper\"]) / video opt-in, not default",
         "left social-proof rail (benefit icons + testimonials + UGC video) beside the checkout form",
-        "tiered os-card bundle selector with a #F3FFDA lime + 3px solid #000 selected state",
+        "tiered os-card bundle selector with per-unit /ea + diagonal compare strike + visible savings, and a #F3FFDA lime + 3px solid #000 .next-selected state",
+        "inline promo-code display (.coupon-section/.promo-display with data-next-coupon) in the order-summary card",
         "delivery-estimate + high-demand/scarcity block inside the order summary"
       ],
       "canonicalSurfaces": {
@@ -470,6 +471,7 @@
         "receipt": "receipt-skeleton",
         "heroMedia": "hero-media",
         "socialProof": "left-content",
+        "promoDisplay": "promo-display",
         "deliveryScarcity": "delivery-scarcity"
       },
       "frontmatterInputsObserved": [
@@ -478,9 +480,14 @@
         "bundles",
         "order_bump",
         "order_bump_variant",
+        "product_eyebrow",
+        "product_name",
+        "product_subhead",
+        "media_type",
+        "hero_image",
         "hero_video",
         "media_badges",
-        "media_type",
+        "promo",
         "benefit_icons",
         "testimonials",
         "ugc_video",
@@ -524,11 +531,16 @@
           "optionalWhenSupported": [
             "shipping_methods.free",
             "order_bump_variant",
+            "product_eyebrow",
+            "product_name",
+            "product_subhead",
             "media_type",
+            "hero_image",
             "hero_video",
             "media_badges",
             "swiper_slides",
             "swiper_thumbs",
+            "promo",
             "benefit_icons",
             "testimonials",
             "ugc_video",
@@ -572,6 +584,7 @@
             ],
             "ownedInputs": [
               "media_type",
+              "hero_image",
               "hero_video",
               "media_badges",
               "swiper_slides",
@@ -634,6 +647,18 @@
               "data-next-bump",
               "data-next-package-toggle",
               "data-next-product-sync"
+            ]
+          },
+          {
+            "name": "inline promo-code display",
+            "partials": [
+              "promo-display.html"
+            ],
+            "ownedInputs": [
+              "promo"
+            ],
+            "sdkRoots": [
+              "data-next-coupon"
             ]
           },
           {
@@ -761,7 +786,10 @@
         "agentNotes": [
           "Use Arjuna only when the design really has the hero-media + left social-proof rail shape; do not default here from a generic checkout.",
           "Arjuna is a private family: campaign-init resolves its source from the Adsbranded private template repo via the template-source registry (authenticated). It is intentionally absent from the public templates.json and picker.",
-          "Upsell offer copy is frontmatter-driven via upsell_offer (component next_version 2): optional headline (or legacy display_name) for the h2 fallback, subheadline, bullets[], rating_count + show_rating, plus show_compare and show_discount for the price block. All optional; the partials MUST render brand-neutral fallbacks when a field is omitted (no literal Lorem/Placeholder/TODO) — this is a build-time expectation, as residue QA does not yet inspect offer copy text (the residue gate covers computed colors, logos, payment chrome, and price visibility). The fixture's minimal SDK-wiring set ships clean and a built campaign layers real copy on per offer."
+          "Upsell offer copy is frontmatter-driven via upsell_offer (component next_version 2): optional headline (or legacy display_name) for the h2 fallback, subheadline, bullets[], rating_count + show_rating, plus show_compare and show_discount for the price block. All optional; the partials MUST render brand-neutral fallbacks when a field is omitted (no literal Lorem/Placeholder/TODO) — this is a build-time expectation, as residue QA does not yet inspect offer copy text (the residue gate covers computed colors, logos, payment chrome, and price visibility). The fixture's minimal SDK-wiring set ships clean and a built campaign layers real copy on per offer.",
+          "DETERMINISTIC defaults (Layer-B hardening): the family renders the full Adsbranded CRO shape from tokens + content frontmatter alone, with NO structural editing. (1) Hero defaults to a single large product image (media_type=image, .banner-img) — only set media_type=gallery/video to opt into a carousel/video. (2) Price shape (per-unit /ea + diagonal compare strike + visible savings) is baked in brand-theme.css for bundle cards AND cart-summary; full-price is the no-discount opt-down via the SDK hasDiscount token, not a frontmatter mode. (3) promo-display.html ships by default in the order-summary card (data-next-coupon path). (4) The lime/black selected card + thick-ring radio key on the SDK-swapped .next-selected class ONLY — never .next-in-cart or data-selected (both leave a stale card/radio lit and break single-select; browser-verified).",
+          "Type is a tri-font signature (Inter/Roboto/Poppins) via --font-primary/-secondary/-accent in brand-theme.css; a single-Inter (or any single-font) brand collapses it in one CSS line, so don't fight the tri-font by editing component CSS — override the three tokens.",
+          "Heading copy is frontmatter-driven (product_eyebrow / product_name / product_subhead); review cards are fully frontmatter-driven (testimonials[]) and the starter ships distinct, no-Lorem placeholder quotes + an HTML-comment asset-fidelity flag when a card still uses a 1x1_* placeholder photo — re-skin reviews + hero before shipping."
         ]
       }
     },
