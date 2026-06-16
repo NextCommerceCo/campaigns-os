@@ -543,7 +543,7 @@
             "shipping_methods.standard=2",
             "shipping_methods.free=1",
             "upsell_offer.package_id=3",
-            "upsell_bundle_tiers packageId=3"
+            "upsell_bundle_tiers[].packageId=3"
           ],
           "replaceFromSpecOrApi": [
             "packages.*",
@@ -760,7 +760,7 @@
         "agentNotes": [
           "Use Arjuna only when the design really has the hero-media + left social-proof rail shape; do not default here from a generic checkout.",
           "Arjuna is a private family: campaign-init resolves its source from the Adsbranded private template repo via the template-source registry (authenticated). It is intentionally absent from the public templates.json and picker.",
-          "Upsell offer copy is frontmatter-driven via upsell_offer (component next_version 2): headline (or legacy display_name) for the h2 fallback, subheadline, bullets[], rating_count + show_rating, plus show_compare and show_discount for the price block. The offer partials ship generic fallbacks, not campaign copy — set these per offer so no placeholder text ships."
+          "Upsell offer copy is frontmatter-driven via upsell_offer (component next_version 2): optional headline (or legacy display_name) for the h2 fallback, subheadline, bullets[], rating_count + show_rating, plus show_compare and show_discount for the price block. All optional — when omitted the partials render generic brand-neutral fallbacks (no Lorem/placeholder), so the fixture's minimal SDK-wiring set is valid as-is; a built campaign layers real copy on per offer to replace the fallbacks."
         ]
       }
     },

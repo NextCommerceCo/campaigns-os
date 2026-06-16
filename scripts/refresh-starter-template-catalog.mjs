@@ -125,9 +125,28 @@ export function preserveLocalOnlyFamilies(adaptedCatalog, existingCatalog) {
   for (const [family, existingFamily] of Object.entries(existingCatalog.families || {})) {
     if (!Object.prototype.hasOwnProperty.call(adaptedCatalog.families, family)) {
       adaptedCatalog.families[family] = structuredClone(existingFamily);
+    } else if (isPrivateFamily(existingFamily)) {
+      // Collision: a private, locally-maintained family (e.g. arjuna) also appears in
+      // the refreshed public source. A refresh would otherwise silently replace the
+      // private, locally-authored block with the public one — almost certainly a
+      // mistake (the public starter-templates repo must not redefine a private family).
+      // Keep the local copy and warn loudly so a maintainer notices the collision.
+      adaptedCatalog.families[family] = structuredClone(existingFamily);
+      console.warn(
+        `[refresh] private local family "${family}" collided with an incoming public source entry; ` +
+          `kept the local copy. The public source must not redefine a private family.`,
+      );
     }
   }
   return adaptedCatalog;
+}
+
+// A family is "private" (local-only, never sourced from the public catalog) when its
+// description says so — e.g. arjuna's "Private family — source lives in the Adsbranded
+// private template repo". Used to guard against a public refresh clobbering it.
+function isPrivateFamily(family) {
+  const description = typeof family?.description === "string" ? family.description.toLowerCase() : "";
+  return description.includes("private family") || description.includes("private template");
 }
 
 function collectSourceFixturePaths(catalog) {

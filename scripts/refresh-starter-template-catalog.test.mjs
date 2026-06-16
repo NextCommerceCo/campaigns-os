@@ -18,7 +18,43 @@ test("catalog refresh preserves private families absent from the public source (
   const adapted = preserveLocalOnlyFamilies(adaptCatalogForCampaignsOs(sourceCatalog), existingCatalog);
   assert.ok(adapted.families.arjuna, "arjuna survives a public refresh");
   assert.equal(adapted.families.arjuna.description, "private family");
+  assert.equal(adapted.families.arjuna.agentContract.status, "agent-ready", "agentContract carried through");
+  assert.deepEqual(
+    adapted.families.arjuna.agentContract.qaStructure.checkout,
+    {},
+    "nested qaStructure survives the structuredClone deep-copy",
+  );
   assert.ok(adapted.families.olympus, "public families still present");
+});
+
+test("catalog refresh keeps the local private family when the public source redefines it (collision guard)", () => {
+  const warnings = [];
+  const origWarn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    const sourceCatalog = {
+      families: {
+        arjuna: { description: "public arjuna (must NOT win)", agentContract: { status: "public" } },
+      },
+    };
+    const existingCatalog = {
+      families: {
+        arjuna: {
+          description: "Private family — Adsbranded",
+          agentContract: { status: "agent-ready", qaStructure: { checkout: { description: "local" } } },
+        },
+      },
+    };
+    const adapted = preserveLocalOnlyFamilies(adaptCatalogForCampaignsOs(sourceCatalog), existingCatalog);
+    assert.equal(adapted.families.arjuna.agentContract.status, "agent-ready", "local private family wins the collision");
+    assert.equal(adapted.families.arjuna.agentContract.qaStructure.checkout.description, "local");
+    assert.ok(
+      warnings.some((w) => w.includes("arjuna") && w.includes("private")),
+      "warns on the private-family collision",
+    );
+  } finally {
+    console.warn = origWarn;
+  }
 });
 
 test("catalog refresh preserves local qaStructure when upstream catalog has none", () => {
