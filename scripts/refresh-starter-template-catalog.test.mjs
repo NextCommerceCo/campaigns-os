@@ -58,6 +58,24 @@ test("catalog refresh keeps the local private family when the public source rede
   }
 });
 
+test("catalog refresh drops public families that disappear from the source", () => {
+  const sourceCatalog = {
+    families: {
+      olympus: { agentContract: { fixtures: [] } },
+    },
+  };
+  const existingCatalog = {
+    families: {
+      olympus: { agentContract: { fixtures: [] } },
+      demeter: { description: "public starter family", agentContract: { status: "agent-ready" } },
+    },
+  };
+
+  const adapted = preserveLocalOnlyFamilies(adaptCatalogForCampaignsOs(sourceCatalog), existingCatalog);
+  assert.ok(adapted.families.olympus, "source family survives");
+  assert.equal(adapted.families.demeter, undefined, "missing public family is not preserved as stale local state");
+});
+
 test("catalog refresh preserves local qaStructure when upstream catalog has none", () => {
   const sourceCatalog = {
     campaignSpecFixturePolicy: { directory: "docs/fixtures/campaign-specs" },

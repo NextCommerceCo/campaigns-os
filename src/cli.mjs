@@ -183,6 +183,11 @@ function isCertifiedTemplateFamily(family) {
   return certifiedTemplateFamilies().has(String(family || ""));
 }
 
+function isKnownTemplateFamily(family) {
+  const value = String(family || "");
+  return KNOWN_TEMPLATE_FAMILIES.has(value) || certifiedTemplateFamilies().has(value);
+}
+
 const KNOWN_DEPLOY_TARGETS = new Set([
   "netlify",
   "cloudflare-pages",
@@ -1789,7 +1794,7 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   requireBoolean(packet, errors, "qa.test_orders_allowed");
   requireBoolean(packet, errors, "qa.sandbox_test_card_confirmed");
 
-  if (!KNOWN_TEMPLATE_FAMILIES.has(packet.assembly?.template_family)) {
+  if (!isKnownTemplateFamily(packet.assembly?.template_family)) {
     addIssue(errors, "assembly.template_family", `Unknown template family "${packet.assembly?.template_family}".`);
   }
   if (!KNOWN_DEPLOY_TARGETS.has(packet.deploy?.target)) {

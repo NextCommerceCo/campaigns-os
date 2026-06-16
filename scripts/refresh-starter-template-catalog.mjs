@@ -114,9 +114,10 @@ export function mergeLocalQaStructure(adaptedCatalog, sourceCatalog, existingCat
 // `arjuna`, whose source lives in a private repo — are not present in the PUBLIC
 // source catalog this script pulls. A refresh rebuilds `families` from the source,
 // so without this step those local-only entries would be silently dropped. Carry
-// any family that exists in the current target but not in the refreshed source
-// through untouched (along with its locally-authored brand contract + fixtures,
-// which live outside the source catalog and are never overwritten by a refresh).
+// private families through untouched (along with locally-authored brand contract
+// + fixtures, which live outside the source catalog and are never overwritten by
+// a refresh). Public families that disappear from the source are intentionally
+// dropped instead of being preserved as stale local copies.
 export function preserveLocalOnlyFamilies(adaptedCatalog, existingCatalog) {
   if (!existingCatalog || typeof existingCatalog !== "object") return adaptedCatalog;
   if (!adaptedCatalog.families || typeof adaptedCatalog.families !== "object") {
@@ -124,7 +125,9 @@ export function preserveLocalOnlyFamilies(adaptedCatalog, existingCatalog) {
   }
   for (const [family, existingFamily] of Object.entries(existingCatalog.families || {})) {
     if (!Object.prototype.hasOwnProperty.call(adaptedCatalog.families, family)) {
-      adaptedCatalog.families[family] = structuredClone(existingFamily);
+      if (isPrivateFamily(existingFamily)) {
+        adaptedCatalog.families[family] = structuredClone(existingFamily);
+      }
     } else if (isPrivateFamily(existingFamily)) {
       // Collision: a private, locally-maintained family (e.g. arjuna) also appears in
       // the refreshed public source. A refresh would otherwise silently replace the
