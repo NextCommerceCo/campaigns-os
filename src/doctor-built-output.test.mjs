@@ -6,7 +6,9 @@ import { test } from "node:test";
 
 import {
   collectPageKitAssetPathViolations,
+  validateBuiltDemoAssetFidelity,
   validateBuiltPageKitAssetPaths,
+  validateBuiltPlaceholderTextResidue,
   validateMarketSensitiveCopy,
   validateSpecRoutingMetaTags,
 } from "./cli.mjs";
@@ -127,5 +129,89 @@ test("R2-B2 currency: still warns when the built output itself has hardcoded $",
     const ready = [];
     validateMarketSensitiveCopy(EUR_SPEC, warnings, ready, derived);
     assert.ok(codes(warnings).includes("copy.hardcoded_currency_symbol"));
+  });
+});
+
+// --- H3.1: doctor warns on literal placeholder TEXT in built output ---
+
+const TEXT_RESIDUE_CONTRACT = {
+  qa_inspection: { placeholder_text_residue: { terms: ["Lorem", "Product Name", "TODO", "Placeholder"] } },
+};
+
+test("H3.1 doctor: built placeholder text warns and names the surviving terms", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "index.html"), "<h1>Product Name</h1><p>Lorem ipsum dolor.</p>");
+    const warnings = [];
+    const ready = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, ready, { target_output_dir: target });
+    assert.ok(codes(warnings).includes("template_contract.placeholder_text_residue"));
+    const msg = warnings.find((w) => w.code === "template_contract.placeholder_text_residue").message;
+    assert.match(msg, /Product Name/);
+    assert.match(msg, /Lorem/);
+  });
+});
+
+test("H3.1 doctor: clean built output yields a ready line, no warning", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "index.html"), "<h1>Cold Brew Concentrate</h1><p>Smooth, low-acid coffee.</p>");
+    const warnings = [];
+    const ready = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, ready, { target_output_dir: target });
+    assert.equal(codes(warnings).includes("template_contract.placeholder_text_residue"), false);
+    assert.ok(ready.some((note) => note.includes("no literal template placeholder text")));
+  });
+});
+
+test("H3.1 doctor: includes/layouts are skipped, no contract terms is a no-op", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(join(target, "_includes"), { recursive: true });
+    writeFileSync(join(target, "_includes", "head.html"), "<!-- TODO Lorem Product Name -->");
+    const warnings = [];
+    const ready = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, ready, { target_output_dir: target });
+    assert.equal(codes(warnings).includes("template_contract.placeholder_text_residue"), false);
+
+    // No declared terms -> validator is inert (no warning, no ready line).
+    const w2 = [];
+    const r2 = [];
+    validateBuiltPlaceholderTextResidue({}, w2, r2, { target_output_dir: target });
+    assert.equal(w2.length, 0);
+    assert.equal(r2.length, 0);
+  });
+});
+
+// --- H3.2: doctor warns when the family's demo assets survive into built output ---
+
+const DEMO_ASSET_CONTRACT = { demo_assets: { assets: ["images/1x1_1.svg", "images/1x1_2.svg"] } };
+
+test("H3.2 doctor: surviving demo assets warn and prompt a re-skin", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "index.html"), '<img src="/c/images/1x1_1.svg"><img src="/c/images/hero.jpg">');
+    const warnings = [];
+    const ready = [];
+    validateBuiltDemoAssetFidelity(DEMO_ASSET_CONTRACT, warnings, ready, { target_output_dir: target });
+    assert.ok(codes(warnings).includes("template_contract.demo_asset_residue"));
+    assert.match(warnings[0].message, /1x1_1\.svg/);
+    assert.match(warnings[0].message, /Re-skin/);
+  });
+});
+
+test("H3.2 doctor: no demo-asset references yields a ready line", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "_site", SLUG);
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "index.html"), '<img src="/c/images/hero.jpg">');
+    const warnings = [];
+    const ready = [];
+    validateBuiltDemoAssetFidelity(DEMO_ASSET_CONTRACT, warnings, ready, { target_output_dir: target });
+    assert.equal(codes(warnings).includes("template_contract.demo_asset_residue"), false);
+    assert.ok(ready.some((note) => note.includes("no template demo placeholder assets")));
   });
 });

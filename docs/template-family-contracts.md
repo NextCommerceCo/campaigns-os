@@ -1,5 +1,8 @@
 # Template Family Contracts
 
+> Deciding whether a design should even *be* a family? See
+> [Template Family vs Figma-extraction vs Hybrid](./template-vs-extraction-decision.md).
+
 Campaigns OS treats starter-template family contracts as deterministic build,
 doctor, polish, and QA inputs. The commerce structure contract lives in
 `contracts/commerce-surface-catalog.json`; the brand/residue/pricing/exit-pop
@@ -38,6 +41,24 @@ If no offer, voucher, compare-at value, or code-discounted post-checkout state
 governs an order bump, upsell, or downsell, render `full_price` only. Do not
 show identical struck-through/current prices, and do not hide unwanted price
 rows with campaign CSS.
+
+## Placeholder Text & Demo-Asset Residue
+
+Two residue surfaces keep a build from silently shipping template placeholders:
+
+- **`qa_inspection.placeholder_text_residue`** (declared in
+  `shared-commerce`, inherited by every family): literal placeholder copy —
+  `Lorem`, `lorem ipsum`, `Placeholder`, `TODO`, `Product Name` — matched on
+  word boundaries, case-insensitive. Doctor warns on built HTML; browser QA
+  **fails (blocker)** on any match in visible page text, and this blocker is
+  fixed — a theme-gate waiver that softens color residue does **not** excuse
+  placeholder text. A family may override the term set.
+- **`demo_assets`** (declared per family; arrays replace on `extends`): the
+  template's own demo placeholder assets. `assets` lists demo-asset paths (e.g.
+  `images/1x1_1.svg`), and an optional `repeated_icon.selector` /
+  `min_repeats` flags one icon `src` reused across distinct slots (the
+  "four identical benefit icons" trap). Both surface as **warnings** that tell
+  the agent to re-skin rather than ship placeholders — not blockers.
 
 ## Exit-Pop Rules
 

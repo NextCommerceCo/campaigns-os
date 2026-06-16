@@ -50,11 +50,21 @@
       "note": "paypal intentionally has two selectors. QA fails if any selector for an unsupported method remains visible."
     }
   },
+  "demo_assets": {
+    "page_types": ["checkout", "select", "upsell", "downsell", "receipt", "presell", "landing"],
+    "assets": ["images/1x1_1.svg", "images/1x1_2.svg"],
+    "rule": "Template demo placeholder assets (1x1 spacer SVGs, repeated benefit icons, starter imagery) must be re-skinned to the campaign's real assets before launch. Surviving demo assets are a warning, not a blocker: the agent should replace them rather than ship template placeholders. Declared per family; arrays replace on extends, so a family lists its own demo-asset set."
+  },
   "qa_inspection": {
     "forbidden_computed_colors": [
       { "hex": "#3c7dff", "rgb": "rgb(60, 125, 255)", "token": "--brand--color--primary" },
       { "hex": "#0a265c", "rgb": "rgb(10, 38, 92)", "token": "--brand--color--primary-dark" }
     ],
+    "placeholder_text_residue": {
+      "page_types": ["checkout", "select", "upsell", "downsell", "receipt", "presell", "landing"],
+      "terms": ["Lorem", "lorem ipsum", "Placeholder", "TODO", "Product Name"],
+      "rule": "Rendered campaign output must not contain literal template placeholder copy. Every term is replaced from the CampaignSpec/design before QA; QA fails (blocker) on any match in visible page text, regardless of any theme-gate waiver. Matched on word boundaries, case-insensitive."
+    },
     "computed_style_checks": [
       {
         "id": "checkout_submit_button",

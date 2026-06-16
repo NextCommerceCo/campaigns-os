@@ -1,5 +1,14 @@
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
-import { forbiddenComputedColors, normalizeCssColor } from "./template-brand-contract.mjs";
+import {
+  demoAssetConfig,
+  forbiddenComputedColors,
+  normalizeCssColor,
+  placeholderTextResidueConfig,
+  placeholderTextResidueMatches,
+  referencedDemoAssetBasenames,
+  repeatedIconSrcs,
+  summarizePlaceholderTerms,
+} from "./template-brand-contract.mjs";
 
 const DEFAULT_BROWSER_TIMEOUT_MS = 30000;
 const DEFAULT_SETTLE_TIMEOUT_MS = 5000;
@@ -159,6 +168,8 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
       assertions.push(...await checkoutPaymentSurfaceAssertions(browserPage, page));
     }
     assertions.push(...await templateResidueAssertions(browserPage, page, options));
+    assertions.push(...await templatePlaceholderTextAssertions(browserPage, page, options));
+    assertions.push(...await templateDemoAssetAssertions(browserPage, page, options));
     assertions.push(...await pricingVisibilityAssertions(browserPage, page, options));
     assertions.push(...await sdkDebuggerAssertions(context, page, args));
 
@@ -948,6 +959,89 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
   }
 
   return assertions;
+}
+
+// H3.1 — Text-residue gate. Literal placeholder copy (Lorem / Placeholder /
+// TODO / Product Name ...) is never shippable, so this is a fixed BLOCKER that
+// does NOT soften under a theme-gate waiver the way the color-residue gate
+// does. Runs on every page type the contract lists (commerce + presell +
+// landing), since placeholder text is wrong everywhere — not just on commerce
+// surfaces. Scans VISIBLE rendered text (body.innerText), so class names,
+// comments, and data attributes can't false-trip the blocker.
+async function templatePlaceholderTextAssertions(browserPage, page, options = {}) {
+  const config = placeholderTextResidueConfig(options.brandContract);
+  if (!config) return [];
+  const pageType = contractPageType(page);
+  if (config.pageTypes && !config.pageTypes.includes(pageType)) return [];
+  const text = await collectVisibleText(browserPage);
+  const matches = placeholderTextResidueMatches(text, config.terms);
+  return [placeholderTextResidueAssertion({ page, terms: config.terms, matches, severity: SEVERITY.BLOCKER })];
+}
+
+async function collectVisibleText(browserPage) {
+  return browserPage
+    .evaluate(() => (document.body ? document.body.innerText || "" : ""))
+    .catch(() => "");
+}
+
+function placeholderTextResidueAssertion({ page, terms, matches, severity }) {
+  const found = summarizePlaceholderTerms(matches);
+  const status = found.length ? STATUS.FAIL : STATUS.PASS;
+  return assertion({
+    id: `template-residue:${page.page_id}:placeholder-text`,
+    family: "template_residue",
+    page,
+    status,
+    severity: status === STATUS.FAIL ? severity : undefined,
+    expected: "no literal template placeholder text in rendered output",
+    actual: found.length ? `placeholder text rendered: ${found.join(", ")}` : "no placeholder text rendered",
+    evidence: {
+      terms,
+      found,
+      occurrences: matches.slice(0, 10).map((match) => ({ term: match.term, match: match.match })),
+      page_url: page.url,
+    },
+  });
+}
+
+// H3.2 — Demo-asset fidelity flag. WARNING (not a blocker): a built campaign
+// that still references the template's own demo placeholders (1x1 spacer SVGs,
+// a benefit icon repeated across every benefit) should be re-skinned, but a
+// shipped placeholder is a quality flag, not a hard stop. Two signals: named
+// demo assets referenced in the rendered HTML, and one icon src repeated across
+// the family's icon selector (learnings L5 "four identical benefit icons").
+async function templateDemoAssetAssertions(browserPage, page, options = {}) {
+  const config = demoAssetConfig(options.brandContract);
+  if (!config) return [];
+  const pageType = contractPageType(page);
+  if (config.pageTypes && !config.pageTypes.includes(pageType)) return [];
+  const html = await browserPage.content().catch(() => "");
+  const namedHits = referencedDemoAssetBasenames(html, config.assetBasenames);
+  let repeatedIcons = [];
+  if (config.repeatedIcon?.selector) {
+    const srcs = await collectLogoSources(browserPage, config.repeatedIcon.selector);
+    repeatedIcons = repeatedIconSrcs(srcs, config.repeatedIcon.minRepeats);
+  }
+  return [demoAssetResidueAssertion({ page, namedHits, repeatedIcons })];
+}
+
+function demoAssetResidueAssertion({ page, namedHits, repeatedIcons }) {
+  const named = namedHits || [];
+  const repeated = repeatedIcons || [];
+  const offending = named.length > 0 || repeated.length > 0;
+  const parts = [];
+  if (named.length) parts.push(`template demo assets still referenced: ${named.join(", ")}`);
+  if (repeated.length) parts.push(`identical icon src repeated ${repeated[0].count}x (re-skin to distinct icons): ${repeated[0].src}`);
+  return assertion({
+    id: `template-residue:${page.page_id}:demo-asset`,
+    family: "template_residue",
+    page,
+    status: offending ? STATUS.WARN : STATUS.PASS,
+    severity: offending ? SEVERITY.WARN : undefined,
+    expected: "campaign assets replace template demo placeholders (re-skin before launch)",
+    actual: offending ? parts.join("; ") : "no template demo asset residue",
+    evidence: { named_hits: named, repeated_icons: repeated, page_url: page.url },
+  });
 }
 
 async function collectComputedStyleEvidence(browserPage, checks) {
@@ -2399,5 +2493,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   paymentChromeResidueAssertion,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
+  placeholderTextResidueAssertion,
+  demoAssetResidueAssertion,
   testOrderAssertion,
 });

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
-import { forbiddenComputedColors, loadTemplateBrandContract } from "./template-brand-contract.mjs";
+import { forbiddenComputedColors, loadTemplateBrandContract, placeholderTextResidueMatches } from "./template-brand-contract.mjs";
 
 const {
   computedStyleResidueAssertions,
@@ -11,6 +11,8 @@ const {
   paymentChromeResidueAssertion,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
+  placeholderTextResidueAssertion,
+  demoAssetResidueAssertion,
 } = __qaBrowserTestHooks;
 
 const demeter = loadTemplateBrandContract("demeter");
@@ -185,4 +187,66 @@ test("checkout pricing visibility: zero visible bundle price rows is a warning, 
 
   const visible = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 3 });
   assert.equal(visible.status, "pass");
+});
+
+// --- H3.1: placeholder text-residue is a verdict blocker, like color residue ---
+
+test("placeholder text-residue fails (blocker) when literal template copy renders", () => {
+  const terms = ["Lorem", "Product Name", "TODO"];
+  const text = "Lorem ipsum dolor sit. Buy the Product Name now.";
+  const result = placeholderTextResidueAssertion({
+    page: checkoutPage,
+    terms,
+    matches: placeholderTextResidueMatches(text, terms),
+    severity: "blocker",
+  });
+  assert.equal(result.id, "template-residue:checkout:placeholder-text");
+  assert.equal(result.family, "template_residue");
+  assert.equal(result.status, "fail");
+  assert.equal(result.severity, "blocker");
+  assert.match(result.actual, /Lorem/);
+  assert.match(result.actual, /Product Name/);
+  assert.deepEqual(result.evidence.found, ["Lorem", "Product Name"]);
+  assert.equal(result.evidence.page_url, checkoutPage.url);
+});
+
+test("placeholder text-residue passes clean visible copy", () => {
+  const terms = ["Lorem", "Product Name", "TODO"];
+  const result = placeholderTextResidueAssertion({
+    page: checkoutPage,
+    terms,
+    matches: placeholderTextResidueMatches("Premium cold brew concentrate, 32oz.", terms),
+    severity: "blocker",
+  });
+  assert.equal(result.status, "pass");
+  assert.equal(result.severity, undefined);
+});
+
+// --- H3.2: demo-asset fidelity is a warning that tells the agent to re-skin ---
+
+test("demo-asset residue warns on named demo assets and repeated icon srcs", () => {
+  const named = demoAssetResidueAssertion({
+    page: checkoutPage,
+    namedHits: ["1x1_1.svg"],
+    repeatedIcons: [],
+  });
+  assert.equal(named.id, "template-residue:checkout:demo-asset");
+  assert.equal(named.family, "template_residue");
+  assert.equal(named.status, "warn");
+  assert.equal(named.severity, "warn");
+  assert.match(named.actual, /1x1_1\.svg/);
+
+  const repeated = demoAssetResidueAssertion({
+    page: checkoutPage,
+    namedHits: [],
+    repeatedIcons: [{ src: "/i/icon.svg", count: 4 }],
+  });
+  assert.equal(repeated.status, "warn");
+  assert.match(repeated.actual, /repeated 4x/);
+});
+
+test("demo-asset residue passes when no demo assets survive", () => {
+  const clean = demoAssetResidueAssertion({ page: checkoutPage, namedHits: [], repeatedIcons: [] });
+  assert.equal(clean.status, "pass");
+  assert.equal(clean.severity, undefined);
 });

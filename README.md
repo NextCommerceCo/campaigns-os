@@ -141,6 +141,7 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 - [Setup Profile Parity](docs/setup-profile-parity.md)
 - [Developer Evaluation](docs/developer-evaluation.md)
 - [QA And Test Orders](docs/qa-and-test-orders.md)
+- [Template Family vs Figma-extraction vs Hybrid](docs/template-vs-extraction-decision.md) — when to mint a template family, when to extract a bespoke design, and when to do both
 - [Small PR Review Path](docs/small-pr-review-path.md)
 - [Run Telemetry](docs/workflow-findings-sidecar.md) — per-run Run Record (system signal + workflow findings) tagged by improvement surface; captured locally always, remitted to Next Commerce only with up-front opt-out consent
 - [Versioning](docs/versioning.md)

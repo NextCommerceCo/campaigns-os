@@ -6,6 +6,7 @@ import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.m
 import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { loadTemplateBrandContract } from "./template-brand-contract.mjs";
+import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
@@ -18,9 +19,12 @@ Usage:
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
+  campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
 
 Options:
   --packet <path>                 Read Map ID, local CampaignSpec, deploy URL, and QA metadata from a Build Packet.
+  --site <path>                   L7 non-packet QA: resolve scope (pages + funnel types) from a built page-kit _site/.
+                                  Requires --base-url and --family. No Map ID / CampaignSpec needed.
   --spec <path>                   Local exported CampaignSpec JSON. Preferred for the prepared-HTML flow.
   --proxy-base <url>              Campaign Map proxy base for fetching /api/spec/<map-id>.
   --base-url <url>                Deployed campaign root. Packet deploy URL is used when omitted.
@@ -93,6 +97,13 @@ export async function runQaCli(args) {
 }
 
 async function resolveQaInputs(args) {
+  // Non-packet mode (learnings L7): QA a `campaign-build`'d page-kit campaign
+  // that has only a built _site/ and a served URL — no Build Packet, no Map ID,
+  // no CampaignSpec. Scope (pages + funnel types) is resolved from the built
+  // output; the residue/placeholder/demo gates run against --family.
+  if ((args.site || args.built) && !args.packet) {
+    return resolveQaInputsFromSite(args);
+  }
   const packetPath = args.packet ? resolve(args.packet) : null;
   const packet = packetPath ? readJson(packetPath) : null;
   const mapId = stringArg(args["map-id"])
@@ -148,6 +159,49 @@ async function resolveQaInputs(args) {
     templateFamily,
     commerceStructureContract,
     topologies,
+  };
+}
+
+// L7 non-packet QA: resolve QA inputs from a built _site/ + served base URL,
+// with no Build Packet / Map ID / CampaignSpec. The theme gate is evaluated
+// from the derived topology scope alone (no theme artifacts exist), which
+// yields "not_applicable" rather than blocking, so browser QA still runs the
+// residue/placeholder/demo gates. Test orders are not attempted (no policy).
+export function resolveQaInputsFromSite(args) {
+  const targetRepo = resolve(String(args.site || args.built));
+  const scope = resolveBuiltSiteScope(targetRepo, { slug: stringArg(args.slug) });
+  if (!scope.ok) {
+    throw new Error(scope.error || `Could not resolve a built campaign from ${targetRepo}.`);
+  }
+  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
+  if (!baseUrl) {
+    throw new Error("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
+  }
+  const templateFamily = stringArg(args.family) || null;
+  const brandContract = loadBrandContract(templateFamily);
+  const topologies = topologiesFromBuiltSiteScope(scope, baseUrl);
+  const mapId = stringArg(args["map-id"]) || scope.slug || "local-site";
+  const themeGate = resolveThemeGate({ packetPath: null, topologies, waive: stringArg(args["theme-waive"]) });
+  const specHash = computeSpecHash({ built_site: scope.slug, pages: scope.pages.map((page) => `${page.page_type}:${page.route}`) });
+  return {
+    themeGate,
+    brandContract: brandContract.contract,
+    brandContractStatus: brandContract.status,
+    packetPath: null,
+    packet: null,
+    mapId,
+    proxyBase: DEFAULT_PROXY_BASE,
+    baseUrl,
+    specPath: null,
+    specSource: `built-site:${scope.campaign_dir}`,
+    rawSpec: {},
+    spec: { campaign: {} },
+    specVersion: "built-site",
+    specHash,
+    templateFamily,
+    commerceStructureContract: null,
+    topologies,
+    builtSite: { slug: scope.slug, campaign_dir: scope.campaign_dir, html_count: scope.html_count },
   };
 }
 
@@ -1299,4 +1353,5 @@ export const __qaNodeTestHooks = Object.freeze({
   supportedPaymentMethodsFromSpec,
   themeGateSummary,
   templateBrandContractAssertion,
+  resolveQaInputsFromSite,
 });

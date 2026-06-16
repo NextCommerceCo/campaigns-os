@@ -23,6 +23,13 @@
     },
     "qa_selectors": [".checkout-wrapper", ".submit-button", ".os-card.next-selected", ".banner-img-wrapper", ".brand-logo"]
   },
+  "demo_assets": {
+    "assets": ["images/1x1_1.svg", "images/1x1_2.svg", "images/benefit-icon.svg", "next-logo.png"],
+    "repeated_icon": {
+      "selector": ".benefit-icon img, .benefits img, .icon-grid img, [data-benefit] img, .feature-icon img",
+      "min_repeats": 3
+    }
+  },
   "qa_inspection": {
     "forbidden_computed_colors": [
       { "hex": "#3c7dff", "rgb": "rgb(60, 125, 255)", "token": "--brand--color--primary (next-core default; brand-theme.css did not load)" },
