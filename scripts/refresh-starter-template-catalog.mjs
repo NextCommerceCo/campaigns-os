@@ -110,6 +110,48 @@ export function mergeLocalQaStructure(adaptedCatalog, sourceCatalog, existingCat
   return adaptedCatalog;
 }
 
+// Families maintained directly in campaigns-os — private template families like
+// `arjuna`, whose source lives in a private repo — are not present in the PUBLIC
+// source catalog this script pulls. A refresh rebuilds `families` from the source,
+// so without this step those local-only entries would be silently dropped. Carry
+// any family that exists in the current target but not in the refreshed source
+// through untouched (along with its locally-authored brand contract + fixtures,
+// which live outside the source catalog and are never overwritten by a refresh).
+export function preserveLocalOnlyFamilies(adaptedCatalog, existingCatalog) {
+  if (!existingCatalog || typeof existingCatalog !== "object") return adaptedCatalog;
+  if (!adaptedCatalog.families || typeof adaptedCatalog.families !== "object") {
+    adaptedCatalog.families = {};
+  }
+  for (const [family, existingFamily] of Object.entries(existingCatalog.families || {})) {
+    if (!Object.prototype.hasOwnProperty.call(adaptedCatalog.families, family)) {
+      adaptedCatalog.families[family] = structuredClone(existingFamily);
+    } else if (isPrivateFamily(existingFamily)) {
+      // Collision: a private, locally-maintained family (e.g. arjuna) also appears in
+      // the refreshed public source. A refresh would otherwise silently replace the
+      // private, locally-authored block with the public one — almost certainly a
+      // mistake (the public starter-templates repo must not redefine a private family).
+      // Keep the local copy and warn loudly so a maintainer notices the collision.
+      adaptedCatalog.families[family] = structuredClone(existingFamily);
+      console.warn(
+        `[refresh] private local family "${family}" collided with an incoming public source entry; ` +
+          `kept the local copy. The public source must not redefine a private family.`,
+      );
+    }
+  }
+  return adaptedCatalog;
+}
+
+// A family is "private" (local-only, never sourced from the public catalog) when its
+// description says so — e.g. arjuna's "Private family — source lives in the Adsbranded
+// private template repo". Used to guard against a public refresh clobbering it.
+function isPrivateFamily(family) {
+  // Prefer the machine-checkable flag; fall back to the description for older
+  // catalog entries that predate the flag.
+  if (family?.private === true) return true;
+  const description = typeof family?.description === "string" ? family.description.toLowerCase() : "";
+  return description.includes("private family") || description.includes("private template");
+}
+
 function collectSourceFixturePaths(catalog) {
   const paths = new Set();
   for (const family of Object.values(catalog.families || {})) {
@@ -178,7 +220,10 @@ async function main() {
   });
   const sourceCatalog = JSON.parse(rawCatalog);
   const existingCatalog = readExistingCatalog(args.targetCatalog);
-  const adaptedCatalog = mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog);
+  const adaptedCatalog = preserveLocalOnlyFamilies(
+    mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog),
+    existingCatalog,
+  );
 
   if (!args.dryRun) {
     writeText(args.targetCatalog, `${JSON.stringify(adaptedCatalog, null, 2)}\n`);
