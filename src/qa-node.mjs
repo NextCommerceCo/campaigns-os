@@ -177,8 +177,14 @@ export function resolveQaInputsFromSite(args) {
   if (!baseUrl) {
     throw new Error("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
   }
-  const templateFamily = stringArg(args.family) || null;
+  const templateFamily = stringArg(args.family);
+  if (!templateFamily) {
+    throw new Error("Non-packet site QA requires --family <template-family> so residue, placeholder, and demo-asset gates can load the family brand contract.");
+  }
   const brandContract = loadBrandContract(templateFamily);
+  if (brandContract.status !== "loaded" || !brandContract.contract) {
+    throw new Error(`Non-packet site QA requires a loadable template brand contract for --family "${templateFamily}" (got ${brandContract.status}).`);
+  }
   const topologies = topologiesFromBuiltSiteScope(scope, baseUrl);
   const mapId = stringArg(args["map-id"]) || scope.slug || "local-site";
   const themeGate = resolveThemeGate({ packetPath: null, topologies, waive: stringArg(args["theme-waive"]) });

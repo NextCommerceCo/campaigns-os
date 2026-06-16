@@ -190,6 +190,15 @@ function isCertifiedTemplateFamily(family) {
   return certifiedTemplateFamilies().has(String(family || ""));
 }
 
+function isKnownTemplateFamily(family) {
+  const value = String(family || "");
+  return KNOWN_TEMPLATE_FAMILIES.has(value) || certifiedTemplateFamilies().has(value);
+}
+
+function isSynthesizedBuiltSitePacket(packet) {
+  return packet?._synthesized?.from === "built_site";
+}
+
 const KNOWN_DEPLOY_TARGETS = new Set([
   "netlify",
   "cloudflare-pages",
@@ -1642,7 +1651,7 @@ function inferredBuildSidecarPaths(packet, packetPath) {
   };
 }
 
-function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
+export function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
   const packet = readJson(packetPath);
   const sidecars = inferredBuildSidecarPaths(packet, packetPath);
   const resolvedContextPath = contextPath === undefined ? sidecars.contextPath : contextPath;
@@ -1902,28 +1911,33 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     addIssue(errors, "packet.type", "Build Packet must be a JSON object.");
     return;
   }
+  const synthesizedBuiltSite = isSynthesizedBuiltSitePacket(packet);
   if (packet.schema_version !== PACKET_SCHEMA) addIssue(errors, "schema_version", `Expected ${PACKET_SCHEMA}.`);
   else ready.push(`Build Packet schema ${PACKET_SCHEMA}`);
 
   requireString(packet, errors, "campaign.public_route_slug");
   requireBoolean(packet, errors, "campaign.allowed_domains_confirmed");
   requireString(packet, errors, "spec.map_id");
-  requireString(packet, errors, "source_html.root");
-  requireArray(packet, errors, "source_html.pages");
+  if (!synthesizedBuiltSite) {
+    requireString(packet, errors, "source_html.root");
+    requireArray(packet, errors, "source_html.pages");
+  } else {
+    ready.push("Synthesized built-site packet: source_html provenance is absent by design");
+  }
   requireString(packet, errors, "assembly.target_repo");
   requireString(packet, errors, "assembly.output_dir");
   requireString(packet, errors, "assembly.template_family");
   requireBoolean(packet, errors, "qa.test_orders_allowed");
   requireBoolean(packet, errors, "qa.sandbox_test_card_confirmed");
 
-  if (!KNOWN_TEMPLATE_FAMILIES.has(packet.assembly?.template_family)) {
+  if (!isKnownTemplateFamily(packet.assembly?.template_family)) {
     addIssue(errors, "assembly.template_family", `Unknown template family "${packet.assembly?.template_family}".`);
   }
   if (!KNOWN_DEPLOY_TARGETS.has(packet.deploy?.target)) {
     addIssue(errors, "deploy.target", `Unknown deploy target "${packet.deploy?.target}".`);
   }
 
-  if (packet.assembly?.template_family === "undecided" || packet.assembly?.template_lock?.locked !== true) {
+  if (!synthesizedBuiltSite && (packet.assembly?.template_family === "undecided" || packet.assembly?.template_lock?.locked !== true)) {
     addIssue(errors, "assembly.template_lock", "Template family must be explicitly locked before commerce wiring.");
   }
 
@@ -1955,10 +1969,27 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     }
   }
 
-  const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
-  derived.source_root = sourceRoot;
-  if (!sourceRoot || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) {
-    addIssue(errors, "source_html.root", `Source root does not exist: ${packet.source_html?.root}`);
+  if (synthesizedBuiltSite) {
+    const builtPages = (Array.isArray(packet.pages) ? packet.pages : []).map((page) => ({
+      page_id: String(page?.page_id || page?.id || page?.route || "page"),
+      type: String(page?.type || page?.page_type || "page"),
+      role: pageRole(String(page?.type || page?.page_type || "page")),
+      route: typeof page?.route === "string" ? page.route : null,
+    }));
+    derived.scope = {
+      mode: "built_site",
+      built_pages: builtPages,
+      out_of_scope_pages: [],
+      previewable_routes: builtPages.map((page) => ({ page_id: page.page_id, type: page.type, route: page.route })),
+      blocked_runtime_pages: [],
+    };
+    derived.source_root = null;
+  } else {
+    const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
+    derived.source_root = sourceRoot;
+    if (!sourceRoot || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) {
+      addIssue(errors, "source_html.root", `Source root does not exist: ${packet.source_html?.root}`);
+    }
   }
 
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
@@ -1991,24 +2022,33 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     }
   }
 
-  const specPath = resolveFromFile(packetPath, packet.spec?.local_path);
-  derived.spec_path = specPath;
   let spec = null;
-  if (!packet.spec?.local_path) {
-    addIssue(errors, "spec.local_path", "No local CampaignSpec path is present. Assembly must use a local exported CampaignSpec JSON so page coverage, routing, meta tags, and commerce refs are not guessed.");
-  } else if (!existsSync(specPath)) {
-    addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${packet.spec.local_path}`);
+  if (synthesizedBuiltSite) {
+    derived.spec_path = null;
+    ready.push("Synthesized built-site packet skips CampaignSpec/source checks; built-output gates should run through doctor --built or qa --site.");
   } else {
-    spec = readJson(specPath);
-    const specMapId = spec.spec_identity?.map_id || spec.map_id;
-    if (specMapId && specMapId !== packet.spec.map_id) {
-      addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
+    const specPath = resolveFromFile(packetPath, packet.spec?.local_path);
+    derived.spec_path = specPath;
+    if (!packet.spec?.local_path) {
+      addIssue(errors, "spec.local_path", "No local CampaignSpec path is present. Assembly must use a local exported CampaignSpec JSON so page coverage, routing, meta tags, and commerce refs are not guessed.");
+    } else if (!existsSync(specPath)) {
+      addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${packet.spec.local_path}`);
+    } else {
+      spec = readJson(specPath);
+      const specMapId = spec.spec_identity?.map_id || spec.map_id;
+      if (specMapId && specMapId !== packet.spec.map_id) {
+        addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
+      }
+      ready.push("Local CampaignSpec parsed");
+      runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
     }
-    ready.push("Local CampaignSpec parsed");
-    runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
   }
 
-  runDoctorChecks(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, context: buildState.context, report: buildState.report, errors, warnings, ready, derived, buildState });
+  if (synthesizedBuiltSite) {
+    ready.push("Packet source/proof checks skipped for synthesized built-site packet");
+  } else {
+    runDoctorChecks(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, context: buildState.context, report: buildState.report, errors, warnings, ready, derived, buildState });
+  }
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
     const partialScope = derived.scope?.mode === "partial";

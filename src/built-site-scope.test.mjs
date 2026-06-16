@@ -97,6 +97,24 @@ test("resolveBuiltSiteScope errors cleanly on a missing or empty campaign", () =
   });
 });
 
+test("resolveBuiltSiteScope treats a direct campaign directory as the campaign root", () => {
+  withTempDir((campaignDir) => {
+    mkdirSync(join(campaignDir, "checkout"), { recursive: true });
+    writeFileSync(join(campaignDir, "checkout", "index.html"), "<h1>Checkout</h1>");
+    const scope = resolveBuiltSiteScope(campaignDir);
+    assert.equal(scope.ok, true);
+    assert.equal(scope.slug, "");
+    assert.equal(scope.campaign_dir, campaignDir);
+    assert.equal(scope.pages.length, 1);
+    assert.equal(scope.pages[0].route, "checkout");
+    assert.equal(scope.pages[0].page_type, "checkout");
+
+    const [topology] = topologiesFromBuiltSiteScope(scope, "http://localhost:8080");
+    assert.equal(topology.topology_id, "campaign");
+    assert.equal(topology.pages[0].url, "http://localhost:8080/checkout/");
+  });
+});
+
 test("resolveBuiltSiteScope ignores includes/layouts and dotfiles", () => {
   withTempDir((repo) => {
     writeBuiltCampaign(repo, "acme", { "": "<h1>Landing</h1>", checkout: "<h1>Checkout</h1>" });

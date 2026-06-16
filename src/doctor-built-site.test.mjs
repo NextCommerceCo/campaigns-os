@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { doctorBuiltOutput } from "./cli.mjs";
+import { doctorBuiltOutput, doctorPacket } from "./cli.mjs";
 
 function withTempDir(run) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-doctor-built-"));
@@ -68,6 +68,12 @@ test("H3.3 doctor --built --emit-packet: writes a consumable minimal packet to d
     const onDisk = JSON.parse(readFileSync(result.emitted_packet_path, "utf8"));
     assert.equal(onDisk._synthesized.from, "built_site");
     assert.equal(onDisk.assembly.template_family, "arjuna");
+
+    const packetDoctor = doctorPacket(result.emitted_packet_path, { contextPath: null, reportPath: null });
+    assert.equal(packetDoctor.ok, true);
+    assert.equal(packetDoctor.errors.length, 0);
+    assert.equal(packetDoctor.derived.scope.mode, "built_site");
+    assert.ok(packetDoctor.ready.some((note) => note.includes("source_html provenance is absent by design")));
   });
 });
 

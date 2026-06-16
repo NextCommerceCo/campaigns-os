@@ -13,7 +13,7 @@
 // topologies / a packet.
 
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 
 const HTML_EXT = ".html";
 
@@ -67,8 +67,10 @@ function pageIdForRoute(route) {
 // or a campaign directory directly.
 function resolveSiteRoot(targetRepo) {
   const candidate = join(targetRepo, "_site");
-  if (existsSync(candidate) && statSync(candidate).isDirectory()) return candidate;
-  return targetRepo;
+  if (existsSync(candidate) && statSync(candidate).isDirectory()) {
+    return { siteRoot: candidate, slugDiscovery: true };
+  }
+  return { siteRoot: targetRepo, slugDiscovery: basename(targetRepo) === "_site" };
 }
 
 /**
@@ -94,23 +96,27 @@ export function resolveBuiltSiteScope(targetRepo, { slug = null } = {}) {
   if (!targetRepo || !existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) {
     return { ...base, error: `Built campaign directory does not exist: ${targetRepo}` };
   }
-  const siteRoot = resolveSiteRoot(targetRepo);
+  const { siteRoot, slugDiscovery } = resolveSiteRoot(targetRepo);
 
   // Slug discovery: prefer an explicit slug; otherwise the campaign is either a
   // single subdirectory under `_site/` or rendered at the site root.
   let resolvedSlug = typeof slug === "string" && slug.trim() ? slug.trim() : null;
   if (!resolvedSlug) {
-    const subdirs = readdirSync(siteRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("_") && !entry.name.startsWith(".") && entry.name !== "node_modules")
-      .map((entry) => entry.name)
-      .filter((name) => listHtmlFiles(join(siteRoot, name)).length > 0);
-    const rootHtml = readdirSync(siteRoot, { withFileTypes: true }).some((e) => e.isFile() && e.name.toLowerCase().endsWith(HTML_EXT));
-    if (subdirs.length === 1 && !rootHtml) {
-      resolvedSlug = subdirs[0];
-    } else if (rootHtml || subdirs.length === 0) {
+    if (!slugDiscovery) {
       resolvedSlug = "";
     } else {
-      return { ...base, site_root: siteRoot, error: `Multiple campaign slugs under ${siteRoot}; pass --slug to choose one.`, slug_candidates: subdirs };
+      const subdirs = readdirSync(siteRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith("_") && !entry.name.startsWith(".") && entry.name !== "node_modules")
+        .map((entry) => entry.name)
+        .filter((name) => listHtmlFiles(join(siteRoot, name)).length > 0);
+      const rootHtml = readdirSync(siteRoot, { withFileTypes: true }).some((e) => e.isFile() && e.name.toLowerCase().endsWith(HTML_EXT));
+      if (subdirs.length === 1 && !rootHtml) {
+        resolvedSlug = subdirs[0];
+      } else if (rootHtml || subdirs.length === 0) {
+        resolvedSlug = "";
+      } else {
+        return { ...base, site_root: siteRoot, error: `Multiple campaign slugs under ${siteRoot}; pass --slug to choose one.`, slug_candidates: subdirs };
+      }
     }
   }
 

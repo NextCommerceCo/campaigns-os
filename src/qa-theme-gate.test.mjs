@@ -201,3 +201,19 @@ test("resolveQaInputsFromSite requires --base-url", () => {
     assert.throws(() => resolveQaInputsFromSite({ site: repo, family: "arjuna", slug: "acme" }), /base-url/);
   });
 });
+
+test("resolveQaInputsFromSite requires a loadable --family brand contract", () => {
+  withTempSite((repo) => {
+    const dir = join(repo, "_site", "acme");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "index.html"), "<h1>Landing</h1>");
+    assert.throws(
+      () => resolveQaInputsFromSite({ site: repo, "base-url": "http://localhost:8080", slug: "acme" }),
+      /--family/,
+    );
+    assert.throws(
+      () => resolveQaInputsFromSite({ site: repo, "base-url": "http://localhost:8080", family: "not-a-family", slug: "acme" }),
+      /loadable template brand contract/,
+    );
+  });
+});
