@@ -450,6 +450,7 @@
       }
     },
     "arjuna": {
+      "private": true,
       "description": "Adsbranded single-step checkout with hero media (video or product gallery), a left social-proof rail (benefit icons + testimonials + UGC video), tiered bundle cards with a lime/black selected state, and a delivery-estimate + scarcity summary block. Private family — source lives in the Adsbranded private template repo, not the public starter-templates repo.",
       "frontmatterStatus": "partial",
       "strongSignals": [
@@ -760,7 +761,7 @@
         "agentNotes": [
           "Use Arjuna only when the design really has the hero-media + left social-proof rail shape; do not default here from a generic checkout.",
           "Arjuna is a private family: campaign-init resolves its source from the Adsbranded private template repo via the template-source registry (authenticated). It is intentionally absent from the public templates.json and picker.",
-          "Upsell offer copy is frontmatter-driven via upsell_offer (component next_version 2): optional headline (or legacy display_name) for the h2 fallback, subheadline, bullets[], rating_count + show_rating, plus show_compare and show_discount for the price block. All optional — when omitted the partials render generic brand-neutral fallbacks (no Lorem/placeholder), so the fixture's minimal SDK-wiring set is valid as-is; a built campaign layers real copy on per offer to replace the fallbacks."
+          "Upsell offer copy is frontmatter-driven via upsell_offer (component next_version 2): optional headline (or legacy display_name) for the h2 fallback, subheadline, bullets[], rating_count + show_rating, plus show_compare and show_discount for the price block. All optional; the partials MUST render brand-neutral fallbacks when a field is omitted (no literal Lorem/Placeholder/TODO — enforced by the QA template-residue gate), so the fixture's minimal SDK-wiring set ships clean and a built campaign layers real copy on per offer."
         ]
       }
     },

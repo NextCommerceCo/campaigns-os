@@ -40,7 +40,8 @@ test("catalog refresh keeps the local private family when the public source rede
     const existingCatalog = {
       families: {
         arjuna: {
-          description: "Private family — Adsbranded",
+          private: true,
+          description: "Adsbranded internal",
           agentContract: { status: "agent-ready", qaStructure: { checkout: { description: "local" } } },
         },
       },

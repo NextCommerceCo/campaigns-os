@@ -145,6 +145,9 @@ export function preserveLocalOnlyFamilies(adaptedCatalog, existingCatalog) {
 // description says so — e.g. arjuna's "Private family — source lives in the Adsbranded
 // private template repo". Used to guard against a public refresh clobbering it.
 function isPrivateFamily(family) {
+  // Prefer the machine-checkable flag; fall back to the description for older
+  // catalog entries that predate the flag.
+  if (family?.private === true) return true;
   const description = typeof family?.description === "string" ? family.description.toLowerCase() : "";
   return description.includes("private family") || description.includes("private template");
 }
