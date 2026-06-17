@@ -127,6 +127,17 @@ export function preserveLocalOnlyFamilies(adaptedCatalog, existingCatalog) {
     if (!Object.prototype.hasOwnProperty.call(adaptedCatalog.families, family)) {
       if (isPrivateFamily(existingFamily)) {
         adaptedCatalog.families[family] = structuredClone(existingFamily);
+      } else {
+        // A PUBLIC family that disappeared from the source is dropped, not
+        // preserved as a stale local copy. Warn loudly (like the collision
+        // guard below) so a maintainer notices before the change ships — any
+        // local-only customizations to this family (custom qaStructure, added
+        // frontmatterInputsObserved, etc.) are not carried through.
+        console.warn(
+          `[refresh] public family "${family}" is no longer in the source catalog and was dropped; ` +
+            `any local-only customizations to it are NOT preserved. If it should persist, re-add it ` +
+            `to the source catalog or mark it private.`,
+        );
       }
     } else if (isPrivateFamily(existingFamily)) {
       // Collision: a private, locally-maintained family (e.g. arjuna) also appears in

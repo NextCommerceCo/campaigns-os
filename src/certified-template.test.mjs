@@ -101,7 +101,13 @@ test("doctor treats certified private families as known template families", () =
       try {
         return execFileSync("node", [CLI, "doctor", "--packet", packetPath, "--json"], { encoding: "utf8", cwd: dir, stdio: "pipe" });
       } catch (error) {
-        return String(error.stdout || "");
+        // doctor exits 2 when a packet has blocking errors; the example arjuna
+        // packet does for reasons unrelated to family recognition, so capture
+        // the JSON it still prints to stdout. Re-throw anything else (a crash,
+        // missing fixture, or non-JSON output) so a real doctor regression
+        // fails this test loudly instead of being masked by the catch.
+        if (error.status !== 2 || !String(error.stdout || "").trim()) throw error;
+        return String(error.stdout);
       }
     })();
     const doctor = JSON.parse(out);

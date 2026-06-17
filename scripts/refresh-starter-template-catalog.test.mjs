@@ -58,7 +58,7 @@ test("catalog refresh keeps the local private family when the public source rede
   }
 });
 
-test("catalog refresh drops public families that disappear from the source", () => {
+test("catalog refresh drops public families that disappear from the source, and warns", () => {
   const sourceCatalog = {
     families: {
       olympus: { agentContract: { fixtures: [] } },
@@ -71,9 +71,20 @@ test("catalog refresh drops public families that disappear from the source", () 
     },
   };
 
-  const adapted = preserveLocalOnlyFamilies(adaptCatalogForCampaignsOs(sourceCatalog), existingCatalog);
+  const warnings = [];
+  const origWarn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  let adapted;
+  try {
+    adapted = preserveLocalOnlyFamilies(adaptCatalogForCampaignsOs(sourceCatalog), existingCatalog);
+  } finally {
+    console.warn = origWarn;
+  }
   assert.ok(adapted.families.olympus, "source family survives");
   assert.equal(adapted.families.demeter, undefined, "missing public family is not preserved as stale local state");
+  // A maintainer must be told a public family was dropped, in case it carried
+  // local-only customizations.
+  assert.ok(warnings.some((msg) => msg.includes("demeter") && /dropped/.test(msg)), "drop is surfaced as a warning");
 });
 
 test("catalog refresh preserves local qaStructure when upstream catalog has none", () => {
