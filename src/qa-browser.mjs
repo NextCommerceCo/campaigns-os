@@ -1169,9 +1169,18 @@ function computedStyleResidueAssertions({ page, evidence, forbidden, severity })
 async function collectLogoSources(browserPage, selector) {
   return browserPage.evaluate((target) => {
     try {
-      return Array.from(document.querySelectorAll(target))
-        .map((element) => element.getAttribute("src") || element.currentSrc || "")
-        .filter(Boolean);
+      const sources = [];
+      for (const element of document.querySelectorAll(target)) {
+        // Same discipline as collectIconSources: prefer the resolved
+        // currentSrc, but also inspect src/data-src so a lazy-loaded starter
+        // logo (<img loading="lazy" data-src="next-logo.png">) is still caught,
+        // and drop inline data: placeholders so a lazy placeholder is not
+        // treated as a real logo reference.
+        for (const candidate of [element.currentSrc, element.getAttribute("src"), element.getAttribute("data-src")]) {
+          if (candidate && !candidate.startsWith("data:")) sources.push(candidate);
+        }
+      }
+      return sources;
     } catch {
       return [];
     }
