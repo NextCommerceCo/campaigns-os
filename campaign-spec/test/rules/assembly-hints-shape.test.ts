@@ -94,6 +94,7 @@ describe('AssemblyHintsShape rule', () => {
       'olympus',
       'limos',
       'demeter',
+      'arjuna',
       'olympus-mv-single-step',
       'olympus-mv-two-step',
       'shop-single-step',

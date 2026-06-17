@@ -92,6 +92,34 @@ test("prepare-build marks a certified family and doctor reports it ready", () =>
   });
 });
 
+test("doctor treats certified private families as known template families", () => {
+  withTempDir((dir) => {
+    const result = prepareBuild(dir, ["--template-family", "arjuna", "--no-run-session"]);
+    const packetPath = join(result.target, "campaign-runtime.build.json");
+
+    const out = (() => {
+      try {
+        return execFileSync("node", [CLI, "doctor", "--packet", packetPath, "--json"], { encoding: "utf8", cwd: dir, stdio: "pipe" });
+      } catch (error) {
+        // doctor exits 2 when a packet has blocking errors; the example arjuna
+        // packet does for reasons unrelated to family recognition, so capture
+        // the JSON it still prints to stdout. Re-throw anything else (a crash,
+        // missing fixture, or non-JSON output) so a real doctor regression
+        // fails this test loudly instead of being masked by the catch.
+        if (error.status !== 2 || !String(error.stdout || "").trim()) throw error;
+        return String(error.stdout);
+      }
+    })();
+    const doctor = JSON.parse(out);
+    assert.equal(
+      doctor.errors.some((issue) => issue.code === "assembly.template_family"),
+      false,
+      "catalog-certified private families must not be rejected by the stale known-family set",
+    );
+    assert.ok(doctor.ready.some((line) => /Template family "arjuna" is certified/.test(line)));
+  });
+});
+
 test("doctor blocks a packet whose decided family lost certification and has no waiver", () => {
   withTempDir((dir) => {
     const result = prepareBuild(dir, ["--template-family", "olympus", "--no-run-session"]);

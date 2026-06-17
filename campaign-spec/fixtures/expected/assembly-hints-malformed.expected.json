@@ -3,7 +3,7 @@
     {
       "ruleId": "AssemblyHintsShape",
       "severity": "warning",
-      "message": "campaign.preferred_template_family \"olympus-typo\" is not in the known set (olympus, limos, demeter, olympus-mv-single-step, olympus-mv-two-step, shop-single-step, shop-three-step). The build agent will still try to use it as a hint, but consider correcting the value if this is a typo.",
+      "message": "campaign.preferred_template_family \"olympus-typo\" is not in the known set (olympus, limos, demeter, arjuna, olympus-mv-single-step, olympus-mv-two-step, shop-single-step, shop-three-step). The build agent will still try to use it as a hint, but consider correcting the value if this is a typo.",
       "path": "/campaign/preferred_template_family",
       "data": {
         "check": "template-family-unknown",
