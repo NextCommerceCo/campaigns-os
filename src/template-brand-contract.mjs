@@ -136,7 +136,9 @@ export function placeholderTextResidueConfig(contract) {
   const cfg = contract?.qa_inspection?.placeholder_text_residue;
   if (!isPlainObject(cfg)) return null;
   const terms = Array.isArray(cfg.terms)
-    ? cfg.terms.map((term) => String(term)).filter((term) => term.trim())
+    // Dedupe so a contract that lists a term twice does not double-count the
+    // same occurrence in evidence / summarizePlaceholderTerms.
+    ? [...new Set(cfg.terms.map((term) => String(term)).filter((term) => term.trim()))]
     : [];
   if (!terms.length) return null;
   return {

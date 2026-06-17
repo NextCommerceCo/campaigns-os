@@ -310,3 +310,12 @@ artifacts the theme gate resolves to `not_applicable` (non-blocking), so the
 placeholder-text blocker and the other residue gates still run. The emitted
 minimal packet is marked `_synthesized` — it points doctor/QA at the built
 output and family, and is not a substitute for a real Build Packet.
+
+**Trade-off — non-packet QA is narrower than packet-driven QA.** It runs the
+built-output gates (residue, placeholder text, demo-asset, pricing-CSS, brand
+contract) but **skips the CampaignSpec/source-HTML-driven checks** a packet
+enables: page-coverage and route parity against the spec, SDK meta-tag
+expectations, and commerce-ref validation. A doctor-clean non-packet run means
+"the built output carries no template residue", **not** "the commerce wiring
+matches a spec". Treat it as a residue/visual gate, not equivalent to a
+packet-driven QA pass.

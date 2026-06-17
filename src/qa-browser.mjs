@@ -1008,21 +1008,65 @@ function placeholderTextResidueAssertion({ page, terms, matches, severity }) {
 // that still references the template's own demo placeholders (1x1 spacer SVGs,
 // a benefit icon repeated across every benefit) should be re-skinned, but a
 // shipped placeholder is a quality flag, not a hard stop. Two signals: named
-// demo assets referenced in the rendered HTML, and one icon src repeated across
-// the family's icon selector (learnings L5 "four identical benefit icons").
+// demo assets referenced via DOM asset attributes (src/currentSrc/srcset/
+// data-src/poster/href/background-image), and one icon src repeated across the
+// family's icon selector (learnings L5 "four identical benefit icons").
+//
+// Matches against actual asset references, NOT the raw HTML string: a basename
+// like "1x1_1.svg" quoted in alt text, a comment, or a JSON blob must not
+// false-trip the flag — only a real asset reference counts.
 async function templateDemoAssetAssertions(browserPage, page, options = {}) {
   const config = demoAssetConfig(options.brandContract);
   if (!config) return [];
   const pageType = contractPageType(page);
   if (config.pageTypes && !config.pageTypes.includes(pageType)) return [];
-  const html = await browserPage.content().catch(() => "");
-  const namedHits = referencedDemoAssetBasenames(html, config.assetBasenames);
+  const assetRefs = await collectAssetReferenceSources(browserPage);
+  const namedHits = referencedDemoAssetBasenames(assetRefs.join("\n"), config.assetBasenames);
   let repeatedIcons = [];
   if (config.repeatedIcon?.selector) {
-    const srcs = await collectLogoSources(browserPage, config.repeatedIcon.selector);
+    const srcs = await collectIconSources(browserPage, config.repeatedIcon.selector);
     repeatedIcons = repeatedIconSrcs(srcs, config.repeatedIcon.minRepeats);
   }
   return [demoAssetResidueAssertion({ page, namedHits, repeatedIcons })];
+}
+
+// All real asset references on the page: src/currentSrc/srcset/data-src/poster
+// on media elements, href on <link>, and inline background-image url(). Used so
+// the demo-asset flag keys off actual references, not substring noise in copy.
+async function collectAssetReferenceSources(browserPage) {
+  return browserPage.evaluate(() => {
+    const urls = [];
+    const push = (value) => { if (value && typeof value === "string") urls.push(value); };
+    const selector = "img, source, video, audio, iframe, embed, object, link, [style], [data-src], [poster]";
+    for (const el of document.querySelectorAll(selector)) {
+      push(el.getAttribute("src"));
+      push(el.currentSrc);
+      push(el.getAttribute("data-src"));
+      push(el.getAttribute("poster"));
+      push(el.getAttribute("srcset"));
+      push(el.getAttribute("data"));
+      if (el.tagName === "LINK") push(el.getAttribute("href"));
+      const bg = el.style && el.style.backgroundImage;
+      if (bg && bg !== "none") push(bg);
+    }
+    return urls;
+  }).catch(() => []);
+}
+
+// Icon src strings for the repeated-icon check. Prefer the resolved currentSrc
+// (handles <picture>/srcset/lazy-loaded imgs) over the literal src attribute,
+// and drop inline data: placeholders so a shared lazy-load placeholder is not
+// mistaken for "the same icon repeated".
+async function collectIconSources(browserPage, selector) {
+  return browserPage.evaluate((target) => {
+    try {
+      return Array.from(document.querySelectorAll(target))
+        .map((el) => el.currentSrc || el.getAttribute("src") || el.getAttribute("data-src") || "")
+        .filter((src) => src && !src.startsWith("data:"));
+    } catch {
+      return [];
+    }
+  }, selector).catch(() => []);
 }
 
 function demoAssetResidueAssertion({ page, namedHits, repeatedIcons }) {

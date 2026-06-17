@@ -188,7 +188,15 @@ export function resolveQaInputsFromSite(args) {
   const topologies = topologiesFromBuiltSiteScope(scope, baseUrl);
   const mapId = stringArg(args["map-id"]) || scope.slug || "local-site";
   const themeGate = resolveThemeGate({ packetPath: null, topologies, waive: stringArg(args["theme-waive"]) });
-  const specHash = computeSpecHash({ built_site: scope.slug, pages: scope.pages.map((page) => `${page.page_type}:${page.route}`) });
+  // Include family + target_repo so two built sites with the same slug/route
+  // structure but different families or locations do not hash identically
+  // (run-identity dedupe / idempotent remit must tell them apart).
+  const specHash = computeSpecHash({
+    built_site: scope.slug,
+    family: templateFamily || null,
+    target_repo: scope.campaign_dir,
+    pages: scope.pages.map((page) => `${page.page_type}:${page.route}`),
+  });
   return {
     themeGate,
     brandContract: brandContract.contract,

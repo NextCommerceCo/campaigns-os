@@ -205,6 +205,11 @@ test("placeholderTextResidueConfig returns null when no terms are declared", () 
   assert.equal(placeholderTextResidueConfig({ qa_inspection: { placeholder_text_residue: { terms: [] } } }), null);
 });
 
+test("placeholderTextResidueConfig dedupes repeated terms", () => {
+  const config = placeholderTextResidueConfig({ qa_inspection: { placeholder_text_residue: { terms: ["Lorem", "Lorem", "TODO"] } } });
+  assert.deepEqual(config.terms, ["Lorem", "TODO"]);
+});
+
 test("placeholderTextResidueMatches matches on word boundaries, case-insensitive, flexible phrase whitespace", () => {
   const terms = ["Lorem", "lorem ipsum", "Placeholder", "TODO", "Product Name"];
   const text = "Buy the Product   Name today. TODO: confirm. Lorem ipsum dolor. Placeholder copy.";

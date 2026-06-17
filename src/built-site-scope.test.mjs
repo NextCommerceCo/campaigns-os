@@ -142,6 +142,12 @@ test("topologiesFromBuiltSiteScope builds fetchable URLs per route", () => {
   assert.equal(topology.pages[1].page_type, "checkout");
 });
 
+test("topologiesFromBuiltSiteScope throws on an empty base URL (no silently-unfetchable topology)", () => {
+  const scope = { slug: "acme", pages: [{ page_id: "index", page_type: "landing", route: "" }] };
+  assert.throws(() => topologiesFromBuiltSiteScope(scope, ""), /base URL/);
+  assert.throws(() => topologiesFromBuiltSiteScope(scope, null), /base URL/);
+});
+
 test("synthesizeMinimalBuildPacket marks itself synthetic and points at the built output", () => {
   withTempDir((repo) => {
     writeBuiltCampaign(repo, "acme", { "": "<h1>Landing</h1>", checkout: "<h1>Checkout</h1>" });

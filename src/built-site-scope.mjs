@@ -105,11 +105,12 @@ export function resolveBuiltSiteScope(targetRepo, { slug = null } = {}) {
     if (!slugDiscovery) {
       resolvedSlug = "";
     } else {
-      const subdirs = readdirSync(siteRoot, { withFileTypes: true })
+      const entries = readdirSync(siteRoot, { withFileTypes: true });
+      const subdirs = entries
         .filter((entry) => entry.isDirectory() && !entry.name.startsWith("_") && !entry.name.startsWith(".") && entry.name !== "node_modules")
         .map((entry) => entry.name)
         .filter((name) => listHtmlFiles(join(siteRoot, name)).length > 0);
-      const rootHtml = readdirSync(siteRoot, { withFileTypes: true }).some((e) => e.isFile() && e.name.toLowerCase().endsWith(HTML_EXT));
+      const rootHtml = entries.some((e) => e.isFile() && e.name.toLowerCase().endsWith(HTML_EXT));
       if (subdirs.length === 1 && !rootHtml) {
         resolvedSlug = subdirs[0];
       } else if (rootHtml || subdirs.length === 0) {
@@ -157,13 +158,18 @@ function trimTrailingSlash(value) {
 // Build QA topologies (the spec-shaped { topology_id, pages: [{page_id,
 // page_type, url}] } structure runQa walks) from a built-site scope plus a
 // served base URL. base URL points at the campaign root the pages are served
-// under; a page's route is appended to form its URL.
+// under; a page's route is appended to form its URL. A base URL is required —
+// the whole point of a topology is fetchable page URLs, so fail fast rather
+// than hand a direct caller (tests, future tools) a topology with null URLs.
 export function topologiesFromBuiltSiteScope(scope, baseUrl) {
   const base = trimTrailingSlash(baseUrl);
+  if (!base) {
+    throw new Error("topologiesFromBuiltSiteScope requires a non-empty base URL so built pages have fetchable URLs.");
+  }
   const pages = (scope?.pages || []).map((page) => ({
     page_id: page.page_id,
     page_type: page.page_type,
-    url: base ? (page.route ? `${base}/${page.route}/` : `${base}/`) : null,
+    url: page.route ? `${base}/${page.route}/` : `${base}/`,
     route: page.route,
   }));
   return [{ topology_id: scope?.slug || "campaign", pages }];

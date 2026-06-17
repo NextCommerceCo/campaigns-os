@@ -63,7 +63,7 @@
     "placeholder_text_residue": {
       "page_types": ["checkout", "select", "upsell", "downsell", "receipt", "presell", "landing"],
       "terms": ["Lorem", "lorem ipsum", "Placeholder", "TODO", "Product Name"],
-      "rule": "Rendered campaign output must not contain literal template placeholder copy. Every term is replaced from the CampaignSpec/design before QA; QA fails (blocker) on any match in visible page text, regardless of any theme-gate waiver. Matched on word boundaries, case-insensitive."
+      "rule": "Rendered campaign output must not contain literal template placeholder copy. Every term is replaced from the CampaignSpec/design before QA; QA fails (blocker) on any match in visible page text, regardless of any theme-gate waiver. Matched on word boundaries, case-insensitive. Scope is governed by page_types: the blocker applies only to the listed campaign funnel page types (generic, non-funnel pages whose type is not listed are not checked). Narrow page_types to exempt a page type where placeholder copy is acceptable."
     },
     "computed_style_checks": [
       {
