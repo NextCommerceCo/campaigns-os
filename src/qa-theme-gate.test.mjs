@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { __qaNodeTestHooks, GATE_SUPPRESSED_FAMILIES } from "./qa-node.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
@@ -12,6 +14,7 @@ const {
   supportedPaymentMethodsFromSpec,
   themeGateSummary,
   templateBrandContractAssertion,
+  resolveQaInputsFromSite,
 } = __qaNodeTestHooks;
 
 const commerceTopologies = [{
@@ -155,4 +158,62 @@ test("custom and undecided families emit visible skipped brand-contract assertio
   const undecided = templateBrandContractAssertion({ templateFamily: "undecided", brandContractStatus: "none" });
   assert.equal(undecided.status, "skipped");
   assert.equal(undecided.evidence.reason, "doctor exempts undecided/custom template families");
+});
+
+// --- H3.3: non-packet QA resolves scope from a built _site/ ---
+
+function withTempSite(run) {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-qa-site-"));
+  try {
+    return run(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("resolveQaInputsFromSite builds topologies + brand contract from a built _site/, gate does not block", () => {
+  withTempSite((repo) => {
+    for (const [route, html] of Object.entries({ "": "<h1>Landing</h1>", checkout: "<h1>Checkout</h1>", "upsell-1": "<h1>Upsell</h1>" })) {
+      const dir = route ? join(repo, "_site", "acme", route) : join(repo, "_site", "acme");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "index.html"), html);
+    }
+    const resolved = resolveQaInputsFromSite({ site: repo, "base-url": "http://localhost:8080", family: "arjuna", slug: "acme" });
+    assert.equal(resolved.templateFamily, "arjuna");
+    assert.equal(resolved.brandContractStatus, "loaded");
+    assert.ok(resolved.brandContract, "brand contract loaded for the QA residue gates");
+    assert.equal(resolved.topologies[0].pages.length, 3);
+    const checkout = resolved.topologies[0].pages.find((p) => p.page_type === "checkout");
+    assert.equal(checkout.url, "http://localhost:8080/checkout/");
+    // No theme artifacts exist for a built-site run -> the gate is non-blocking
+    // (not_applicable), so browser QA still runs the residue/placeholder gates.
+    assert.notEqual(resolved.themeGate.status, "blocked");
+    assert.equal(resolved.packetPath, null);
+    assert.equal(resolved.builtSite.html_count, 3);
+  });
+});
+
+test("resolveQaInputsFromSite requires --base-url", () => {
+  withTempSite((repo) => {
+    const dir = join(repo, "_site", "acme");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "index.html"), "<h1>Landing</h1>");
+    assert.throws(() => resolveQaInputsFromSite({ site: repo, family: "arjuna", slug: "acme" }), /base-url/);
+  });
+});
+
+test("resolveQaInputsFromSite requires a loadable --family brand contract", () => {
+  withTempSite((repo) => {
+    const dir = join(repo, "_site", "acme");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "index.html"), "<h1>Landing</h1>");
+    assert.throws(
+      () => resolveQaInputsFromSite({ site: repo, "base-url": "http://localhost:8080", slug: "acme" }),
+      /--family/,
+    );
+    assert.throws(
+      () => resolveQaInputsFromSite({ site: repo, "base-url": "http://localhost:8080", family: "not-a-family", slug: "acme" }),
+      /loadable template brand contract/,
+    );
+  });
 });

@@ -1,5 +1,14 @@
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
-import { forbiddenComputedColors, normalizeCssColor } from "./template-brand-contract.mjs";
+import {
+  demoAssetConfig,
+  forbiddenComputedColors,
+  normalizeCssColor,
+  placeholderTextResidueConfig,
+  placeholderTextResidueMatches,
+  referencedDemoAssetBasenames,
+  repeatedIconSrcs,
+  summarizePlaceholderTerms,
+} from "./template-brand-contract.mjs";
 
 const DEFAULT_BROWSER_TIMEOUT_MS = 30000;
 const DEFAULT_SETTLE_TIMEOUT_MS = 5000;
@@ -159,6 +168,8 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
       assertions.push(...await checkoutPaymentSurfaceAssertions(browserPage, page));
     }
     assertions.push(...await templateResidueAssertions(browserPage, page, options));
+    assertions.push(...await templatePlaceholderTextAssertions(browserPage, page, options));
+    assertions.push(...await templateDemoAssetAssertions(browserPage, page, options));
     assertions.push(...await pricingVisibilityAssertions(browserPage, page, options));
     assertions.push(...await sdkDebuggerAssertions(context, page, args));
 
@@ -950,6 +961,133 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
   return assertions;
 }
 
+// H3.1 — Text-residue gate. Literal placeholder copy (Lorem / Placeholder /
+// TODO / Product Name ...) is never shippable, so this is a fixed BLOCKER that
+// does NOT soften under a theme-gate waiver the way the color-residue gate
+// does. Runs on every page type the contract lists (commerce + presell +
+// landing), since placeholder text is wrong everywhere — not just on commerce
+// surfaces. Scans VISIBLE rendered text (body.innerText), so class names,
+// comments, and data attributes can't false-trip the blocker.
+async function templatePlaceholderTextAssertions(browserPage, page, options = {}) {
+  const config = placeholderTextResidueConfig(options.brandContract);
+  if (!config) return [];
+  const pageType = contractPageType(page);
+  if (config.pageTypes && !config.pageTypes.includes(pageType)) return [];
+  const text = await collectVisibleText(browserPage);
+  const matches = placeholderTextResidueMatches(text, config.terms);
+  return [placeholderTextResidueAssertion({ page, terms: config.terms, matches, severity: SEVERITY.BLOCKER })];
+}
+
+async function collectVisibleText(browserPage) {
+  return browserPage
+    .evaluate(() => (document.body ? document.body.innerText || "" : ""))
+    .catch(() => "");
+}
+
+function placeholderTextResidueAssertion({ page, terms, matches, severity }) {
+  const found = summarizePlaceholderTerms(matches);
+  const status = found.length ? STATUS.FAIL : STATUS.PASS;
+  return assertion({
+    id: `template-residue:${page.page_id}:placeholder-text`,
+    family: "template_residue",
+    page,
+    status,
+    severity: status === STATUS.FAIL ? severity : undefined,
+    expected: "no literal template placeholder text in rendered output",
+    actual: found.length ? `placeholder text rendered: ${found.join(", ")}` : "no placeholder text rendered",
+    evidence: {
+      terms,
+      found,
+      occurrences: matches.slice(0, 10).map((match) => ({ term: match.term, match: match.match })),
+      page_url: page.url,
+    },
+  });
+}
+
+// H3.2 — Demo-asset fidelity flag. WARNING (not a blocker): a built campaign
+// that still references the template's own demo placeholders (1x1 spacer SVGs,
+// a benefit icon repeated across every benefit) should be re-skinned, but a
+// shipped placeholder is a quality flag, not a hard stop. Two signals: named
+// demo assets referenced via DOM asset attributes (src/currentSrc/srcset/
+// data-src/poster/href/background-image), and one icon src repeated across the
+// family's icon selector (learnings L5 "four identical benefit icons").
+//
+// Matches against actual asset references, NOT the raw HTML string: a basename
+// like "1x1_1.svg" quoted in alt text, a comment, or a JSON blob must not
+// false-trip the flag — only a real asset reference counts.
+async function templateDemoAssetAssertions(browserPage, page, options = {}) {
+  const config = demoAssetConfig(options.brandContract);
+  if (!config) return [];
+  const pageType = contractPageType(page);
+  if (config.pageTypes && !config.pageTypes.includes(pageType)) return [];
+  const assetRefs = await collectAssetReferenceSources(browserPage);
+  const namedHits = referencedDemoAssetBasenames(assetRefs.join("\n"), config.assetBasenames);
+  let repeatedIcons = [];
+  if (config.repeatedIcon?.selector) {
+    const srcs = await collectIconSources(browserPage, config.repeatedIcon.selector);
+    repeatedIcons = repeatedIconSrcs(srcs, config.repeatedIcon.minRepeats);
+  }
+  return [demoAssetResidueAssertion({ page, namedHits, repeatedIcons })];
+}
+
+// All real asset references on the page: src/currentSrc/srcset/data-src/poster
+// on media elements, href on <link>, and inline background-image url(). Used so
+// the demo-asset flag keys off actual references, not substring noise in copy.
+async function collectAssetReferenceSources(browserPage) {
+  return browserPage.evaluate(() => {
+    const urls = [];
+    const push = (value) => { if (value && typeof value === "string") urls.push(value); };
+    const selector = "img, source, video, audio, iframe, embed, object, link, [style], [data-src], [poster]";
+    for (const el of document.querySelectorAll(selector)) {
+      push(el.getAttribute("src"));
+      push(el.currentSrc);
+      push(el.getAttribute("data-src"));
+      push(el.getAttribute("poster"));
+      push(el.getAttribute("srcset"));
+      push(el.getAttribute("data"));
+      if (el.tagName === "LINK") push(el.getAttribute("href"));
+      const bg = el.style && el.style.backgroundImage;
+      if (bg && bg !== "none") push(bg);
+    }
+    return urls;
+  }).catch(() => []);
+}
+
+// Icon src strings for the repeated-icon check. Prefer the resolved currentSrc
+// (handles <picture>/srcset/lazy-loaded imgs) over the literal src attribute,
+// and drop inline data: placeholders so a shared lazy-load placeholder is not
+// mistaken for "the same icon repeated".
+async function collectIconSources(browserPage, selector) {
+  return browserPage.evaluate((target) => {
+    try {
+      return Array.from(document.querySelectorAll(target))
+        .map((el) => el.currentSrc || el.getAttribute("src") || el.getAttribute("data-src") || "")
+        .filter((src) => src && !src.startsWith("data:"));
+    } catch {
+      return [];
+    }
+  }, selector).catch(() => []);
+}
+
+function demoAssetResidueAssertion({ page, namedHits, repeatedIcons }) {
+  const named = namedHits || [];
+  const repeated = repeatedIcons || [];
+  const offending = named.length > 0 || repeated.length > 0;
+  const parts = [];
+  if (named.length) parts.push(`template demo assets still referenced: ${named.join(", ")}`);
+  if (repeated.length) parts.push(`identical icon src repeated ${repeated[0].count}x (re-skin to distinct icons): ${repeated[0].src}`);
+  return assertion({
+    id: `template-residue:${page.page_id}:demo-asset`,
+    family: "template_residue",
+    page,
+    status: offending ? STATUS.WARN : STATUS.PASS,
+    severity: offending ? SEVERITY.WARN : undefined,
+    expected: "campaign assets replace template demo placeholders (re-skin before launch)",
+    actual: offending ? parts.join("; ") : "no template demo asset residue",
+    evidence: { named_hits: named, repeated_icons: repeated, page_url: page.url },
+  });
+}
+
 async function collectComputedStyleEvidence(browserPage, checks) {
   const input = checks.map((check) => ({
     id: check.id,
@@ -1031,9 +1169,18 @@ function computedStyleResidueAssertions({ page, evidence, forbidden, severity })
 async function collectLogoSources(browserPage, selector) {
   return browserPage.evaluate((target) => {
     try {
-      return Array.from(document.querySelectorAll(target))
-        .map((element) => element.getAttribute("src") || element.currentSrc || "")
-        .filter(Boolean);
+      const sources = [];
+      for (const element of document.querySelectorAll(target)) {
+        // Same discipline as collectIconSources: prefer the resolved
+        // currentSrc, but also inspect src/data-src so a lazy-loaded starter
+        // logo (<img loading="lazy" data-src="next-logo.png">) is still caught,
+        // and drop inline data: placeholders so a lazy placeholder is not
+        // treated as a real logo reference.
+        for (const candidate of [element.currentSrc, element.getAttribute("src"), element.getAttribute("data-src")]) {
+          if (candidate && !candidate.startsWith("data:")) sources.push(candidate);
+        }
+      }
+      return sources;
     } catch {
       return [];
     }
@@ -2399,5 +2546,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   paymentChromeResidueAssertion,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
+  placeholderTextResidueAssertion,
+  demoAssetResidueAssertion,
   testOrderAssertion,
 });

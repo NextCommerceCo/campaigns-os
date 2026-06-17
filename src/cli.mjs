@@ -92,9 +92,16 @@ import {
   PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
 } from "./page-kit-build-summary.mjs";
 import {
+  demoAssetConfig,
   findForbiddenPriceHides,
   loadTemplateBrandContract,
+  placeholderTextResidueConfig,
+  placeholderTextResidueMatches,
 } from "./template-brand-contract.mjs";
+import {
+  resolveBuiltSiteScope,
+  synthesizeMinimalBuildPacket,
+} from "./built-site-scope.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
   BUILD_BRIEF_SCHEMA,
@@ -183,6 +190,15 @@ function isCertifiedTemplateFamily(family) {
   return certifiedTemplateFamilies().has(String(family || ""));
 }
 
+function isKnownTemplateFamily(family) {
+  const value = String(family || "");
+  return KNOWN_TEMPLATE_FAMILIES.has(value) || certifiedTemplateFamilies().has(value);
+}
+
+function isSynthesizedBuiltSitePacket(packet) {
+  return packet?._synthesized?.from === "built_site";
+}
+
 const KNOWN_DEPLOY_TARGETS = new Set([
   "netlify",
   "cloudflare-pages",
@@ -230,6 +246,7 @@ Usage:
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
+  campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
@@ -1436,6 +1453,14 @@ function toConstantCase(value) {
 }
 
 function doctorCommand(args) {
+  // Non-packet mode (learnings L7): doctor a `campaign-build`'d page-kit
+  // campaign that has only a built _site/ and no full Build Packet. Resolves
+  // scope from the built output and runs the built-output residue/text/
+  // demo-asset/pricing gates against the chosen family's brand contract.
+  const builtArg = args.built || args.site;
+  if (builtArg && !args.packet) {
+    return doctorBuiltOutput(args);
+  }
   const packetPath = resolve(requireArg(args, "packet"));
   const explicitSidecarArgs = Boolean(args.context || args.report);
   return doctorPacket(packetPath, {
@@ -1443,6 +1468,117 @@ function doctorCommand(args) {
     reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   });
+}
+
+// L7 non-packet doctor: resolve scope from a built _site/, run the built-output
+// gates the family brand contract drives, and auto-emit a minimal Build Packet
+// (optionally written with --emit-packet) so QA can run against the same
+// campaign without a hand-authored packet.
+export function doctorBuiltOutput(args) {
+  const targetRepo = resolve(String(args.built || args.site));
+  const errors = [];
+  const warnings = [];
+  const ready = [];
+  if (!existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) {
+    addIssue(errors, "built_site.target", `Built campaign directory does not exist: ${targetRepo}`);
+    return { ok: false, status: "blocked", mode: "built_site", errors, warnings, ready, derived: { mode: "built_site" }, next: null };
+  }
+
+  const scope = resolveBuiltSiteScope(targetRepo, { slug: optionalString(args.slug) });
+  if (!scope.ok) {
+    addIssue(errors, "built_site.scope", scope.error || "Could not resolve scope from the built _site/.");
+    return { ok: false, status: "blocked", mode: "built_site", errors, warnings, ready, derived: { mode: "built_site", scope }, next: null };
+  }
+
+  const family = optionalString(args.family) || null;
+  const baseUrl = optionalString(args["base-url"]);
+  const mapId = optionalString(args["map-id"]);
+  const deployTarget = optionalString(args["deploy-target"], "unknown");
+
+  const derived = {
+    mode: "built_site",
+    map_id: mapId || scope.slug || null,
+    public_route_slug: scope.slug || null,
+    template_family: family,
+    target_repo: targetRepo,
+    target_output_dir: scope.campaign_dir,
+    site_root: scope.site_root,
+    built_pages: scope.pages.map((page) => ({ page_id: page.page_id, type: page.page_type, route: page.route })),
+    doctor_checks: [],
+  };
+  ready.push(`Resolved ${scope.html_count} built page(s) from ${relFromDir(targetRepo, scope.campaign_dir)} (slug "${scope.slug || "(site root)"}")`);
+
+  let brandContract = null;
+  if (!family) {
+    addIssue(warnings, "assembly.template_family", "No --family given; the residue/placeholder-text/demo-asset gates need a family brand contract to run. Pass --family <family> (the family the campaign was built from).");
+  } else {
+    try {
+      brandContract = loadTemplateBrandContract(family);
+    } catch (error) {
+      addIssue(warnings, "template_contract.brand_contract", `Template brand contract for "${family}" failed to load: ${error.message}`);
+    }
+    if (!brandContract) {
+      addIssue(warnings, "template_contract.brand_contract", `No brand/residue/pricing contract found for family "${family}". Built-output residue gates cannot run; confirm the family slug.`);
+    } else {
+      ready.push(`Template brand/residue/pricing contract loaded for ${family}`);
+      validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived);
+      validateBuiltDemoAssetFidelity(brandContract, warnings, ready, derived);
+      // Pricing CSS-hide scan (report omitted -> a missing assets/css dir reads
+      // as a skipped ready-line, not a false "scan did not run" warning, since
+      // built page-kit output may lay CSS out differently).
+      runPricingCssHideCheck({ packet: { assembly: { template_family: family } }, derived, warnings, ready, report: null });
+    }
+  }
+
+  // Family-agnostic generic placeholder residue (XXCODE / Product Title /
+  // next-logo.png ...) always runs against the built output.
+  const genericHits = collectGenericTemplateResidueMatches(scope.campaign_dir);
+  if (genericHits.length) {
+    addIssue(
+      warnings,
+      "template_contract.literal_residue",
+      `Built output contains generic starter/template placeholders: ${summarizeCopyMatches(genericHits)}. Replace these from CampaignSpec/API or remove dead template references.`,
+    );
+  } else {
+    ready.push("Built output has no generic starter placeholder or promo-code residue");
+  }
+
+  const synthesized = synthesizeMinimalBuildPacket({
+    schemaVersion: PACKET_SCHEMA,
+    targetRepo,
+    scope,
+    family,
+    mapId,
+    baseUrl,
+    deployTarget,
+  });
+  derived.synthesized_packet = synthesized;
+
+  let emittedPacketPath = null;
+  if (args["emit-packet"]) {
+    emittedPacketPath = args["emit-packet"] === true
+      ? join(targetRepo, ".campaign-runtime", "minimal-build-packet.json")
+      : resolve(String(args["emit-packet"]));
+    mkdirSync(dirname(emittedPacketPath), { recursive: true });
+    writeJson(emittedPacketPath, synthesized);
+    ready.push(`Emitted minimal Build Packet to ${relFromDir(targetRepo, emittedPacketPath)}`);
+  }
+
+  const next = buildNextStep(errors, warnings, derived, null);
+  const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
+  return {
+    ok: errors.length === 0,
+    status,
+    mode: "built_site",
+    errors,
+    warnings,
+    ready,
+    derived,
+    scope: { slug: scope.slug, html_count: scope.html_count, pages: derived.built_pages, campaign_dir: scope.campaign_dir },
+    synthesized_packet: synthesized,
+    emitted_packet_path: emittedPacketPath,
+    next,
+  };
 }
 
 function themeCommand(args) {
@@ -1515,7 +1651,7 @@ function inferredBuildSidecarPaths(packet, packetPath) {
   };
 }
 
-function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
+export function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
   const packet = readJson(packetPath);
   const sidecars = inferredBuildSidecarPaths(packet, packetPath);
   const resolvedContextPath = contextPath === undefined ? sidecars.contextPath : contextPath;
@@ -1775,28 +1911,33 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     addIssue(errors, "packet.type", "Build Packet must be a JSON object.");
     return;
   }
+  const synthesizedBuiltSite = isSynthesizedBuiltSitePacket(packet);
   if (packet.schema_version !== PACKET_SCHEMA) addIssue(errors, "schema_version", `Expected ${PACKET_SCHEMA}.`);
   else ready.push(`Build Packet schema ${PACKET_SCHEMA}`);
 
   requireString(packet, errors, "campaign.public_route_slug");
   requireBoolean(packet, errors, "campaign.allowed_domains_confirmed");
   requireString(packet, errors, "spec.map_id");
-  requireString(packet, errors, "source_html.root");
-  requireArray(packet, errors, "source_html.pages");
+  if (!synthesizedBuiltSite) {
+    requireString(packet, errors, "source_html.root");
+    requireArray(packet, errors, "source_html.pages");
+  } else {
+    ready.push("Synthesized built-site packet: source_html provenance is absent by design");
+  }
   requireString(packet, errors, "assembly.target_repo");
   requireString(packet, errors, "assembly.output_dir");
   requireString(packet, errors, "assembly.template_family");
   requireBoolean(packet, errors, "qa.test_orders_allowed");
   requireBoolean(packet, errors, "qa.sandbox_test_card_confirmed");
 
-  if (!KNOWN_TEMPLATE_FAMILIES.has(packet.assembly?.template_family)) {
+  if (!isKnownTemplateFamily(packet.assembly?.template_family)) {
     addIssue(errors, "assembly.template_family", `Unknown template family "${packet.assembly?.template_family}".`);
   }
   if (!KNOWN_DEPLOY_TARGETS.has(packet.deploy?.target)) {
     addIssue(errors, "deploy.target", `Unknown deploy target "${packet.deploy?.target}".`);
   }
 
-  if (packet.assembly?.template_family === "undecided" || packet.assembly?.template_lock?.locked !== true) {
+  if (!synthesizedBuiltSite && (packet.assembly?.template_family === "undecided" || packet.assembly?.template_lock?.locked !== true)) {
     addIssue(errors, "assembly.template_lock", "Template family must be explicitly locked before commerce wiring.");
   }
 
@@ -1828,10 +1969,27 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     }
   }
 
-  const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
-  derived.source_root = sourceRoot;
-  if (!sourceRoot || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) {
-    addIssue(errors, "source_html.root", `Source root does not exist: ${packet.source_html?.root}`);
+  if (synthesizedBuiltSite) {
+    const builtPages = (Array.isArray(packet.pages) ? packet.pages : []).map((page) => ({
+      page_id: String(page?.page_id || page?.id || page?.route || "page"),
+      type: String(page?.type || page?.page_type || "page"),
+      role: pageRole(String(page?.type || page?.page_type || "page")),
+      route: typeof page?.route === "string" ? page.route : null,
+    }));
+    derived.scope = {
+      mode: "built_site",
+      built_pages: builtPages,
+      out_of_scope_pages: [],
+      previewable_routes: builtPages.map((page) => ({ page_id: page.page_id, type: page.type, route: page.route })),
+      blocked_runtime_pages: [],
+    };
+    derived.source_root = null;
+  } else {
+    const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
+    derived.source_root = sourceRoot;
+    if (!sourceRoot || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) {
+      addIssue(errors, "source_html.root", `Source root does not exist: ${packet.source_html?.root}`);
+    }
   }
 
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
@@ -1864,24 +2022,33 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     }
   }
 
-  const specPath = resolveFromFile(packetPath, packet.spec?.local_path);
-  derived.spec_path = specPath;
   let spec = null;
-  if (!packet.spec?.local_path) {
-    addIssue(errors, "spec.local_path", "No local CampaignSpec path is present. Assembly must use a local exported CampaignSpec JSON so page coverage, routing, meta tags, and commerce refs are not guessed.");
-  } else if (!existsSync(specPath)) {
-    addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${packet.spec.local_path}`);
+  if (synthesizedBuiltSite) {
+    derived.spec_path = null;
+    ready.push("Synthesized built-site packet skips CampaignSpec/source checks; built-output gates should run through doctor --built or qa --site.");
   } else {
-    spec = readJson(specPath);
-    const specMapId = spec.spec_identity?.map_id || spec.map_id;
-    if (specMapId && specMapId !== packet.spec.map_id) {
-      addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
+    const specPath = resolveFromFile(packetPath, packet.spec?.local_path);
+    derived.spec_path = specPath;
+    if (!packet.spec?.local_path) {
+      addIssue(errors, "spec.local_path", "No local CampaignSpec path is present. Assembly must use a local exported CampaignSpec JSON so page coverage, routing, meta tags, and commerce refs are not guessed.");
+    } else if (!existsSync(specPath)) {
+      addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${packet.spec.local_path}`);
+    } else {
+      spec = readJson(specPath);
+      const specMapId = spec.spec_identity?.map_id || spec.map_id;
+      if (specMapId && specMapId !== packet.spec.map_id) {
+        addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
+      }
+      ready.push("Local CampaignSpec parsed");
+      runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
     }
-    ready.push("Local CampaignSpec parsed");
-    runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
   }
 
-  runDoctorChecks(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, context: buildState.context, report: buildState.report, errors, warnings, ready, derived, buildState });
+  if (synthesizedBuiltSite) {
+    ready.push("Packet source/proof checks skipped for synthesized built-site packet");
+  } else {
+    runDoctorChecks(PACKET_DOCTOR_CHECKS, { packet, packetPath, spec, context: buildState.context, report: buildState.report, errors, warnings, ready, derived, buildState });
+  }
 
   if (!packet.deploy?.preview_url && !packet.deploy?.production_url) {
     const partialScope = derived.scope?.mode === "partial";
@@ -3327,6 +3494,11 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
   if (assemblyComplete) {
     validateBuiltContractResidue(contract, warnings, ready, derived, spec);
+    // H3.1/H3.2: pre-QA warnings off the family brand contract. Doctor warns
+    // (the fix happens during build/polish); browser QA enforces the same
+    // placeholder-text terms as a blocker in the verdict.
+    validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived);
+    validateBuiltDemoAssetFidelity(brandContract, warnings, ready, derived);
   } else {
     for (const value of contract.frontmatter?.demoOnlyValues || []) {
       addIssue(warnings, "frontmatter.demoOnlyValues", `Replace demo-only starter value before launch: ${value}`);
@@ -3538,6 +3710,68 @@ function validateBuiltContractResidue(contract, warnings, ready, derived, spec =
     } else {
       ready.push("Built target output has no promo discount percentage claims requiring CampaignSpec verification");
     }
+  }
+}
+
+// H3.1 (doctor surface): literal placeholder TEXT in built HTML. Word-boundary
+// matched off the family brand contract's placeholder_text_residue.terms, so
+// the doctor warning and the browser QA blocker key off one declared term set.
+// Scans rendered HTML (not the includes/layouts the family ships) — broad net
+// pre-QA; the browser gate narrows to visible text and blocks.
+export function validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived) {
+  const config = placeholderTextResidueConfig(brandContract);
+  if (!config) return;
+  const targetOutputDir = derived.target_output_dir;
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return;
+  const hits = collectPlaceholderTextResidueMatches(targetOutputDir, config.terms);
+  if (hits.length) {
+    const terms = [...new Set(hits.map((hit) => hit.label))].join(", ");
+    addIssue(
+      warnings,
+      "template_contract.placeholder_text_residue",
+      `Assembly is recorded complete, but built output still contains literal template placeholder text (${terms}): ${summarizeCopyMatches(hits)}. Replace with CampaignSpec/design copy; browser QA blocks on these terms.`,
+    );
+  } else {
+    ready.push("Built target output has no literal template placeholder text");
+  }
+}
+
+function collectPlaceholderTextResidueMatches(root, terms) {
+  const matches = [];
+  for (const file of collectHtmlFiles(root)) {
+    if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
+    const content = readFileSync(join(root, file.path), "utf8");
+    for (const match of placeholderTextResidueMatches(content, terms)) {
+      matches.push({
+        surface: "target",
+        path: file.path,
+        line: lineNumberAt(content, match.index || 0),
+        label: match.term,
+        text: match.match,
+      });
+    }
+  }
+  return matches;
+}
+
+// H3.2 (doctor surface): the family's own demo placeholder assets surviving
+// into built output. Reuses the literal-match infra over the demo-asset
+// basenames declared in the brand contract. Warning only — the agent re-skins.
+export function validateBuiltDemoAssetFidelity(brandContract, warnings, ready, derived) {
+  const config = demoAssetConfig(brandContract);
+  if (!config || !config.assetBasenames.length) return;
+  const targetOutputDir = derived.target_output_dir;
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return;
+  const hits = collectLiteralMatches(targetOutputDir, config.assetBasenames);
+  if (hits.length) {
+    const assets = [...new Set(hits.map((hit) => hit.label))].join(", ");
+    addIssue(
+      warnings,
+      "template_contract.demo_asset_residue",
+      `Assembly is recorded complete, but built output still references template demo assets (${assets}): ${summarizeCopyMatches(hits)}. Re-skin to the campaign's real assets rather than shipping template placeholders.`,
+    );
+  } else {
+    ready.push("Built target output references no template demo placeholder assets");
   }
 }
 
@@ -4490,6 +4724,12 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
   if (codes.has("template_contract.discount_claim_unverified")) {
     actions.push("Confirm any rendered promo discount percentage claims against the build request, merchant notes, or CampaignSpec before launch.");
+  }
+  if (codes.has("template_contract.placeholder_text_residue")) {
+    actions.push("Replace literal template placeholder text (Lorem/Placeholder/TODO/Product Name) with CampaignSpec/design copy before QA; the browser residue gate blocks on these terms.");
+  }
+  if (codes.has("template_contract.demo_asset_residue")) {
+    actions.push("Re-skin template demo placeholder assets (spacer SVGs, repeated benefit icons, starter imagery) to the campaign's real assets before launch.");
   }
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");

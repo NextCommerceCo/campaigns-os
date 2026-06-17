@@ -3,10 +3,16 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  demoAssetConfig,
   findForbiddenPriceHides,
   forbiddenComputedColors,
   loadTemplateBrandContract,
   normalizeCssColor,
+  placeholderTextResidueConfig,
+  placeholderTextResidueMatches,
+  referencedDemoAssetBasenames,
+  repeatedIconSrcs,
+  summarizePlaceholderTerms,
   TEMPLATE_BRAND_CONTRACT_SCHEMA,
 } from "./template-brand-contract.mjs";
 
@@ -178,4 +184,83 @@ test("findForbiddenPriceHides ignores price selectors without display:none", () 
   assert.deepEqual(findForbiddenPriceHides(contract, ".price-wrapper { color: black; }"), []);
   assert.deepEqual(findForbiddenPriceHides(contract, ""), []);
   assert.deepEqual(findForbiddenPriceHides(contract, null), []);
+});
+
+// --- H3.1: placeholder text-residue contract + matcher ---
+
+test("placeholder text-residue terms are inherited by every family from shared-commerce", () => {
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  for (const family of Object.keys(catalog.families)) {
+    const config = placeholderTextResidueConfig(loadTemplateBrandContract(family));
+    assert.ok(config, `${family} should inherit placeholder_text_residue`);
+    for (const term of ["Lorem", "lorem ipsum", "Placeholder", "TODO", "Product Name"]) {
+      assert.ok(config.terms.includes(term), `${family} terms should include "${term}"`);
+    }
+  }
+});
+
+test("placeholderTextResidueConfig returns null when no terms are declared", () => {
+  assert.equal(placeholderTextResidueConfig(null), null);
+  assert.equal(placeholderTextResidueConfig({}), null);
+  assert.equal(placeholderTextResidueConfig({ qa_inspection: { placeholder_text_residue: { terms: [] } } }), null);
+});
+
+test("placeholderTextResidueConfig dedupes repeated terms", () => {
+  const config = placeholderTextResidueConfig({ qa_inspection: { placeholder_text_residue: { terms: ["Lorem", "Lorem", "TODO"] } } });
+  assert.deepEqual(config.terms, ["Lorem", "TODO"]);
+});
+
+test("placeholderTextResidueMatches matches on word boundaries, case-insensitive, flexible phrase whitespace", () => {
+  const terms = ["Lorem", "lorem ipsum", "Placeholder", "TODO", "Product Name"];
+  const text = "Buy the Product   Name today. TODO: confirm. Lorem ipsum dolor. Placeholder copy.";
+  const found = summarizePlaceholderTerms(placeholderTextResidueMatches(text, terms));
+  assert.ok(found.includes("Product Name"), "collapsed multi-space phrase still matches");
+  assert.ok(found.includes("TODO"));
+  assert.ok(found.includes("Lorem"));
+  assert.ok(found.includes("lorem ipsum"));
+  assert.ok(found.includes("Placeholder"));
+});
+
+test("placeholderTextResidueMatches does not fire inside larger words (Loremaster, todos)", () => {
+  assert.deepEqual(placeholderTextResidueMatches("Loremaster Industries makes todos lists", ["Lorem", "TODO"]), []);
+  // real visible copy that merely contains the substring is safe
+  assert.deepEqual(placeholderTextResidueMatches("Our Placeholders-brand stand mixer", ["Placeholder"]), []);
+});
+
+test("placeholderTextResidueMatches handles empty/missing input", () => {
+  assert.deepEqual(placeholderTextResidueMatches("", ["Lorem"]), []);
+  assert.deepEqual(placeholderTextResidueMatches("Lorem", []), []);
+  assert.deepEqual(placeholderTextResidueMatches(null, ["Lorem"]), []);
+});
+
+// --- H3.2: demo-asset fidelity contract + detectors ---
+
+test("arjuna declares its own demo-asset set and a repeated-icon selector", () => {
+  const config = demoAssetConfig(loadTemplateBrandContract("arjuna"));
+  assert.ok(config);
+  assert.ok(config.assetBasenames.includes("1x1_1.svg"));
+  assert.ok(config.assetBasenames.includes("benefit-icon.svg"));
+  assert.ok(config.repeatedIcon.selector.length > 0);
+  assert.equal(config.repeatedIcon.minRepeats, 3);
+});
+
+test("demoAssetConfig is null when neither assets nor a repeated-icon selector exist", () => {
+  assert.equal(demoAssetConfig(null), null);
+  assert.equal(demoAssetConfig({ demo_assets: { assets: [] } }), null);
+  assert.equal(demoAssetConfig({ demo_assets: { repeated_icon: { min_repeats: 3 } } }), null, "selector is required");
+});
+
+test("referencedDemoAssetBasenames reports only basenames present in the HTML", () => {
+  const html = '<img src="/c/images/1x1_1.svg"><img src="/c/images/hero.jpg">';
+  assert.deepEqual(referencedDemoAssetBasenames(html, ["1x1_1.svg", "1x1_2.svg"]), ["1x1_1.svg"]);
+  assert.deepEqual(referencedDemoAssetBasenames("", ["1x1_1.svg"]), []);
+});
+
+test("repeatedIconSrcs flags the four-identical-benefit-icons trap, not legitimate variety", () => {
+  const trap = ["/i/icon.svg", "/i/icon.svg", "/i/icon.svg", "/i/icon.svg"];
+  assert.deepEqual(repeatedIconSrcs(trap, 3), [{ src: "/i/icon.svg", count: 4 }]);
+  const distinct = ["/i/a.svg", "/i/b.svg", "/i/c.svg", "/i/d.svg"];
+  assert.deepEqual(repeatedIconSrcs(distinct, 3), []);
+  // a pair below the threshold does not trip
+  assert.deepEqual(repeatedIconSrcs(["/i/a.svg", "/i/a.svg"], 3), []);
 });

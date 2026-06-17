@@ -288,3 +288,34 @@ The older direct backend mode is available only as
 `--legacy-api-test-order <accept|decline|both>`. It is diagnostic behavior, not
 canonical launch proof, because it bypasses the deployed campaign page and the
 SDK checkout/upsell surfaces.
+
+## Non-packet QA against a built `_site/` (no Build Packet)
+
+A `campaign-build`'d page-kit campaign produces a built `_site/` but no full
+Build Packet. Doctor and QA can still run against it: scope (pages + funnel
+types) is resolved from the built output, and the residue / placeholder-text /
+demo-asset gates run against the chosen family's brand contract.
+
+```bash
+# Doctor a built campaign with no packet; optionally auto-emit a minimal packet.
+npm run campaigns-os -- doctor --built ../my-campaign-repo --family arjuna --emit-packet
+
+# QA a built, served campaign with no packet/spec.
+npm run campaigns-os -- qa run --site ../my-campaign-repo --base-url http://localhost:8080 --family arjuna --browser
+```
+
+`--family` is required (the residue gates need the family's brand contract).
+`--slug` selects the campaign when `_site/` holds more than one. With no theme
+artifacts the theme gate resolves to `not_applicable` (non-blocking), so the
+placeholder-text blocker and the other residue gates still run. The emitted
+minimal packet is marked `_synthesized` — it points doctor/QA at the built
+output and family, and is not a substitute for a real Build Packet.
+
+**Trade-off — non-packet QA is narrower than packet-driven QA.** It runs the
+built-output gates (residue, placeholder text, demo-asset, pricing-CSS, brand
+contract) but **skips the CampaignSpec/source-HTML-driven checks** a packet
+enables: page-coverage and route parity against the spec, SDK meta-tag
+expectations, and commerce-ref validation. A doctor-clean non-packet run means
+"the built output carries no template residue", **not** "the commerce wiring
+matches a spec". Treat it as a residue/visual gate, not equivalent to a
+packet-driven QA pass.

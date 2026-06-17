@@ -119,6 +119,114 @@ export function forbiddenComputedColors(contract) {
     .filter((entry) => entry.rgb);
 }
 
+function escapeContractRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizePageTypes(value) {
+  return Array.isArray(value) ? value.map((entry) => String(entry).toLowerCase()) : null;
+}
+
+// Placeholder text-residue contract (H3.1): literal template copy that must
+// never survive into rendered output (Lorem / Placeholder / TODO / Product
+// Name ...). Mirrors the forbidden-computed-colors model — data lives in the
+// contract (shared-commerce, inherited by every family), matchers compile in
+// code — so the gate is data-driven and a family can override the term set.
+export function placeholderTextResidueConfig(contract) {
+  const cfg = contract?.qa_inspection?.placeholder_text_residue;
+  if (!isPlainObject(cfg)) return null;
+  const terms = Array.isArray(cfg.terms)
+    // Dedupe so a contract that lists a term twice does not double-count the
+    // same occurrence in evidence / summarizePlaceholderTerms.
+    ? [...new Set(cfg.terms.map((term) => String(term)).filter((term) => term.trim()))]
+    : [];
+  if (!terms.length) return null;
+  return {
+    terms,
+    pageTypes: normalizePageTypes(cfg.page_types),
+    rule: typeof cfg.rule === "string" ? cfg.rule : null,
+  };
+}
+
+// Pure: every literal placeholder-term occurrence in `text`. Word-boundary,
+// case-insensitive; multi-word terms keep flexible internal whitespace so a
+// reflowed "Product   Name" still matches. Boundaries only apply where the
+// term itself starts/ends with a word char, so "lorem ipsum" still anchors.
+export function placeholderTextResidueMatches(text, terms) {
+  if (typeof text !== "string" || !text || !Array.isArray(terms) || !terms.length) return [];
+  const matches = [];
+  for (const term of terms) {
+    const raw = String(term || "").trim();
+    if (!raw) continue;
+    const body = escapeContractRegExp(raw).replace(/\s+/g, "\\s+");
+    const startBoundary = /^\w/.test(raw) ? "\\b" : "";
+    const endBoundary = /\w$/.test(raw) ? "\\b" : "";
+    const regex = new RegExp(`${startBoundary}${body}${endBoundary}`, "gi");
+    for (const match of text.matchAll(regex)) {
+      matches.push({ term: raw, match: match[0], index: match.index ?? 0 });
+    }
+  }
+  return matches.sort((a, b) => a.index - b.index);
+}
+
+// The distinct placeholder terms found, in first-seen order, for verdict copy.
+export function summarizePlaceholderTerms(matches) {
+  const seen = [];
+  for (const match of matches || []) {
+    if (!seen.includes(match.term)) seen.push(match.term);
+  }
+  return seen;
+}
+
+// Demo-asset fidelity contract (H3.2): the template's own demo placeholder
+// assets (1x1 spacers, repeated benefit icons, starter imagery) that should be
+// re-skinned. Data-driven per family so the flag is declarative, not hardcoded.
+export function demoAssetConfig(contract) {
+  const cfg = contract?.demo_assets;
+  if (!isPlainObject(cfg)) return null;
+  const assets = Array.isArray(cfg.assets)
+    ? cfg.assets.map((asset) => String(asset)).filter((asset) => asset.trim())
+    : [];
+  const rawIcon = isPlainObject(cfg.repeated_icon) ? cfg.repeated_icon : null;
+  const repeatedIcon = rawIcon && typeof rawIcon.selector === "string" && rawIcon.selector.trim()
+    ? {
+        selector: rawIcon.selector.trim(),
+        minRepeats: Number.isInteger(rawIcon.min_repeats) && rawIcon.min_repeats > 1 ? rawIcon.min_repeats : 3,
+      }
+    : null;
+  if (!assets.length && !repeatedIcon) return null;
+  return {
+    assets,
+    assetBasenames: [...new Set(assets.map((asset) => asset.split("/").pop()).filter(Boolean))],
+    pageTypes: normalizePageTypes(cfg.page_types),
+    repeatedIcon,
+    rule: typeof cfg.rule === "string" ? cfg.rule : null,
+  };
+}
+
+// Pure: which demo-asset basenames are referenced in rendered HTML. Mirrors
+// referencedAssetBasenames in qa-browser (payment-chrome residue).
+export function referencedDemoAssetBasenames(html, basenames) {
+  const text = typeof html === "string" ? html : "";
+  return (basenames || []).filter((basename) => basename && text.includes(basename));
+}
+
+// Pure: from a flat list of icon src strings, the ones repeated at least
+// `minRepeats` times — the "four identical benefit icons" trap (learnings L5).
+export function repeatedIconSrcs(srcs, minRepeats = 3) {
+  const counts = new Map();
+  for (const src of srcs || []) {
+    const key = String(src || "").trim();
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const threshold = Number.isInteger(minRepeats) && minRepeats > 1 ? minRepeats : 3;
+  return [...counts.entries()]
+    .filter(([, count]) => count >= threshold)
+    .map(([src, count]) => ({ src, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 // Scan campaign CSS text for rules that hide pricing surfaces with
 // display:none. Returns one finding per offending selector occurrence.
 //
