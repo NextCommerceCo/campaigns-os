@@ -498,7 +498,10 @@
         "upsell_offer",
         "upsell_bundle_tiers",
         "payment_flags",
-        "progress_style"
+        "progress_style",
+        "rating",
+        "trust_bar",
+        "guarantee"
       ],
       "agentContract": {
         "status": "agent-ready",
