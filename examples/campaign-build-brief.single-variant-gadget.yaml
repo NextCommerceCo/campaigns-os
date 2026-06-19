@@ -91,7 +91,7 @@ qa_policy:
   enforcement:
     status: documented_expectation
     enforced_by: qa.proof_policy and report.proof_policy
-    note: Build Brief qa_policy records business QA expectations; doctor and QA enforce the Build Packet qa.proof_policy and Assembly Report proof_policy contract.
+    note: Build Brief qa_policy records business QA expectations; doctor and QA enforce the Build Packet qa.proof_policy and Assembly Report report.proof_policy contract.
   require_desktop_mobile_screenshots: true
   require_checkout_flow: true
   require_post_purchase_flow: true

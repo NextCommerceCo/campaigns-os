@@ -233,6 +233,7 @@ test("policy nulls normalize back to safe defaults", () => {
     assert.equal(result.artifact.template_residue_policy.block_demo_payment_methods, true);
     assert.equal(result.artifact.qa_policy.enforcement.status, "documented_expectation");
     assert.equal(result.artifact.qa_policy.enforcement.enforced_by, "qa.proof_policy and report.proof_policy");
+    assert.match(result.artifact.qa_policy.enforcement.note, /Assembly Report report\.proof_policy contract/);
     assert.equal(result.artifact.qa_policy.require_checkout_flow, true);
   });
 });

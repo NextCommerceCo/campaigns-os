@@ -127,7 +127,7 @@ const COLOR_WORDS = Object.freeze([
 const QA_POLICY_ENFORCEMENT = Object.freeze({
   status: "documented_expectation",
   enforced_by: "qa.proof_policy and report.proof_policy",
-  note: "Build Brief qa_policy records business QA expectations; doctor and QA enforce the Build Packet qa.proof_policy and Assembly Report proof_policy contract.",
+  note: "Build Brief qa_policy records business QA expectations; doctor and QA enforce the Build Packet qa.proof_policy and Assembly Report report.proof_policy contract.",
 });
 
 export function inferBuildBriefPath({ explicitPath = null, sourceRoot = null, targetRepo = null } = {}) {
