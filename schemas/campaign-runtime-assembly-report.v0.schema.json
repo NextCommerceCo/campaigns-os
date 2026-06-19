@@ -120,14 +120,28 @@
     "build_brief": {
       "type": "object",
       "additionalProperties": true,
+      "required": ["schema_version", "mode", "status", "normalized_path", "question_count", "gate_count"],
       "properties": {
         "schema_version": { "const": "campaigns-os-build-brief/v1" },
         "mode": { "enum": ["prepared", "guided_draft"] },
         "status": { "enum": ["complete", "needs_answers", "invalid"] },
-        "normalized_path": { "type": "string" },
+        "normalized_path": { "type": "string", "minLength": 1 },
         "question_count": { "type": "integer", "minimum": 0 },
         "gate_count": { "type": "integer", "minimum": 0 }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "needs_answers" } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "question_count": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      ],
       "description": "Campaign Build Brief summary mirrored from Build Context for build/polish/QA handoff continuity."
     },
     "adapter_decisions": { "$ref": "#/$defs/adapterDecisions" },

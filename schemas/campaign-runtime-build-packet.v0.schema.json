@@ -88,7 +88,11 @@
             "properties": {
               "page_id": { "type": "string", "minLength": 1 },
               "path": { "type": "string", "minLength": 1 },
-              "page_type": { "type": "string", "minLength": 1 },
+              "page_type": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Producer or CampaignSpec page type. This may use richer authoring vocabulary than the Page Kit runtime projection in page_kit.page_type."
+              },
               "upsell_template_pattern": { "type": "string", "minLength": 1 },
               "upsell_mv_tiers": {
                 "type": "object",
@@ -139,10 +143,11 @@
                   },
                   "page_type": {
                     "enum": ["product", "checkout", "upsell", "receipt"],
-                    "description": "CPK runtime/analytics page_type. Preserve richer CampaignSpec or producer page types in source metadata instead."
+                    "description": "Page Kit runtime/analytics page_type. Preserve richer CampaignSpec or producer page types in source metadata instead."
                   },
                   "permalink_required": {
                     "type": "boolean",
+                    "default": false,
                     "description": "True when Page Kit's default filename route would not match public_route and frontmatter.permalink should be written."
                   },
                   "frontmatter": {
@@ -150,13 +155,31 @@
                     "additionalProperties": false,
                     "required": ["page_type"],
                     "properties": {
-                      "page_type": { "enum": ["product", "checkout", "upsell", "receipt"] },
+                      "page_type": {
+                        "enum": ["product", "checkout", "upsell", "receipt"],
+                        "description": "Page Kit runtime/analytics page_type. This is authoritative for generated frontmatter and may differ from source_html.pages[].page_type."
+                      },
                       "permalink": { "type": "string", "minLength": 1 },
                       "next_url": { "type": "string", "minLength": 1 },
                       "decline_url": { "type": "string", "minLength": 1 }
                     }
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": { "permalink_required": { "const": true } },
+                      "required": ["permalink_required"]
+                    },
+                    "then": {
+                      "properties": {
+                        "frontmatter": {
+                          "required": ["permalink"]
+                        }
+                      }
+                    }
+                  }
+                ]
               },
               "skip_reason": { "type": "string", "minLength": 1 },
               "notes": { "type": ["string", "null"] }
@@ -215,14 +238,14 @@
               }
             }
           },
-          "description": "Prepared HTML -> page-kit conversion contract. Build/report updates should move pending values to completed/verified once wrapper stripping, frontmatter, asset moves, CTA/routes, commerce shell, and template dependency copying are settled."
+          "description": "Prepared HTML -> page-kit conversion contract scoped to source_html because it describes how producer/source HTML must be converted. Build Context and Assembly Report mirror this as adapter_decisions and should move pending values to completed/verified once wrapper stripping, frontmatter, asset moves, CTA/routes, commerce shell, and template dependency copying are settled."
         }
       }
     },
     "build_brief": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["schema_version", "mode", "status", "normalized_path"],
+      "required": ["schema_version", "mode", "status", "normalized_path", "question_count", "gate_count"],
       "properties": {
         "schema_version": { "const": "campaigns-os-build-brief/v1" },
         "mode": { "enum": ["prepared", "guided_draft"] },
@@ -236,6 +259,19 @@
         "question_count": { "type": "integer", "minimum": 0 },
         "gate_count": { "type": "integer", "minimum": 0 }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "needs_answers" } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "question_count": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      ],
       "description": "Durable Campaign Build Brief reference. CampaignSpec remains operational truth; this brief is merchandising/design presentation truth."
     },
     "assembly": {
