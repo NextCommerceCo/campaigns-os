@@ -32,9 +32,10 @@ function gitIgnoredPaths() {
   }
 }
 const gitIgnored = gitIgnoredPaths();
-// Always skipped, even outside a git checkout (a worktree .git is a file, not a
-// dir, so name-matching catches both).
-const baselineIgnoredDirs = new Set([".git", "node_modules"]);
+// Always skipped, even outside a git checkout / when git's ignore list is
+// unavailable (a worktree .git is a file, not a dir, so name-matching catches
+// both). Mirrors the original hardcoded set so the fallback never widens scope.
+const baselineIgnoredDirs = new Set([".git", "node_modules", ".campaign-runtime"]);
 const ignoredFiles = new Set(["package-lock.json", "check-private-strings.mjs"]);
 const forbidden = [
   /\/Users\//,
