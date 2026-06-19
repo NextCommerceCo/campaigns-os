@@ -98,6 +98,11 @@ permission gate; the explicit field prevents agents from re-litigating proof
 depth in chat. Doctor checks the full field set in both packet and report
 artifacts when present.
 
+Campaign Build Brief `qa_policy` is deliberately scoped as
+`documented_expectation` metadata. Use it to preserve business QA intent, but
+do not treat it as the enforced gate; doctor/QA enforcement reads the packet
+and report proof policy fields above.
+
 ## CampaignSpec Retrieval (`--map-id`)
 
 `campaigns-os start` / `campaigns-os prepare-build` accept the CampaignSpec via either of two routes:

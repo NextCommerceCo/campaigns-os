@@ -76,6 +76,11 @@ Assembly Reports mirror it at `report.proof_policy`. The important fields are
 Agents should update proof state in artifacts instead of renegotiating browser
 QA or typed-card depth in chat.
 
+Campaign Build Brief `qa_policy` is business expectation metadata, not a
+direct runner gate. Normalized briefs mark it as
+`documented_expectation`; the enforced proof contract remains
+`qa.proof_policy` and `report.proof_policy`.
+
 For SDK-owned runtime pages such as checkout, upsell, downsell, and receipt,
 the browser pass also opens a separate instrumented view with `?debugger=true`
 and verifies that the Campaign Cart debugger overlay and selector controls

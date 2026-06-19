@@ -124,6 +124,12 @@ const COLOR_WORDS = Object.freeze([
   "rose",
 ]);
 
+const QA_POLICY_ENFORCEMENT = Object.freeze({
+  status: "documented_expectation",
+  enforced_by: "qa.proof_policy and report.proof_policy",
+  note: "Build Brief qa_policy records business QA expectations; doctor and QA enforce the Build Packet qa.proof_policy and Assembly Report report.proof_policy contract.",
+});
+
 export function inferBuildBriefPath({ explicitPath = null, sourceRoot = null, targetRepo = null } = {}) {
   if (isNonEmptyString(explicitPath)) return { path: resolve(explicitPath), source: "operator_flag" };
   const roots = [...new Set([sourceRoot, targetRepo].filter(isNonEmptyString).map((path) => resolve(path)))];
@@ -588,6 +594,7 @@ function normalizeQaPolicy(policy = {}) {
   const value = objectOrEmpty(policy);
   return {
     ...value,
+    enforcement: cloneJson(QA_POLICY_ENFORCEMENT),
     require_desktop_mobile_screenshots: value.require_desktop_mobile_screenshots !== false,
     require_checkout_flow: value.require_checkout_flow !== false,
     require_post_purchase_flow: value.require_post_purchase_flow !== false,
