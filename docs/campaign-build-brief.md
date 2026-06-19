@@ -62,6 +62,12 @@ Doctor warns when generated guided drafts still need answers, a brief allows pay
 
 Existing template residue, theme, pricing, and built-output checks continue to run. The brief gives those checks business intent instead of replacing them.
 
+## QA Policy Scope
+
+`qa_policy` records business expectations for the proof pass, such as desktop/mobile screenshots, checkout flow coverage, post-purchase coverage, visible-placeholder handling, and runtime-data comparison. It is not the doctor/QA enforcement contract by itself.
+
+Normalized briefs include `qa_policy.enforcement.status: documented_expectation` so consumers do not mistake these fields for direct gates. Doctor and QA enforce the Build Packet `qa.proof_policy` and Assembly Report `report.proof_policy` contract, which names browser QA, typed-card depth, SDK origin allowlist state, order path depth, and operator approval state.
+
 ## Generic Scenarios
 
 Single-variant gadget:

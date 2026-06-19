@@ -231,6 +231,8 @@ test("policy nulls normalize back to safe defaults", () => {
     const result = createCampaignBuildBriefArtifact({ inputPath: briefPath });
 
     assert.equal(result.artifact.template_residue_policy.block_demo_payment_methods, true);
+    assert.equal(result.artifact.qa_policy.enforcement.status, "documented_expectation");
+    assert.equal(result.artifact.qa_policy.enforcement.enforced_by, "qa.proof_policy and report.proof_policy");
     assert.equal(result.artifact.qa_policy.require_checkout_flow, true);
   });
 });

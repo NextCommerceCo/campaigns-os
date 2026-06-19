@@ -95,6 +95,15 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
+        "enforcement": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "status": { "const": "documented_expectation" },
+            "enforced_by": { "type": "string" },
+            "note": { "type": "string" }
+          }
+        },
         "require_desktop_mobile_screenshots": { "type": "boolean" },
         "require_checkout_flow": { "type": "boolean" },
         "require_post_purchase_flow": { "type": "boolean" },
