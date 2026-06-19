@@ -299,6 +299,62 @@ Examples:
   npm run campaigns-os -- theme inspect --packet examples/build-packet.basic.json --json
 `;
 
+// Top-level commands the CLI dispatches. Kept in sync with the `command === "…"`
+// branches in dispatch(); used to offer a did-you-mean suggestion on a typo
+// instead of a bare "Unknown command".
+const KNOWN_COMMANDS = [
+  "help",
+  "start",
+  "prepare-build",
+  "build",
+  "doctor",
+  "validate-build-packet",
+  "theme",
+  "validate-assembly-report",
+  "install-agent-context",
+  "install-skills",
+  "tooling",
+  "next",
+  "qa",
+  "findings",
+  "run-record",
+  "telemetry",
+  "run",
+];
+
+// Levenshtein distance, capped use: only for a single short token at error
+// time, so the naive O(n*m) implementation is fine.
+function editDistance(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dist = Array.from({ length: rows }, () => new Array(cols).fill(0));
+  for (let i = 0; i < rows; i += 1) dist[i][0] = i;
+  for (let j = 0; j < cols; j += 1) dist[0][j] = j;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dist[i][j] = Math.min(dist[i - 1][j] + 1, dist[i][j - 1] + 1, dist[i - 1][j - 1] + cost);
+    }
+  }
+  return dist[rows - 1][cols - 1];
+}
+
+// Nearest known command within a small edit budget, or null when nothing is
+// close enough to be a confident suggestion.
+function closestCommand(input) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const candidate of KNOWN_COMMANDS) {
+    const distance = editDistance(input, candidate);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  const budget = input.length <= 4 ? 2 : 3;
+  return bestDistance <= budget ? best : null;
+}
+
 export async function main(argv) {
   const args = parseArgs(argv);
   const command = args._[0] || "help";
@@ -573,7 +629,11 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     return;
   }
 
-  throw new Error(`Unknown command: ${command}`);
+  const suggestion = closestCommand(command);
+  const didYouMean = suggestion ? ` Did you mean "${suggestion}"?` : "";
+  throw new Error(
+    `Unknown command: ${command}.${didYouMean} Run \`campaigns-os --help\` to see available commands.`,
+  );
 }
 
 function parseArgs(argv) {
@@ -748,7 +808,11 @@ async function resolveSpecPath(args, opts = {}) {
     writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
     return { specPath: cachePath, source: "remote", mapId, proxyBase };
   }
-  throw new Error("Either --spec <path> or --map-id <id> is required.");
+  throw new Error(
+    "Either --spec <path> or --map-id <id> is required. " +
+      "Pass a local CampaignSpec (--spec examples/campaignspec.v42.basic.json) " +
+      "or fetch one from Map Builder (--map-id <id> --target <page-kit-dir>).",
+  );
 }
 
 function sha256File(path) {

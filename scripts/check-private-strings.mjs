@@ -4,7 +4,19 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
-const ignoredDirs = new Set([".git", "node_modules", ".campaign-runtime"]);
+// Mirror the gitignored build/output dirs: scanning them produces false
+// positives (e.g. qa-output/ verdict JSON legitimately contains live
+// campaigns.apps.29next.com URLs) on files git never commits, so `npm run
+// check` would fail locally after a QA run while CI — which has no such
+// output in a fresh checkout — stays green.
+const ignoredDirs = new Set([
+  ".git",
+  "node_modules",
+  ".campaign-runtime",
+  "qa-output",
+  "coverage",
+  "dist",
+]);
 const ignoredFiles = new Set(["package-lock.json", "check-private-strings.mjs"]);
 const forbidden = [
   /\/Users\//,
