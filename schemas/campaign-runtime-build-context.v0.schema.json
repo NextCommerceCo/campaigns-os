@@ -68,6 +68,28 @@
         "questions": { "type": "array" },
         "gates": { "type": "array" }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "needs_answers" } },
+            "required": ["status"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "question_count": { "type": "integer", "minimum": 1 }
+                }
+              },
+              {
+                "properties": {
+                  "gate_count": { "type": "integer", "minimum": 1 }
+                }
+              }
+            ]
+          }
+        }
+      ],
       "description": "Campaign Build Brief handoff summary. The normalized full artifact lives at normalized_path."
     },
     "page_map": {
@@ -86,17 +108,50 @@
           "page_kit": {
             "type": ["object", "null"],
             "properties": {
-              "target_path": { "type": "string" },
+              "target_path": { "type": "string", "minLength": 1 },
               "output_path": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Page Kit target file path relative to the target repo."
               },
-              "public_route": { "type": "string" },
+              "public_route": { "type": "string", "minLength": 1 },
               "spec_route": { "type": "string" },
-              "page_type": { "enum": ["product", "checkout", "upsell", "receipt"] },
-              "permalink_required": { "type": "boolean" },
-              "frontmatter": { "type": "object" }
-            }
+              "page_type": {
+                "enum": ["product", "checkout", "upsell", "receipt"],
+                "description": "Page Kit runtime/analytics page_type. Producer or CampaignSpec page types may use richer vocabulary upstream."
+              },
+              "permalink_required": { "type": "boolean", "default": false },
+              "frontmatter": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["page_type"],
+                "properties": {
+                  "page_type": {
+                    "enum": ["product", "checkout", "upsell", "receipt"],
+                    "description": "Page Kit runtime/analytics page_type. This is authoritative for generated frontmatter and may differ from source or producer page types."
+                  },
+                  "permalink": { "type": "string", "minLength": 1 },
+                  "next_url": { "type": "string", "minLength": 1 },
+                  "decline_url": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "permalink_required": { "const": true } },
+                  "required": ["permalink_required"]
+                },
+                "then": {
+                  "required": ["frontmatter"],
+                  "properties": {
+                    "frontmatter": {
+                      "required": ["permalink"]
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
       }
