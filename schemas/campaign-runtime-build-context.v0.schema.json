@@ -75,9 +75,18 @@
             "required": ["status"]
           },
           "then": {
-            "properties": {
-              "question_count": { "type": "integer", "minimum": 1 }
-            }
+            "anyOf": [
+              {
+                "properties": {
+                  "question_count": { "type": "integer", "minimum": 1 }
+                }
+              },
+              {
+                "properties": {
+                  "gate_count": { "type": "integer", "minimum": 1 }
+                }
+              }
+            ]
           }
         }
       ],
@@ -112,8 +121,37 @@
                 "description": "Page Kit runtime/analytics page_type. Producer or CampaignSpec page types may use richer vocabulary upstream."
               },
               "permalink_required": { "type": "boolean", "default": false },
-              "frontmatter": { "type": "object" }
-            }
+              "frontmatter": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["page_type"],
+                "properties": {
+                  "page_type": {
+                    "enum": ["product", "checkout", "upsell", "receipt"],
+                    "description": "Page Kit runtime/analytics page_type. This is authoritative for generated frontmatter and may differ from source or producer page types."
+                  },
+                  "permalink": { "type": "string", "minLength": 1 },
+                  "next_url": { "type": "string", "minLength": 1 },
+                  "decline_url": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "permalink_required": { "const": true } },
+                  "required": ["permalink_required"]
+                },
+                "then": {
+                  "required": ["frontmatter"],
+                  "properties": {
+                    "frontmatter": {
+                      "required": ["permalink"]
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
       }

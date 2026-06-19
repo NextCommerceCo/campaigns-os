@@ -136,9 +136,18 @@
             "required": ["status"]
           },
           "then": {
-            "properties": {
-              "question_count": { "type": "integer", "minimum": 1 }
-            }
+            "anyOf": [
+              {
+                "properties": {
+                  "question_count": { "type": "integer", "minimum": 1 }
+                }
+              },
+              {
+                "properties": {
+                  "gate_count": { "type": "integer", "minimum": 1 }
+                }
+              }
+            ]
           }
         }
       ],
