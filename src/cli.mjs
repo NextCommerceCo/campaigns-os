@@ -299,28 +299,20 @@ Examples:
   npm run campaigns-os -- theme inspect --packet examples/build-packet.basic.json --json
 `;
 
-// Top-level commands the CLI dispatches. Kept in sync with the `command === "…"`
-// branches in dispatch(); used to offer a did-you-mean suggestion on a typo
-// instead of a bare "Unknown command".
-const KNOWN_COMMANDS = [
-  "help",
-  "start",
-  "prepare-build",
-  "build",
-  "doctor",
-  "validate-build-packet",
-  "theme",
-  "validate-assembly-report",
-  "install-agent-context",
-  "install-skills",
-  "tooling",
-  "next",
-  "qa",
-  "findings",
-  "run-record",
-  "telemetry",
-  "run",
-];
+// Top-level commands the CLI dispatches, used to offer a did-you-mean
+// suggestion on a typo instead of a bare "Unknown command". Derived from the
+// `command === "…"` literals in dispatch() itself (memoized on first use) so
+// the list cannot drift as dispatch branches are added or removed.
+let knownCommandsCache = null;
+function knownCommands() {
+  if (knownCommandsCache) return knownCommandsCache;
+  const found = new Set(["help"]);
+  for (const match of dispatch.toString().matchAll(/command === "([^"]+)"/g)) {
+    found.add(match[1]);
+  }
+  knownCommandsCache = [...found];
+  return knownCommandsCache;
+}
 
 // Levenshtein distance, capped use: only for a single short token at error
 // time, so the naive O(n*m) implementation is fine.
@@ -344,7 +336,7 @@ function editDistance(a, b) {
 function closestCommand(input) {
   let best = null;
   let bestDistance = Infinity;
-  for (const candidate of KNOWN_COMMANDS) {
+  for (const candidate of knownCommands()) {
     const distance = editDistance(input, candidate);
     if (distance < bestDistance) {
       best = candidate;
@@ -810,7 +802,7 @@ async function resolveSpecPath(args, opts = {}) {
   }
   throw new Error(
     "Either --spec <path> or --map-id <id> is required. " +
-      "Pass a local CampaignSpec (--spec examples/campaignspec.v42.basic.json) " +
+      "Pass a local CampaignSpec (--spec <path-to-campaignspec.json>) " +
       "or fetch one from Map Builder (--map-id <id> --target <page-kit-dir>).",
   );
 }

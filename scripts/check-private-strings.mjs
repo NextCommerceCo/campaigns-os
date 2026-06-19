@@ -1,22 +1,40 @@
 #!/usr/bin/env node
 
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
-// Mirror the gitignored build/output dirs: scanning them produces false
-// positives (e.g. qa-output/ verdict JSON legitimately contains live
-// campaigns.apps.29next.com URLs) on files git never commits, so `npm run
-// check` would fail locally after a QA run while CI — which has no such
-// output in a fresh checkout — stays green.
-const ignoredDirs = new Set([
-  ".git",
-  "node_modules",
-  ".campaign-runtime",
-  "qa-output",
-  "coverage",
-  "dist",
-]);
+
+// Skip whatever git already ignores, derived live so this scan stays in
+// lockstep with .gitignore instead of hand-mirroring it (which drifts: e.g.
+// qa-output/ verdict JSON legitimately contains live storefront URLs, so a
+// stale mirror would fail `npm run check` locally after a QA run while CI —
+// fresh checkout, no output — stays green). `--directory` collapses fully
+// ignored dirs to a single entry so we never descend into them.
+function gitIgnoredPaths() {
+  try {
+    const out = execFileSync(
+      "git",
+      ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
+      { cwd: root, encoding: "utf8" },
+    );
+    return new Set(
+      out
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => line.replace(/\/+$/, "")),
+    );
+  } catch {
+    // Not a git checkout (e.g. an unpacked npm tarball) — rely on the baseline.
+    return new Set();
+  }
+}
+const gitIgnored = gitIgnoredPaths();
+// Always skipped, even outside a git checkout (a worktree .git is a file, not a
+// dir, so name-matching catches both).
+const baselineIgnoredDirs = new Set([".git", "node_modules"]);
 const ignoredFiles = new Set(["package-lock.json", "check-private-strings.mjs"]);
 const forbidden = [
   /\/Users\//,
@@ -35,12 +53,18 @@ const hits = [];
 
 function walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (ignoredDirs.has(entry.name)) continue; // skip by name (worktree .git is a file, not a dir)
+    if (baselineIgnoredDirs.has(entry.name)) continue; // skip by name (a worktree .git is a file, not a dir)
     const fullPath = join(dir, entry.name);
     const rel = relative(root, fullPath);
     if (entry.isDirectory()) {
+      if (gitIgnored.has(rel)) continue;
       walk(fullPath);
-    } else if (entry.isFile() && !ignoredFiles.has(entry.name) && statSync(fullPath).size < 2_000_000) {
+    } else if (
+      entry.isFile() &&
+      !ignoredFiles.has(entry.name) &&
+      !gitIgnored.has(rel) &&
+      statSync(fullPath).size < 2_000_000
+    ) {
       const text = readFileSync(fullPath, "utf8");
       for (const pattern of forbidden) {
         if (pattern.test(text)) hits.push(`${rel}: ${pattern}`);
