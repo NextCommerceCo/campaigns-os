@@ -299,6 +299,64 @@ Examples:
   npm run campaigns-os -- theme inspect --packet examples/build-packet.basic.json --json
 `;
 
+// Top-level commands the CLI dispatches, used to offer a did-you-mean
+// suggestion on a typo instead of a bare "Unknown command". Derived from the
+// `command === "…"` literals in dispatch() itself (memoized on first use) so
+// the list cannot drift as dispatch branches are added or removed. The regex
+// tolerates whitespace and either quote style so common reformats don't
+// silently empty the list; a known-commands test guards against a refactor
+// (switch table, extracted constant) that the regex can't follow.
+let knownCommandsCache = null;
+export function knownCommands() {
+  if (knownCommandsCache) return knownCommandsCache;
+  const found = new Set(["help"]);
+  for (const match of dispatch.toString().matchAll(/command\s*===\s*["']([^"']+)["']/g)) {
+    found.add(match[1]);
+  }
+  knownCommandsCache = [...found];
+  return knownCommandsCache;
+}
+
+// Levenshtein distance, capped use: only for a single short token at error
+// time, so the naive O(n*m) implementation is fine.
+function editDistance(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dist = Array.from({ length: rows }, () => new Array(cols).fill(0));
+  for (let i = 0; i < rows; i += 1) dist[i][0] = i;
+  for (let j = 0; j < cols; j += 1) dist[0][j] = j;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dist[i][j] = Math.min(dist[i - 1][j] + 1, dist[i][j - 1] + 1, dist[i - 1][j - 1] + cost);
+    }
+  }
+  return dist[rows - 1][cols - 1];
+}
+
+// Nearest known command within a small edit budget, or null when nothing is
+// close enough to be a confident suggestion.
+function closestCommand(input) {
+  // Case-insensitive: commands are all lowercase, so `Doctor` should still
+  // match `doctor` by intent, not by accident.
+  const needle = input.toLowerCase();
+  let best = null;
+  let bestDistance = Infinity;
+  for (const candidate of knownCommands()) {
+    const distance = editDistance(needle, candidate.toLowerCase());
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  // Tighter budget for shorter inputs: a 2-char budget on a 2-char typo would
+  // confidently mis-suggest (e.g. `dr` -> `qa`, distance 2). Scale the allowed
+  // edits with length so suggestions stay high-confidence.
+  const len = needle.length;
+  const budget = len <= 3 ? 1 : len <= 6 ? 2 : 3;
+  return bestDistance <= budget ? best : null;
+}
+
 export async function main(argv) {
   const args = parseArgs(argv);
   const command = args._[0] || "help";
@@ -573,7 +631,11 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     return;
   }
 
-  throw new Error(`Unknown command: ${command}`);
+  const suggestion = closestCommand(command);
+  const didYouMean = suggestion ? ` Did you mean "${suggestion}"?` : "";
+  throw new Error(
+    `Unknown command: ${command}.${didYouMean} Run \`campaigns-os --help\` to see available commands.`,
+  );
 }
 
 function parseArgs(argv) {
@@ -748,7 +810,11 @@ async function resolveSpecPath(args, opts = {}) {
     writeFileSync(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
     return { specPath: cachePath, source: "remote", mapId, proxyBase };
   }
-  throw new Error("Either --spec <path> or --map-id <id> is required.");
+  throw new Error(
+    "Either --spec <path> or --map-id <id> is required. " +
+      "Pass a local CampaignSpec (--spec <path-to-campaignspec.json>) " +
+      "or fetch one from Map Builder (--map-id <id> --target <page-kit-dir>).",
+  );
 }
 
 function sha256File(path) {
