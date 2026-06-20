@@ -26,8 +26,21 @@ function gitIgnoredPaths() {
         .filter(Boolean)
         .map((line) => line.replace(/\/+$/, "")),
     );
-  } catch {
-    // Not a git checkout (e.g. an unpacked npm tarball) — rely on the baseline.
+  } catch (error) {
+    // A genuine non-checkout is expected and silent: no git binary (ENOENT) or
+    // "not a git repository" (e.g. an unpacked npm tarball) — fall back to the
+    // baseline. ANY other failure (broken/old git, killed child, permission
+    // error) would also narrow scope, but invisibly, re-introducing the
+    // false positives this derivation prevents — so leave a breadcrumb on
+    // stderr instead of swallowing it.
+    const expectedNonCheckout =
+      error?.code === "ENOENT" || /not a git repository/i.test(error?.stderr ?? "");
+    if (!expectedNonCheckout) {
+      console.error(
+        `check-private-strings: could not read git-ignored paths (${error?.message ?? error}); ` +
+          "scanning all non-baseline files.",
+      );
+    }
     return new Set();
   }
 }

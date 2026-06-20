@@ -30,6 +30,9 @@ main(process.argv.slice(2)).catch((error) => {
     console.error(`campaigns-os: ${buildMessage(where)}`);
     process.exit(1);
   }
-  console.error(`campaigns-os: ${error.message}`);
+  // main() normally rejects with an Error, but guard against a non-Error throw
+  // (a string, number, or Promise.reject("boom")) so the user never sees
+  // `campaigns-os: undefined`.
+  console.error(`campaigns-os: ${String(error?.message ?? error)}`);
   process.exit(1);
 });
