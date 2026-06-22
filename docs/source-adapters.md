@@ -22,6 +22,15 @@ Input:
 - Page Kit target projection in `source_html.pages[].page_kit` after
   `prepare-build`
 
+When no source-html manifest exists, `prepare-build` may infer page mappings
+from filenames. If more than one HTML file can satisfy the same active
+CampaignSpec page, Campaigns OS blocks `prepare_build`, records
+`context.source.ambiguous_candidates`, and drafts
+`context.source.manifest_draft`. Copy that draft to
+`.campaigns-os/source-html-manifest.json`, choose the intended candidate path for
+each ambiguous page, and rerun `start`/`prepare-build`. The fallback matcher
+should not silently choose among ambiguous source or asset-mirror pages.
+
 The `.html` files should be prepared for page-kit ingestion. This does not mean
 "rewrite everything into Liquid." Page Kit source files are HTML files with
 optional YAML frontmatter and optional Liquid filters/includes. Liquid is only

@@ -1141,7 +1141,13 @@ function prepareBuild(args, options = {}) {
       blocking: question.blocking,
     },
   }));
-  const sourceBlockers = matched.prompts.map((prompt) => ({ code: prompt.code, stage: prompt.stage, message: prompt.message }));
+  const sourceBlockers = matched.prompts.map((prompt) => ({
+    code: prompt.code,
+    stage: prompt.stage,
+    message: prompt.message,
+    ...(prompt.page_id ? { page_id: prompt.page_id } : {}),
+    ...(prompt.detail ? { detail: prompt.detail } : {}),
+  }));
   const briefBlockers = buildBrief.blockers.map((gate) => ({
     code: gate.code,
     stage: "prepare_build",
@@ -1260,6 +1266,8 @@ function prepareBuild(args, options = {}) {
           }
         : null,
       manifest_warnings: manifestWarnings,
+      ambiguous_candidates: sourceIntake.ambiguousCandidates,
+      manifest_draft: sourceIntake.manifestDraft,
       asset_crawl: sourceAssetCrawl,
     },
     build_brief: {
@@ -1315,6 +1323,7 @@ function prepareBuild(args, options = {}) {
     writeReport: true,
     writeCss: shouldWriteThemeCss,
     force: args.force === true,
+    packetPath,
   });
   context.theme = {
     ...themeInspection.context_theme,
@@ -1473,6 +1482,14 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
     evidence: [],
     blockers,
     warnings: [
+      ...(context.source?.ambiguous_candidates?.length
+        ? [{
+            code: "AMBIGUOUS_SOURCE_HTML_CANDIDATES",
+            stage: "prepare_build",
+            message: "Source HTML filename fallback found ambiguous candidates. Write .campaigns-os/source-html-manifest.json from context.source.manifest_draft, choosing the intended candidate paths before build.",
+            candidates: context.source.ambiguous_candidates,
+          }]
+        : []),
       ...(context.commerce_zone_findings.length
         ? [{ code: "SOURCE_COMMERCE_REVIEW", stage: "assembly", message: "Source HTML contains possible commerce zones. Preserve catalog-owned runtime surfaces." }]
         : []),
@@ -1671,6 +1688,7 @@ function themeCommand(args) {
     writeReport: true,
     writeCss: true,
     force: args.force === true,
+    packetPath,
   });
   return { ...written, css: undefined };
 }
@@ -2276,7 +2294,15 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready) {
     addIssue(
       errors,
       "spec.store_profile",
-      `CampaignSpec campaign is missing required Store Profile field for page-kit campaigns.json: ${missing.join(", ")}.`
+      `CampaignSpec campaign is missing required Store Profile field for page-kit campaigns.json: ${missing.join(", ")}. Add ${missing.map((field) => `campaign.${field}`).join(", ")} to the CampaignSpec Store Profile, then rerun start/prepare-build. Campaigns OS does not infer or silently mutate these storefront/legal values.`,
+      {
+        missing_fields: missing.map((field) => `campaign.${field}`),
+        repair: {
+          owner: "operator",
+          action: "Update the CampaignSpec Store Profile export with merchant storefront metadata, then rerun campaigns-os start/prepare-build.",
+          example_patch: Object.fromEntries(missing.map((field) => [field, field === "store_url" ? "https://<merchant-store-domain>" : "<merchant value>"])),
+        },
+      }
     );
     return;
   }

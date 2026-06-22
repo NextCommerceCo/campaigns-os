@@ -59,7 +59,11 @@ test("R2-B5: absent available_payment_methods does not warn (unknown != empty)",
 
 test("R2-B5: a missing store_url is still a hard error (existing behavior)", () => {
   const { errors } = run({ available_payment_methods: ["card"] });
-  assert.ok(codes(errors).includes("spec.store_profile"));
+  const error = errors.find((issue) => issue.code === "spec.store_profile");
+  assert.ok(error);
+  assert.ok(error.message.includes("campaign.store_url"));
+  assert.deepEqual(error.detail.missing_fields, ["campaign.store_url"]);
+  assert.equal(error.detail.repair.owner, "operator");
 });
 
 test("localhost URLs are globally allowed Development origins for SDK QA", () => {

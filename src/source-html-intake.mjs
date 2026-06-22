@@ -45,6 +45,8 @@ export function createSourceHtmlIntake({
     mappings,
     prompts: [...matched.prompts, ...targetPrompts],
     decisions: [...matched.decisions, ...projectionDecisions],
+    ambiguousCandidates: matched.ambiguousCandidates || [],
+    manifestDraft: matched.manifestDraft || null,
   };
 }
 
@@ -211,6 +213,7 @@ function matchSourcePages(specPages, htmlFiles) {
   const mappings = [];
   const prompts = [];
   const decisions = [];
+  const ambiguousCandidates = [];
   const counts = new Map();
   const ordinals = new Map();
 
@@ -223,10 +226,38 @@ function matchSourcePages(specPages, htmlFiles) {
 
   for (const page of specPages) {
     const keys = pageMatchKeys(page, ordinals.get(page.id));
-    const candidates = htmlFiles.filter((file) => keys.includes(slugify(file.basename)));
+    const candidates = htmlFiles
+      .map((file) => ({
+        ...file,
+        matched_keys: keys.filter((key) => key && key === slugify(file.basename)),
+      }))
+      .filter((file) => file.matched_keys.length > 0);
     const unused = candidates.filter((file) => !used.has(file.path));
-    const match = unused[0] || candidates[0] || null;
-    if (match) {
+    const match = unused.length === 1 ? unused[0] : null;
+    if (unused.length > 1) {
+      const candidateEntries = candidateEntriesForPrompt(unused);
+      ambiguousCandidates.push({
+        page_id: page.id,
+        page_type: page.type || null,
+        match_keys: keys,
+        candidates: candidateEntries,
+      });
+      mappings.push({
+        page_id: page.id,
+        skip_reason: `Ambiguous source HTML candidates found: ${candidateEntries.map((candidate) => candidate.path).join(", ")}. Add .campaigns-os/source-html-manifest.json to bind this page explicitly before build.`,
+      });
+      prompts.push({
+        code: "AMBIGUOUS_SOURCE_PAGE",
+        stage: "prepare_build",
+        message: `Active CampaignSpec page "${page.id}" has multiple matching HTML files. Add a source-html manifest entry for this page before build.`,
+        page_id: page.id,
+        detail: {
+          match_keys: keys,
+          candidates: candidateEntries,
+          manifest_entry: manifestEntryDraft(page, candidateEntries[0]?.path || ""),
+        },
+      });
+    } else if (match) {
       used.add(match.path);
       const mapping = { page_id: page.id, path: match.path };
       addSpecHints(mapping, page);
@@ -249,11 +280,57 @@ function matchSourcePages(specPages, htmlFiles) {
         stage: "prepare_build",
         message: `Active CampaignSpec page "${page.id}" has no matching HTML file.`,
         page_id: page.id,
+        detail: {
+          match_keys: keys,
+          manifest_entry: manifestEntryDraft(page, ""),
+        },
       });
     }
   }
 
-  return { mappings, prompts, decisions };
+  return {
+    mappings,
+    prompts,
+    decisions,
+    ambiguousCandidates,
+    manifestDraft: ambiguousCandidates.length > 0
+      ? createManifestDraft(specPages, mappings, ambiguousCandidates)
+      : null,
+  };
+}
+
+function candidateEntriesForPrompt(candidates) {
+  return candidates.map((candidate) => ({
+    path: candidate.path,
+    bytes: candidate.bytes ?? null,
+    sha256: candidate.sha256 || null,
+    matched_keys: candidate.matched_keys || [],
+  }));
+}
+
+function manifestEntryDraft(page, path) {
+  const entry = {
+    page_id: page.id,
+    path,
+  };
+  if (isNonEmptyString(page.type)) entry.page_type = page.type;
+  const pageUrl = optionalString(page.page_url) || optionalString(page.url);
+  if (pageUrl) entry.page_url = pageUrl;
+  return entry;
+}
+
+function createManifestDraft(specPages, mappings, ambiguousCandidates) {
+  const mappingByPageId = new Map(mappings.map((mapping) => [mapping.page_id, mapping]));
+  const ambiguousByPageId = new Map(ambiguousCandidates.map((entry) => [entry.page_id, entry]));
+  return {
+    schema_version: "source-html-manifest/v0",
+    generator: "campaigns-os@prepare-build-draft",
+    pages: specPages.map((page) => {
+      const mapping = mappingByPageId.get(page.id);
+      const ambiguous = ambiguousByPageId.get(page.id);
+      return manifestEntryDraft(page, mapping?.path || ambiguous?.candidates?.[0]?.path || "");
+    }),
+  };
 }
 
 function addSpecHints(mapping, page) {

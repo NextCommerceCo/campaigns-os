@@ -229,3 +229,48 @@ test("select spec pages project to checkout Page Kit page_type", () => {
   assert.equal(result.mappings[0].page_kit.page_type, "checkout");
   assert.equal(result.mappings[0].page_kit.frontmatter.page_type, "checkout");
 });
+
+test("prepare-build blocks ambiguous filesystem source matches and drafts a manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-source-ambiguous-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(targetRepo, { recursive: true });
+    writeJson(resolve(targetRepo, "package.json"), { dependencies: { "next-campaign-page-kit": "fixture" } });
+    writeFileSync(resolve(sourceRoot, "landing.html"), "<main>primary landing</main>");
+    mkdirSync(resolve(sourceRoot, "mirror"), { recursive: true });
+    writeFileSync(resolve(sourceRoot, "mirror", "landing.html"), "<main>asset mirror landing</main>");
+    for (const page of ["checkout", "upsell", "receipt"]) {
+      writeFileSync(resolve(sourceRoot, `${page}.html`), `<main>${page}</main>`);
+    }
+
+    const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, spec);
+
+    const result = runCliJson([
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+
+    assert.equal(result.context.status, "blocked");
+    assert.equal(result.context.prompts_required.some((prompt) => prompt.code === "AMBIGUOUS_SOURCE_PAGE"), true);
+    assert.equal(result.context.source.ambiguous_candidates.length, 1);
+    assert.deepEqual(
+      result.context.source.ambiguous_candidates[0].candidates.map((candidate) => candidate.path).sort(),
+      ["landing.html", "mirror/landing.html"]
+    );
+    assert.equal(result.context.source.manifest_draft.schema_version, "source-html-manifest/v0");
+    assert.equal(result.report.blockers.some((blocker) => blocker.code === "AMBIGUOUS_SOURCE_PAGE" && blocker.detail?.candidates?.length === 2), true);
+    assert.equal(result.report.warnings.some((warning) => warning.code === "AMBIGUOUS_SOURCE_HTML_CANDIDATES"), true);
+    const landing = result.packet.source_html.pages.find((page) => page.page_id === "landing");
+    assert.match(landing.skip_reason, /Ambiguous source HTML candidates/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
