@@ -150,6 +150,33 @@ test("polish gate accepts explicit waiver for source package changed after assem
   assert.equal(gate.current_source_package_material_fingerprint, SOURCE_PACKAGE_FINGERPRINT);
 });
 
+test("polish gate rejects source freshness waiver without attribution or review bounds", () => {
+  const report = baseReport(validPolish({
+    source_package_material_fingerprint: SOURCE_PACKAGE_FINGERPRINT,
+  }), {
+    design_source_package: { material_fingerprint: SOURCE_PACKAGE_FINGERPRINT },
+    waivers: [
+      {
+        scope: "assembly_source_package_freshness",
+        reason: "Operator confirmed the source change does not require rebuilding this run.",
+        applies_to: ["stages.assembly.source_package_material_fingerprint"],
+      },
+    ],
+    stages: {
+      assembly: {
+        stage: "assembly",
+        status: "completed",
+        build_fingerprint: FINGERPRINT,
+        source_package_material_fingerprint: "sha256:old-source-package",
+      },
+    },
+  });
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.assembly_source_package_stale");
+  assert.equal(gate.waiver, undefined);
+});
+
 test("polish gate blocks missing source package fingerprint when current source package exists", () => {
   const report = sourceAwareReport(validPolish());
   const gate = evaluatePolishGate({ report });

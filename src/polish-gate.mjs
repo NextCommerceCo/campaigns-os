@@ -86,7 +86,10 @@ export function assemblySourcePackageFreshnessWaiver(report) {
       "polish.assembly_source_package_fingerprint_missing",
       "polish.assembly_source_package_stale",
     ].includes(entry));
-    if (scopeMatches || appliesToMatches) return waiver;
+    const attributed = Boolean(normalizeString(waiver.waived_by) || normalizeString(waiver.owner));
+    const timestamped = Boolean(normalizeString(waiver.waived_at) || normalizeString(waiver.created_at));
+    const bounded = Boolean(normalizeString(waiver.expires_at) || normalizeString(waiver.review_condition));
+    if ((scopeMatches || appliesToMatches) && attributed && timestamped && bounded) return waiver;
   }
   return null;
 }

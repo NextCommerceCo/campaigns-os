@@ -483,6 +483,44 @@ function polishGateSummary(gate) {
   };
 }
 
+function polishBlockedAssertions(polishGate, themeGate) {
+  const skippedByGate = (family, id) => assertion({
+    id,
+    family,
+    page: { page_id: "campaign" },
+    status: STATUS.SKIPPED,
+    expected: `${family} checks executed`,
+    actual: "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+    evidence: { blocked_by: polishGate.code },
+  });
+  return [
+    polishGateAssertion(polishGate),
+    themeGateAssertion(themeGate),
+    ...GATE_SUPPRESSED_FAMILIES
+      .filter((family) => family !== "polish_gate")
+      .map((family) => skippedByGate(family, `${family}.blocked_by_polish_gate`)),
+  ];
+}
+
+function themeBlockedAssertions(themeGate, polishGate) {
+  const skippedByGate = (family, id) => assertion({
+    id,
+    family,
+    page: { page_id: "campaign" },
+    status: STATUS.SKIPPED,
+    expected: `${family} checks executed`,
+    actual: "Skipped: theme gate is blocked; no browser or test-order checks ran.",
+    evidence: { blocked_by: themeGate.code },
+  });
+  return [
+    polishGateAssertion(polishGate),
+    themeGateAssertion(themeGate),
+    ...GATE_SUPPRESSED_FAMILIES
+      .filter((family) => family !== "polish_gate")
+      .map((family) => skippedByGate(family, `${family}.blocked_by_gate`)),
+  ];
+}
+
 function serializeThrownValue(error) {
   const diagnostic = { message: String(error) };
   if (error && typeof error === "object") {
@@ -565,27 +603,12 @@ async function runQa(args) {
   const gate = resolved.themeGate;
   const polishGate = resolved.polishGate;
   if (polishGate.status === "blocked") {
-    const skippedByGate = (family, id) => assertion({
-      id,
-      family,
-      page: { page_id: "campaign" },
-      status: STATUS.SKIPPED,
-      expected: `${family} checks executed`,
-      actual: "Skipped: polish gate is blocked; no browser or test-order checks ran.",
-      evidence: { blocked_by: polishGate.code },
-    });
     return finalizeQaRun({
       args,
       resolved,
       runId,
       startedAt,
-      assertions: [
-        polishGateAssertion(polishGate),
-        themeGateAssertion(gate),
-        ...GATE_SUPPRESSED_FAMILIES
-          .filter((family) => family !== "polish_gate")
-          .map((family) => skippedByGate(family, `${family}.blocked_by_polish_gate`)),
-      ],
+      assertions: polishBlockedAssertions(polishGate, gate),
       testOrders: [],
     });
   }
@@ -593,24 +616,12 @@ async function runQa(args) {
   // blocker plus skipped audit assertions for every suppressed check family,
   // so the verdict shape stays stable for consumers (exit code 4).
   if (gate.status === "blocked") {
-    const skippedByGate = (family, id) => assertion({
-      id,
-      family,
-      page: { page_id: "campaign" },
-      status: STATUS.SKIPPED,
-      expected: `${family} checks executed`,
-      actual: "Skipped: theme gate is blocked; no browser or test-order checks ran.",
-      evidence: { blocked_by: gate.code },
-    });
     return finalizeQaRun({
       args,
       resolved,
       runId,
       startedAt,
-      assertions: [
-        themeGateAssertion(gate),
-        ...GATE_SUPPRESSED_FAMILIES.map((family) => skippedByGate(family, `${family}.blocked_by_gate`)),
-      ],
+      assertions: themeBlockedAssertions(gate, polishGate),
       testOrders: [],
     });
   }
@@ -1454,6 +1465,9 @@ function extractApiError(raw) {
 }
 
 export const __qaNodeTestHooks = Object.freeze({
+  polishBlockedAssertions,
+  polishGateAssertion,
+  themeBlockedAssertions,
   themeGateAssertion,
   themeGateScopeFromTopologies,
   residueSeverityForThemeGate,
