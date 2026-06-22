@@ -4232,7 +4232,6 @@ function validateAssemblyProofPolicy(policy, warnings, ready) {
  * STAGE_TERMINAL_STATUSES to make the prefix-matching contract explicit.
  */
 const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped"]);
-const STAGE_BLOCKED_STATUSES = Object.freeze(new Set(["blocked"]));
 const POLISH_GATE_BUILD_RERUN_CODES = Object.freeze(new Set([
   "polish.assembly_source_package_fingerprint_missing",
   "polish.assembly_source_package_stale",
@@ -4241,6 +4240,10 @@ const POLISH_GATE_BUILD_RERUN_CODES = Object.freeze(new Set([
 function stageIsTerminal(status) {
   const normalized = String(status || "");
   return STAGE_TERMINAL_STATUS_PREFIXES.some((t) => normalized.startsWith(t));
+}
+
+function stageIsBlocked(status) {
+  return String(status || "") === "blocked";
 }
 
 function polishGateRequiresBuild(polishGate) {
@@ -4282,8 +4285,8 @@ function prepareBuildGateIssue(report) {
   return {
     stage,
     status,
-    blocked: STAGE_BLOCKED_STATUSES.has(status),
-    reason: STAGE_BLOCKED_STATUSES.has(status)
+    blocked: stageIsBlocked(status),
+    reason: stageIsBlocked(status)
       ? `Stage "prepare_build" is blocked (status="${status}"); resolve prepare-build blockers before continuing.`
       : `Stage "prepare_build" has status "${status || "(unset)"}"; rerun prepare-build before continuing.`,
   };
@@ -4327,8 +4330,8 @@ function addPrepareBuildGateErrors(errors, report) {
  *      prepare-build/start before continuing.
  *   3. `{ stage: "<setup|build|polish|deploy|qa>", reason, blocked? }`
  *      — next stage to run. `blocked: true` is present and `true` when
- *      the returned stage's recorded status in the report is "blocked"
- *      (per STAGE_BLOCKED_STATUSES). The picker still returns the stage
+   *      the returned stage's recorded status in the report is "blocked".
+   *      The picker still returns the stage
  *      (rather than treating it as done) so the orchestrator surfaces
  *      the blocker rather than silently skipping past it. When
  *      `blocked` is absent or `false`, the stage is in its normal
@@ -4398,7 +4401,7 @@ function pickNextStage(report, doctor) {
       };
     }
     const status = String(stage.status || "");
-    if (STAGE_BLOCKED_STATUSES.has(status)) {
+    if (stageIsBlocked(status)) {
       return {
         stage: cliStage,
         reason: `Stage "${reportKey}" is blocked (status="${status}"); unblock before continuing.`,
@@ -4825,7 +4828,6 @@ For multi-market campaigns, verify at least one non-default currency/country pat
 function buildNextStep(errors, warnings, derived, report = null) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const assemblyStatus = report?.stages?.assembly?.status || "";
-  const polishStatus = report?.stages?.polish?.status || "";
   const deployStatus = report?.stages?.deploy?.status || "";
   const qaStatus = report?.stages?.qa?.status || "";
   const assemblyComplete = assemblyStatus.startsWith("completed");
