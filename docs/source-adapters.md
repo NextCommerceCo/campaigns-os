@@ -6,6 +6,11 @@ The adapter is deliberately explicit so the Build Packet, doctor, build, polish,
 
 > **Where does the source HTML come from?** That's the entry-point question, covered in a separate doc: [docs/entry-points.md](./entry-points.md) names the five recognized shapes (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and explains how each populates the inputs this adapter consumes.
 
+Source adapter inputs are compatibility contracts, not the final design-source
+contract. `prepare-build` may translate them into Design Source Contributions in
+the public Design Source Package while keeping the existing source-html manifest
+available for current producers.
+
 ## `html_funnel`
 
 Input:

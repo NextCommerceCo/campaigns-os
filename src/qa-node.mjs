@@ -7,6 +7,7 @@ import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { loadTemplateBrandContract } from "./template-brand-contract.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
+import { evaluatePolishGate } from "./polish-gate.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
@@ -140,9 +141,11 @@ async function resolveQaInputs(args) {
   const commerceStructureContract = loadCommerceStructureContract({ packet, packetPath, templateFamily });
   const topologies = extractTopologies(normalized, { baseUrl, publicRouteSlug, templateFamily, commerceStructureContract });
   const themeGate = resolveThemeGate({ packetPath, topologies, waive: stringArg(args["theme-waive"]) });
+  const polishGate = resolvePolishGate({ packetPath });
   const brandContract = loadBrandContract(templateFamily);
   return {
     themeGate,
+    polishGate,
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath,
@@ -188,6 +191,7 @@ export function resolveQaInputsFromSite(args) {
   const topologies = topologiesFromBuiltSiteScope(scope, baseUrl);
   const mapId = stringArg(args["map-id"]) || scope.slug || "local-site";
   const themeGate = resolveThemeGate({ packetPath: null, topologies, waive: stringArg(args["theme-waive"]) });
+  const polishGate = { status: "not_applicable", code: "polish.not_applicable", reason: "Non-packet built-site QA has no Assembly Report polish gate." };
   // Include family + target_repo so two built sites with the same slug/route
   // structure but different families or locations do not hash identically
   // (run-identity dedupe / idempotent remit must tell them apart).
@@ -199,6 +203,7 @@ export function resolveQaInputsFromSite(args) {
   });
   return {
     themeGate,
+    polishGate,
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath: null,
@@ -280,6 +285,13 @@ function loadRuntimeArtifact(packetPath, name) {
   }
 }
 
+function resolvePolishGate({ packetPath }) {
+  const report = loadRuntimeArtifact(packetPath, "assembly-report.json");
+  const gate = evaluatePolishGate({ report, required: true });
+  gate.scope_source = report ? "assembly_report" : "missing_assembly_report";
+  return gate;
+}
+
 const THEME_GATE_COMMERCE_TYPES = new Set(["checkout", "upsell", "downsell", "receipt", "thankyou"]);
 
 function themeGateScopeFromTopologies(topologies = []) {
@@ -345,6 +357,48 @@ function themeGateAssertion(gate) {
     expected: "theme gate pass or not applicable",
     actual: gate.reason,
     evidence: { code: gate.code, commerce_pages: gate.commerce_pages, scope_source: gate.scope_source || null },
+  });
+}
+
+function polishGateAssertion(gate) {
+  const page = { page_id: "campaign" };
+  if (gate.status === "blocked") {
+    return assertion({
+      id: gate.code,
+      family: "polish_gate",
+      page,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "current structured Polish evidence produced by next-campaigns-polish",
+      actual: gate.reason,
+      evidence: {
+        reason: gate.reason,
+        build_fingerprint: gate.build_fingerprint || null,
+        source_build_fingerprint: gate.source_build_fingerprint || null,
+        performed_by: gate.performed_by || null,
+        problems: gate.problems || [],
+        required_actions: gate.required_actions || [],
+        scope_source: gate.scope_source || null,
+      },
+    });
+  }
+  return assertion({
+    id: gate.code,
+    family: "polish_gate",
+    page,
+    status: STATUS.PASS,
+    expected: "current structured Polish evidence produced by next-campaigns-polish, with any source-freshness exception explicitly waived",
+    actual: gate.reason,
+    evidence: {
+      build_fingerprint: gate.build_fingerprint || null,
+      source_build_fingerprint: gate.source_build_fingerprint || null,
+      source_package_material_fingerprint: gate.source_package_material_fingerprint || null,
+      current_source_package_material_fingerprint: gate.current_source_package_material_fingerprint || null,
+      assembly_source_package_material_fingerprint: gate.assembly_source_package_material_fingerprint || null,
+      performed_by: gate.performed_by || null,
+      waiver: gate.waiver || null,
+      scope_source: gate.scope_source || null,
+    },
   });
 }
 
@@ -419,6 +473,16 @@ function themeGateSummary(gate) {
   };
 }
 
+function polishGateSummary(gate) {
+  return {
+    status: gate.status,
+    code: gate.code,
+    reason: gate.reason,
+    ...(gate.waiver ? { waiver: gate.waiver } : {}),
+    ...(gate.required_actions?.length ? { required_actions: gate.required_actions } : {}),
+  };
+}
+
 function serializeThrownValue(error) {
   const diagnostic = { message: String(error) };
   if (error && typeof error === "object") {
@@ -446,6 +510,7 @@ function resolvePayload(resolved) {
       ref_id: resolved.spec.campaign?.ref_id || null,
     },
     theme_gate: themeGateSummary(resolved.themeGate),
+    polish_gate: polishGateSummary(resolved.polishGate),
     funnels: resolved.topologies,
   };
 }
@@ -483,6 +548,7 @@ function updateQaPolicy(args) {
 // `family:` literals from qa-node.mjs + qa-browser.mjs and asserts set
 // equality — adding an emitter without updating this list fails CI.
 export const GATE_SUPPRESSED_FAMILIES = Object.freeze([
+  "polish_gate",
   "funnel-flow",
   "meta-tags",
   "api-metadata",
@@ -497,6 +563,32 @@ async function runQa(args) {
   const startedAt = new Date().toISOString();
   const runId = generateRunId();
   const gate = resolved.themeGate;
+  const polishGate = resolved.polishGate;
+  if (polishGate.status === "blocked") {
+    const skippedByGate = (family, id) => assertion({
+      id,
+      family,
+      page: { page_id: "campaign" },
+      status: STATUS.SKIPPED,
+      expected: `${family} checks executed`,
+      actual: "Skipped: polish gate is blocked; no browser or test-order checks ran.",
+      evidence: { blocked_by: polishGate.code },
+    });
+    return finalizeQaRun({
+      args,
+      resolved,
+      runId,
+      startedAt,
+      assertions: [
+        polishGateAssertion(polishGate),
+        themeGateAssertion(gate),
+        ...GATE_SUPPRESSED_FAMILIES
+          .filter((family) => family !== "polish_gate")
+          .map((family) => skippedByGate(family, `${family}.blocked_by_polish_gate`)),
+      ],
+      testOrders: [],
+    });
+  }
   // Blocked theme gate refuses the whole run: the verdict carries the gate
   // blocker plus skipped audit assertions for every suppressed check family,
   // so the verdict shape stays stable for consumers (exit code 4).
@@ -523,7 +615,7 @@ async function runQa(args) {
     });
   }
 
-  const assertions = [themeGateAssertion(gate)];
+  const assertions = [polishGateAssertion(polishGate), themeGateAssertion(gate)];
   const contractAssertion = templateBrandContractAssertion(resolved);
   if (contractAssertion) assertions.push(contractAssertion);
   for (const topology of resolved.topologies) {
@@ -591,6 +683,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     publish_skipped: !shouldPublish,
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),
+    polish_gate: polishGateSummary(resolved.polishGate),
     verdict,
   };
 }

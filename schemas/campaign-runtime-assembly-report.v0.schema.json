@@ -153,6 +153,17 @@
       ],
       "description": "Campaign Build Brief summary mirrored from Build Context for build/polish/QA handoff continuity."
     },
+    "design_source_package": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "schema_version": { "const": "campaign-design-source-package/v0" },
+        "sha256": { "type": "string", "minLength": 1 },
+        "material_fingerprint": { "type": "string", "minLength": 1 }
+      },
+      "description": "Reference to the normalized Design Source Package used by Build and Polish. sha256 is the full artifact hash; material_fingerprint drives freshness gates."
+    },
     "adapter_decisions": { "$ref": "#/$defs/adapterDecisions" },
     "proof_policy": {
       "type": "object",
@@ -166,6 +177,11 @@
         "operator_approval_state": { "type": "string", "minLength": 1 },
         "qa_portal_publish_default": { "type": "boolean" }
       }
+    },
+    "waivers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/checkpointWaiver" },
+      "description": "Structured readiness exceptions approved by an operator/run decision. Stages may recommend waivers, but accepted waivers must be explicit and attributed."
     },
     "theme": {
       "type": ["object", "null"],
@@ -226,6 +242,26 @@
     }
   },
   "$defs": {
+    "checkpointWaiver": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["scope", "reason"],
+      "properties": {
+        "scope": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "applies_to": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "waived_by": { "type": ["string", "null"] },
+        "owner": { "type": ["string", "null"] },
+        "waived_at": { "type": ["string", "null"] },
+        "created_at": { "type": ["string", "null"] },
+        "expires_at": { "type": ["string", "null"] },
+        "review_condition": { "type": ["string", "null"] },
+        "evidence_refs": { "type": "array" }
+      }
+    },
     "adapterDecisions": {
       "type": "object",
       "additionalProperties": true,
@@ -273,6 +309,24 @@
       "properties": {
         "stage": { "type": "string", "minLength": 1 },
         "status": { "type": "string", "minLength": 1 },
+        "required_by": { "type": "string", "minLength": 1 },
+        "required_for": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "performed_by": { "type": "string", "minLength": 1 },
+        "source_build_fingerprint": { "type": "string", "minLength": 1 },
+        "source_package_material_fingerprint": { "type": "string", "minLength": 1 },
+        "build_fingerprint": { "type": "string", "minLength": 1 },
+        "artifact_fingerprint": { "type": "string", "minLength": 1 },
+        "completed_at": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "description": "Stage-owned structured evidence. For stages.polish, this must include visual_review, brand_review, checkout_review, template_residue_review, commerce_flow_review, issues, and commands before QA.",
+          "oneOf": [
+            { "type": "array" },
+            { "type": "object", "additionalProperties": true }
+          ]
+        },
         "inputs": { "type": "array", "default": [] },
         "outputs": { "type": "array", "default": [] },
         "commands": { "type": "array", "default": [] },

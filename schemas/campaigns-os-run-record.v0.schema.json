@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nextcommerce.com/schemas/campaigns-os-run-record.v0.schema.json",
   "title": "Campaigns OS Run Record v0",
-  "description": "A per-run manifest for one Campaigns OS run. Keyed by one canonical run_id. References source artifacts by {path, schema_version, sha256} and carries normalized observation arrays — it does NOT re-embed full artifact bodies (so it survives upstream schema drift). Capture is always local; consent gates remit only. See docs/workflow-findings-sidecar.md (Run Telemetry).",
+  "description": "A per-run manifest for one Campaigns OS run. Keyed by one canonical run_id. References source artifacts by {path, schema_version, sha256, material_fingerprint} where available and carries normalized observation arrays — it does NOT re-embed full artifact bodies (so it survives upstream schema drift). Capture is always local; consent gates remit only. See docs/workflow-findings-sidecar.md (Run Telemetry).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -92,7 +92,7 @@
     },
     "artifacts": {
       "type": "array",
-      "description": "References to this run's source artifacts. References, not copies — this is what survives upstream schema drift. schema_version/sha256 are nullable for artifacts that are not on disk or whose hash could not be read.",
+      "description": "References to this run's source artifacts. References, not copies — this is what survives upstream schema drift. schema_version/sha256/material_fingerprint are nullable for artifacts that are not on disk or whose hash/fingerprint could not be read.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -103,6 +103,7 @@
             "enum": [
               "build_packet",
               "build_brief",
+              "design_source_package",
               "build_context",
               "assembly_report",
               "qa_verdict",
@@ -115,7 +116,8 @@
             "description": "Relativized-or-hashed path. Never an absolute contributor filesystem path."
           },
           "schema_version": { "type": ["string", "null"] },
-          "sha256": { "type": ["string", "null"] }
+          "sha256": { "type": ["string", "null"] },
+          "material_fingerprint": { "type": ["string", "null"] }
         }
       }
     },

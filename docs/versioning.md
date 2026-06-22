@@ -6,6 +6,7 @@ This repo uses independent compatibility versions:
 - Build Packet: `campaign-runtime-build-packet/v0`
 - Build Context: `campaign-runtime-build-context/v0`
 - Assembly Report: `campaign-runtime-assembly-report/v0`
+- Design Source Package: `campaign-design-source-package/v0`
 - Workflow Finding: `campaigns-os-workflow-finding/v0`
 - CampaignSpec: `4.2`
 - starter-template agent contract: `1`

@@ -122,6 +122,7 @@ import {
   NEXT_STAGE_ORDER,
   reportKeyForCliStage,
 } from "./orchestration-stage-contract.mjs";
+import { evaluatePolishGate } from "./polish-gate.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -1772,6 +1773,19 @@ export function doctorPacket(packetPath, { contextPath = undefined, reportPath =
     ready.push("Theme gate passed: brand layer applied after next-core.css on commerce pages.");
   }
   runPricingCssHideCheck({ packet, derived, warnings, ready, report });
+
+  const polishGate = evaluatePolishGate({ report });
+  derived.polish_gate = polishGate;
+  if (polishGate.status === "blocked") {
+    const commands = (polishGate.required_actions || [])
+      .map((action) => action?.command)
+      .filter(Boolean);
+    addIssue(errors, polishGate.code, `${polishGate.reason}${commands.length ? ` Required action: ${commands.join(" | ")}.` : " Run next-campaigns-polish before QA."}`, { polish_gate: polishGate });
+  } else if (polishGate.status === "waived") {
+    ready.push(`Polish gate passed under waiver: ${polishGate.waiver?.reason || "(no reason recorded)"}`);
+  } else if (polishGate.status === "pass") {
+    ready.push("Polish gate passed: structured evidence is current for this build.");
+  }
 
   const next = buildNextStep(errors, warnings, derived, report);
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
@@ -4219,26 +4233,35 @@ function validateAssemblyProofPolicy(policy, warnings, ready) {
  */
 const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped"]);
 const STAGE_BLOCKED_STATUSES = Object.freeze(new Set(["blocked"]));
-
-/**
- * Predicate: is a polish status acceptable as a handoff into a downstream
- * stage (deploy, qa)? Polish must be terminal (completed, completed_* via
- * prefix matching, or skipped). A blocked polish record is useful evidence,
- * but it is not a deploy/QA handoff; unblock or explicitly skip it first.
- *
- * Centralized so deploy and qa stages share one source of truth. Previously
- * the qa check listed "completed_with_warnings" explicitly (redundant with
- * the prefix-match on "completed") while the deploy check omitted it,
- * leaving the appearance of drift even though both behaved the same.
- */
-function polishHandoffReady(polishStatus) {
-  const status = String(polishStatus || "");
-  return STAGE_TERMINAL_STATUS_PREFIXES.some((t) => status.startsWith(t));
-}
+const POLISH_GATE_BUILD_RERUN_CODES = Object.freeze(new Set([
+  "polish.assembly_source_package_fingerprint_missing",
+  "polish.assembly_source_package_stale",
+]));
 
 function stageIsTerminal(status) {
   const normalized = String(status || "");
   return STAGE_TERMINAL_STATUS_PREFIXES.some((t) => normalized.startsWith(t));
+}
+
+function polishGateRequiresBuild(polishGate) {
+  return polishGate?.status === "blocked" && POLISH_GATE_BUILD_RERUN_CODES.has(polishGate.code);
+}
+
+function addPolishGateErrors(errors, polishGate, stage) {
+  if (!polishGate || polishGate.status !== "blocked") return;
+  const commands = (polishGate.required_actions || [])
+    .map((action) => action?.command)
+    .filter(Boolean);
+  addIssue(
+    errors,
+    `next.${stage}.${polishGate.code}`,
+    `${polishGate.reason}${commands.length ? ` Required action: ${commands.join(" | ")}.` : " Run next-campaigns-polish before QA."}`,
+    { polish_gate: polishGate },
+  );
+}
+
+function doctorErrorsAreOnlyPolishGate(errors = []) {
+  return errors.length > 0 && errors.every((issue) => String(issue?.code || "").startsWith("polish."));
 }
 
 function reportStageBlockerIssues(reportStage, fallbackCode, fallbackMessage) {
@@ -4327,7 +4350,8 @@ function pickNextStage(report, doctor) {
   // instead of advancing the pipeline. If future stage-specific doctor
   // signal logic needs to run (e.g. consulting doctor.derived for
   // specific stages), add it AFTER this gate, not before.
-  if (doctor && !doctor.ok) {
+  const polishGate = doctor?.derived?.polish_gate || evaluatePolishGate({ report });
+  if (doctor && !doctor.ok && !doctorErrorsAreOnlyPolishGate(doctor.errors)) {
     return {
       stage: "doctor-blocked",
       reason: `Doctor reported ${doctor.errors?.length || 0} blocker(s); resolve them before any stage runs.`,
@@ -4346,6 +4370,20 @@ function pickNextStage(report, doctor) {
     return {
       stage: "prepare-build",
       reason: prepareBuildGate.reason,
+      blocked: true,
+    };
+  }
+
+  if (polishGate.status === "blocked") {
+    if (polishGateRequiresBuild(polishGate)) {
+      return {
+        stage: "build",
+        reason: polishGate.reason,
+      };
+    }
+    return {
+      stage: "polish",
+      reason: polishGate.reason,
       blocked: true,
     };
   }
@@ -4396,21 +4434,23 @@ function nextStage(stage, args, ambient = null) {
     reportPath: report ? reportPath : null,
   });
   const themeGate = doctor.derived?.theme_gate || null;
+  const polishGate = doctor.derived?.polish_gate || evaluatePolishGate({ report });
   // Every return path runs through this finalizer so the machine-readable
   // contract is uniform: `gates` (pass/blocked/waived/not_applicable per
   // gate) and `next_actions` (exact commands — not prose) are always present,
   // and the recommendation is recorded on the active run session for
   // deviation telemetry.
   const finalize = (result) => {
-    result.gates = buildNextGates({ doctor, report, themeGate });
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, ambient });
+    result.gates = buildNextGates({ doctor, report, themeGate, polishGate });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, ambient });
     recordNextRecommendation(ambient, result);
     return result;
   };
+  const doctorHasOnlyPolishGateErrors = doctorErrorsAreOnlyPolishGate(doctor.errors);
   const errors = [];
   const warnings = [...doctor.warnings];
   const ready = [...doctor.ready];
-  if (!doctor.ok) errors.push(...doctor.errors);
+  if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors);
 
   // Slice 3 Phase 2: when no stage was passed, self-decide. The orchestration
   // loop is: agent calls `next`, gets a stage + prompt, does the work,
@@ -4464,11 +4504,11 @@ function nextStage(stage, args, ambient = null) {
   let prompt = "";
   if (stage === "setup") {
     addPrepareBuildGateErrors(errors, report);
-    if (!doctor.ok) addIssue(errors, "next.setup.doctor", "Doctor is blocked; resolve packet errors before setup.");
+    if (!doctor.ok && !doctorHasOnlyPolishGateErrors) addIssue(errors, "next.setup.doctor", "Doctor is blocked; resolve packet errors before setup.");
     prompt = setupPrompt(packetPath, contextPath, reportPath, packet);
   } else if (stage === "build") {
     addPrepareBuildGateErrors(errors, report);
-    if (!doctor.ok) addIssue(errors, "next.build.doctor", "Doctor is blocked; resolve packet errors before build.");
+    if (!doctor.ok && !doctorHasOnlyPolishGateErrors) addIssue(errors, "next.build.doctor", "Doctor is blocked; resolve packet errors before build.");
     if (doctor.derived?.scaffold_required) addIssue(errors, "next.build.setup", doctor.derived.scaffold_reason || "Setup is required before build.");
     prompt = buildPrompt(packetPath, contextPath, reportPath, packet);
   } else if (stage === "polish") {
@@ -4476,6 +4516,7 @@ function nextStage(stage, args, ambient = null) {
     if (!report) addIssue(errors, "next.polish.report", "Assembly report is required before polish.");
     const assemblyStatus = report?.stages?.assembly?.status || "";
     if (!assemblyStatus.startsWith("completed")) addIssue(errors, "next.polish.assembly", `Assembly status is "${assemblyStatus || "missing"}"; polish expects completed assembly or an explicit blocked/skipped handoff.`);
+    if (polishGateRequiresBuild(polishGate)) addPolishGateErrors(errors, polishGate, "polish");
     addThemeGateErrors(errors, themeGate, "polish");
     prompt = polishPrompt(packetPath, reportPath, packet);
   } else if (stage === "deploy") {
@@ -4484,9 +4525,7 @@ function nextStage(stage, args, ambient = null) {
     // etc.) but it's still a stage in the orchestration loop because the
     // agent needs to know when to fire it and what to record afterwards.
     if (!report) addIssue(errors, "next.deploy.report", "Assembly report is required before deploy.");
-    if (!polishHandoffReady(report?.stages?.polish?.status)) {
-      addIssue(errors, "next.deploy.polish", `Polish status is "${report?.stages?.polish?.status || "missing"}"; record completed/skipped before deploy, or resolve a blocked polish stage first.`);
-    }
+    addPolishGateErrors(errors, polishGate, "deploy");
     addThemeGateErrors(errors, themeGate, "deploy");
     prompt = deployPrompt(packetPath, reportPath, packet);
   } else if (stage === "qa") {
@@ -4494,9 +4533,7 @@ function nextStage(stage, args, ambient = null) {
     if (!report) addIssue(errors, "next.qa.report", "Assembly report is required before QA.");
     const deployUrl = packet.deploy?.preview_url || packet.deploy?.production_url;
     if (!deployUrl) addIssue(errors, "next.qa.deploy_url", "QA requires deploy.preview_url or deploy.production_url.");
-    if (!polishHandoffReady(report?.stages?.polish?.status)) {
-      addIssue(errors, "next.qa.polish", `Polish status is "${report?.stages?.polish?.status || "missing"}"; record completed/skipped before QA, or resolve a blocked polish stage first.`);
-    }
+    addPolishGateErrors(errors, polishGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
     prompt = qaPrompt(packetPath, reportPath, packet);
   } else {
@@ -4542,7 +4579,7 @@ function addThemeGateErrors(errors, themeGate, stage) {
 // Gate summary every `next` response carries: one entry per gate with a
 // deterministic status, so an agent reads gate state from data instead of
 // parsing error prose.
-function buildNextGates({ doctor, report, themeGate }) {
+function buildNextGates({ doctor, report, themeGate, polishGate }) {
   const prepareBuildGate = prepareBuildGateIssue(report);
   return [
     {
@@ -4563,12 +4600,20 @@ function buildNextGates({ doctor, report, themeGate }) {
       waiver: themeGate?.waiver || null,
       required_actions: themeGate?.required_actions || [],
     },
+    {
+      id: "polish_gate",
+      status: polishGate?.status || "not_applicable",
+      reason: polishGate?.reason || "No polish gate evaluation available.",
+      code: polishGate?.code || null,
+      waiver: polishGate?.waiver || null,
+      required_actions: polishGate?.required_actions || [],
+    },
   ];
 }
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-function buildNextActions({ result, packetPath, packet, themeGate, ambient }) {
+function buildNextActions({ result, packetPath, packet, themeGate, polishGate, ambient }) {
   const actions = [];
   const push = (id, kind, command, description) => actions.push({ id, kind, command, description, stage: result.stage });
   if (result.stage === "doctor-blocked") {
@@ -4586,6 +4631,20 @@ function buildNextActions({ result, packetPath, packet, themeGate, ambient }) {
       push(`theme_gate.${action.id}`, action.kind, action.command, action.description);
     }
     push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after resolving the theme gate to advance.");
+    return actions;
+  }
+  if (polishGateRequiresBuild(polishGate) && ["polish", "deploy", "qa"].includes(result.stage)) {
+    for (const action of polishGate.required_actions || []) {
+      push(`polish_gate.${action.id}`, action.kind, action.command, action.description);
+    }
+    push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after rebuilding against the current Design Source Package.");
+    return actions;
+  }
+  if (polishGate?.status === "blocked" && ["deploy", "qa"].includes(result.stage)) {
+    for (const action of polishGate.required_actions || []) {
+      push(`polish_gate.${action.id}`, action.kind, action.command, action.description);
+    }
+    push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after recording valid Polish evidence.");
     return actions;
   }
   if (result.stage === "setup") {
@@ -4645,6 +4704,7 @@ Read first:
 - Build Context: ${contextPath || "(use packet-adjacent .campaign-runtime/build-context.json if present)"}
 - Assembly Report: ${reportPath || "(use packet-adjacent .campaign-runtime/assembly-report.json if present)"}
 - Campaign Build Brief: ${briefPath}
+- Design Source Package: .campaign-runtime/input/design-source-package.json when present; use report.design_source_package.material_fingerprint as the source context fingerprint.
 - Template family: ${packet.assembly.template_family}
 
 Rules:
@@ -4663,7 +4723,7 @@ Rules:
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
 - For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
-- Run page-kit build and SDK/template lint, then update the assembly report before polish. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
+- Run page-kit build and SDK/template lint, then update stages.assembly.status plus stages.assembly.build_fingerprint before polish. If report.design_source_package.material_fingerprint exists, also record the same value on stages.assembly.source_package_material_fingerprint so Polish can prove the build used the current source context. Build must set stages.polish.status to "required" or "pending" with required_by="build" and required_for=["qa"]; Build must not mark stages.polish as completed/completed_with_warnings/skipped. If you applied a brand theme, record report.theme.status, css_path, commerce_pages, load_order=after-next-core, evidence, and any repair-loop defect.
 - Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.`;
 }
 
@@ -4698,7 +4758,21 @@ Read first:
 - Campaign Build Brief: ${briefPath}
 - Template family: ${packet.assembly.template_family}
 
-Compare source and Campaign Build Brief decisions against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, capture desktop/mobile evidence, and record polish as completed, skipped, or blocked before QA.
+Compare source and Campaign Build Brief decisions against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, and capture desktop/mobile evidence.
+
+Record Polish on stages.polish before QA:
+- status: completed or completed_with_warnings (or blocked with blockers)
+- performed_by: next-campaigns-polish
+- source_build_fingerprint: the current stages.assembly.build_fingerprint
+- source_package_material_fingerprint: the current report.design_source_package.material_fingerprint when present
+- completed_at: ISO timestamp
+- evidence.visual_review: representative screenshot paths/URLs
+- evidence.brand_review: logo/favicon/brand color checks, including non-template favicon confirmation
+- evidence.checkout_review: labels/placeholders, phone alignment, payment display, bump compare-price rule
+- evidence.template_residue_review: NEXT Blue/template placeholder/starter favicon/lorem/product residue checks
+- evidence.commerce_flow_review: shop single-step direct-entry force-package/product-selector limitation notes
+- evidence.issues: open defects with severity and QA-blocking status
+- evidence.commands: commands/tool invocations used
 
 If report.theme/context.theme exists, verify source token parity for primary color, CTA, surface, text, font/radius when present, and verify brand-theme.css loads after next-core.css on commerce pages. If the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.`;
 }
@@ -4755,9 +4829,9 @@ function buildNextStep(errors, warnings, derived, report = null) {
   const deployStatus = report?.stages?.deploy?.status || "";
   const qaStatus = report?.stages?.qa?.status || "";
   const assemblyComplete = assemblyStatus.startsWith("completed");
-  const polishRecorded = ["completed", "completed_with_warnings", "skipped", "blocked"].some((prefix) => polishStatus.startsWith(prefix));
-  const polishBlocked = polishStatus.startsWith("blocked");
-  const polishSatisfied = ["completed", "completed_with_warnings", "skipped"].some((prefix) => polishStatus.startsWith(prefix));
+  const polishGate = derived.polish_gate || evaluatePolishGate({ report });
+  const polishBlocked = assemblyComplete && polishGate.status === "blocked";
+  const polishSatisfied = assemblyComplete && ["pass", "waived"].includes(polishGate.status);
   const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
     || (report?.stages?.deploy?.outputs || []).some((output) => /^https?:\/\//.test(String(output)));
   const qaRecorded = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => qaStatus.startsWith(prefix));
@@ -4804,15 +4878,10 @@ function buildNextStep(errors, warnings, derived, report = null) {
     actions.push("Keep checkout/order-proof QA blocked until the out-of-scope runtime pages are built or explicitly delegated to an existing downstream URL.");
   }
 
-  if (assemblyComplete && !polishRecorded) {
+  if (polishBlocked) {
     blockedStages.push("deploy");
     blockedStages.push("qa");
-    actions.push("Run next-campaigns-polish and record polish as completed, skipped, or blocked before deploy/QA handoff.");
-  }
-  if (assemblyComplete && polishBlocked) {
-    blockedStages.push("deploy");
-    blockedStages.push("qa");
-    actions.push("Resolve the recorded polish blockers, then rerun polish before deploy/QA handoff.");
+    actions.push(`${polishGate.reason} Run next-campaigns-polish and record structured evidence before deploy/QA handoff.`);
   }
 
   if (errors.length) {
@@ -4825,21 +4894,10 @@ function buildNextStep(errors, warnings, derived, report = null) {
       blocked_stages: ["assembly", "polish", "deploy", "qa"],
     };
   }
-  if (assemblyComplete && !polishRecorded) {
+  if (polishBlocked) {
     return {
       stage: "polish",
-      status: warnings.length ? "ready_with_warnings" : "ready",
-      owner: "polish",
-      default_skill: "next-campaigns-polish",
-      command: `campaigns-os next polish --packet ${derived.packet_path}`,
-      actions,
-      blocked_stages: [...new Set(blockedStages)],
-    };
-  }
-  if (assemblyComplete && polishBlocked) {
-    return {
-      stage: "polish",
-      status: "blocked",
+      status: polishStatus.startsWith("blocked") ? "blocked" : (warnings.length ? "ready_with_warnings" : "ready"),
       owner: "polish",
       default_skill: "next-campaigns-polish",
       command: `campaigns-os next polish --packet ${derived.packet_path}`,
