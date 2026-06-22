@@ -74,8 +74,34 @@ function withPreparedBuild(run) {
 function markAssemblyCompleted(reportPath, mutate = (report) => report) {
   const report = readJson(reportPath);
   report.stages.assembly.status = "completed";
+  report.stages.assembly.build_fingerprint = "sha256:test-build";
   mutate(report);
   writeJson(reportPath, report);
+}
+
+function validPolishStage(overrides = {}) {
+  return {
+    stage: "polish",
+    status: "completed_with_warnings",
+    performed_by: "next-campaigns-polish",
+    source_build_fingerprint: "sha256:test-build",
+    completed_at: "2026-06-22T00:00:00.000Z",
+    inputs: [],
+    outputs: [],
+    commands: ["next-campaigns-polish"],
+    blockers: [],
+    warnings: [],
+    evidence: {
+      visual_review: { screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"] },
+      brand_review: { logo_checked: true, favicon: "confirmed non-template favicon", colors: ["#123456"] },
+      checkout_review: { field_labels: "checked", phone_alignment: "checked", payment_display: "checked", bump_compare_price_rule: "checked" },
+      template_residue_review: { next_blue: "not found", starter_favicon: "not found", lorem: "not found", product_placeholders: "not found" },
+      commerce_flow_review: { shop_single_step: "direct-entry force-package/product-selector limitation reviewed" },
+      issues: [],
+      commands: ["next-campaigns-polish"],
+    },
+    ...overrides,
+  };
 }
 
 test("prepare-build emits adapter decisions and proof policy in public artifacts", () => {
@@ -235,10 +261,166 @@ test("doctor names unfinished adapter decisions after assembly is recorded compl
     const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
     const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
 
-    assert.equal(doctor.ok, true);
+    assert.equal(doctor.ok, false);
+    assert.equal((doctor.errors || []).some((issue) => issue.code === "polish.evidence_missing"), true);
     assert.equal(warningCodes.has("adapter.raw_html_conversion_status"), true);
     assert.equal(warningCodes.has("adapter.commerce_shell_adoption"), true);
     assert.equal(warningCodes.has("adapter.template_files_copied"), true);
+  });
+});
+
+test("polish lifecycle gate blocks doctor, next, and qa until distinct evidence exists", () => {
+  withPreparedBuild(({ dir, packetPath, contextPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.stages.polish.status = "required";
+      report.stages.polish.required_by = "build";
+      report.stages.polish.required_for = ["qa"];
+    });
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    assert.equal(doctor.ok, false);
+    assert.equal((doctor.errors || []).some((issue) => issue.code === "polish.evidence_missing"), true);
+    assert.equal(doctor.derived?.polish_gate?.status, "blocked");
+    assert.match((doctor.errors || []).find((issue) => issue.code === "polish.evidence_missing").message, /Polish evidence missing for current build/);
+    assert.equal(doctor.next?.status, "blocked");
+    assert.equal((doctor.next?.blocked_stages || []).includes("polish"), true);
+    assert.equal((doctor.next?.blocked_stages || []).includes("deploy"), true);
+    assert.equal((doctor.next?.blocked_stages || []).includes("qa"), true);
+
+    const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.equal(next.ok, true);
+    assert.equal(next.stage, "polish");
+    assert.equal(next.stage_blocked, true);
+    assert.equal((next.gates || []).find((gate) => gate.id === "polish_gate")?.status, "blocked");
+
+    const qa = runCliJson([
+      "qa", "run",
+      "--packet", packetPath,
+      "--no-post-verdict",
+      "--output-dir", join(dir, "qa-output"),
+      "--json",
+    ]);
+    assert.equal(qa.status, "blocked");
+    assert.equal(qa.polish_gate.status, "blocked");
+    assert.equal(qa.verdict.assertions.some((assertion) => assertion.family === "polish_gate" && assertion.status === "fail"), true);
+  });
+});
+
+test("next routes back to build when source package changed after assembly", () => {
+  withPreparedBuild(({ packetPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.design_source_package = {
+        path: ".campaign-runtime/input/design-source-package.json",
+        schema_version: "campaign-design-source-package/v0",
+        sha256: "sha256:source-full",
+        material_fingerprint: "sha256:source-current",
+      };
+      report.stages.assembly.source_package_material_fingerprint = "sha256:source-old";
+      report.stages.polish.status = "required";
+      report.stages.polish.required_by = "build";
+      report.stages.polish.required_for = ["qa"];
+    });
+
+    const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.equal((next.errors || []).some((issue) => String(issue.code || "").startsWith("polish.") || issue.code === "next.build.doctor"), false);
+    assert.equal(next.stage, "build");
+    assert.match(next.picked_reason, /Design Source Package changed after Build/);
+    assert.equal((next.gates || []).find((gate) => gate.id === "polish_gate")?.code, "polish.assembly_source_package_stale");
+    assert.equal((next.next_actions || []).some((action) => action.command === "next-campaigns-build"), true);
+    assert.equal((next.next_actions || []).some((action) => action.id === "polish_gate.rerun_build" && /current Design Source Package/.test(action.description || "")), true);
+
+    const explicitBuild = runCliJson(["next", "build", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.equal(explicitBuild.stage, "build");
+    assert.equal((explicitBuild.next_actions || []).some((action) => action.id === "polish_gate.rerun_build" && action.command === "next-campaigns-build"), true);
+
+    const explicitPolish = runCliJson(["next", "polish", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.equal(explicitPolish.stage, "polish");
+    assert.equal(explicitPolish.status, "blocked");
+    assert.equal((explicitPolish.errors || []).some((issue) => issue.code === "next.polish.polish.assembly_source_package_stale"), true);
+    assert.equal((explicitPolish.next_actions || []).some((action) => action.command === "next-campaigns-build"), true);
+  });
+});
+
+test("source package freshness waiver lets next proceed to polish but not past missing polish evidence", () => {
+  withPreparedBuild(({ packetPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.design_source_package = {
+        path: ".campaign-runtime/input/design-source-package.json",
+        schema_version: "campaign-design-source-package/v0",
+        sha256: "sha256:source-full",
+        material_fingerprint: "sha256:source-current",
+      };
+      report.waivers = [
+        {
+          scope: "assembly_source_package_freshness",
+          reason: "Operator confirmed the source change does not require rebuilding this run.",
+          applies_to: ["stages.assembly.source_package_material_fingerprint"],
+          waived_by: "operator",
+          waived_at: "2026-06-22T00:00:00.000Z",
+          review_condition: "Valid for this run only.",
+        },
+      ];
+      report.stages.assembly.source_package_material_fingerprint = "sha256:source-old";
+      report.stages.polish.status = "required";
+      report.stages.polish.required_by = "build";
+      report.stages.polish.required_for = ["qa"];
+    });
+
+    const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.equal(next.ok, true);
+    assert.equal(next.stage, "polish");
+    assert.equal(next.stage_blocked, true);
+    assert.match(next.picked_reason, /Polish evidence missing/);
+    assert.equal((next.gates || []).find((gate) => gate.id === "polish_gate")?.code, "polish.evidence_missing");
+    assert.equal((next.next_actions || []).some((action) => action.command === "next-campaigns-polish"), true);
+  });
+});
+
+test("valid polish evidence lets next advance beyond polish", () => {
+  withPreparedBuild(({ packetPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.stages.polish = validPolishStage();
+    });
+
+    const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.notEqual(next.stage, "polish");
+    assert.equal((next.gates || []).find((gate) => gate.id === "polish_gate")?.status, "pass");
+  });
+});
+
+test("valid polish evidence under source freshness waiver lets doctor and next advance beyond polish", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.design_source_package = {
+        path: ".campaign-runtime/input/design-source-package.json",
+        schema_version: "campaign-design-source-package/v0",
+        sha256: "sha256:source-full",
+        material_fingerprint: "sha256:source-current",
+      };
+      report.waivers = [
+        {
+          scope: "assembly_source_package_freshness",
+          reason: "Operator confirmed the source change does not require rebuilding this run.",
+          applies_to: ["stages.assembly.source_package_material_fingerprint"],
+          waived_by: "operator",
+          waived_at: "2026-06-22T00:00:00.000Z",
+          review_condition: "Valid for this run only.",
+        },
+      ];
+      report.stages.assembly.source_package_material_fingerprint = "sha256:source-old";
+      report.stages.polish = validPolishStage({
+        source_package_material_fingerprint: "sha256:source-current",
+      });
+    });
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    assert.equal(doctor.derived?.polish_gate?.status, "waived");
+    assert.notEqual(doctor.next?.stage, "assembly");
+    assert.notEqual(doctor.next?.stage, "polish");
+
+    const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.notEqual(next.stage, "polish");
+    assert.equal((next.gates || []).find((gate) => gate.id === "polish_gate")?.status, "waived");
   });
 });
 

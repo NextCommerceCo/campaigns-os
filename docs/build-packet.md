@@ -30,6 +30,7 @@ campaign-runtime.build.json
 .campaign-runtime/doctor-output.json
 .campaign-runtime/theme/theme-report.json
 .campaign-runtime/input/campaign-build-brief.normalized.json
+.campaign-runtime/input/design-source-package.json
 ```
 
 Commit durable packet/context/report artifacts when they represent a real build handoff. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.
@@ -47,6 +48,140 @@ source root or target repo. When none is present, Campaigns OS creates a guided
 draft at `.campaign-runtime/input/campaign-build-brief.normalized.json`.
 See [Campaign Build Brief](./campaign-build-brief.md) for the schema and
 prepared/guided behavior.
+
+`start` / `prepare-build` also writes the normalized Design Source Package to
+`.campaign-runtime/input/design-source-package.json`. Its schema version is
+`campaign-design-source-package/v0` (schema file:
+`schemas/campaign-design-source-package.v0.schema.json`). The Build Packet,
+Build Context, and Assembly Report reference that artifact by path, full artifact
+hash, and material fingerprint instead of embedding it,
+matching the normalized Build Brief handoff pattern. The full hash supports audit
+and reproduction; the material fingerprint drives freshness gates. The package
+includes a generated top-level `readiness` summary with
+`status`, `blocking_reasons`, `gap_count`, `todo_count`, `waiver_count`, and
+`generated_at`; detailed gaps, TODOs, and waivers remain authoritative.
+`readiness.status` uses `pending`, `blocked`, `ready`, `ready_with_gaps`, or
+`ready_with_waivers`, not `ready_with_warnings`. The package may include
+free-form `notes`, but notes do not affect readiness; any concern that affects
+whether Build or Polish can proceed must be typed as a gap, TODO, proposed
+exception, or waiver. Source gaps and TODOs require `scope` and `applies_to`;
+attach them to Surface Identity when possible. The package reserves a top-level
+Surface Identity entry `campaign` with `kind: "campaign"`; use
+`applies_to: ["campaign"]` for legitimate campaign-level gaps/TODOs. Surface
+Identity IDs should be stable human-semantic strings such as `campaign`,
+`landing`, `landing.hero`, `checkout`, `checkout.payment`, or
+`upsell.offer-card`, with labels and aliases for source-specific, DOM, or Page
+Kit names. v0 requires `campaign` plus page-level Surface Identities for active
+or mapped CampaignSpec pages; section and runtime-surface IDs are optional until
+Build or Polish needs them. Do not derive the primary Surface Identity solely
+from CPK `page_type`, Map Builder custom labels, public routes, or producer page
+types. Preserve those as mapped attributes or aliases alongside the Surface
+Identity. For page-level IDs, prefer the CampaignSpec page ID when it is stable
+and human-readable; otherwise derive from normalized page role plus order
+(`landing`, `checkout`, `upsell-1`, `downsell-1`, `receipt`). Always preserve the
+CampaignSpec page ID, Map Builder label/custom name, public route, source aliases,
+and CPK `page_type` separately. `surface_identity[]` is a structured catalog,
+not a simple list of strings. Minimum fields are `id`, `kind`, `label`,
+`aliases`, and `mappings`; page-surface `mappings` preserve CampaignSpec page ID,
+Map Builder label/custom name, public route, producer page type, and Page Kit
+projection. Contribution mappings should reference `surface_identity[].id`
+values and carry relationship metadata such as `coverage_role`, `confidence`,
+`source_refs`, and `notes`. They should not define competing CampaignSpec route
+or Page Kit projection maps. `coverage_role` is a small enum:
+`primary_design`, `partial_design`, `brand_tokens`, `asset_source`,
+`copy_source`, `template_baseline`, `reference_only`, or `fallback_legacy`;
+use `notes` for unusual cases. Mapping `confidence` is also a coarse enum:
+`high`, `medium`, `low`, or `unknown`. It describes confidence in the
+surface/coverage mapping, not design quality or approval. Low confidence blocks
+source readiness only when it affects required page-level `primary_design`
+coverage; represent that as a Source TODO unless waived. Low confidence on
+brand-token, reference-only, or other non-primary coverage may produce
+`ready_with_gaps` or a readback note instead.
+
+Screenshot references in the Design Source Package are source-side or
+reference-side proof only: canonical URLs, exports, captured source renders, or
+explicit records that a render is unavailable. Built-output screenshots for the
+current implementation belong in Polish Evidence or later QA evidence, tied to
+the current build fingerprint. Polish should compare against Design Source
+Package refs and Template Reference refs without mutating either source artifact.
+If Polish can capture a missing canonical source render, it should emit a
+proposed source-reference update or Source TODO rather than silently updating the
+Design Source Package. Source preparation or an explicit source-reference refresh
+action owns package mutation and must record attribution.
+Material source-reference refreshes create a new Design Source Package
+fingerprint. Any Build, Polish, or QA evidence tied to the previous source
+fingerprint is stale until refreshed or explicitly waived. Purely administrative
+changes that do not alter readiness, coverage, provenance, or comparison refs may
+be non-material if the package records that distinction.
+Polish Evidence must record both the current build fingerprint and the current
+Design Source Package material fingerprint, conventionally as
+`source_build_fingerprint` for the assembly/build artifact and
+`source_package_material_fingerprint` for the design source context. Freshness
+gates should consider Polish current only when both match the latest artifacts;
+if either changes materially, Polish is stale unless a structured waiver explains
+the exception. During the v0 transition, the polish gate enforces
+`source_package_material_fingerprint` only when the Assembly Report exposes a
+current Design Source Package material fingerprint, such as
+`design_source_package.material_fingerprint`. Legacy reports without a current
+source package keep the build-fingerprint gate and emit a readiness warning
+instead of blocking.
+
+Assembly should also record the Design Source Package material fingerprint it
+consumed on `stages.assembly.source_package_material_fingerprint`. If the current
+`design_source_package.material_fingerprint` is missing from Assembly or differs
+from the Assembly-recorded value, `campaigns-os next` routes back to Build before
+Polish. Polish must review a build made from the current material source context;
+it should not repair or certify a build made from stale design inputs.
+
+A stale or missing Assembly Source Package Fingerprint is waivable only as an
+exceptional Source Freshness Waiver. The waiver must be structured in
+`waivers[]`, with `scope: "assembly_source_package_freshness"` or an
+`applies_to` reference such as
+`stages.assembly.source_package_material_fingerprint`, plus reason, owner or
+waived_by, timestamp, and expiry/review condition. The waiver allows the
+orchestration loop to proceed to Polish, but Polish still must record current
+Polish Evidence, including `source_package_material_fingerprint` when a current
+Design Source Package exists. The waiver must remain visible in Campaign
+Readiness Readback and downstream QA evidence; it is not a silent pass.
+In v0, write accepted Source Freshness Waivers directly into `waivers[]`. A
+generic waiver CLI is intentionally deferred until the broader checkpoint model
+settles; when added, it should cover all Checkpoint Waivers rather than only
+source freshness.
+
+In v0, material source fingerprint fields include contribution identity/kind,
+provenance, presentation intent, Surface Identity catalog and mappings,
+contribution coverage roles, mapping confidence, source refs, source
+screenshot/reference refs, Template Reference linkage, Source Gaps, Source
+TODOs, accepted waivers, and any source divergence or proposed exception that
+affects readiness or comparison. Generated readback prose, formatting/key order,
+and administrative notes are non-material when they do not alter readiness,
+coverage, provenance, or comparison basis. Capture timestamps alone may be
+non-material, but changing the viewport key, URL, dimensions, artifact path, or
+visual artifact hash is material.
+
+For renderable contributions that provide page-level `primary_design` coverage,
+source readiness requires at least desktop and mobile screenshot refs. Tablet is
+optional in v0. If a source is renderable but cannot be captured, record a
+Source TODO unless the absence is explicitly accepted as a Source Gap or covered
+by an approved Checkpoint Waiver. Template-baseline pages use the selected
+Template Reference standard viewport refs rather than source-specific captures.
+Use shared viewport keys across source refs, Polish Evidence, and QA evidence:
+`mobile`, `desktop`, and optional `tablet` in v0. Exact width, height, device
+profile, scale factor, browser, capture time, and URL are capture metadata, not
+new viewport names. Avoid stage-specific aliases such as `iphone`, `small`,
+`wide`, or `1440`; keep those details in metadata so cross-stage comparisons can
+join on the same keys.
+
+Required page-level coverage applies to every active or mapped page in the
+current build scope. A page is covered by a non-low-confidence `primary_design`
+contribution, an explicit `template_baseline` contribution for template-stock
+pages, or an attributed Source Gap / approved Checkpoint Waiver explaining why
+no primary design source exists. `template_baseline` must reference the selected
+template family/version and Template Reference artifact or contract. If the
+Template Reference proof is missing, record a Source TODO, Source Gap, or waiver
+according to whether the missing proof represents unfinished preparation, an
+accepted source absence, or an approved run exception. Missing page-level
+coverage blocks source readiness.
 
 ## Adapter And Proof Fields
 
@@ -127,6 +262,18 @@ The fetched spec is treated identically to a `--spec`-supplied local file from t
 
 When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`, published at `schemas/source-html-manifest.v0.schema.json`), `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching.
 
+The source-html manifest remains a producer/source-HTML adapter input. It is not
+renamed into the Design Source Package. In the normalized source workflow,
+`prepare-build` uses source-html manifests, filesystem fallback, template-stock
+inputs, and other adapters to emit a separate public Design Source Package with
+contributions, coverage, gaps/TODOs, Surface Identity, references, and readback.
+When legacy packet/source-html data is the only available input, v0 may
+synthesize the package during source preparation. Downstream Build and Polish
+should still consume the package concept rather than branching back to
+`packet.source_html` as a second source model. The emitted package lives at
+`.campaign-runtime/input/design-source-package.json` by default and is referenced
+from packet/context/report by path, full artifact hash, and material fingerprint.
+
 Behavior:
 
 - The manifest is consumed only when it passes the `source-html-manifest/v0`
@@ -153,6 +300,11 @@ Fresh `prepare-build` output also writes `source_html.pages[].page_kit` for mapp
 - `page_type` is the CPK runtime/analytics vocabulary (`product`, `checkout`, `upsell`, `receipt`), not the richer CampaignSpec or producer page type. CampaignSpec `select` pages project as CPK `checkout` because they are pre-checkout runtime selection surfaces.
 - `frontmatter` names the Page Kit frontmatter fields the build should write or preserve.
 - `permalink_required` is true when Page Kit's filename-derived route would not match `public_route`.
+
+The Design Source Package should reference this projection without confusing it
+with Surface Identity. Surface Identity is the campaign-facing join key; Page Kit
+`page_type`, public routes, output paths, CampaignSpec/Map Builder page IDs,
+custom labels, and producer page types stay as mapped attributes or aliases.
 
 `page_map[].output_path` in the Build Context is the same Page Kit target path,
 not `source_html.pages[].path` appended under `assembly.output_dir`. Build agents
@@ -235,6 +387,49 @@ to do with it.
 ## Orchestration Loop (`campaigns-os next`)
 
 `campaigns-os next` (no stage argument) is the agentic orchestration primitive. It reads the current packet, doctor, and assembly report state from disk and tells you which stage should run next. Each call re-reads state, so the loop is idempotent and recoverable across sessions / machines.
+
+Treat the loop as a sequence of Readiness Checkpoints, not as a required one-shot
+campaign build. A one-shot run is the best case where inputs are already complete
+and every checkpoint can advance in one session; the normal path may take several
+turns or sessions as source gaps, source TODOs, waivers, polish findings, deploy
+state, and QA blockers are discovered and resolved.
+
+For source preparation, the Design Source Package should carry a generated
+readback summary that names included sources, coverage, gaps/TODOs, mappings,
+reference availability, and readiness. The readback helps humans and agents pick
+up the work later; structured package fields remain authoritative. Later stages
+should write their own stage readbacks or evidence summaries rather than
+rewriting the Design Source Readback. Those stage readbacks should be surfaced
+through a consolidated or just-in-time Campaign Readiness Readback so the
+operator is not expected to discover a patchwork of separate artifacts. Generate
+that readiness readback from the latest artifacts as the primary behavior; Run
+Records may snapshot it for audit. `campaigns-os next` should show the concise
+current-stage readback, while run or campaign status should show the fuller
+campaign-level readback. The readback should include readable prose plus stable
+buckets: `current_checkpoint`, `readiness_status`, `handled`, `blocked_by`,
+`known_gaps`, `proposed_exceptions`, `waivers`, `evidence_refs`, and
+`next_actions`. `evidence_refs` should point to source package sections,
+screenshots, Polish Evidence, Assembly Report stages, deploy URLs, QA verdicts,
+or other owning artifacts; the readback summarizes evidence but does not embed
+the detailed proof. UI surfaces may render screenshot thumbnails from refs, but
+CLI/readback data should keep screenshots as references with a short statement of
+what each proves.
+
+Checkpoint status should stay boring and shared: `pending`, `blocked`, `ready`,
+`ready_with_gaps`, `ready_with_waivers`, `completed`,
+`completed_with_warnings`, or `skipped`. Put stage-specific detail in evidence,
+gaps, TODOs, waivers, findings, and next actions. `ready_with_waivers` requires
+structured waiver evidence: owner, reason, scope, applies-to references, created
+time, and either an expiry or review condition. Stages such as polish may draft
+or recommend waivers with evidence, but an operator/run decision approves them.
+Polish must classify every unresolved issue as `repair_needed`, `source_gap`,
+`source_divergence`, `waiver_recommended`, or `out_of_scope` so the next
+checkpoint knows whether to fix, carry, approve, or route it. Unresolved
+`repair_needed` issues block deploy and QA unless repaired, reclassified, or
+covered by an approved waiver. A `source_divergence` raised by polish is
+proposed until confirmed by an operator/run decision or the relevant Build or
+Design Source owner. A `source_gap` raised by polish is proposed too, unless it
+traces to an accepted Source Gap in the Design Source Package.
 
 The motion:
 

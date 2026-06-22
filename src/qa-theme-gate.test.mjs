@@ -8,6 +8,8 @@ import { __qaNodeTestHooks, GATE_SUPPRESSED_FAMILIES } from "./qa-node.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 
 const {
+  polishGateAssertion,
+  themeBlockedAssertions,
   themeGateAssertion,
   themeGateScopeFromTopologies,
   residueSeverityForThemeGate,
@@ -54,6 +56,64 @@ test("blocked theme gate maps to a single blocker assertion with reason and requ
   assert.equal(result.evidence.reason, gate.reason);
   assert.ok(result.evidence.required_actions.length >= 1);
   assert.ok(result.evidence.required_actions.some((action) => /theme generate --packet campaign-runtime\.build\.json/.test(action.command || "")));
+});
+
+test("blocked theme gate still records current polish gate evidence", () => {
+  const gate = evaluateThemeGate({
+    reportTheme: { status: "needs_review", load_order: "unknown" },
+    contextTheme: { policy: "inspect_only", generated: { can_generate: true } },
+    scope: themeGateScopeFromTopologies(commerceTopologies),
+    packetPath: "campaign-runtime.build.json",
+  });
+  const polishGate = {
+    status: "pass",
+    code: "polish.evidence_current",
+    reason: "Polish evidence is current.",
+    build_fingerprint: "sha256:build",
+    source_build_fingerprint: "sha256:build",
+    performed_by: "next-campaigns-polish",
+  };
+
+  const assertions = themeBlockedAssertions(gate, polishGate);
+  const polishAssertion = assertions.find((assertion) => assertion.family === "polish_gate");
+
+  assert.equal(polishAssertion.id, "polish.evidence_current");
+  assert.equal(polishAssertion.status, "pass");
+  assert.equal(assertions.some((assertion) => assertion.family === "polish_gate" && assertion.status === "skipped"), false);
+  assert.equal(assertions.some((assertion) => assertion.family === "theme_gate" && assertion.status === "fail"), true);
+});
+
+test("polish gate assertion keeps pass, waived, and not-applicable distinct", () => {
+  const pass = polishGateAssertion({
+    status: "pass",
+    code: "polish.evidence_current",
+    reason: "Polish evidence is current.",
+    build_fingerprint: "sha256:build",
+    source_build_fingerprint: "sha256:build",
+    performed_by: "next-campaigns-polish",
+  });
+  assert.equal(pass.status, "pass");
+
+  const waived = polishGateAssertion({
+    status: "waived",
+    code: "polish.assembly_source_package_waived",
+    reason: "Polish evidence is current under source freshness waiver.",
+    build_fingerprint: "sha256:build",
+    source_build_fingerprint: "sha256:build",
+    performed_by: "next-campaigns-polish",
+    waiver: { reason: "source refresh accepted for this run" },
+  });
+  assert.equal(waived.status, "skipped");
+  assert.equal(waived.id, "polish.assembly_source_package_waived");
+  assert.equal(waived.evidence.waiver.reason, "source refresh accepted for this run");
+
+  const notApplicable = polishGateAssertion({
+    status: "not_applicable",
+    code: "polish.not_applicable",
+    reason: "Assembly is not completed yet; polish evidence is required after build completion.",
+  });
+  assert.equal(notApplicable.status, "skipped");
+  assert.match(notApplicable.expected, /assembly report/);
 });
 
 test("waived theme gate maps to a pass assertion carrying the waiver", () => {

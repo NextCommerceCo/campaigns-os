@@ -1641,14 +1641,27 @@ try {
   }
 
   // Mark assembly completed → picker should advance to polish.
-  markStageStatus("assembly", "completed");
+  markStageStatus("assembly", "completed", { build_fingerprint: "sha256:fixture-build" });
   step = nextNoStage();
   if (step.stage !== "polish") {
     throw new Error(`next-orchestration fixture: after assembly completed, expected "polish", got ${step.stage}. picked_reason=${step.picked_reason}`);
   }
 
-  // Mark polish completed → picker should advance to deploy.
-  markStageStatus("polish", "completed");
+  // Mark polish completed with structured evidence → picker should advance to deploy.
+  markStageStatus("polish", "completed", {
+    performed_by: "next-campaigns-polish",
+    source_build_fingerprint: "sha256:fixture-build",
+    completed_at: "2026-06-22T00:00:00.000Z",
+    evidence: {
+      visual_review: { screenshots: ["qa-output/checkout-desktop.png"] },
+      brand_review: { favicon: "confirmed non-template favicon", colors: ["#123456"] },
+      checkout_review: { field_labels: "checked", phone_alignment: "checked", payment_display: "checked", bump_compare_price_rule: "checked" },
+      template_residue_review: { next_blue: "not found", starter_favicon: "not found", placeholders: "not found" },
+      commerce_flow_review: { shop_single_step: "direct-entry force-package/product-selector limitation reviewed" },
+      issues: [],
+      commands: ["next-campaigns-polish"],
+    },
+  });
   step = nextNoStage();
   if (step.stage !== "deploy") {
     throw new Error(`next-orchestration fixture: after polish completed, expected "deploy", got ${step.stage}. picked_reason=${step.picked_reason}`);
@@ -1687,11 +1700,11 @@ try {
     throw new Error(`next-orchestration fixture: blocked stage should set stage_blocked=true, got ${JSON.stringify(step)}`);
   }
   step = runCliJsonAllowFailure(["next", "deploy", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
-  if (step.ok !== false || !step.errors?.some((issue) => issue.code === "next.deploy.polish")) {
+  if (step.ok !== false || !step.errors?.some((issue) => String(issue.code || "").startsWith("next.deploy.polish"))) {
     throw new Error(`next-orchestration fixture: explicit next deploy should not accept blocked polish as handoff-ready, got ${JSON.stringify(step)}`);
   }
   step = runCliJsonAllowFailure(["next", "qa", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
-  if (step.ok !== false || !step.errors?.some((issue) => issue.code === "next.qa.polish")) {
+  if (step.ok !== false || !step.errors?.some((issue) => String(issue.code || "").startsWith("next.qa.polish"))) {
     throw new Error(`next-orchestration fixture: explicit next qa should not accept blocked polish as handoff-ready, got ${JSON.stringify(step)}`);
   }
 

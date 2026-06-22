@@ -2,11 +2,12 @@
 // See docs/workflow-findings-sidecar.md (Run Telemetry).
 //
 // A Run Record is a per-run MANIFEST keyed by one canonical run_id. It
-// REFERENCES source artifacts by {path, schema_version, sha256} and carries
-// normalized observation arrays; it never re-embeds full artifact bodies, so
-// it survives upstream schema drift. Capture is ALWAYS local — consent gates
-// remit only (see consent.mjs). This module owns the schema validator and the
-// local assemble/write surface; it has no network or credential dependencies.
+// REFERENCES source artifacts by {path, schema_version, sha256,
+// material_fingerprint} where available and carries normalized observation
+// arrays; it never re-embeds full artifact bodies, so it survives upstream schema
+// drift. Capture is ALWAYS local — consent gates remit only (see consent.mjs).
+// This module owns the schema validator and the local assemble/write surface; it
+// has no network or credential dependencies.
 
 import { randomBytes } from "node:crypto";
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -31,6 +32,7 @@ export const RUN_RECORD_SURFACES = [
 export const RUN_RECORD_ARTIFACT_KINDS = [
   "build_packet",
   "build_brief",
+  "design_source_package",
   "build_context",
   "assembly_report",
   "qa_verdict",
