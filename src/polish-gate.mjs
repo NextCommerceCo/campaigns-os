@@ -116,33 +116,37 @@ function fieldHasEvidence(value, field) {
   return nonEmptyString(value);
 }
 
+function textFragments(value) {
+  if (Array.isArray(value)) return value.flatMap(textFragments);
+  if (isObject(value)) return Object.values(value).flatMap(textFragments);
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [String(value)];
+  return [];
+}
+
 function reviewText(value) {
-  if (Array.isArray(value)) return value.map(reviewText).join(" ");
-  if (isObject(value)) {
-    return [
-      value.status,
-      value.result,
-      value.verdict,
-      value.summary,
-      value.note,
-      value.value,
-    ].filter(Boolean).map(String).join(" ");
-  }
-  return String(value || "");
+  return textFragments(value).join(" ");
 }
 
 function hasNegativeEvidence(value, pattern) {
   const text = reviewText(value);
-  if (/\bnot\s+found\b|\bnone\s+found\b|\bnot\s+present\b|\bno\s+(?:starter|template|equal|same|duplicate)/i.test(text)) return false;
+  if (/\bnot\s+found\b|\bnone\s+found\b|\bnot\s+present\b|\bno\s+(?:starter|template)\b/i.test(text)) return false;
   return pattern.test(text);
 }
 
 function buildBriefBlocksTemplateFavicon(report) {
-  const policy = report?.build_brief?.artifact?.template_residue_policy
-    || report?.build_brief?.template_residue_policy
-    || report?.template_residue_policy
-    || null;
+  // Canonical Build Brief location after prepare-build normalization.
+  const policy = report?.build_brief?.artifact?.template_residue_policy || null;
   return policy?.block_template_favicon === true;
+}
+
+function faviconTextConfirmsSourceMatch(text) {
+  return /(?:byte[-_\s]?match|matched|matches|matching).{0,40}(?:source|brand|candidate)|(?:source|brand|candidate).{0,40}(?:matched|matches|matching|byte[-_\s]?match)|promoted.{0,40}source|confirmed.{0,40}(?:non[-_\s]?template|not[-_\s]?template)|\b(?:no|none)\s+source\s+candidate\b/i.test(text);
+}
+
+function hasNegativeBumpCompareEvidence(value) {
+  const text = reviewText(value);
+  if (/\b(?:no|none)\s+(?:equal|same|duplicate|doubled|no[-_\s]?discount).{0,24}(?:compare|strike|original|price)\s*(?:found|present|rendered|shown|visible)?\b/i.test(text)) return false;
+  return hasNegativeEvidence(value, /\b(?:equal|same)\s+(?:compare|strike|original)\s+price\s+(?:found|present|rendered|shown|visible)\b|\b(?:equal|same)\s+price\s+(?:compare|strike|original)\b|\b(?:compare|strike|original)\s+price\s+(?:equals|===|same\s+as)\s+(?:list|full|retail|original)\b|\b(?:doubled|duplicate)\s+(?:compare|strike|original|price)(?:\s+(?:row|price))?\s+(?:found|present|rendered|shown|visible)\b|\bno[-_\s]?discount\s+(?:compare|strike|original)\s+(?:rendered|shown|visible|present|found)\b/i);
 }
 
 function semanticEvidenceProblems(evidence, report) {
@@ -158,7 +162,7 @@ function semanticEvidenceProblems(evidence, report) {
       favicon.byte_match === true
       || ["matched_source", "promoted_source", "confirmed_non_template", "no_source_candidate"].includes(String(favicon.status || favicon.result || ""))
     );
-    const faviconTextOk = /\b(?:matched|promoted|source|brand|candidate|confirmed|not[-_\s]?template)\b/i.test(faviconText);
+    const faviconTextOk = faviconTextConfirmsSourceMatch(faviconText);
     if (!faviconObjectOk && !faviconTextOk) {
       problems.push("stages.polish.evidence.brand_review.favicon must confirm source/brand favicon matching or a documented no-source-candidate outcome when block_template_favicon is true.");
     }
@@ -166,10 +170,10 @@ function semanticEvidenceProblems(evidence, report) {
       problems.push("stages.polish.evidence.brand_review.favicon records byte_match=false while block_template_favicon is true.");
     }
   }
-  if (hasNegativeEvidence(favicon, /\b(?:starter|template)\s+favicon\s+(?:found|present|matched|leaked)|images\/favicon\.png\b/i)) {
+  if (hasNegativeEvidence(favicon, /\b(?:starter|template)\s+favicon\s+(?:found|present|matched|leaked|retained|kept|remaining)|images\/favicon\.png\b/i)) {
     problems.push("stages.polish.evidence.brand_review.favicon still indicates starter-template favicon leakage.");
   }
-  if (hasNegativeEvidence(residueReview?.starter_favicon, /\b(?:found|present|matched|leaked)|images\/favicon\.png\b/i)) {
+  if (hasNegativeEvidence(residueReview?.starter_favicon, /\b(?:found|present|matched|leaked|retained|kept|remaining)|images\/favicon\.png\b/i)) {
     problems.push("stages.polish.evidence.template_residue_review.starter_favicon still indicates starter-template favicon leakage.");
   }
 
@@ -183,10 +187,7 @@ function semanticEvidenceProblems(evidence, report) {
   const bumpEvidence = checkoutReview?.bump_compare_price_rule ?? checkoutReview?.bump_compare_price;
   if (!bumpEvidence) {
     problems.push("stages.polish.evidence.checkout_review must confirm the order-bump compare-price rule.");
-  } else if (
-    (isObject(bumpEvidence) && (bumpEvidence.equal_compare_price_found === true || bumpEvidence.same_price_compare_rendered === true))
-    || hasNegativeEvidence(bumpEvidence, /\b(?:equal|same|doubled|duplicate|no[-_\s]?discount).{0,40}(?:compare|strike|original)|compare.{0,40}(?:equal|same|doubled|duplicate)\b/i)
-  ) {
+  } else if ((isObject(bumpEvidence) && (bumpEvidence.equal_compare_price_found === true || bumpEvidence.same_price_compare_rendered === true)) || hasNegativeBumpCompareEvidence(bumpEvidence)) {
     problems.push("stages.polish.evidence.checkout_review.bump_compare_price_rule must confirm no equal/no-discount compare price renders.");
   }
 

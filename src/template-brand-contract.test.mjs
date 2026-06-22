@@ -29,6 +29,7 @@ test("demeter contract loads and declares the starter defaults", () => {
   assert.equal(contract.pricing_surfaces.legacy_aliases.discounted, "compare_at_current");
   assert.equal(contract.checkout_fields.initial_hint_state.polish_evidence_key, "checkout_review.field_labels");
   assert.ok(contract.checkout_fields.initial_hint_state.valid_patterns.includes("placeholder_style_hint"));
+  assert.match(contract.checkout_fields.initial_hint_state.surface_definitions.payment_hosted_fields, /hosted payment/);
   assert.equal(contract.family_inventory.bundle_picker.includes("Editorial tier selector"), true);
 });
 
