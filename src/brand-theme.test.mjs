@@ -221,6 +221,31 @@ test("theme generate refuses different existing CSS without force and prints a s
   });
 });
 
+test("theme generate reports empty CSS before checking existing artifact overwrite", () => {
+  withTempDir((dir) => {
+    const { target, packetPath } = makePacket(dir);
+    mkdirSync(join(target, ".campaign-runtime/theme"), { recursive: true });
+    writeFileSync(join(target, ".campaign-runtime/theme/brand-theme.css"), ":root { --brand--color--primary: #000000; }\n");
+    const inspection = {
+      errors: [],
+      status: "ready",
+      context_theme: { generated: { can_generate: true } },
+      report: { status: "ready" },
+      css: "",
+      absolute_paths: {
+        report_path: join(target, ".campaign-runtime/theme/theme-report.json"),
+        css_path: join(target, ".campaign-runtime/theme/brand-theme.css"),
+      },
+    };
+
+    const result = writeThemeArtifacts(inspection, { writeCss: true, writeReport: true, packetPath });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.errors.some((error) => error.code === "theme.generate.empty"), true);
+    assert.equal(result.errors.some((error) => error.code === "theme.generate.exists"), false);
+  });
+});
+
 test("theme validators reject malformed context and applied report load order", () => {
   const contextResult = validateThemeContextBlock({
     status: "ready",

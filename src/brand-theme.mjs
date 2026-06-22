@@ -788,9 +788,11 @@ export function writeThemeArtifacts(inspection, { writeCss = false, writeReport 
   if (writeCss) {
     if (!inspection.context_theme?.generated?.can_generate) {
       errors.push(issue("theme.generate.not_ready", "brand-theme.css is not ready to generate; inspect theme-report.json for missing/default/conflicting source tokens."));
+    } else if (!inspection.css) {
+      errors.push(issue("theme.generate.empty", "No generated CSS is available."));
     } else if (existsSync(cssPath) && !force) {
       const existingCss = readFileSync(cssPath, "utf8");
-      if (inspection.css && existingCss === inspection.css) {
+      if (existingCss === inspection.css) {
         alreadyCurrent.css = true;
       } else {
         const safeCommand = `campaigns-os theme generate --packet ${packetPath} --force`;
@@ -800,8 +802,6 @@ export function writeThemeArtifacts(inspection, { writeCss = false, writeReport 
           { safe_commands: [safeCommand] },
         ));
       }
-    } else if (!inspection.css) {
-      errors.push(issue("theme.generate.empty", "No generated CSS is available."));
     } else {
       mkdirSync(dirname(cssPath), { recursive: true });
       writeFileSync(cssPath, inspection.css);

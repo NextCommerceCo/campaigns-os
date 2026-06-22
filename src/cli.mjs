@@ -1486,8 +1486,8 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
         ? [{
             code: "AMBIGUOUS_SOURCE_HTML_CANDIDATES",
             stage: "prepare_build",
-            message: "Source HTML filename fallback found ambiguous candidates. Write .campaigns-os/source-html-manifest.json from context.source.manifest_draft, choosing the intended candidate paths before build.",
-            candidates: context.source.ambiguous_candidates,
+            message: `Source HTML filename fallback found ambiguous candidates: ${context.source.ambiguous_candidates.map((entry) => `${entry.page_id}: ${(entry.candidates || []).map((candidate) => candidate.path).join(", ")}`).join("; ")}. Write .campaigns-os/source-html-manifest.json from context.source.manifest_draft, choosing the intended candidate paths before build.`,
+            sample: context.source.ambiguous_candidates.map((entry) => `${entry.page_id}: ${(entry.candidates || []).map((candidate) => candidate.path).join(", ")}`),
           }]
         : []),
       ...(context.commerce_zone_findings.length

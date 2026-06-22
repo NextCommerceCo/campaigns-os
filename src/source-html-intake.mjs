@@ -209,7 +209,7 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
 }
 
 function matchSourcePages(specPages, htmlFiles) {
-  const used = new Set();
+  const usedByPageId = new Map();
   const mappings = [];
   const prompts = [];
   const decisions = [];
@@ -232,7 +232,7 @@ function matchSourcePages(specPages, htmlFiles) {
         matched_keys: keys.filter((key) => key && key === slugify(file.basename)),
       }))
       .filter((file) => file.matched_keys.length > 0);
-    const unused = candidates.filter((file) => !used.has(file.path));
+    const unused = candidates.filter((file) => !usedByPageId.has(file.path));
     const match = unused.length === 1 ? unused[0] : null;
     if (unused.length > 1) {
       const candidateEntries = candidateEntriesForPrompt(unused);
@@ -258,7 +258,7 @@ function matchSourcePages(specPages, htmlFiles) {
         },
       });
     } else if (match) {
-      used.add(match.path);
+      usedByPageId.set(match.path, page.id);
       const mapping = { page_id: page.id, path: match.path };
       addSpecHints(mapping, page);
       mappings.push(mapping);
@@ -269,6 +269,29 @@ function matchSourcePages(specPages, htmlFiles) {
         decision: `mapped CampaignSpec page "${page.id}" to source file "${match.path}"`,
         confidence: candidates.length === 1 ? "high" : "medium",
         evidence: [`matched source filename against page keys: ${keys.join(", ")}`],
+      });
+    } else if (candidates.length > 0) {
+      const candidateEntries = candidateEntriesForPrompt(candidates, usedByPageId);
+      ambiguousCandidates.push({
+        page_id: page.id,
+        page_type: page.type || null,
+        match_keys: keys,
+        candidates: candidateEntries,
+      });
+      mappings.push({
+        page_id: page.id,
+        skip_reason: `Matching source HTML candidates were already assigned to other pages: ${candidateEntries.map((candidate) => `${candidate.path}${candidate.used_by_page_id ? ` used by ${candidate.used_by_page_id}` : ""}`).join(", ")}. Add .campaigns-os/source-html-manifest.json to bind this page explicitly before build.`,
+      });
+      prompts.push({
+        code: "AMBIGUOUS_SOURCE_PAGE",
+        stage: "prepare_build",
+        message: `Active CampaignSpec page "${page.id}" only matched HTML files already assigned to another page. Add a source-html manifest entry for this page before build.`,
+        page_id: page.id,
+        detail: {
+          match_keys: keys,
+          candidates: candidateEntries,
+          manifest_entry: manifestEntryDraft(page, candidateEntries[0]?.path || ""),
+        },
       });
     } else {
       const hasDesignSource = isObject(page.design_source);
@@ -299,12 +322,13 @@ function matchSourcePages(specPages, htmlFiles) {
   };
 }
 
-function candidateEntriesForPrompt(candidates) {
+function candidateEntriesForPrompt(candidates, usedByPageId = null) {
   return candidates.map((candidate) => ({
     path: candidate.path,
     bytes: candidate.bytes ?? null,
     sha256: candidate.sha256 || null,
     matched_keys: candidate.matched_keys || [],
+    ...(usedByPageId?.has(candidate.path) ? { used_by_page_id: usedByPageId.get(candidate.path) } : {}),
   }));
 }
 
@@ -325,11 +349,14 @@ function createManifestDraft(specPages, mappings, ambiguousCandidates) {
   return {
     schema_version: "source-html-manifest/v0",
     generator: "campaigns-os@prepare-build-draft",
-    pages: specPages.map((page) => {
-      const mapping = mappingByPageId.get(page.id);
-      const ambiguous = ambiguousByPageId.get(page.id);
-      return manifestEntryDraft(page, mapping?.path || ambiguous?.candidates?.[0]?.path || "");
-    }),
+    pages: specPages
+      .map((page) => {
+        const mapping = mappingByPageId.get(page.id);
+        const ambiguous = ambiguousByPageId.get(page.id);
+        const path = mapping?.path || ambiguous?.candidates?.[0]?.path || "";
+        return path ? manifestEntryDraft(page, path) : null;
+      })
+      .filter(Boolean),
   };
 }
 
@@ -382,6 +409,11 @@ function pageKitTargetPrompts(mappings) {
         stage: "prepare_build",
         message: `CampaignSpec pages "${existing.page_id}" and "${mapping.page_id}" both project to Page Kit target "${outputPath}". Give one page a distinct route before build.`,
         page_id: mapping.page_id,
+        detail: {
+          output_path: outputPath,
+          existing_page_id: existing.page_id,
+          conflicting_page_id: mapping.page_id,
+        },
       });
     } else {
       byOutputPath.set(outputPath, mapping);
