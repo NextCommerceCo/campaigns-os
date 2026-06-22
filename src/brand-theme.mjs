@@ -159,24 +159,66 @@ export function parseRootCustomProperties(content) {
   return { tokens, warnings };
 }
 
-function inferDesignIntentTokens(content) {
+function inferDesignIntentTokens(content, rootTokens = {}) {
   const tokens = {};
+  const addToken = (name, value) => {
+    const color = normalizeColor(value);
+    if (color && !tokens[name]) tokens[name] = color;
+  };
+
+  for (const [name, value] of Object.entries(rootTokens || {})) {
+    const color = normalizeColor(value);
+    if (!color) continue;
+    const lower = name.toLowerCase();
+    if (/(primary|brand|teal|nav|header)(?!.*foreground)/.test(lower)) addToken("--brand-primary", color);
+    if (/(cta|button|btn|accent|green|success)/.test(lower)) {
+      addToken("--brand-cta", color);
+      addToken("--brand-accent", color);
+    }
+    if (/(surface|card|panel)/.test(lower)) addToken(lower.includes("card") || lower.includes("panel") ? "--surface-card" : "--surface-bg", color);
+    if (/(text|foreground).*?(primary|main)|(^--.*foreground$)/.test(lower)) addToken("--text-primary", color);
+    if (/(text|foreground).*?(secondary|muted|subtle)/.test(lower)) addToken("--text-secondary", color);
+    if (/(inverse|on-primary|on-cta|white)/.test(lower)) addToken("--text-inverse", color);
+    if (/(border|outline|stroke|ring)/.test(lower)) addToken("--border-default", color);
+    if (/(rating|star|review)/.test(lower)) addToken("--rating-star", color);
+  }
+
   const rulePattern = /([^{}]+)\{([^{}]+)\}/g;
   for (const match of content.matchAll(rulePattern)) {
     const selector = match[1] || "";
-    if (!isCtaLikeSelector(selector)) continue;
     for (const declaration of match[2].split(";")) {
       const [rawName, ...rawValueParts] = declaration.split(":");
       const name = String(rawName || "").trim().toLowerCase();
-      if (!["background", "background-color", "border-color"].includes(name)) continue;
-      const color = extractDeclarationColor(rawValueParts.join(":"));
-      if (!isStrongBrandColor(color)) continue;
-      tokens["--button-primary-bg"] ||= color;
-      tokens["--brand-cta"] ||= color;
-      break;
+      const rawValue = rawValueParts.join(":");
+      const color = resolveDeclarationColor(rawValue, rootTokens);
+      if (!color) continue;
+      if (["background", "background-color"].includes(name)) {
+        if (isCtaLikeSelector(selector) && isStrongBrandColor(color)) {
+          addToken("--button-primary-bg", color);
+          addToken("--brand-cta", color);
+          addToken("--brand-accent", color);
+        } else if (/(header|nav|announcement|brand|hero)/i.test(selector) && isStrongBrandColor(color)) {
+          addToken("--brand-primary", color);
+        } else if (/(card|panel|summary|product|form|checkout)/i.test(selector) && !isStrongBrandColor(color)) {
+          addToken("--surface-card", color);
+        } else if (/(body|main|page|wrapper)/i.test(selector) && !isStrongBrandColor(color)) {
+          addToken("--surface-bg", color);
+        }
+      }
+      if (["border", "border-color", "outline", "outline-color", "box-shadow"].includes(name)) {
+        addToken("--border-default", color);
+      }
+      if (name === "color") {
+        if (/(star|rating|review)/i.test(selector)) tokens["--rating-star"] = color;
+        else if (isCtaLikeSelector(selector)) addToken("--text-inverse", color);
+        else if (/(muted|secondary|sub|caption|small)/i.test(selector)) addToken("--text-secondary", color);
+        else if (!isStrongBrandColor(color)) addToken("--text-primary", color);
+      }
     }
-    if (tokens["--button-primary-bg"]) break;
   }
+  if (tokens["--brand-cta"] && !tokens["--brand-accent"]) tokens["--brand-accent"] = tokens["--brand-cta"];
+  if (tokens["--brand-accent"] && !tokens["--rating-star"]) tokens["--rating-star"] = tokens["--brand-accent"];
+  if (tokens["--text-primary"] && !tokens["--text-inverse"]) tokens["--text-inverse"] = "#ffffff";
   return tokens;
 }
 
@@ -190,6 +232,14 @@ function extractDeclarationColor(value) {
   if (exact) return exact;
   const match = cleaned.match(/#[0-9a-f]{3,6}\b|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)/i);
   return match ? normalizeColor(match[0]) : null;
+}
+
+function resolveDeclarationColor(value, tokens = {}) {
+  const direct = extractDeclarationColor(value);
+  if (direct) return direct;
+  const varMatch = String(value || "").match(/var\(\s*(--[A-Za-z0-9_-]+)/);
+  if (!varMatch) return null;
+  return extractDeclarationColor(tokens[varMatch[1]]);
 }
 
 function isStrongBrandColor(value) {
@@ -207,7 +257,7 @@ function isStrongBrandColor(value) {
 function candidateFromFile(path, role, source = "css_file", referencedBy = []) {
   const content = readFileSync(path, "utf8");
   const parsed = parseRootCustomProperties(content);
-  const inferred = inferDesignIntentTokens(content);
+  const inferred = inferDesignIntentTokens(content, parsed.tokens);
   return {
     source,
     path,
@@ -225,13 +275,14 @@ function inlineCandidatesFromHtml(path, role) {
   for (const block of extractRootBlocks(content)) {
     const parsed = parseRootCustomProperties(`:root {${block.body}}`);
     if (Object.keys(parsed.tokens).length === 0) continue;
+    const inferred = inferDesignIntentTokens(content, parsed.tokens);
     candidates.push({
       source: "html_inline_root",
       path,
       role,
       hash: sha256(`${path}:${block.index}:${block.body}`),
       inline_block_index: block.index,
-      tokens: parsed.tokens,
+      tokens: { ...inferred, ...parsed.tokens },
       warnings: parsed.warnings,
       referenced_by: [],
     });
@@ -446,6 +497,19 @@ function mapTokens(tokens, targetTokens) {
   if (!hasCta && isNonEmptyString(tokens["--brand-accent"])) {
     addMapping("--brand-accent", "--brand--color--cta-primary", tokens["--brand-accent"].trim(), "medium", { method: "cta-fallback-from-brand-accent" });
     warnings.push(issue("theme.cta.fallback", "No explicit CTA token was found; using --brand-accent as --brand--color--cta-primary."));
+  } else if (!hasCta && isNonEmptyString(tokens["--brand-primary"])) {
+    addMapping("--brand-primary", "--brand--color--cta-primary", tokens["--brand-primary"].trim(), "medium", { method: "cta-fallback-from-brand-primary" });
+    warnings.push(issue("theme.cta.fallback", "No explicit CTA token was found; using --brand-primary as --brand--color--cta-primary."));
+  }
+
+  const hasSurface = mappings.some((mapping) => mapping.target === "--brand--color--surface");
+  if (!hasSurface && isNonEmptyString(tokens["--surface-bg"])) {
+    addMapping("--surface-bg", "--brand--color--surface", tokens["--surface-bg"].trim(), "medium", { method: "surface-fallback-from-background" });
+  }
+
+  const hasRating = mappings.some((mapping) => mapping.target === "--brand--color--rating-star");
+  if (!hasRating && isNonEmptyString(tokens["--brand-accent"])) {
+    addMapping("--brand-accent", "--brand--color--rating-star", tokens["--brand-accent"].trim(), "medium", { method: "rating-fallback-from-brand-accent" });
   }
 
   return { mappings, warnings };
@@ -457,9 +521,9 @@ function confidenceFor({ selected, defaultMatch, mappings, conflicts }) {
   const targets = new Set(mappings.map((mapping) => mapping.target));
   const hasCore = [
     "--brand--color--primary",
-    "--brand--color--background",
-    "--brand--color--text-primary",
-  ].every((target) => targets.has(target));
+  ].every((target) => targets.has(target))
+    && (targets.has("--brand--color--background") || targets.has("--brand--color--surface"))
+    && (targets.has("--brand--color--text-primary") || targets.has("--brand--color--foreground"));
   if (!hasCore) return "medium";
   if (conflicts.length > 0) return "medium";
   if (targets.has("--brand--color--cta-primary") || targets.has("--brand--color--accent")) return "high";

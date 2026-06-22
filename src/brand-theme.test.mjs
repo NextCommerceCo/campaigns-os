@@ -136,6 +136,47 @@ test("brand theme infers safe CTA tokens from linked button CSS when root tokens
   });
 });
 
+test("brand theme normalizes role-like source tokens into a complete commerce token family", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir, [{ page_id: "checkout", path: "checkout.html" }]);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "checkout.html"), `<link rel="stylesheet" href="styles/roadside.css"><main>Checkout</main>`);
+    writeFileSync(join(source, "styles/roadside.css"), `
+:root {
+  --pt-teal: #125161;
+  --pt-green: #1aae2d;
+}
+.checkout-header { background: var(--pt-teal); border-bottom: 4px solid var(--pt-green); }
+.accept-btn { background: linear-gradient(to bottom, #1aae2d 0%, #148c24 100%); color: #ffffff; }
+.panel { background: #ffffff; border: 1px solid #eee; }
+.input-flds { border: 1px solid #ccd; color: #101010; }
+.stars { color: #ffb400; }
+`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const targets = new Set(result.context_theme.mappings.map((mapping) => mapping.target));
+
+    assert.equal(result.status, "ready");
+    assert.equal(result.confidence, "high");
+    for (const target of [
+      "--brand--color--primary",
+      "--brand--color--primary-dark",
+      "--brand--color--primary-light",
+      "--brand--color--cta-primary",
+      "--brand--color--surface",
+      "--brand--color--border",
+      "--component--color--outline",
+      "--brand--color--foreground",
+      "--brand--color--rating-star",
+    ]) {
+      assert.ok(targets.has(target), `expected generated mapping for ${target}`);
+    }
+    assert.match(result.css, /--brand--color--primary: #125161;/);
+    assert.match(result.css, /--brand--color--cta-primary: #1aae2d;/);
+    assert.match(result.css, /--brand--color--rating-star: #ffb400;/);
+  });
+});
+
 test("brand theme detects inline :root tokens from mapped HTML without workflow-order assumptions", () => {
   withTempDir((dir) => {
     const { source, packet, packetPath } = makePacket(dir);

@@ -116,7 +116,84 @@ function fieldHasEvidence(value, field) {
   return nonEmptyString(value);
 }
 
-function evidenceProblems(evidence) {
+function reviewText(value) {
+  if (Array.isArray(value)) return value.map(reviewText).join(" ");
+  if (isObject(value)) {
+    return [
+      value.status,
+      value.result,
+      value.verdict,
+      value.summary,
+      value.note,
+      value.value,
+    ].filter(Boolean).map(String).join(" ");
+  }
+  return String(value || "");
+}
+
+function hasNegativeEvidence(value, pattern) {
+  const text = reviewText(value);
+  if (/\bnot\s+found\b|\bnone\s+found\b|\bnot\s+present\b|\bno\s+(?:starter|template|equal|same|duplicate)/i.test(text)) return false;
+  return pattern.test(text);
+}
+
+function buildBriefBlocksTemplateFavicon(report) {
+  const policy = report?.build_brief?.artifact?.template_residue_policy
+    || report?.build_brief?.template_residue_policy
+    || report?.template_residue_policy
+    || null;
+  return policy?.block_template_favicon === true;
+}
+
+function semanticEvidenceProblems(evidence, report) {
+  const problems = [];
+  const brandReview = evidence?.brand_review;
+  const checkoutReview = evidence?.checkout_review;
+  const residueReview = evidence?.template_residue_review;
+
+  const favicon = isObject(brandReview) ? brandReview.favicon : null;
+  if (buildBriefBlocksTemplateFavicon(report)) {
+    const faviconText = reviewText(favicon);
+    const faviconObjectOk = isObject(favicon) && (
+      favicon.byte_match === true
+      || ["matched_source", "promoted_source", "confirmed_non_template", "no_source_candidate"].includes(String(favicon.status || favicon.result || ""))
+    );
+    const faviconTextOk = /\b(?:matched|promoted|source|brand|candidate|confirmed|not[-_\s]?template)\b/i.test(faviconText);
+    if (!faviconObjectOk && !faviconTextOk) {
+      problems.push("stages.polish.evidence.brand_review.favicon must confirm source/brand favicon matching or a documented no-source-candidate outcome when block_template_favicon is true.");
+    }
+    if (isObject(favicon) && favicon.byte_match === false) {
+      problems.push("stages.polish.evidence.brand_review.favicon records byte_match=false while block_template_favicon is true.");
+    }
+  }
+  if (hasNegativeEvidence(favicon, /\b(?:starter|template)\s+favicon\s+(?:found|present|matched|leaked)|images\/favicon\.png\b/i)) {
+    problems.push("stages.polish.evidence.brand_review.favicon still indicates starter-template favicon leakage.");
+  }
+  if (hasNegativeEvidence(residueReview?.starter_favicon, /\b(?:found|present|matched|leaked)|images\/favicon\.png\b/i)) {
+    problems.push("stages.polish.evidence.template_residue_review.starter_favicon still indicates starter-template favicon leakage.");
+  }
+
+  const fieldEvidence = checkoutReview?.field_labels ?? checkoutReview?.initial_field_hints ?? checkoutReview?.visible_labels;
+  if (!fieldEvidence) {
+    problems.push("stages.polish.evidence.checkout_review must confirm initial checkout field labels/placeholders/hints.");
+  } else if (hasNegativeEvidence(fieldEvidence, /\b(?:missing|absent|blank|unlabeled|unlabelled|placeholder[-_\s]?stripped|not\s+legible)\b/i)) {
+    problems.push("stages.polish.evidence.checkout_review.field_labels must confirm a legible initial field hint/label state.");
+  }
+
+  const bumpEvidence = checkoutReview?.bump_compare_price_rule ?? checkoutReview?.bump_compare_price;
+  if (!bumpEvidence) {
+    problems.push("stages.polish.evidence.checkout_review must confirm the order-bump compare-price rule.");
+  } else if (
+    (isObject(bumpEvidence) && (bumpEvidence.equal_compare_price_found === true || bumpEvidence.same_price_compare_rendered === true))
+    || hasNegativeEvidence(bumpEvidence, /\b(?:equal|same|doubled|duplicate|no[-_\s]?discount).{0,40}(?:compare|strike|original)|compare.{0,40}(?:equal|same|doubled|duplicate)\b/i)
+  ) {
+    problems.push("stages.polish.evidence.checkout_review.bump_compare_price_rule must confirm no equal/no-discount compare price renders.");
+  }
+
+  return problems;
+}
+
+function evidenceProblems(evidence, report) {
   if (!isObject(evidence)) {
     return ["stages.polish.evidence must be an object with the required polish evidence categories."];
   }
@@ -126,6 +203,7 @@ function evidenceProblems(evidence) {
       problems.push(`stages.polish.evidence.${field} is missing or incomplete.`);
     }
   }
+  problems.push(...semanticEvidenceProblems(evidence, report));
   return problems;
 }
 
@@ -351,7 +429,7 @@ export function evaluatePolishGate({ report, required = false } = {}) {
     };
   }
 
-  const problems = evidenceProblems(evidence);
+  const problems = evidenceProblems(evidence, report);
   if (problems.length) {
     return {
       status: "blocked",

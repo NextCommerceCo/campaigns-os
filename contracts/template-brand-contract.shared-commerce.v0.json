@@ -144,6 +144,14 @@
       }
     }
   },
+  "checkout_fields": {
+    "initial_hint_state": {
+      "rule": "Empty checkout fields must have a legible initial hint state: either visible labels, placeholder-style hints, or both. Accessible-only labels are not sufficient if the visible placeholder/hint text is stripped from empty inputs.",
+      "valid_patterns": ["visible_label", "placeholder_style_hint", "visible_label_plus_placeholder"],
+      "applies_to": ["customer", "shipping", "billing", "payment_hosted_fields"],
+      "polish_evidence_key": "checkout_review.field_labels"
+    }
+  },
   "exit_pop": {
     "requires_spec_surface": ["exit_intent", "promo_code_input"],
     "residue_literals": [
