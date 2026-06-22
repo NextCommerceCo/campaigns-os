@@ -362,6 +362,16 @@ function themeGateAssertion(gate) {
 
 function polishGateAssertion(gate) {
   const page = { page_id: "campaign" };
+  const evidence = {
+    build_fingerprint: gate.build_fingerprint || null,
+    source_build_fingerprint: gate.source_build_fingerprint || null,
+    source_package_material_fingerprint: gate.source_package_material_fingerprint || null,
+    current_source_package_material_fingerprint: gate.current_source_package_material_fingerprint || null,
+    assembly_source_package_material_fingerprint: gate.assembly_source_package_material_fingerprint || null,
+    performed_by: gate.performed_by || null,
+    waiver: gate.waiver || null,
+    scope_source: gate.scope_source || null,
+  };
   if (gate.status === "blocked") {
     return assertion({
       id: gate.code,
@@ -382,6 +392,28 @@ function polishGateAssertion(gate) {
       },
     });
   }
+  if (gate.status === "not_applicable") {
+    return assertion({
+      id: gate.code,
+      family: "polish_gate",
+      page,
+      status: STATUS.SKIPPED,
+      expected: "Polish gate evaluated only when an assembly report is available after build completion",
+      actual: gate.reason,
+      evidence,
+    });
+  }
+  if (gate.status === "waived") {
+    return assertion({
+      id: gate.code,
+      family: "polish_gate",
+      page,
+      status: STATUS.SKIPPED,
+      expected: "current structured Polish evidence with an explicit source-freshness waiver",
+      actual: gate.reason,
+      evidence,
+    });
+  }
   return assertion({
     id: gate.code,
     family: "polish_gate",
@@ -389,16 +421,7 @@ function polishGateAssertion(gate) {
     status: STATUS.PASS,
     expected: "current structured Polish evidence produced by next-campaigns-polish, with any source-freshness exception explicitly waived",
     actual: gate.reason,
-    evidence: {
-      build_fingerprint: gate.build_fingerprint || null,
-      source_build_fingerprint: gate.source_build_fingerprint || null,
-      source_package_material_fingerprint: gate.source_package_material_fingerprint || null,
-      current_source_package_material_fingerprint: gate.current_source_package_material_fingerprint || null,
-      assembly_source_package_material_fingerprint: gate.assembly_source_package_material_fingerprint || null,
-      performed_by: gate.performed_by || null,
-      waiver: gate.waiver || null,
-      scope_source: gate.scope_source || null,
-    },
+    evidence,
   });
 }
 

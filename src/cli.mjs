@@ -4633,7 +4633,7 @@ function buildNextActions({ result, packetPath, packet, themeGate, polishGate, a
     push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after resolving the theme gate to advance.");
     return actions;
   }
-  if (polishGateRequiresBuild(polishGate) && ["polish", "deploy", "qa"].includes(result.stage)) {
+  if (polishGateRequiresBuild(polishGate) && ["build", "polish", "deploy", "qa"].includes(result.stage)) {
     for (const action of polishGate.required_actions || []) {
       push(`polish_gate.${action.id}`, action.kind, action.command, action.description);
     }
@@ -4897,7 +4897,7 @@ function buildNextStep(errors, warnings, derived, report = null) {
   if (polishBlocked) {
     return {
       stage: "polish",
-      status: polishStatus.startsWith("blocked") ? "blocked" : (warnings.length ? "ready_with_warnings" : "ready"),
+      status: polishBlocked ? "blocked" : (warnings.length ? "ready_with_warnings" : "ready"),
       owner: "polish",
       default_skill: "next-campaigns-polish",
       command: `campaigns-os next polish --packet ${derived.packet_path}`,

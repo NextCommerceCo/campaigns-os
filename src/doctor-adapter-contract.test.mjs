@@ -282,6 +282,10 @@ test("polish lifecycle gate blocks doctor, next, and qa until distinct evidence 
     assert.equal((doctor.errors || []).some((issue) => issue.code === "polish.evidence_missing"), true);
     assert.equal(doctor.derived?.polish_gate?.status, "blocked");
     assert.match((doctor.errors || []).find((issue) => issue.code === "polish.evidence_missing").message, /Polish evidence missing for current build/);
+    assert.equal(doctor.next?.status, "blocked");
+    assert.equal((doctor.next?.blocked_stages || []).includes("polish"), true);
+    assert.equal((doctor.next?.blocked_stages || []).includes("deploy"), true);
+    assert.equal((doctor.next?.blocked_stages || []).includes("qa"), true);
 
     const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
     assert.equal(next.ok, true);
@@ -323,6 +327,11 @@ test("next routes back to build when source package changed after assembly", () 
     assert.match(next.picked_reason, /Design Source Package changed after Build/);
     assert.equal((next.gates || []).find((gate) => gate.id === "polish_gate")?.code, "polish.assembly_source_package_stale");
     assert.equal((next.next_actions || []).some((action) => action.command === "next-campaigns-build"), true);
+    assert.equal((next.next_actions || []).some((action) => action.id === "polish_gate.rerun_build" && /current Design Source Package/.test(action.description || "")), true);
+
+    const explicitBuild = runCliJson(["next", "build", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.equal(explicitBuild.stage, "build");
+    assert.equal((explicitBuild.next_actions || []).some((action) => action.id === "polish_gate.rerun_build" && action.command === "next-campaigns-build"), true);
 
     const explicitPolish = runCliJson(["next", "polish", "--packet", packetPath, "--report", reportPath, "--json"]);
     assert.equal(explicitPolish.stage, "polish");
