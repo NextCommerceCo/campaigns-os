@@ -4899,7 +4899,7 @@ function buildNextStep(errors, warnings, derived, report = null) {
   if (polishBlocked) {
     return {
       stage: "polish",
-      status: polishBlocked ? "blocked" : (warnings.length ? "ready_with_warnings" : "ready"),
+      status: "blocked",
       owner: "polish",
       default_skill: "next-campaigns-polish",
       command: `campaigns-os next polish --packet ${derived.packet_path}`,
