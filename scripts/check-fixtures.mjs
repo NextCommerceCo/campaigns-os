@@ -1654,7 +1654,7 @@ try {
     completed_at: "2026-06-22T00:00:00.000Z",
     evidence: {
       visual_review: { screenshots: ["qa-output/checkout-desktop.png"] },
-      brand_review: { favicon: "confirmed non-template favicon", colors: ["#123456"] },
+      brand_review: { favicon: "confirmed non-template favicon", colors: ["#123456"], brand_bleed: { cleared: true } },
       checkout_review: { field_labels: "checked", phone_alignment: "checked", payment_display: "checked", bump_compare_price_rule: "checked" },
       template_residue_review: { next_blue: "not found", starter_favicon: "not found", placeholders: "not found" },
       commerce_flow_review: { shop_single_step: "direct-entry force-package/product-selector limitation reviewed" },

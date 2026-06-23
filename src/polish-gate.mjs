@@ -191,7 +191,24 @@ function semanticEvidenceProblems(evidence, report) {
     problems.push("stages.polish.evidence.checkout_review.bump_compare_price_rule must confirm no equal/no-discount compare price renders.");
   }
 
+  // Brand bleed: when a campaign is cloned from a proven sibling, the sibling's
+  // brand defaults ride along — a default promo/sale banner with a fake code,
+  // hardcoded non-token colors (e.g. next-core's #C670FE pill), scaffold fonts
+  // (Plus Jakarta), and the prior favicon. Polish must affirmatively certify
+  // the de-brand pass cleared them. See the Shield build learnings (A3).
+  const bleedEvidence = brandReview?.brand_bleed ?? brandReview?.brand_bleed_review ?? brandReview?.debrand;
+  if (!bleedEvidence) {
+    problems.push("stages.polish.evidence.brand_review.brand_bleed must confirm the cloned-source de-brand pass: no residual promo/sale code or copy, no prior-campaign favicon, no scaffold/non-design fonts, no hardcoded non-token colors.");
+  } else if (brandBleedNegative(bleedEvidence)) {
+    problems.push("stages.polish.evidence.brand_review.brand_bleed still indicates cloned-source brand bleed (residual promo code/sale copy, prior-campaign favicon, scaffold/non-design fonts, or a hardcoded non-token color).");
+  }
+
   return problems;
+}
+
+function brandBleedNegative(value) {
+  if (isObject(value) && (value.cleared === false || value.bleed_found === true || value.residual_found === true)) return true;
+  return hasNegativeEvidence(value, /\b(?:promo|sale)\s+(?:code|copy|banner|sale)\b.{0,40}\b(?:found|present|remain(?:s|ing)?|leaked|retained|kept)\b|\bfake\s+(?:code|sale)\b|\bprior[-_\s]?campaign\b|\bsibling[-_\s]?(?:brand|campaign|source)\b|\bscaffold\s+font|\bplus\s+jakarta\b|#c670fe\b|\bhardcoded\s+(?:non[-_\s]?token\s+)?(?:color|hex|purple)\b|\bnon[-_\s]?token\s+colou?r\s+(?:found|present|remain(?:s|ing)?)\b/i);
 }
 
 function evidenceProblems(evidence, report) {

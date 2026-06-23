@@ -93,7 +93,7 @@ function validPolishStage(overrides = {}) {
     warnings: [],
     evidence: {
       visual_review: { screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"] },
-      brand_review: { logo_checked: true, favicon: "confirmed non-template favicon", colors: ["#123456"] },
+      brand_review: { logo_checked: true, favicon: "confirmed non-template favicon", colors: ["#123456"], brand_bleed: { cleared: true } },
       checkout_review: { field_labels: "checked", phone_alignment: "checked", payment_display: "checked", bump_compare_price_rule: "checked" },
       template_residue_review: { next_blue: "not found", starter_favicon: "not found", lorem: "not found", product_placeholders: "not found" },
       commerce_flow_review: { shop_single_step: "direct-entry force-package/product-selector limitation reviewed" },
