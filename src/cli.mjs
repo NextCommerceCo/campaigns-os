@@ -2732,17 +2732,18 @@ const PRE_CHECKOUT_PAGE_TYPES = new Set([
 ]);
 
 function sdkLoaderScriptPresent(content) {
+  // Only the campaign-cart loader counts. A loose `loader.js` match would let an
+  // unrelated bundle (analytics/lazy-image loader) falsely satisfy the check and
+  // re-introduce the missing-SDK bug, so the src must identify the campaign-cart
+  // loader specifically. We do not scan for inline ESM imports: that is not a
+  // real bootstrap path for this SDK and is trivially spoofed by a comment or a
+  // JSON <script> blob.
   for (const tag of content.matchAll(/<script\b[^>]*>/gi)) {
-    const attrs = tag[0];
-    const srcMatch = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+    const srcMatch = tag[0].match(/\bsrc\s*=\s*["']([^"']+)["']/i);
     if (!srcMatch) continue;
-    const src = srcMatch[1];
-    if (/campaign-cart@[^"']*\/dist\/loader\.js/i.test(src) || /(?:^|[\/])loader\.js(?:[?#]|$)/i.test(src)) {
-      return true;
-    }
+    if (/campaign-cart(?:@[^"']*)?\/dist\/loader\.js/i.test(srcMatch[1])) return true;
   }
-  // Inline ESM import of the campaign-cart loader also counts as bootstrapped.
-  return /import\s+[^;]*campaign-cart[^;]*\/dist\/loader\.js/i.test(content);
+  return false;
 }
 
 // Order-bump templates (bump-check01/bump-switch01) ship BOTH a per-unit price

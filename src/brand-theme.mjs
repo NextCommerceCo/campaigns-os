@@ -477,17 +477,19 @@ function contrastRatio(luminanceA, luminanceB) {
 // saturated background yields a light one. This is the fix for white-on-light
 // CTA text: never trust a copied source --text-inverse (which defaults to
 // white), always derive from the background's luminance.
-function readableForeground(bgValue, choices = { dark: "#0a0a0a", light: "#ffffff" }) {
+function readableForeground(bgValue, choices = {}) {
   const bgRgb = colorToRgb(bgValue);
   if (!bgRgb) return null;
+  // Normalize the choices once so the emitted value is always 6-digit hex,
+  // regardless of how the contract spells them (e.g. "#000" -> "#000000").
+  const darkValue = normalizeColor(choices.dark) || "#0a0a0a";
+  const lightValue = normalizeColor(choices.light) || "#ffffff";
   const bgLuminance = relativeLuminance(bgRgb);
-  const dark = colorToRgb(choices.dark) || { r: 10, g: 10, b: 10 };
-  const light = colorToRgb(choices.light) || { r: 255, g: 255, b: 255 };
-  const darkContrast = contrastRatio(bgLuminance, relativeLuminance(dark));
-  const lightContrast = contrastRatio(bgLuminance, relativeLuminance(light));
+  const darkContrast = contrastRatio(bgLuminance, relativeLuminance(colorToRgb(darkValue)));
+  const lightContrast = contrastRatio(bgLuminance, relativeLuminance(colorToRgb(lightValue)));
   const useDark = darkContrast >= lightContrast;
   return {
-    value: normalizeColor(useDark ? choices.dark : choices.light) || (useDark ? choices.dark : choices.light),
+    value: useDark ? darkValue : lightValue,
     contrast: Math.round(Math.max(darkContrast, lightContrast) * 100) / 100,
     on: useDark ? "dark" : "light",
   };
@@ -525,11 +527,14 @@ function deriveForegroundMappings(existingMappings, targetTokens) {
         { foreground: foregroundTarget, background: backgroundTarget, background_value: backgroundValue, contrast: readable.contrast },
       ));
     }
+    // Scale confidence by the achieved contrast so a strong derivation reads as
+    // trustworthy as a direct mapping (AAA >= 7:1 high, AA >= 4.5:1 medium).
+    const confidence = readable.contrast >= 7 ? "high" : readable.contrast >= 4.5 ? "medium" : "low";
     mappings.push({
       source: backgroundTarget,
       target: foregroundTarget,
       value: readable.value,
-      confidence: "medium",
+      confidence,
       derivation: { method: "foreground-from-luminance", background: backgroundTarget, background_value: backgroundValue, on: readable.on, contrast: readable.contrast },
     });
   }

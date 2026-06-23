@@ -196,19 +196,46 @@ function semanticEvidenceProblems(evidence, report) {
   // hardcoded non-token colors (e.g. next-core's #C670FE pill), scaffold fonts
   // (Plus Jakarta), and the prior favicon. Polish must affirmatively certify
   // the de-brand pass cleared them. See the Shield build learnings (A3).
+  // Field precedence: `brand_bleed` is canonical; `brand_bleed_review` and
+  // `debrand` are accepted aliases (in that order) for forward compat.
   const bleedEvidence = brandReview?.brand_bleed ?? brandReview?.brand_bleed_review ?? brandReview?.debrand;
-  if (!bleedEvidence) {
+  if (bleedEvidence === undefined || bleedEvidence === null) {
     problems.push("stages.polish.evidence.brand_review.brand_bleed must confirm the cloned-source de-brand pass: no residual promo/sale code or copy, no prior-campaign favicon, no scaffold/non-design fonts, no hardcoded non-token colors.");
-  } else if (brandBleedNegative(bleedEvidence)) {
-    problems.push("stages.polish.evidence.brand_review.brand_bleed still indicates cloned-source brand bleed (residual promo code/sale copy, prior-campaign favicon, scaffold/non-design fonts, or a hardcoded non-token color).");
+  } else {
+    const kinds = brandBleedResidualKinds(bleedEvidence);
+    if (kinds.length) {
+      problems.push(`stages.polish.evidence.brand_review.brand_bleed still indicates cloned-source brand bleed (${kinds.join(", ")}).`);
+    }
   }
 
   return problems;
 }
 
-function brandBleedNegative(value) {
-  if (isObject(value) && (value.cleared === false || value.bleed_found === true || value.residual_found === true)) return true;
-  return hasNegativeEvidence(value, /\b(?:promo|sale)\s+(?:code|copy|banner|sale)\b.{0,40}\b(?:found|present|remain(?:s|ing)?|leaked|retained|kept)\b|\bfake\s+(?:code|sale)\b|\bprior[-_\s]?campaign\b|\bsibling[-_\s]?(?:brand|campaign|source)\b|\bscaffold\s+font|\bplus\s+jakarta\b|#c670fe\b|\bhardcoded\s+(?:non[-_\s]?token\s+)?(?:color|hex|purple)\b|\bnon[-_\s]?token\s+colou?r\s+(?:found|present|remain(?:s|ing)?)\b/i);
+// Per-kind brand-bleed residue detection. Returns the kinds that still leaked,
+// so the gate message names the actual residue. Each kind has its own phrase
+// vocabulary rather than one monolithic regex.
+const BRAND_BLEED_RESIDUE_PATTERNS = [
+  ["residual promo/sale code or copy", /\b(?:promo|sale|discount|coupon)\b[^.;]{0,40}\b(?:code|copy|banner|sale)\b[^.;]{0,40}\b(?:found|present|remain(?:s|ing)?|leaked|retained|kept|still)\b|\b(?:found|present|remain(?:s|ing)?|leaked|retained|kept|still)\b[^.;]{0,40}\b(?:promo|sale|discount|coupon)\b[^.;]{0,40}\b(?:code|copy|banner)\b|\bfake\s+(?:code|sale|coupon)\b/i],
+  ["prior-campaign favicon", /\bprior[-_\s]?campaign\b|\bsibling[-_\s]?(?:brand|campaign|source)\b/i],
+  ["scaffold/non-design fonts", /\bscaffold\s+fonts?\b|\bplus\s+jakarta\b|\bnon[-_\s]?design\s+fonts?\b/i],
+  ["hardcoded non-token color", /(?:^|[^\w])#?c670fe(?:[^\w]|$)|\bhardcoded\s+(?:non[-_\s]?token\s+)?(?:colou?r|hex|purple)\b|\bnon[-_\s]?token\s+colou?r\s+(?:found|present|remain(?:s|ing)?)\b/i],
+];
+
+function brandBleedResidualKinds(value) {
+  if (isObject(value)) {
+    if (value.cleared === false || value.bleed_found === true || value.residual_found === true) return ["de-brand pass not cleared"];
+    if (value.cleared === true || value.bleed_found === false || value.residual_found === false) return [];
+  }
+  const text = reviewText(value);
+  // An explicit cleared/none statement short-circuits the phrase scan.
+  if (/\bcleared\b|\bno\s+(?:bleed|residue|residual)\b|\bde[-_\s]?brand(?:ed|\s+pass)\b/i.test(text) && !/\bnot\s+cleared\b|\bcleared\s*[:=]?\s*(?:false|no)\b/i.test(text)) {
+    return [];
+  }
+  const kinds = [];
+  for (const [label, pattern] of BRAND_BLEED_RESIDUE_PATTERNS) {
+    if (hasNegativeEvidence(value, pattern)) kinds.push(label);
+  }
+  return kinds;
 }
 
 function evidenceProblems(evidence, report) {

@@ -263,6 +263,8 @@ test("brand theme derives dark foregrounds for a light brand (no white-on-yellow
     const result = inspectBrandTheme({ packet, packetPath });
     const byTarget = new Map(result.context_theme.mappings.map((mapping) => [mapping.target, mapping]));
 
+    // Assert the contract being tested (dark, not white) rather than the exact
+    // hex, so changing foreground_choices.dark doesn't break these.
     for (const target of [
       "--brand--color--text-inverse",
       "--brand--color--cta-foreground",
@@ -271,11 +273,12 @@ test("brand theme derives dark foregrounds for a light brand (no white-on-yellow
     ]) {
       const mapping = byTarget.get(target);
       assert.ok(mapping, `expected derived ${target}`);
-      assert.equal(mapping.value, "#0a0a0a", `${target} on a yellow brand must be dark, not white`);
+      assert.equal(mapping.derivation?.on, "dark", `${target} on a yellow brand must resolve to a dark foreground`);
+      assert.notEqual(mapping.value, "#ffffff", `${target} on a yellow brand must not be white`);
       assert.equal(mapping.derivation?.method, "foreground-from-luminance");
     }
-    // The CTA-text variable that next-core actually renders is text-inverse.
-    assert.match(result.css, /--brand--color--text-inverse: #0a0a0a;/);
+    // The CTA-text variable that next-core actually renders is text-inverse:
+    // it must not be white on a light brand.
     assert.doesNotMatch(result.css, /--brand--color--text-inverse: #ffffff;/);
   });
 });

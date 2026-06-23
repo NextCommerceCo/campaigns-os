@@ -289,3 +289,9 @@ test("B2 bump pricing: non-checkout pages and bump-free pages are no-ops", () =>
   validateBuiltBumpPricing(`<div class="checkout"></div>`, "/repo/_site/c/checkout/index.html", "/repo", CHECKOUT_PAGE, issues);
   assert.equal(issues.length, 0);
 });
+
+test("B2 bump pricing: 'select' pre-checkout pages are in scope (treated as checkout)", () => {
+  const issues = [];
+  validateBuiltBumpPricing(bump(PER_UNIT_ROW + LINE_TOTAL_ROW), "/repo/_site/c/select/index.html", "/repo", { id: "select", type: "select" }, issues);
+  assert.equal(codes(issues).includes("built_output.bump_double_price"), true);
+});

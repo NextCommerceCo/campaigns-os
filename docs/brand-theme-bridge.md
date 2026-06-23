@@ -51,7 +51,15 @@ CTA background first, then the primary background. Pairings live in the
 `contracts/brand-theme-target-tokens.next-core.v0.json`; a derived foreground
 that still falls below the contract's `min_contrast_ratio` is emitted with a
 `theme.foreground.low_contrast` warning so the brand background can be
-confirmed.
+confirmed. Derived-foreground confidence scales with the achieved contrast
+(`>= 7:1` high, `>= 4.5:1` medium, otherwise low).
+
+> **Contract change (PR #117):** `--text-inverse` and the three `*-foreground`
+> targets are no longer entries under `source_mappings` — they moved to
+> `foreground_derivations`. A source `--text-inverse` token (or anything that
+> name-infers to one) is therefore no longer mapped directly; the foreground is
+> always derived from the paired background's luminance. No fixtures or
+> consumers keyed off the old mapping.
 
 ## Prepare-Build Behavior
 
