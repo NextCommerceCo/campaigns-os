@@ -8,6 +8,7 @@ import {
   collectPageKitAssetPathViolations,
   validateBuiltDemoAssetFidelity,
   validateBuiltPageKitAssetPaths,
+  validateBuiltBumpPricing,
   validateBuiltPlaceholderTextResidue,
   validateBuiltPreCheckoutBootstrap,
   validateMarketSensitiveCopy,
@@ -255,5 +256,36 @@ test("A1 pre-checkout bootstrap: checkout/upsell pages are out of scope", () => 
   const bare = `<html><head></head><body>Checkout</body></html>`;
   validateBuiltPreCheckoutBootstrap(bare, "/repo/_site/c/checkout/index.html", "/repo", { id: "checkout", type: "checkout" }, issues);
   validateBuiltPreCheckoutBootstrap(bare, "/repo/_site/c/up1/index.html", "/repo", { id: "up1", type: "upsell" }, issues);
+  assert.equal(issues.length, 0);
+});
+
+const PER_UNIT_ROW = `<div class="bump__price-row"><span data-next-toggle-display="originalUnitPrice">--</span><span data-next-toggle-display="unitPrice">--</span>/ea</div>`;
+const LINE_TOTAL_ROW = `<div class="bump__price-row"><span data-next-toggle-display="originalPrice">--</span><span data-next-toggle-display="price">--</span></div>`;
+const bump = (rows) => `<div data-component="prepurchase-upsell" data-variant="check01"><div class="bump__price">${rows}</div></div>`;
+const CHECKOUT_PAGE = { id: "checkout", type: "checkout" };
+
+test("B2 bump pricing: a bump rendering both per-unit and line-total rows is flagged", () => {
+  const issues = [];
+  validateBuiltBumpPricing(bump(PER_UNIT_ROW + LINE_TOTAL_ROW), "/repo/_site/c/checkout/index.html", "/repo", CHECKOUT_PAGE, issues);
+  assert.equal(codes(issues).includes("built_output.bump_double_price"), true);
+  assert.equal(issues[0].detail.doubled_bumps, 1);
+});
+
+test("B2 bump pricing: a single per-unit-only bump passes", () => {
+  const issues = [];
+  validateBuiltBumpPricing(bump(PER_UNIT_ROW), "/repo/_site/c/checkout/index.html", "/repo", CHECKOUT_PAGE, issues);
+  assert.equal(issues.length, 0);
+});
+
+test("B2 bump pricing: two bumps, one doubled, counts only the doubled one", () => {
+  const issues = [];
+  validateBuiltBumpPricing(bump(PER_UNIT_ROW) + bump(PER_UNIT_ROW + LINE_TOTAL_ROW), "/repo/_site/c/checkout/index.html", "/repo", CHECKOUT_PAGE, issues);
+  assert.equal(issues[0].detail.doubled_bumps, 1);
+});
+
+test("B2 bump pricing: non-checkout pages and bump-free pages are no-ops", () => {
+  const issues = [];
+  validateBuiltBumpPricing(bump(PER_UNIT_ROW + LINE_TOTAL_ROW), "/repo/_site/c/up1/index.html", "/repo", { id: "up1", type: "upsell" }, issues);
+  validateBuiltBumpPricing(`<div class="checkout"></div>`, "/repo/_site/c/checkout/index.html", "/repo", CHECKOUT_PAGE, issues);
   assert.equal(issues.length, 0);
 });

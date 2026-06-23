@@ -2712,6 +2712,7 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
     addIssue(issueTarget, "built_output.runtime_missing", `Built page "${page.id}" has no obvious Campaign Cart runtime markers.`, { page_id: page.id, file: relPath });
   }
   validateBuiltPreCheckoutBootstrap(content, builtPath, targetRepo, page, issueTarget);
+  validateBuiltBumpPricing(content, builtPath, targetRepo, page, issueTarget);
   validateBuiltPageKitAssetPaths(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
@@ -2742,6 +2743,48 @@ function sdkLoaderScriptPresent(content) {
   }
   // Inline ESM import of the campaign-cart loader also counts as bootstrapped.
   return /import\s+[^;]*campaign-cart[^;]*\/dist\/loader\.js/i.test(content);
+}
+
+// Order-bump templates (bump-check01/bump-switch01) ship BOTH a per-unit price
+// row (Option A) and a line-total price row (Option B) behind Liquid guards,
+// with a "pick ONE" comment. If a build leaves both rendered, the bump shows
+// doubled prices. The template now defaults to per-unit only, so this guards
+// the built output against a regression where both rows survive. See the
+// Shield build learnings (B2). Spurious strikethrough (compare == price) is
+// covered separately as a polish-gate evidence requirement.
+const BUMP_BLOCK_PATTERN = /data-component\s*=\s*["']prepurchase-upsell["']/gi;
+const BUMP_PER_UNIT_DISPLAYS = ["unitPrice", "originalUnitPrice"];
+const BUMP_LINE_TOTAL_DISPLAYS = ["price", "originalPrice"];
+
+function bumpDisplaysPresent(block, displays) {
+  return displays.some((name) => new RegExp(`data-next-toggle-display\\s*=\\s*["']${name}["']`, "i").test(block));
+}
+
+const CHECKOUT_BUMP_PAGE_TYPES = new Set(["checkout", "select"]);
+
+export function validateBuiltBumpPricing(content, builtPath, targetRepo, page, issueTarget) {
+  const type = String(page?.type || page?.page_type || "").toLowerCase().trim();
+  if (!CHECKOUT_BUMP_PAGE_TYPES.has(type)) return;
+
+  // Slice the document into per-bump blocks at each prepurchase-upsell anchor.
+  const anchorOffsets = [...content.matchAll(BUMP_BLOCK_PATTERN)].map((match) => match.index);
+  if (anchorOffsets.length === 0) return;
+  const relPath = relFromDir(targetRepo, builtPath);
+  let doubled = 0;
+  for (let i = 0; i < anchorOffsets.length; i += 1) {
+    const block = content.slice(anchorOffsets[i], anchorOffsets[i + 1] ?? content.length);
+    if (bumpDisplaysPresent(block, BUMP_PER_UNIT_DISPLAYS) && bumpDisplaysPresent(block, BUMP_LINE_TOTAL_DISPLAYS)) {
+      doubled += 1;
+    }
+  }
+  if (doubled > 0) {
+    addIssue(
+      issueTarget,
+      "built_output.bump_double_price",
+      `Built page "${page.id}" renders ${doubled} order bump(s) with BOTH a per-unit price row (Option A) and a line-total price row (Option B). Pick one: pass show_per_unit_price / show_line_total_price to the bump include so a single price row renders (rendering both doubles the displayed price).`,
+      { page_id: page.id, file: relPath, doubled_bumps: doubled },
+    );
+  }
 }
 
 export function validateBuiltPreCheckoutBootstrap(content, builtPath, targetRepo, page, issueTarget) {
