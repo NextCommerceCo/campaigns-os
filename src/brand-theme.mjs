@@ -74,6 +74,12 @@ function issue(code, message, detail = null) {
   return detail ? { code, message, detail } : { code, message };
 }
 
+function shellToken(value) {
+  const text = String(value ?? "");
+  if (/^[A-Za-z0-9_/@%+=:,.-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, "'\\''")}'`;
+}
+
 function cleanCssRef(value) {
   const cleaned = String(value || "").trim().replace(/^["']|["']$/g, "").split("#")[0].split("?")[0];
   if (!cleaned || !cleaned.endsWith(".css")) return null;
@@ -772,9 +778,10 @@ function buildInspectionResponse({ packet, targetRepo, sourceRoot, cssPath, repo
   };
 }
 
-export function writeThemeArtifacts(inspection, { writeCss = false, writeReport = true, force = false } = {}) {
+export function writeThemeArtifacts(inspection, { writeCss = false, writeReport = true, force = false, packetPath = "<campaign-runtime.build.json>" } = {}) {
   const errors = [...(inspection.errors || [])];
   const wrote = { report: false, css: false };
+  const alreadyCurrent = { css: false };
   const reportPath = resolvePathFromInspection(inspection, "report_path");
   const cssPath = resolvePathFromInspection(inspection, "css_path");
 
@@ -787,10 +794,20 @@ export function writeThemeArtifacts(inspection, { writeCss = false, writeReport 
   if (writeCss) {
     if (!inspection.context_theme?.generated?.can_generate) {
       errors.push(issue("theme.generate.not_ready", "brand-theme.css is not ready to generate; inspect theme-report.json for missing/default/conflicting source tokens."));
-    } else if (existsSync(cssPath) && !force) {
-      errors.push(issue("theme.generate.exists", "brand-theme.css already exists; use --force or a new --out-dir to overwrite."));
     } else if (!inspection.css) {
       errors.push(issue("theme.generate.empty", "No generated CSS is available."));
+    } else if (existsSync(cssPath) && !force) {
+      const existingCss = readFileSync(cssPath, "utf8");
+      if (existingCss === inspection.css) {
+        alreadyCurrent.css = true;
+      } else {
+        const safeCommand = `campaigns-os theme generate --packet ${shellToken(packetPath)} --force`;
+        errors.push(issue(
+          "theme.generate.exists",
+          `brand-theme.css already exists and differs from the current generated output; rerun \`${safeCommand}\` or pass a new --out-dir to overwrite safely.`,
+          { safe_commands: [safeCommand] },
+        ));
+      }
     } else {
       mkdirSync(dirname(cssPath), { recursive: true });
       writeFileSync(cssPath, inspection.css);
@@ -804,6 +821,7 @@ export function writeThemeArtifacts(inspection, { writeCss = false, writeReport 
     status: errors.length ? "blocked" : inspection.status,
     errors,
     wrote,
+    already_current: alreadyCurrent,
   };
 }
 

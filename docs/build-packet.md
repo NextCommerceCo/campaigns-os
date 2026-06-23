@@ -286,7 +286,14 @@ Behavior:
 - Path values are relative to the source HTML root (`<source>`), not to the `.campaigns-os/` directory that contains the manifest. For example, use `checkout/index.html`, not `../checkout/index.html`.
 - The build context records `source.manifest` with `schema_version`, `generator`, `generated_at`, and `page_count`, and the assembly decision log records evidence citing the manifest file.
 
-When the manifest is absent, prepare-build's behavior is unchanged — pages are matched by filesystem name slug as before.
+When the manifest is absent, prepare-build falls back to filesystem-name slug
+matching. If exactly one candidate matches an active page, the mapping is
+recorded as before. If multiple HTML files can satisfy the same page, or if all
+matching files were already assigned to sibling pages, prepare-build blocks with
+`AMBIGUOUS_SOURCE_PAGE`, records `context.source.ambiguous_candidates`, and
+drafts `context.source.manifest_draft` so the operator can write
+`.campaigns-os/source-html-manifest.json` and choose the intended paths before
+build.
 
 ### Page Kit Target Projection
 

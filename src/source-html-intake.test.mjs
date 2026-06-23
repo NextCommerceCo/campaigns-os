@@ -229,3 +229,115 @@ test("select spec pages project to checkout Page Kit page_type", () => {
   assert.equal(result.mappings[0].page_kit.page_type, "checkout");
   assert.equal(result.mappings[0].page_kit.frontmatter.page_type, "checkout");
 });
+
+test("manifest drafts omit pages with no candidate path and stay schema-valid", () => {
+  const result = createSourceHtmlIntake({
+    sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+    specPages: [
+      { id: "landing", type: "landing" },
+      { id: "checkout", type: "checkout" },
+    ],
+    htmlFiles: [
+      { path: "landing.html", basename: "landing", bytes: 10, sha256: "a".repeat(64) },
+      { path: "mirror/landing.html", basename: "landing", bytes: 10, sha256: "b".repeat(64) },
+    ],
+    publicRouteSlug: "runtime-packet-demo",
+    outputDir: "src/runtime-packet-demo",
+  });
+
+  assert.equal(result.manifestDraft.pages.some((page) => page.page_id === "checkout"), false);
+  assert.equal(result.manifestDraft.pages.every((page) => page.path), true);
+  assert.equal(validateSourceHtmlManifest(result.manifestDraft).ok, true);
+});
+
+test("filesystem fallback reports candidates already assigned to a sibling page", () => {
+  const result = createSourceHtmlIntake({
+    sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+    specPages: [
+      { id: "first", type: "landing" },
+      { id: "second", type: "landing" },
+    ],
+    htmlFiles: [
+      { path: "landing.html", basename: "landing", bytes: 10, sha256: "a".repeat(64) },
+    ],
+    publicRouteSlug: "runtime-packet-demo",
+    outputDir: "src/runtime-packet-demo",
+  });
+
+  const prompt = result.prompts.find((entry) => entry.page_id === "second" && entry.code === "AMBIGUOUS_SOURCE_PAGE");
+  assert.ok(prompt);
+  assert.equal(prompt.detail.candidates[0].path, "landing.html");
+  assert.equal(prompt.detail.candidates[0].used_by_page_id, "first");
+  assert.equal(prompt.detail.manifest_entry.path, "");
+  assert.equal(prompt.detail.manifest_entry.path_conflicts, true);
+  assert.match(result.mappings.find((entry) => entry.page_id === "second").skip_reason, /already assigned/);
+});
+
+test("Page Kit target conflict prompts carry structured detail", () => {
+  const result = createSourceHtmlIntake({
+    sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+    specPages: [
+      { id: "landing-a", type: "landing", page_url: "same/" },
+      { id: "landing-b", type: "landing", page_url: "same/" },
+    ],
+    htmlFiles: [
+      { path: "landing-a.html", basename: "landing-a" },
+      { path: "landing-b.html", basename: "landing-b" },
+    ],
+    publicRouteSlug: "runtime-packet-demo",
+    outputDir: "src/runtime-packet-demo",
+  });
+
+  const prompt = result.prompts.find((entry) => entry.code === "PAGE_KIT_TARGET_CONFLICT");
+  assert.ok(prompt);
+  assert.deepEqual(prompt.detail, {
+    output_path: "src/runtime-packet-demo/same.html",
+    existing_page_id: "landing-a",
+    conflicting_page_id: "landing-b",
+  });
+});
+
+test("prepare-build blocks ambiguous filesystem source matches and drafts a manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-source-ambiguous-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(targetRepo, { recursive: true });
+    writeJson(resolve(targetRepo, "package.json"), { dependencies: { "next-campaign-page-kit": "fixture" } });
+    writeFileSync(resolve(sourceRoot, "landing.html"), "<main>primary landing</main>");
+    mkdirSync(resolve(sourceRoot, "mirror"), { recursive: true });
+    writeFileSync(resolve(sourceRoot, "mirror", "landing.html"), "<main>asset mirror landing</main>");
+    for (const page of ["checkout", "upsell", "receipt"]) {
+      writeFileSync(resolve(sourceRoot, `${page}.html`), `<main>${page}</main>`);
+    }
+
+    const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, spec);
+
+    const result = runCliJson([
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+
+    assert.equal(result.context.status, "blocked");
+    assert.equal(result.context.prompts_required.some((prompt) => prompt.code === "AMBIGUOUS_SOURCE_PAGE"), true);
+    assert.equal(result.context.source.ambiguous_candidates.length, 1);
+    assert.deepEqual(
+      result.context.source.ambiguous_candidates[0].candidates.map((candidate) => candidate.path).sort(),
+      ["landing.html", "mirror/landing.html"]
+    );
+    assert.equal(result.context.source.manifest_draft.schema_version, "source-html-manifest/v0");
+    assert.equal(result.report.blockers.some((blocker) => blocker.code === "AMBIGUOUS_SOURCE_PAGE" && blocker.detail?.candidates?.length === 2), true);
+    assert.equal(result.report.warnings.some((warning) => warning.code === "AMBIGUOUS_SOURCE_HTML_CANDIDATES"), true);
+    const landing = result.packet.source_html.pages.find((page) => page.page_id === "landing");
+    assert.match(landing.skip_reason, /Ambiguous source HTML candidates/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

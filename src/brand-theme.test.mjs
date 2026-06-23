@@ -180,9 +180,11 @@ test("generated CSS safety rejects selectors and protected runtime surfaces", ()
   assert.ok(result.errors.some((error) => error.code === "theme.css.selector"));
 });
 
-test("theme generate writes artifacts and refuses stale overwrite without force", () => {
+test("theme generate writes artifacts and treats identical reruns as current", () => {
   withTempDir((dir) => {
-    const { source, target, packet, packetPath } = makePacket(dir);
+    const { source, target, packet } = makePacket(dir);
+    const packetPath = join(target, "campaign runtime.build.json");
+    writeJson(packetPath, packet);
     mkdirSync(join(source, "assets/css"), { recursive: true });
     writeFileSync(join(source, "landing.html"), `<main>Landing</main>`);
     writeFileSync(join(source, "assets/css/tokens.css"), highConfidenceTokens());
@@ -195,8 +197,56 @@ test("theme generate writes artifacts and refuses stale overwrite without force"
     assert.equal(existsSync(join(target, ".campaign-runtime/theme/theme-report.json")), true);
 
     const second = writeThemeArtifacts(inspection, { writeCss: true, writeReport: true });
-    assert.equal(second.ok, false);
-    assert.ok(second.errors.some((error) => error.code === "theme.generate.exists"));
+    assert.equal(second.ok, true);
+    assert.equal(second.wrote.css, false);
+    assert.equal(second.already_current.css, true);
+  });
+});
+
+test("theme generate refuses different existing CSS without force and prints a safe command", () => {
+  withTempDir((dir) => {
+    const { source, target, packet } = makePacket(dir);
+    const packetPath = join(target, "campaign runtime.build.json");
+    writeJson(packetPath, packet);
+    mkdirSync(join(source, "assets/css"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<main>Landing</main>`);
+    writeFileSync(join(source, "assets/css/tokens.css"), highConfidenceTokens());
+    mkdirSync(join(target, ".campaign-runtime/theme"), { recursive: true });
+    writeFileSync(join(target, ".campaign-runtime/theme/brand-theme.css"), ":root { --brand--color--primary: #000000; }\n");
+
+    const inspection = inspectBrandTheme({ packet, packetPath, force: true });
+    const result = writeThemeArtifacts(inspection, { writeCss: true, writeReport: true, packetPath });
+
+    assert.equal(result.ok, false);
+    const error = result.errors.find((issue) => issue.code === "theme.generate.exists");
+    assert.ok(error);
+    assert.deepEqual(error.detail.safe_commands, [`campaigns-os theme generate --packet '${packetPath}' --force`]);
+    assert.match(error.message, /theme generate --packet '/);
+  });
+});
+
+test("theme generate reports empty CSS before checking existing artifact overwrite", () => {
+  withTempDir((dir) => {
+    const { target, packetPath } = makePacket(dir);
+    mkdirSync(join(target, ".campaign-runtime/theme"), { recursive: true });
+    writeFileSync(join(target, ".campaign-runtime/theme/brand-theme.css"), ":root { --brand--color--primary: #000000; }\n");
+    const inspection = {
+      errors: [],
+      status: "ready",
+      context_theme: { generated: { can_generate: true } },
+      report: { status: "ready" },
+      css: "",
+      absolute_paths: {
+        report_path: join(target, ".campaign-runtime/theme/theme-report.json"),
+        css_path: join(target, ".campaign-runtime/theme/brand-theme.css"),
+      },
+    };
+
+    const result = writeThemeArtifacts(inspection, { writeCss: true, writeReport: true, packetPath });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.errors.some((error) => error.code === "theme.generate.empty"), true);
+    assert.equal(result.errors.some((error) => error.code === "theme.generate.exists"), false);
   });
 });
 
