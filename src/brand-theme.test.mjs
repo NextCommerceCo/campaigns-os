@@ -136,16 +136,101 @@ test("brand theme infers safe CTA tokens from linked button CSS when root tokens
   });
 });
 
+test("brand theme normalizes role-like source tokens into a complete commerce token family", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir, [{ page_id: "checkout", path: "checkout.html" }]);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "checkout.html"), `<link rel="stylesheet" href="styles/roadside.css"><main>Checkout</main>`);
+    writeFileSync(join(source, "styles/roadside.css"), `
+:root {
+  --pt-teal: #125161;
+  --pt-green: #1aae2d;
+}
+.checkout-header { background: var(--pt-teal); border-bottom: 4px solid var(--pt-green); }
+.accept-btn { background: linear-gradient(to bottom, #1aae2d 0%, #148c24 100%); color: #ffffff; }
+.panel { background: #ffffff; border: 1px solid #eee; }
+.input-flds { border: 1px solid #ccd; color: #101010; }
+.stars { color: #ffb400; }
+`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const targets = new Set(result.context_theme.mappings.map((mapping) => mapping.target));
+
+    assert.equal(result.status, "ready");
+    assert.equal(result.confidence, "medium");
+    for (const target of [
+      "--brand--color--primary",
+      "--brand--color--primary-dark",
+      "--brand--color--primary-light",
+      "--brand--color--cta-primary",
+      "--brand--color--surface",
+      "--brand--color--border",
+      "--component--color--outline",
+      "--brand--color--foreground",
+      "--brand--color--rating-star",
+    ]) {
+      assert.ok(targets.has(target), `expected generated mapping for ${target}`);
+    }
+    assert.match(result.css, /--brand--color--primary: #125161;/);
+    assert.match(result.css, /--brand--color--cta-primary: #1aae2d;/);
+    assert.match(result.css, /--brand--color--rating-star: #ffb400;/);
+  });
+});
+
 test("brand theme detects inline :root tokens from mapped HTML without workflow-order assumptions", () => {
   withTempDir((dir) => {
     const { source, packet, packetPath } = makePacket(dir);
-    writeFileSync(join(source, "landing.html"), `<style>${highConfidenceTokens()}</style><main>Landing</main>`);
+    writeFileSync(join(source, "landing.html"), `
+<style>${highConfidenceTokens()}</style>
+<script type="application/ld+json">{":root { --brand-primary: #ff0000; }": true}</script>
+<main>Landing</main>
+`);
 
     const result = inspectBrandTheme({ packet, packetPath });
 
     assert.equal(result.context_theme.selected_source.source, "html_inline_root");
     assert.equal(result.context_theme.selected_source.inline_block_index, 0);
     assert.equal(result.confidence, "high");
+    assert.match(result.css, /--brand--color--primary: #2c3d43;/);
+    assert.doesNotMatch(result.css, /#ff0000/);
+  });
+});
+
+test("brand theme avoids broad root-token role inference for layout and foreground utility names", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="styles/utilities.css"><main>Landing</main>`);
+    writeFileSync(join(source, "styles/utilities.css"), `
+:root {
+  --nav-bg: #125161;
+  --header-divider: #1aae2d;
+  --card-shadow: #eeeeee;
+  --panel-border: #dddddd;
+  --brand--color--foreground: #101010;
+  --white-smoke: #f8f8f8;
+  --success-message-bg: #dff5e8;
+  --text-bg: #fafafa;
+  --section-bg: #f2f2f2;
+  --background-inverse: #222222;
+  --cta-primary: #e4572e;
+  --text-primary: #111111;
+  --surface-bg: #ffffff;
+}
+`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const mappings = result.context_theme.mappings;
+    const mappedTargets = new Set(result.context_theme.mappings.map((mapping) => mapping.target));
+
+    assert.equal(mappedTargets.has("--brand--color--primary"), false);
+    assert.equal(mappings.some((mapping) => mapping.source === "--surface-card"), false);
+    assert.equal(mappedTargets.has("--brand--color--text-inverse"), false);
+    assert.equal(result.context_theme.selected_source.tokens?.["--state-success"], undefined);
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--background")?.source, "--surface-bg");
+    assert.ok(mappedTargets.has("--brand--color--cta-primary"));
+    assert.ok(mappedTargets.has("--brand--color--background"));
+    assert.ok(mappedTargets.has("--brand--color--text-primary"));
   });
 });
 

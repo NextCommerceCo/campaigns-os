@@ -206,6 +206,111 @@ test("polish gate blocks incomplete evidence categories", () => {
   assert.ok(gate.problems.some((problem) => problem.includes("checkout_review")));
 });
 
+test("polish gate blocks weak favicon evidence when brief blocks template favicons", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      brand_review: { logo_checked: true, favicon: "checked", colors: ["#123456"] },
+    }),
+  }), {
+    build_brief: {
+      artifact: {
+        template_residue_policy: { block_template_favicon: true },
+      },
+    },
+  });
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.ok(gate.problems.some((problem) => problem.includes("brand_review.favicon")));
+});
+
+test("polish gate blocks favicon evidence that says the source is missing and template favicon remains", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      brand_review: { logo_checked: true, favicon: "source favicon missing; template favicon retained", colors: ["#123456"] },
+    }),
+  }), {
+    build_brief: {
+      artifact: {
+        template_residue_policy: { block_template_favicon: true },
+      },
+    },
+  });
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.ok(gate.problems.some((problem) => problem.includes("brand_review.favicon")));
+});
+
+test("polish gate blocks negative checkout field and bump compare evidence", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      checkout_review: {
+        field_labels: "placeholders stripped; empty fields are unlabeled",
+        phone_alignment: "checked",
+        payment_display: "checked",
+        bump_compare_price_rule: { equal_compare_price_found: true },
+      },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.ok(gate.problems.some((problem) => problem.includes("field_labels")));
+  assert.ok(gate.problems.some((problem) => problem.includes("bump_compare_price_rule")));
+});
+
+test("polish gate accepts harmless compare-price wording in bump evidence", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      checkout_review: {
+        field_labels: "visible labels confirmed",
+        phone_alignment: "checked",
+        payment_display: "checked",
+        bump_compare_price_rule: {
+          verdict: "passed",
+          summary: {
+            note: "compare price uses same currency as list; no equal compare price found",
+            layout: "same price compare layout checked against the source",
+          },
+        },
+      },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "pass");
+  assert.equal(gate.code, "polish.evidence_current");
+});
+
+test("polish gate blocks concrete equal compare-price text evidence", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      checkout_review: {
+        field_labels: "visible labels confirmed",
+        phone_alignment: "checked",
+        payment_display: "checked",
+        bump_compare_price_rule: "equal compare price found on no-discount bump",
+      },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.ok(gate.problems.some((problem) => problem.includes("bump_compare_price_rule")));
+});
+
+test("polish gate blocks starter favicon residue evidence", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      template_residue_review: { next_blue: "not found", starter_favicon: "images/favicon.png found", lorem: "not found" },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.ok(gate.problems.some((problem) => problem.includes("starter_favicon")));
+});
+
 test("polish gate passes current structured polish evidence", () => {
   const gate = evaluatePolishGate({ report: baseReport(validPolish()) });
   assert.equal(gate.status, "pass");

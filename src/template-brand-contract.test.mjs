@@ -27,6 +27,13 @@ test("demeter contract loads and declares the starter defaults", () => {
   assert.ok(contract.qa_inspection.computed_style_checks.length >= 3);
   assert.deepEqual(contract.pricing_surfaces.modes, ["full_price", "compare_at_current", "unit_price_plus_total", "savings_badge_amount", "code_discounted_post_checkout"]);
   assert.equal(contract.pricing_surfaces.legacy_aliases.discounted, "compare_at_current");
+  assert.equal(contract.checkout_fields.initial_hint_state.polish_evidence_key, "checkout_review.field_labels");
+  assert.ok(contract.checkout_fields.initial_hint_state.valid_patterns.includes("placeholder_style_hint"));
+  assert.match(contract.checkout_fields.initial_hint_state.surface_definitions.payment_hosted_fields, /hosted payment/);
+  assert.deepEqual(
+    Object.keys(contract.checkout_fields.initial_hint_state.surface_definitions).sort(),
+    [...contract.checkout_fields.initial_hint_state.applies_to].sort(),
+  );
   assert.equal(contract.family_inventory.bundle_picker.includes("Editorial tier selector"), true);
 });
 
