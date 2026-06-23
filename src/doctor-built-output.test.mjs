@@ -9,6 +9,7 @@ import {
   validateBuiltDemoAssetFidelity,
   validateBuiltPageKitAssetPaths,
   validateBuiltPlaceholderTextResidue,
+  validateBuiltPreCheckoutBootstrap,
   validateMarketSensitiveCopy,
   validateSpecRoutingMetaTags,
 } from "./cli.mjs";
@@ -214,4 +215,45 @@ test("H3.2 doctor: no demo-asset references yields a ready line", () => {
     assert.equal(codes(warnings).includes("template_contract.demo_asset_residue"), false);
     assert.ok(ready.some((note) => note.includes("no template demo placeholder assets")));
   });
+});
+
+const PRESELL_PAGE = { id: "presell", type: "presell" };
+const BOOTSTRAP = `
+  <script src="/c/config.js"></script>
+  <meta name="next-funnel" content="demo">
+  <meta name="next-page-type" content="product">
+  <script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.2/dist/loader.js" type="module"></script>
+`;
+
+test("A1 pre-checkout bootstrap: presell missing loader + page-type meta is flagged", () => {
+  const issues = [];
+  const content = `<html><head></head><body><div data-next-hide="param.banner=='n'">Banner</div></body></html>`;
+  validateBuiltPreCheckoutBootstrap(content, "/repo/_site/c/index.html", "/repo", PRESELL_PAGE, issues);
+  assert.equal(codes(issues).includes("built_output.pre_checkout_sdk_bootstrap"), true);
+  assert.equal(issues[0].detail.missing.loader, true);
+  assert.equal(issues[0].detail.missing.page_type_meta, true);
+  assert.match(issues[0].message, /utmTransfer/);
+});
+
+test("A1 pre-checkout bootstrap: fully bootstrapped presell passes", () => {
+  const issues = [];
+  validateBuiltPreCheckoutBootstrap(`<html><head>${BOOTSTRAP}</head><body></body></html>`, "/repo/_site/c/index.html", "/repo", PRESELL_PAGE, issues);
+  assert.equal(issues.length, 0);
+});
+
+test("A1 pre-checkout bootstrap: landing with loader but no page-type meta is flagged for the meta only", () => {
+  const issues = [];
+  const content = `<html><head><script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.2/dist/loader.js" type="module"></script></head><body></body></html>`;
+  validateBuiltPreCheckoutBootstrap(content, "/repo/_site/c/lp/index.html", "/repo", { id: "landing", type: "landing" }, issues);
+  assert.equal(codes(issues).includes("built_output.pre_checkout_sdk_bootstrap"), true);
+  assert.equal(issues[0].detail.missing.loader, false);
+  assert.equal(issues[0].detail.missing.page_type_meta, true);
+});
+
+test("A1 pre-checkout bootstrap: checkout/upsell pages are out of scope", () => {
+  const issues = [];
+  const bare = `<html><head></head><body>Checkout</body></html>`;
+  validateBuiltPreCheckoutBootstrap(bare, "/repo/_site/c/checkout/index.html", "/repo", { id: "checkout", type: "checkout" }, issues);
+  validateBuiltPreCheckoutBootstrap(bare, "/repo/_site/c/up1/index.html", "/repo", { id: "up1", type: "upsell" }, issues);
+  assert.equal(issues.length, 0);
 });

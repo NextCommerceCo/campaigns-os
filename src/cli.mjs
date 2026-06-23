@@ -2711,9 +2711,58 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
   if (!/(data-next-|window\.next|next-page-type|campaign-cart-sdk|campaign-cart)/i.test(content)) {
     addIssue(issueTarget, "built_output.runtime_missing", `Built page "${page.id}" has no obvious Campaign Cart runtime markers.`, { page_id: page.id, file: relPath });
   }
+  validateBuiltPreCheckoutBootstrap(content, builtPath, targetRepo, page, issueTarget);
   validateBuiltPageKitAssetPaths(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
+}
+
+// Pre-checkout pages (presell/landing — SDK page_type "product") must ship the
+// Campaign Cart bootstrap, not just inert data-next attributes. Without the
+// loader + next-page-type meta, every SDK feature silently no-ops: conditional
+// visibility (param.banner/param.seen), utmTransfer (UTM/query carry-through to
+// checkout — top-of-funnel ad attribution), and SDK analytics. The generic
+// runtime-marker check above passes on a lone data-next-* attribute, so this
+// dedicated check guards the pre-checkout boundary. See the Shield build
+// learnings (A1): base-presell.html / base-landing.html shipped without it.
+const PRE_CHECKOUT_PAGE_TYPES = new Set([
+  "presell", "advertorial", "listicle", "review",
+  "landing", "lander", "lp", "product",
+]);
+
+function sdkLoaderScriptPresent(content) {
+  for (const tag of content.matchAll(/<script\b[^>]*>/gi)) {
+    const attrs = tag[0];
+    const srcMatch = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+    if (!srcMatch) continue;
+    const src = srcMatch[1];
+    if (/campaign-cart@[^"']*\/dist\/loader\.js/i.test(src) || /(?:^|[\/])loader\.js(?:[?#]|$)/i.test(src)) {
+      return true;
+    }
+  }
+  // Inline ESM import of the campaign-cart loader also counts as bootstrapped.
+  return /import\s+[^;]*campaign-cart[^;]*\/dist\/loader\.js/i.test(content);
+}
+
+export function validateBuiltPreCheckoutBootstrap(content, builtPath, targetRepo, page, issueTarget) {
+  const type = String(page?.type || page?.page_type || "").toLowerCase().trim();
+  if (!PRE_CHECKOUT_PAGE_TYPES.has(type)) return;
+
+  const relPath = relFromDir(targetRepo, builtPath);
+  const hasLoader = sdkLoaderScriptPresent(content);
+  const hasPageTypeMeta = isNonEmptyString(extractMetaContent(content, "next-page-type"));
+  if (hasLoader && hasPageTypeMeta) return;
+
+  const missing = [
+    !hasLoader ? "the Campaign Cart loader script (campaign-cart@v{sdk_version}/dist/loader.js)" : null,
+    !hasPageTypeMeta ? 'the <meta name="next-page-type"> tag' : null,
+  ].filter(Boolean);
+  addIssue(
+    issueTarget,
+    "built_output.pre_checkout_sdk_bootstrap",
+    `SDK not bootstrapped on pre-checkout page "${page.id}" (type "${type}"): missing ${missing.join(" and ")}. Without it, conditional visibility (param.banner/param.seen), utmTransfer (UTM carry-through to checkout — ad attribution), and SDK analytics silently no-op. Emit the same config.js → loader.js → next-funnel/next-page-type bootstrap that the checkout layout uses.`,
+    { page_id: page.id, file: relPath, missing: { loader: !hasLoader, page_type_meta: !hasPageTypeMeta } },
+  );
 }
 
 function validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget) {
