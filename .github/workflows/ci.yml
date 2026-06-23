@@ -9,7 +9,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           path: campaigns-os
       # Deliberately unpinned: check-template-doctrine validates partial defaults
@@ -17,7 +17,7 @@ jobs:
       # promptly. When the agent contract gains _synced_from_sha (deferred v2 work),
       # pin this checkout to that SHA so contract tests run against the same
       # snapshot the agent consumes.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: NextCommerceCo/campaign-cart-starter-templates
           ref: main
