@@ -369,6 +369,15 @@ test("polish gate blocks a free-form 'cleared: false' brand_bleed string (A3)", 
   }
 });
 
+test("polish gate accepts cleared brand_bleed wording that mentions 'no bleed' (A3)", () => {
+  for (const wording of ["cleared: no bleed, no residue, de-brand pass complete", "no bleed found"]) {
+    const gate = evaluatePolishGate({ report: baseReport(validPolish({
+      evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: wording } }),
+    })) });
+    assert.equal(gate.status, "pass", `"${wording}" must pass`);
+  }
+});
+
 test("polish gate accepts a cleared brand_bleed attestation (A3)", () => {
   const gate = evaluatePolishGate({ report: baseReport(validPolish({
     evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: "promo banner stripped, design fonts only, colors tokenized, no prior favicon" } }),

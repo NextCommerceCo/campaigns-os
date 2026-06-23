@@ -229,7 +229,11 @@ function brandBleedResidualKinds(value) {
   const text = reviewText(value);
   // Explicit "not cleared" wording blocks first — a free-form "cleared: false"
   // must not slip through just because no residue *kind* phrase happens to match.
-  if (/\bnot\s+cleared\b|\bcleared\s*[:=-]?\s*(?:false|no|n)\b|\bbleed\s+found\b|\bresidual\s+found\b|\bnot\s+de[-_\s]?branded\b/i.test(text)) {
+  // Tightened to avoid over-blocking benign clearances: the boolean form
+  // requires a literal "false" (not "no", which collides with "cleared: no
+  // bleed"), and bleed/residual "found" is excluded when preceded by "no" (so
+  // "no bleed found" reads as cleared, not as residue).
+  if (/\bnot\s+cleared\b|\bcleared\s*[:=-]\s*false\b|\b(?<!no\s)(?:bleed|residual)\s+(?:found|present|detected|remain(?:s|ing)?)\b|\bnot\s+de[-_\s]?branded\b/i.test(text)) {
     return ["de-brand pass not cleared"];
   }
   // Otherwise an explicit cleared/none statement short-circuits the phrase scan.
