@@ -182,7 +182,9 @@ test("generated CSS safety rejects selectors and protected runtime surfaces", ()
 
 test("theme generate writes artifacts and treats identical reruns as current", () => {
   withTempDir((dir) => {
-    const { source, target, packet, packetPath } = makePacket(dir);
+    const { source, target, packet } = makePacket(dir);
+    const packetPath = join(target, "campaign runtime.build.json");
+    writeJson(packetPath, packet);
     mkdirSync(join(source, "assets/css"), { recursive: true });
     writeFileSync(join(source, "landing.html"), `<main>Landing</main>`);
     writeFileSync(join(source, "assets/css/tokens.css"), highConfidenceTokens());
@@ -203,7 +205,9 @@ test("theme generate writes artifacts and treats identical reruns as current", (
 
 test("theme generate refuses different existing CSS without force and prints a safe command", () => {
   withTempDir((dir) => {
-    const { source, target, packet, packetPath } = makePacket(dir);
+    const { source, target, packet } = makePacket(dir);
+    const packetPath = join(target, "campaign runtime.build.json");
+    writeJson(packetPath, packet);
     mkdirSync(join(source, "assets/css"), { recursive: true });
     writeFileSync(join(source, "landing.html"), `<main>Landing</main>`);
     writeFileSync(join(source, "assets/css/tokens.css"), highConfidenceTokens());
@@ -216,8 +220,8 @@ test("theme generate refuses different existing CSS without force and prints a s
     assert.equal(result.ok, false);
     const error = result.errors.find((issue) => issue.code === "theme.generate.exists");
     assert.ok(error);
-    assert.match(error.message, new RegExp(`theme generate --packet ${packetPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} --force`));
-    assert.deepEqual(error.detail.safe_commands, [`campaigns-os theme generate --packet ${packetPath} --force`]);
+    assert.deepEqual(error.detail.safe_commands, [`campaigns-os theme generate --packet '${packetPath}' --force`]);
+    assert.match(error.message, /theme generate --packet '/);
   });
 });
 

@@ -24,7 +24,8 @@ Input:
 
 When no source-html manifest exists, `prepare-build` may infer page mappings
 from filenames. If more than one HTML file can satisfy the same active
-CampaignSpec page, Campaigns OS blocks `prepare_build`, records
+CampaignSpec page, or if every matching file was already assigned to a sibling
+page, Campaigns OS blocks `prepare_build`, records
 `context.source.ambiguous_candidates`, and drafts
 `context.source.manifest_draft`. Copy that draft to
 `.campaigns-os/source-html-manifest.json`, choose the intended candidate path for

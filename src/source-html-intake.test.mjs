@@ -268,6 +268,8 @@ test("filesystem fallback reports candidates already assigned to a sibling page"
   assert.ok(prompt);
   assert.equal(prompt.detail.candidates[0].path, "landing.html");
   assert.equal(prompt.detail.candidates[0].used_by_page_id, "first");
+  assert.equal(prompt.detail.manifest_entry.path, "");
+  assert.equal(prompt.detail.manifest_entry.path_conflicts, true);
   assert.match(result.mappings.find((entry) => entry.page_id === "second").skip_reason, /already assigned/);
 });
 

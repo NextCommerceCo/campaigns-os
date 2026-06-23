@@ -290,7 +290,7 @@ function matchSourcePages(specPages, htmlFiles) {
         detail: {
           match_keys: keys,
           candidates: candidateEntries,
-          manifest_entry: manifestEntryDraft(page, candidateEntries[0]?.path || ""),
+          manifest_entry: { ...manifestEntryDraft(page, ""), path_conflicts: true },
         },
       });
     } else {

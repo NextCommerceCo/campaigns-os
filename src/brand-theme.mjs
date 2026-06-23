@@ -74,6 +74,12 @@ function issue(code, message, detail = null) {
   return detail ? { code, message, detail } : { code, message };
 }
 
+function shellToken(value) {
+  const text = String(value ?? "");
+  if (/^[A-Za-z0-9_/@%+=:,.-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, "'\\''")}'`;
+}
+
 function cleanCssRef(value) {
   const cleaned = String(value || "").trim().replace(/^["']|["']$/g, "").split("#")[0].split("?")[0];
   if (!cleaned || !cleaned.endsWith(".css")) return null;
@@ -795,7 +801,7 @@ export function writeThemeArtifacts(inspection, { writeCss = false, writeReport 
       if (existingCss === inspection.css) {
         alreadyCurrent.css = true;
       } else {
-        const safeCommand = `campaigns-os theme generate --packet ${packetPath} --force`;
+        const safeCommand = `campaigns-os theme generate --packet ${shellToken(packetPath)} --force`;
         errors.push(issue(
           "theme.generate.exists",
           `brand-theme.css already exists and differs from the current generated output; rerun \`${safeCommand}\` or pass a new --out-dir to overwrite safely.`,
