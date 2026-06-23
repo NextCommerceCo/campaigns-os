@@ -34,6 +34,25 @@ properties such as `--brand--color--primary` and
 `--brand--color--cta-primary`, but it must not emit selectors, `data-next`
 selectors, payment/package/cart selectors, JavaScript, or remote URL fetches.
 
+### Foreground tokens are derived from background luminance
+
+Foreground / on-color tokens — `--brand--color--text-inverse`,
+`--brand--color--cta-foreground`, `--brand--color--primary-foreground`, and
+`--brand--color--accent-foreground` — are **not** copied from a source
+`--text-inverse` token (which scaffolds default to white). They are derived
+from the WCAG relative luminance of the background each sits on, picking the
+more legible of the configured dark/light choices. A light brand (yellow,
+white, pastel) therefore gets dark foregrounds; a dark/saturated brand gets
+white ones. This prevents the white-on-light-CTA bug — next-core's
+`.button` / `.submit-button` render their label with
+`color: var(--brand--color--text-inverse)`, so `text-inverse` pairs with the
+CTA background first, then the primary background. Pairings live in the
+`foreground_derivations` block of
+`contracts/brand-theme-target-tokens.next-core.v0.json`; a derived foreground
+that still falls below the contract's `min_contrast_ratio` is emitted with a
+`theme.foreground.low_contrast` warning so the brand background can be
+confirmed.
+
 ## Prepare-Build Behavior
 
 `start` and `prepare-build` run theme discovery in `inspect_only` mode by
