@@ -225,12 +225,80 @@ test("brand theme avoids broad root-token role inference for layout and foregrou
 
     assert.equal(mappedTargets.has("--brand--color--primary"), false);
     assert.equal(mappings.some((mapping) => mapping.source === "--surface-card"), false);
-    assert.equal(mappedTargets.has("--brand--color--text-inverse"), false);
+    // text-inverse is no longer name-inferred from --background-inverse (#222222);
+    // it is now a luminance-derived foreground paired with the mapped CTA bg.
+    const textInverse = mappings.find((mapping) => mapping.target === "--brand--color--text-inverse");
+    assert.ok(textInverse, "expected a derived text-inverse foreground");
+    assert.equal(textInverse.derivation?.method, "foreground-from-luminance");
+    assert.equal(textInverse.derivation?.background, "--brand--color--cta-primary");
+    assert.notEqual(textInverse.value, "#222222");
     assert.equal(result.context_theme.selected_source.tokens?.["--state-success"], undefined);
     assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--background")?.source, "--surface-bg");
     assert.ok(mappedTargets.has("--brand--color--cta-primary"));
     assert.ok(mappedTargets.has("--brand--color--background"));
     assert.ok(mappedTargets.has("--brand--color--text-primary"));
+  });
+});
+
+test("brand theme derives dark foregrounds for a light brand (no white-on-yellow CTAs)", () => {
+  withTempDir((dir) => {
+    // Regression for the Chamelo Shield build: a yellow brand (#ffe100) whose
+    // generated foregrounds were all white, so next-core .button text
+    // (color: var(--brand--color--text-inverse)) was illegible on the CTA.
+    const { source, packet, packetPath } = makePacket(dir);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="styles/brand.css"><main>Landing</main>`);
+    writeFileSync(join(source, "styles/brand.css"), `
+:root {
+  --brand-primary: #ffe100;
+  --brand-cta: #ffe100;
+  --brand-accent: #ffe100;
+  --surface-bg: #ffffff;
+  --text-primary: #1a1a1a;
+  --text-secondary: #555555;
+  --border-default: #e6e6e6;
+}
+`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const byTarget = new Map(result.context_theme.mappings.map((mapping) => [mapping.target, mapping]));
+
+    for (const target of [
+      "--brand--color--text-inverse",
+      "--brand--color--cta-foreground",
+      "--brand--color--primary-foreground",
+      "--brand--color--accent-foreground",
+    ]) {
+      const mapping = byTarget.get(target);
+      assert.ok(mapping, `expected derived ${target}`);
+      assert.equal(mapping.value, "#0a0a0a", `${target} on a yellow brand must be dark, not white`);
+      assert.equal(mapping.derivation?.method, "foreground-from-luminance");
+    }
+    // The CTA-text variable that next-core actually renders is text-inverse.
+    assert.match(result.css, /--brand--color--text-inverse: #0a0a0a;/);
+    assert.doesNotMatch(result.css, /--brand--color--text-inverse: #ffffff;/);
+  });
+});
+
+test("brand theme keeps white foregrounds on a dark brand", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="styles/brand.css"><main>Landing</main>`);
+    writeFileSync(join(source, "styles/brand.css"), `
+:root {
+  --brand-primary: #0b1f3a;
+  --brand-cta: #0b1f3a;
+  --surface-bg: #ffffff;
+  --text-primary: #111111;
+}
+`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const textInverse = result.context_theme.mappings.find((mapping) => mapping.target === "--brand--color--text-inverse");
+    assert.ok(textInverse);
+    assert.equal(textInverse.value, "#ffffff");
+    assert.equal(textInverse.derivation?.on, "light");
   });
 });
 

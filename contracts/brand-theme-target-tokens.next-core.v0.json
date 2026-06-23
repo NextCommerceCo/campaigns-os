@@ -34,7 +34,6 @@
     "--surface-card": ["--brand--color--surface"],
     "--text-primary": ["--brand--color--text-primary", "--brand--color--foreground"],
     "--text-secondary": ["--brand--color--text-secondary"],
-    "--text-inverse": ["--brand--color--text-inverse", "--brand--color--primary-foreground", "--brand--color--accent-foreground", "--brand--color--cta-foreground"],
     "--border-default": ["--brand--color--border", "--component--color--outline"],
     "--rating-star": ["--brand--color--rating-star"],
     "--state-success": ["--system-colors--success"],
@@ -50,6 +49,17 @@
       "--brand--color--primary-dark": { "method": "mix-black", "amount": 0.18 },
       "--brand--color--primary-light": { "method": "mix-white", "amount": 0.2 },
       "--brand--color--primary-lighter": { "method": "mix-white", "amount": 0.86 }
+    }
+  },
+  "foreground_derivations": {
+    "description": "Foreground/on-color tokens are derived from the luminance of the background they sit on, never copied blindly from a source --text-inverse token (which defaults to white and renders illegible on a light brand, e.g. white-on-yellow CTAs). Each foreground target picks the first paired background that was mapped and emits the readable choice from foreground_choices. next-core .button/.submit-button render their label with --brand--color--text-inverse, so text-inverse pairs with the CTA background first.",
+    "foreground_choices": { "dark": "#0a0a0a", "light": "#ffffff" },
+    "min_contrast_ratio": 4.5,
+    "derivations": {
+      "--brand--color--cta-foreground": ["--brand--color--cta-primary"],
+      "--brand--color--text-inverse": ["--brand--color--cta-primary", "--brand--color--primary"],
+      "--brand--color--primary-foreground": ["--brand--color--primary"],
+      "--brand--color--accent-foreground": ["--brand--color--accent"]
     }
   }
 }
