@@ -146,7 +146,7 @@ function faviconTextConfirmsSourceMatch(text) {
 function hasNegativeBumpCompareEvidence(value) {
   const text = reviewText(value);
   if (/\b(?:no|none)\s+(?:equal|same|duplicate|doubled|no[-_\s]?discount).{0,24}(?:compare|strike|original|price)\s*(?:found|present|rendered|shown|visible)?\b/i.test(text)) return false;
-  return hasNegativeEvidence(value, /\b(?:equal|same)\s+(?:compare|strike|original)\s+price\s+(?:found|present|rendered|shown|visible)\b|\b(?:equal|same)\s+price\s+(?:compare|strike|original)\b|\b(?:compare|strike|original)\s+price\s+(?:equals|===|same\s+as)\s+(?:list|full|retail|original)\b|\b(?:doubled|duplicate)\s+(?:compare|strike|original|price)(?:\s+(?:row|price))?\s+(?:found|present|rendered|shown|visible)\b|\bno[-_\s]?discount\s+(?:compare|strike|original)\s+(?:rendered|shown|visible|present|found)\b/i);
+  return hasNegativeEvidence(value, /\b(?:equal|same)\s+(?:compare|strike|original)\s+price\s+(?:found|present|rendered|shown|visible)\b|\b(?:equal|same)\s+price\s+(?:compare|strike|original)\s+(?:found|present|rendered|shown|visible)\b|\b(?:compare|strike|original)\s+price\s+(?:equals|===|same\s+as)\s+(?:list|full|retail|original)\b|\b(?:doubled|duplicate)\s+(?:compare|strike|original|price)(?:\s+(?:row|price))?\s+(?:found|present|rendered|shown|visible)\b|\bno[-_\s]?discount\s+(?:compare|strike|original)\s+(?:rendered|shown|visible|present|found)\b/i);
 }
 
 function semanticEvidenceProblems(evidence, report) {

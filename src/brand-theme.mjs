@@ -182,6 +182,19 @@ function hasTokenSequence(parts, firstValues, secondValues) {
   return parts.some((part, index) => firstValues.includes(part) && secondValues.includes(parts[index + 1]));
 }
 
+function isSurfaceBgToken(parts) {
+  if (hasTokenPart(parts, ["surface", "background"])) return true;
+  if (parts.length === 1 && parts[0] === "bg") return true;
+  return hasTokenSequence(parts, ["page", "body", "site"], ["bg"])
+    || hasTokenSequence(parts, ["bg"], ["page", "body", "site"]);
+}
+
+function isTextInverseToken(parts) {
+  return hasTokenSequence(parts, ["text", "foreground"], ["inverse"])
+    || hasTokenSequence(parts, ["inverse"], ["text", "foreground"])
+    || hasTokenSequence(parts, ["on"], ["primary", "cta", "brand", "accent"]);
+}
+
 function isTargetContractToken(name) {
   const lower = String(name || "").toLowerCase();
   return lower.startsWith("--brand--color--") || lower.startsWith("--component--") || lower.startsWith("--system-colors--");
@@ -210,9 +223,8 @@ function inferDesignIntentTokens(content, rootTokens = {}) {
     if (hasTokenPart(parts, ["accent"])) {
       addToken("--brand-accent", color);
     }
-    if (hasTokenPart(parts, ["success"])) addToken("--state-success", color);
     const hasCardSurfacePart = hasTokenPart(parts, ["card", "panel"]);
-    if (!hasCardSurfacePart && hasTokenPart(parts, ["surface", "background", "bg"])) addToken("--surface-bg", color);
+    if (!hasCardSurfacePart && isSurfaceBgToken(parts)) addToken("--surface-bg", color);
     if (
       hasTokenSequence(parts, ["surface"], ["card", "panel"])
       || hasTokenSequence(parts, ["card", "panel"], ["surface", "background", "bg"])
@@ -221,7 +233,7 @@ function inferDesignIntentTokens(content, rootTokens = {}) {
     }
     if (hasTokenPart(parts, ["text"]) && hasTokenPart(parts, ["primary", "main"])) addToken("--text-primary", color);
     if (hasTokenPart(parts, ["text", "foreground"]) && hasTokenPart(parts, ["secondary", "muted", "subtle"])) addToken("--text-secondary", color);
-    if (hasTokenPart(parts, ["inverse"]) || hasTokenSequence(parts, ["on"], ["primary", "cta", "brand", "accent"])) addToken("--text-inverse", color);
+    if (isTextInverseToken(parts)) addToken("--text-inverse", color);
     if (hasTokenPart(parts, ["border", "outline", "stroke", "ring"])) addToken("--border-default", color);
     if (hasTokenPart(parts, ["rating", "star", "review"])) addToken("--rating-star", color);
   }

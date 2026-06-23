@@ -271,6 +271,7 @@ test("polish gate accepts harmless compare-price wording in bump evidence", () =
           verdict: "passed",
           summary: {
             note: "compare price uses same currency as list; no equal compare price found",
+            layout: "same price compare layout checked against the source",
           },
         },
       },

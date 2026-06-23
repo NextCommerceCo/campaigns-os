@@ -209,6 +209,10 @@ test("brand theme avoids broad root-token role inference for layout and foregrou
   --panel-border: #dddddd;
   --brand--color--foreground: #101010;
   --white-smoke: #f8f8f8;
+  --success-message-bg: #dff5e8;
+  --text-bg: #fafafa;
+  --section-bg: #f2f2f2;
+  --background-inverse: #222222;
   --cta-primary: #e4572e;
   --text-primary: #111111;
   --surface-bg: #ffffff;
@@ -222,6 +226,8 @@ test("brand theme avoids broad root-token role inference for layout and foregrou
     assert.equal(mappedTargets.has("--brand--color--primary"), false);
     assert.equal(mappings.some((mapping) => mapping.source === "--surface-card"), false);
     assert.equal(mappedTargets.has("--brand--color--text-inverse"), false);
+    assert.equal(result.context_theme.selected_source.tokens?.["--state-success"], undefined);
+    assert.equal(mappings.find((mapping) => mapping.target === "--brand--color--background")?.source, "--surface-bg");
     assert.ok(mappedTargets.has("--brand--color--cta-primary"));
     assert.ok(mappedTargets.has("--brand--color--background"));
     assert.ok(mappedTargets.has("--brand--color--text-primary"));
