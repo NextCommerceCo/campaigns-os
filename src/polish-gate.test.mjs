@@ -359,6 +359,16 @@ test("polish gate blocks a hardcoded non-token color bleed (A3)", () => {
   assert.ok(gate.problems.some((problem) => problem.includes("brand_review.brand_bleed")));
 });
 
+test("polish gate blocks a free-form 'cleared: false' brand_bleed string (A3)", () => {
+  for (const wording of ["cleared: false", "not cleared", "de-brand pass: bleed found"]) {
+    const gate = evaluatePolishGate({ report: baseReport(validPolish({
+      evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: wording } }),
+    })) });
+    assert.equal(gate.status, "blocked", `"${wording}" must block`);
+    assert.ok(gate.problems.some((problem) => problem.includes("brand_review.brand_bleed")));
+  }
+});
+
 test("polish gate accepts a cleared brand_bleed attestation (A3)", () => {
   const gate = evaluatePolishGate({ report: baseReport(validPolish({
     evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: "promo banner stripped, design fonts only, colors tokenized, no prior favicon" } }),
