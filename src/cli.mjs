@@ -2711,9 +2711,102 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
   if (!/(data-next-|window\.next|next-page-type|campaign-cart-sdk|campaign-cart)/i.test(content)) {
     addIssue(issueTarget, "built_output.runtime_missing", `Built page "${page.id}" has no obvious Campaign Cart runtime markers.`, { page_id: page.id, file: relPath });
   }
+  validateBuiltPreCheckoutBootstrap(content, builtPath, targetRepo, page, issueTarget);
+  validateBuiltBumpPricing(content, builtPath, targetRepo, page, issueTarget);
   validateBuiltPageKitAssetPaths(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
+}
+
+// Pre-checkout pages (presell/landing — SDK page_type "product") must ship the
+// Campaign Cart bootstrap, not just inert data-next attributes. Without the
+// loader + next-page-type meta, every SDK feature silently no-ops: conditional
+// visibility (param.banner/param.seen), utmTransfer (UTM/query carry-through to
+// checkout — top-of-funnel ad attribution), and SDK analytics. The generic
+// runtime-marker check above passes on a lone data-next-* attribute, so this
+// dedicated check guards the pre-checkout boundary. See the Shield build
+// learnings (A1): base-presell.html / base-landing.html shipped without it.
+const PRE_CHECKOUT_PAGE_TYPES = new Set([
+  "presell", "advertorial", "listicle", "review",
+  "landing", "lander", "lp", "product",
+]);
+
+function sdkLoaderScriptPresent(content) {
+  // Only the campaign-cart loader counts. A loose `loader.js` match would let an
+  // unrelated bundle (analytics/lazy-image loader) falsely satisfy the check and
+  // re-introduce the missing-SDK bug, so the src must identify the campaign-cart
+  // loader specifically. We do not scan for inline ESM imports: that is not a
+  // real bootstrap path for this SDK and is trivially spoofed by a comment or a
+  // JSON <script> blob.
+  for (const tag of content.matchAll(/<script\b[^>]*>/gi)) {
+    const srcMatch = tag[0].match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+    if (!srcMatch) continue;
+    if (/campaign-cart(?:@[^"']*)?\/dist\/loader\.js/i.test(srcMatch[1])) return true;
+  }
+  return false;
+}
+
+// Order-bump templates (bump-check01/bump-switch01) ship BOTH a per-unit price
+// row (Option A) and a line-total price row (Option B) behind Liquid guards,
+// with a "pick ONE" comment. If a build leaves both rendered, the bump shows
+// doubled prices. The template now defaults to per-unit only, so this guards
+// the built output against a regression where both rows survive. See the
+// Shield build learnings (B2). Spurious strikethrough (compare == price) is
+// covered separately as a polish-gate evidence requirement.
+const BUMP_BLOCK_PATTERN = /data-component\s*=\s*["']prepurchase-upsell["']/gi;
+const BUMP_PER_UNIT_DISPLAYS = ["unitPrice", "originalUnitPrice"];
+const BUMP_LINE_TOTAL_DISPLAYS = ["price", "originalPrice"];
+
+function bumpDisplaysPresent(block, displays) {
+  return displays.some((name) => new RegExp(`data-next-toggle-display\\s*=\\s*["']${name}["']`, "i").test(block));
+}
+
+const CHECKOUT_BUMP_PAGE_TYPES = new Set(["checkout", "select"]);
+
+export function validateBuiltBumpPricing(content, builtPath, targetRepo, page, issueTarget) {
+  const type = String(page?.type || page?.page_type || "").toLowerCase().trim();
+  if (!CHECKOUT_BUMP_PAGE_TYPES.has(type)) return;
+
+  // Slice the document into per-bump blocks at each prepurchase-upsell anchor.
+  const anchorOffsets = [...content.matchAll(BUMP_BLOCK_PATTERN)].map((match) => match.index);
+  if (anchorOffsets.length === 0) return;
+  const relPath = relFromDir(targetRepo, builtPath);
+  let doubled = 0;
+  for (let i = 0; i < anchorOffsets.length; i += 1) {
+    const block = content.slice(anchorOffsets[i], anchorOffsets[i + 1] ?? content.length);
+    if (bumpDisplaysPresent(block, BUMP_PER_UNIT_DISPLAYS) && bumpDisplaysPresent(block, BUMP_LINE_TOTAL_DISPLAYS)) {
+      doubled += 1;
+    }
+  }
+  if (doubled > 0) {
+    addIssue(
+      issueTarget,
+      "built_output.bump_double_price",
+      `Built page "${page.id}" renders ${doubled} order bump(s) with BOTH a per-unit price row (Option A) and a line-total price row (Option B). Pick one: pass show_per_unit_price / show_line_total_price to the bump include so a single price row renders (rendering both doubles the displayed price).`,
+      { page_id: page.id, file: relPath, doubled_bumps: doubled },
+    );
+  }
+}
+
+export function validateBuiltPreCheckoutBootstrap(content, builtPath, targetRepo, page, issueTarget) {
+  const type = String(page?.type || page?.page_type || "").toLowerCase().trim();
+  if (!PRE_CHECKOUT_PAGE_TYPES.has(type)) return;
+
+  const relPath = relFromDir(targetRepo, builtPath);
+  const hasLoader = sdkLoaderScriptPresent(content);
+  const hasPageTypeMeta = isNonEmptyString(extractMetaContent(content, "next-page-type"));
+  if (hasLoader && hasPageTypeMeta) return;
+
+  const missing = [
+    !hasLoader ? "the Campaign Cart loader script (campaign-cart@v{sdk_version}/dist/loader.js)" : null,
+    !hasPageTypeMeta ? 'the <meta name="next-page-type"> tag' : null,
+  ].filter(Boolean);
+  addIssue(
+    issueTarget,
+    "built_output.pre_checkout_sdk_bootstrap",
+    `SDK not bootstrapped on pre-checkout page "${page.id}" (type "${type}"): missing ${missing.join(" and ")}. Without it, conditional visibility (param.banner/param.seen), utmTransfer (UTM carry-through to checkout — ad attribution), and SDK analytics silently no-op. Emit the same config.js → loader.js → next-funnel/next-page-type bootstrap that the checkout layout uses.`,
+    { page_id: page.id, file: relPath, missing: { loader: !hasLoader, page_type_meta: !hasPageTypeMeta } },
+  );
 }
 
 function validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget) {

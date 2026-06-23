@@ -458,6 +458,89 @@ function mixColor(value, target, amount) {
   });
 }
 
+function relativeLuminance({ r, g, b }) {
+  const channel = (value) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrastRatio(luminanceA, luminanceB) {
+  const lighter = Math.max(luminanceA, luminanceB);
+  const darker = Math.min(luminanceA, luminanceB);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+// Pick the foreground color (dark vs light) most legible on `bgValue`. A light
+// brand background (yellow/white/pastel) yields a dark foreground; a dark or
+// saturated background yields a light one. This is the fix for white-on-light
+// CTA text: never trust a copied source --text-inverse (which defaults to
+// white), always derive from the background's luminance.
+function readableForeground(bgValue, choices = {}) {
+  const bgRgb = colorToRgb(bgValue);
+  if (!bgRgb) return null;
+  // Normalize the choices once so the emitted value is always 6-digit hex,
+  // regardless of how the contract spells them (e.g. "#000" -> "#000000").
+  const darkValue = normalizeColor(choices.dark) || "#0a0a0a";
+  const lightValue = normalizeColor(choices.light) || "#ffffff";
+  const bgLuminance = relativeLuminance(bgRgb);
+  const darkContrast = contrastRatio(bgLuminance, relativeLuminance(colorToRgb(darkValue)));
+  const lightContrast = contrastRatio(bgLuminance, relativeLuminance(colorToRgb(lightValue)));
+  const useDark = darkContrast >= lightContrast;
+  return {
+    value: useDark ? darkValue : lightValue,
+    contrast: Math.round(Math.max(darkContrast, lightContrast) * 100) / 100,
+    on: useDark ? "dark" : "light",
+  };
+}
+
+// Emit foreground/on-color tokens derived from the luminance of the background
+// each sits on. Pairing comes from the contract's foreground_derivations so the
+// generator stays data-driven. A foreground target already mapped from a source
+// token is left untouched; one whose paired backgrounds are all unmapped is
+// skipped (no background to read).
+function deriveForegroundMappings(existingMappings, targetTokens) {
+  const config = targetTokens.foreground_derivations;
+  if (!isObject(config) || !isObject(config.derivations)) return { mappings: [], warnings: [] };
+  const allowedTargets = new Set(targetTokens.tokens || []);
+  const choices = isObject(config.foreground_choices) ? config.foreground_choices : { dark: "#0a0a0a", light: "#ffffff" };
+  const minContrast = Number(config.min_contrast_ratio) || 0;
+  const valueByTarget = new Map();
+  for (const mapping of existingMappings) {
+    if (!valueByTarget.has(mapping.target)) valueByTarget.set(mapping.target, mapping.value);
+  }
+  const mappings = [];
+  const warnings = [];
+  for (const [foregroundTarget, backgroundCandidates] of Object.entries(config.derivations)) {
+    if (!allowedTargets.has(foregroundTarget) || valueByTarget.has(foregroundTarget)) continue;
+    const candidates = Array.isArray(backgroundCandidates) ? backgroundCandidates : [backgroundCandidates];
+    const backgroundTarget = candidates.find((target) => valueByTarget.has(target));
+    if (!backgroundTarget) continue;
+    const backgroundValue = valueByTarget.get(backgroundTarget);
+    const readable = readableForeground(backgroundValue, choices);
+    if (!readable) continue;
+    if (minContrast && readable.contrast < minContrast) {
+      warnings.push(issue(
+        "theme.foreground.low_contrast",
+        `Derived ${foregroundTarget} on ${backgroundTarget} (${backgroundValue}) only reaches ${readable.contrast}:1 contrast (< ${minContrast}:1). Confirm the brand background or supply an explicit foreground.`,
+        { foreground: foregroundTarget, background: backgroundTarget, background_value: backgroundValue, contrast: readable.contrast },
+      ));
+    }
+    // Scale confidence by the achieved contrast so a strong derivation reads as
+    // trustworthy as a direct mapping (AAA >= 7:1 high, AA >= 4.5:1 medium).
+    const confidence = readable.contrast >= 7 ? "high" : readable.contrast >= 4.5 ? "medium" : "low";
+    mappings.push({
+      source: backgroundTarget,
+      target: foregroundTarget,
+      value: readable.value,
+      confidence,
+      derivation: { method: "foreground-from-luminance", background: backgroundTarget, background_value: backgroundValue, on: readable.on, contrast: readable.contrast },
+    });
+  }
+  return { mappings, warnings };
+}
+
 function compareProducerDefaults(tokens, sourceDefaults) {
   const matches = [];
   const unresolved = [];
@@ -573,6 +656,14 @@ function mapTokens(tokens, targetTokens) {
   if (!hasRating && isNonEmptyString(tokens["--brand-accent"])) {
     addMapping("--brand-accent", "--brand--color--rating-star", tokens["--brand-accent"].trim(), "medium", { method: "rating-fallback-from-brand-accent" });
   }
+
+  // Foreground/on-color tokens derive from the luminance of the background they
+  // sit on (CTA, primary, accent), after all backgrounds are mapped above.
+  const foreground = deriveForegroundMappings(mappings, targetTokens);
+  for (const mapping of foreground.mappings) {
+    addMapping(mapping.source, mapping.target, mapping.value, mapping.confidence, mapping.derivation);
+  }
+  warnings.push(...foreground.warnings);
 
   return { mappings, warnings };
 }

@@ -53,7 +53,7 @@ function sourceFreshnessWaiver(reason = "Operator confirmed current source chang
 function validEvidence(overrides = {}) {
   return {
     visual_review: { screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"] },
-    brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"] },
+    brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: { cleared: true, promo_codes: "none", fonts: "design fonts only", colors: "tokenized" } },
     checkout_review: { field_labels: "checked", phone_alignment: "checked", payment_display: "checked", bump_compare_price_rule: "checked" },
     template_residue_review: { next_blue: "not found", starter_favicon: "not found", lorem: "not found" },
     commerce_flow_review: { shop_single_step: "direct-entry force-package/product-selector limitation reviewed" },
@@ -332,4 +332,55 @@ test("polish gate passes current build and source package fingerprints", () => {
   assert.equal(gate.current_source_package_material_fingerprint, SOURCE_PACKAGE_FINGERPRINT);
   assert.equal(gate.assembly_source_package_material_fingerprint, SOURCE_PACKAGE_FINGERPRINT);
   assert.deepEqual(gate.warnings, []);
+});
+
+test("polish gate blocks when brand_bleed evidence is missing (A3)", () => {
+  const evidence = validEvidence();
+  delete evidence.brand_review.brand_bleed;
+  const gate = evaluatePolishGate({ report: baseReport(validPolish({ evidence })) });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.ok(gate.problems.some((problem) => problem.includes("brand_review.brand_bleed")));
+});
+
+test("polish gate blocks a residual cloned-source sale code (A3)", () => {
+  const gate = evaluatePolishGate({ report: baseReport(validPolish({
+    evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: "promo sale code SPRING still present from sibling campaign" } }),
+  })) });
+  assert.equal(gate.status, "blocked");
+  assert.ok(gate.problems.some((problem) => problem.includes("brand_review.brand_bleed")));
+});
+
+test("polish gate blocks a hardcoded non-token color bleed (A3)", () => {
+  const gate = evaluatePolishGate({ report: baseReport(validPolish({
+    evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: { cleared: false, note: "hardcoded #C670FE purple still on Most Popular pill" } } }),
+  })) });
+  assert.equal(gate.status, "blocked");
+  assert.ok(gate.problems.some((problem) => problem.includes("brand_review.brand_bleed")));
+});
+
+test("polish gate blocks a free-form 'cleared: false' brand_bleed string (A3)", () => {
+  for (const wording of ["cleared: false", "not cleared", "de-brand pass: bleed found"]) {
+    const gate = evaluatePolishGate({ report: baseReport(validPolish({
+      evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: wording } }),
+    })) });
+    assert.equal(gate.status, "blocked", `"${wording}" must block`);
+    assert.ok(gate.problems.some((problem) => problem.includes("brand_review.brand_bleed")));
+  }
+});
+
+test("polish gate accepts cleared brand_bleed wording that mentions 'no bleed' (A3)", () => {
+  for (const wording of ["cleared: no bleed, no residue, de-brand pass complete", "no bleed found"]) {
+    const gate = evaluatePolishGate({ report: baseReport(validPolish({
+      evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: wording } }),
+    })) });
+    assert.equal(gate.status, "pass", `"${wording}" must pass`);
+  }
+});
+
+test("polish gate accepts a cleared brand_bleed attestation (A3)", () => {
+  const gate = evaluatePolishGate({ report: baseReport(validPolish({
+    evidence: validEvidence({ brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: "promo banner stripped, design fonts only, colors tokenized, no prior favicon" } }),
+  })) });
+  assert.equal(gate.status, "pass");
 });

@@ -2,6 +2,8 @@
 
 The public v0 QA runner is Node/npm-based and does not require access to a private runtime repo.
 
+> **Commerce QA requires network; it cannot run in a no-outbound sandbox.** The SDK, product images, fonts, the Netlify preview, and the Playwright typed-card test order all need outbound network. A build environment without it can only validate markup/build/CSS — the commerce runtime and the typed-card test order (the Campaigns OS control) must be deferred to a deployed preview. Always run the QA runner against a `--base-url` preview/production origin (e.g. `npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url https://deploy-preview-7--your-site.netlify.app/ --browser --test-order common`); never report commerce-runtime QA as passed from an offline build.
+
 ## Resolve
 
 Use resolve before a full run:

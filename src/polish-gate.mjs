@@ -191,7 +191,60 @@ function semanticEvidenceProblems(evidence, report) {
     problems.push("stages.polish.evidence.checkout_review.bump_compare_price_rule must confirm no equal/no-discount compare price renders.");
   }
 
+  // Brand bleed: when a campaign is cloned from a proven sibling, the sibling's
+  // brand defaults ride along — a default promo/sale banner with a fake code,
+  // hardcoded non-token colors (e.g. next-core's #C670FE pill), scaffold fonts
+  // (Plus Jakarta), and the prior favicon. Polish must affirmatively certify
+  // the de-brand pass cleared them. See the Shield build learnings (A3).
+  // Field precedence: `brand_bleed` is canonical; `brand_bleed_review` and
+  // `debrand` are accepted aliases (in that order) for forward compat.
+  const bleedEvidence = brandReview?.brand_bleed ?? brandReview?.brand_bleed_review ?? brandReview?.debrand;
+  if (bleedEvidence === undefined || bleedEvidence === null) {
+    problems.push("stages.polish.evidence.brand_review.brand_bleed must confirm the cloned-source de-brand pass: no residual promo/sale code or copy, no prior-campaign favicon, no scaffold/non-design fonts, no hardcoded non-token colors.");
+  } else {
+    const kinds = brandBleedResidualKinds(bleedEvidence);
+    if (kinds.length) {
+      problems.push(`stages.polish.evidence.brand_review.brand_bleed still indicates cloned-source brand bleed (${kinds.join(", ")}).`);
+    }
+  }
+
   return problems;
+}
+
+// Per-kind brand-bleed residue detection. Returns the kinds that still leaked,
+// so the gate message names the actual residue. Each kind has its own phrase
+// vocabulary rather than one monolithic regex.
+const BRAND_BLEED_RESIDUE_PATTERNS = [
+  ["residual promo/sale code or copy", /\b(?:promo|sale|discount|coupon)\b[^.;]{0,40}\b(?:code|copy|banner|sale)\b[^.;]{0,40}\b(?:found|present|remain(?:s|ing)?|leaked|retained|kept|still)\b|\b(?:found|present|remain(?:s|ing)?|leaked|retained|kept|still)\b[^.;]{0,40}\b(?:promo|sale|discount|coupon)\b[^.;]{0,40}\b(?:code|copy|banner)\b|\bfake\s+(?:code|sale|coupon)\b/i],
+  ["prior-campaign favicon", /\bprior[-_\s]?campaign\b|\bsibling[-_\s]?(?:brand|campaign|source)\b/i],
+  ["scaffold/non-design fonts", /\bscaffold\s+fonts?\b|\bplus\s+jakarta\b|\bnon[-_\s]?design\s+fonts?\b/i],
+  ["hardcoded non-token color", /(?:^|[^\w])#?c670fe(?:[^\w]|$)|\bhardcoded\s+(?:non[-_\s]?token\s+)?(?:colou?r|hex|purple)\b|\bnon[-_\s]?token\s+colou?r\s+(?:found|present|remain(?:s|ing)?)\b/i],
+];
+
+function brandBleedResidualKinds(value) {
+  if (isObject(value)) {
+    if (value.cleared === false || value.bleed_found === true || value.residual_found === true) return ["de-brand pass not cleared"];
+    if (value.cleared === true || value.bleed_found === false || value.residual_found === false) return [];
+  }
+  const text = reviewText(value);
+  // Explicit "not cleared" wording blocks first — a free-form "cleared: false"
+  // must not slip through just because no residue *kind* phrase happens to match.
+  // Tightened to avoid over-blocking benign clearances: the boolean form
+  // requires a literal "false" (not "no", which collides with "cleared: no
+  // bleed"), and bleed/residual "found" is excluded when preceded by "no" (so
+  // "no bleed found" reads as cleared, not as residue).
+  if (/\bnot\s+cleared\b|\bcleared\s*[:=-]\s*false\b|\b(?<!no\s)(?:bleed|residual)\s+(?:found|present|detected|remain(?:s|ing)?)\b|\bnot\s+de[-_\s]?branded\b/i.test(text)) {
+    return ["de-brand pass not cleared"];
+  }
+  // Otherwise an explicit cleared/none statement short-circuits the phrase scan.
+  if (/\bcleared\b|\bno\s+(?:bleed|residue|residual)\b|\bde[-_\s]?brand(?:ed|\s+pass)\b/i.test(text)) {
+    return [];
+  }
+  const kinds = [];
+  for (const [label, pattern] of BRAND_BLEED_RESIDUE_PATTERNS) {
+    if (hasNegativeEvidence(value, pattern)) kinds.push(label);
+  }
+  return kinds;
 }
 
 function evidenceProblems(evidence, report) {
