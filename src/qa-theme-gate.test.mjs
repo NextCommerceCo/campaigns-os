@@ -277,3 +277,12 @@ test("resolveQaInputsFromSite requires a loadable --family brand contract", () =
     );
   });
 });
+
+test("#4 advisory meta tags: currency and predictive-address are advisory (config-sourced), routing/page-type are not", () => {
+  const { isAdvisoryMetaTag } = __qaNodeTestHooks;
+  assert.equal(isAdvisoryMetaTag("next-currency"), true);
+  assert.equal(isAdvisoryMetaTag("next-predictive-address"), true);
+  assert.equal(isAdvisoryMetaTag("NEXT-CURRENCY"), true);
+  assert.equal(isAdvisoryMetaTag("next-page-type"), false);
+  assert.equal(isAdvisoryMetaTag("next-upsell-accept-url"), false);
+});

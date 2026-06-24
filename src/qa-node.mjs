@@ -784,15 +784,22 @@ async function runPageChecks(page, args) {
   for (const [name, expected] of Object.entries(expectedMeta)) {
     const actual = actualMeta[name] || null;
     const matches = metaTagMatches(name, actual, expected);
+    // Advisory SDK hints (currency, predictive address) are sourced by the SDK
+    // from config.js — the build legitimately omits them as page meta, so an
+    // ABSENT advisory hint is a manual-review warning, not a blocker. A
+    // present-but-wrong value still fails (a wrong currency hint is real).
+    const advisoryAbsent = !matches && actual === null && isAdvisoryMetaTag(name);
     assertions.push(assertion({
       id: `meta:${page.page_id}:${name}`,
       family: "meta-tags",
       page,
-      status: matches ? STATUS.PASS : STATUS.FAIL,
-      severity: matches ? undefined : SEVERITY.BLOCKER,
+      status: matches ? STATUS.PASS : advisoryAbsent ? STATUS.MANUAL_REVIEW : STATUS.FAIL,
+      severity: matches ? undefined : advisoryAbsent ? SEVERITY.WARN : SEVERITY.BLOCKER,
       expected,
       actual,
-      evidence: matches ? undefined : { expected, actual },
+      evidence: matches ? undefined : advisoryAbsent
+        ? { expected, actual, note: "Advisory SDK hint; the SDK sources this from config.js when the meta tag is absent. Verify the behavior (currency/address) in-browser." }
+        : { expected, actual },
     }));
   }
 
@@ -1393,6 +1400,16 @@ function isRoutingMetaTag(name) {
   ].includes(String(name || "").toLowerCase());
 }
 
+// Advisory SDK hints the SDK can source from config.js (currency behavior,
+// predictive-address toggle) rather than requiring a page meta tag. Their
+// absence is a manual-review warning, not a QA blocker.
+function isAdvisoryMetaTag(name) {
+  return [
+    "next-currency",
+    "next-predictive-address",
+  ].includes(String(name || "").toLowerCase());
+}
+
 function metaTagMatches(name, actual, expected) {
   if (actual === expected) return true;
   if (!isRoutingMetaTag(name)) return false;
@@ -1498,4 +1515,5 @@ export const __qaNodeTestHooks = Object.freeze({
   themeGateSummary,
   templateBrandContractAssertion,
   resolveQaInputsFromSite,
+  isAdvisoryMetaTag,
 });
