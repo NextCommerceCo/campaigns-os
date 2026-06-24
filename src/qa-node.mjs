@@ -786,9 +786,12 @@ async function runPageChecks(page, args) {
     const matches = metaTagMatches(name, actual, expected);
     // Advisory SDK hints (currency, predictive address) are sourced by the SDK
     // from config.js — the build legitimately omits them as page meta, so an
-    // ABSENT advisory hint is a manual-review warning, not a blocker. A
-    // present-but-wrong value still fails (a wrong currency hint is real).
-    const advisoryAbsent = !matches && actual === null && isAdvisoryMetaTag(name);
+    // ABSENT (or empty-content) advisory hint is a manual-review warning, not a
+    // blocker. A present, non-empty but wrong value still fails (a wrong
+    // currency hint is real). `actual` is already null-coerced above when the
+    // content is empty; the explicit empty-string check keeps that intent
+    // robust if that coercion ever changes.
+    const advisoryAbsent = !matches && isAdvisoryMetaTag(name) && (actual === null || String(actual).trim() === "");
     assertions.push(assertion({
       id: `meta:${page.page_id}:${name}`,
       family: "meta-tags",

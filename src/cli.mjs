@@ -2710,14 +2710,20 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
 
   const claimed = new Set();
   const drifted = [];
+  const unverifiable = [];
   for (const page of pages) {
     const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
-    if (builtPath && existsSync(builtPath)) {
+    if (!builtPath) {
+      // No page_url / source permalink to resolve a route from: doctor cannot
+      // determine the expected route, so this is "unverifiable", not drift.
+      unverifiable.push({ page_id: page.id, type: page.type || "page", reason: "no page_url / source permalink to resolve an expected route" });
+      continue;
+    }
+    if (existsSync(builtPath)) {
       claimed.add(resolve(builtPath));
       continue;
     }
-    const relSegments = builtPath ? relFromDir(siteRoot, dirname(builtPath)).split("/") : [];
-    const segments = [publicRouteSlug, ...relSegments].filter((segment) => segment && segment !== ".");
+    const segments = [publicRouteSlug, ...relFromDir(siteRoot, dirname(builtPath)).split("/")].filter((segment) => segment && segment !== ".");
     drifted.push({
       page_id: page.id,
       type: page.type || "page",
@@ -2725,8 +2731,17 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
     });
   }
 
+  const verifiedNote = `${claimed.size}/${pages.length} verified${unverifiable.length ? `, ${unverifiable.length} unverifiable` : ""}`;
   if (drifted.length === 0) {
-    ready.push(`Built routes match CampaignSpec page routes (${pages.length} page(s))`);
+    ready.push(`Built routes match CampaignSpec page routes (${verifiedNote})`);
+    if (unverifiable.length) {
+      addIssue(
+        warnings,
+        "built_output.route_unverifiable",
+        `Doctor could not determine the expected route for ${unverifiable.length} CampaignSpec page(s) (no page_url / source permalink): ${unverifiable.map((u) => `"${u.page_id}" (${u.type})`).join(", ")}.`,
+        { unverifiable },
+      );
+    }
     return;
   }
 
@@ -2740,8 +2755,9 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
     "built_output.route_drift",
     `CampaignSpec page(s) have no built page at their declared route: ${drifted.map((d) => `"${d.page_id}" (${d.type}) → ${d.expected_route}`).join("; ")}. `
       + (unmatched.length ? `Built output has unmatched route(s): ${unmatched.join(", ")}. ` : "")
+      + (unverifiable.length ? `Unverifiable (no page_url): ${unverifiable.map((u) => `"${u.page_id}"`).join(", ")}. ` : "")
       + `page-kit routes by source filename, so reconcile the spec page_url with the built route — otherwise QA (which resolves URLs from page_url) targets phantom URLs and reports live pages as 404.`,
-    { drifted, unmatched_built_routes: unmatched },
+    { drifted, unmatched_built_routes: unmatched, unverifiable, verified_count: claimed.size },
   );
 }
 
@@ -2777,14 +2793,20 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
   validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
 }
 
-// Per-page starter-logo residue. The starter brand logo (next-logo.png on
-// img.brand-logo) must be swapped for the campaign's real logo on every page.
-// This previously slipped through to browser QA on the *receipt* page: the
-// polish gate's brand attestation is campaign-level (the agent checks the
-// prominent checkout logo and attests logo_checked), and the static next-logo
-// scan only ran in the no-packet `doctor --built` path. Running it per built
-// page in the packet flow gates it at build time on every page, receipt
-// included. See the Shield build QA (#5).
+// Per-page starter-logo residue, scanned against the BUILT `_site/<slug>`
+// output. The starter brand logo (next-logo.png on img.brand-logo) must be
+// swapped for the campaign's real logo on every page.
+//
+// Division of responsibility vs the existing generic residue scan: the packet
+// path already emits `template_contract.literal_residue` (via
+// collectGenericTemplateResidueMatches, which includes the next-logo pattern),
+// but that scan runs against `derived.target_output_dir` — the page-kit SOURCE
+// dir (src/<slug>) — and is gated on assembly-complete. This check is the
+// BUILT-output signal: per page, unconditional, over `_site/<slug>`. A logo
+// that survives the page-kit build into _site (the receipt case) is caught here
+// even when the source scan didn't run or was a non-blocking source-side note.
+// The two can both fire for one logo (it lives in source AND built); fixing the
+// source and rebuilding clears both. See the Shield build QA (#5).
 export function validateBuiltStarterLogoResidue(content, builtPath, targetRepo, page, issueTarget) {
   const occurrences = (content.match(/\bnext-logo\.(?:png|svg|webp)\b/gi) || []).length;
   if (occurrences === 0) return;
