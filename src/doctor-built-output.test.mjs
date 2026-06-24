@@ -11,6 +11,8 @@ import {
   validateBuiltBumpPricing,
   validateBuiltPlaceholderTextResidue,
   validateBuiltPreCheckoutBootstrap,
+  validateBuiltRouteDrift,
+  validateBuiltStarterLogoResidue,
   validateMarketSensitiveCopy,
   validateSpecRoutingMetaTags,
 } from "./cli.mjs";
@@ -294,4 +296,69 @@ test("B2 bump pricing: 'select' pre-checkout pages are in scope (treated as chec
   const issues = [];
   validateBuiltBumpPricing(bump(PER_UNIT_ROW + LINE_TOTAL_ROW), "/repo/_site/c/select/index.html", "/repo", { id: "select", type: "select" }, issues);
   assert.equal(codes(issues).includes("built_output.bump_double_price"), true);
+});
+
+// --- #5: per-page starter-logo residue (incl. receipt) ---
+
+test("#5 logo residue: built page referencing next-logo.png is flagged", () => {
+  const issues = [];
+  const html = `<div class="checkout__header-brand"><img src="/shield/images/next-logo.png" class="brand-logo"></div>`;
+  validateBuiltStarterLogoResidue(html, "/repo/_site/shield/receipt/index.html", "/repo", { id: "receipt", type: "thankyou" }, issues);
+  assert.equal(codes(issues).includes("built_output.starter_logo_residue"), true);
+  assert.equal(issues[0].detail.occurrences, 1);
+});
+
+test("#5 logo residue: a branded logo passes", () => {
+  const issues = [];
+  validateBuiltStarterLogoResidue(`<img src="/shield/images/chamelo-logo.svg" class="brand-logo">`, "/repo/_site/shield/receipt/index.html", "/repo", { id: "receipt", type: "thankyou" }, issues);
+  assert.equal(issues.length, 0);
+});
+
+// --- #1: built-output route drift (spec page_url vs page-kit filename route) ---
+
+function buildSite(dir, routes) {
+  for (const r of routes) {
+    const d = join(dir, "_site", "shield", r);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "index.html"), "<html><body>x</body></html>");
+  }
+}
+const DRIFT_PACKET = { campaign: { public_route_slug: "shield" } };
+const driftSpec = {
+  funnel_pages: [
+    { id: "presell", type: "presell", page_url: "presell/", enabled: true },
+    { id: "checkout", type: "checkout", page_url: "checkout/", enabled: true },
+  ],
+};
+
+test("#1 route drift: spec page_url with no built page at that route is flagged with the actual route", () => {
+  withTempDir((dir) => {
+    // Built at presell-running/ (filename-derived) but spec says presell/.
+    buildSite(dir, ["presell-running", "checkout"]);
+    const errors = [], warnings = [], ready = [];
+    validateBuiltRouteDrift(driftSpec, DRIFT_PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    assert.equal(codes(warnings).includes("built_output.route_drift"), true);
+    const detail = warnings.find((w) => w.code === "built_output.route_drift").detail;
+    assert.ok(detail.drifted.some((d) => d.page_id === "presell"));
+    assert.ok(detail.unmatched_built_routes.some((r) => r.includes("presell-running")));
+  });
+});
+
+test("#1 route drift: matching routes pass with a ready line", () => {
+  withTempDir((dir) => {
+    buildSite(dir, ["presell", "checkout"]);
+    const errors = [], warnings = [], ready = [];
+    validateBuiltRouteDrift(driftSpec, DRIFT_PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    assert.equal(codes(warnings).includes("built_output.route_drift"), false);
+    assert.ok(ready.some((r) => r.includes("Built routes match")));
+  });
+});
+
+test("#1 route drift: errors (not warns) once assembly is complete", () => {
+  withTempDir((dir) => {
+    buildSite(dir, ["presell-running", "checkout"]);
+    const errors = [], warnings = [], ready = [];
+    validateBuiltRouteDrift(driftSpec, DRIFT_PACKET, errors, warnings, ready, { target_repo: dir }, { report: { stages: { assembly: { status: "completed" } } } });
+    assert.equal(codes(errors).includes("built_output.route_drift"), true);
+  });
 });

@@ -1952,6 +1952,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuildSummary(spec, packet, errors, warnings, ready, derived, buildState),
   },
+  {
+    id: "built_output.route_drift",
+    phase: "built-output",
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltRouteDrift(spec, packet, errors, warnings, ready, derived, buildState),
+  },
 ], { registryId: "packet.spec" });
 
 const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
@@ -2687,6 +2692,75 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
   if (checked > 0) ready.push(`Built HTML structure and commerce refs checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
 }
 
+// Route drift: a CampaignSpec page whose declared route has no built page at
+// that path. page-kit derives the public route from the source FILENAME, so a
+// file named presell-running.html builds at /presell-running/ even if the spec
+// page_url says "presell/". QA resolves page URLs from the spec page_url, so
+// this drift makes QA fetch phantom URLs (404s) and misreport pages as down —
+// exactly what happened on the Shield QA (presell/landing). validateBuiltOutputPages
+// silently skips missing pages, so this surfaces the drift and the actual
+// built routes for reconciliation. See the Shield build QA (#1).
+export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+  const pages = activeSpecPages(spec);
+  if (pages.length === 0) return;
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  if (!siteRoot || !existsSync(siteRoot)) return;
+
+  const claimed = new Set();
+  const drifted = [];
+  const unverifiable = [];
+  for (const page of pages) {
+    const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
+    if (!builtPath) {
+      // No page_url / source permalink to resolve a route from: doctor cannot
+      // determine the expected route, so this is "unverifiable", not drift.
+      unverifiable.push({ page_id: page.id, type: page.type || "page", reason: "no page_url / source permalink to resolve an expected route" });
+      continue;
+    }
+    if (existsSync(builtPath)) {
+      claimed.add(resolve(builtPath));
+      continue;
+    }
+    const segments = [publicRouteSlug, ...relFromDir(siteRoot, dirname(builtPath)).split("/")].filter((segment) => segment && segment !== ".");
+    drifted.push({
+      page_id: page.id,
+      type: page.type || "page",
+      expected_route: `/${segments.join("/")}/`,
+    });
+  }
+
+  const verifiedNote = `${claimed.size}/${pages.length} verified${unverifiable.length ? `, ${unverifiable.length} unverifiable` : ""}`;
+  if (drifted.length === 0) {
+    ready.push(`Built routes match CampaignSpec page routes (${verifiedNote})`);
+    if (unverifiable.length) {
+      addIssue(
+        warnings,
+        "built_output.route_unverifiable",
+        `Doctor could not determine the expected route for ${unverifiable.length} CampaignSpec page(s) (no page_url / source permalink): ${unverifiable.map((u) => `"${u.page_id}" (${u.type})`).join(", ")}.`,
+        { unverifiable },
+      );
+    }
+    return;
+  }
+
+  const scope = resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug });
+  const unmatched = (scope.ok ? scope.pages : [])
+    .filter((builtPage) => !claimed.has(resolve(builtPage.built_path)))
+    .map((builtPage) => `/${publicRouteSlug}/${builtPage.route ? `${builtPage.route}/` : ""}`.replace(/\/{2,}/g, "/"));
+  const assemblyComplete = isStageComplete(buildState.report, "assembly");
+  addIssue(
+    assemblyComplete ? errors : warnings,
+    "built_output.route_drift",
+    `CampaignSpec page(s) have no built page at their declared route: ${drifted.map((d) => `"${d.page_id}" (${d.type}) → ${d.expected_route}`).join("; ")}. `
+      + (unmatched.length ? `Built output has unmatched route(s): ${unmatched.join(", ")}. ` : "")
+      + (unverifiable.length ? `Unverifiable (no page_url): ${unverifiable.map((u) => `"${u.page_id}"`).join(", ")}. ` : "")
+      + `page-kit routes by source filename, so reconcile the spec page_url with the built route — otherwise QA (which resolves URLs from page_url) targets phantom URLs and reports live pages as 404.`,
+    { drifted, unmatched_built_routes: unmatched, unverifiable, verified_count: claimed.size },
+  );
+}
+
 function validateBuildSummary(spec, packet, errors, warnings, ready, derived, buildState = {}) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
@@ -2713,9 +2787,35 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
   }
   validateBuiltPreCheckoutBootstrap(content, builtPath, targetRepo, page, issueTarget);
   validateBuiltBumpPricing(content, builtPath, targetRepo, page, issueTarget);
+  validateBuiltStarterLogoResidue(content, builtPath, targetRepo, page, issueTarget);
   validateBuiltPageKitAssetPaths(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
+}
+
+// Per-page starter-logo residue, scanned against the BUILT `_site/<slug>`
+// output. The starter brand logo (next-logo.png on img.brand-logo) must be
+// swapped for the campaign's real logo on every page.
+//
+// Division of responsibility vs the existing generic residue scan: the packet
+// path already emits `template_contract.literal_residue` (via
+// collectGenericTemplateResidueMatches, which includes the next-logo pattern),
+// but that scan runs against `derived.target_output_dir` — the page-kit SOURCE
+// dir (src/<slug>) — and is gated on assembly-complete. This check is the
+// BUILT-output signal: per page, unconditional, over `_site/<slug>`. A logo
+// that survives the page-kit build into _site (the receipt case) is caught here
+// even when the source scan didn't run or was a non-blocking source-side note.
+// The two can both fire for one logo (it lives in source AND built); fixing the
+// source and rebuilding clears both. See the Shield build QA (#5).
+export function validateBuiltStarterLogoResidue(content, builtPath, targetRepo, page, issueTarget) {
+  const occurrences = (content.match(/\bnext-logo\.(?:png|svg|webp)\b/gi) || []).length;
+  if (occurrences === 0) return;
+  addIssue(
+    issueTarget,
+    "built_output.starter_logo_residue",
+    `Built page "${page.id}" still references the starter logo next-logo.png (${occurrences} occurrence(s)). Replace the .brand-logo asset with the campaign's real logo before deploy.`,
+    { page_id: page.id, file: relFromDir(targetRepo, builtPath), occurrences },
+  );
 }
 
 // Pre-checkout pages (presell/landing — SDK page_type "product") must ship the
