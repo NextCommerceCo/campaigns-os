@@ -16,7 +16,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 
 Usage:
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--json]
-  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--json]
+  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--no-remit] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
@@ -34,6 +34,7 @@ Options:
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
                                   Publishing is automatic; this flag is retained for clarity.
   --no-post-verdict, --local-only Skip publishing; write only the local verdict copy (offline / dev / CI).
+  --no-remit                     When an ambient run session is active, write the local Run Record but skip Run Telemetry remit.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
                                   Requires one-time setup: npm run qa:install-browser.
@@ -75,24 +76,25 @@ export async function runQaCli(args) {
   const subcommand = args._[1] || "help";
   if (subcommand === "help" || args.help) {
     console.log(HELP);
-    return;
+    return null;
   }
   if (subcommand === "resolve") {
     const resolved = await resolveQaInputs(args);
-    output(resolvePayload(resolved), args);
-    return;
+    const result = resolvePayload(resolved);
+    output(result, args);
+    return result;
   }
   if (subcommand === "run") {
     const result = await runQa(args);
     output(result, args);
     process.exitCode = result.verdict.disposition === "blocked" ? 4 : 0;
-    return;
+    return result;
   }
   if (subcommand === "policy") {
     if (args._[2] !== "set") throw new Error("Unknown qa policy command. Use: campaigns-os qa policy set --packet <campaign-runtime.build.json>");
     const result = updateQaPolicy(args);
     output(result, args);
-    return;
+    return result;
   }
   throw new Error(`Unknown qa command: ${subcommand}`);
 }

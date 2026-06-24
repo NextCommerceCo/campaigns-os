@@ -10,13 +10,16 @@ import {
   buildRunSession,
   clearRunSession,
   findRunSession,
+  isRunSessionStale,
+  isRunSessionTerminal,
   mintSessionRunId,
   resolveRunSessionPath,
   RUN_SESSION_SCHEMA,
+  RUN_SESSION_TTL_MS,
   writeRunSession,
 } from "./run-session.mjs";
 import { readLifecycleJournal } from "./lifecycle.mjs";
-import { validateRunRecord } from "./run-record.mjs";
+import { resolveRunRecordPath, validateRunRecord } from "./run-record.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -48,7 +51,17 @@ test("buildRunSession carries schema_version, run_id, journal, packet, timestamp
   assert.equal(session.lifecycle_journal, "/tmp/lc.jsonl");
   assert.equal(session.packet, "/tmp/p.json");
   assert.equal(session.started_at, "2026-06-07T00:00:00.000Z");
+  assert.equal(session.updated_at, "2026-06-07T00:00:00.000Z");
   assert.equal(buildRunSession({ runId: "r", lifecycleJournal: "j" }).packet, null);
+});
+
+test("stale and terminal session helpers classify old/done sessions", () => {
+  const session = buildRunSession({ runId: "run_old", lifecycleJournal: "j", now: new Date("2026-06-07T00:00:00.000Z") });
+  assert.equal(isRunSessionStale(session, { now: new Date("2026-06-07T11:59:59.000Z") }), false);
+  assert.equal(isRunSessionStale(session, { now: new Date("2026-06-07T12:00:01.000Z") }), true);
+  assert.equal(isRunSessionStale(session, { now: new Date("2026-06-30T00:00:00.000Z"), ttlMs: Infinity }), false);
+  assert.equal(isRunSessionTerminal({ ...session, last_recommendation: { stage: "done" } }), true);
+  assert.equal(isRunSessionTerminal(session), false);
 });
 
 test("writeRunSession + findRunSession round-trip", () => {
@@ -80,6 +93,25 @@ test("findRunSession: missing => null; malformed => null (never throws)", () => 
     // present-but-no-run_id is also treated as inactive
     writeFileSync(resolveRunSessionPath(dir), JSON.stringify({ schema_version: RUN_SESSION_SCHEMA }));
     assert.equal(findRunSession(dir), null);
+  });
+});
+
+test("findRunSession ignores stale sessions so old work sessions are not reused", () => {
+  withTempDir((dir) => {
+    writeRunSession(dir, buildRunSession({
+      runId: "run_stale",
+      lifecycleJournal: join(dir, "lc.jsonl"),
+      now: new Date("2026-06-07T00:00:00.000Z"),
+    }));
+    assert.equal(
+      findRunSession(dir, { now: new Date("2026-06-07T00:00:00.000Z") }).session.run_id,
+      "run_stale",
+    );
+    assert.equal(
+      findRunSession(dir, { now: new Date("2026-06-07T00:00:00.000Z"), ttlMs: RUN_SESSION_TTL_MS }).session.run_id,
+      "run_stale",
+    );
+    assert.equal(findRunSession(dir, { now: new Date("2026-06-07T12:00:01.000Z") }), null);
   });
 });
 
@@ -219,6 +251,64 @@ test("CLI: full ambient flow — run start -> prepare-build (no flags) -> run en
 
     // session is cleared after end
     assert.equal(findRunSession(target), null);
+  });
+});
+
+test("CLI: qa run auto-writes Run Record and clears the active session", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+    const start = JSON.parse(runIn(dir, ["run", "start", "--packet", packetPath, "--json"]));
+
+    const qa = JSON.parse(runIn(dir, [
+      "qa", "run",
+      "--packet", packetPath,
+      "--base-url", "http://127.0.0.1:4173/runtime-packet-demo/",
+      "--no-post-verdict",
+      "--no-remit",
+      "--json",
+    ], { allowFail: true }));
+
+    assert.equal(qa.status, "blocked");
+    assert.equal(findRunSession(dir), null);
+    const recordPath = resolveRunRecordPath(start.session.run_id, dir);
+    assert.equal(existsSync(recordPath), true);
+    const record = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.equal(record.run_id, start.session.run_id);
+    assert.equal(validateRunRecord(record).ok, true);
+    assert.equal(record.remit_state, "skipped");
+    assert.ok(record.artifacts.some((artifact) => artifact.kind === "qa_verdict"));
+    assert.ok(record.lifecycle.stages.some((stage) => stage.name === "qa"));
+    assert.equal(record.lifecycle.duration_ms >= 0, true);
+  });
+});
+
+test("CLI: terminal active sessions do not record new deviations", () => {
+  withTempDir((dir) => {
+    const session = {
+      ...buildRunSession({ runId: "run_done", lifecycleJournal: join(dir, ".campaign-runtime/command-lifecycle.jsonl") }),
+      last_recommendation: {
+        stage: "done",
+        status: "ready",
+        expected_commands: ["run-record"],
+        issued_at: new Date("2026-06-07T00:00:00.000Z").toISOString(),
+      },
+    };
+    writeRunSession(dir, session);
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+
+    runIn(dir, [
+      "qa", "run",
+      "--packet", packetPath,
+      "--base-url", "http://127.0.0.1:4173/runtime-packet-demo/",
+      "--no-post-verdict",
+      "--no-remit",
+      "--json",
+    ], { allowFail: true });
+    assert.equal(existsSync(join(dir, ".campaign-runtime/agent-deviations.jsonl")), false);
   });
 });
 

@@ -19,6 +19,7 @@ import { dirname, join, parse, resolve, sep } from "node:path";
 
 export const RUN_SESSION_SCHEMA = "campaigns-os-run-session/v0";
 export const RUN_SESSION_REL_PATH = ".campaign-runtime/run-session.json";
+export const RUN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 // Files that mark a project root. Session discovery never climbs ABOVE the
 // nearest project root, so a stray session in an unrelated ancestor (e.g.
@@ -53,7 +54,23 @@ export function resolveRunSessionPath(rootDir = process.cwd()) {
  *
  * `home` is injectable for tests.
  */
-export function findRunSession(cwd = process.cwd(), { home = homedir() } = {}) {
+export function isRunSessionStale(session, { now = new Date(), ttlMs = RUN_SESSION_TTL_MS } = {}) {
+  if (!session || typeof session !== "object" || Array.isArray(session)) return false;
+  if (!Number.isFinite(ttlMs) || ttlMs < 0) return false;
+  const activity = isNonEmptyString(session.updated_at) ? session.updated_at : session.started_at;
+  const timestamp = Date.parse(activity || "");
+  if (!Number.isFinite(timestamp)) return false;
+  return now.getTime() - timestamp > ttlMs;
+}
+
+export function isRunSessionTerminal(session) {
+  if (!session || typeof session !== "object" || Array.isArray(session)) return false;
+  return session.terminal === true
+    || session.status === "terminal"
+    || session.last_recommendation?.stage === "done";
+}
+
+export function findRunSession(cwd = process.cwd(), { home = homedir(), now = new Date(), ttlMs = RUN_SESSION_TTL_MS } = {}) {
   let dir = resolve(cwd);
   const { root } = parse(dir);
   const resolvedHome = resolve(home);
@@ -67,7 +84,7 @@ export function findRunSession(cwd = process.cwd(), { home = homedir() } = {}) {
       if (dir === root || isHomeOrAncestor(dir)) return null;
       try {
         const session = JSON.parse(readFileSync(candidate, "utf8"));
-        if (session && typeof session === "object" && !Array.isArray(session) && isNonEmptyString(session.run_id)) {
+        if (session && typeof session === "object" && !Array.isArray(session) && isNonEmptyString(session.run_id) && !isRunSessionStale(session, { now, ttlMs })) {
           return { session, path: candidate, dir };
         }
       } catch {
@@ -91,12 +108,14 @@ export function mintSessionRunId(now = new Date()) {
 
 /** Build the session object (its own schema_version, the run_id, the journal it owns, an optional packet, and a timestamp). */
 export function buildRunSession({ runId, lifecycleJournal, packet = null, now = new Date() }) {
+  const createdAt = now.toISOString();
   return {
     schema_version: RUN_SESSION_SCHEMA,
     run_id: runId,
     lifecycle_journal: lifecycleJournal,
     packet: isNonEmptyString(packet) ? packet : null,
-    started_at: now.toISOString(),
+    started_at: createdAt,
+    updated_at: createdAt,
   };
 }
 
