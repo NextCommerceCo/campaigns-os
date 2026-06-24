@@ -33,6 +33,7 @@ Options:
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
                                   Publishing is automatic; this flag is retained for clarity.
+                                  CAMPAIGNS_OS_INGEST_TOKEN is optional and marks trusted internal sends.
   --no-post-verdict, --local-only Skip publishing; write only the local verdict copy (offline / dev / CI).
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
@@ -1160,7 +1161,7 @@ function output(value, args) {
     } else if (value.publish_skipped) {
       console.log(`QA portal: publish skipped (--no-post-verdict); local verdict only.`);
     } else {
-      console.log(`QA portal: publish failed${value.post_error ? ` (${value.post_error})` : ""}; local verdict kept at ${value.local_path}. Re-run with network access, or pass --no-post-verdict to silence.`);
+      console.log(`QA portal: publish failed${value.post_error ? ` (${value.post_error})` : ""}; local verdict kept at ${value.local_path}. Check network access, or pass --no-post-verdict to silence.`);
     }
     console.log(`Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
     return;

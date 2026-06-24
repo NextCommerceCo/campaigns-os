@@ -118,8 +118,12 @@ but they should not contain full customer address/payment payloads.
 
 QA runs **publish to the QA portal by default** — they appear in the Campaign Map
 QA tab and the run picker, and the command prints the portal link. No flag needed.
-Pass `--no-post-verdict` (or `--local-only`) for offline / dev / CI runs that should
-stay local-only; publishing never fails the QA run if the portal is unreachable.
+Public portal publishing does not require a secret; external/local sends are
+stored as untrusted anonymous records after receiver-side shape, size, and rate
+checks. Internal operators may set `CAMPAIGNS_OS_INGEST_TOKEN` to mark sends as
+trusted. Pass `--no-post-verdict` (or `--local-only`) for offline / dev / CI runs
+that should stay local-only; publishing never fails the QA run if the portal is
+unreachable or rejects the request.
 
 ```bash
 npm run campaigns-os -- qa run \

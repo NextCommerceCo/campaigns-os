@@ -51,6 +51,31 @@ test("remit normalizes trailing slashes and a missing leading slash", async () =
   assert.equal(calls[0].url, "https://proxy.test/api/runs");
 });
 
+test("remit includes bearer ingest auth when a token is configured", async () => {
+  const { fetchImpl, calls } = recordingFetch();
+  await remit("/api/qa/verdicts", { verdict_id: "verdict_1" }, "https://proxy.test", { fetchImpl, ingestToken: " ingest-secret " });
+  assert.equal(calls[0].init.headers.Authorization, "Bearer ingest-secret");
+});
+
+test("remit reads the ingest token from CAMPAIGNS_OS_INGEST_TOKEN by default", async () => {
+  const previous = process.env.CAMPAIGNS_OS_INGEST_TOKEN;
+  try {
+    process.env.CAMPAIGNS_OS_INGEST_TOKEN = "env-ingest-secret";
+    const { fetchImpl, calls } = recordingFetch();
+    await remit("/api/qa/verdicts", { verdict_id: "verdict_1" }, "https://proxy.test", { fetchImpl });
+    assert.equal(calls[0].init.headers.Authorization, "Bearer env-ingest-secret");
+  } finally {
+    if (previous == null) delete process.env.CAMPAIGNS_OS_INGEST_TOKEN;
+    else process.env.CAMPAIGNS_OS_INGEST_TOKEN = previous;
+  }
+});
+
+test("remit omits ingest auth when the token is absent", async () => {
+  const { fetchImpl, calls } = recordingFetch();
+  await remit("/api/qa/verdicts", { verdict_id: "verdict_1" }, "https://proxy.test", { fetchImpl, ingestToken: "" });
+  assert.equal(Object.hasOwn(calls[0].init.headers, "Authorization"), false);
+});
+
 test("remit returns {ok:true} for an empty 2xx body", async () => {
   const { fetchImpl } = recordingFetch(fakeResponse({ body: "" }));
   assert.deepEqual(await remit("/api/runs", {}, "https://proxy.test", { fetchImpl }), { ok: true });
@@ -123,10 +148,14 @@ test("remitRunRecord: missing/unresolved consent also makes no call", async () =
 
 test("remitRunRecord: consent ON success records ok + endpoint and sends run_id (idempotency key)", async () => {
   const { fetchImpl, calls } = recordingFetch(fakeResponse({ body: JSON.stringify({ ok: true }) }));
-  const status = await remitRunRecord({ run_id: "run_idem_1", schema_version: "campaigns-os-run-record/v0" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
+  const status = await remitRunRecord(
+    { run_id: "run_idem_1", schema_version: "campaigns-os-run-record/v0" },
+    { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl, ingestToken: "ingest-secret" },
+  );
   assert.deepEqual(status, { attempted: true, ok: true, error: null, endpoint: "/api/runs" });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://proxy.test/api/runs");
+  assert.equal(calls[0].init.headers.Authorization, "Bearer ingest-secret");
   assert.equal(JSON.parse(calls[0].init.body).run_id, "run_idem_1"); // upsert key travels with the payload
 });
 

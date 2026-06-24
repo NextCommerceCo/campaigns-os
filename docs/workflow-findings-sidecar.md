@@ -185,6 +185,11 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
 ```
 
 - **Consent-gated** — only sends when the resolver says yes.
+- **Trust-aware** — public receivers may accept well-formed anonymous remits and
+  label them untrusted. When `CAMPAIGNS_OS_INGEST_TOKEN` is present, the helper
+  sends it as `Authorization: Bearer <token>` so internal receivers can mark the
+  remit trusted; rejection is still recorded as a non-fatal remit failure in the
+  local Run Record.
 - **Non-fatal** — a failed POST never blocks or fails the run (mirrors "never
   fail the run if publish is unreachable").
 - **Idempotent** — payload carries `run_id`; the endpoint upserts so retries /

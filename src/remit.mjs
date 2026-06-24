@@ -13,6 +13,7 @@
 export const DEFAULT_RUNS_ENDPOINT = "/api/runs";
 export const DEFAULT_REMIT_TIMEOUT_MS = 10_000;
 export const DEFAULT_REMIT_MAX_BODY_BYTES = 4_096;
+export const INGEST_TOKEN_ENV_VAR = "CAMPAIGNS_OS_INGEST_TOKEN";
 
 function byteLength(value) {
   return Buffer.byteLength(String(value), "utf8");
@@ -78,6 +79,19 @@ async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REMIT_MAX_
   return `${String(text).slice(0, max)}...[truncated to ${max} bytes]`;
 }
 
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function jsonHeaders({ ingestToken } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  const token = nonEmptyString(ingestToken);
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 /**
  * POST `payload` as JSON to `proxyBase` + `path`. Returns the parsed response
  * body (or `{ ok: true }` for an empty 2xx). Throws on a non-2xx response or a
@@ -87,6 +101,7 @@ export async function remit(path, payload, proxyBase, {
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_REMIT_TIMEOUT_MS,
   maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES,
+  ingestToken = process.env[INGEST_TOKEN_ENV_VAR],
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
@@ -98,7 +113,7 @@ export async function remit(path, payload, proxyBase, {
   response = await withTimeout(
     fetchImpl(`${base}${suffix}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders({ ingestToken }),
       body: JSON.stringify(payload),
       ...(controller ? { signal: controller.signal } : {}),
     }),
@@ -127,12 +142,13 @@ export async function remitRunRecord(record, {
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_REMIT_TIMEOUT_MS,
   maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES,
+  ingestToken = process.env[INGEST_TOKEN_ENV_VAR],
 } = {}) {
   if (!consent || consent.state !== "on") {
     return { attempted: false, ok: null, error: null, endpoint: null };
   }
   try {
-    await remit(endpoint, record, proxyBase, { fetchImpl, timeoutMs, maxBodyBytes });
+    await remit(endpoint, record, proxyBase, { fetchImpl, timeoutMs, maxBodyBytes, ingestToken });
     return { attempted: true, ok: true, error: null, endpoint };
   } catch (error) {
     return { attempted: true, ok: false, error: error instanceof Error ? error.message : String(error), endpoint };
