@@ -502,7 +502,7 @@ function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
 // intentional detour can carry --deviation-reason "<why>". Never throws.
 function persistDeviationIfDetected(args, command, lifecycle, ambient) {
   if (!ambient?.session?.last_recommendation) return;
-  if (isRunSessionTerminal(ambient.session) || isRunSessionStale(ambient.session)) return;
+  if (isRunSessionTerminal(ambient.session) || hasDoneRecommendation(ambient.session) || isRunSessionStale(ambient.session)) return;
   try {
     const entry = detectDeviation({
       lastRecommendation: ambient.session.last_recommendation,
@@ -520,6 +520,10 @@ function persistDeviationIfDetected(args, command, lifecycle, ambient) {
   } catch {
     // telemetry never blocks a command
   }
+}
+
+function hasDoneRecommendation(session) {
+  return session?.last_recommendation?.stage === "done";
 }
 
 async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown) {
@@ -543,9 +547,8 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
       "run-id": found.session.run_id,
       "lifecycle-journal": found.session.lifecycle_journal,
       "qa-verdict": result.local_path,
-      _silent: true,
     };
-    const summary = await runRecordCommand(endArgs, found);
+    const summary = await runRecordCommand(endArgs, found, { silent: true, promptForConsent: false });
     clearRunSession(found.path);
     sessionHolder.current = null;
     process.stderr.write(
@@ -6049,7 +6052,7 @@ async function runSessionEnd(args, ambient = null) {
 // run-record.mjs to assemble the manifest, then (consent-gated, non-fatal)
 // remit it. Capture is ALWAYS local; consent gates only the remit. See
 // docs/workflow-findings-sidecar.md.
-async function runRecordCommand(args, ambient = null) {
+async function runRecordCommand(args, ambient = null, { silent = false, promptForConsent = true } = {}) {
   const packetPath = resolve(requireArg(args, "packet"));
   const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
@@ -6113,7 +6116,7 @@ async function runRecordCommand(args, ambient = null) {
   // When interactive, not in --json/agent mode, remit isn't disabled, and no
   // explicit choice exists yet, ask once up front and persist it.
   let consent = resolveConsent({ proxyBase });
-  if (!consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
+  if (promptForConsent && !consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
     consent = await promptAndPersistConsent({ proxyBase });
   }
   // Default-on consent is announced, never silent: the operator learns the
@@ -6177,7 +6180,7 @@ async function runRecordCommand(args, ambient = null) {
   if (write) writeRunRecord(record, { baseDir });
 
   const summary = { ok: true, action: "run-record", written: write, record_path: recordPath, record };
-  if (args._silent) return summary;
+  if (silent) return summary;
   if (args.json) {
     console.log(JSON.stringify(summary, null, 2));
     return summary;
@@ -6345,7 +6348,7 @@ const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["no-remit", "no-write", "proxy-base"])
 function argvShape(args) {
   const names = new Set();
   for (const key of Object.keys(args)) {
-    if (key === "_" || key.startsWith("_")) continue;
+    if (key === "_") continue;
     const name = key.split("=")[0];
     if (ARGV_SHAPE_PRIVATE_FLAGS.has(name)) continue;
     names.add(`--${name}`);

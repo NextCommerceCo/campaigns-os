@@ -66,8 +66,7 @@ export function isRunSessionStale(session, { now = new Date(), ttlMs = RUN_SESSI
 export function isRunSessionTerminal(session) {
   if (!session || typeof session !== "object" || Array.isArray(session)) return false;
   return session.terminal === true
-    || session.status === "terminal"
-    || session.last_recommendation?.stage === "done";
+    || session.status === "terminal";
 }
 
 export function findRunSession(cwd = process.cwd(), { home = homedir(), now = new Date(), ttlMs = RUN_SESSION_TTL_MS } = {}) {

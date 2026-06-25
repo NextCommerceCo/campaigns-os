@@ -55,12 +55,14 @@ test("buildRunSession carries schema_version, run_id, journal, packet, timestamp
   assert.equal(buildRunSession({ runId: "r", lifecycleJournal: "j" }).packet, null);
 });
 
-test("stale and terminal session helpers classify old/done sessions", () => {
+test("stale and terminal session helpers classify old/explicitly-terminal sessions", () => {
   const session = buildRunSession({ runId: "run_old", lifecycleJournal: "j", now: new Date("2026-06-07T00:00:00.000Z") });
   assert.equal(isRunSessionStale(session, { now: new Date("2026-06-07T11:59:59.000Z") }), false);
   assert.equal(isRunSessionStale(session, { now: new Date("2026-06-07T12:00:01.000Z") }), true);
   assert.equal(isRunSessionStale(session, { now: new Date("2026-06-30T00:00:00.000Z"), ttlMs: Infinity }), false);
-  assert.equal(isRunSessionTerminal({ ...session, last_recommendation: { stage: "done" } }), true);
+  assert.equal(isRunSessionTerminal({ ...session, terminal: true }), true);
+  assert.equal(isRunSessionTerminal({ ...session, status: "terminal" }), true);
+  assert.equal(isRunSessionTerminal({ ...session, last_recommendation: { stage: "done" } }), false);
   assert.equal(isRunSessionTerminal(session), false);
 });
 
@@ -221,6 +223,21 @@ test("CLI: with a session active, a command auto-logs with NO per-command flags"
   });
 });
 
+test("CLI: lifecycle argv_shape preserves underscore-prefixed user flags", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const start = JSON.parse(runIn(dir, ["run", "start", "--json"]));
+
+    runIn(dir, ["doctor", "--packet", packetPath, "--_custom-audit-flag"], { allowFail: true });
+
+    const { entries } = readLifecycleJournal(start.session.lifecycle_journal);
+    const doctorEntry = entries.find((entry) => entry.command === "doctor");
+    assert.ok(doctorEntry);
+    assert.ok(doctorEntry.argv_shape.includes("--_custom-audit-flag"), JSON.stringify(doctorEntry.argv_shape));
+  });
+});
+
 test("CLI: full ambient flow — run start -> prepare-build (no flags) -> run end aggregates the Run Record", () => {
   withTempDir((dir) => {
     const target = join(dir, "target");
@@ -284,7 +301,7 @@ test("CLI: qa run auto-writes Run Record and clears the active session", () => {
   });
 });
 
-test("CLI: terminal active sessions do not record new deviations", () => {
+test("CLI: done recommendations suppress deviations but qa run still auto-writes the Run Record", () => {
   withTempDir((dir) => {
     const session = {
       ...buildRunSession({ runId: "run_done", lifecycleJournal: join(dir, ".campaign-runtime/command-lifecycle.jsonl") }),
@@ -309,6 +326,9 @@ test("CLI: terminal active sessions do not record new deviations", () => {
       "--json",
     ], { allowFail: true });
     assert.equal(existsSync(join(dir, ".campaign-runtime/agent-deviations.jsonl")), false);
+    assert.equal(findRunSession(dir), null);
+    const recordPath = resolveRunRecordPath(session.run_id, dir);
+    assert.equal(existsSync(recordPath), true);
   });
 });
 
