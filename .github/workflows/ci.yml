@@ -20,12 +20,15 @@ jobs:
         id: pin
         run: |
           sha="$(jq -r '._synced_from_sha // empty' campaigns-os/contracts/commerce-surface-catalog.json)"
-          if [ -n "$sha" ]; then
+          if [ -z "$sha" ]; then
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+            echo "No _synced_from_sha in catalog (legacy snapshot); using main."
+          elif printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
             echo "ref=$sha" >> "$GITHUB_OUTPUT"
             echo "Pinning templates checkout to catalog _synced_from_sha=$sha"
           else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-            echo "No _synced_from_sha in catalog (legacy snapshot); using main."
+            echo "::error::catalog _synced_from_sha is malformed ('$sha'); expected a 40-char commit SHA. Re-run refresh:starter-catalog."
+            exit 1
           fi
       - uses: actions/checkout@v7
         with:

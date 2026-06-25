@@ -24,6 +24,11 @@ test("stampProvenance rejects a non-SHA value", () => {
   assert.throws(() => stampProvenance({}, { repo: "r", ref: "main", sha: "main" }), /40-char commit SHA/);
 });
 
+test("stampProvenance rejects empty repo or ref", () => {
+  assert.throws(() => stampProvenance({}, { repo: "", ref: "main", sha: SHA }), /repo must be a non-empty string/);
+  assert.throws(() => stampProvenance({}, { repo: "r", ref: "", sha: SHA }), /ref must be a non-empty string/);
+});
+
 test("validateProvenance passes and warns for a legacy (unstamped) snapshot", () => {
   const { ok, errors, warnings } = validateProvenance({ version: 2 });
   assert.equal(ok, true);
@@ -48,7 +53,13 @@ test("validateProvenance fails on a malformed sha", () => {
 });
 
 test("validateProvenance fails when sha is set but repo is missing", () => {
-  const { ok, errors } = validateProvenance({ _synced_from_sha: SHA });
+  const { ok, errors } = validateProvenance({ _synced_from_sha: SHA, _synced_from_ref: "main" });
   assert.equal(ok, false);
   assert.ok(errors.some((e) => e.includes("_synced_from_repo")));
+});
+
+test("validateProvenance fails when sha is set but ref is missing", () => {
+  const { ok, errors } = validateProvenance({ _synced_from_sha: SHA, _synced_from_repo: "x/y" });
+  assert.equal(ok, false);
+  assert.ok(errors.some((e) => e.includes("_synced_from_ref")));
 });

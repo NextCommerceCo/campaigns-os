@@ -43,6 +43,9 @@ export function validateProvenance(catalog) {
   if (typeof catalog._synced_from_repo !== "string" || catalog._synced_from_repo.length === 0) {
     errors.push("`_synced_from_sha` is set but `_synced_from_repo` is missing — record the source repo too.");
   }
+  if (typeof catalog._synced_from_ref !== "string" || catalog._synced_from_ref.length === 0) {
+    errors.push("`_synced_from_sha` is set but `_synced_from_ref` is missing — record the source ref too.");
+  }
 
   return { ok: errors.length === 0, errors, warnings };
 }
@@ -79,7 +82,7 @@ function main() {
   if (catalog._synced_from_sha) {
     console.log(
       `Catalog provenance check passed (_synced_from_sha=${catalog._synced_from_sha} ` +
-        `from ${catalog._synced_from_repo}@${catalog._synced_from_ref ?? "?"}).`,
+        `from ${catalog._synced_from_repo}@${catalog._synced_from_ref}).`,
     );
   } else {
     console.log("Catalog provenance check passed (legacy snapshot, not yet stamped).");

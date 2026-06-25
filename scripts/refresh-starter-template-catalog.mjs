@@ -181,6 +181,12 @@ export function stampProvenance(catalog, { repo, ref, sha }) {
   if (!SHA_RE.test(sha || "")) {
     throw new Error(`stampProvenance: expected a 40-char commit SHA, got "${sha}"`);
   }
+  if (typeof repo !== "string" || repo.length === 0) {
+    throw new Error(`stampProvenance: repo must be a non-empty string, got ${JSON.stringify(repo)}`);
+  }
+  if (typeof ref !== "string" || ref.length === 0) {
+    throw new Error(`stampProvenance: ref must be a non-empty string, got ${JSON.stringify(ref)}`);
+  }
   const next = structuredClone(catalog);
   next._synced_from_repo = repo;
   next._synced_from_ref = ref;
@@ -200,7 +206,16 @@ async function resolveCommitSha({ repo, ref, token }) {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(url, { headers });
+  // Bound the request so a stalled connection can't hang the refresh indefinitely.
+  let response;
+  try {
+    response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  } catch (error) {
+    if (error?.name === "TimeoutError") {
+      throw new Error(`Timed out resolving commit SHA for ${repo}@${ref} after 15s`);
+    }
+    throw error;
+  }
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Failed to resolve commit SHA for ${repo}@${ref}: ${response.status} ${body}`);
