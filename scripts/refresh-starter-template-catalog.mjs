@@ -211,7 +211,14 @@ async function resolveCommitSha({ repo, ref, token }) {
   try {
     response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
   } catch (error) {
-    if (error?.name === "TimeoutError") {
+    // AbortSignal.timeout() rejects with a TimeoutError DOMException on newer Node,
+    // but undici-backed fetch on older Node surfaces it as AbortError (sometimes with
+    // a TimeoutError cause). Match all forms so the friendly message always fires.
+    if (
+      error?.name === "TimeoutError" ||
+      error?.name === "AbortError" ||
+      error?.cause?.name === "TimeoutError"
+    ) {
       throw new Error(`Timed out resolving commit SHA for ${repo}@${ref} after 15s`);
     }
     throw error;
