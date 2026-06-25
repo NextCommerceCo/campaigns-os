@@ -67,6 +67,8 @@ import {
   buildRunSession,
   clearRunSession,
   findRunSession,
+  isRunSessionStale,
+  isRunSessionTerminal,
   mintSessionRunId,
   writeRunSession,
 } from "./run-session.mjs";
@@ -262,7 +264,7 @@ Usage:
   campaigns-os next deploy --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
-  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--no-post-verdict] [--output-dir qa-output] [--json]
+  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--no-post-verdict] [--no-remit] [--output-dir qa-output] [--json]
   campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
@@ -278,7 +280,7 @@ Usage:
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
-  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session); Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\` or CAMPAIGNS_OS_TELEMETRY=off. Capture is always local.
+  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session), and \`qa run\` auto-assembles the Run Record and clears the session. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
@@ -382,13 +384,16 @@ export async function main(argv) {
   // prepare-build auto-open a run session mid-command, they publish it here
   // so onFinish persists this command's own lifecycle entry into the new
   // session — without two interleaved invocations ever sharing a session.
-  const sessionHolder = { current: ambient, autoStarted: false };
+  const sessionHolder = { current: ambient, autoStarted: false, qaResult: null };
   await withCommandLifecycle(
     {
       command,
       argvShape: argvShape(args),
       runId: optionalString(args["run-id"]) || ambient?.session?.run_id || null,
-      onFinish: (lifecycle) => persistLifecycleIfRequested(args, command, lifecycle, sessionHolder),
+      onFinish: async (lifecycle, thrown) => {
+        persistLifecycleIfRequested(args, command, lifecycle, sessionHolder);
+        await autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown);
+      },
     },
     (recorder) => dispatch(command, args, recorder, ambient, sessionHolder),
   );
@@ -497,6 +502,7 @@ function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
 // intentional detour can carry --deviation-reason "<why>". Never throws.
 function persistDeviationIfDetected(args, command, lifecycle, ambient) {
   if (!ambient?.session?.last_recommendation) return;
+  if (isRunSessionTerminal(ambient.session) || hasDoneRecommendation(ambient.session) || isRunSessionStale(ambient.session)) return;
   try {
     const entry = detectDeviation({
       lastRecommendation: ambient.session.last_recommendation,
@@ -513,6 +519,43 @@ function persistDeviationIfDetected(args, command, lifecycle, ambient) {
     );
   } catch {
     // telemetry never blocks a command
+  }
+}
+
+function hasDoneRecommendation(session) {
+  return session?.last_recommendation?.stage === "done";
+}
+
+async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown) {
+  if (command !== "qa" || args._[1] !== "run" || thrown) return;
+  const found = sessionHolder?.current;
+  const result = sessionHolder?.qaResult;
+  if (!found?.session || !result?.verdict) return;
+  if (isRunSessionTerminal(found.session) || isRunSessionStale(found.session)) return;
+
+  const packet = optionalString(args.packet) || optionalString(found.session.packet);
+  if (!packet) {
+    process.stderr.write("[campaigns-os] run session auto-end skipped after QA: no build packet recorded on the session.\n");
+    return;
+  }
+
+  try {
+    const endArgs = {
+      ...args,
+      _: ["run-record"],
+      packet,
+      "run-id": found.session.run_id,
+      "lifecycle-journal": found.session.lifecycle_journal,
+      "qa-verdict": result.local_path,
+    };
+    const summary = await runRecordCommand(endArgs, found, { silent: true, promptForConsent: false });
+    clearRunSession(found.path);
+    sessionHolder.current = null;
+    process.stderr.write(
+      `[campaigns-os] Run session ${found.session.run_id} auto-ended after qa run; Run Record ${summary?.record_path || "assembled"}.\n`,
+    );
+  } catch (error) {
+    process.stderr.write(`[campaigns-os] run session auto-end skipped after QA: ${error.message}\n`);
   }
 }
 
@@ -608,7 +651,8 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "qa") {
-    await runQaCli(args);
+    const result = await runQaCli(args);
+    if (sessionHolder) sessionHolder.qaResult = result;
     return;
   }
 
@@ -4902,12 +4946,15 @@ function recordNextRecommendation(ambient, result) {
   if (!ambient) return;
   try {
     const expected = expectedCommandsForStage(result.stage, result.next_actions || []);
+    const now = new Date();
     const session = {
       ...ambient.session,
+      updated_at: now.toISOString(),
       last_recommendation: buildRecommendation({
         stage: result.stage,
         status: result.status,
         expectedCommands: expected,
+        now,
       }),
     };
     writeRunSession(ambient.dir, session);
@@ -6005,7 +6052,7 @@ async function runSessionEnd(args, ambient = null) {
 // run-record.mjs to assemble the manifest, then (consent-gated, non-fatal)
 // remit it. Capture is ALWAYS local; consent gates only the remit. See
 // docs/workflow-findings-sidecar.md.
-async function runRecordCommand(args, ambient = null) {
+async function runRecordCommand(args, ambient = null, { silent = false, promptForConsent = true } = {}) {
   const packetPath = resolve(requireArg(args, "packet"));
   const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
@@ -6069,7 +6116,7 @@ async function runRecordCommand(args, ambient = null) {
   // When interactive, not in --json/agent mode, remit isn't disabled, and no
   // explicit choice exists yet, ask once up front and persist it.
   let consent = resolveConsent({ proxyBase });
-  if (!consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
+  if (promptForConsent && !consent.resolved && !remitDisabled && !args.json && process.stdin.isTTY) {
     consent = await promptAndPersistConsent({ proxyBase });
   }
   // Default-on consent is announced, never silent: the operator learns the
@@ -6132,9 +6179,11 @@ async function runRecordCommand(args, ambient = null) {
 
   if (write) writeRunRecord(record, { baseDir });
 
+  const summary = { ok: true, action: "run-record", written: write, record_path: recordPath, record };
+  if (silent) return summary;
   if (args.json) {
-    console.log(JSON.stringify({ ok: true, action: "run-record", written: write, record_path: recordPath, record }, null, 2));
-    return;
+    console.log(JSON.stringify(summary, null, 2));
+    return summary;
   }
   console.log(`Run Record assembled.`);
   console.log(`Run ID: ${record.run_id}`);
@@ -6148,6 +6197,7 @@ async function runRecordCommand(args, ambient = null) {
   }
   if (write) console.log(`Wrote: ${recordPath}`);
   else console.log("Dry run only (--no-write). No record written, no remit.");
+  return summary;
 }
 
 // Build one artifact reference {kind, path, schema_version, sha256}. The path

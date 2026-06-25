@@ -156,7 +156,7 @@ export async function withCommandLifecycle({
 
   if (typeof onFinish === "function") {
     try {
-      onFinish(lifecycle, thrown);
+      await onFinish(lifecycle, thrown);
     } catch {
       // Persistence is non-fatal — never let a lifecycle write mask the command.
     }
@@ -327,9 +327,10 @@ function entriesForRun(journal, runId, excludeCommands) {
  * repair-loop fields. Each command invocation becomes a stage; when a command
  * marked its own sub-phases (Tier 2), those become `command:phase` stages
  * instead. `repair_loop_count` = re-runs of any command (a re-run is a repair
- * loop: doctor -> fix -> doctor). Run-level timing spans the earliest start to
- * the latest finish across commands. Returns null when no entry matches, so
- * embedding stays best-effort and backward-compatible.
+ * loop: doctor -> fix -> doctor). Run-level duration is summed active command
+ * time, while started_at/completed_at preserve the outer observed bounds.
+ * Returns null when no entry matches, so embedding stays best-effort and
+ * backward-compatible.
  */
 export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] } = {}) {
   const matching = entriesForRun(journal, runId, excludeCommands);
@@ -378,14 +379,9 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
   let repairLoopCount = explicitRepairLoops;
   for (const count of commandCounts.values()) if (count > 1) repairLoopCount += count - 1;
 
-  // Single command: trust its own monotonic duration. Multiple commands: prefer
-  // the wall-clock span (it includes the gaps between separate invocations), but
-  // never report less than the summed work.
-  let durationMs = durationSum;
-  if (matching.length > 1 && earliest && latest) {
-    const span = Date.parse(latest) - Date.parse(earliest);
-    if (Number.isFinite(span) && span >= durationSum) durationMs = span;
-  }
+  // Duration is active work, not the idle wall-clock gap between separate
+  // invocations. The outer timestamps remain available for audit/debugging.
+  const durationMs = durationSum;
 
   // Top-level command/argv_shape describe the RUN, not its earliest invocation.
   // They are meaningful only when the run is a single distinct command; for a

@@ -118,6 +118,28 @@ test("withCommandLifecycle: a throwing onFinish never masks the command result",
   assert.equal(result, "still-ok");
 });
 
+test("withCommandLifecycle awaits async onFinish before returning", async () => {
+  const order = [];
+  const { result } = await withCommandLifecycle(
+    {
+      command: "qa",
+      argvShape: [],
+      clock: fakeClock(),
+      readExitStatus: () => 0,
+      onFinish: async () => {
+        await Promise.resolve();
+        order.push("finish");
+      },
+    },
+    async () => {
+      order.push("command");
+      return "ok";
+    },
+  );
+  assert.equal(result, "ok");
+  assert.deepEqual(order, ["command", "finish"]);
+});
+
 test("recorder.time records a named sub-phase, returns fn result, and records even on throw", async () => {
   const { lifecycle } = await withCommandLifecycle(
     { command: "start", argvShape: [], clock: fakeClock([0, 3, 9, 20, 50]), readExitStatus: () => 0 },
@@ -257,7 +279,7 @@ test("lifecycleForRunRecord DROPS a stage missing its required name (never emits
 
 // --- Tier 1: aggregation --------------------------------------------------
 
-test("aggregateLifecycleForRun: one stage per command, repair_loop_count counts re-runs, span timing", () => {
+test("aggregateLifecycleForRun: one stage per command, repair_loop_count counts re-runs, active duration", () => {
   const journal = { entries: [
     { command: "doctor", argv_shape: ["--packet"], run_id: "R", exit_status: 2, duration_ms: 10, started_at: "2026-06-07T00:00:00.000Z", completed_at: "2026-06-07T00:00:00.010Z" },
     { command: "start",  argv_shape: ["--spec"],   run_id: "R", exit_status: 0, duration_ms: 50, started_at: "2026-06-07T00:00:01.000Z", completed_at: "2026-06-07T00:00:01.050Z" },
@@ -272,8 +294,8 @@ test("aggregateLifecycleForRun: one stage per command, repair_loop_count counts 
   // multiple distinct commands => top-level command/argv_shape are null (stages[] carry the detail)
   assert.equal(agg.command, null);
   assert.deepEqual(agg.argv_shape, []);
-  // span = earliest start (00.000) to latest finish (02.008) = 2008ms, >= summed work (68)
-  assert.equal(agg.duration_ms, 2008);
+  // duration is summed active command time, not idle wall-clock span between invocations
+  assert.equal(agg.duration_ms, 68);
   assert.equal(agg.stages[0].exit_status, 2); // per-command exit preserved
 });
 

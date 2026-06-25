@@ -1,6 +1,6 @@
 # Run Telemetry
 
-Status: Implemented v0 — Run Records, consent/remit, ambient run sessions, lifecycle timing, and repair-loop aggregation are live.
+Status: Implemented v0 — Run Records, consent/remit, ambient run sessions, QA auto-close, lifecycle timing, and repair-loop aggregation are live.
 Date: 2026-06-08
 
 > Supersedes the v0 "Workflow Findings Sidecar" framing. The sidecar was
@@ -251,8 +251,14 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   also inherit the active `run_id` when writing findings. Explicit `--run-id` /
   `--lifecycle-journal` still wins; `CAMPAIGNS_OS_TELEMETRY` consent still gates
   remit.
-- `campaigns-os run end` assembles the aggregated Run Record for the session
-  (consent-gated remit) and clears it. `run status` reports the active session.
+- `campaigns-os qa run` is a terminal capture point: after the QA verdict is
+  written, an active session auto-assembles the aggregated Run Record
+  (consent-gated remit) and clears the session. Pass `--no-remit` to skip remit
+  for that local Run Record.
+- `campaigns-os run end` remains the manual close path for non-QA or interrupted
+  sessions. `run status` reports the active session.
+- Sessions older than 12 hours are treated as stale and are not auto-discovered,
+  so a later work session does not inherit an old `run_id` or lifecycle journal.
 
 The session file is transient, machine-local, and lives under the
 scrubber-ignored `.campaign-runtime/`.
@@ -267,12 +273,13 @@ scrubber-ignored `.campaign-runtime/`.
 - Stage timings and repair-loop count — **landed.** `run-record` aggregates the
   whole lifecycle journal for a `run_id` (Tier 1): each command invocation
   becomes a `lifecycle.stages[]` entry (with per-stage `exit_status`),
-  `repair_loop_count` counts command re-runs, and run-level timing spans the
-  earliest start to the latest finish. Heavy commands mark their own sub-phases
-  (Tier 2), which aggregate into `command:phase` stages. The cross-command
-  `run_id` is threaded automatically by the run session (Tier 3), so these
-  fields populate with real data from a normal "talk to your agent and build"
-  flow — no manual flag bookkeeping.
+  `repair_loop_count` counts command re-runs, and run-level `duration_ms` sums
+  active command time instead of idle wall-clock gaps between invocations.
+  `started_at` / `completed_at` still preserve the outer observed bounds. Heavy
+  commands mark their own sub-phases (Tier 2), which aggregate into
+  `command:phase` stages. The cross-command `run_id` is threaded automatically
+  by the run session (Tier 3), so these fields populate with real data from a
+  normal "talk to your agent and build" flow — no manual flag bookkeeping.
 - Internal ingestion / clustering / surface-mapping — internal tooling
   (ADR-019), not this package.
 
