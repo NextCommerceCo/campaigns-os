@@ -21,6 +21,7 @@ function parseArgs(argv) {
     targetCatalog: DEFAULT_TARGET_CATALOG,
     dryRun: false,
     syncFixtures: true,
+    syncedFromSha: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -35,6 +36,7 @@ function parseArgs(argv) {
     else if (arg === "--source-ref") args.sourceRef = next();
     else if (arg === "--source-catalog") args.sourceCatalog = next();
     else if (arg === "--target-catalog") args.targetCatalog = next();
+    else if (arg === "--synced-from-sha") args.syncedFromSha = next();
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--no-fixtures") args.syncFixtures = false;
     else if (arg === "--help" || arg === "-h") {
@@ -56,6 +58,9 @@ Options:
   --source-ref <ref>              Source branch, tag, or SHA. Default: ${DEFAULT_SOURCE_REF}
   --source-catalog <path>         Source catalog path. Default: ${DEFAULT_SOURCE_CATALOG}
   --target-catalog <path>         Vendored catalog path. Default: ${DEFAULT_TARGET_CATALOG}
+  --synced-from-sha <sha>         Record this commit SHA as the snapshot provenance
+                                  instead of resolving --source-ref via the API.
+                                  Pass the dispatch source_sha (GITHUB_SHA) in CI.
   --dry-run                       Fetch and adapt without writing files
   --no-fixtures                   Refresh only the catalog file
 `);
@@ -166,6 +171,47 @@ function isPrivateFamily(family) {
   return description.includes("private family") || description.includes("private template");
 }
 
+const SHA_RE = /^[0-9a-f]{40}$/;
+
+// Stamp the snapshot with the exact source commit it was built from, so portal
+// and agent consumers can tell which campaign-cart-starter-templates commit the
+// vendored catalog reflects, and CI can pin the doctrine check to the same SHA
+// instead of validating against drifting live HEAD. Pure: returns a clone.
+export function stampProvenance(catalog, { repo, ref, sha }) {
+  if (!SHA_RE.test(sha || "")) {
+    throw new Error(`stampProvenance: expected a 40-char commit SHA, got "${sha}"`);
+  }
+  const next = structuredClone(catalog);
+  next._synced_from_repo = repo;
+  next._synced_from_ref = ref;
+  next._synced_from_sha = sha;
+  return next;
+}
+
+// Resolve a ref (branch, tag, or SHA) to its concrete commit SHA via the GitHub
+// commits API, so a snapshot taken from `main` records the head commit rather
+// than the moving branch name.
+async function resolveCommitSha({ repo, ref, token }) {
+  const url = new URL(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(ref)}`);
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "campaigns-os-catalog-refresh",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Failed to resolve commit SHA for ${repo}@${ref}: ${response.status} ${body}`);
+  }
+  const payload = await response.json();
+  if (typeof payload.sha !== "string" || !SHA_RE.test(payload.sha)) {
+    throw new Error(`Unexpected commit response resolving ${repo}@${ref}`);
+  }
+  return payload.sha;
+}
+
 function collectSourceFixturePaths(catalog) {
   const paths = new Set();
   for (const family of Object.values(catalog.families || {})) {
@@ -239,8 +285,21 @@ async function main() {
     existingCatalog,
   );
 
+  // Record the exact source commit. Prefer the explicitly-passed SHA (the
+  // dispatch source_sha in CI); otherwise resolve the ref via the API.
+  const syncedFromSha = args.syncedFromSha || (await resolveCommitSha({
+    repo: args.sourceRepo,
+    ref: args.sourceRef,
+    token,
+  }));
+  const stampedCatalog = stampProvenance(adaptedCatalog, {
+    repo: args.sourceRepo,
+    ref: args.sourceRef,
+    sha: syncedFromSha,
+  });
+
   if (!args.dryRun) {
-    writeText(args.targetCatalog, `${JSON.stringify(adaptedCatalog, null, 2)}\n`);
+    writeText(args.targetCatalog, `${JSON.stringify(stampedCatalog, null, 2)}\n`);
   }
 
   if (args.syncFixtures) {
@@ -259,7 +318,10 @@ async function main() {
   }
 
   const action = args.dryRun ? "Checked" : "Refreshed";
-  console.log(`${action} ${args.targetCatalog} from ${args.sourceRepo}:${args.sourceCatalog}@${args.sourceRef}`);
+  console.log(
+    `${action} ${args.targetCatalog} from ${args.sourceRepo}:${args.sourceCatalog}@${args.sourceRef} ` +
+      `(pinned to ${syncedFromSha})`,
+  );
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
