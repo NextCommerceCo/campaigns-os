@@ -748,7 +748,6 @@ const ENTRY_PAGE_TYPES = new Set([
   "advertorial",
   "listicle",
   "review",
-  "product",
 ]);
 
 function deriveEntryUrls(topologies) {

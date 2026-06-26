@@ -46,7 +46,7 @@ export function createVerdict({
   baseUrl = null,
   entryUrls = [],
   pageUrls = [],
-  testedUrls = null,
+  testedUrls = [],
   assertions,
   testOrders = [],
   exceptions = null,
@@ -57,7 +57,7 @@ export function createVerdict({
   const normalizedBaseUrl = optionalString(baseUrl);
   const normalizedEntryUrls = Array.isArray(entryUrls) ? entryUrls : [];
   const normalizedPageUrls = Array.isArray(pageUrls) ? pageUrls : [];
-  const normalizedTestedUrls = testedUrls == null ? normalizedPageUrls : Array.isArray(testedUrls) ? testedUrls : [];
+  const normalizedTestedUrls = Array.isArray(testedUrls) ? testedUrls : [];
   return {
     schema_version: QA_SCHEMA_VERSION,
     run_id: runId,

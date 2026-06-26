@@ -60,6 +60,12 @@ test("entry URL derivation prefers explicit top-of-funnel page types before rout
   }]);
 
   assert.deepEqual(deriveEntryUrls([{ pages: [{ page_id: "checkout", page_type: "checkout", url: "https://preview.test/checkout/" }] }])[0].funnel_name, "default");
+  assert.equal(deriveEntryUrls([{
+    pages: [
+      { page_id: "checkout", page_type: "checkout", url: "https://preview.test/checkout/" },
+      { page_id: "product-offer", page_type: "product", url: "https://preview.test/product-offer/" },
+    ],
+  }])[0].page_id, "checkout");
 });
 
 test("page URL derivation returns the resolved URL set once per URL", () => {
