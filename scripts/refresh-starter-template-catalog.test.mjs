@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { adaptCatalogForCampaignsOs, mergeLocalQaStructure, preserveLocalOnlyFamilies } from "./refresh-starter-template-catalog.mjs";
+import {
+  adaptCatalogForCampaignsOs,
+  fetchWithTimeout,
+  mergeLocalQaStructure,
+  preserveLocalOnlyFamilies,
+} from "./refresh-starter-template-catalog.mjs";
 
 test("catalog refresh preserves private families absent from the public source (no arjuna clobber)", () => {
   const sourceCatalog = {
@@ -158,4 +163,38 @@ test("catalog refresh lets upstream qaStructure override matching local pages", 
 
   assert.equal(result.families.limos.agentContract.qaStructure.checkout.description, "upstream checkout structure");
   assert.equal(result.families.limos.agentContract.qaStructure.upsell.description, "local upsell structure");
+});
+
+test("fetchWithTimeout reports only its own timer as a timeout", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (_url, { signal }) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("operation aborted")));
+      });
+    await assert.rejects(
+      () =>
+        fetchWithTimeout("https://example.test/slow", {
+          headers: {},
+          timeoutMs: 1,
+          timeoutMessage: () => "timed out after 0.001s",
+        }),
+      /timed out after 0\.001s/,
+    );
+
+    const abortError = new Error("manual abort");
+    abortError.name = "AbortError";
+    globalThis.fetch = () => Promise.reject(abortError);
+    await assert.rejects(
+      () =>
+        fetchWithTimeout("https://example.test/manual-abort", {
+          headers: {},
+          timeoutMs: 50,
+          timeoutMessage: () => "should not appear",
+        }),
+      (error) => error === abortError,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

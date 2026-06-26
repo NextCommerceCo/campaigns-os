@@ -174,6 +174,29 @@ function isPrivateFamily(family) {
 const SHA_RE = /^[0-9a-f]{40}$/;
 const COMMIT_FETCH_TIMEOUT_MS = 15000;
 
+function timeoutSeconds(timeoutMs) {
+  return timeoutMs / 1000;
+}
+
+export async function fetchWithTimeout(url, { headers, timeoutMs = COMMIT_FETCH_TIMEOUT_MS, timeoutMessage }) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    return await fetch(url, { headers, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(timeoutMessage());
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Stamp the snapshot with the exact source commit it was built from, so portal
 // and agent consumers can tell which campaign-cart-starter-templates commit the
 // vendored catalog reflects, and CI can pin the doctrine check to the same SHA
@@ -208,29 +231,13 @@ async function resolveCommitSha({ repo, ref, token }) {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   // Bound the request so a stalled connection can't hang the refresh indefinitely.
-  // Use our own controller + flag rather than AbortSignal.timeout(): a self-set
-  // `timedOut` flag is unambiguous across Node versions (no reliance on the
-  // TimeoutError-vs-AbortError naming) and won't misreport some future manual
-  // abort (cancellation, body-stream, connection reset) as a timeout.
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, COMMIT_FETCH_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(url, { headers, signal: controller.signal });
-  } catch (error) {
-    if (timedOut) {
-      throw new Error(
-        `Timed out resolving commit SHA for ${repo}@${ref} after ${COMMIT_FETCH_TIMEOUT_MS / 1000}s`,
-      );
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+  // The shared helper owns its timer flag rather than relying on AbortError names,
+  // which differ across Node versions and can also mean a non-timeout abort.
+  const response = await fetchWithTimeout(url, {
+    headers,
+    timeoutMessage: () =>
+      `Timed out resolving commit SHA for ${repo}@${ref} after ${timeoutSeconds(COMMIT_FETCH_TIMEOUT_MS)}s`,
+  });
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Failed to resolve commit SHA for ${repo}@${ref}: ${response.status} ${body}`);
@@ -278,7 +285,11 @@ async function fetchRepoFile({ repo, ref, path, token }) {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(url, { headers });
+  const response = await fetchWithTimeout(url, {
+    headers,
+    timeoutMessage: () =>
+      `Timed out fetching ${repo}:${path}@${ref} after ${timeoutSeconds(COMMIT_FETCH_TIMEOUT_MS)}s`,
+  });
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Failed to fetch ${repo}:${path}@${ref}: ${response.status} ${body}`);
