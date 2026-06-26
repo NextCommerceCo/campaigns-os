@@ -51,10 +51,10 @@ test("explicit empty exceptions remain explicit", () => {
   assert.deepEqual(verdict.exceptions, []);
 });
 
-test("createVerdict carries campaign base, entry URLs, and tested URLs when provided", () => {
+test("createVerdict carries campaign base, entry URLs, resolved page URLs, and tested URL alias", () => {
   const verdict = createVerdict({
     ...baseVerdict,
-    baseUrl: "https://preview.example.test/shield/",
+    baseUrl: Object("https://preview.example.test/shield/"),
     entryUrls: [
       {
         funnel_id: "default",
@@ -63,7 +63,7 @@ test("createVerdict carries campaign base, entry URLs, and tested URLs when prov
         url: "https://preview.example.test/shield/presell-running/",
       },
     ],
-    testedUrls: [
+    pageUrls: [
       {
         funnel_id: "default",
         page_id: "presell",
@@ -81,5 +81,14 @@ test("createVerdict carries campaign base, entry URLs, and tested URLs when prov
 
   assert.equal(verdict.base_url, "https://preview.example.test/shield/");
   assert.deepEqual(verdict.entry_urls.map((entry) => entry.url), ["https://preview.example.test/shield/presell-running/"]);
+  assert.deepEqual(verdict.page_urls.map((entry) => entry.page_type), ["presell", "checkout"]);
   assert.deepEqual(verdict.tested_urls.map((entry) => entry.page_type), ["presell", "checkout"]);
+});
+
+test("createVerdict emits empty URL arrays consistently", () => {
+  const verdict = createVerdict(baseVerdict);
+
+  assert.deepEqual(verdict.entry_urls, []);
+  assert.deepEqual(verdict.page_urls, []);
+  assert.deepEqual(verdict.tested_urls, []);
 });

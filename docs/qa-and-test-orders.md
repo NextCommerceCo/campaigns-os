@@ -17,7 +17,11 @@ Resolve reads the packet, loads the local CampaignSpec when available, derives d
 Use the printed `Entry URLs` for preview probes and proof notes. The campaign
 root is only the URL-joining base; some funnels enter through a more specific
 route such as `/shield/presell-running/`, and the root path may legitimately
-404.
+404. Treat a root 404 as legitimate only when `qa resolve` prints at least one
+Entry URL and the follow-up `qa run` records a passing `http:<page_id>` assertion
+for that entry URL. If Entry URLs are empty, still point at a deleted preview, or
+fail their own HTTP assertion, fix `--base-url` or the packet deploy URL before
+continuing.
 
 `--base-url` can be either the deploy host or the campaign root. If the Build Packet says `campaign.public_route_slug = "roadside-ready"`, both of these resolve pages under `/roadside-ready/`:
 

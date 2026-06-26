@@ -559,7 +559,7 @@ function serializeThrownValue(error) {
 
 function resolvePayload(resolved) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
-  const testedUrls = deriveTestedUrls(resolved.topologies);
+  const pageUrls = derivePageUrls(resolved.topologies);
   return {
     ok: true,
     map_id: resolved.mapId,
@@ -570,7 +570,8 @@ function resolvePayload(resolved) {
     spec_hash: resolved.specHash,
     base_url: resolved.baseUrl,
     entry_urls: entryUrls,
-    tested_urls: testedUrls,
+    page_urls: pageUrls,
+    tested_urls: pageUrls,
     campaign: {
       name: resolved.spec.campaign?.name || null,
       slug: resolved.spec.campaign?.slug || null,
@@ -677,7 +678,7 @@ async function runQa(args) {
 
 async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders }) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
-  const testedUrls = deriveTestedUrls(resolved.topologies);
+  const pageUrls = derivePageUrls(resolved.topologies);
   const verdict = createVerdict({
     runId,
     mapId: resolved.mapId,
@@ -690,7 +691,8 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     operator: process.env.USER ? `${process.env.USER}@local` : "",
     baseUrl: resolved.baseUrl,
     entryUrls,
-    testedUrls,
+    pageUrls,
+    testedUrls: pageUrls,
     assertions,
     testOrders,
   });
@@ -722,7 +724,8 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     map_id: resolved.mapId,
     base_url: resolved.baseUrl,
     entry_urls: entryUrls,
-    tested_urls: testedUrls,
+    page_urls: pageUrls,
+    tested_urls: pageUrls,
     dashboard_url: dashboardUrl,
     local_path: localPath,
     posted: postResult,
@@ -735,15 +738,28 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   };
 }
 
-function deriveEntryUrls(topologies = []) {
+const ENTRY_PAGE_TYPES = new Set([
+  "entry",
+  "presell",
+  "landing",
+  "lander",
+  "opt-in",
+  "optin",
+  "advertorial",
+  "listicle",
+  "review",
+  "product",
+]);
+
+function deriveEntryUrls(topologies) {
   const entries = [];
-  for (const topology of Array.isArray(topologies) ? topologies : []) {
+  for (const topology of topologyList(topologies)) {
     const pages = Array.isArray(topology?.pages) ? topology.pages.filter((page) => page?.url) : [];
     if (!pages.length) continue;
-    const page = pages[0];
+    const page = pages.find(isEntryLikePage) || pages[0];
     entries.push({
       funnel_id: topology.funnel_id || "default",
-      funnel_name: topology.funnel_name || topology.funnel_id || "Default",
+      funnel_name: topology.funnel_name || topology.funnel_id || "default",
       page_id: page.page_id || null,
       page_type: page.page_type || null,
       label: page.label || null,
@@ -753,10 +769,15 @@ function deriveEntryUrls(topologies = []) {
   return entries;
 }
 
-function deriveTestedUrls(topologies = []) {
+function isEntryLikePage(page) {
+  const type = String(page?.page_type || "").toLowerCase().trim();
+  return ENTRY_PAGE_TYPES.has(type);
+}
+
+function derivePageUrls(topologies) {
   const seen = new Set();
   const urls = [];
-  for (const topology of Array.isArray(topologies) ? topologies : []) {
+  for (const topology of topologyList(topologies)) {
     for (const page of Array.isArray(topology?.pages) ? topology.pages : []) {
       if (!page?.url || seen.has(page.url)) continue;
       seen.add(page.url);
@@ -770,6 +791,10 @@ function deriveTestedUrls(topologies = []) {
     }
   }
   return urls;
+}
+
+function topologyList(topologies) {
+  return Array.isArray(topologies) ? topologies : [];
 }
 
 async function runPageChecks(page, args) {
@@ -1586,6 +1611,8 @@ export const __qaNodeTestHooks = Object.freeze({
   supportedPaymentMethodsFromSpec,
   themeGateSummary,
   templateBrandContractAssertion,
+  deriveEntryUrls,
+  derivePageUrls,
   resolveQaInputsFromSite,
   isAdvisoryMetaTag,
 });

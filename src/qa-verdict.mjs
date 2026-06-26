@@ -45,7 +45,8 @@ export function createVerdict({
   operator = "",
   baseUrl = null,
   entryUrls = [],
-  testedUrls = [],
+  pageUrls = [],
+  testedUrls = null,
   assertions,
   testOrders = [],
   exceptions = null,
@@ -53,6 +54,10 @@ export function createVerdict({
   const normalizedExceptions = Array.isArray(exceptions)
     ? exceptions
     : deriveExceptions(assertions);
+  const normalizedBaseUrl = optionalString(baseUrl);
+  const normalizedEntryUrls = Array.isArray(entryUrls) ? entryUrls : [];
+  const normalizedPageUrls = Array.isArray(pageUrls) ? pageUrls : [];
+  const normalizedTestedUrls = testedUrls == null ? normalizedPageUrls : Array.isArray(testedUrls) ? testedUrls : [];
   return {
     schema_version: QA_SCHEMA_VERSION,
     run_id: runId,
@@ -64,14 +69,21 @@ export function createVerdict({
     completed_at: completedAt,
     runtime,
     operator,
-    ...(typeof baseUrl === "string" && baseUrl.trim() ? { base_url: baseUrl.trim() } : {}),
-    ...(Array.isArray(entryUrls) && entryUrls.length ? { entry_urls: entryUrls } : {}),
-    ...(Array.isArray(testedUrls) && testedUrls.length ? { tested_urls: testedUrls } : {}),
+    ...(normalizedBaseUrl ? { base_url: normalizedBaseUrl } : {}),
+    entry_urls: normalizedEntryUrls,
+    page_urls: normalizedPageUrls,
+    tested_urls: normalizedTestedUrls,
     disposition: computeDisposition(assertions),
     assertions,
     test_orders: testOrders,
     exceptions: normalizedExceptions,
   };
+}
+
+function optionalString(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
 }
 
 export function deriveExceptions(assertions = []) {
