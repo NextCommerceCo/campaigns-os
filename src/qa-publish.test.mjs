@@ -37,12 +37,22 @@ test("qa resolve names the next proof command when a base URL is known", () => {
     map_id: "shw-round-2",
     packet_path: "/tmp/campaign-runtime.build.json",
     base_url: "http://localhost:4173/simple-home-watch/",
+    entry_urls: [
+      {
+        funnel_id: "default",
+        page_id: "presell",
+        page_type: "presell",
+        url: "http://localhost:4173/simple-home-watch/presell/",
+      },
+    ],
   });
 
   assert.match(lines[0], /Next expected proof:/);
   assert.match(lines[0], /campaigns-os qa run --packet \/tmp\/campaign-runtime\.build\.json/);
   assert.match(lines[0], /--browser --test-order common/);
-  assert.match(lines[1], /publishes to the portal by default/);
+  assert.match(lines[1], /Entry URL\(s\) resolved:/);
+  assert.match(lines[1], /\/simple-home-watch\/presell\//);
+  assert.match(lines[2], /publishes to the portal by default/);
 });
 
 test("qa resolve asks for a tested URL before browser and typed-card proof", () => {

@@ -16,6 +16,10 @@ const {
   supportedPaymentMethodsFromSpec,
   themeGateSummary,
   templateBrandContractAssertion,
+  deriveEntryUrls,
+  derivePageUrls,
+  deriveTestedUrlsFromAssertions,
+  resolvePayload,
   resolveQaInputsFromSite,
 } = __qaNodeTestHooks;
 
@@ -36,6 +40,101 @@ test("theme gate scope derives commerce pages from spec topologies", () => {
   // thankyou is preserved as its spec type; the gate treats it as commerce
   assert.equal(scope.built_pages.at(-1).type, "thankyou");
   assert.deepEqual(themeGateScopeFromTopologies([]), { built_pages: [] });
+});
+
+test("entry URL derivation prefers explicit top-of-funnel page types before route order fallback", () => {
+  const entries = deriveEntryUrls([{
+    funnel_id: "default",
+    pages: [
+      { page_id: "checkout", page_type: "checkout", url: "https://preview.test/shield/checkout/" },
+      { page_id: "presell", page_type: "presell", url: "https://preview.test/shield/presell-running/" },
+      { page_id: "receipt", page_type: "thankyou", url: "https://preview.test/shield/receipt/" },
+    ],
+  }]);
+
+  assert.deepEqual(entries, [{
+    funnel_id: "default",
+    funnel_name: "default",
+    page_id: "presell",
+    page_type: "presell",
+    label: null,
+    url: "https://preview.test/shield/presell-running/",
+  }]);
+
+  assert.deepEqual(deriveEntryUrls([{ pages: [{ page_id: "checkout", page_type: "checkout", url: "https://preview.test/checkout/" }] }])[0].funnel_name, "default");
+  assert.equal(deriveEntryUrls([{
+    pages: [
+      { page_id: "checkout", page_type: "checkout", url: "https://preview.test/checkout/" },
+      { page_id: "product-offer", page_type: "product", url: "https://preview.test/product-offer/" },
+    ],
+  }])[0].page_id, "checkout");
+});
+
+test("page URL derivation returns the resolved URL set once per URL", () => {
+  const urls = derivePageUrls([{
+    funnel_id: "primary",
+    pages: [
+      { page_id: "presell", page_type: "presell", url: "https://preview.test/presell/" },
+      { page_id: "checkout", page_type: "checkout", url: "https://preview.test/checkout/" },
+    ],
+  }, {
+    funnel_id: "secondary",
+    pages: [
+      { page_id: "presell-b", page_type: "presell", url: "https://preview.test/presell/" },
+    ],
+  }]);
+
+  assert.deepEqual(urls.map((entry) => [entry.funnel_id, entry.page_id, entry.url]), [
+    ["primary", "presell", "https://preview.test/presell/"],
+    ["primary", "checkout", "https://preview.test/checkout/"],
+  ]);
+});
+
+test("tested URL derivation only includes pages with executed HTTP assertions", () => {
+  const pageUrls = [
+    {
+      funnel_id: "default",
+      page_id: "presell",
+      page_type: "presell",
+      label: "Presell",
+      url: "https://preview.test/presell/",
+    },
+    {
+      funnel_id: "default",
+      page_id: "checkout",
+      page_type: "checkout",
+      label: "Checkout",
+      url: "https://preview.test/checkout/",
+    },
+  ];
+  const tested = deriveTestedUrlsFromAssertions([
+    { id: "route-url:receipt", family: "funnel-flow", page: "receipt", status: "fail" },
+    { id: "http:presell", family: "funnel-flow", page: "presell", url: "https://preview.test/presell/", status: "pass" },
+  ], pageUrls);
+
+  assert.deepEqual(tested, [pageUrls[0]]);
+});
+
+test("qa resolve payload reports resolved page URLs without claiming tested URLs", () => {
+  const payload = resolvePayload({
+    mapId: "shield-41x9",
+    specSource: "campaign-spec.json",
+    specVersion: "4.3",
+    specHash: "sha256:abc",
+    baseUrl: "https://preview.test/shield/",
+    spec: { campaign: { name: "Shield", slug: "shield", ref_id: 1638 } },
+    themeGate: { status: "pass", code: "theme_gate.applied", reason: "ok" },
+    polishGate: { status: "pass", code: "polish.evidence_current", reason: "ok" },
+    topologies: [{
+      funnel_id: "default",
+      pages: [
+        { page_id: "presell", page_type: "presell", url: "https://preview.test/shield/presell-running/" },
+      ],
+    }],
+  });
+
+  assert.deepEqual(payload.page_urls.map((entry) => entry.page_id), ["presell"]);
+  assert.deepEqual(payload.tested_urls, []);
 });
 
 test("blocked theme gate maps to a single blocker assertion with reason and required actions", () => {

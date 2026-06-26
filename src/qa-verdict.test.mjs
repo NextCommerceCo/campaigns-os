@@ -50,3 +50,76 @@ test("explicit empty exceptions remain explicit", () => {
   assert.equal(verdict.disposition, "ready_with_exceptions");
   assert.deepEqual(verdict.exceptions, []);
 });
+
+test("createVerdict carries campaign base, entry URLs, resolved page URLs, and tested URL alias", () => {
+  const verdict = createVerdict({
+    ...baseVerdict,
+    baseUrl: Object("https://preview.example.test/shield/"),
+    entryUrls: [
+      {
+        funnel_id: "default",
+        page_id: "presell",
+        page_type: "presell",
+        url: "https://preview.example.test/shield/presell-running/",
+      },
+    ],
+    pageUrls: [
+      {
+        funnel_id: "default",
+        page_id: "presell",
+        page_type: "presell",
+        url: "https://preview.example.test/shield/presell-running/",
+      },
+      {
+        funnel_id: "default",
+        page_id: "checkout",
+        page_type: "checkout",
+        url: "https://preview.example.test/shield/checkout/",
+      },
+    ],
+    testedUrls: [
+      {
+        funnel_id: "default",
+        page_id: "presell",
+        page_type: "presell",
+        url: "https://preview.example.test/shield/presell-running/",
+      },
+      {
+        funnel_id: "default",
+        page_id: "checkout",
+        page_type: "checkout",
+        url: "https://preview.example.test/shield/checkout/",
+      },
+    ],
+  });
+
+  assert.equal(verdict.base_url, "https://preview.example.test/shield/");
+  assert.deepEqual(verdict.entry_urls.map((entry) => entry.url), ["https://preview.example.test/shield/presell-running/"]);
+  assert.deepEqual(verdict.page_urls.map((entry) => entry.page_type), ["presell", "checkout"]);
+  assert.deepEqual(verdict.tested_urls.map((entry) => entry.page_type), ["presell", "checkout"]);
+});
+
+test("createVerdict does not infer tested URLs from page URLs", () => {
+  const verdict = createVerdict({
+    ...baseVerdict,
+    pageUrls: [
+      {
+        funnel_id: "default",
+        page_id: "presell",
+        page_type: "presell",
+        url: "https://preview.example.test/shield/presell-running/",
+      },
+    ],
+  });
+
+  assert.deepEqual(verdict.page_urls.map((entry) => entry.page_id), ["presell"]);
+  assert.deepEqual(verdict.tested_urls, []);
+});
+
+test("createVerdict emits empty URL arrays consistently", () => {
+  const verdict = createVerdict(baseVerdict);
+
+  assert.deepEqual(verdict.entry_urls, []);
+  assert.deepEqual(verdict.page_urls, []);
+  assert.deepEqual(verdict.tested_urls, []);
+});

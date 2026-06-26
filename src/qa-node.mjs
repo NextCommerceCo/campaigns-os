@@ -558,6 +558,8 @@ function serializeThrownValue(error) {
 }
 
 function resolvePayload(resolved) {
+  const entryUrls = deriveEntryUrls(resolved.topologies);
+  const pageUrls = derivePageUrls(resolved.topologies);
   return {
     ok: true,
     map_id: resolved.mapId,
@@ -567,6 +569,9 @@ function resolvePayload(resolved) {
     spec_version: resolved.specVersion,
     spec_hash: resolved.specHash,
     base_url: resolved.baseUrl,
+    entry_urls: entryUrls,
+    page_urls: pageUrls,
+    tested_urls: [],
     campaign: {
       name: resolved.spec.campaign?.name || null,
       slug: resolved.spec.campaign?.slug || null,
@@ -672,6 +677,9 @@ async function runQa(args) {
 }
 
 async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders }) {
+  const entryUrls = deriveEntryUrls(resolved.topologies);
+  const pageUrls = derivePageUrls(resolved.topologies);
+  const testedUrls = deriveTestedUrlsFromAssertions(assertions, pageUrls);
   const verdict = createVerdict({
     runId,
     mapId: resolved.mapId,
@@ -682,6 +690,10 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     completedAt: new Date().toISOString(),
     runtime: RUNTIME,
     operator: process.env.USER ? `${process.env.USER}@local` : "",
+    baseUrl: resolved.baseUrl,
+    entryUrls,
+    pageUrls,
+    testedUrls,
     assertions,
     testOrders,
   });
@@ -712,6 +724,9 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     run_id: verdict.run_id,
     map_id: resolved.mapId,
     base_url: resolved.baseUrl,
+    entry_urls: entryUrls,
+    page_urls: pageUrls,
+    tested_urls: testedUrls,
     dashboard_url: dashboardUrl,
     local_path: localPath,
     posted: postResult,
@@ -722,6 +737,89 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     polish_gate: polishGateSummary(resolved.polishGate),
     verdict,
   };
+}
+
+const ENTRY_PAGE_TYPES = new Set([
+  "entry",
+  "presell",
+  "landing",
+  "lander",
+  "opt-in",
+  "optin",
+  "advertorial",
+  "listicle",
+  "review",
+]);
+
+function deriveEntryUrls(topologies) {
+  const entries = [];
+  for (const topology of topologyList(topologies)) {
+    const pages = Array.isArray(topology?.pages) ? topology.pages.filter((page) => page?.url) : [];
+    if (!pages.length) continue;
+    const page = pages.find(isEntryLikePage) || pages[0];
+    entries.push({
+      funnel_id: topology.funnel_id || "default",
+      funnel_name: topology.funnel_name || topology.funnel_id || "default",
+      page_id: page.page_id || null,
+      page_type: page.page_type || null,
+      label: page.label || null,
+      url: page.url,
+    });
+  }
+  return entries;
+}
+
+function isEntryLikePage(page) {
+  const type = String(page?.page_type || "").toLowerCase().trim();
+  return ENTRY_PAGE_TYPES.has(type);
+}
+
+function derivePageUrls(topologies) {
+  const seen = new Set();
+  const urls = [];
+  for (const topology of topologyList(topologies)) {
+    for (const page of Array.isArray(topology?.pages) ? topology.pages : []) {
+      if (!page?.url || seen.has(page.url)) continue;
+      seen.add(page.url);
+      urls.push({
+        funnel_id: topology.funnel_id || "default",
+        page_id: page.page_id || null,
+        page_type: page.page_type || null,
+        label: page.label || null,
+        url: page.url,
+      });
+    }
+  }
+  return urls;
+}
+
+function deriveTestedUrlsFromAssertions(assertions, pageUrls = []) {
+  const knownByUrl = new Map();
+  const knownByPageId = new Map();
+  for (const entry of Array.isArray(pageUrls) ? pageUrls : []) {
+    if (entry?.url && !knownByUrl.has(entry.url)) knownByUrl.set(entry.url, entry);
+    if (entry?.page_id && !knownByPageId.has(entry.page_id)) knownByPageId.set(entry.page_id, entry);
+  }
+
+  const seen = new Set();
+  const tested = [];
+  for (const assertion of Array.isArray(assertions) ? assertions : []) {
+    if (!String(assertion?.id || "").startsWith("http:") || !assertion?.url || seen.has(assertion.url)) continue;
+    seen.add(assertion.url);
+    const known = knownByUrl.get(assertion.url) || knownByPageId.get(String(assertion.id).slice("http:".length));
+    tested.push(known || {
+      funnel_id: null,
+      page_id: String(assertion.id).slice("http:".length) || assertion.page || null,
+      page_type: null,
+      label: null,
+      url: assertion.url,
+    });
+  }
+  return tested;
+}
+
+function topologyList(topologies) {
+  return Array.isArray(topologies) ? topologies : [];
 }
 
 async function runPageChecks(page, args) {
@@ -1152,6 +1250,7 @@ function output(value, args) {
     console.log(`QA run complete.`);
     console.log(`Map ID: ${value.map_id}`);
     console.log(`Base URL: ${value.base_url || "(missing)"}`);
+    printEntryUrlLines(value.entry_urls);
     console.log(`Run ID: ${value.run_id}`);
     console.log(`Disposition: ${value.verdict.disposition}`);
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
@@ -1171,6 +1270,7 @@ function output(value, args) {
   console.log(`Map ID: ${value.map_id}`);
   console.log(`Spec: ${value.spec_source}`);
   console.log(`Base URL: ${value.base_url || "(missing)"}`);
+  printEntryUrlLines(value.entry_urls);
   for (const funnel of value.funnels) {
     console.log(`\n${funnel.funnel_name} (${funnel.funnel_id}, ${funnel.weight}%)`);
     for (const page of funnel.pages) console.log(`- [${page.page_type}] ${page.label}: ${page.url || "(missing)"}`);
@@ -1181,6 +1281,17 @@ function output(value, args) {
   if (nextProofLines.length) {
     console.log("");
     for (const line of nextProofLines) console.log(line);
+  }
+}
+
+function printEntryUrlLines(entryUrls) {
+  if (!Array.isArray(entryUrls) || !entryUrls.length) return;
+  console.log("Entry URLs:");
+  for (const entry of entryUrls) {
+    const label = [entry.funnel_name || entry.funnel_id, entry.page_type, entry.label]
+      .filter(Boolean)
+      .join(" / ");
+    console.log(`- ${label || entry.page_id || "entry"}: ${entry.url}`);
   }
 }
 
@@ -1205,8 +1316,14 @@ export function qaResolveNextProofLines(value) {
 
   return [
     `Next expected proof: ${qaRunCommandFromResolve(value)}`,
+    `Entry URL(s) resolved: ${formatEntryUrlsForProof(value.entry_urls)}`,
     "Typed-card test orders use global test cards (no transactions/no permission gate); QA publishes to the portal by default.",
   ];
+}
+
+function formatEntryUrlsForProof(entryUrls) {
+  if (!Array.isArray(entryUrls) || !entryUrls.length) return "(none)";
+  return entryUrls.map((entry) => entry.url).filter(Boolean).join(", ") || "(none)";
 }
 
 function qaRunCommandFromResolve(value) {
@@ -1519,6 +1636,10 @@ export const __qaNodeTestHooks = Object.freeze({
   supportedPaymentMethodsFromSpec,
   themeGateSummary,
   templateBrandContractAssertion,
+  deriveEntryUrls,
+  derivePageUrls,
+  deriveTestedUrlsFromAssertions,
+  resolvePayload,
   resolveQaInputsFromSite,
   isAdvisoryMetaTag,
 });
