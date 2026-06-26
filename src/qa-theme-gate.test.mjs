@@ -18,6 +18,8 @@ const {
   templateBrandContractAssertion,
   deriveEntryUrls,
   derivePageUrls,
+  deriveTestedUrlsFromAssertions,
+  resolvePayload,
   resolveQaInputsFromSite,
 } = __qaNodeTestHooks;
 
@@ -86,6 +88,53 @@ test("page URL derivation returns the resolved URL set once per URL", () => {
     ["primary", "presell", "https://preview.test/presell/"],
     ["primary", "checkout", "https://preview.test/checkout/"],
   ]);
+});
+
+test("tested URL derivation only includes pages with executed HTTP assertions", () => {
+  const pageUrls = [
+    {
+      funnel_id: "default",
+      page_id: "presell",
+      page_type: "presell",
+      label: "Presell",
+      url: "https://preview.test/presell/",
+    },
+    {
+      funnel_id: "default",
+      page_id: "checkout",
+      page_type: "checkout",
+      label: "Checkout",
+      url: "https://preview.test/checkout/",
+    },
+  ];
+  const tested = deriveTestedUrlsFromAssertions([
+    { id: "route-url:receipt", family: "funnel-flow", page: "receipt", status: "fail" },
+    { id: "http:presell", family: "funnel-flow", page: "presell", url: "https://preview.test/presell/", status: "pass" },
+  ], pageUrls);
+
+  assert.deepEqual(tested, [pageUrls[0]]);
+});
+
+test("qa resolve payload reports resolved page URLs without claiming tested URLs", () => {
+  const payload = resolvePayload({
+    mapId: "shield-41x9",
+    specSource: "campaign-spec.json",
+    specVersion: "4.3",
+    specHash: "sha256:abc",
+    baseUrl: "https://preview.test/shield/",
+    spec: { campaign: { name: "Shield", slug: "shield", ref_id: 1638 } },
+    themeGate: { status: "pass", code: "theme_gate.applied", reason: "ok" },
+    polishGate: { status: "pass", code: "polish.evidence_current", reason: "ok" },
+    topologies: [{
+      funnel_id: "default",
+      pages: [
+        { page_id: "presell", page_type: "presell", url: "https://preview.test/shield/presell-running/" },
+      ],
+    }],
+  });
+
+  assert.deepEqual(payload.page_urls.map((entry) => entry.page_id), ["presell"]);
+  assert.deepEqual(payload.tested_urls, []);
 });
 
 test("blocked theme gate maps to a single blocker assertion with reason and required actions", () => {

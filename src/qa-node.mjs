@@ -571,7 +571,7 @@ function resolvePayload(resolved) {
     base_url: resolved.baseUrl,
     entry_urls: entryUrls,
     page_urls: pageUrls,
-    tested_urls: pageUrls,
+    tested_urls: [],
     campaign: {
       name: resolved.spec.campaign?.name || null,
       slug: resolved.spec.campaign?.slug || null,
@@ -679,6 +679,7 @@ async function runQa(args) {
 async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders }) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
+  const testedUrls = deriveTestedUrlsFromAssertions(assertions, pageUrls);
   const verdict = createVerdict({
     runId,
     mapId: resolved.mapId,
@@ -692,7 +693,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     baseUrl: resolved.baseUrl,
     entryUrls,
     pageUrls,
-    testedUrls: pageUrls,
+    testedUrls,
     assertions,
     testOrders,
   });
@@ -725,7 +726,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     base_url: resolved.baseUrl,
     entry_urls: entryUrls,
     page_urls: pageUrls,
-    tested_urls: pageUrls,
+    tested_urls: testedUrls,
     dashboard_url: dashboardUrl,
     local_path: localPath,
     posted: postResult,
@@ -790,6 +791,31 @@ function derivePageUrls(topologies) {
     }
   }
   return urls;
+}
+
+function deriveTestedUrlsFromAssertions(assertions, pageUrls = []) {
+  const knownByUrl = new Map();
+  const knownByPageId = new Map();
+  for (const entry of Array.isArray(pageUrls) ? pageUrls : []) {
+    if (entry?.url && !knownByUrl.has(entry.url)) knownByUrl.set(entry.url, entry);
+    if (entry?.page_id && !knownByPageId.has(entry.page_id)) knownByPageId.set(entry.page_id, entry);
+  }
+
+  const seen = new Set();
+  const tested = [];
+  for (const assertion of Array.isArray(assertions) ? assertions : []) {
+    if (!String(assertion?.id || "").startsWith("http:") || !assertion?.url || seen.has(assertion.url)) continue;
+    seen.add(assertion.url);
+    const known = knownByUrl.get(assertion.url) || knownByPageId.get(String(assertion.id).slice("http:".length));
+    tested.push(known || {
+      funnel_id: null,
+      page_id: String(assertion.id).slice("http:".length) || assertion.page || null,
+      page_type: null,
+      label: null,
+      url: assertion.url,
+    });
+  }
+  return tested;
 }
 
 function topologyList(topologies) {
@@ -1612,6 +1638,8 @@ export const __qaNodeTestHooks = Object.freeze({
   templateBrandContractAssertion,
   deriveEntryUrls,
   derivePageUrls,
+  deriveTestedUrlsFromAssertions,
+  resolvePayload,
   resolveQaInputsFromSite,
   isAdvisoryMetaTag,
 });
