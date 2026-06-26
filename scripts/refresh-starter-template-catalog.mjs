@@ -172,6 +172,7 @@ function isPrivateFamily(family) {
 }
 
 const SHA_RE = /^[0-9a-f]{40}$/;
+const COMMIT_FETCH_TIMEOUT_MS = 15000;
 
 // Stamp the snapshot with the exact source commit it was built from, so portal
 // and agent consumers can tell which campaign-cart-starter-templates commit the
@@ -207,21 +208,28 @@ async function resolveCommitSha({ repo, ref, token }) {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   // Bound the request so a stalled connection can't hang the refresh indefinitely.
+  // Use our own controller + flag rather than AbortSignal.timeout(): a self-set
+  // `timedOut` flag is unambiguous across Node versions (no reliance on the
+  // TimeoutError-vs-AbortError naming) and won't misreport some future manual
+  // abort (cancellation, body-stream, connection reset) as a timeout.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, COMMIT_FETCH_TIMEOUT_MS);
   let response;
   try {
-    response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+    response = await fetch(url, { headers, signal: controller.signal });
   } catch (error) {
-    // AbortSignal.timeout() rejects with a TimeoutError DOMException on newer Node,
-    // but undici-backed fetch on older Node surfaces it as AbortError (sometimes with
-    // a TimeoutError cause). Match all forms so the friendly message always fires.
-    if (
-      error?.name === "TimeoutError" ||
-      error?.name === "AbortError" ||
-      error?.cause?.name === "TimeoutError"
-    ) {
-      throw new Error(`Timed out resolving commit SHA for ${repo}@${ref} after 15s`);
+    if (timedOut) {
+      throw new Error(
+        `Timed out resolving commit SHA for ${repo}@${ref} after ${COMMIT_FETCH_TIMEOUT_MS / 1000}s`,
+      );
     }
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
   if (!response.ok) {
     const body = await response.text();
