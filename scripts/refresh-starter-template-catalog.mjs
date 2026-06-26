@@ -178,7 +178,17 @@ function timeoutSeconds(timeoutMs) {
   return timeoutMs / 1000;
 }
 
-export async function fetchWithTimeout(url, { headers, timeoutMs = COMMIT_FETCH_TIMEOUT_MS, timeoutMessage }) {
+// Bound the WHOLE operation — request AND response-body read — so a server that
+// returns headers quickly then trickles or stalls the body still can't hang the
+// refresh. The body read must happen inside `consume`, which runs while the timer
+// is armed and the abort signal is live: if the timer fires, controller.abort()
+// aborts the in-flight body read too, the read rejects, and we surface the
+// friendly timeout message. (Clearing the timer the moment `fetch` resolves would
+// leave the body read unbounded.) `fetchImpl` is injectable for tests.
+export async function fetchWithTimeout(
+  url,
+  { headers, timeoutMs = COMMIT_FETCH_TIMEOUT_MS, timeoutMessage, consume, fetchImpl = fetch },
+) {
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -186,7 +196,8 @@ export async function fetchWithTimeout(url, { headers, timeoutMs = COMMIT_FETCH_
     controller.abort();
   }, timeoutMs);
   try {
-    return await fetch(url, { headers, signal: controller.signal });
+    const response = await fetchImpl(url, { headers, signal: controller.signal });
+    return consume ? await consume(response) : response;
   } catch (error) {
     if (timedOut) {
       throw new Error(timeoutMessage());
@@ -230,19 +241,19 @@ async function resolveCommitSha({ repo, ref, token }) {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  // Bound the request so a stalled connection can't hang the refresh indefinitely.
-  // The shared helper owns its timer flag rather than relying on AbortError names,
-  // which differ across Node versions and can also mean a non-timeout abort.
-  const response = await fetchWithTimeout(url, {
+  // Bound request + body read so a stalled connection can't hang the refresh.
+  const payload = await fetchWithTimeout(url, {
     headers,
     timeoutMessage: () =>
       `Timed out resolving commit SHA for ${repo}@${ref} after ${timeoutSeconds(COMMIT_FETCH_TIMEOUT_MS)}s`,
+    consume: async (response) => {
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Failed to resolve commit SHA for ${repo}@${ref}: ${response.status} ${body}`);
+      }
+      return response.json();
+    },
   });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Failed to resolve commit SHA for ${repo}@${ref}: ${response.status} ${body}`);
-  }
-  const payload = await response.json();
   if (typeof payload.sha !== "string" || !SHA_RE.test(payload.sha)) {
     throw new Error(`Unexpected commit response resolving ${repo}@${ref}`);
   }
@@ -285,22 +296,22 @@ async function fetchRepoFile({ repo, ref, path, token }) {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetchWithTimeout(url, {
+  return fetchWithTimeout(url, {
     headers,
     timeoutMessage: () =>
       `Timed out fetching ${repo}:${path}@${ref} after ${timeoutSeconds(COMMIT_FETCH_TIMEOUT_MS)}s`,
+    consume: async (response) => {
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Failed to fetch ${repo}:${path}@${ref}: ${response.status} ${body}`);
+      }
+      const payload = await response.json();
+      if (payload.encoding !== "base64" || typeof payload.content !== "string") {
+        throw new Error(`Unexpected GitHub contents response for ${repo}:${path}@${ref}`);
+      }
+      return Buffer.from(payload.content.replace(/\n/g, ""), "base64").toString("utf8");
+    },
   });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Failed to fetch ${repo}:${path}@${ref}: ${response.status} ${body}`);
-  }
-
-  const payload = await response.json();
-  if (payload.encoding !== "base64" || typeof payload.content !== "string") {
-    throw new Error(`Unexpected GitHub contents response for ${repo}:${path}@${ref}`);
-  }
-
-  return Buffer.from(payload.content.replace(/\n/g, ""), "base64").toString("utf8");
 }
 
 function writeText(path, text) {

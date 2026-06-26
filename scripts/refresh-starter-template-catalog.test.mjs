@@ -198,3 +198,55 @@ test("fetchWithTimeout reports only its own timer as a timeout", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("fetchWithTimeout bounds the response-body read, not just the request", async () => {
+  // Headers arrive immediately, but the body read trickles/stalls until the
+  // abort signal fires. Because `consume` runs inside the timed window, the
+  // timer's abort cancels the in-flight read and the timeout message wins.
+  const fetchImpl = (_url, { signal }) =>
+    Promise.resolve({
+      ok: true,
+      json: () =>
+        new Promise((_resolve, reject) => {
+          if (signal.aborted) reject(new Error("aborted"));
+          else signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        }),
+    });
+  await assert.rejects(
+    () =>
+      fetchWithTimeout("https://example.test/trickle-body", {
+        headers: {},
+        timeoutMs: 5,
+        timeoutMessage: () => "timed out during body read",
+        consume: (response) => response.json(),
+        fetchImpl,
+      }),
+    /timed out during body read/,
+  );
+});
+
+test("fetchWithTimeout returns consume's result and propagates consume errors as-is", async () => {
+  const okFetch = () => Promise.resolve({ ok: true, json: async () => ({ sha: "abc" }) });
+  const sha = await fetchWithTimeout("https://example.test/ok", {
+    headers: {},
+    timeoutMessage: () => "should not appear",
+    consume: async (response) => (await response.json()).sha,
+    fetchImpl: okFetch,
+  });
+  assert.equal(sha, "abc");
+
+  const notFound = () => Promise.resolve({ ok: false, status: 404, text: async () => "missing" });
+  await assert.rejects(
+    () =>
+      fetchWithTimeout("https://example.test/404", {
+        headers: {},
+        timeoutMessage: () => "should not appear",
+        consume: async (response) => {
+          if (!response.ok) throw new Error(`Failed: ${response.status} ${await response.text()}`);
+          return response.json();
+        },
+        fetchImpl: notFound,
+      }),
+    /Failed: 404 missing/,
+  );
+});
