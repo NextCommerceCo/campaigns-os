@@ -50,3 +50,36 @@ test("explicit empty exceptions remain explicit", () => {
   assert.equal(verdict.disposition, "ready_with_exceptions");
   assert.deepEqual(verdict.exceptions, []);
 });
+
+test("createVerdict carries campaign base, entry URLs, and tested URLs when provided", () => {
+  const verdict = createVerdict({
+    ...baseVerdict,
+    baseUrl: "https://preview.example.test/shield/",
+    entryUrls: [
+      {
+        funnel_id: "default",
+        page_id: "presell",
+        page_type: "presell",
+        url: "https://preview.example.test/shield/presell-running/",
+      },
+    ],
+    testedUrls: [
+      {
+        funnel_id: "default",
+        page_id: "presell",
+        page_type: "presell",
+        url: "https://preview.example.test/shield/presell-running/",
+      },
+      {
+        funnel_id: "default",
+        page_id: "checkout",
+        page_type: "checkout",
+        url: "https://preview.example.test/shield/checkout/",
+      },
+    ],
+  });
+
+  assert.equal(verdict.base_url, "https://preview.example.test/shield/");
+  assert.deepEqual(verdict.entry_urls.map((entry) => entry.url), ["https://preview.example.test/shield/presell-running/"]);
+  assert.deepEqual(verdict.tested_urls.map((entry) => entry.page_type), ["presell", "checkout"]);
+});

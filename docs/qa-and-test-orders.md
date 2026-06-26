@@ -14,6 +14,11 @@ npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 
 Resolve reads the packet, loads the local CampaignSpec when available, derives deployed page URLs from the packet deploy URL or `--base-url`, and prints the funnel topology. It does not create a verdict.
 
+Use the printed `Entry URLs` for preview probes and proof notes. The campaign
+root is only the URL-joining base; some funnels enter through a more specific
+route such as `/shield/presell-running/`, and the root path may legitimately
+404.
+
 `--base-url` can be either the deploy host or the campaign root. If the Build Packet says `campaign.public_route_slug = "roadside-ready"`, both of these resolve pages under `/roadside-ready/`:
 
 ```bash
