@@ -812,7 +812,7 @@
         "orderSummary": "cart-summary",
         "payment": "payment-methods",
         "expressCheckout": "express-checkout",
-        "orderBump": "optional (shared bump partials; not in v1 spine)",
+        "orderBump": "bump-coverage",
         "upsell": "bundle-stepper (single offer + quantity stepper)",
         "receipt": "receipt-skeleton"
       },
@@ -973,10 +973,20 @@
                 "name": "visible order summary content",
                 "selector": "[data-next-cart-summary]"
               }
+            ],
+            "forbiddenSelectors": [
+              {
+                "name": "bundle package picker (must be absent on Karna checkout)",
+                "selector": "[data-next-bundle-selector]"
+              },
+              {
+                "name": "bundle card on checkout (must be absent on Karna checkout)",
+                "selector": "[data-next-bundle-card]"
+              }
             ]
           },
           "upsell": {
-            "description": "Rendered Arjuna upsell must render the Arjuna upsell offer shell with a visible bundle offer and accept control.",
+            "description": "Rendered Karna upsell must render the single-product quantity-stepper OTO shell with a visible offer and accept control.",
             "requiredVisibleSelectors": [
               {
                 "name": "upsell offer root",
@@ -987,19 +997,19 @@
                 "selector": ".upsell-header"
               },
               {
-                "name": "upsell bundle card",
-                "selector": "[data-next-bundle-card]"
+                "name": "upsell accept control",
+                "selector": "[data-next-upsell-action]"
               }
             ],
             "requiredNonEmptySelectors": [
               {
-                "name": "visible upsell offer",
-                "selector": "[data-next-bundle-card]"
+                "name": "visible upsell accept control",
+                "selector": "[data-next-upsell-action]"
               }
             ]
           },
           "receipt": {
-            "description": "Rendered Arjuna receipt must render order items and totals under the Arjuna receipt shell.",
+            "description": "Rendered Karna receipt must render order items and totals under the Karna cart-based receipt shell.",
             "requiredVisibleSelectors": [
               {
                 "name": "receipt order items",
@@ -1030,7 +1040,8 @@
           "Karna is a private family: campaign-init resolves its source from the Adsbranded private template repo via the template-source registry (authenticated). It is intentionally absent from the public templates.json and picker.",
           "Single-Inter typography + a generic neutral starter palette; a built campaign re-skins via its own token layer. karna-theme.css only points next-core's font-family vars at --font-primary; css/tokens.css owns the palette.",
           "The OTO is a single-product offer with a quantity stepper (one hidden data-next-bundle-card + add/skip), reusing the shared upsell-bundle-stepper-offer partial; it keeps a visible price row above the accept CTA.",
-          "Landing/presell ship as lean, indicative, debranded scaffolds (frontmatter-driven copy on the token-backed Tailwind layer) — they are customized per campaign."
+          "Landing/presell ship as lean, indicative, debranded scaffolds (frontmatter-driven copy on the token-backed Tailwind layer) — they are customized per campaign.",
+          "Order bump (bump-coverage) is optional and not included in the v1 checkout spine; add via the shared bump-coverage partials when a CampaignSpec order bump maps."
         ]
       }
     },
