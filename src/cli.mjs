@@ -92,6 +92,7 @@ import { evaluateThemeGate } from "./theme-gate.mjs";
 import {
   evaluatePageKitBuildSummary,
   PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
+  readPageKitBuildSummary,
 } from "./page-kit-build-summary.mjs";
 import {
   demoAssetConfig,
@@ -6057,7 +6058,8 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
   const baseDir = dirname(packetPath);
-  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || baseDir;
+  const explicitTargetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
+  const targetRepo = explicitTargetRepo || baseDir;
   const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
   const reportPath = args.report ? resolve(args.report) : join(targetRepo, ".campaign-runtime/assembly-report.json");
   const contextExists = existsSync(contextPath);
@@ -6101,9 +6103,18 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
 
   const artifacts = [runRecordArtifactRef("build_packet", packetPath, PACKET_SCHEMA, baseDir)];
   const buildBriefPath = resolveFromFile(packetPath, packet.build_brief?.normalized_path);
+  const pageKitBuildSummary = explicitTargetRepo ? readPageKitBuildSummary(explicitTargetRepo) : null;
   if (buildBriefPath && existsSync(buildBriefPath)) artifacts.push(runRecordArtifactRef("build_brief", buildBriefPath, BUILD_BRIEF_SCHEMA, baseDir));
   if (contextExists) artifacts.push(runRecordArtifactRef("build_context", contextPath, CONTEXT_SCHEMA, baseDir));
   if (reportExists) artifacts.push(runRecordArtifactRef("assembly_report", reportPath, REPORT_SCHEMA, baseDir));
+  if (pageKitBuildSummary?.summary || pageKitBuildSummary?.error) {
+    artifacts.push(runRecordArtifactRef(
+      "page_kit_build_summary",
+      pageKitBuildSummary.path,
+      optionalString(pageKitBuildSummary.summary?.schema_version) || "next-campaign-page-kit-build-summary/v0",
+      baseDir,
+    ));
+  }
   if (qaVerdictExists) artifacts.push(runRecordArtifactRef("qa_verdict", qaVerdictPath, optionalString(qaVerdict?.schema_version), baseDir));
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 

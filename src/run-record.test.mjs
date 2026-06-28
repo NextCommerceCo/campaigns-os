@@ -73,6 +73,9 @@ test("validator accepts a fully-populated record", () => {
     },
     artifacts: [
       { kind: "build_packet", path: "./campaign-runtime.build.json", schema_version: "campaign-runtime-build-packet/v0", sha256: "deadbeef" },
+      { kind: "build_context", path: ".campaign-runtime/build-context.json", schema_version: "campaign-runtime-build-context/v0", sha256: "badc0de" },
+      { kind: "assembly_report", path: ".campaign-runtime/assembly-report.json", schema_version: "campaign-runtime-assembly-report/v0", sha256: "facefeed" },
+      { kind: "page_kit_build_summary", path: ".campaign-runtime/page-kit-build-summary.json", schema_version: "next-campaign-page-kit-build-summary/v0", sha256: "c0ffee" },
       { kind: "findings_journal", path: ".campaign-runtime/workflow-findings.jsonl", schema_version: "campaigns-os-workflow-finding/v0", sha256: null },
     ],
     observations: {
@@ -622,6 +625,73 @@ test("CLI: malformed findings journal lines are recorded in Run Record observati
       malformed_count: 1,
       malformed_lines: [2],
     });
+  });
+});
+
+test("CLI: run-record references Page Kit build summary when present", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    const targetRepo = join(dir, "target-page-kit");
+    const runtimeDir = join(targetRepo, ".campaign-runtime");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    mkdirSync(runtimeDir, { recursive: true });
+    writeFileSync(join(runtimeDir, "page-kit-build-summary.json"), JSON.stringify({
+      schema_version: "next-campaign-page-kit-build-summary/v1",
+      built: 1,
+      errors: 0,
+      warnings: 0,
+      skipped: 0,
+      ms: 42,
+      pages: [],
+    }));
+
+    const out = JSON.parse(execFileSync("node", [
+      CLI, "run-record",
+      "--packet", packetPath,
+      "--run-id", "run_page_kit_summary",
+      "--no-write",
+      "--no-remit",
+      "--json",
+    ], { encoding: "utf8" }));
+
+    const ref = out.record.artifacts.find((artifact) => artifact.kind === "page_kit_build_summary");
+    assert.ok(ref, JSON.stringify(out.record.artifacts));
+    assert.equal(ref.path, "./target-page-kit/.campaign-runtime/page-kit-build-summary.json");
+    assert.equal(ref.schema_version, "next-campaign-page-kit-build-summary/v1");
+    assert.ok(ref.sha256);
+    assert.equal(validateRunRecord(out.record).ok, true, JSON.stringify(validateRunRecord(out.record).errors));
+  });
+});
+
+test("CLI: run-record does not infer Page Kit build summary from packet-dir fallback", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    const runtimeDir = join(dir, ".campaign-runtime");
+    const packet = JSON.parse(readFileSync(resolve(ROOT, "examples/build-packet.basic.json"), "utf8"));
+    delete packet.assembly.target_repo;
+    writeFileSync(packetPath, JSON.stringify(packet));
+    mkdirSync(runtimeDir, { recursive: true });
+    writeFileSync(join(runtimeDir, "page-kit-build-summary.json"), JSON.stringify({
+      schema_version: "next-campaign-page-kit-build-summary/v1",
+      built: 1,
+      errors: 0,
+      warnings: 0,
+      skipped: 0,
+      ms: 42,
+      pages: [],
+    }));
+
+    const out = JSON.parse(execFileSync("node", [
+      CLI, "run-record",
+      "--packet", packetPath,
+      "--run-id", "run_no_inferred_page_kit_summary",
+      "--no-write",
+      "--no-remit",
+      "--json",
+    ], { encoding: "utf8" }));
+
+    assert.equal(out.record.artifacts.some((artifact) => artifact.kind === "page_kit_build_summary"), false);
+    assert.equal(validateRunRecord(out.record).ok, true, JSON.stringify(validateRunRecord(out.record).errors));
   });
 });
 

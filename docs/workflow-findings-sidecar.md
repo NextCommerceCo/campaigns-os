@@ -55,7 +55,7 @@ own schemas and evolve independently). Instead it carries:
 - **Run identity** — `map_id`, `campaign_slug`, `template_family`,
   `entry_point_shape`. (Best-effort; missing identity never blocks capture.)
 - **Source artifact refs** — for the Build Packet, Build Context, Assembly
-  Report, doctor output, QA verdict, and findings journal: `{ path,
+  Report, Page Kit build summary, QA verdict, and findings journal: `{ path,
   schema_version, sha256 }`. References, not copies. This is what survives
   upstream schema drift.
 - **Normalized observation arrays** — the extracted signal: doctor issue codes
