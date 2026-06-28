@@ -35,6 +35,7 @@ export const RUN_RECORD_ARTIFACT_KINDS = [
   "design_source_package",
   "build_context",
   "assembly_report",
+  "page_kit_build_summary",
   "qa_verdict",
   "findings_journal",
 ];
