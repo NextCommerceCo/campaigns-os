@@ -58,7 +58,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
       severity: SEVERITY.INFO,
       expected: "a declared CampaignSpec analytics block to validate against",
       actual: "no analytics contract declared — recorded the observed fires, gated nothing",
-      evidence: { observed_inventory: inventory, purchase: effectivePurchase(capture), events: capture.eventNames || [] },
+      evidence: { inventory: Object.fromEntries(Object.entries(inventory).map(([k, v]) => [k, v.length])), purchase_signals: (capture.purchaseSignals || {}), purchase_fired: effectivePurchase(capture).fired },
     }));
     return assertions;
   }
@@ -73,7 +73,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
       severity: SEVERITY.BLOCKER,
       expected: `GTM ${id || "container"} fires on the page`,
       actual: present ? "present" : `absent (observed: ${(inventory.gtm || []).join(", ") || "none"})`,
-      evidence: { declared: id || null, observed: inventory.gtm || [] },
+      evidence: { declared: id || null, observed_count: (inventory.gtm || []).length },
     }));
   }
 
@@ -87,7 +87,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
       severity: SEVERITY.BLOCKER,
       expected: `Meta pixel ${id || ""} fires on the page`.trim(),
       actual: present ? "present" : `absent (observed: ${(inventory.meta || []).join(", ") || "none"})`,
-      evidence: { declared: id || null, observed: inventory.meta || [] },
+      evidence: { declared: id || null, observed_count: (inventory.meta || []).length },
     }));
   }
 
@@ -103,7 +103,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
         severity: SEVERITY.BLOCKER,
         expected: `declared out-of-band ${vendor} pixel fires`,
         actual: present ? "present" : "absent",
-        evidence: { vendor, declared_id: pixel.id || null, observed: inventory[vendor] || [] },
+        evidence: { vendor, declared_id: pixel.id || null, observed_count: (inventory[vendor] || []).length },
       }));
     } else {
       // Vendor host not in the classifier (e.g. TriplePixel→triplewhale.com).
