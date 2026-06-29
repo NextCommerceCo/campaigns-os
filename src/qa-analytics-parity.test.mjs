@@ -141,8 +141,9 @@ test("diffAnalyticsParity — source-aware: candidate blocks dl_purchase but fir
   assert.equal(a["analytics-parity:purchase-present"].evidence.via, "meta");
   // Value can't be compared (pixel-only) → manual review, not a blocker fail.
   assert.equal(a["analytics-parity:purchase-value"].status, STATUS.MANUAL_REVIEW);
-  // CAPI dedup still checked from the Meta fire.
-  assert.equal(a["analytics-parity:capi-dedup"].status, STATUS.PASS);
+  // CAPI dedup: Meta eventID is present, but with no dataLayer transaction_id to
+  // confirm consistency it's WARN (manual review), not a confident PASS.
+  assert.equal(a["analytics-parity:capi-dedup"].status, STATUS.WARN);
 });
 
 test("diffAnalyticsParity — no baseline value falls back to manual review, not a false block", () => {

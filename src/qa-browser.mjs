@@ -218,7 +218,14 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}) {
       status: STATUS.PASS,
       expected: "live dataLayer + tag-fire capture on the candidate page",
       actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`,
-      evidence: { url, capture },
+      // Fingerprints only — never publish raw order fields (value/transaction_id)
+      // to the QA portal. Mirrors the parity capture evidence sanitization.
+      evidence: {
+        url,
+        event_count: capture.eventNames.length,
+        inventory: Object.fromEntries(Object.entries(capture.inventory).map(([k, v]) => [k, v.length])),
+        purchase_signals: capture.purchaseSignals || {},
+      },
     }));
     return assertions;
   } catch (error) {
