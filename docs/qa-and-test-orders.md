@@ -164,6 +164,44 @@ This is enforced by `scripts/check-cart-readiness-contract.mjs` (part of
 `npm run check`), which fails if QA source reaches for `cartLines`. Relax or
 retire that guard once #36 ships and `cartLines` is populated.
 
+## Analytics parity (dataLayer / GTM)
+
+The analytics-parity leg proves the live **dataLayer event stream + GTM/pixel
+tag-fires** match after a migration cutover — the leg repo scans can't cover,
+because runtime-injected GTM and remote `campaign.js` pushes are invisible to a
+static scan. Migration doctrine: **no cutover on a non-zero analytics diff.**
+
+It is opt-in. Supply a **baseline** (the legacy live funnel) and a **candidate**
+(the migrated preview); the runner captures both with Playwright and diffs them:
+
+```bash
+npm run campaigns-os -- qa run \
+  --packet campaign-runtime.build.json \
+  --base-url https://preview.example.com/campaign/thank-you/ \
+  --analytics-baseline https://legacy.example.com/campaign/thank-you/
+```
+
+| Flag | Meaning |
+|---|---|
+| `--analytics-baseline <url>` | Legacy funnel URL to capture as the parity baseline (enables the leg) |
+| `--analytics-candidate <url>` | Migrated URL to capture; defaults to `--base-url` |
+| `--analytics-hosts a,b` | Extra host substrings to treat as analytics tag-fires (Everflow is built in) |
+| `--analytics-settle <ms>` | Wait after load for async tags to fire (default 5000) |
+
+Point both at the **thank-you / receipt page** for the highest-value `dl_purchase`
+check, or drive the same offer through each funnel so client-fired values line up.
+
+What the diff asserts (BLOCKER unless noted):
+- `purchase-present` — candidate fires a purchase event.
+- `purchase-value` / `purchase-currency` — match the baseline's **client-fired**
+  value (compared client-vs-client; never vs a backend total, since tax is
+  computed backend and is not in the client value on headless checkouts).
+- `purchase-transaction-id` — present (not equal — different orders have different ids).
+- `capi-dedup` — the Meta `Purchase` fire carries an `eventID` keyed on the order id.
+- `carryover:<provider>:<id>` — **WARN** when a container/pixel that fired on the
+  baseline (GTM, Meta, Everflow, GA4, …) is **absent on the candidate** — a likely
+  attribution regression flagged for human review, not an auto-block.
+
 ## Test Orders
 
 Test Orders use **global test cards** that work on any live store and integration.

@@ -1,4 +1,5 @@
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-parity.mjs";
 import {
   demoAssetConfig,
   forbiddenComputedColors,
@@ -106,6 +107,88 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   }
 
   return { orders, assertions };
+}
+
+// Analytics-parity leg: capture the live dataLayer event stream + GTM/pixel
+// tag-fires on a baseline (legacy) URL and a candidate (migrated) URL, then
+// diff them into parity assertions. Highest-value target is the thank-you /
+// receipt page, where dl_purchase fires — pass receipt URLs for both, or drive
+// the same offer through each funnel so the values line up (see the PARITY QA
+// phase of the campaignsjs→SDK-0.4.x migration doctrine).
+export async function runAnalyticsParityChecks(args = {}) {
+  const baselineUrl = trim(args["analytics-baseline"]) || null;
+  const candidateUrl = trim(args["analytics-candidate"]) || trim(args["base-url"]) || null;
+  const analyticsPage = { page_id: "analytics", url: candidateUrl || baselineUrl || undefined };
+
+  if (!baselineUrl || !candidateUrl) {
+    return [assertion({
+      id: "analytics-parity:inputs",
+      family: "analytics-parity",
+      page: analyticsPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "both --analytics-baseline <legacy-url> and a candidate URL (--analytics-candidate or --base-url)",
+      actual: `baseline=${baselineUrl || "missing"}, candidate=${candidateUrl || "missing"}`,
+    })];
+  }
+
+  const extraHosts = analyticsExtraHosts(args);
+  const browser = await launchChromium(args);
+  const context = await browser.newContext({
+    viewport: viewportFromArgs(args),
+    extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
+  });
+  try {
+    const baseline = await captureAnalyticsForUrl(context, baselineUrl, args, extraHosts);
+    const candidate = await captureAnalyticsForUrl(context, candidateUrl, args, extraHosts);
+    const assertions = diffAnalyticsParity(baseline, candidate);
+    assertions.unshift(assertion({
+      id: "analytics-parity:capture",
+      family: "analytics-parity",
+      page: analyticsPage,
+      status: STATUS.PASS,
+      expected: "live dataLayer + tag-fire capture on baseline and candidate",
+      actual: `baseline events=${baseline.eventNames.length}, candidate events=${candidate.eventNames.length}`,
+      evidence: { baseline_url: baselineUrl, candidate_url: candidateUrl, baseline, candidate },
+    }));
+    return assertions;
+  } catch (error) {
+    return [assertion({
+      id: "analytics-parity:runner",
+      family: "analytics-parity",
+      page: analyticsPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "analytics-parity capture completes on both URLs",
+      actual: error instanceof Error ? error.message : String(error),
+      evidence: { baseline_url: baselineUrl, candidate_url: candidateUrl },
+    })];
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+}
+
+function analyticsExtraHosts(args) {
+  const raw = args["analytics-hosts"];
+  if (!raw) return [];
+  return String(raw).split(",").map((h) => h.trim()).filter(Boolean);
+}
+
+async function captureAnalyticsForUrl(context, url, args, extraHosts) {
+  const page = await context.newPage();
+  const capture = await attachAnalyticsCapture(page, { extraHosts });
+  const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
+  const settleMs = numberArg(args["analytics-settle"], DEFAULT_SETTLE_TIMEOUT_MS);
+  try {
+    await page.goto(url, { waitUntil: "load", timeout: timeoutMs });
+    // Let async GTM/pixel tags and deferred dataLayer pushes fire before reading.
+    await page.waitForTimeout(settleMs);
+    return await capture.collect();
+  } finally {
+    capture.detach();
+    await page.close().catch(() => {});
+  }
 }
 
 async function runPageBrowserChecks(context, page, args, options = {}) {

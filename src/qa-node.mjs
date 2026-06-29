@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
+import { runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
 import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
@@ -624,6 +624,7 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze([
   "template_residue",
   "pricing",
   "browser-test-order",
+  "analytics-parity",
 ]);
 
 async function runQa(args) {
@@ -670,6 +671,13 @@ async function runQa(args) {
       residueSeverity: residueSeverityForThemeGate(gate.status),
       supportedPaymentMethods: supportedPaymentMethodsFromSpec(resolved.spec),
     }));
+  }
+
+  // Analytics-parity leg (opt-in): when a legacy baseline URL is supplied, capture
+  // the live dataLayer + GTM/pixel fires on baseline vs candidate and diff them.
+  // No cutover on a non-zero analytics diff — blockers feed computeDisposition.
+  if (stringArg(args["analytics-baseline"])) {
+    assertions.push(...await runAnalyticsParityChecks(args));
   }
 
   const testOrders = await maybeRunTestOrders({ args, resolved, runId, assertions });
