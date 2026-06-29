@@ -163,6 +163,11 @@ export const AnalyticsContractShape: Rule = {
             }
             if (cp.pages !== undefined && !Array.isArray(cp.pages)) {
               warn(`params.content[${i}] (?${cp.name}) pages must be an array of page-id strings.`, `${base}/pages`, 'content-pages-shape', { index: i, name: cp.name })
+            } else if (Array.isArray(cp.pages) && cp.pages.length === 0) {
+              // Explicit empty array applies to no page — a silent no-op the
+              // author almost certainly didn't intend. Omit `pages` to apply to
+              // all pages, or list the ids to scope to.
+              warn(`params.content[${i}] (?${cp.name}) has an empty pages array, so it applies to no page. Omit pages to apply to all pages, or list the page ids it should scope to.`, `${base}/pages`, 'content-pages-empty', { index: i, name: cp.name })
             } else {
               for (const pageRef of cp.pages ?? []) {
                 if (!pageIds.has(pageRef)) {

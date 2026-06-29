@@ -132,6 +132,12 @@ describe('AnalyticsContractShape rule', () => {
     expect(c.includes('manual-purchase-page-missing')).toBe(false)
   })
 
+  test('flags a content param with an empty pages array (applies to no page)', () => {
+    const c = checks(baseSpec({ params: { content: [{ name: 'reviews', pages: [] }] } }))
+    expect(c).toContain('content-pages-empty')
+    expect(c.includes('content-page-unknown')).toBe(false)
+  })
+
   test('flags a content param whose pages is a scalar instead of an array', () => {
     // Guards against char-by-char iteration of a stray string producing
     // spurious content-page-unknown noise.
