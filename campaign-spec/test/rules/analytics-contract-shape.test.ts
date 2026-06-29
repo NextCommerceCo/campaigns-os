@@ -117,4 +117,26 @@ describe('AnalyticsContractShape rule', () => {
     expect(checks(baseSpec({ params: { tracking: { click_id: { inbound: 'sub2' } } } })))
       .toContain('click-id-incomplete')
   })
+
+  test('flags a purchase manual_event placed on a checkout page (worst-case footgun)', () => {
+    // p-co is the checkout page; a purchase beacon there is lost in the
+    // checkout -> upsell redirect even though it does declare a page.
+    const c = checks(baseSpec({ manual_events: [{ event: 'dl_purchase', page: 'p-co' }] }))
+    expect(c).toContain('manual-purchase-on-checkout')
+    expect(c.includes('manual-purchase-page-missing')).toBe(false)
+  })
+
+  test('does not flag a purchase manual_event on a non-checkout (upsell) page', () => {
+    const c = checks(baseSpec({ manual_events: [{ event: 'dl_purchase', page: 'p-u1' }] }))
+    expect(c.includes('manual-purchase-on-checkout')).toBe(false)
+    expect(c.includes('manual-purchase-page-missing')).toBe(false)
+  })
+
+  test('flags a content param whose pages is a scalar instead of an array', () => {
+    // Guards against char-by-char iteration of a stray string producing
+    // spurious content-page-unknown noise.
+    const c = checks(baseSpec({ params: { content: [{ name: 'reviews', pages: 'p-l' as unknown as string[] }] } }))
+    expect(c).toContain('content-pages-shape')
+    expect(c.includes('content-page-unknown')).toBe(false)
+  })
 })
