@@ -188,6 +188,10 @@ npm run campaigns-os -- qa run \
 | `--analytics-hosts a,b` | Extra host substrings to treat as analytics tag-fires (Everflow is built in) |
 | `--analytics-settle <ms>` | Wait after load for async tags to fire (default 5000) |
 
+> The analytics legs drive a headless **Playwright** browser (like `--test-order`),
+> so they need the package-owned browser installed (`npm run qa:install-browser`)
+> and outbound network — they cannot run in a no-outbound sandbox.
+
 Point both at the **thank-you / receipt page** for the highest-value `dl_purchase`
 check, or drive the same offer through each funnel so client-fired values line up.
 
