@@ -7,9 +7,9 @@
 // Driven by the CampaignSpec `analytics` block (campaign-spec AnalyticsContract).
 // When no block is declared the assessment can't know the expected container/
 // pixel ids, so it emits an INFO inventory only — nothing is gated. The contract
-// is what turns observations into pass/fail. (Until the Map Builder in
-// next-campaigns-ops authors the block, real specs won't carry one — so the
-// no-contract path is the common case today and must stay non-blocking.)
+// is what turns observations into pass/fail. (Until the spec authoring tool
+// emits the block, real specs won't carry one — so the no-contract path is the
+// common case today and must stay non-blocking.)
 //
 // Source-aware by construction: it keys on OUTBOUND pixel fires (the network
 // truth), via effectivePurchase + the capture inventory, so a campaign that
