@@ -2836,6 +2836,50 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
   validateBuiltPageKitAssetPaths(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
+  validateBuiltAnalyticsContract(content, builtPath, targetRepo, page, spec, issueTarget);
+}
+
+// Build-time enforcement of the declared analytics contract (CampaignSpec
+// `analytics` block). This is the static twin of the runtime QA correctness
+// leg: where QA confirms a content param FIRES on a live page, this confirms the
+// built page even HAS a handler for it — catching the gap before QA runs.
+//
+// Specifically the "?reviews=n with no handler" case from the Chamelo Shield
+// build: the spec (or a synthesized one) declares a content param, but the
+// built page never wired `data-next-hide="param.<name>=='n'"`, so the param
+// silently no-ops. Only fires when the spec declares `analytics.params.content`;
+// silent otherwise (the common case until specs carry an analytics block).
+export function validateBuiltAnalyticsContract(content, builtPath, targetRepo, page, spec, issueTarget) {
+  const contentParams = spec?.analytics?.params?.content;
+  if (!Array.isArray(contentParams) || contentParams.length === 0) return;
+  const relPath = relFromDir(targetRepo, builtPath);
+  for (const cp of contentParams) {
+    const name = typeof cp?.name === "string" ? cp.name.trim() : "";
+    if (!name) continue;
+    // A content param applies to this page when `pages` is unspecified (all
+    // pages) or explicitly lists this page id. An explicit empty `pages: []`
+    // (applies to no page) is a spec-shape misconfiguration flagged once at
+    // spec-validation time by AnalyticsContractShape, not per built page here.
+    const pages = Array.isArray(cp.pages) ? cp.pages : null;
+    if (pages && !pages.includes(page.id)) continue;
+    // The SDK drives content-param visibility via data-next-hide/show using
+    // `param.<name>` (persisted to sessionStorage). Require the reference to sit
+    // inside an actual data-next-hide/show attribute — a bare `param.<name>` in
+    // a script/comment/pixel is not a handler (avoids false negatives).
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const handlerPattern = new RegExp(
+      `data-next-(?:hide|show)\\s*=\\s*["'][^"']*\\bparam\\.${escaped}\\b[^"']*["']`,
+      "i",
+    );
+    if (!handlerPattern.test(content)) {
+      addIssue(
+        issueTarget,
+        "analytics_contract.content_param_no_handler",
+        `Built page "${page.id}" declares analytics content param "?${name}" but has no data-next-hide/show="param.${name}…" handler. The param will silently no-op — the Chamelo Shield "?reviews=n with no handler" gap.`,
+        { page_id: page.id, file: relPath, param: name },
+      );
+    }
+  }
 }
 
 // Per-page starter-logo residue, scanned against the BUILT `_site/<slug>`
