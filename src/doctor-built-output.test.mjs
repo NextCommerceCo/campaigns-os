@@ -11,6 +11,7 @@ import {
   validateBuiltBumpPricing,
   validateBuiltPlaceholderTextResidue,
   validateBuiltPreCheckoutBootstrap,
+  validateBuiltAnalyticsContract,
   validateBuiltRouteDrift,
   validateBuiltStarterLogoResidue,
   validateMarketSensitiveCopy,
@@ -361,4 +362,37 @@ test("#1 route drift: errors (not warns) once assembly is complete", () => {
     validateBuiltRouteDrift(driftSpec, DRIFT_PACKET, errors, warnings, ready, { target_repo: dir }, { report: { stages: { assembly: { status: "completed" } } } });
     assert.equal(codes(errors).includes("built_output.route_drift"), true);
   });
+});
+
+// ── analytics contract: content-param handler presence (Layer 2 doctor) ──────
+const LANDING = { id: "landing", type: "landing" };
+const ANALYTICS_SPEC = (pages) => ({
+  analytics: { params: { content: [{ name: "reviews", hides: "reviews", ...(pages ? { pages } : {}) }] } },
+});
+
+test("analytics contract: declared content param with no handler in built page is flagged", () => {
+  const issues = [];
+  const content = `<html><body><section class="reviews">no handler here</section></body></html>`;
+  validateBuiltAnalyticsContract(content, "/repo/_site/c/lp/index.html", "/repo", LANDING, ANALYTICS_SPEC(["landing"]), issues);
+  assert.equal(codes(issues).includes("analytics_contract.content_param_no_handler"), true);
+  assert.equal(issues[0].detail.param, "reviews");
+});
+
+test("analytics contract: content param with a data-next-hide handler passes", () => {
+  const issues = [];
+  const content = `<html><body><section data-next-hide="param.reviews=='n'" class="reviews">ok</section></body></html>`;
+  validateBuiltAnalyticsContract(content, "/repo/_site/c/lp/index.html", "/repo", LANDING, ANALYTICS_SPEC(["landing"]), issues);
+  assert.equal(issues.length, 0);
+});
+
+test("analytics contract: silent when the spec declares no analytics block", () => {
+  const issues = [];
+  validateBuiltAnalyticsContract(`<html><body></body></html>`, "/repo/_site/c/lp/index.html", "/repo", LANDING, { funnels: [] }, issues);
+  assert.equal(issues.length, 0);
+});
+
+test("analytics contract: a param scoped to other pages is not checked on this page", () => {
+  const issues = [];
+  validateBuiltAnalyticsContract(`<html><body>no handler</body></html>`, "/repo/_site/c/co/index.html", "/repo", { id: "checkout", type: "checkout" }, ANALYTICS_SPEC(["landing"]), issues);
+  assert.equal(issues.length, 0);
 });
