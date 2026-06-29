@@ -2857,17 +2857,25 @@ export function validateBuiltAnalyticsContract(content, builtPath, targetRepo, p
     const name = typeof cp?.name === "string" ? cp.name.trim() : "";
     if (!name) continue;
     // A content param applies to this page when `pages` is unspecified (all
-    // pages) or explicitly lists this page id.
+    // pages) or explicitly lists this page id. An explicit empty `pages: []`
+    // (applies to no page) is a spec-shape misconfiguration flagged once at
+    // spec-validation time by AnalyticsContractShape, not per built page here.
     const pages = Array.isArray(cp.pages) ? cp.pages : null;
     if (pages && !pages.includes(page.id)) continue;
     // The SDK drives content-param visibility via data-next-hide/show using
-    // `param.<name>` (persisted to sessionStorage). Absence = no handler.
+    // `param.<name>` (persisted to sessionStorage). Require the reference to sit
+    // inside an actual data-next-hide/show attribute — a bare `param.<name>` in
+    // a script/comment/pixel is not a handler (avoids false negatives).
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (!new RegExp(`param\\.${escaped}\\b`).test(content)) {
+    const handlerPattern = new RegExp(
+      `data-next-(?:hide|show)\\s*=\\s*["'][^"']*\\bparam\\.${escaped}\\b[^"']*["']`,
+      "i",
+    );
+    if (!handlerPattern.test(content)) {
       addIssue(
         issueTarget,
         "analytics_contract.content_param_no_handler",
-        `Built page "${page.id}" declares analytics content param "?${name}" but has no param.${name} handler (e.g. data-next-hide="param.${name}=='n'"). The param will silently no-op — the Chamelo Shield "?reviews=n with no handler" gap.`,
+        `Built page "${page.id}" declares analytics content param "?${name}" but has no data-next-hide/show="param.${name}…" handler. The param will silently no-op — the Chamelo Shield "?reviews=n with no handler" gap.`,
         { page_id: page.id, file: relPath, param: name },
       );
     }

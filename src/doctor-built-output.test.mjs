@@ -396,3 +396,25 @@ test("analytics contract: a param scoped to other pages is not checked on this p
   validateBuiltAnalyticsContract(`<html><body>no handler</body></html>`, "/repo/_site/c/co/index.html", "/repo", { id: "checkout", type: "checkout" }, ANALYTICS_SPEC(["landing"]), issues);
   assert.equal(issues.length, 0);
 });
+
+test("analytics contract: a param with no pages field applies to all pages (flagged here)", () => {
+  const issues = [];
+  // pages omitted → applies to every page; this page has no handler → flagged.
+  validateBuiltAnalyticsContract(`<html><body>no handler</body></html>`, "/repo/_site/c/lp/index.html", "/repo", LANDING, ANALYTICS_SPEC(), issues);
+  assert.equal(codes(issues).includes("analytics_contract.content_param_no_handler"), true);
+});
+
+test("analytics contract: a bare param.<name> outside a data-next-hide/show is NOT a handler", () => {
+  const issues = [];
+  // param.reviews mentioned only in a script comment / analytics setup — no real handler.
+  const content = `<html><head><script>/* param.reviews is referenced here but not wired */ track("param.reviews");</script></head><body><section class="reviews">x</section></body></html>`;
+  validateBuiltAnalyticsContract(content, "/repo/_site/c/lp/index.html", "/repo", LANDING, ANALYTICS_SPEC(["landing"]), issues);
+  assert.equal(codes(issues).includes("analytics_contract.content_param_no_handler"), true);
+});
+
+test("analytics contract: data-next-show handler (not just hide) also counts", () => {
+  const issues = [];
+  const content = `<html><body><section data-next-show="param.reviews=='y'">ok</section></body></html>`;
+  validateBuiltAnalyticsContract(content, "/repo/_site/c/lp/index.html", "/repo", LANDING, ANALYTICS_SPEC(["landing"]), issues);
+  assert.equal(issues.length, 0);
+});
