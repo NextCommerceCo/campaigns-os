@@ -37,6 +37,15 @@ export type {
   UpsellMvTiers,
   VariantLabels,
   PromoCode,
+  AnalyticsContract,
+  AnalyticsMode,
+  AnalyticsProvider,
+  OutOfBandPixel,
+  ManualEvent,
+  ContentParam,
+  TrackingParams,
+  AnalyticsParams,
+  UtmTransfer,
 } from './types.ts'
 
 export { normalize, NormalizeError } from './normalize.ts'

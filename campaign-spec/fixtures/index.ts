@@ -97,6 +97,9 @@ import variantLabelsMalformedExpected from './expected/variant-labels-malformed.
 import storeProfileMalformed from './store-profile-malformed.json' with { type: 'json' }
 import storeProfileMalformedExpected from './expected/store-profile-malformed.expected.json' with { type: 'json' }
 
+import analyticsContractMalformed from './analytics-contract-malformed.json' with { type: 'json' }
+import analyticsContractMalformedExpected from './expected/analytics-contract-malformed.expected.json' with { type: 'json' }
+
 export interface NamedFixture extends Fixture {
   name: string
 }
@@ -142,6 +145,7 @@ export const corpus: NamedFixture[] = [
   build('promo-codes-malformed', promoCodesMalformed, promoCodesMalformedExpected),
   build('variant-labels-malformed', variantLabelsMalformed, variantLabelsMalformedExpected),
   build('store-profile-malformed', storeProfileMalformed, storeProfileMalformedExpected),
+  build('analytics-contract-malformed', analyticsContractMalformed, analyticsContractMalformedExpected),
 ]
 
 export function fixtureByName(name: string): NamedFixture {
