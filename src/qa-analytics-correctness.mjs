@@ -58,7 +58,13 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
       severity: SEVERITY.INFO,
       expected: "a declared CampaignSpec analytics block to validate against",
       actual: "no analytics contract declared — recorded the observed fires, gated nothing",
-      evidence: { inventory: Object.fromEntries(Object.entries(inventory).map(([k, v]) => [k, v.length])), purchase_signals: (capture.purchaseSignals || {}), purchase_fired: effectivePurchase(capture).fired },
+      // Fingerprints only — never publish raw container/pixel ids or order
+      // fields (value/transaction_id) to the QA portal.
+      evidence: {
+        inventory: Object.fromEntries(Object.entries(inventory).map(([k, v]) => [k, v.length])),
+        purchase_signals: capture.purchaseSignals || {},
+        purchase_fired: effectivePurchase(capture).fired,
+      },
     }));
     return assertions;
   }
@@ -72,7 +78,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
       status: present ? STATUS.PASS : STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
       expected: `GTM ${id || "container"} fires on the page`,
-      actual: present ? "present" : `absent (observed: ${(inventory.gtm || []).join(", ") || "none"})`,
+      actual: present ? "present" : `absent (${(inventory.gtm || []).length} gtm tag(s) fired, none matching)`,
       evidence: { declared: id || null, observed_count: (inventory.gtm || []).length },
     }));
   }
@@ -86,7 +92,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
       status: present ? STATUS.PASS : STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
       expected: `Meta pixel ${id || ""} fires on the page`.trim(),
-      actual: present ? "present" : `absent (observed: ${(inventory.meta || []).join(", ") || "none"})`,
+      actual: present ? "present" : `absent (${(inventory.meta || []).length} meta pixel(s) fired, none matching)`,
       evidence: { declared: id || null, observed_count: (inventory.meta || []).length },
     }));
   }
