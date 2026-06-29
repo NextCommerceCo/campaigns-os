@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
+import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
 import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
@@ -70,6 +70,13 @@ Options:
   --api-key <key>                 Campaigns API key for legacy direct API diagnostics. Env QA_CAMPAIGNS_API_KEY is also recognized.
   --campaigns-api-base <url>      Campaigns API base URL for legacy direct API diagnostics. Env CAMPAIGNS_API_BASE is also recognized.
   --cart <package-ref:qty,...>    Optional target cart/package selector for browser or legacy diagnostics.
+  --analytics-baseline <url>      Analytics-parity leg (opt-in): URL of the legacy funnel to diff against (e.g. the
+                                  legacy receipt/thank-you page). Launches a Playwright browser to capture the live
+                                  dataLayer + GTM/pixel tag-fires on both URLs and diffs them into parity assertions.
+                                  Requires one-time setup: npm run qa:install-browser.
+  --analytics-candidate <url>     Override the candidate URL for analytics capture (default: --base-url).
+  --analytics-settle <ms>         Extra settle time after page load for async analytics pushes. Default: 5000.
+  --analytics-hosts <h1,h2,...>   Extra third-party host patterns to intercept for tag-fire capture (comma-separated).
 `;
 
 export async function runQaCli(args) {
@@ -624,6 +631,8 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze([
   "template_residue",
   "pricing",
   "browser-test-order",
+  "analytics-correctness",
+  "analytics-parity",
 ]);
 
 async function runQa(args) {
@@ -670,6 +679,22 @@ async function runQa(args) {
       residueSeverity: residueSeverityForThemeGate(gate.status),
       supportedPaymentMethods: supportedPaymentMethodsFromSpec(resolved.spec),
     }));
+  }
+
+  // Analytics CORRECTNESS leg: runs when the spec declares an `analytics` block
+  // (or --analytics-correctness is forced). Validates the candidate funnel fires
+  // its declared tags/pixels + a Purchase (source-aware re blockedEvents). The
+  // foundation the parity differ sits on — correctness before parity.
+  const analyticsContract = resolved.spec?.analytics;
+  if (analyticsContract || booleanArg(args["analytics-correctness"], "analytics-correctness")) {
+    assertions.push(...await runAnalyticsCorrectnessChecks(args, analyticsContract || {}));
+  }
+
+  // Analytics-parity leg (opt-in): when a legacy baseline URL is supplied, capture
+  // the live dataLayer + GTM/pixel fires on baseline vs candidate and diff them.
+  // No cutover on a non-zero analytics diff — blockers feed computeDisposition.
+  if (stringArg(args["analytics-baseline"])) {
+    assertions.push(...await runAnalyticsParityChecks(args));
   }
 
   const testOrders = await maybeRunTestOrders({ args, resolved, runId, assertions });

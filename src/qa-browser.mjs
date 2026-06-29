@@ -1,4 +1,6 @@
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-parity.mjs";
+import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import {
   demoAssetConfig,
   forbiddenComputedColors,
@@ -106,6 +108,167 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   }
 
   return { orders, assertions };
+}
+
+// Analytics-parity leg: capture the live dataLayer event stream + GTM/pixel
+// tag-fires on a baseline (legacy) URL and a candidate (migrated) URL, then
+// diff them into parity assertions. Highest-value target is the thank-you /
+// receipt page, where dl_purchase fires — pass receipt URLs for both, or drive
+// the same offer through each funnel so the values line up (see the PARITY QA
+// phase of the campaignsjs→SDK-0.4.x migration doctrine).
+export async function runAnalyticsParityChecks(args = {}) {
+  const baselineUrl = trim(args["analytics-baseline"]) || null;
+  const candidateUrl = trim(args["analytics-candidate"]) || trim(args["base-url"]) || null;
+  const analyticsPage = { page_id: "analytics", url: candidateUrl || baselineUrl || undefined };
+
+  if (!baselineUrl || !candidateUrl) {
+    return [assertion({
+      id: "analytics-parity:inputs",
+      family: "analytics-parity",
+      page: analyticsPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "both --analytics-baseline <legacy-url> and a candidate URL (--analytics-candidate or --base-url)",
+      actual: `baseline=${baselineUrl || "missing"}, candidate=${candidateUrl || "missing"}`,
+    })];
+  }
+
+  const extraHosts = analyticsExtraHosts(args);
+  const browser = await launchChromium(args);
+  const context = await browser.newContext({
+    viewport: viewportFromArgs(args),
+    extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
+  });
+  try {
+    const baseline = await captureAnalyticsForUrl(context, baselineUrl, args, extraHosts);
+    const candidate = await captureAnalyticsForUrl(context, candidateUrl, args, extraHosts);
+    const assertions = diffAnalyticsParity(baseline, candidate);
+    assertions.unshift(assertion({
+      id: "analytics-parity:capture",
+      family: "analytics-parity",
+      page: analyticsPage,
+      status: STATUS.PASS,
+      expected: "live dataLayer + tag-fire capture on baseline and candidate",
+      actual: `baseline events=${baseline.eventNames.length}, candidate events=${candidate.eventNames.length}`,
+      evidence: {
+        baseline_url: baselineUrl,
+        candidate_url: candidateUrl,
+        baseline_event_count: baseline.eventNames.length,
+        candidate_event_count: candidate.eventNames.length,
+        baseline_inventory: Object.fromEntries(Object.entries(baseline.inventory).map(([k, v]) => [k, v.length])),
+        candidate_inventory: Object.fromEntries(Object.entries(candidate.inventory).map(([k, v]) => [k, v.length])),
+      },
+    }));
+    return assertions;
+  } catch (error) {
+    return [assertion({
+      id: "analytics-parity:runner",
+      family: "analytics-parity",
+      page: analyticsPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "analytics-parity capture completes on both URLs",
+      actual: error instanceof Error ? error.message : String(error),
+      evidence: { baseline_url: baselineUrl, candidate_url: candidateUrl },
+    })];
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+}
+
+// Analytics CORRECTNESS leg: capture ONE funnel page and assess it against the
+// declared CampaignSpec `analytics` contract — declared tags/pixels fire,
+// Purchase fires (source-aware). This is the foundation the parity differ sits
+// on; runs whenever a spec carries an `analytics` block (or --analytics-correctness).
+export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}) {
+  const url = trim(args["analytics-candidate"]) || trim(args["base-url"]) || null;
+  const correctnessPage = { page_id: "analytics", url: url || undefined };
+  if (!url) {
+    return [assertion({
+      id: "analytics-correctness:inputs",
+      family: "analytics-correctness",
+      page: correctnessPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "a candidate URL to capture (--analytics-candidate or --base-url)",
+      actual: "missing",
+    })];
+  }
+
+  // Seed the host filter with declared out-of-band vendor names so vendors whose
+  // host contains their name (everflow, northbeam, …) get captured.
+  const vendorHosts = ((contract && contract.out_of_band_pixels) || [])
+    .map((p) => (p && p.vendor ? String(p.vendor) : null))
+    .filter(Boolean);
+  const extraHosts = [...analyticsExtraHosts(args), ...vendorHosts];
+
+  const browser = await launchChromium(args);
+  const context = await browser.newContext({
+    viewport: viewportFromArgs(args),
+    extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
+  });
+  try {
+    const capture = await captureAnalyticsForUrl(context, url, args, extraHosts);
+    const assertions = assessAnalyticsCorrectness(capture, contract || {});
+    assertions.unshift(assertion({
+      id: "analytics-correctness:capture",
+      family: "analytics-correctness",
+      page: correctnessPage,
+      status: STATUS.PASS,
+      expected: "live dataLayer + tag-fire capture on the candidate page",
+      actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`,
+      // Fingerprints only — never publish raw order fields (value/transaction_id)
+      // to the QA portal. Mirrors the parity capture evidence sanitization.
+      evidence: {
+        url,
+        event_count: capture.eventNames.length,
+        inventory: Object.fromEntries(Object.entries(capture.inventory).map(([k, v]) => [k, v.length])),
+        purchase_signals: capture.purchaseSignals || {},
+      },
+    }));
+    return assertions;
+  } catch (error) {
+    return [assertion({
+      id: "analytics-correctness:runner",
+      family: "analytics-correctness",
+      page: correctnessPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "analytics-correctness capture completes",
+      actual: error instanceof Error ? error.message : String(error),
+      evidence: { url },
+    })];
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+}
+
+function analyticsExtraHosts(args) {
+  const raw = args["analytics-hosts"];
+  if (!raw) return [];
+  return String(raw).split(",").map((h) => h.trim()).filter(Boolean);
+}
+
+async function captureAnalyticsForUrl(context, url, args, extraHosts) {
+  const page = await context.newPage();
+  const capture = await attachAnalyticsCapture(page, { extraHosts });
+  const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
+  const settleMs = numberArg(args["analytics-settle"], DEFAULT_SETTLE_TIMEOUT_MS);
+  try {
+    // domcontentloaded (not "load") so a single stuck analytics beacon — exactly
+    // the kind of subresource we're capturing — can't starve the goto timeout.
+    // Mirrors runPageBrowserChecks; the settle wait below lets async tags fire.
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
+    // Let async GTM/pixel tags and deferred dataLayer pushes fire before reading.
+    await page.waitForTimeout(settleMs);
+    return await capture.collect();
+  } finally {
+    capture.detach();
+    await page.close().catch(() => {});
+  }
 }
 
 async function runPageBrowserChecks(context, page, args, options = {}) {
