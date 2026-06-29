@@ -42,14 +42,18 @@ function isStringArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((v) => typeof v === 'string')
 }
 
-function collectPageIds(spec: CampaignSpec): Set<string> {
-  const ids = new Set<string>()
+function collectPageIds(spec: CampaignSpec): { pageIds: Set<string>; checkoutPageIds: Set<string> } {
+  const pageIds = new Set<string>()
+  const checkoutPageIds = new Set<string>()
   for (const funnel of spec.funnels ?? []) {
     for (const page of funnel.pages ?? []) {
-      if (isNonEmptyString(page.id)) ids.add(page.id)
+      if (isNonEmptyString(page.id)) {
+        pageIds.add(page.id)
+        if (page.type === 'checkout') checkoutPageIds.add(page.id)
+      }
     }
   }
-  return ids
+  return { pageIds, checkoutPageIds }
 }
 
 export const AnalyticsContractShape: Rule = {
@@ -104,7 +108,7 @@ export const AnalyticsContractShape: Rule = {
       }
     }
 
-    const pageIds = collectPageIds(spec)
+    const { pageIds, checkoutPageIds } = collectPageIds(spec)
 
     // 3. out_of_band_pixels
     if (analytics.out_of_band_pixels !== undefined) {
@@ -136,6 +140,9 @@ export const AnalyticsContractShape: Rule = {
           if (PURCHASE_EVENT.test(evt.event) && !isNonEmptyString(evt.page)) {
             warn(`manual_events[${i}] is a purchase fire but declares no page. Purchase beacons placed on checkout are lost in the checkout→upsell redirect — declare the page they live on (typically the first upsell).`, `${base}/page`, 'manual-purchase-page-missing', { index: i })
           }
+          if (PURCHASE_EVENT.test(evt.event) && isNonEmptyString(evt.page) && checkoutPageIds.has(evt.page)) {
+            warn(`manual_events[${i}] is a purchase fire on checkout page "${evt.page}". Purchase beacons on checkout are lost in the checkout→upsell redirect — move the fire to the first upsell page.`, `${base}/page`, 'manual-purchase-on-checkout', { index: i, page: evt.page })
+          }
         })
       }
     }
@@ -154,9 +161,13 @@ export const AnalyticsContractShape: Rule = {
               warn(`params.content[${i}] is missing a param name.`, `${base}/name`, 'content-name-missing', { index: i })
               return
             }
-            for (const pageRef of cp.pages ?? []) {
-              if (!pageIds.has(pageRef)) {
-                warn(`params.content[${i}] (?${cp.name}) references page "${pageRef}", which is not a page id in this spec.`, `${base}/pages`, 'content-page-unknown', { index: i, name: cp.name, page: pageRef })
+            if (cp.pages !== undefined && !Array.isArray(cp.pages)) {
+              warn(`params.content[${i}] (?${cp.name}) pages must be an array of page-id strings.`, `${base}/pages`, 'content-pages-shape', { index: i, name: cp.name })
+            } else {
+              for (const pageRef of cp.pages ?? []) {
+                if (!pageIds.has(pageRef)) {
+                  warn(`params.content[${i}] (?${cp.name}) references page "${pageRef}", which is not a page id in this spec.`, `${base}/pages`, 'content-page-unknown', { index: i, name: cp.name, page: pageRef })
+                }
               }
             }
           })
