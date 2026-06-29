@@ -366,8 +366,8 @@ export interface Campaign {
  * Shield `?reviews=n`-has-no-handler finding and the Walla Sound Redtrack/
  * campaign.js sub1-6 param conflict).
  *
- * Modeled on real Sellmore-Co usage, NOT the idealized "SDK fires the canonical
- * dl_* set" view. The field reality the block must express:
+ * Modeled on real production-funnel usage, NOT the idealized "SDK fires the
+ * canonical dl_* set" view. The field reality the block must express:
  *   - Events fire from three sources: SDK auto, SDK-blocked-then-manual
  *     (`blockedEvents` suppresses the SDK event, a side script re-fires it via
  *     raw fbq/gtag to control timing), and fully out-of-band pixels loaded via
