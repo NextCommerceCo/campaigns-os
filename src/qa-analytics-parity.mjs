@@ -169,8 +169,6 @@ export function classifyTagFire(urlString, extraHostSubstrings = []) {
     return fire("google_ads", params.id || params.tid || null);
   }
   if (hostMatches(host, "facebook.com") || hostMatches(host, "facebook.net")) {
-    // Pixel GET (facebook.com/tr) and loader (connect.facebook.net/.../fbevents.js).
-    if (/\/tr\b/.test(path) || path.startsWith("/tr")) return fire("meta", params.id || null);
     return fire("meta", params.id || null);
   }
   if (hostMatches(host, "tiktok.com")) {
@@ -333,6 +331,15 @@ export function diffAnalyticsParity(baseline, candidate) {
         actual: cp.currency,
         evidence: { baseline_currency: bp.currency, candidate_currency: cp.currency },
       }));
+    } else {
+      assertions.push(parityAssertion({
+        id: "analytics-parity:purchase-currency",
+        status: STATUS.MANUAL_REVIEW,
+        severity: SEVERITY.WARN,
+        expected: "baseline purchase currency to compare against",
+        actual: `no baseline currency captured; candidate fired ${cp.currency ?? "none"}`,
+        evidence: { baseline_currency: null, candidate_currency: cp.currency ?? null },
+      }));
     }
 
     // 4. transaction_id PRESENCE (not equality — different orders have different ids).
@@ -351,7 +358,7 @@ export function diffAnalyticsParity(baseline, candidate) {
     const candidateHasMeta = (c.inventory?.meta || []).length > 0;
     if (baselineHasMeta || candidateHasMeta) {
       const eid = c.metaPurchaseEventId;
-      const consistent = eid && (!cp.transactionId || String(eid) === String(cp.transactionId));
+      const consistent = eid && cp.transactionId && String(eid) === String(cp.transactionId);
       assertions.push(parityAssertion({
         id: "analytics-parity:capi-dedup",
         status: eid ? (consistent ? STATUS.PASS : STATUS.WARN) : STATUS.FAIL,
@@ -370,15 +377,30 @@ export function diffAnalyticsParity(baseline, candidate) {
     const baselineIds = (b.inventory?.[kind]) || [];
     const candidateIds = new Set((c.inventory?.[kind]) || []);
     for (const id of baselineIds) {
-      const present = candidateIds.has(id) || (candidateIds.size > 0 && id === null);
-      assertions.push(parityAssertion({
-        id: `analytics-parity:carryover:${kind}:${id || "present"}`,
-        status: present ? STATUS.PASS : STATUS.WARN,
-        severity: present ? undefined : SEVERITY.WARN,
-        expected: `carried-over ${kind} tag ${id || ""} still fires on candidate`.trim(),
-        actual: present ? "present" : "absent on candidate",
-        evidence: { kind, id, baseline: baselineIds, candidate: [...candidateIds] },
-      }));
+      if (id === null) {
+        // Baseline fired this kind with an unknown/null id — can't reliably match
+        // against candidate ids, so a human must confirm carryover.
+        assertions.push(parityAssertion({
+          id: `analytics-parity:carryover:${kind}:present`,
+          status: STATUS.MANUAL_REVIEW,
+          severity: SEVERITY.WARN,
+          expected: `carried-over ${kind} tag (unidentified baseline id) verified on candidate`,
+          actual: candidateIds.size > 0
+            ? `candidate has ${candidateIds.size} ${kind} id(s) but baseline id was null — verify manually`
+            : `no ${kind} tag on candidate`,
+          evidence: { kind, id: null, baseline: baselineIds, candidate: [...candidateIds] },
+        }));
+      } else {
+        const present = candidateIds.has(id);
+        assertions.push(parityAssertion({
+          id: `analytics-parity:carryover:${kind}:${id}`,
+          status: present ? STATUS.PASS : STATUS.WARN,
+          severity: present ? undefined : SEVERITY.WARN,
+          expected: `carried-over ${kind} tag ${id} still fires on candidate`,
+          actual: present ? "present" : "absent on candidate",
+          evidence: { kind, id, baseline: baselineIds, candidate: [...candidateIds] },
+        }));
+      }
     }
   }
 

@@ -70,6 +70,13 @@ Options:
   --api-key <key>                 Campaigns API key for legacy direct API diagnostics. Env QA_CAMPAIGNS_API_KEY is also recognized.
   --campaigns-api-base <url>      Campaigns API base URL for legacy direct API diagnostics. Env CAMPAIGNS_API_BASE is also recognized.
   --cart <package-ref:qty,...>    Optional target cart/package selector for browser or legacy diagnostics.
+  --analytics-baseline <url>      Analytics-parity leg (opt-in): URL of the legacy funnel to diff against (e.g. the
+                                  legacy receipt/thank-you page). Launches a Playwright browser to capture the live
+                                  dataLayer + GTM/pixel tag-fires on both URLs and diffs them into parity assertions.
+                                  Requires one-time setup: npm run qa:install-browser.
+  --analytics-candidate <url>     Override the candidate URL for analytics capture (default: --base-url).
+  --analytics-settle <ms>         Extra settle time after page load for async analytics pushes. Default: 5000.
+  --analytics-hosts <h1,h2,...>   Extra third-party host patterns to intercept for tag-fire capture (comma-separated).
 `;
 
 export async function runQaCli(args) {

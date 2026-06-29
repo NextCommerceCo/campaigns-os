@@ -149,7 +149,14 @@ export async function runAnalyticsParityChecks(args = {}) {
       status: STATUS.PASS,
       expected: "live dataLayer + tag-fire capture on baseline and candidate",
       actual: `baseline events=${baseline.eventNames.length}, candidate events=${candidate.eventNames.length}`,
-      evidence: { baseline_url: baselineUrl, candidate_url: candidateUrl, baseline, candidate },
+      evidence: {
+        baseline_url: baselineUrl,
+        candidate_url: candidateUrl,
+        baseline_event_count: baseline.eventNames.length,
+        candidate_event_count: candidate.eventNames.length,
+        baseline_inventory: Object.fromEntries(Object.entries(baseline.inventory).map(([k, v]) => [k, v.length])),
+        candidate_inventory: Object.fromEntries(Object.entries(candidate.inventory).map(([k, v]) => [k, v.length])),
+      },
     }));
     return assertions;
   } catch (error) {
