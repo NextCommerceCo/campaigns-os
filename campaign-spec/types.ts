@@ -359,6 +359,106 @@ export interface Campaign {
   [key: string]: unknown
 }
 
+/**
+ * Analytics & attribution contract (Slice 4g) — what a campaign's analytics,
+ * tag-management, and querystring-param tracking are SUPPOSED to be, so doctor
+ * + QA can validate them instead of discovering gaps in QA (cf. the Chamelo
+ * Shield `?reviews=n`-has-no-handler finding and the Walla Sound Redtrack/
+ * campaign.js sub1-6 param conflict).
+ *
+ * Modeled on real Sellmore-Co usage, NOT the idealized "SDK fires the canonical
+ * dl_* set" view. The field reality the block must express:
+ *   - Events fire from three sources: SDK auto, SDK-blocked-then-manual
+ *     (`blockedEvents` suppresses the SDK event, a side script re-fires it via
+ *     raw fbq/gtag to control timing), and fully out-of-band pixels loaded via
+ *     GTM (Everflow / TriplePixel / Northbeam / RudderStack) that never touch
+ *     the dataLayer. So outbound pixel fires — not dataLayer events — are the
+ *     QA source of truth.
+ *   - A custom provider may carry an endpoint + transform (cookie injection).
+ *   - Querystring params split into two classes: CONTENT (param.* → visibility
+ *     via data-next-hide) and TRACKING (utm params, gclid, fbclid, subN, click-ids that
+ *     must be preserved across funnel steps and not collide with ad trackers).
+ *
+ * The whole block is OPTIONAL — absent analytics means "use SDK defaults",
+ * exactly as today. When present it becomes the source of truth for the
+ * AnalyticsContractShape rule + downstream doctor/QA.
+ */
+export type AnalyticsMode = 'auto' | 'manual' | 'disabled'
+
+export interface AnalyticsProvider {
+  enabled?: boolean
+  /** GTM container id (kind: gtm). */
+  containerId?: string
+  /** Meta/Facebook pixel id (kind: facebook). */
+  pixelId?: string
+  /** Custom-provider HTTP endpoint (kind: custom). */
+  endpoint?: string
+  /** Custom-provider transform hint, e.g. a cookie name to inject (`cf_click_id`). */
+  transform?: string
+  /** Events the SDK must NOT fire for this provider (a side script fires them). */
+  blockedEvents?: string[]
+  [key: string]: unknown
+}
+
+/** A pixel/tag fired OUTSIDE the SDK (via GTM or a raw snippet) — QA must still
+ * expect it on a live run even though it never appears in the dataLayer. */
+export interface OutOfBandPixel {
+  vendor: string                       // everflow | triplepixel | northbeam | axon | rudderstack | …
+  loaded_via?: 'gtm' | 'script' | (string & {})
+  id?: string
+}
+
+/** An event the SDK is configured NOT to fire (`blockedEvents`), declared with
+ * where + when a side script fires it instead. A `purchase`/`Purchase` manual
+ * event SHOULD name the page it lives on — the first-upsell placement footgun
+ * (async purchase beacons get lost in the checkout→upsell redirect). */
+export interface ManualEvent {
+  event: string
+  page?: string                        // page id the manual fire lives on
+  trigger?: string                     // page-load | field-focus | express-checkout-click | …
+}
+
+/** A content param that drives visibility via `data-next-hide="param.X=='n'"`. */
+export interface ContentParam {
+  name: string                         // e.g. seen, reviews, media, banner, timer
+  hides?: string                       // section id/selector it toggles
+  pages?: string[]                     // page ids where the handler exists
+}
+
+export interface TrackingParams {
+  /** Params captured + preserved across funnel steps (utm_*, gclid, fbclid, sub1..5). */
+  preserve?: string[]
+  /** Funnel step page-types/ids the params must survive across. */
+  across?: string[]
+  /** The affiliate click id: inbound querystring param → SDK attribution field. */
+  click_id?: { inbound?: string; maps_to?: string }
+  /** External ad trackers sharing the URL (Redtrack/Clickflare) — collision watch. */
+  external_trackers?: string[]
+}
+
+export interface AnalyticsParams {
+  content?: ContentParam[]
+  tracking?: TrackingParams
+}
+
+export interface UtmTransfer {
+  enabled?: boolean
+  applyToExternalLinks?: boolean
+  paramsToCopy?: string[]
+  excludedDomains?: string[]
+}
+
+export interface AnalyticsContract {
+  mode?: AnalyticsMode
+  /** Keyed by provider kind: gtm | facebook | rudderstack | custom | … */
+  providers?: Record<string, AnalyticsProvider>
+  out_of_band_pixels?: OutOfBandPixel[]
+  manual_events?: ManualEvent[]
+  utmTransfer?: UtmTransfer
+  params?: AnalyticsParams
+  [key: string]: unknown
+}
+
 export interface CampaignSpec {
   schema_version?: string
   spec_identity?: { map_id?: string; [key: string]: unknown }
@@ -369,6 +469,8 @@ export interface CampaignSpec {
   global_config?: { sdk_version?: string; [key: string]: unknown }
   runtime?: { sdk_version?: string; [key: string]: unknown }
   build_scope?: { mode?: 'partial' | 'full'; [key: string]: unknown }
+  /** Analytics & attribution contract (optional). See AnalyticsContract. */
+  analytics?: AnalyticsContract
   [key: string]: unknown
 }
 

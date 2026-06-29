@@ -1,0 +1,96 @@
+{
+  "violations": [
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "analytics.mode \"on\" is not recognized; expected auto | manual | disabled.",
+      "path": "/analytics/mode",
+      "data": {
+        "check": "mode-invalid",
+        "mode": "on"
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "analytics.providers.gtm is enabled but has no containerId (e.g. \"GTM-…\"); doctor/QA bind to it.",
+      "path": "/analytics/providers/gtm/containerId",
+      "data": {
+        "check": "gtm-container-missing",
+        "kind": "gtm"
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "analytics.providers.facebook.blockedEvents must be an array of event-name strings.",
+      "path": "/analytics/providers/facebook/blockedEvents",
+      "data": {
+        "check": "blocked-events-shape",
+        "kind": "facebook"
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "analytics.providers.facebook is enabled but has no pixelId; doctor/QA bind to it.",
+      "path": "/analytics/providers/facebook/pixelId",
+      "data": {
+        "check": "facebook-pixel-missing",
+        "kind": "facebook"
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "out_of_band_pixels[1] is missing a vendor (e.g. \"everflow\", \"triplepixel\").",
+      "path": "/analytics/out_of_band_pixels/1/vendor",
+      "data": {
+        "check": "oob-vendor-missing",
+        "index": 1
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "manual_events[0] is a purchase fire but declares no page. Purchase beacons placed on checkout are lost in the checkout→upsell redirect — declare the page they live on (typically the first upsell).",
+      "path": "/analytics/manual_events/0/page",
+      "data": {
+        "check": "manual-purchase-page-missing",
+        "index": 0
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "manual_events[1] (dl_begin_checkout) names page \"ghost-checkout\", which is not a page id in this spec.",
+      "path": "/analytics/manual_events/1/page",
+      "data": {
+        "check": "manual-event-page-unknown",
+        "index": 1,
+        "page": "ghost-checkout"
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "params.content[0] (?reviews) references page \"missing-page\", which is not a page id in this spec.",
+      "path": "/analytics/params/content/0/pages",
+      "data": {
+        "check": "content-page-unknown",
+        "index": 0,
+        "name": "reviews",
+        "page": "missing-page"
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
+      "message": "analytics.params.tracking.click_id needs both \"inbound\" (the querystring param) and \"maps_to\" (the SDK attribution field); half a mapping silently drops the affiliate click id.",
+      "path": "/analytics/params/tracking/click_id",
+      "data": {
+        "check": "click-id-incomplete"
+      }
+    }
+  ]
+}

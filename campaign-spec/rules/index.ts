@@ -44,6 +44,7 @@ import { AssemblyHintsShape } from './assembly-hints-shape.ts'
 import { PromoCodesShape } from './promo-codes-shape.ts'
 import { VariantLabelsShape } from './variant-labels-shape.ts'
 import { StoreProfileShape } from './store-profile-shape.ts'
+import { AnalyticsContractShape } from './analytics-contract-shape.ts'
 import { CycleDetection } from './cycle-detection.ts'
 
 export { SchemaVersion } from './schema-version.ts'
@@ -72,6 +73,7 @@ export { AssemblyHintsShape } from './assembly-hints-shape.ts'
 export { PromoCodesShape } from './promo-codes-shape.ts'
 export { VariantLabelsShape } from './variant-labels-shape.ts'
 export { StoreProfileShape } from './store-profile-shape.ts'
+export { AnalyticsContractShape } from './analytics-contract-shape.ts'
 export { CycleDetection } from './cycle-detection.ts'
 
 /**
@@ -110,6 +112,7 @@ export const allRules: RuleSet = [
   PromoCodesShape,
   VariantLabelsShape,
   StoreProfileShape,
+  AnalyticsContractShape,
   CycleDetection,
 ]
 
