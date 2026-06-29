@@ -188,7 +188,8 @@ export function classifyTagFire(urlString, extraHostSubstrings = []) {
 // the event is not a purchase.
 export function extractPurchase(event) {
   if (!event || typeof event !== "object") return null;
-  const name = String(event.event || "").toLowerCase();
+  // GA4-only and some legacy funnels push the name as `event_name`, not `event`.
+  const name = String(event.event || event.event_name || "").toLowerCase();
   if (name !== "purchase" && name !== "dl_purchase") return null;
   const ec = (event.ecommerce && typeof event.ecommerce === "object") ? event.ecommerce : {};
   const value = firstNumber([ec.value, ec.revenue, event.value, event.revenue]);
@@ -224,7 +225,7 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
   const eventNames = [];
   let purchase = null;
   for (const ev of rawEvents) {
-    const name = ev && typeof ev === "object" ? String(ev.event || "") : "";
+    const name = ev && typeof ev === "object" ? String(ev.event || ev.event_name || "") : "";
     if (name && !eventNames.includes(name)) eventNames.push(name);
     if (!purchase) {
       const p = extractPurchase(ev);

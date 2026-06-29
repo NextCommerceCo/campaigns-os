@@ -257,7 +257,11 @@ async function captureAnalyticsForUrl(context, url, args, extraHosts) {
   const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
   const settleMs = numberArg(args["analytics-settle"], DEFAULT_SETTLE_TIMEOUT_MS);
   try {
-    await page.goto(url, { waitUntil: "load", timeout: timeoutMs });
+    // domcontentloaded (not "load") so a single stuck analytics beacon — exactly
+    // the kind of subresource we're capturing — can't starve the goto timeout.
+    // Mirrors runPageBrowserChecks; the settle wait below lets async tags fire.
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await page.waitForLoadState("networkidle", { timeout: settleMs }).catch(() => {});
     // Let async GTM/pixel tags and deferred dataLayer pushes fire before reading.
     await page.waitForTimeout(settleMs);
     return await capture.collect();

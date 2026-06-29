@@ -39,6 +39,10 @@ test("extractPurchase reads SDK and legacy purchase shapes", () => {
   const legacy = extractPurchase({ event: "purchase", value: "49.99", currency: "USD", order_id: 1043 });
   assert.deepEqual(legacy, { value: 49.99, currency: "USD", transactionId: "1043" });
 
+  // GA4-only / legacy funnels push the name as `event_name`.
+  const ga4 = extractPurchase({ event_name: "purchase", value: 49.99, currency: "USD", transaction_id: "1043" });
+  assert.deepEqual(ga4, { value: 49.99, currency: "USD", transactionId: "1043" });
+
   assert.equal(extractPurchase({ event: "dl_add_to_cart" }), null);
   assert.equal(extractPurchase(null), null);
 });
