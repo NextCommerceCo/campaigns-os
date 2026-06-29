@@ -234,14 +234,23 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
 
   const inventory = { gtm: [], ga4: [], google_ads: [], meta: [], tiktok: [], everflow: [], other: [] };
   let metaPurchaseEventId = null;
+  let metaPurchaseFired = false;
+  let ga4PurchaseFired = false;
   for (const fire of tagFires) {
     if (!fire || !inventory[fire.kind]) continue;
     if (fire.id && !inventory[fire.kind].includes(fire.id)) inventory[fire.kind].push(fire.id);
     if (fire.kind === "meta") {
       const ev = fire.params?.ev || fire.params?.event;
       if (ev && String(ev).toLowerCase() === "purchase") {
+        metaPurchaseFired = true;
         metaPurchaseEventId = metaPurchaseEventId || fire.params?.eid || fire.params?.event_id || null;
       }
+    }
+    if (fire.kind === "ga4") {
+      // GA4 Measurement Protocol fires carry the event name in `en` (one per
+      // event, or en=purchase among batched `&en=` params on /g/collect).
+      const en = fire.params?.en || fire.params?.event_name;
+      if (en && String(en).toLowerCase() === "purchase") ga4PurchaseFired = true;
     }
   }
 
@@ -250,6 +259,34 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
     purchase: purchase ? { present: true, ...purchase } : { present: false },
     inventory,
     metaPurchaseEventId,
+    // Purchase can fire from any of three sources (dataLayer event, Meta pixel,
+    // GA4) — campaigns that block the SDK event and fire Meta/GA4 manually still
+    // "purchased." effectivePurchase() reads these so correctness/parity don't
+    // false-fail a deliberate `blockedEvents` setup.
+    purchaseSignals: {
+      dataLayer: !!purchase,
+      meta: metaPurchaseFired,
+      ga4: ga4PurchaseFired,
+    },
+  };
+}
+
+// The effective purchase across all fire sources — the source-of-truth answer
+// to "did this funnel record a purchase," independent of whether the SDK
+// dataLayer event was used or blocked-and-fired-manually via a pixel.
+export function effectivePurchase(capture = {}) {
+  const p = capture.purchase || { present: false };
+  const s = capture.purchaseSignals || {};
+  const via = p.present ? "datalayer" : s.meta ? "meta" : s.ga4 ? "ga4" : null;
+  return {
+    fired: !!(p.present || s.meta || s.ga4),
+    via,
+    // value/currency/txn are only knowable from the dataLayer event; a
+    // pixel-only purchase fires without them in our capture.
+    value: p.present ? p.value : null,
+    currency: p.present ? p.currency : null,
+    transactionId: p.present ? p.transactionId : null,
+    metaEventId: capture.metaPurchaseEventId || null,
   };
 }
 
@@ -284,22 +321,28 @@ export function diffAnalyticsParity(baseline, candidate) {
   const c = candidate || {};
   const bp = b.purchase || { present: false };
   const cp = c.purchase || { present: false };
+  // Source-aware: a campaign may block dl_purchase and fire Purchase manually
+  // via the Meta/GA4 pixel. The effective purchase counts ALL sources, so a
+  // deliberate `blockedEvents` setup doesn't false-fail.
+  const cEff = effectivePurchase(c);
 
   // 1. Purchase present on candidate — the highest-value blocking check.
   assertions.push(parityAssertion({
     id: "analytics-parity:purchase-present",
-    status: cp.present ? STATUS.PASS : STATUS.FAIL,
+    status: cEff.fired ? STATUS.PASS : STATUS.FAIL,
     severity: SEVERITY.BLOCKER,
-    expected: "candidate fires a purchase event (dl_purchase) on the thank-you page",
-    actual: cp.present ? "dl_purchase fired" : "no purchase event captured on candidate",
-    evidence: { candidate_events: c.eventNames || [], baseline_purchase: bp, candidate_purchase: cp },
+    expected: "candidate fires a Purchase (dl_purchase, or Meta/GA4 pixel if the SDK event is blocked)",
+    actual: cEff.fired ? `purchase fired via ${cEff.via}` : "no purchase fire captured on candidate (dataLayer, Meta, or GA4)",
+    evidence: { via: cEff.via, candidate_events: c.eventNames || [], candidate_signals: c.purchaseSignals || {}, baseline_purchase: bp },
   }));
 
-  if (cp.present) {
+  if (cEff.fired) {
     // 2. Value parity — same offer driven through both funnels, so client-fired
     //    values must match. Compared client-vs-client, never vs a backend total
-    //    (tax is excluded from the client value on headless checkouts).
-    if (bp.present && bp.value !== null && bp.value !== undefined) {
+    //    (tax is excluded from the client value on headless checkouts). Only
+    //    knowable when BOTH fired the dataLayer event (a pixel-only purchase
+    //    carries no client value in our capture) → else manual review.
+    if (bp.present && bp.value !== null && bp.value !== undefined && cp.present && cp.value !== null && cp.value !== undefined) {
       const ok = valuesEqual(bp.value, cp.value);
       assertions.push(parityAssertion({
         id: "analytics-parity:purchase-value",
@@ -308,6 +351,17 @@ export function diffAnalyticsParity(baseline, candidate) {
         expected: `client-fired purchase value == baseline (${bp.value})`,
         actual: cp.value,
         evidence: { baseline_value: bp.value, candidate_value: cp.value, note: "client-fired; excludes backend-calculated tax" },
+      }));
+    } else if (!cp.present) {
+      // Candidate fired Purchase pixel-only (e.g. dl_purchase blocked) — the
+      // client value isn't in our capture, so value parity can't be asserted.
+      assertions.push(parityAssertion({
+        id: "analytics-parity:purchase-value",
+        status: STATUS.MANUAL_REVIEW,
+        severity: SEVERITY.WARN,
+        expected: "client-fired value to compare",
+        actual: `candidate purchase fired via ${cEff.via} (pixel-only) — no client value captured`,
+        evidence: { via: cEff.via },
       }));
     } else {
       assertions.push(parityAssertion({
@@ -320,8 +374,8 @@ export function diffAnalyticsParity(baseline, candidate) {
       }));
     }
 
-    // 3. Currency parity.
-    if (bp.present && bp.currency) {
+    // 3. Currency parity (dataLayer-only; skipped for pixel-only purchases).
+    if (cp.present && bp.present && bp.currency) {
       const ok = bp.currency === cp.currency;
       assertions.push(parityAssertion({
         id: "analytics-parity:purchase-currency",
@@ -342,15 +396,18 @@ export function diffAnalyticsParity(baseline, candidate) {
       }));
     }
 
-    // 4. transaction_id PRESENCE (not equality — different orders have different ids).
-    assertions.push(parityAssertion({
-      id: "analytics-parity:purchase-transaction-id",
-      status: cp.transactionId ? STATUS.PASS : STATUS.FAIL,
-      severity: SEVERITY.BLOCKER,
-      expected: "candidate purchase carries a non-empty transaction_id",
-      actual: cp.transactionId || "missing",
-      evidence: { candidate_transaction_id: cp.transactionId || null },
-    }));
+    // 4. transaction_id PRESENCE (not equality — different orders have different
+    //    ids). Only checkable when the dataLayer event fired.
+    if (cp.present) {
+      assertions.push(parityAssertion({
+        id: "analytics-parity:purchase-transaction-id",
+        status: cp.transactionId ? STATUS.PASS : STATUS.FAIL,
+        severity: SEVERITY.BLOCKER,
+        expected: "candidate purchase carries a non-empty transaction_id",
+        actual: cp.transactionId || "missing",
+        evidence: { candidate_transaction_id: cp.transactionId || null },
+      }));
+    }
 
     // 5. Meta CAPI dedup — candidate's Meta Purchase fire carries an eventID,
     //    consistent with the order id so client + server events dedup.

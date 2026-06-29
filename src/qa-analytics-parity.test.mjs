@@ -120,6 +120,31 @@ test("diffAnalyticsParity — value mismatch and missing eventID block cutover",
   assert.equal(a["analytics-parity:capi-dedup"].severity, SEVERITY.BLOCKER);
 });
 
+test("diffAnalyticsParity — source-aware: candidate blocks dl_purchase but fires Meta Purchase → present passes", () => {
+  const baseline = {
+    eventNames: ["purchase"],
+    purchase: { present: true, value: 49.99, currency: "USD", transactionId: "1" },
+    inventory: { meta: ["998877"] },
+    metaPurchaseEventId: "1",
+    purchaseSignals: { dataLayer: true, meta: true, ga4: false },
+  };
+  // Candidate: no dataLayer purchase, but Meta Purchase fired (blockedEvents pattern).
+  const candidate = {
+    eventNames: ["dl_add_to_cart"],
+    purchase: { present: false },
+    inventory: { meta: ["998877"] },
+    metaPurchaseEventId: "7781",
+    purchaseSignals: { dataLayer: false, meta: true, ga4: false },
+  };
+  const a = byId(diffAnalyticsParity(baseline, candidate));
+  assert.equal(a["analytics-parity:purchase-present"].status, STATUS.PASS, "Meta Purchase counts — no false-fail on a blocked SDK event");
+  assert.equal(a["analytics-parity:purchase-present"].evidence.via, "meta");
+  // Value can't be compared (pixel-only) → manual review, not a blocker fail.
+  assert.equal(a["analytics-parity:purchase-value"].status, STATUS.MANUAL_REVIEW);
+  // CAPI dedup still checked from the Meta fire.
+  assert.equal(a["analytics-parity:capi-dedup"].status, STATUS.PASS);
+});
+
 test("diffAnalyticsParity — no baseline value falls back to manual review, not a false block", () => {
   const baseline = { purchase: { present: true, value: null, currency: null, transactionId: null }, inventory: {} };
   const candidate = { purchase: { present: true, value: 49.99, currency: "USD", transactionId: "2" }, inventory: {} };

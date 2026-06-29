@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
+import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
 import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
@@ -631,6 +631,7 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze([
   "template_residue",
   "pricing",
   "browser-test-order",
+  "analytics-correctness",
   "analytics-parity",
 ]);
 
@@ -678,6 +679,15 @@ async function runQa(args) {
       residueSeverity: residueSeverityForThemeGate(gate.status),
       supportedPaymentMethods: supportedPaymentMethodsFromSpec(resolved.spec),
     }));
+  }
+
+  // Analytics CORRECTNESS leg: runs when the spec declares an `analytics` block
+  // (or --analytics-correctness is forced). Validates the candidate funnel fires
+  // its declared tags/pixels + a Purchase (source-aware re blockedEvents). The
+  // foundation the parity differ sits on — correctness before parity.
+  const analyticsContract = resolved.spec?.analytics;
+  if (analyticsContract || booleanArg(args["analytics-correctness"], "analytics-correctness")) {
+    assertions.push(...await runAnalyticsCorrectnessChecks(args, analyticsContract || {}));
   }
 
   // Analytics-parity leg (opt-in): when a legacy baseline URL is supplied, capture

@@ -1,5 +1,6 @@
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-parity.mjs";
+import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import {
   demoAssetConfig,
   forbiddenComputedColors,
@@ -169,6 +170,67 @@ export async function runAnalyticsParityChecks(args = {}) {
       expected: "analytics-parity capture completes on both URLs",
       actual: error instanceof Error ? error.message : String(error),
       evidence: { baseline_url: baselineUrl, candidate_url: candidateUrl },
+    })];
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+}
+
+// Analytics CORRECTNESS leg: capture ONE funnel page and assess it against the
+// declared CampaignSpec `analytics` contract — declared tags/pixels fire,
+// Purchase fires (source-aware). This is the foundation the parity differ sits
+// on; runs whenever a spec carries an `analytics` block (or --analytics-correctness).
+export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}) {
+  const url = trim(args["analytics-candidate"]) || trim(args["base-url"]) || null;
+  const correctnessPage = { page_id: "analytics", url: url || undefined };
+  if (!url) {
+    return [assertion({
+      id: "analytics-correctness:inputs",
+      family: "analytics-correctness",
+      page: correctnessPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "a candidate URL to capture (--analytics-candidate or --base-url)",
+      actual: "missing",
+    })];
+  }
+
+  // Seed the host filter with declared out-of-band vendor names so vendors whose
+  // host contains their name (everflow, northbeam, …) get captured.
+  const vendorHosts = ((contract && contract.out_of_band_pixels) || [])
+    .map((p) => (p && p.vendor ? String(p.vendor) : null))
+    .filter(Boolean);
+  const extraHosts = [...analyticsExtraHosts(args), ...vendorHosts];
+
+  const browser = await launchChromium(args);
+  const context = await browser.newContext({
+    viewport: viewportFromArgs(args),
+    extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
+  });
+  try {
+    const capture = await captureAnalyticsForUrl(context, url, args, extraHosts);
+    const assertions = assessAnalyticsCorrectness(capture, contract || {});
+    assertions.unshift(assertion({
+      id: "analytics-correctness:capture",
+      family: "analytics-correctness",
+      page: correctnessPage,
+      status: STATUS.PASS,
+      expected: "live dataLayer + tag-fire capture on the candidate page",
+      actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`,
+      evidence: { url, capture },
+    }));
+    return assertions;
+  } catch (error) {
+    return [assertion({
+      id: "analytics-correctness:runner",
+      family: "analytics-correctness",
+      page: correctnessPage,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "analytics-correctness capture completes",
+      actual: error instanceof Error ? error.message : String(error),
+      evidence: { url },
     })];
   } finally {
     await context.close().catch(() => {});
