@@ -22,6 +22,6 @@
       "default_coupon_codes": ["SAVE10"],
       "behavior": "Available include only; strip unless CampaignSpec checkout exit_intent or promo_code_input maps an offer/code."
     },
-    "qa_selectors": [".checkout-wrapper", ".submit-button", ".os-card.next-selected", "[data-next-bundle-slots-for]", ".brand-logo"]
+    "qa_selectors": [".checkout-wrapper", ".submit-button", "[data-next-bundle-card][data-next-selected], [data-next-bundle-card].next-selected", "[data-next-bundle-slots-for]", ".brand-logo"]
   }
 }
