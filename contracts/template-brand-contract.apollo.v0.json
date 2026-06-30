@@ -22,6 +22,6 @@
       "default_coupon_codes": ["EXIT5"],
       "behavior": "Available include only; strip unless CampaignSpec checkout exit_intent or promo_code_input maps an offer/code."
     },
-    "qa_selectors": [".checkout-wrapper", ".submit-button", ".bundle-card.next-selected, .os-card.next-selected, .bundle-tile.next-selected", ".price-wrapper, .bundle-card__price-total", ".brand-logo"]
+    "qa_selectors": [".checkout-wrapper", ".submit-button", ".bundle-card.next-selected, .bundle-tile.next-selected", ".price-wrapper, .bundle-card__price-total", ".brand-logo"]
   }
 }

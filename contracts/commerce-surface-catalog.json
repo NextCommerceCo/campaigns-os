@@ -166,7 +166,9 @@
         "items_json",
         "vouchers_json",
         "accept_text",
-        "decline_text"
+        "decline_text",
+        "display_selector_id",
+        "header_discount_selector_id"
       ],
       "sourceOfTruth": [
         "CampaignSpec upsell/downsell pages",
