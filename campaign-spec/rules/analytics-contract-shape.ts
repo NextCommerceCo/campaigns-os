@@ -11,6 +11,10 @@
  * authoring guidance, not a build blocker (matches DesignSourceShape).
  *
  * Checks:
+ *   0. If `analytics` is present but not a plain object (a non-plain-object
+ *      value: string, array, number, boolean, boxed primitive, class instance,
+ *      etc.), warn once and stop — there is no contract shape to inspect.
+ *      Genuinely-absent `analytics` stays silent (optional, non-gating).
  *   1. `mode`, if present, is one of auto | manual | disabled.
  *   2. Each provider: `blockedEvents` (when present) is a string[]; an enabled
  *      gtm provider should declare `containerId`, facebook `pixelId`, custom
@@ -59,12 +63,39 @@ function collectPageIds(spec: CampaignSpec): { pageIds: Set<string>; checkoutPag
 export const AnalyticsContractShape: Rule = {
   id: 'AnalyticsContractShape',
   severity: 'warning',
+  // Dual tag is intentional and matches every sibling pure-spec rule
+  // (StoreProfileShape, DesignSourceShape, AssemblyHintsShape, …): the rule is
+  // cheap enough for per-keystroke Map Builder (`fast`) AND needs no live
+  // deployment (`spec-only`). `fastRules`/`specOnlyRules` are mutually-exclusive
+  // FILTERED VIEWS of `allRules` (see rules/index.ts) — a validation pass runs
+  // exactly one RuleSet, and `allRules` lists each rule once, so a dual-tagged
+  // rule never double-runs. (Surfaced in a downstream consumer-PR review.)
   tags: ['fast', 'spec-only'],
 
   check(spec: CampaignSpec): Violation[] {
     const violations: Violation[] = []
     const analytics = spec.analytics
-    if (!analytics || typeof analytics !== 'object') return violations
+    // Genuinely-absent analytics stays silent: the block is OPTIONAL and
+    // non-gating (SDK defaults apply). But a PRESENT-but-non-object value
+    // (`analytics: "auto"`, an array, a primitive) is authoring drift the
+    // author wants to hear about — warn, then stop (no shape to inspect).
+    if (analytics === undefined || analytics === null) return violations
+    // Reject any non-plain-object value: primitives, arrays, and boxed
+    // primitives (new String("auto") passes `typeof === 'object'` but is not a
+    // plain contract block). Only Object.prototype and null-prototype objects
+    // are accepted as valid analytics blocks.
+    const analyticsProto = typeof analytics === 'object' ? Object.getPrototypeOf(analytics as object) : null
+    if (typeof analytics !== 'object' || Array.isArray(analytics) || (analyticsProto !== Object.prototype && analyticsProto !== null)) {
+      const label = Array.isArray(analytics) ? 'an array' : typeof analytics !== 'object' ? typeof analytics : 'a non-plain object'
+      violations.push({
+        ruleId: 'AnalyticsContractShape',
+        severity: 'warning',
+        message: 'analytics must be an object (the analytics/attribution contract block); got ' + label + '.',
+        path: '/analytics',
+        data: { check: 'analytics-shape' },
+      })
+      return violations
+    }
 
     const warn = (message: string, path: string, check: string, data: Record<string, unknown> = {}) => {
       violations.push({
@@ -92,6 +123,13 @@ export const AnalyticsContractShape: Rule = {
       for (const [kind, provider] of Object.entries(providers)) {
         if (!provider || typeof provider !== 'object') continue
         const base = `/analytics/providers/${kind}`
+        // Asymmetry accepted by design (downstream consumer-PR review): a
+        // provider with `enabled:false` that still carries containerId/pixelId/
+        // endpoint gets no signal. A disabled provider keeping its id is a
+        // legitimate, common pattern (staged rollout, env-toggled, kept for
+        // reference) — flagging it would be noise, and "off accidentally" is not
+        // distinguishable from "off by design" at spec level. We only validate
+        // ENABLED providers' binding ids; disabled providers are left alone.
         const enabled = provider.enabled !== false
         if (provider.blockedEvents !== undefined && !isStringArray(provider.blockedEvents)) {
           warn(`analytics.providers.${kind}.blockedEvents must be an array of event-name strings.`, `${base}/blockedEvents`, 'blocked-events-shape', { kind })
