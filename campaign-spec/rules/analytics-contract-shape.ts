@@ -11,9 +11,10 @@
  * authoring guidance, not a build blocker (matches DesignSourceShape).
  *
  * Checks:
- *   0. If `analytics` is present but not an object (a string / array / number),
- *      warn once and stop — there is no contract shape to inspect. Genuinely-
- *      absent `analytics` stays silent (optional, non-gating).
+ *   0. If `analytics` is present but not a plain object (a non-plain-object
+ *      value: string, array, number, boolean, boxed primitive, class instance,
+ *      etc.), warn once and stop — there is no contract shape to inspect.
+ *      Genuinely-absent `analytics` stays silent (optional, non-gating).
  *   1. `mode`, if present, is one of auto | manual | disabled.
  *   2. Each provider: `blockedEvents` (when present) is a string[]; an enabled
  *      gtm provider should declare `containerId`, facebook `pixelId`, custom
