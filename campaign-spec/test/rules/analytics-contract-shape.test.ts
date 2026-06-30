@@ -1,5 +1,6 @@
 import { describe, expect, test } from '../harness.ts'
 import { AnalyticsContractShape } from '../../rules/analytics-contract-shape.ts'
+import { allRules, fastRules, specOnlyRules } from '../../rules/index.ts'
 import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'
 import type { AnalyticsContract, CampaignSpec } from '../../types.ts'
@@ -34,6 +35,62 @@ const checks = (spec: CampaignSpec): string[] =>
 describe('AnalyticsContractShape rule', () => {
   test('silent when no analytics block is present', () => {
     expect(AnalyticsContractShape.check(normalize(baseSpec()))).toEqual([])
+  })
+
+  // Fix #2 (downstream consumer-PR review): a present-but-non-object
+  // analytics value used to silently pass. It must now warn once.
+  test('warns when analytics is a string instead of an object', () => {
+    const spec = baseSpec()
+    ;(spec as { analytics?: unknown }).analytics = 'auto'
+    const c = checks(spec)
+    expect(c).toEqual(['analytics-shape'])
+  })
+
+  test('warns when analytics is an array instead of an object', () => {
+    const spec = baseSpec()
+    ;(spec as { analytics?: unknown }).analytics = [{ mode: 'auto' }]
+    const c = checks(spec)
+    expect(c).toEqual(['analytics-shape'])
+  })
+
+  test('warns when analytics is a number instead of an object', () => {
+    const spec = baseSpec()
+    ;(spec as { analytics?: unknown }).analytics = 1
+    expect(checks(spec)).toEqual(['analytics-shape'])
+  })
+
+  test('genuinely-absent analytics stays silent (null or undefined)', () => {
+    const undef = baseSpec()
+    expect(AnalyticsContractShape.check(normalize(undef))).toEqual([])
+    const nul = baseSpec()
+    ;(nul as { analytics?: unknown }).analytics = null
+    expect(AnalyticsContractShape.check(normalize(nul))).toEqual([])
+  })
+
+  // Fix #1 (downstream consumer-PR review): the rule is dual-tagged
+  // ['fast', 'spec-only']. fastRules / specOnlyRules are mutually-exclusive
+  // FILTERED VIEWS of allRules — a pass runs one RuleSet, so the rule never
+  // double-runs. Guard that each preset lists it exactly once (no duplicates).
+  test('rule appears exactly once in each preset (no double-run)', () => {
+    const count = (set: typeof allRules) =>
+      set.filter((r) => r.id === 'AnalyticsContractShape').length
+    expect(count(allRules)).toBe(1)
+    expect(count(fastRules)).toBe(1)
+    expect(count(specOnlyRules)).toBe(1)
+  })
+
+  test('running fastRules then specOnlyRules each yields one set of analytics warnings', () => {
+    const spec = normalize(baseSpec({ mode: 'on' as never }))
+    const fastWarnings = fastRules
+      .flatMap((r) => r.check(spec))
+      .filter((v) => v.ruleId === 'AnalyticsContractShape')
+    const specWarnings = specOnlyRules
+      .flatMap((r) => r.check(spec))
+      .filter((v) => v.ruleId === 'AnalyticsContractShape')
+    // Same single warning in each view — not doubled within a pass.
+    expect(fastWarnings.length).toBe(1)
+    expect(specWarnings.length).toBe(1)
+    expect(fastWarnings).toEqual(specWarnings)
   })
 
   test('matches corpus fixture violations', () => {
