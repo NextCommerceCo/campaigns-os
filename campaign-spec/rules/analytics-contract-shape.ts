@@ -79,11 +79,17 @@ export const AnalyticsContractShape: Rule = {
     // (`analytics: "auto"`, an array, a primitive) is authoring drift the
     // author wants to hear about — warn, then stop (no shape to inspect).
     if (analytics === undefined || analytics === null) return violations
-    if (typeof analytics !== 'object' || Array.isArray(analytics)) {
+    // Reject any non-plain-object value: primitives, arrays, and boxed
+    // primitives (new String("auto") passes `typeof === 'object'` but is not a
+    // plain contract block). Only Object.prototype and null-prototype objects
+    // are accepted as valid analytics blocks.
+    const analyticsProto = typeof analytics === 'object' ? Object.getPrototypeOf(analytics as object) : null
+    if (typeof analytics !== 'object' || Array.isArray(analytics) || (analyticsProto !== Object.prototype && analyticsProto !== null)) {
+      const label = Array.isArray(analytics) ? 'an array' : typeof analytics !== 'object' ? typeof analytics : 'a non-plain object'
       violations.push({
         ruleId: 'AnalyticsContractShape',
         severity: 'warning',
-        message: 'analytics must be an object (the analytics/attribution contract block); got ' + (Array.isArray(analytics) ? 'an array' : typeof analytics) + '.',
+        message: 'analytics must be an object (the analytics/attribution contract block); got ' + label + '.',
         path: '/analytics',
         data: { check: 'analytics-shape' },
       })

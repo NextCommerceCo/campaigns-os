@@ -59,6 +59,28 @@ describe('AnalyticsContractShape rule', () => {
     expect(checks(spec)).toEqual(['analytics-shape'])
   })
 
+  test('warns when analytics is a boolean true instead of an object', () => {
+    const spec = baseSpec()
+    ;(spec as { analytics?: unknown }).analytics = true
+    expect(checks(spec)).toEqual(['analytics-shape'])
+  })
+
+  test('warns when analytics is a boolean false instead of an object', () => {
+    // Pins the guard against future refactors that add `!analytics` and
+    // accidentally swallow false (false is falsy but not a valid contract block).
+    const spec = baseSpec()
+    ;(spec as { analytics?: unknown }).analytics = false
+    expect(checks(spec)).toEqual(['analytics-shape'])
+  })
+
+  test('warns when analytics is a boxed primitive instead of a plain object', () => {
+    // new String("auto") passes typeof === 'object' but is not a plain contract
+    // block; the prototype guard must catch it.
+    const spec = baseSpec()
+    ;(spec as { analytics?: unknown }).analytics = new String('auto')
+    expect(checks(spec)).toEqual(['analytics-shape'])
+  })
+
   test('genuinely-absent analytics stays silent (null or undefined)', () => {
     const undef = baseSpec()
     expect(AnalyticsContractShape.check(normalize(undef))).toEqual([])
