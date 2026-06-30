@@ -62,6 +62,13 @@
           "manufactured in the USA",
           "FDA-registered US facility"
         ]
+      },
+      {
+        "label": "US address-language assumption",
+        "examples": [
+          "State",
+          "ZIP Code"
+        ]
       }
     ],
     "agentRule": "When a warn-only pattern appears in a country-specific or multi-market campaign, treat it as replace-or-confirm campaign copy. Preserve it only when the CampaignSpec, source design, or operator explicitly confirms the claim. Do not remove it automatically."
@@ -139,14 +146,16 @@
       "purpose": "Pre-purchase add-on toggle configuration.",
       "canonicalKeys": [
         "order_bump_variant",
+        "selector_order_bump_variant",
         "order_bump.check01",
+        "order_bump.check03",
         "order_bump.switch01"
       ],
       "sourceOfTruth": [
         "CampaignSpec checkout page offers/packages",
         "Campaigns API package refs"
       ],
-      "agentRule": "Enable only when the target campaign has the referenced package or offer. Do not leave warranty/insurance starter modules pointed at missing package refs."
+      "agentRule": "Enable only when the target campaign has the referenced package or offer. Do not leave warranty/insurance starter modules pointed at missing package refs. On Apollo and Apollo MV checkouts, `selector_order_bump_variant` controls the product-card bump immediately below the bundle/MV selector (`check03` or `none`); `order_bump_variant` controls only the later `.order-bumps` form-section slot — do not treat `order_bump_variant` as all bumps on the page."
     },
     "upsell_offer": {
       "purpose": "Single-card post-purchase bundle upsell offer.",
@@ -222,6 +231,38 @@
         "Campaigns API/payment provider capability"
       ],
       "agentRule": "Payment config, CampaignSpec/API support, and visible rows must agree."
+    },
+    "slot_personalization": {
+      "purpose": "MV slot-picker line-item personalization (SDK 0.4.27+). Adds a data-next-property input to each rendered bundle slot — on the checkout/select selector AND the post-purchase upsell offer — so units carry distinct text and become separate order lines. Same contract name across both surfaces.",
+      "canonicalKeys": [
+        "enabled",
+        "property_key",
+        "label",
+        "optional",
+        "placeholder",
+        "maxlength"
+      ],
+      "sourceOfTruth": [
+        "Campaign personalization requirement (per-line custom text)",
+        "Template slot partials: mv-configurable-selector.html / mv-slot-stage.html (checkout/select) and upsell-mv-offer.html (upsell)"
+      ],
+      "agentRule": "MV/slot-rendering families only — per-line customization requires a slot picker (eng-confirmed); not available on tier-swap families. Same `slot_personalization` contract on MV checkout/select and MV upsell. Shipped enabled on `apollo-mv-single-step` and `olympus-mv-single-step` (checkout.html + upsell-mv.html), disabled on `olympus-mv-two-step` (one live reference each). To apply on any other MV page, set slot_personalization.enabled:true in that page's frontmatter — the shared partial renders the field from the same contract (no markup copy). property_key becomes the order line-item attribute name. Fill every slot explicitly; do not rely on an order-wide default to fill some slots and override others (same-package overrides drop). When paired with order_personalization, keep property_keys distinct (per-slot overrides the page default on a shared key)."
+    },
+    "order_personalization": {
+      "purpose": "All-lines line-item personalization default (SDK 0.4.27+) via data-next-default-property. One value is applied to every line the active bundle/cart write or upsell accept sends; on a single non-slot upsell this means the one accepted line gets the value.",
+      "canonicalKeys": [
+        "enabled",
+        "property_key",
+        "label",
+        "optional",
+        "placeholder",
+        "maxlength"
+      ],
+      "sourceOfTruth": [
+        "Campaign personalization requirement (one shared value across all units or one value on a single non-slot upsell)",
+        "Template partial: personalization-field.html; offer partials may render the same order_personalization contract with data-next-default-property"
+      ],
+      "agentRule": "Reliable for 'same value on every unit' and for single non-variant / non-slot upsells where the accepted set is one line. The generic partial ships in every family's _includes but is NOT wired into generic pages; opt in with a campaign_include or an offer partial that accepts order_personalization. For per-line distinct slot values use slot_personalization (MV checkout/select/upsell) instead. When paired with a per-slot field on the same surface, use a DISTINCT property_key: the merge is { ...default, ...slot } so a per-slot value overrides the default on a shared key (MV checkout uses custom_text vs slot number; MV upsell example uses gift_message vs slot upsell_message)."
     }
   },
   "campaignSpecFixturePolicy": {
@@ -243,7 +284,7 @@
   "families": {
     "olympus": {
       "description": "Single-step checkout with tiered bundle cards and strong direct-response checkout framing.",
-      "frontmatterStatus": "partial",
+      "frontmatterStatus": "include-driven",
       "strongSignals": [
         "olympus in spec, path, or export metadata",
         "os-card tier bundle selector",
@@ -255,13 +296,15 @@
         "orderSummary": "cart-summary01|cart-summary02|cart-summary03|cart-summary04",
         "payment": "payment-methods",
         "expressCheckout": "express-checkout|express-checkout-inline",
-        "orderBump": "bump-check01|bump-check02|bump-switch01",
+        "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
         "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards",
         "receipt": "receipt-skeleton"
       },
       "frontmatterInputsObserved": [
         "bundles",
-        "bump_features",
+        "cart_summary_variant",
+        "order_bump",
+        "order_bump_variant",
         "packages",
         "shipping_methods",
         "swiper_slides",
@@ -271,7 +314,7 @@
       ],
       "agentContract": {
         "status": "agent-ready",
-        "templateRole": "Reference single-step checkout family with tiered bundle cards and optional pre-purchase bumps.",
+        "templateRole": "Classic single-step checkout family with tiered os-card bundle cards and optional pre-purchase bumps. Prefer `apollo` for new campaigns unless the design explicitly matches the Olympus os-card shape.",
         "sourceOfTruth": {
           "campaignSpec": [
             "campaign currency/language/payment/tracking",
@@ -298,8 +341,10 @@
             "bundles[].shipping_method"
           ],
           "optionalWhenSupported": [
+            "cart_summary_variant",
             "shipping_methods.free",
             "order_bump_variant",
+            "order_bump",
             "packages.prepurchase_1",
             "packages.prepurchase_2",
             "swiper_slides",
@@ -325,8 +370,7 @@
             "order_bump.*.package_id",
             "upsell_offer.*",
             "upsell_bundle_tiers[].items_json",
-            "upsell_bundle_tiers[].vouchers_json",
-            "matching inline upsell package/voucher refs until upsell includes are promoted"
+            "upsell_bundle_tiers[].vouchers_json"
           ],
           "removeWhenUnsupported": [
             "bundles[].shipping_method when no tier-specific shipping exists",
@@ -384,9 +428,9 @@
           {
             "name": "Olympus bundle upsell pages",
             "partials": [
-              "upsell-bundle-stepper.html",
-              "upsell-bundle-tier-pills.html",
-              "upsell-bundle-tier-cards.html"
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
             ],
             "ownedInputs": [
               "upsell_offer",
@@ -398,6 +442,13 @@
               "data-next-bundle-card"
             ]
           }
+        ],
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json"
+        ],
+        "agentNotes": [
+          "Use this family when the design explicitly has the classic Olympus os-card tier shape. For new direct-response checkouts, default to `apollo` unless os-card styling is required.",
+          "Olympus bundle upsell pages use include-owned offer partials; replace upsell_offer and upsell_bundle_tiers from the target CampaignSpec/API."
         ],
         "qaStructure": {
           "checkout": {
@@ -439,14 +490,1863 @@
               }
             ]
           }
+        }
+      }
+    },
+    "apollo": {
+      "description": "Single-step checkout with Apollo direct-response layout, include-driven bundle selector with interchangeable card styles, and optional checkout reveal.",
+      "frontmatterStatus": "include-driven",
+      "strongSignals": [
+        "apollo in spec, path, or export metadata",
+        "checkout-apollo.js",
+        "bundle_card_style frontmatter",
+        "bundle-selector.html with bundle-card dispatcher",
+        "promo-banner and promo-timer partials (not web components)",
+        "checkout-reveal CTA and panel",
+        "selector_order_bump_variant for check03 below selector"
+      ],
+      "canonicalSurfaces": {
+        "mainSelector": "tiered-bundle-selector",
+        "bundleCardStyles": "bundle-card-product|bundle-card-classic|bundle-card-tiles",
+        "selectorOrderBump": "bump-check03",
+        "orderSummary": "cart-summary01|cart-summary02|cart-summary03|cart-summary04",
+        "payment": "payment-methods",
+        "expressCheckout": "express-checkout|express-checkout-inline",
+        "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
+        "checkoutReveal": "checkout-form--reveal",
+        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards",
+        "receipt": "receipt-skeleton"
+      },
+      "frontmatterInputsObserved": [
+        "bundles",
+        "bundle_card_style",
+        "cart_summary_variant",
+        "selector_order_bump_variant",
+        "order_bump",
+        "order_bump_variant",
+        "checkout_reveal",
+        "checkout_reveal_cta",
+        "as_seen_in",
+        "reviews_slider",
+        "guarantee",
+        "promo_timer",
+        "promo_banner",
+        "product_heading",
+        "packages",
+        "shipping_methods",
+        "swiper_slides",
+        "swiper_thumbs",
+        "upsell_offer",
+        "upsell_bundle_tiers"
+      ],
+      "agentContract": {
+        "status": "agent-ready",
+        "templateRole": "Flagship single-step checkout: Apollo direct-response layout, tiered bundle cards via style dispatcher, selector-area check03 bump, optional checkout reveal, and form-section bumps.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "campaign currency/language/payment/tracking",
+            "checkout page packages/offers",
+            "shipping_methods[]",
+            "upsell/receipt routing"
+          ],
+          "campaignsApi": [
+            "packages[].ref_id",
+            "shipping_options[].ref_id",
+            "payment method capability"
+          ],
+          "starterTemplate": [
+            "stable SDK DOM shape",
+            "family-local includes",
+            "page frontmatter contract",
+            "promoted checkout component CSS in next-core.css"
+          ]
         },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "packages.main_package",
+            "shipping_methods.standard",
+            "bundles[].quantity",
+            "bundles[].shipping_method"
+          ],
+          "optionalWhenSupported": [
+            "bundle_card_style",
+            "cart_summary_variant",
+            "shipping_methods.free",
+            "selector_order_bump_variant",
+            "order_bump_variant",
+            "order_bump",
+            "checkout_reveal",
+            "checkout_reveal_cta",
+            "as_seen_in",
+            "reviews",
+            "guarantee",
+            "promo_banner",
+            "promo_timer",
+            "product_heading",
+            "packages.prepurchase_1",
+            "packages.prepurchase_2",
+            "swiper_slides",
+            "swiper_thumbs",
+            "payment_flags",
+            "upsell_offer",
+            "upsell_bundle_tiers"
+          ],
+          "demoOnlyValues": [
+            "packages.main_package=1",
+            "packages.prepurchase_1=7",
+            "packages.prepurchase_2=9",
+            "shipping_methods.standard=2",
+            "shipping_methods.free=1",
+            "bundle_card_style=product",
+            "selector_order_bump_variant=check03",
+            "order_bump_variant=check01+switch01",
+            "order_bump.check03.sync_quantity=1",
+            "upsell_offer.package_id=3",
+            "upsell_offer.vouchers_json=[\"UP50\"]",
+            "upsell_bundle_tiers packageId=3"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.*",
+            "shipping_methods.*",
+            "bundles[].shipping_method",
+            "order_bump.*.package_id",
+            "upsell_offer.*",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json"
+          ],
+          "removeWhenUnsupported": [
+            "bundles[].shipping_method when no tier-specific shipping exists",
+            "selector_order_bump_variant when no selector-area bump package exists",
+            "bump includes when prepurchase packages are absent",
+            "unsupported payment method rows",
+            "upsell pages not present in the funnel"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "tiered bundle selector with card style dispatcher",
+            "partials": [
+              "bundle-selector.html",
+              "bundle-card.html",
+              "bundle-card-product.html",
+              "bundle-card-classic.html",
+              "bundle-card-tiles.html"
+            ],
+            "ownedInputs": [
+              "packages",
+              "shipping_methods",
+              "bundles",
+              "bundle_card_style"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-card"
+            ],
+            "note": "product and tiles card styles show coupon extra savings via data-next-discounts=\"voucher\" gated by cart.hasCoupon(). Styling lives in shared next-core.css — no per-page bundle-card CSS link."
+          },
+          {
+            "name": "selector-area order bump",
+            "partials": [
+              "bump-check03.html"
+            ],
+            "ownedInputs": [
+              "selector_order_bump_variant",
+              "order_bump.check03"
+            ],
+            "sdkRoots": [
+              "data-next-package-toggle",
+              "data-next-toggle-card"
+            ]
+          },
+          {
+            "name": "Apollo checkout layout blocks",
+            "partials": [
+              "checkout-header.html",
+              "product-heading.html",
+              "promo-banner.html",
+              "promo-timer.html",
+              "as-seen-in.html",
+              "reviews-slider.html",
+              "guarantee.html"
+            ],
+            "ownedInputs": [
+              "product_heading",
+              "promo_banner",
+              "promo_timer",
+              "as_seen_in",
+              "reviews",
+              "guarantee"
+            ],
+            "sdkRoots": [],
+            "note": "Checkout component CSS is in shared next-core.css. Checkout page styles: typically Swiper CDN only."
+          },
+          {
+            "name": "checkout reveal",
+            "partials": [],
+            "ownedInputs": [
+              "checkout_reveal",
+              "checkout_reveal_cta"
+            ],
+            "sdkRoots": [
+              "data-checkout-reveal-trigger",
+              "data-checkout-reveal-panel"
+            ],
+            "note": "initCheckoutReveal() in checkout-apollo.js. Hidden panel is off-screen (not display:none) so Spreedly card iframes mount at real size."
+          },
+          {
+            "name": "form-section order bumps",
+            "partials": [
+              "bump-check01.html",
+              "bump-switch01.html"
+            ],
+            "ownedInputs": [
+              "packages",
+              "order_bump",
+              "order_bump_variant"
+            ],
+            "sdkRoots": [
+              "data-next-package-toggle",
+              "data-next-toggle-card"
+            ]
+          },
+          {
+            "name": "payment shell",
+            "partials": [
+              "payment-methods.html",
+              "express-checkout.html"
+            ],
+            "ownedInputs": [
+              "payment_flags"
+            ],
+            "sdkRoots": [
+              "data-next-payment-method",
+              "data-next-payment-form",
+              "data-next-express-checkout"
+            ]
+          },
+          {
+            "name": "Apollo bundle upsell pages",
+            "partials": [
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card"
+            ]
+          }
+        ],
         "fixtures": [
-          "contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json"
+          "contracts/fixtures/campaign-specs/apollo-tiered-apollo-layout.json"
         ],
         "agentNotes": [
-          "Use this family only when the design really has the Olympus tiered checkout shape; do not default here from a generic checkout.",
-          "Olympus bundle upsell pages declare upsell frontmatter as mapping hints, but still render inline SDK package/voucher refs today; replace both until those pages are promoted to include-owned upsell partials."
-        ]
+          "Use Apollo when the design has the Apollo checkout shell (trust bar, product heading, promo banner/timer, as-seen-in, reviews slider, guarantee) plus tiered bundle cards — not a generic Olympus clone.",
+          "Two bump slots: selector_order_bump_variant (check03 below selector) vs order_bump_variant (later form-section bumps). check03 config reads order_bump.check03.* frontmatter only.",
+          "Do not add per-page checkout component CSS files; promoted styles live in canonical next-core.css synced across all nine families."
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Apollo checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Apollo checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "limos": {
+      "description": "Single-step checkout with dense offer framing and native bundle quantity controls.",
+      "frontmatterStatus": "partial",
+      "strongSignals": [
+        "limos in spec, path, or export metadata",
+        "single offer card with native quantity stepper",
+        "checkout-bundle-offer",
+        "next-bundle-qty--anchor-br",
+        "cart-summary02 accordion shape",
+        "limos upsell offer includes with upsell_offer or upsell_bundle_tiers frontmatter"
+      ],
+      "canonicalSurfaces": {
+        "mainSelector": "single-offer-quantity-selector",
+        "orderSummary": "cart-summary02 accordion",
+        "payment": "payment-methods",
+        "expressCheckout": "express-checkout|express-checkout-inline",
+        "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
+        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer",
+        "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop"
+      },
+      "frontmatterInputsNeeded": [
+        "timer"
+      ],
+      "frontmatterInputsObserved": [
+        "single_offer",
+        "selector_id",
+        "package_id",
+        "shipping_methods",
+        "shipping_method",
+        "shipping_id",
+        "quantity_min",
+        "quantity_max",
+        "items_json",
+        "price_display_variant",
+        "order_bump_variant",
+        "order_bump.check01",
+        "order_bump.switch01",
+        "receipt_summary",
+        "upsell_bundle_tiers",
+        "upsell_offer"
+      ],
+      "agentContract": {
+        "status": "agent-ready",
+        "templateRole": "Single-step checkout with one visible offer card and a native quantity stepper.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "checkout page package",
+            "standard shipping method when selector shipping is used",
+            "optional prepurchase packages",
+            "upsell/receipt routing"
+          ],
+          "campaignsApi": [
+            "packages[].ref_id",
+            "shipping_options[].ref_id",
+            "offers/vouchers for upsell pages"
+          ],
+          "starterTemplate": [
+            "stable SDK DOM shape",
+            "family-local includes",
+            "page frontmatter contract"
+          ]
+        },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "packages.main_package",
+            "single_offer.shipping_method",
+            "shipping_methods.standard"
+          ],
+          "optionalWhenSupported": [
+            "single_offer.quantity_min",
+            "single_offer.quantity_max",
+            "single_offer.show_quantity_stepper",
+            "order_bump_variant",
+            "upsell_offer",
+            "upsell_bundle_tiers",
+            "receipt_summary"
+          ],
+          "demoOnlyValues": [
+            "single_offer.package_id=1",
+            "shipping_methods.standard=2",
+            "packages.prepurchase_1=7",
+            "packages.prepurchase_2=9"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.*",
+            "shipping_methods.standard",
+            "single_offer.package_id",
+            "order_bump.*.package_id",
+            "upsell_offer.package_id",
+            "upsell_bundle_tiers[].items_json"
+          ],
+          "removeWhenUnsupported": [
+            "single_offer.shipping_method when the target campaign has no selector shipping",
+            "order bump variants when prepurchase packages are absent"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "single offer selector",
+            "partials": [
+              "single-offer-quantity-selector.html"
+            ],
+            "ownedInputs": [
+              "single_offer",
+              "packages",
+              "shipping_methods"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-bundle-qty-for"
+            ]
+          },
+          {
+            "name": "upsell offers",
+            "partials": [
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector"
+            ]
+          },
+          {
+            "name": "receipt summary",
+            "partials": [
+              "receipt-skeleton.html",
+              "receipt-order-summary-mobile.html",
+              "receipt-order-summary-desktop.html"
+            ],
+            "ownedInputs": [
+              "receipt_summary"
+            ],
+            "sdkRoots": [
+              "data-next-skeleton",
+              "data-next-order-items"
+            ]
+          }
+        ],
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/limos-single-offer-quantity.json"
+        ],
+        "agentNotes": [
+          "Limos is quantity-stepper first; do not force 1x/2x/3x visual tier cards into this family."
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Limos checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Limos checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right order-summary column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "demeter": {
+      "description": "Single-step editorial/luxury checkout with spacious tier cards and open cart summary.",
+      "frontmatterStatus": "partial",
+      "strongSignals": [
+        "demeter in spec, path, or export metadata",
+        "editorial 1/2/3 tier selector",
+        "checkout-progress bar above bundle selection",
+        "open side cart using cart-summary03",
+        "luxury/editorial spacing with serif display type",
+        "demeter upsell offer includes with upsell_offer or upsell_bundle_tiers frontmatter"
+      ],
+      "canonicalSurfaces": {
+        "mainSelector": "editorial-tier-selector",
+        "orderSummary": "cart-summary03 side cart",
+        "payment": "payment-methods",
+        "expressCheckout": "express-checkout|express-checkout-inline",
+        "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
+        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer",
+        "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop"
+      },
+      "frontmatterInputsNeeded": [
+        "progress_steps"
+      ],
+      "frontmatterInputsObserved": [
+        "bundles",
+        "packages",
+        "shipping_methods",
+        "selector_id",
+        "selection_mode",
+        "price_display_variant",
+        "order_bump_variant",
+        "order_bump.check01",
+        "order_bump.switch01",
+        "cart_summary_variant",
+        "cart_summary_heading",
+        "cart_summary_subtitle",
+        "cart_summary_feature_package",
+        "receipt_summary",
+        "upsell_bundle_tiers",
+        "upsell_offer"
+      ],
+      "agentContract": {
+        "status": "agent-ready",
+        "templateRole": "Editorial single-step checkout with tier cards and an open side summary.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "checkout page package tiers",
+            "shipping_methods[]",
+            "optional prepurchase packages",
+            "upsell/receipt routing"
+          ],
+          "campaignsApi": [
+            "packages[].ref_id",
+            "shipping_options[].ref_id",
+            "offers/vouchers for upsell pages"
+          ],
+          "starterTemplate": [
+            "stable SDK DOM shape",
+            "family-local includes",
+            "page frontmatter contract"
+          ]
+        },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "packages.main_package",
+            "shipping_methods.standard",
+            "bundles[].quantity",
+            "bundles[].shipping_method"
+          ],
+          "optionalWhenSupported": [
+            "shipping_methods.free",
+            "cart_summary_variant",
+            "order_bump_variant",
+            "upsell_offer",
+            "upsell_bundle_tiers",
+            "receipt_summary"
+          ],
+          "demoOnlyValues": [
+            "packages.main_package=1",
+            "shipping_methods.standard=2",
+            "shipping_methods.free=1",
+            "packages.prepurchase_1=7",
+            "packages.prepurchase_2=9"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.*",
+            "shipping_methods.*",
+            "bundles[].shipping_method",
+            "order_bump.*.package_id",
+            "upsell_offer.package_id",
+            "upsell_bundle_tiers[].items_json"
+          ],
+          "removeWhenUnsupported": [
+            "bundles[].shipping_method when no tier-specific shipping exists",
+            "order bump variants when prepurchase packages are absent"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "editorial tier selector",
+            "partials": [
+              "editorial-tier-selector.html"
+            ],
+            "ownedInputs": [
+              "packages",
+              "shipping_methods",
+              "bundles",
+              "price_display_variant"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-card"
+            ]
+          },
+          {
+            "name": "side summary and bumps",
+            "partials": [
+              "cart-summary03.html",
+              "bump-check01.html",
+              "bump-switch01.html"
+            ],
+            "ownedInputs": [
+              "cart_summary_variant",
+              "packages",
+              "order_bump"
+            ],
+            "sdkRoots": [
+              "data-next-cart-summary",
+              "data-next-package-toggle"
+            ]
+          },
+          {
+            "name": "upsell and receipt includes",
+            "partials": [
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html",
+              "receipt-skeleton.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_bundle_tiers",
+              "receipt_summary"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-order-items"
+            ]
+          }
+        ],
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/demeter-editorial-tiered.json"
+        ],
+        "agentNotes": [
+          "Demeter text such as shipping labels is copy, not proof; validate actual free/standard shipping against spec/API before launch."
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Demeter checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Demeter checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "shop-single-step": {
+      "description": "Highly used shop-style single-step checkout with compact cart summary, receipt, and three bundle upsell variants.",
+      "frontmatterStatus": "partial",
+      "strongSignals": [
+        "shop-single-step in spec, path, or export metadata",
+        "shop checkout with checkout.html plus upsell-bundle-stepper/tier-pills/tier-cards pages",
+        "cart-summary04 used on checkout",
+        "receipt order summary split into mobile and desktop order item templates",
+        "upsell bundle offers promoted to shop-single-step *_offer includes"
+      ],
+      "canonicalSurfaces": {
+        "checkoutSummary": "cart-summary04",
+        "payment": "payment-methods",
+        "expressCheckout": "express-checkout",
+        "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
+        "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop",
+        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer"
+      },
+      "frontmatterInputsNeeded": [
+        "cart_summary_variant"
+      ],
+      "frontmatterInputsObserved": [
+        "order_bump",
+        "order_bump_variant",
+        "packages",
+        "receipt_summary",
+        "swiper_slides",
+        "swiper_thumbs",
+        "upsell_bundle_tiers",
+        "upsell_offer"
+      ],
+      "agentContract": {
+        "status": "agent-ready",
+        "templateRole": "Shop-style single-step checkout with compact cart summary plus promoted receipt and upsell includes.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "checkout page payment/shipping support",
+            "optional order bump package",
+            "upsell pages/packages/offers",
+            "receipt routing"
+          ],
+          "campaignsApi": [
+            "packages[].ref_id",
+            "payment method capability",
+            "offers/vouchers for upsell pages"
+          ],
+          "starterTemplate": [
+            "shop checkout DOM shape",
+            "family-local receipt and upsell includes",
+            "runtime shipping/address fields"
+          ]
+        },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "next_url",
+            "page_type=checkout"
+          ],
+          "optionalWhenSupported": [
+            "packages.prepurchase_1",
+            "packages.prepurchase_2",
+            "order_bump_variant",
+            "order_bump",
+            "receipt_summary",
+            "upsell_offer",
+            "upsell_bundle_tiers",
+            "swiper_slides",
+            "swiper_thumbs",
+            "payment_flags"
+          ],
+          "demoOnlyValues": [
+            "packages.prepurchase_1=7",
+            "packages.prepurchase_2=9",
+            "order_bump.check02.package_id=9",
+            "upsell_offer.package_id=3",
+            "upsell_offer.vouchers_json=[\"UP50\"]",
+            "upsell_bundle_tiers packageId=3"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.*",
+            "order_bump.*.package_id",
+            "upsell_offer.*",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json",
+            "receipt_summary.*",
+            "payment_flags"
+          ],
+          "removeWhenUnsupported": [
+            "unsupported payment method rows",
+            "order bump when no bump package exists",
+            "upsell pages not present in the funnel"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "shop checkout shell",
+            "partials": [
+              "cart-summary04.html",
+              "express-checkout.html",
+              "payment-methods.html",
+              "bump-check02.html"
+            ],
+            "ownedInputs": [
+              "payment_flags"
+            ],
+            "sdkRoots": [
+              "data-next-cart-summary",
+              "data-next-express-checkout",
+              "data-next-payment-method"
+            ]
+          },
+          {
+            "name": "shop upsell offers",
+            "partials": [
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector"
+            ]
+          },
+          {
+            "name": "shop receipt",
+            "partials": [
+              "receipt-skeleton.html",
+              "receipt-order-summary-mobile.html",
+              "receipt-order-summary-desktop.html"
+            ],
+            "ownedInputs": [
+              "receipt_summary"
+            ],
+            "sdkRoots": [
+              "data-next-order-items"
+            ]
+          }
+        ],
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/shop-single-step-upsell-receipt.json"
+        ],
+        "agentNotes": [
+          "Shop-single-step is a real family, not a generic fallback. Preserve its summary/payment template roots."
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered shop single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "shop checkout layout",
+                "selector": ".checkout__layout"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout__column--left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout__column--right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "olympus-mv-single-step": {
+      "description": "Olympus-style single-step checkout with configurable multi-variant bundle slots in the checkout page.",
+      "frontmatterStatus": "partial",
+      "strongSignals": [
+        "olympus-mv-single-step in spec, path, or export metadata",
+        "data-next-bundle-slots-for in checkout",
+        "checkout-olympus-mv-full.js",
+        "variant slot controls inside checkout",
+        "MV product gallery plus bundle slots on one page"
+      ],
+      "canonicalSurfaces": {
+        "mainSelector": "mv-configurable-selector",
+        "variantSlots": "bundle-slot-selector",
+        "personalization": "per-slot picker (data-next-property per slot, toggled by slot_personalization); order-wide default via mv-configurable-selector order_personalization",
+        "orderSummary": "cart-summary03|cart-summary04",
+        "payment": "payment-methods",
+        "expressCheckout": "express-checkout|express-checkout-inline",
+        "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
+        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
+        "receipt": "receipt-skeleton"
+      },
+      "frontmatterInputsNeeded": [
+        "cart_summary_variant"
+      ],
+      "frontmatterInputsObserved": [
+        "checkout_step",
+        "packages",
+        "shipping_methods",
+        "selector_id",
+        "swiper_slides",
+        "swiper_thumbs",
+        "variant_slots",
+        "slot_personalization",
+        "variant_picker",
+        "upsell_offer",
+        "upsell_mv_tiers",
+        "slot_personalization",
+        "order_personalization",
+        "upsell_bundle_tiers"
+      ],
+      "agentContract": {
+        "status": "agent-ready",
+        "templateRole": "Olympus-style single-step checkout where bundle quantity selection and configurable variant slots live on the same page.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "configurable checkout page package",
+            "variant slot expectations",
+            "shipping_methods[]",
+            "payment/routing"
+          ],
+          "campaignsApi": [
+            "configurable package ref_id",
+            "variant product data",
+            "shipping_options[].ref_id"
+          ],
+          "starterTemplate": [
+            "mv-configurable-selector.html",
+            "mv slot DOM contract",
+            "checkout-olympus-mv-full.js"
+          ]
+        },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "packages.main_package",
+            "shipping_methods.standard",
+            "variant_slots[].id",
+            "variant_slots[].quantity",
+            "variant_slots[].shipping_method"
+          ],
+          "optionalWhenSupported": [
+            "shipping_methods.free",
+            "checkout_step.selector_layout",
+            "swiper_slides",
+            "swiper_thumbs",
+            "variant_slots[].label_text",
+            "upsell_offer",
+            "upsell_mv_tiers",
+            "slot_personalization",
+            "order_personalization",
+            "upsell_bundle_tiers"
+          ],
+          "demoOnlyValues": [
+            "packages.main_package=1",
+            "shipping_methods.standard=2",
+            "shipping_methods.free=1",
+            "upsell_offer.package_id=1",
+            "upsell_offer.package_id=3",
+            "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
+            "upsell_bundle_tiers packageId=3",
+            "upsell_bundle_tiers vouchers_json=[\"UP50\"]"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.main_package",
+            "shipping_methods.*",
+            "variant_slots[].shipping_method",
+            "upsell_offer.*",
+            "upsell_mv_tiers[].vouchers_json",
+            "slot_personalization",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json"
+          ],
+          "removeWhenUnsupported": [
+            "variant slot rows unsupported by the target spec/API",
+            "free shipping row if no free method exists",
+            "upsell pages not present in the funnel"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "MV configurable selector",
+            "partials": [
+              "mv-configurable-selector.html"
+            ],
+            "ownedInputs": [
+              "packages",
+              "shipping_methods",
+              "variant_slots"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-slots-for",
+              "data-next-bundle-slot-template-id"
+            ]
+          },
+          {
+            "name": "MV variant-picker (alternative selector)",
+            "partials": [
+              "variant-picker.html"
+            ],
+            "ownedInputs": [
+              "variant_picker",
+              "shipping_methods"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-slots-for"
+            ],
+            "note": "Additive alternative to mv-configurable-selector: custom-JS slot rendering (variant-picker.js) with per-variant swatch thumbnails driven from one declared variant_picker.variants source, plus an offline render fixture. Supports per-tier data-next-shipping-id via variant_picker.tiers[].shipping_method/shipping_id. Demoed on the standalone variant-picker.html page; not wired into checkout.html by default."
+          },
+          {
+            "name": "MV payment and summary",
+            "partials": [
+              "payment-methods.html",
+              "cart-summary03.html",
+              "cart-summary04.html"
+            ],
+            "ownedInputs": [
+              "payment_flags"
+            ],
+            "sdkRoots": [
+              "data-next-payment-method",
+              "data-next-cart-summary"
+            ]
+          },
+          {
+            "name": "MV upsell offers",
+            "partials": [
+              "upsell-mv-offer.html",
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_mv_tiers",
+              "slot_personalization",
+              "order_personalization",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-bundle-slots-for"
+            ]
+          }
+        ],
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/olympus-mv-single-step-configurable.json"
+        ],
+        "agentNotes": [
+          "Keep slot ids aligned across selector rows, bundle slots, and JS.",
+          "MV upsell pages now use upsells-mv.js for configurable-slot upsells and upsells.js for the standard bundle upsell chain; replace both upsell_offer and tier voucher/package refs from the target spec/API."
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Olympus MV single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Olympus MV checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "apollo-mv-single-step": {
+      "description": "Apollo-layout single-step checkout with configurable multi-variant bundle slots, selector layout toggle, and optional checkout reveal.",
+      "frontmatterStatus": "partial",
+      "strongSignals": [
+        "apollo-mv-single-step in spec, path, or export metadata",
+        "checkout-apollo-mv-full.js",
+        "data-next-bundle-slots-for in checkout",
+        "mv-configurable-selector.html with Apollo layout partials",
+        "selector_order_bump_variant and checkout_reveal frontmatter",
+        "checkout_step.selector_layout"
+      ],
+      "canonicalSurfaces": {
+        "mainSelector": "mv-configurable-selector",
+        "selectorLayout": "grid|vertical",
+        "variantSlots": "bundle-slot-selector",
+        "selectorOrderBump": "bump-check03",
+        "personalization": "per-slot picker (data-next-property per slot, toggled by slot_personalization); order-wide default via mv-configurable-selector order_personalization",
+        "orderSummary": "cart-summary03|cart-summary04",
+        "payment": "payment-methods",
+        "expressCheckout": "express-checkout|express-checkout-inline",
+        "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
+        "checkoutReveal": "checkout-form--reveal",
+        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
+        "receipt": "receipt-skeleton"
+      },
+      "frontmatterInputsNeeded": [
+        "cart_summary_variant"
+      ],
+      "frontmatterInputsObserved": [
+        "checkout_step",
+        "packages",
+        "shipping_methods",
+        "selector_id",
+        "selector_order_bump_variant",
+        "order_bump_variant",
+        "checkout_reveal",
+        "checkout_reveal_cta",
+        "as_seen_in",
+        "reviews",
+        "guarantee",
+        "promo_timer",
+        "promo_banner",
+        "product_heading",
+        "swiper_slides",
+        "swiper_thumbs",
+        "variant_slots",
+        "slot_personalization",
+        "variant_picker",
+        "upsell_offer",
+        "upsell_mv_tiers",
+        "order_personalization",
+        "upsell_bundle_tiers"
+      ],
+      "agentContract": {
+        "status": "agent-ready",
+        "templateRole": "Flagship Apollo-layout single-step MV checkout where bundle quantity selection, configurable variant slots, and Apollo framing live on one page.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "configurable checkout page package",
+            "variant slot expectations",
+            "shipping_methods[]",
+            "payment/routing"
+          ],
+          "campaignsApi": [
+            "configurable package ref_id",
+            "variant product data",
+            "shipping_options[].ref_id"
+          ],
+          "starterTemplate": [
+            "mv-configurable-selector.html",
+            "mv slot DOM contract",
+            "checkout-apollo-mv-full.js",
+            "promoted checkout component CSS in next-core.css"
+          ]
+        },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "packages.main_package",
+            "shipping_methods.standard",
+            "variant_slots[].id",
+            "variant_slots[].quantity",
+            "variant_slots[].shipping_method"
+          ],
+          "optionalWhenSupported": [
+            "shipping_methods.free",
+            "checkout_step.selector_layout",
+            "selector_order_bump_variant",
+            "order_bump_variant",
+            "checkout_reveal",
+            "checkout_reveal_cta",
+            "as_seen_in",
+            "reviews",
+            "guarantee",
+            "promo_banner",
+            "promo_timer",
+            "product_heading",
+            "swiper_slides",
+            "swiper_thumbs",
+            "variant_slots[].label_text",
+            "upsell_offer",
+            "upsell_mv_tiers",
+            "slot_personalization",
+            "order_personalization",
+            "upsell_bundle_tiers"
+          ],
+          "demoOnlyValues": [
+            "packages.main_package=1",
+            "shipping_methods.standard=2",
+            "shipping_methods.free=1",
+            "checkout_step.selector_layout=grid",
+            "selector_order_bump_variant=check03",
+            "order_bump_variant=check01",
+            "upsell_offer.package_id=1",
+            "upsell_offer.package_id=3",
+            "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
+            "upsell_bundle_tiers packageId=3",
+            "upsell_bundle_tiers vouchers_json=[\"UP50\"]"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.main_package",
+            "shipping_methods.*",
+            "variant_slots[].shipping_method",
+            "upsell_offer.*",
+            "upsell_mv_tiers[].vouchers_json",
+            "slot_personalization",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json"
+          ],
+          "removeWhenUnsupported": [
+            "variant slot rows unsupported by the target spec/API",
+            "selector_order_bump_variant when no selector-area bump package exists",
+            "free shipping row if no free method exists",
+            "upsell pages not present in the funnel"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "MV configurable selector",
+            "partials": [
+              "mv-configurable-selector.html"
+            ],
+            "ownedInputs": [
+              "packages",
+              "shipping_methods",
+              "variant_slots",
+              "checkout_step"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-slots-for",
+              "data-next-bundle-slot-template-id"
+            ],
+            "note": "checkout_step.selector_layout: grid (default) | vertical adds mv-cards--vertical. MV selector CSS lives in shared next-core.css."
+          },
+          {
+            "name": "selector-area order bump",
+            "partials": [
+              "bump-check03.html"
+            ],
+            "ownedInputs": [
+              "selector_order_bump_variant",
+              "order_bump.check03"
+            ],
+            "sdkRoots": [
+              "data-next-package-toggle",
+              "data-next-toggle-card"
+            ]
+          },
+          {
+            "name": "Apollo checkout layout blocks",
+            "partials": [
+              "checkout-header.html",
+              "product-heading.html",
+              "promo-banner.html",
+              "promo-timer.html",
+              "as-seen-in.html",
+              "reviews-slider.html",
+              "guarantee.html"
+            ],
+            "ownedInputs": [
+              "product_heading",
+              "promo_banner",
+              "promo_timer",
+              "as_seen_in",
+              "reviews",
+              "guarantee"
+            ],
+            "sdkRoots": []
+          },
+          {
+            "name": "checkout reveal",
+            "partials": [],
+            "ownedInputs": [
+              "checkout_reveal",
+              "checkout_reveal_cta"
+            ],
+            "sdkRoots": [
+              "data-checkout-reveal-trigger",
+              "data-checkout-reveal-panel"
+            ],
+            "note": "initCheckoutReveal() in checkout-apollo-mv-full.js alongside guardBumpPersonalization() for check03 personalization fields."
+          },
+          {
+            "name": "MV variant-picker (alternative selector)",
+            "partials": [
+              "variant-picker.html"
+            ],
+            "ownedInputs": [
+              "variant_picker",
+              "shipping_methods"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-slots-for"
+            ],
+            "note": "Additive alternative to mv-configurable-selector. Demoed on variant-picker.html; not wired into checkout.html by default. variant-picker.css remains route-specific."
+          },
+          {
+            "name": "MV payment and summary",
+            "partials": [
+              "payment-methods.html",
+              "cart-summary03.html",
+              "cart-summary04.html"
+            ],
+            "ownedInputs": [
+              "payment_flags"
+            ],
+            "sdkRoots": [
+              "data-next-payment-method",
+              "data-next-cart-summary"
+            ]
+          },
+          {
+            "name": "form-section order bumps",
+            "partials": [
+              "bump-check01.html"
+            ],
+            "ownedInputs": [
+              "packages",
+              "order_bump",
+              "order_bump_variant"
+            ],
+            "sdkRoots": [
+              "data-next-package-toggle",
+              "data-next-toggle-card"
+            ],
+            "note": "MV bump-check01 uses data-next-product-sync for variant-safe quantity sync."
+          },
+          {
+            "name": "MV upsell offers",
+            "partials": [
+              "upsell-mv-offer.html",
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_mv_tiers",
+              "slot_personalization",
+              "order_personalization",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-bundle-slots-for"
+            ]
+          }
+        ],
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/apollo-mv-single-step-configurable.json"
+        ],
+        "agentNotes": [
+          "Hybrid of Olympus MV commerce surfaces and Apollo checkout layout. Pick this over olympus-mv-single-step when the design needs Apollo framing (trust bar, reviews slider, checkout reveal, etc.).",
+          "selector_layout grid|vertical on checkout_step. Two bump slots: selector_order_bump_variant vs order_bump_variant.",
+          "Checkout page styles: typically Swiper CDN only; component CSS is in shared next-core.css."
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Apollo MV single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Apollo checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              },
+              {
+                "name": "MV slot container",
+                "selector": "[data-next-bundle-slots-for]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "olympus-mv-two-step": {
+      "description": "Olympus-style multi-variant flow with a separate variant select step before checkout.",
+      "frontmatterStatus": "partial",
+      "strongSignals": [
+        "olympus-mv-two-step in spec, path, or export metadata",
+        "select.html before checkout.html",
+        "checkout-olympus-mv-selection.js",
+        "checkout-olympus-mv-full.js",
+        "variant selection step followed by payment step"
+      ],
+      "canonicalSurfaces": {
+        "selectStep": "mv-selection-step",
+        "checkoutSelector": "mv-selected-bundle-review",
+        "variantSlots": "bundle-slot-selector",
+        "personalization": "per-slot picker (data-next-property per slot, toggled by slot_personalization); order-wide default via personalization-field (ships unwired)",
+        "orderSummary": "cart-summary03|cart-summary04",
+        "payment": "payment-methods",
+        "expressCheckout": "express-checkout|express-checkout-inline",
+        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
+        "receipt": "receipt-skeleton"
+      },
+      "frontmatterInputsNeeded": [
+        "swiper_slides",
+        "swiper_thumbs"
+      ],
+      "frontmatterInputsObserved": [
+        "checkout_step",
+        "packages",
+        "shipping_methods",
+        "select_step",
+        "selector_id",
+        "variant_slots",
+        "slot_personalization",
+        "variant_picker",
+        "upsell_offer",
+        "upsell_mv_tiers",
+        "slot_personalization",
+        "order_personalization",
+        "upsell_bundle_tiers"
+      ],
+      "agentContract": {
+        "status": "agent-ready",
+        "templateRole": "Olympus-style MV flow with separate select step before checkout/payment.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "select page package/variant choices",
+            "checkout routing",
+            "shipping_methods[]",
+            "payment/routing"
+          ],
+          "campaignsApi": [
+            "configurable package ref_id",
+            "variant product data",
+            "shipping_options[].ref_id"
+          ],
+          "starterTemplate": [
+            "mv-selection-step.html",
+            "mv-slot-stage.html",
+            "checkout-olympus-mv-selection.js",
+            "checkout-olympus-mv-full.js"
+          ]
+        },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "packages.main_package",
+            "shipping_methods.standard",
+            "variant_slots[].id",
+            "variant_slots[].quantity",
+            "variant_slots[].shipping_method",
+            "select_step.selector_id"
+          ],
+          "optionalWhenSupported": [
+            "shipping_methods.free",
+            "checkout_step.selector_id",
+            "select_step.selector_layout",
+            "swiper_slides",
+            "swiper_thumbs",
+            "upsell_offer",
+            "upsell_mv_tiers",
+            "slot_personalization",
+            "order_personalization",
+            "upsell_bundle_tiers"
+          ],
+          "demoOnlyValues": [
+            "packages.main_package=1",
+            "shipping_methods.standard=2",
+            "shipping_methods.free=1",
+            "upsell_offer.package_id=1",
+            "upsell_offer.package_id=3",
+            "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
+            "upsell_bundle_tiers packageId=3",
+            "upsell_bundle_tiers vouchers_json=[\"UP50\"]"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.main_package",
+            "shipping_methods.*",
+            "variant_slots[].shipping_method",
+            "upsell_offer.*",
+            "upsell_mv_tiers[].vouchers_json",
+            "slot_personalization",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json"
+          ],
+          "removeWhenUnsupported": [
+            "variant slot rows unsupported by the target spec/API",
+            "free shipping row if no free method exists",
+            "upsell pages not present in the funnel"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "MV select step",
+            "partials": [
+              "mv-selection-step.html"
+            ],
+            "ownedInputs": [
+              "select_step",
+              "packages",
+              "shipping_methods",
+              "variant_slots"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-card"
+            ]
+          },
+          {
+            "name": "MV slot stage",
+            "partials": [
+              "mv-slot-stage.html"
+            ],
+            "ownedInputs": [
+              "checkout_step",
+              "variant_slots"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-slots-for",
+              "data-next-bundle-slot-template-id"
+            ]
+          },
+          {
+            "name": "MV variant-picker (alternative selector)",
+            "partials": [
+              "variant-picker.html"
+            ],
+            "ownedInputs": [
+              "variant_picker",
+              "shipping_methods"
+            ],
+            "sdkRoots": [
+              "data-next-bundle-selector",
+              "data-next-bundle-slots-for"
+            ],
+            "note": "Additive alternative to mv-selection-step + mv-slot-stage: custom-JS slot rendering (variant-picker.js) with per-variant swatch thumbnails driven from one declared variant_picker.variants source, plus an offline render fixture. Supports per-tier data-next-shipping-id via variant_picker.tiers[].shipping_method/shipping_id. Demoed on the standalone variant-picker.html page; not wired into select.html by default."
+          },
+          {
+            "name": "MV payment and summary",
+            "partials": [
+              "payment-methods.html",
+              "cart-summary03.html",
+              "cart-summary04.html"
+            ],
+            "ownedInputs": [
+              "payment_flags"
+            ],
+            "sdkRoots": [
+              "data-next-payment-method",
+              "data-next-cart-summary"
+            ]
+          },
+          {
+            "name": "MV upsell offers",
+            "partials": [
+              "upsell-mv-offer.html",
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_mv_tiers",
+              "slot_personalization",
+              "order_personalization",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card",
+              "data-next-bundle-slots-for"
+            ]
+          }
+        ],
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/olympus-mv-two-step-configurable.json"
+        ],
+        "agentNotes": [
+          "Select-step ids and checkout-step ids must remain synchronized; ask if a design blends one-step and two-step MV patterns.",
+          "MV upsell pages now use upsells-mv.js for configurable-slot upsells and upsells.js for the standard bundle upsell chain; replace both upsell_offer and tier voucher/package refs from the target spec/API."
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered Olympus MV two-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "Olympus MV checkout wrapper",
+                "selector": ".checkout-wrapper"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout-layout__left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout-layout__right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "shipping field row component",
+                "selector": "[data-next-component=\"shipping-field-row\"]"
+              },
+              {
+                "name": "checkout payment submit",
+                "selector": "[os-checkout-payment]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "shop-three-step": {
+      "description": "Shop-style three-step checkout with separate information, shipping, and billing pages plus dynamic shipping options.",
+      "frontmatterStatus": "include-driven",
+      "strongSignals": [
+        "shop-three-step in spec, path, or export metadata",
+        "information.html -> shipping.html -> billing.html flow",
+        "checkout-shop-three-shipping.js dynamic shipping options",
+        "separate shipping method page before billing"
+      ],
+      "canonicalSurfaces": {
+        "informationStep": "shipping/contact form",
+        "shippingStep": "dynamic shipping methods from SDK getShippingMethods()",
+        "billingStep": "payment-methods and checkout review",
+        "receipt": "receipt-skeleton",
+        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards"
+      },
+      "frontmatterInputsNeeded": [
+        "receipt_summary"
+      ],
+      "frontmatterInputsObserved": [
+        "order_bump",
+        "order_bump_variant",
+        "packages",
+        "shipping_steps",
+        "swiper_slides",
+        "swiper_thumbs",
+        "upsell_offer",
+        "upsell_bundle_tiers"
+      ],
+      "agentContract": {
+        "status": "upsell-include-driven",
+        "templateRole": "Shop checkout split into information, shipping, and billing steps; shipping methods are runtime-derived, not frontmatter refs.",
+        "sourceOfTruth": {
+          "campaignSpec": [
+            "three-step checkout routing",
+            "shipping_methods[]",
+            "payment support",
+            "upsell pages/packages/offers",
+            "receipt routing"
+          ],
+          "campaignsApi": [
+            "shipping_options[].ref_id via SDK getShippingMethods()",
+            "payment method capability",
+            "offers/vouchers for upsell pages"
+          ],
+          "starterTemplate": [
+            "multi-step form sequencing",
+            "checkout-shop-three-shipping.js",
+            "shop receipt and upsell DOM shape"
+          ]
+        },
+        "frontmatter": {
+          "requiredWhenCloning": [
+            "information.next_url=shipping.html",
+            "shipping.next_url=billing.html",
+            "billing.next_url=upsell-bundle-stepper.html"
+          ],
+          "optionalWhenSupported": [
+            "packages.prepurchase_1",
+            "packages.prepurchase_2",
+            "order_bump_variant",
+            "order_bump",
+            "receipt_summary",
+            "upsell_offer",
+            "upsell_bundle_tiers",
+            "swiper_slides",
+            "swiper_thumbs"
+          ],
+          "demoOnlyValues": [
+            "packages.prepurchase_1=7",
+            "packages.prepurchase_2=9",
+            "order_bump.check02.package_id=9",
+            "upsell_offer.package_id=3",
+            "upsell_offer.vouchers_json=[\"UP50\"]",
+            "upsell_bundle_tiers packageId=3"
+          ],
+          "replaceFromSpecOrApi": [
+            "packages.*",
+            "order_bump.*.package_id",
+            "upsell_offer.*",
+            "upsell_bundle_tiers[].items_json",
+            "upsell_bundle_tiers[].vouchers_json",
+            "payment method visibility",
+            "receipt summary copy and order evidence text"
+          ],
+          "removeWhenUnsupported": [
+            "order bump when no bump package exists",
+            "unsupported payment method rows",
+            "upsell pages not present in the funnel"
+          ]
+        },
+        "surfaces": [
+          {
+            "name": "dynamic shipping step",
+            "partials": [
+              "assets/js/checkout-shop-three-shipping.js"
+            ],
+            "ownedInputs": [
+              "Campaigns API shipping methods"
+            ],
+            "sdkRoots": [
+              "data-next-shipping-id"
+            ]
+          },
+          {
+            "name": "billing payment shell",
+            "partials": [
+              "payment-methods.html"
+            ],
+            "ownedInputs": [
+              "payment_flags"
+            ],
+            "sdkRoots": [
+              "data-next-payment-method",
+              "data-next-payment-form"
+            ]
+          },
+          {
+            "name": "upsell selectors/actions",
+            "partials": [
+              "upsell-bundle-stepper-offer.html",
+              "upsell-bundle-tier-pills-offer.html",
+              "upsell-bundle-tier-cards-offer.html"
+            ],
+            "ownedInputs": [
+              "upsell_offer",
+              "upsell_bundle_tiers"
+            ],
+            "sdkRoots": [
+              "data-next-upsell",
+              "data-next-bundle-selector",
+              "data-next-bundle-card"
+            ]
+          }
+        ],
+        "fixtures": [
+          "contracts/fixtures/campaign-specs/shop-three-step-dynamic-shipping.json"
+        ],
+        "agentNotes": [
+          "Do not add shipping_methods frontmatter here for checkout methods. The shipping step renders from the live SDK/API method list.",
+          "Shop-three-step bundle upsell pages use include-owned offer partials; replace upsell_offer and upsell_bundle_tiers from the target CampaignSpec/API."
+        ],
+        "qaStructure": {
+          "checkout": {
+            "description": "Rendered shop three-step checkout must preserve the shop checkout shell and runtime summary/form roots.",
+            "requiredVisibleSelectors": [
+              {
+                "name": "shop checkout layout",
+                "selector": ".checkout__layout"
+              },
+              {
+                "name": "left checkout column",
+                "selector": ".checkout__column--left"
+              },
+              {
+                "name": "right checkout column",
+                "selector": ".checkout__column--right"
+              },
+              {
+                "name": "checkout form",
+                "selector": "[data-next-checkout=\"form\"]"
+              },
+              {
+                "name": "rendered order summary",
+                "selector": "[data-next-cart-summary]"
+              }
+            ],
+            "requiredNonEmptySelectors": [
+              {
+                "name": "visible order summary content",
+                "selector": "[data-next-cart-summary]"
+              }
+            ]
+          }
+        }
       }
     },
     "arjuna": {
@@ -1044,1163 +2944,229 @@
           "Order bump (bump-coverage) is optional and not included in the v1 checkout spine; add via the shared bump-coverage partials when a CampaignSpec order bump maps."
         ]
       }
-    },
-    "limos": {
-      "description": "Single-step checkout with dense offer framing and native bundle quantity controls.",
-      "frontmatterStatus": "partial",
-      "strongSignals": [
-        "limos in spec, path, or export metadata",
-        "single offer card with native quantity stepper",
-        "checkout-bundle-offer",
-        "next-bundle-qty--anchor-br",
-        "cart-summary02 accordion shape",
-        "limos upsell offer includes with upsell_offer or upsell_bundle_tiers frontmatter"
-      ],
-      "canonicalSurfaces": {
-        "mainSelector": "single-offer-quantity-selector",
-        "orderSummary": "cart-summary02 accordion",
-        "payment": "payment-methods",
-        "expressCheckout": "express-checkout|express-checkout-inline",
-        "orderBump": "bump-check01|bump-check02|bump-switch01",
-        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer",
-        "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop"
-      },
-      "frontmatterInputsNeeded": [
-        "timer"
-      ],
-      "frontmatterInputsObserved": [
-        "single_offer",
-        "selector_id",
-        "package_id",
-        "shipping_methods",
-        "shipping_method",
-        "shipping_id",
-        "quantity_min",
-        "quantity_max",
-        "items_json",
-        "price_display_variant",
-        "order_bump_variant",
-        "order_bump.check01",
-        "order_bump.switch01",
-        "receipt_summary",
-        "upsell_bundle_tiers",
-        "upsell_offer"
-      ],
-      "agentContract": {
-        "status": "agent-ready",
-        "templateRole": "Single-step checkout with one visible offer card and a native quantity stepper.",
-        "sourceOfTruth": {
-          "campaignSpec": [
-            "checkout page package",
-            "standard shipping method when selector shipping is used",
-            "optional prepurchase packages",
-            "upsell/receipt routing"
-          ],
-          "campaignsApi": [
-            "packages[].ref_id",
-            "shipping_options[].ref_id",
-            "offers/vouchers for upsell pages"
-          ],
-          "starterTemplate": [
-            "stable SDK DOM shape",
-            "family-local includes",
-            "page frontmatter contract"
-          ]
-        },
-        "frontmatter": {
-          "requiredWhenCloning": [
-            "packages.main_package",
-            "single_offer.shipping_method",
-            "shipping_methods.standard"
-          ],
-          "optionalWhenSupported": [
-            "single_offer.quantity_min",
-            "single_offer.quantity_max",
-            "single_offer.show_quantity_stepper",
-            "order_bump_variant",
-            "upsell_offer",
-            "upsell_bundle_tiers",
-            "receipt_summary"
-          ],
-          "demoOnlyValues": [
-            "single_offer.package_id=1",
-            "shipping_methods.standard=2",
-            "packages.prepurchase_1=7",
-            "packages.prepurchase_2=9"
-          ],
-          "replaceFromSpecOrApi": [
-            "packages.*",
-            "shipping_methods.standard",
-            "single_offer.package_id",
-            "order_bump.*.package_id",
-            "upsell_offer.package_id",
-            "upsell_bundle_tiers[].items_json"
-          ],
-          "removeWhenUnsupported": [
-            "single_offer.shipping_method when the target campaign has no selector shipping",
-            "order bump variants when prepurchase packages are absent"
-          ]
-        },
-        "surfaces": [
+    }
+  },
+  "askUserPromptTemplate": "I can map this design to more than one commerce template family: {candidates}. The ambiguous surfaces are {surfaces}. Which family should I use before wiring SDK components?",
+  "intentionalVariants": {
+    "purpose": "Shared includes that legitimately differ across families. These lineages are DELIBERATE design/structure differences, not drift — do NOT flag or auto-reconcile them in cross-family include-drift audits. Families omitted from an include's lineages do not ship that include.",
+    "verified": "2026-06-26",
+    "regenerate": "For each include, hash the body across families with the next_component/HTML-comment header and whitespace stripped; families with the same hash share a lineage.",
+    "doNotReconcile": true,
+    "includes": {
+      "bump-check01.html": {
+        "surface": "orderBump",
+        "lineages": [
           {
-            "name": "single offer selector",
-            "partials": [
-              "single-offer-quantity-selector.html"
+            "families": [
+              "olympus",
+              "apollo"
             ],
-            "ownedInputs": [
-              "single_offer",
-              "packages",
-              "shipping_methods"
-            ],
-            "sdkRoots": [
-              "data-next-bundle-selector",
-              "data-next-bundle-card",
-              "data-next-bundle-qty-for"
-            ]
+            "note": "Single-package check-style bump."
           },
           {
-            "name": "upsell offers",
-            "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+            "families": [
+              "olympus-mv-single-step",
+              "apollo-mv-single-step",
+              "olympus-mv-two-step"
             ],
-            "ownedInputs": [
-              "upsell_offer",
-              "upsell_bundle_tiers"
-            ],
-            "sdkRoots": [
-              "data-next-upsell",
-              "data-next-bundle-selector"
-            ]
+            "note": "MV/configurable bump: quantity sync via data-next-product-sync (product_id), so it sums across variant swaps (SDK 0.4.25+). See CLAUDE.md."
           },
           {
-            "name": "receipt summary",
-            "partials": [
-              "receipt-skeleton.html",
-              "receipt-order-summary-mobile.html",
-              "receipt-order-summary-desktop.html"
+            "families": [
+              "shop-single-step",
+              "shop-three-step"
             ],
-            "ownedInputs": [
-              "receipt_summary"
+            "note": "Shop bump layout for selector-less checkouts."
+          },
+          {
+            "families": [
+              "demeter",
+              "limos"
             ],
-            "sdkRoots": [
-              "data-next-skeleton",
-              "data-next-order-items"
-            ]
+            "note": "Editorial/Limos bump styling."
           }
-        ],
-        "qaStructure": {
-          "checkout": {
-            "description": "Rendered Limos checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
-            "requiredVisibleSelectors": [
-              {
-                "name": "Limos checkout wrapper",
-                "selector": ".checkout-wrapper"
-              },
-              {
-                "name": "left checkout column",
-                "selector": ".checkout-layout__left"
-              },
-              {
-                "name": "right order-summary column",
-                "selector": ".checkout-layout__right"
-              },
-              {
-                "name": "checkout form",
-                "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
-              },
-              {
-                "name": "checkout payment submit",
-                "selector": "[os-checkout-payment]"
-              },
-              {
-                "name": "rendered order summary",
-                "selector": "[data-next-cart-summary]"
-              }
-            ],
-            "requiredNonEmptySelectors": [
-              {
-                "name": "visible order summary content",
-                "selector": "[data-next-cart-summary]"
-              }
-            ]
-          }
-        },
-        "fixtures": [
-          "contracts/fixtures/campaign-specs/limos-single-offer-quantity.json"
-        ],
-        "agentNotes": [
-          "Limos is quantity-stepper first; do not force 1x/2x/3x visual tier cards into this family."
         ]
-      }
-    },
-    "demeter": {
-      "description": "Single-step editorial/luxury checkout with spacious tier cards and open cart summary.",
-      "frontmatterStatus": "partial",
-      "strongSignals": [
-        "demeter in spec, path, or export metadata",
-        "editorial 1/2/3 tier selector",
-        "checkout-progress bar above bundle selection",
-        "open side cart using cart-summary03",
-        "luxury/editorial spacing with serif display type",
-        "demeter upsell offer includes with upsell_offer or upsell_bundle_tiers frontmatter"
-      ],
-      "canonicalSurfaces": {
-        "mainSelector": "editorial-tier-selector",
-        "orderSummary": "cart-summary03 side cart",
-        "payment": "payment-methods",
-        "expressCheckout": "express-checkout|express-checkout-inline",
-        "orderBump": "bump-check01|bump-check02|bump-switch01",
-        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer",
-        "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop"
       },
-      "frontmatterInputsNeeded": [
-        "progress_steps"
-      ],
-      "frontmatterInputsObserved": [
-        "bundles",
-        "packages",
-        "shipping_methods",
-        "selector_id",
-        "selection_mode",
-        "price_display_variant",
-        "order_bump_variant",
-        "order_bump.check01",
-        "order_bump.switch01",
-        "cart_summary_variant",
-        "cart_summary_heading",
-        "cart_summary_subtitle",
-        "cart_summary_feature_package",
-        "receipt_summary",
-        "upsell_bundle_tiers",
-        "upsell_offer"
-      ],
-      "agentContract": {
-        "status": "agent-ready",
-        "templateRole": "Editorial single-step checkout with tier cards and an open side summary.",
-        "sourceOfTruth": {
-          "campaignSpec": [
-            "checkout page package tiers",
-            "shipping_methods[]",
-            "optional prepurchase packages",
-            "upsell/receipt routing"
-          ],
-          "campaignsApi": [
-            "packages[].ref_id",
-            "shipping_options[].ref_id",
-            "offers/vouchers for upsell pages"
-          ],
-          "starterTemplate": [
-            "stable SDK DOM shape",
-            "family-local includes",
-            "page frontmatter contract"
-          ]
-        },
-        "frontmatter": {
-          "requiredWhenCloning": [
-            "packages.main_package",
-            "shipping_methods.standard",
-            "bundles[].quantity",
-            "bundles[].shipping_method"
-          ],
-          "optionalWhenSupported": [
-            "shipping_methods.free",
-            "cart_summary_variant",
-            "order_bump_variant",
-            "upsell_offer",
-            "upsell_bundle_tiers",
-            "receipt_summary"
-          ],
-          "demoOnlyValues": [
-            "packages.main_package=1",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
-            "packages.prepurchase_1=7",
-            "packages.prepurchase_2=9"
-          ],
-          "replaceFromSpecOrApi": [
-            "packages.*",
-            "shipping_methods.*",
-            "bundles[].shipping_method",
-            "order_bump.*.package_id",
-            "upsell_offer.package_id",
-            "upsell_bundle_tiers[].items_json"
-          ],
-          "removeWhenUnsupported": [
-            "bundles[].shipping_method when no tier-specific shipping exists",
-            "order bump variants when prepurchase packages are absent"
-          ]
-        },
-        "surfaces": [
+      "bump-check03.html": {
+        "surface": "orderBump",
+        "lineages": [
           {
-            "name": "editorial tier selector",
-            "partials": [
-              "editorial-tier-selector.html"
+            "families": [
+              "olympus",
+              "apollo",
+              "limos",
+              "demeter",
+              "olympus-mv-single-step",
+              "apollo-mv-single-step",
+              "olympus-mv-two-step",
+              "shop-single-step",
+              "shop-three-step"
             ],
-            "ownedInputs": [
-              "packages",
-              "shipping_methods",
-              "bundles",
-              "price_display_variant"
-            ],
-            "sdkRoots": [
-              "data-next-bundle-selector",
-              "data-next-bundle-card"
-            ]
-          },
-          {
-            "name": "side summary and bumps",
-            "partials": [
-              "cart-summary03.html",
-              "bump-check01.html",
-              "bump-switch01.html"
-            ],
-            "ownedInputs": [
-              "cart_summary_variant",
-              "packages",
-              "order_bump"
-            ],
-            "sdkRoots": [
-              "data-next-cart-summary",
-              "data-next-package-toggle"
-            ]
-          },
-          {
-            "name": "upsell and receipt includes",
-            "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html",
-              "receipt-skeleton.html"
-            ],
-            "ownedInputs": [
-              "upsell_offer",
-              "upsell_bundle_tiers",
-              "receipt_summary"
-            ],
-            "sdkRoots": [
-              "data-next-upsell",
-              "data-next-order-items"
-            ]
+            "note": "Shared unsynced product-card bump with optional PackageToggle line-item property field (SDK 0.4.27+)."
           }
-        ],
-        "qaStructure": {
-          "checkout": {
-            "description": "Rendered Demeter checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
-            "requiredVisibleSelectors": [
-              {
-                "name": "Demeter checkout wrapper",
-                "selector": ".checkout-wrapper"
-              },
-              {
-                "name": "left checkout column",
-                "selector": ".checkout-layout__left"
-              },
-              {
-                "name": "right checkout column",
-                "selector": ".checkout-layout__right"
-              },
-              {
-                "name": "checkout form",
-                "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
-              },
-              {
-                "name": "checkout payment submit",
-                "selector": "[os-checkout-payment]"
-              },
-              {
-                "name": "rendered order summary",
-                "selector": "[data-next-cart-summary]"
-              }
-            ],
-            "requiredNonEmptySelectors": [
-              {
-                "name": "visible order summary content",
-                "selector": "[data-next-cart-summary]"
-              }
-            ]
-          }
-        },
-        "fixtures": [
-          "contracts/fixtures/campaign-specs/demeter-editorial-tiered.json"
-        ],
-        "agentNotes": [
-          "Demeter text such as shipping labels is copy, not proof; validate actual free/standard shipping against spec/API before launch."
         ]
-      }
-    },
-    "shop-single-step": {
-      "description": "Highly used shop-style single-step checkout with compact cart summary, receipt, and three bundle upsell variants.",
-      "frontmatterStatus": "partial",
-      "strongSignals": [
-        "shop-single-step in spec, path, or export metadata",
-        "shop checkout with checkout.html plus upsell-bundle-stepper/tier-pills/tier-cards pages",
-        "cart-summary04 used on checkout",
-        "receipt order summary split into mobile and desktop order item templates",
-        "upsell bundle offers promoted to shop-single-step *_offer includes"
-      ],
-      "canonicalSurfaces": {
-        "checkoutSummary": "cart-summary04",
-        "payment": "payment-methods",
-        "expressCheckout": "express-checkout",
-        "orderBump": "bump-check02",
-        "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop",
-        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer"
       },
-      "frontmatterInputsNeeded": [
-        "cart_summary_variant",
-        "order_bump_variant"
-      ],
-      "frontmatterInputsObserved": [
-        "receipt_summary",
-        "swiper_slides",
-        "swiper_thumbs",
-        "upsell_bundle_tiers",
-        "upsell_offer"
-      ],
-      "agentContract": {
-        "status": "agent-ready",
-        "templateRole": "Shop-style single-step checkout with compact cart summary plus promoted receipt and upsell includes.",
-        "sourceOfTruth": {
-          "campaignSpec": [
-            "checkout page payment/shipping support",
-            "optional order bump package",
-            "upsell pages/packages/offers",
-            "receipt routing"
-          ],
-          "campaignsApi": [
-            "packages[].ref_id",
-            "payment method capability",
-            "offers/vouchers for upsell pages"
-          ],
-          "starterTemplate": [
-            "shop checkout DOM shape",
-            "family-local receipt and upsell includes",
-            "runtime shipping/address fields"
-          ]
-        },
-        "frontmatter": {
-          "requiredWhenCloning": [
-            "next_url",
-            "page_type=checkout"
-          ],
-          "optionalWhenSupported": [
-            "receipt_summary",
-            "upsell_offer",
-            "upsell_bundle_tiers",
-            "swiper_slides",
-            "swiper_thumbs",
-            "payment_flags"
-          ],
-          "demoOnlyValues": [
-            "upsell_offer.package_id=3",
-            "upsell_offer.vouchers_json=[\"UP50\"]",
-            "upsell_bundle_tiers packageId=3"
-          ],
-          "replaceFromSpecOrApi": [
-            "upsell_offer.*",
-            "upsell_bundle_tiers[].items_json",
-            "upsell_bundle_tiers[].vouchers_json",
-            "receipt_summary.*",
-            "payment_flags"
-          ],
-          "removeWhenUnsupported": [
-            "unsupported payment method rows",
-            "order bump when no bump package exists",
-            "upsell pages not present in the funnel"
-          ]
-        },
-        "surfaces": [
+      "bump-switch01.html": {
+        "surface": "orderBump",
+        "lineages": [
           {
-            "name": "shop checkout shell",
-            "partials": [
-              "cart-summary04.html",
-              "express-checkout.html",
-              "payment-methods.html",
-              "bump-check02.html"
+            "families": [
+              "demeter",
+              "limos"
             ],
-            "ownedInputs": [
-              "payment_flags"
-            ],
-            "sdkRoots": [
-              "data-next-cart-summary",
-              "data-next-express-checkout",
-              "data-next-payment-method"
-            ]
+            "note": "Switch-style bump with demeter/limos styling."
           },
           {
-            "name": "shop upsell offers",
-            "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+            "families": [
+              "olympus",
+              "apollo",
+              "olympus-mv-single-step",
+              "apollo-mv-single-step",
+              "olympus-mv-two-step",
+              "shop-single-step",
+              "shop-three-step"
             ],
-            "ownedInputs": [
-              "upsell_offer",
-              "upsell_bundle_tiers"
-            ],
-            "sdkRoots": [
-              "data-next-upsell",
-              "data-next-bundle-selector"
-            ]
-          },
-          {
-            "name": "shop receipt",
-            "partials": [
-              "receipt-skeleton.html",
-              "receipt-order-summary-mobile.html",
-              "receipt-order-summary-desktop.html"
-            ],
-            "ownedInputs": [
-              "receipt_summary"
-            ],
-            "sdkRoots": [
-              "data-next-order-items"
-            ]
+            "note": "Shared switch-style bump."
           }
-        ],
-        "qaStructure": {
-          "checkout": {
-            "description": "Rendered shop single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
-            "requiredVisibleSelectors": [
-              {
-                "name": "shop checkout layout",
-                "selector": ".checkout__layout"
-              },
-              {
-                "name": "left checkout column",
-                "selector": ".checkout__column--left"
-              },
-              {
-                "name": "right checkout column",
-                "selector": ".checkout__column--right"
-              },
-              {
-                "name": "checkout form",
-                "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
-              },
-              {
-                "name": "checkout payment submit",
-                "selector": "[os-checkout-payment]"
-              },
-              {
-                "name": "rendered order summary",
-                "selector": "[data-next-cart-summary]"
-              }
-            ],
-            "requiredNonEmptySelectors": [
-              {
-                "name": "visible order summary content",
-                "selector": "[data-next-cart-summary]"
-              }
-            ]
-          }
-        },
-        "fixtures": [
-          "contracts/fixtures/campaign-specs/shop-single-step-upsell-receipt.json"
-        ],
-        "agentNotes": [
-          "Shop-single-step is a real family, not a generic fallback. Preserve its summary/payment template roots.",
-          "Do not add Olympus-style shipping_methods frontmatter; this family does not consume explicit selector-card shipping refs."
         ]
-      }
-    },
-    "olympus-mv-single-step": {
-      "description": "Olympus-style single-step checkout with configurable multi-variant bundle slots in the checkout page.",
-      "frontmatterStatus": "partial",
-      "strongSignals": [
-        "olympus-mv-single-step in spec, path, or export metadata",
-        "data-next-bundle-slots-for in checkout",
-        "checkout-olympus-mv-full.js",
-        "variant slot controls inside checkout",
-        "MV product gallery plus bundle slots on one page"
-      ],
-      "canonicalSurfaces": {
-        "mainSelector": "mv-configurable-selector",
-        "variantSlots": "bundle-slot-selector",
-        "orderSummary": "cart-summary03|cart-summary04",
-        "payment": "payment-methods",
-        "expressCheckout": "express-checkout|express-checkout-inline",
-        "orderBump": "bump-check01|bump-check02|bump-switch01",
-        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
-        "receipt": "receipt-skeleton"
       },
-      "frontmatterInputsNeeded": [
-        "cart_summary_variant"
-      ],
-      "frontmatterInputsObserved": [
-        "checkout_step",
-        "packages",
-        "shipping_methods",
-        "selector_id",
-        "swiper_slides",
-        "swiper_thumbs",
-        "variant_slots",
-        "upsell_offer",
-        "upsell_mv_tiers",
-        "upsell_bundle_tiers"
-      ],
-      "agentContract": {
-        "status": "agent-ready",
-        "templateRole": "Olympus-style single-step checkout where bundle quantity selection and configurable variant slots live on the same page.",
-        "sourceOfTruth": {
-          "campaignSpec": [
-            "configurable checkout page package",
-            "variant slot expectations",
-            "shipping_methods[]",
-            "payment/routing"
-          ],
-          "campaignsApi": [
-            "configurable package ref_id",
-            "variant product data",
-            "shipping_options[].ref_id"
-          ],
-          "starterTemplate": [
-            "mv-configurable-selector.html",
-            "mv slot DOM contract",
-            "checkout-olympus-mv-full.js"
-          ]
-        },
-        "frontmatter": {
-          "requiredWhenCloning": [
-            "packages.main_package",
-            "shipping_methods.standard",
-            "variant_slots[].id",
-            "variant_slots[].quantity",
-            "variant_slots[].shipping_method"
-          ],
-          "optionalWhenSupported": [
-            "shipping_methods.free",
-            "swiper_slides",
-            "swiper_thumbs",
-            "variant_slots[].label_text",
-            "upsell_offer",
-            "upsell_mv_tiers",
-            "upsell_bundle_tiers"
-          ],
-          "demoOnlyValues": [
-            "packages.main_package=1",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
-            "upsell_offer.package_id=1",
-            "upsell_offer.package_id=3",
-            "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
-            "upsell_bundle_tiers packageId=3",
-            "upsell_bundle_tiers vouchers_json=[\"UP50\"]"
-          ],
-          "replaceFromSpecOrApi": [
-            "packages.main_package",
-            "shipping_methods.*",
-            "variant_slots[].shipping_method",
-            "upsell_offer.*",
-            "upsell_mv_tiers[].vouchers_json",
-            "upsell_bundle_tiers[].items_json",
-            "upsell_bundle_tiers[].vouchers_json"
-          ],
-          "removeWhenUnsupported": [
-            "variant slot rows unsupported by the target spec/API",
-            "free shipping row if no free method exists",
-            "upsell pages not present in the funnel"
-          ]
-        },
-        "surfaces": [
+      "checkout-header.html": {
+        "surface": "checkoutHeader",
+        "lineages": [
           {
-            "name": "MV configurable selector",
-            "partials": [
-              "mv-configurable-selector.html"
+            "families": [
+              "olympus",
+              "olympus-mv-single-step",
+              "olympus-mv-two-step"
             ],
-            "ownedInputs": [
-              "packages",
-              "shipping_methods",
-              "variant_slots"
-            ],
-            "sdkRoots": [
-              "data-next-bundle-selector",
-              "data-next-bundle-slots-for",
-              "data-next-bundle-slot-template-id"
-            ]
+            "note": "Olympus/MV header."
           },
           {
-            "name": "MV payment and summary",
-            "partials": [
-              "payment-methods.html",
-              "cart-summary03.html",
-              "cart-summary04.html"
+            "families": [
+              "apollo",
+              "apollo-mv-single-step"
             ],
-            "ownedInputs": [
-              "payment_flags"
-            ],
-            "sdkRoots": [
-              "data-next-payment-method",
-              "data-next-cart-summary"
-            ]
+            "note": "Apollo trust-bar header (promoted checkout CSS in next-core)."
           },
           {
-            "name": "MV upsell offers",
-            "partials": [
-              "upsell-mv-offer.html",
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
+            "families": [
+              "demeter"
             ],
-            "ownedInputs": [
-              "upsell_offer",
-              "upsell_mv_tiers",
-              "upsell_bundle_tiers"
+            "note": "Demeter header."
+          },
+          {
+            "families": [
+              "limos"
             ],
-            "sdkRoots": [
-              "data-next-upsell",
-              "data-next-bundle-selector",
-              "data-next-bundle-card",
-              "data-next-bundle-slots-for"
-            ]
+            "note": "Limos header."
+          },
+          {
+            "families": [
+              "shop-single-step",
+              "shop-three-step"
+            ],
+            "note": "Shop top-bar header (checkout-header--lg). See CLAUDE.md shop checkout top-bar notes."
           }
-        ],
-        "qaStructure": {
-          "checkout": {
-            "description": "Rendered Olympus MV single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
-            "requiredVisibleSelectors": [
-              {
-                "name": "Olympus MV checkout wrapper",
-                "selector": ".checkout-wrapper"
-              },
-              {
-                "name": "left checkout column",
-                "selector": ".checkout-layout__left"
-              },
-              {
-                "name": "right checkout column",
-                "selector": ".checkout-layout__right"
-              },
-              {
-                "name": "checkout form",
-                "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
-              },
-              {
-                "name": "checkout payment submit",
-                "selector": "[os-checkout-payment]"
-              },
-              {
-                "name": "rendered order summary",
-                "selector": "[data-next-cart-summary]"
-              }
-            ],
-            "requiredNonEmptySelectors": [
-              {
-                "name": "visible order summary content",
-                "selector": "[data-next-cart-summary]"
-              }
-            ]
-          }
-        },
-        "fixtures": [
-          "contracts/fixtures/campaign-specs/olympus-mv-single-step-configurable.json"
-        ],
-        "agentNotes": [
-          "Keep slot ids aligned across selector rows, bundle slots, and JS.",
-          "MV upsell pages now use upsells-mv.js for configurable-slot upsells and upsells.js for the standard bundle upsell chain; replace both upsell_offer and tier voucher/package refs from the target spec/API."
         ]
-      }
-    },
-    "olympus-mv-two-step": {
-      "description": "Olympus-style multi-variant flow with a separate variant select step before checkout.",
-      "frontmatterStatus": "partial",
-      "strongSignals": [
-        "olympus-mv-two-step in spec, path, or export metadata",
-        "select.html before checkout.html",
-        "checkout-olympus-mv-selection.js",
-        "checkout-olympus-mv-full.js",
-        "variant selection step followed by payment step"
-      ],
-      "canonicalSurfaces": {
-        "selectStep": "mv-selection-step",
-        "checkoutSelector": "mv-selected-bundle-review",
-        "variantSlots": "bundle-slot-selector",
-        "orderSummary": "cart-summary03|cart-summary04",
-        "payment": "payment-methods",
-        "expressCheckout": "express-checkout|express-checkout-inline",
-        "upsell": "upsell-mv|upsell-bundle-stepper|upsell-bundle-tier-pills|upsell-bundle-tier-cards",
-        "receipt": "receipt-skeleton"
       },
-      "frontmatterInputsNeeded": [
-        "swiper_slides",
-        "swiper_thumbs"
-      ],
-      "frontmatterInputsObserved": [
-        "checkout_step",
-        "packages",
-        "shipping_methods",
-        "select_step",
-        "selector_id",
-        "variant_slots",
-        "upsell_offer",
-        "upsell_mv_tiers",
-        "upsell_bundle_tiers"
-      ],
-      "agentContract": {
-        "status": "agent-ready",
-        "templateRole": "Olympus-style MV flow with separate select step before checkout/payment.",
-        "sourceOfTruth": {
-          "campaignSpec": [
-            "select page package/variant choices",
-            "checkout routing",
-            "shipping_methods[]",
-            "payment/routing"
-          ],
-          "campaignsApi": [
-            "configurable package ref_id",
-            "variant product data",
-            "shipping_options[].ref_id"
-          ],
-          "starterTemplate": [
-            "mv-selection-step.html",
-            "mv-slot-stage.html",
-            "checkout-olympus-mv-selection.js",
-            "checkout-olympus-mv-full.js"
-          ]
-        },
-        "frontmatter": {
-          "requiredWhenCloning": [
-            "packages.main_package",
-            "shipping_methods.standard",
-            "variant_slots[].id",
-            "variant_slots[].quantity",
-            "variant_slots[].shipping_method",
-            "select_step.selector_id"
-          ],
-          "optionalWhenSupported": [
-            "shipping_methods.free",
-            "checkout_step.selector_id",
-            "swiper_slides",
-            "swiper_thumbs",
-            "upsell_offer",
-            "upsell_mv_tiers",
-            "upsell_bundle_tiers"
-          ],
-          "demoOnlyValues": [
-            "packages.main_package=1",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
-            "upsell_offer.package_id=1",
-            "upsell_offer.package_id=3",
-            "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
-            "upsell_bundle_tiers packageId=3",
-            "upsell_bundle_tiers vouchers_json=[\"UP50\"]"
-          ],
-          "replaceFromSpecOrApi": [
-            "packages.main_package",
-            "shipping_methods.*",
-            "variant_slots[].shipping_method",
-            "upsell_offer.*",
-            "upsell_mv_tiers[].vouchers_json",
-            "upsell_bundle_tiers[].items_json",
-            "upsell_bundle_tiers[].vouchers_json"
-          ],
-          "removeWhenUnsupported": [
-            "variant slot rows unsupported by the target spec/API",
-            "free shipping row if no free method exists",
-            "upsell pages not present in the funnel"
-          ]
-        },
-        "surfaces": [
+      "cart-summary03.html": {
+        "surface": "orderSummary",
+        "lineages": [
           {
-            "name": "MV select step",
-            "partials": [
-              "mv-selection-step.html"
+            "families": [
+              "apollo",
+              "olympus"
             ],
-            "ownedInputs": [
-              "select_step",
-              "packages",
-              "shipping_methods",
-              "variant_slots"
-            ],
-            "sdkRoots": [
-              "data-next-bundle-selector",
-              "data-next-bundle-card"
-            ]
+            "note": "Apollo + Olympus featured-product order summary (annotated reference)."
           },
           {
-            "name": "MV slot stage",
-            "partials": [
-              "mv-slot-stage.html"
+            "families": [
+              "limos",
+              "olympus-mv-single-step",
+              "apollo-mv-single-step",
+              "olympus-mv-two-step",
+              "shop-single-step",
+              "shop-three-step"
             ],
-            "ownedInputs": [
-              "checkout_step",
-              "variant_slots"
-            ],
-            "sdkRoots": [
-              "data-next-bundle-slots-for",
-              "data-next-bundle-slot-template-id"
-            ]
+            "note": "Shared featured-product summary body."
           },
           {
-            "name": "MV payment and summary",
-            "partials": [
-              "payment-methods.html",
-              "cart-summary03.html",
-              "cart-summary04.html"
+            "families": [
+              "demeter"
             ],
-            "ownedInputs": [
-              "payment_flags"
-            ],
-            "sdkRoots": [
-              "data-next-payment-method",
-              "data-next-cart-summary"
-            ]
-          },
-          {
-            "name": "MV upsell offers",
-            "partials": [
-              "upsell-mv-offer.html",
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
-            ],
-            "ownedInputs": [
-              "upsell_offer",
-              "upsell_mv_tiers",
-              "upsell_bundle_tiers"
-            ],
-            "sdkRoots": [
-              "data-next-upsell",
-              "data-next-bundle-selector",
-              "data-next-bundle-card",
-              "data-next-bundle-slots-for"
-            ]
+            "note": "Demeter side-cart summary, parameterized (heading/subtitle/feature_package)."
           }
-        ],
-        "qaStructure": {
-          "checkout": {
-            "description": "Rendered Olympus MV two-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
-            "requiredVisibleSelectors": [
-              {
-                "name": "Olympus MV checkout wrapper",
-                "selector": ".checkout-wrapper"
-              },
-              {
-                "name": "left checkout column",
-                "selector": ".checkout-layout__left"
-              },
-              {
-                "name": "right checkout column",
-                "selector": ".checkout-layout__right"
-              },
-              {
-                "name": "checkout form",
-                "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
-              },
-              {
-                "name": "checkout payment submit",
-                "selector": "[os-checkout-payment]"
-              },
-              {
-                "name": "rendered order summary",
-                "selector": "[data-next-cart-summary]"
-              }
-            ],
-            "requiredNonEmptySelectors": [
-              {
-                "name": "visible order summary content",
-                "selector": "[data-next-cart-summary]"
-              }
-            ]
-          }
-        },
-        "fixtures": [
-          "contracts/fixtures/campaign-specs/olympus-mv-two-step-configurable.json"
-        ],
-        "agentNotes": [
-          "Select-step ids and checkout-step ids must remain synchronized; ask if a design blends one-step and two-step MV patterns.",
-          "MV upsell pages now use upsells-mv.js for configurable-slot upsells and upsells.js for the standard bundle upsell chain; replace both upsell_offer and tier voucher/package refs from the target spec/API."
         ]
-      }
-    },
-    "shop-three-step": {
-      "description": "Shop-style three-step checkout with separate information, shipping, and billing pages plus dynamic shipping options.",
-      "frontmatterStatus": "partial",
-      "strongSignals": [
-        "shop-three-step in spec, path, or export metadata",
-        "information.html -> shipping.html -> billing.html flow",
-        "checkout-shop-three-shipping.js dynamic shipping options",
-        "separate shipping method page before billing"
-      ],
-      "canonicalSurfaces": {
-        "informationStep": "shipping/contact form",
-        "shippingStep": "dynamic shipping methods from SDK getShippingMethods()",
-        "billingStep": "payment-methods and checkout review",
-        "receipt": "receipt-skeleton",
-        "upsell": "bundle-stepper|bundle-tier-pills|bundle-tier-cards"
       },
-      "frontmatterInputsNeeded": [
-        "receipt_summary"
-      ],
-      "frontmatterInputsObserved": [
-        "shipping_steps",
-        "swiper_slides",
-        "swiper_thumbs",
-        "upsell_offer",
-        "upsell_bundle_tiers"
-      ],
-      "agentContract": {
-        "status": "partial-needs-promotion",
-        "templateRole": "Shop checkout split into information, shipping, and billing steps; shipping methods are runtime-derived, not frontmatter refs.",
-        "sourceOfTruth": {
-          "campaignSpec": [
-            "three-step checkout routing",
-            "shipping_methods[]",
-            "payment support",
-            "upsell pages/packages/offers",
-            "receipt routing"
-          ],
-          "campaignsApi": [
-            "shipping_options[].ref_id via SDK getShippingMethods()",
-            "payment method capability",
-            "offers/vouchers for upsell pages"
-          ],
-          "starterTemplate": [
-            "multi-step form sequencing",
-            "checkout-shop-three-shipping.js",
-            "shop receipt and upsell DOM shape"
-          ]
-        },
-        "frontmatter": {
-          "requiredWhenCloning": [
-            "information.next_url=shipping.html",
-            "shipping.next_url=billing.html",
-            "billing.next_url=upsell-bundle-stepper.html"
-          ],
-          "optionalWhenSupported": [
-            "receipt_summary",
-            "upsell_offer",
-            "upsell_bundle_tiers",
-            "swiper_slides",
-            "swiper_thumbs"
-          ],
-          "demoOnlyValues": [
-            "upsell_offer.package_id=3",
-            "upsell_offer.vouchers_json=[\"UP50\"]",
-            "upsell_bundle_tiers packageId=3",
-            "inline upsell packageId=3",
-            "inline upsell vouchers=[\"UP50\"]"
-          ],
-          "replaceFromSpecOrApi": [
-            "upsell_offer.*",
-            "upsell_bundle_tiers[].items_json",
-            "upsell_bundle_tiers[].vouchers_json",
-            "matching inline upsell package/voucher refs until upsell includes are promoted",
-            "payment method visibility",
-            "receipt summary markup once promoted"
-          ],
-          "removeWhenUnsupported": [
-            "unsupported payment method rows",
-            "upsell pages not present in the funnel"
-          ]
-        },
-        "surfaces": [
+      "cart-summary04.html": {
+        "surface": "orderSummary",
+        "lineages": [
           {
-            "name": "dynamic shipping step",
-            "partials": [
-              "assets/js/checkout-shop-three-shipping.js"
+            "families": [
+              "olympus",
+              "apollo",
+              "demeter",
+              "limos",
+              "olympus-mv-single-step",
+              "apollo-mv-single-step",
+              "olympus-mv-two-step"
             ],
-            "ownedInputs": [
-              "Campaigns API shipping methods"
-            ],
-            "sdkRoots": [
-              "data-next-shipping-id"
-            ]
+            "note": "Large/image-line order summary (annotated in #73)."
           },
           {
-            "name": "billing payment shell",
-            "partials": [
-              "payment-methods.html"
+            "families": [
+              "shop-single-step",
+              "shop-three-step"
             ],
-            "ownedInputs": [
-              "payment_flags"
+            "note": "Shop structural rewrite of cart-summary04 (188 lines vs olympus's 143)."
+          }
+        ]
+      },
+      "checkout-footer-links.html": {
+        "surface": "footerLinks",
+        "lineages": [
+          {
+            "families": [
+              "shop-single-step",
+              "shop-three-step"
             ],
-            "sdkRoots": [
-              "data-next-payment-method",
-              "data-next-payment-form"
-            ]
+            "note": "Shop footer links."
           },
           {
-            "name": "upsell and receipt surfaces",
-            "partials": [
-              "inline today; promote to shop-single-step parity includes next"
+            "families": [
+              "limos"
             ],
-            "ownedInputs": [
-              "upsell_offer",
-              "upsell_bundle_tiers",
-              "receipt_summary"
-            ],
-            "sdkRoots": [
-              "data-next-upsell",
-              "data-next-order-items"
-            ]
+            "note": "Limos footer links."
           }
-        ],
-        "qaStructure": {
-          "checkout": {
-            "description": "Rendered shop three-step checkout must preserve the shop checkout shell and runtime summary/form roots.",
-            "requiredVisibleSelectors": [
-              {
-                "name": "shop checkout layout",
-                "selector": ".checkout__layout"
-              },
-              {
-                "name": "left checkout column",
-                "selector": ".checkout__column--left"
-              },
-              {
-                "name": "right checkout column",
-                "selector": ".checkout__column--right"
-              },
-              {
-                "name": "checkout form",
-                "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "rendered order summary",
-                "selector": "[data-next-cart-summary]"
-              }
+        ]
+      },
+      "footer.html": {
+        "surface": "footer",
+        "lineages": [
+          {
+            "families": [
+              "olympus",
+              "apollo",
+              "limos",
+              "olympus-mv-single-step",
+              "apollo-mv-single-step",
+              "olympus-mv-two-step",
+              "shop-single-step",
+              "shop-three-step"
             ],
-            "requiredNonEmptySelectors": [
-              {
-                "name": "visible order summary content",
-                "selector": "[data-next-cart-summary]"
-              }
-            ]
+            "note": "Shared footer."
+          },
+          {
+            "families": [
+              "demeter"
+            ],
+            "note": "Demeter footer (cc-medium variant)."
           }
-        },
-        "fixtures": [
-          "contracts/fixtures/campaign-specs/shop-three-step-dynamic-shipping.json"
-        ],
-        "agentNotes": [
-          "Do not add shipping_methods frontmatter here for checkout methods. The shipping step renders from the live SDK/API method list.",
-          "Shop-three-step bundle upsell pages declare upsell frontmatter as mapping hints, but still render inline SDK package/voucher refs today; replace both until those pages are promoted to include-owned upsell partials."
         ]
       }
     }
   },
-  "askUserPromptTemplate": "I can map this design to more than one commerce template family: {candidates}. The ambiguous surfaces are {surfaces}. Which family should I use before wiring SDK components?"
+  "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
+  "_synced_from_ref": "feat/apollo-template",
+  "_synced_from_sha": "f3bbd706a91a0720ce4703a6a81ec9d429973cb5"
 }

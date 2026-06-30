@@ -1,0 +1,27 @@
+{
+  "schema_version": "template-brand-contract/v0",
+  "family": "apollo",
+  "extends": "template-brand-contract.shared-commerce.v0.json",
+  "description": "Brand contract for the Apollo tiered-bundle starter-template family.",
+  "family_inventory": {
+    "supported_pages": ["landing", "presell", "checkout", "upsell", "receipt"],
+    "required_sdk_anchors": {
+      "checkout": ["data-next-bundle-selector", "data-next-bundle-card", "data-next-package-toggle", "data-next-payment-method", "data-next-payment-form", "data-next-express-checkout"],
+      "upsell": ["data-next-upsell", "data-next-bundle-selector", "data-next-bundle-card"],
+      "receipt": ["data-next-order-items"]
+    },
+    "theme_insertion_point": "Load brand-theme.css from frontmatter styles after css/next-core.css on checkout, upsell, downsell, and receipt pages.",
+    "default_color_residue": ["#3c7dff", "#0a265c"],
+    "pricing_presentation": "Apollo bundle cards support compare/current, coupon-discounted savings, unit-plus-total, and full-price modes through SDK display nodes.",
+    "bundle_picker": "Tiered bundle selector with data-next-bundle-selector/data-next-bundle-card anchors and bundle-card product/classic/tile style dispatch.",
+    "order_bump": "Selector-area bump-check03 and form-section bump-check01/bump-switch01 variants are valid only when prepurchase packages exist.",
+    "upsell_downsell": "Bundle stepper, tier-pills, and tier-cards upsells require a visible price row above the accept CTA.",
+    "exit_pop": {
+      "default_included": false,
+      "include": "exit-intent-popup.html",
+      "default_coupon_codes": ["EXIT5"],
+      "behavior": "Available include only; strip unless CampaignSpec checkout exit_intent or promo_code_input maps an offer/code."
+    },
+    "qa_selectors": [".checkout-wrapper", ".submit-button", ".bundle-card.next-selected, .os-card.next-selected, .bundle-tile.next-selected", ".price-wrapper, .bundle-card__price-total", ".brand-logo"]
+  }
+}

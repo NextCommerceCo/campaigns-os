@@ -1,0 +1,27 @@
+{
+  "schema_version": "template-brand-contract/v0",
+  "family": "apollo-mv-single-step",
+  "extends": "template-brand-contract.shared-commerce.v0.json",
+  "description": "Brand contract for the Apollo MV single-step configurable starter-template family.",
+  "family_inventory": {
+    "supported_pages": ["landing", "presell", "checkout", "upsell", "receipt"],
+    "required_sdk_anchors": {
+      "checkout": ["data-next-bundle-selector", "data-next-bundle-slot-template-id", "data-next-bundle-slots-for", "data-next-variant-selectors", "data-next-cart-summary", "data-next-payment-method"],
+      "upsell": ["data-next-upsell", "data-next-bundle-selector", "data-next-bundle-slots-for"],
+      "receipt": ["data-next-order-items"]
+    },
+    "theme_insertion_point": "Load brand-theme.css from frontmatter styles after css/next-core.css on checkout, upsell, downsell, and receipt pages.",
+    "default_color_residue": ["#3c7dff", "#0a265c"],
+    "pricing_presentation": "Apollo MV slots use SDK bundle displays for compare/current, unit-plus-total, coupon savings, and full-price modes.",
+    "bundle_picker": "Single-page Apollo MV configurable selector with variant_slots and data-next-bundle-slots-for controls.",
+    "order_bump": "Optional selector-area and form-section bump variants are valid only when prepurchase packages exist; MV quantity sync must use the declared product/package sync contract.",
+    "upsell_downsell": "MV and bundle upsell includes use upsell_offer, upsell_mv_tiers, or upsell_bundle_tiers with visible price rows.",
+    "exit_pop": {
+      "default_included": false,
+      "include": "exit-intent-popup.html",
+      "default_coupon_codes": ["SAVE10"],
+      "behavior": "Available include only; strip unless CampaignSpec checkout exit_intent or promo_code_input maps an offer/code."
+    },
+    "qa_selectors": [".checkout-wrapper", ".submit-button", ".os-card.next-selected", "[data-next-bundle-slots-for]", ".brand-logo"]
+  }
+}

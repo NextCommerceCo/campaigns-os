@@ -364,8 +364,9 @@ always win.
 
 **Campaign-level:** `campaign.preferred_template_family` declares
 which starter family the campaign was authored against (one of
-`olympus`, `limos`, `demeter`, `olympus-mv-single-step`,
-`olympus-mv-two-step`, `shop-single-step`, `shop-three-step`). The
+`apollo`, `apollo-mv-single-step`, `olympus`, `limos`, `demeter`,
+`olympus-mv-single-step`, `olympus-mv-two-step`, `shop-single-step`,
+`shop-three-step`). The
 consumer (`preferredTemplateFamily()` in `src/cli.mjs`) reads this
 at three spec locations and uses it as the default template family
 when no `--template-family` CLI flag is given.
