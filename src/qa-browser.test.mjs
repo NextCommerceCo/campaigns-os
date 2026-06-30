@@ -204,6 +204,8 @@ test("primary CTA assertion passes readable route-driving controls", () => {
 test("promoted template families declare checkout commerce structure contracts", () => {
   const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
   const promotedFamilies = [
+    "apollo",
+    "apollo-mv-single-step",
     "olympus",
     "limos",
     "demeter",

@@ -160,6 +160,8 @@ const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 
 const KNOWN_TEMPLATE_FAMILIES = new Set([
   "undecided",
+  "apollo",
+  "apollo-mv-single-step",
   "olympus",
   "limos",
   "demeter",
