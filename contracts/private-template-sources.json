@@ -2,6 +2,7 @@
   "schema_version": "private-template-source/v0",
   "sources": {
     "arjuna": { "repo": "Sellmore-Co/adsbranded-templates", "contract_path": "contracts/arjuna.json" },
-    "karna": { "repo": "Sellmore-Co/adsbranded-templates", "contract_path": "contracts/karna.json" }
+    "karna": { "repo": "Sellmore-Co/adsbranded-templates", "contract_path": "contracts/karna.json" },
+    "limos": { "repo": "Sellmore-Co/adsbranded-templates", "contract_path": "contracts/limos.json" }
   }
 }
