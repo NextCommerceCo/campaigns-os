@@ -97,10 +97,10 @@ import {
 import {
   demoAssetConfig,
   findForbiddenPriceHides,
-  loadTemplateBrandContract,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
 } from "./template-brand-contract.mjs";
+import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import {
   resolveBuiltSiteScope,
   synthesizeMinimalBuildPacket,
@@ -181,10 +181,10 @@ const KNOWN_TEMPLATE_FAMILIES = new Set([
 // Recomputed per call (a handful of small JSON reads) so long-lived
 // processes never serve a stale certified set after contract edits.
 function certifiedTemplateFamilies() {
-  const catalog = readJson(join(ROOT, "contracts/commerce-surface-catalog.json"));
+  const catalog = resolveCommerceCatalog();
   const certified = Object.keys(catalog.families || {}).filter((family) => {
     try {
-      return loadTemplateBrandContract(family) !== null;
+      return resolveTemplateBrandContract(family) !== null;
     } catch {
       return false;
     }
@@ -1150,7 +1150,7 @@ function prepareBuild(args, options = {}) {
     console.warn(`[campaigns-os prepare-build] ${manifestResult.warning}`);
   }
   const liveUrlPath = optionalString(args["live-url-path"], `/${publicRouteSlug}/`);
-  const commerceCatalog = optionalString(args["commerce-catalog"], join(ROOT, "contracts/commerce-surface-catalog.json"));
+  const commerceCatalog = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
   const themePolicy = optionalString(args["theme-policy"], "inspect_only");
   const portable = (path) => relFromDir(targetRepo, path);
   const commerceZoneFindings = inspectCommerceZones(sourceRoot, htmlFiles);
@@ -1644,7 +1644,7 @@ export function doctorBuiltOutput(args) {
     addIssue(warnings, "assembly.template_family", "No --family given; the residue/placeholder-text/demo-asset gates need a family brand contract to run. Pass --family <family> (the family the campaign was built from).");
   } else {
     try {
-      brandContract = loadTemplateBrandContract(family);
+      brandContract = resolveTemplateBrandContract(family);
     } catch (error) {
       addIssue(warnings, "template_contract.brand_contract", `Template brand contract for "${family}" failed to load: ${error.message}`);
     }
@@ -1870,7 +1870,7 @@ function runPricingCssHideCheck({ packet, derived, warnings, ready, report = nul
   const family = packet?.assembly?.template_family;
   let contract = null;
   try {
-    contract = loadTemplateBrandContract(family);
+    contract = resolveTemplateBrandContract(family);
   } catch (error) {
     addIssue(warnings, "template_contract.brand_contract", `Template brand contract for "${family}" failed to load: ${error.message}`);
     return;
@@ -3812,7 +3812,7 @@ function isAutomatableTemplateFamily(family) {
 
 function loadTemplateFamilyBrandContract(family, errors, warnings, { required = false } = {}) {
   try {
-    const contract = loadTemplateBrandContract(family);
+    const contract = resolveTemplateBrandContract(family);
     if (!contract && required) {
       addIssue(
         errors,
@@ -3858,7 +3858,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     addIssue(errors, "assembly.commerce_catalog.path", "Commerce catalog is required but not found.");
     return;
   }
-  const catalog = readJson(catalogPath);
+  const catalog = resolveCommerceCatalog(catalogPath);
   if (familyAutomatable && catalog.agentContractVersion !== 1) {
     addIssue(warnings, "template_contract.catalog_version", "Commerce surface catalog agentContractVersion is not 1; verify contract semantics before build.");
   }
