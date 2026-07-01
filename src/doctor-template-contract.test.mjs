@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { validateCommerceCatalog, validateTemplateFamilyInventory } from "./cli.mjs";
+import { validateCommerceCatalog, validateExitPopContract, validateTemplateFamilyInventory } from "./cli.mjs";
 
 const codes = (issues) => issues.map((issue) => issue.code);
 
@@ -112,7 +112,7 @@ test("template_contract.spec_family errors when a page family disagrees with the
   const { errors } = run({
     contract: checkoutContract,
     spec: specWith([
-      { id: "checkout", type: "checkout", packages: [{ ref_id: "1" }], sdk_hints: { template_family: "limos" } },
+      { id: "checkout", type: "checkout", packages: [{ ref_id: "1" }], sdk_hints: { template_family: "demeter" } },
     ]),
   });
   assert.ok(codes(errors).includes("template_contract.spec_family"));
@@ -145,19 +145,53 @@ test("template_contract.brand_contract errors when a promoted catalog family has
   assert.equal(errors.find((issue) => issue.code === "template_contract.brand_contract").detail.reason, "missing_file");
 });
 
-test("limos default exit-pop warns when CampaignSpec has no governed offer surface", () => {
-  const { warnings } = run({
-    family: "limos",
-    contract: checkoutContract,
+// Exit-pop doctor coverage. Driven directly against validateExitPopContract
+// with a synthetic "default-included exit-pop" brand contract, so the checks
+// do not depend on a specific family's on-disk contract. (Limos was the only
+// family with exit_pop.default_included=true; it is now a private family
+// resolved out-of-repo, so these unit-test the doctor logic instead of the
+// former limos contract.) The top-level exit_pop shape mirrors what every
+// family inherits from template-brand-contract.shared-commerce.v0.json.
+const defaultExitPopContract = {
+  exit_pop: {
+    residue_literals: ['data-coupon-code="EXIT10"'],
+    blank_widget_literals: ['data-coupon-code=""'],
+  },
+  family_inventory: { exit_pop: { default_included: true } },
+};
+
+function runExitPop({ spec, targetHtml = null }) {
+  const warnings = [];
+  const ready = [];
+  const derived = {};
+  const buildState = {};
+  let cleanup = () => {};
+  if (targetHtml !== null) {
+    const dir = mkdtempSync(join(tmpdir(), "campaigns-os-exit-pop-"));
+    const outputDir = join(dir, "out");
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(join(outputDir, "index.html"), targetHtml);
+    derived.target_output_dir = outputDir;
+    buildState.report = { stages: { assembly: { status: "completed" } } };
+    cleanup = () => rmSync(dir, { recursive: true, force: true });
+  }
+  try {
+    validateExitPopContract(defaultExitPopContract, spec, "olympus", warnings, ready, derived, buildState);
+  } finally {
+    cleanup();
+  }
+  return { warnings, ready };
+}
+
+test("default exit-pop warns when CampaignSpec has no governed offer surface", () => {
+  const { warnings } = runExitPop({
     spec: specWith([{ id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] }]),
   });
   assert.ok(codes(warnings).includes("template_contract.exit_pop"));
 });
 
-test("limos default exit-pop is clean when CampaignSpec owns checkout exit_intent", () => {
-  const { warnings } = run({
-    family: "limos",
-    contract: checkoutContract,
+test("default exit-pop is clean when CampaignSpec owns checkout exit_intent", () => {
+  const { warnings } = runExitPop({
     spec: specWith([{
       id: "checkout",
       type: "checkout",
@@ -168,10 +202,8 @@ test("limos default exit-pop is clean when CampaignSpec owns checkout exit_inten
   assert.equal(codes(warnings).includes("template_contract.exit_pop"), false);
 });
 
-test("limos default exit-pop still warns when exit_intent is declared away from checkout", () => {
-  const { warnings } = run({
-    family: "limos",
-    contract: checkoutContract,
+test("default exit-pop still warns when exit_intent is declared away from checkout", () => {
+  const { warnings } = runExitPop({
     spec: specWith([
       {
         id: "landing",
@@ -184,19 +216,15 @@ test("limos default exit-pop still warns when exit_intent is declared away from 
   assert.ok(codes(warnings).includes("template_contract.exit_pop"));
 });
 
-test("limos exit-pop residue scan anchors coupon code literals", () => {
+test("exit-pop residue scan anchors coupon code literals", () => {
   const spec = specWith([{ id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] }]);
-  const similarCode = run({
-    family: "limos",
-    contract: checkoutContract,
+  const similarCode = runExitPop({
     spec,
     targetHtml: '<button data-coupon-code="EXIT10BONUS">Apply</button>',
   });
   assert.equal(codes(similarCode.warnings).includes("template_contract.exit_pop_residue"), false);
 
-  const defaultCode = run({
-    family: "limos",
-    contract: checkoutContract,
+  const defaultCode = runExitPop({
     spec,
     targetHtml: '<button data-coupon-code="EXIT10">Apply</button>',
   });

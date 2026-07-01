@@ -104,10 +104,10 @@ test("commerce structure assertion soft-fails when a required family shell selec
   const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
   const page = { page_id: "checkout", page_type: "checkout", url: "https://example.test/checkout/" };
   const result = commerceStructureAssertionFromEvidence(page, {
-    template_family: "limos",
+    template_family: "olympus",
     contract_status: "loaded",
     checks: [
-      { name: "Limos checkout wrapper", status: "fail", selectors: [".checkout-wrapper"], count: 0, visible_count: 0 },
+      { name: "Olympus checkout wrapper", status: "fail", selectors: [".checkout-wrapper"], count: 0, visible_count: 0 },
       { name: "rendered order summary", status: "pass", selectors: ["[data-next-cart-summary]"], count: 1, visible_count: 1 },
     ],
   });
@@ -115,17 +115,17 @@ test("commerce structure assertion soft-fails when a required family shell selec
   assert.equal(result.id, "browser-commerce-structure:checkout");
   assert.equal(result.status, "fail");
   assert.equal(result.severity, "warn");
-  assert.match(result.actual, /missing Limos checkout wrapper/);
+  assert.match(result.actual, /missing Olympus checkout wrapper/);
 });
 
 test("commerce structure assertion passes when contract checks pass", () => {
   const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
   const page = { page_id: "checkout", page_type: "checkout" };
   const result = commerceStructureAssertionFromEvidence(page, {
-    template_family: "limos",
+    template_family: "olympus",
     contract_status: "loaded",
     checks: [
-      { name: "Limos checkout wrapper", status: "pass", selectors: [".checkout-wrapper"], count: 1, visible_count: 1 },
+      { name: "Olympus checkout wrapper", status: "pass", selectors: [".checkout-wrapper"], count: 1, visible_count: 1 },
       { name: "rendered order summary", status: "pass", selectors: ["[data-next-cart-summary]"], count: 1, visible_count: 1 },
     ],
   });
@@ -207,7 +207,6 @@ test("promoted template families declare checkout commerce structure contracts",
     "apollo",
     "apollo-mv-single-step",
     "olympus",
-    "limos",
     "demeter",
     "shop-single-step",
     "olympus-mv-single-step",

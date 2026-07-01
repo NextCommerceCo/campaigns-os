@@ -19,7 +19,7 @@ test("source adapter records SDK-owned commerce zones as template-shell-required
   withTempDir((dir) => {
     writeFileSync(join(dir, "checkout.html"), `
       <main>
-        <!-- SDK-OWNED: customer + shipping + payment form is provided by the limos checkout commerce surface -->
+        <!-- SDK-OWNED: customer + shipping + payment form is provided by the checkout commerce surface -->
         <section data-commerce-zone="checkout-form"></section>
         <aside data-commerce-zone="order-summary"></aside>
       </main>

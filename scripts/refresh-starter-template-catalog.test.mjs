@@ -96,16 +96,16 @@ test("catalog refresh preserves local qaStructure when upstream catalog has none
   const sourceCatalog = {
     campaignSpecFixturePolicy: { directory: "docs/fixtures/campaign-specs" },
     families: {
-      limos: {
+      olympus: {
         agentContract: {
-          fixtures: ["docs/fixtures/campaign-specs/limos.json"],
+          fixtures: ["docs/fixtures/campaign-specs/olympus.json"],
         },
       },
     },
   };
   const existingCatalog = {
     families: {
-      limos: {
+      olympus: {
         agentContract: {
           qaStructure: {
             checkout: {
@@ -121,14 +121,14 @@ test("catalog refresh preserves local qaStructure when upstream catalog has none
   const result = mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog);
 
   assert.equal(result.campaignSpecFixturePolicy.directory, "contracts/fixtures/campaign-specs");
-  assert.deepEqual(result.families.limos.agentContract.fixtures, ["contracts/fixtures/campaign-specs/limos.json"]);
-  assert.equal(result.families.limos.agentContract.qaStructure.checkout.description, "local checkout structure");
+  assert.deepEqual(result.families.olympus.agentContract.fixtures, ["contracts/fixtures/campaign-specs/olympus.json"]);
+  assert.equal(result.families.olympus.agentContract.qaStructure.checkout.description, "local checkout structure");
 });
 
 test("catalog refresh lets upstream qaStructure override matching local pages", () => {
   const sourceCatalog = {
     families: {
-      limos: {
+      olympus: {
         agentContract: {
           qaStructure: {
             checkout: {
@@ -142,7 +142,7 @@ test("catalog refresh lets upstream qaStructure override matching local pages", 
   };
   const existingCatalog = {
     families: {
-      limos: {
+      olympus: {
         agentContract: {
           qaStructure: {
             checkout: {
@@ -161,8 +161,8 @@ test("catalog refresh lets upstream qaStructure override matching local pages", 
 
   const result = mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog);
 
-  assert.equal(result.families.limos.agentContract.qaStructure.checkout.description, "upstream checkout structure");
-  assert.equal(result.families.limos.agentContract.qaStructure.upsell.description, "local upsell structure");
+  assert.equal(result.families.olympus.agentContract.qaStructure.checkout.description, "upstream checkout structure");
+  assert.equal(result.families.olympus.agentContract.qaStructure.upsell.description, "local upsell structure");
 });
 
 test("fetchWithTimeout reports only its own timer as a timeout", async () => {
