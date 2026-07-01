@@ -795,200 +795,6 @@
         }
       }
     },
-    "limos": {
-      "description": "Single-step checkout with dense offer framing and native bundle quantity controls.",
-      "frontmatterStatus": "partial",
-      "strongSignals": [
-        "limos in spec, path, or export metadata",
-        "single offer card with native quantity stepper",
-        "checkout-bundle-offer",
-        "next-bundle-qty--anchor-br",
-        "cart-summary02 accordion shape",
-        "limos upsell offer includes with upsell_offer or upsell_bundle_tiers frontmatter"
-      ],
-      "canonicalSurfaces": {
-        "mainSelector": "single-offer-quantity-selector",
-        "orderSummary": "cart-summary02 accordion",
-        "payment": "payment-methods",
-        "expressCheckout": "express-checkout|express-checkout-inline",
-        "orderBump": "bump-check01|bump-check02|bump-check03|bump-switch01",
-        "upsell": "upsell-bundle-stepper-offer|upsell-bundle-tier-pills-offer|upsell-bundle-tier-cards-offer",
-        "receipt": "receipt-skeleton|receipt-order-summary-mobile|receipt-order-summary-desktop"
-      },
-      "frontmatterInputsNeeded": [
-        "timer"
-      ],
-      "frontmatterInputsObserved": [
-        "single_offer",
-        "selector_id",
-        "package_id",
-        "shipping_methods",
-        "shipping_method",
-        "shipping_id",
-        "quantity_min",
-        "quantity_max",
-        "items_json",
-        "price_display_variant",
-        "order_bump_variant",
-        "order_bump.check01",
-        "order_bump.switch01",
-        "receipt_summary",
-        "upsell_bundle_tiers",
-        "upsell_offer"
-      ],
-      "agentContract": {
-        "status": "agent-ready",
-        "templateRole": "Single-step checkout with one visible offer card and a native quantity stepper.",
-        "sourceOfTruth": {
-          "campaignSpec": [
-            "checkout page package",
-            "standard shipping method when selector shipping is used",
-            "optional prepurchase packages",
-            "upsell/receipt routing"
-          ],
-          "campaignsApi": [
-            "packages[].ref_id",
-            "shipping_options[].ref_id",
-            "offers/vouchers for upsell pages"
-          ],
-          "starterTemplate": [
-            "stable SDK DOM shape",
-            "family-local includes",
-            "page frontmatter contract"
-          ]
-        },
-        "frontmatter": {
-          "requiredWhenCloning": [
-            "packages.main_package",
-            "single_offer.shipping_method",
-            "shipping_methods.standard"
-          ],
-          "optionalWhenSupported": [
-            "single_offer.quantity_min",
-            "single_offer.quantity_max",
-            "single_offer.show_quantity_stepper",
-            "order_bump_variant",
-            "upsell_offer",
-            "upsell_bundle_tiers",
-            "receipt_summary"
-          ],
-          "demoOnlyValues": [
-            "single_offer.package_id=1",
-            "shipping_methods.standard=2",
-            "packages.prepurchase_1=7",
-            "packages.prepurchase_2=9"
-          ],
-          "replaceFromSpecOrApi": [
-            "packages.*",
-            "shipping_methods.standard",
-            "single_offer.package_id",
-            "order_bump.*.package_id",
-            "upsell_offer.package_id",
-            "upsell_bundle_tiers[].items_json"
-          ],
-          "removeWhenUnsupported": [
-            "single_offer.shipping_method when the target campaign has no selector shipping",
-            "order bump variants when prepurchase packages are absent"
-          ]
-        },
-        "surfaces": [
-          {
-            "name": "single offer selector",
-            "partials": [
-              "single-offer-quantity-selector.html"
-            ],
-            "ownedInputs": [
-              "single_offer",
-              "packages",
-              "shipping_methods"
-            ],
-            "sdkRoots": [
-              "data-next-bundle-selector",
-              "data-next-bundle-card",
-              "data-next-bundle-qty-for"
-            ]
-          },
-          {
-            "name": "upsell offers",
-            "partials": [
-              "upsell-bundle-stepper-offer.html",
-              "upsell-bundle-tier-pills-offer.html",
-              "upsell-bundle-tier-cards-offer.html"
-            ],
-            "ownedInputs": [
-              "upsell_offer",
-              "upsell_bundle_tiers"
-            ],
-            "sdkRoots": [
-              "data-next-upsell",
-              "data-next-bundle-selector"
-            ]
-          },
-          {
-            "name": "receipt summary",
-            "partials": [
-              "receipt-skeleton.html",
-              "receipt-order-summary-mobile.html",
-              "receipt-order-summary-desktop.html"
-            ],
-            "ownedInputs": [
-              "receipt_summary"
-            ],
-            "sdkRoots": [
-              "data-next-skeleton",
-              "data-next-order-items"
-            ]
-          }
-        ],
-        "fixtures": [
-          "contracts/fixtures/campaign-specs/limos-single-offer-quantity.json"
-        ],
-        "agentNotes": [
-          "Limos is quantity-stepper first; do not force 1x/2x/3x visual tier cards into this family."
-        ],
-        "qaStructure": {
-          "checkout": {
-            "description": "Rendered Limos checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
-            "requiredVisibleSelectors": [
-              {
-                "name": "Limos checkout wrapper",
-                "selector": ".checkout-wrapper"
-              },
-              {
-                "name": "left checkout column",
-                "selector": ".checkout-layout__left"
-              },
-              {
-                "name": "right order-summary column",
-                "selector": ".checkout-layout__right"
-              },
-              {
-                "name": "checkout form",
-                "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
-              },
-              {
-                "name": "checkout payment submit",
-                "selector": "[os-checkout-payment]"
-              },
-              {
-                "name": "rendered order summary",
-                "selector": "[data-next-cart-summary]"
-              }
-            ],
-            "requiredNonEmptySelectors": [
-              {
-                "name": "visible order summary content",
-                "selector": "[data-next-cart-summary]"
-              }
-            ]
-          }
-        }
-      }
-    },
     "demeter": {
       "description": "Single-step editorial/luxury checkout with spacious tier cards and open cart summary.",
       "frontmatterStatus": "partial",
@@ -2386,10 +2192,9 @@
           },
           {
             "families": [
-              "demeter",
-              "limos"
+              "demeter"
             ],
-            "note": "Editorial/Limos bump styling."
+            "note": "Editorial bump styling."
           }
         ]
       },
@@ -2400,7 +2205,6 @@
             "families": [
               "olympus",
               "apollo",
-              "limos",
               "demeter",
               "olympus-mv-single-step",
               "apollo-mv-single-step",
@@ -2417,10 +2221,9 @@
         "lineages": [
           {
             "families": [
-              "demeter",
-              "limos"
+              "demeter"
             ],
-            "note": "Switch-style bump with demeter/limos styling."
+            "note": "Switch-style bump with demeter styling."
           },
           {
             "families": [
@@ -2462,12 +2265,6 @@
           },
           {
             "families": [
-              "limos"
-            ],
-            "note": "Limos header."
-          },
-          {
-            "families": [
               "shop-single-step",
               "shop-three-step"
             ],
@@ -2487,7 +2284,6 @@
           },
           {
             "families": [
-              "limos",
               "olympus-mv-single-step",
               "apollo-mv-single-step",
               "olympus-mv-two-step",
@@ -2512,7 +2308,6 @@
               "olympus",
               "apollo",
               "demeter",
-              "limos",
               "olympus-mv-single-step",
               "apollo-mv-single-step",
               "olympus-mv-two-step"
@@ -2537,12 +2332,6 @@
               "shop-three-step"
             ],
             "note": "Shop footer links."
-          },
-          {
-            "families": [
-              "limos"
-            ],
-            "note": "Limos footer links."
           }
         ]
       },
@@ -2553,7 +2342,6 @@
             "families": [
               "olympus",
               "apollo",
-              "limos",
               "olympus-mv-single-step",
               "apollo-mv-single-step",
               "olympus-mv-two-step",

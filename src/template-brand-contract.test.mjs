@@ -62,13 +62,11 @@ test("every catalog family has a loadable brand/residue/pricing contract and inv
   }
 });
 
-test("non-Demeter families inherit residue and pricing rules", () => {
+test("olympus inherits residue and pricing rules", () => {
   const olympus = loadTemplateBrandContract("olympus");
-  const limos = loadTemplateBrandContract("limos");
   assert.deepEqual(forbiddenComputedColors(olympus).map((color) => color.rgb), ["rgb(60, 125, 255)", "rgb(10, 38, 92)"]);
   assert.ok(findForbiddenPriceHides(olympus, ".price-display { display:none }").length === 1);
-  assert.equal(limos.family_inventory.exit_pop.default_included, true);
-  assert.deepEqual(limos.family_inventory.exit_pop.default_coupon_codes, ["EXIT10", "SAVE10"]);
+  assert.ok(olympus.exit_pop.residue_literals.includes('data-coupon-code="EXIT10"'));
 });
 
 test("unknown family returns null instead of throwing", () => {

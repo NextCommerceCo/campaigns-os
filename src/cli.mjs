@@ -163,7 +163,6 @@ const KNOWN_TEMPLATE_FAMILIES = new Set([
   "apollo",
   "apollo-mv-single-step",
   "olympus",
-  "limos",
   "demeter",
   "olympus-mv-single-step",
   "olympus-mv-two-step",
@@ -3999,7 +3998,7 @@ function hasPopulatedInventoryValue(value) {
   return true;
 }
 
-function validateExitPopContract(contract, spec, family, warnings, ready, derived, buildState = {}) {
+export function validateExitPopContract(contract, spec, family, warnings, ready, derived, buildState = {}) {
   const exitPop = contract?.exit_pop;
   if (!exitPop || !spec) return;
   const hasGovernedOfferSurface = activeSpecPages(spec).some((page) => (
