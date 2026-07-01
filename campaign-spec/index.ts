@@ -51,6 +51,20 @@ export type {
 export { normalize, NormalizeError } from './normalize.ts'
 export { allRules, fastRules, specOnlyRules } from './rules/index.ts'
 
+// Canonical dl_* analytics event vocabulary — synced from the Campaign Cart SDK.
+// The AnalyticsContractShape rule validates blockedEvents against it; the Map
+// Builder picker (via the campaign-spec.js shim) autocompletes from it.
+export {
+  DL_EVENTS,
+  DL_EVENT_NAMES,
+  DL_EVENT_NAME_SET,
+  isKnownDlEvent,
+} from './analytics-vocabulary.ts'
+export type {
+  DlEventCategory,
+  DlEventDefinition,
+} from './analytics-vocabulary.ts'
+
 // ── Phases ─────────────────────────────────────────────────────────────────
 
 /**
