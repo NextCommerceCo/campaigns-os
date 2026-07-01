@@ -112,14 +112,28 @@ export function resolvePrivateTemplateSourceFragment(family) {
   return { catalogFamily: fragment.catalog_family || null, brandContract: fragment.brand_contract || null, fragmentPath };
 }
 
-// Drop-in for the raw `readJson(catalogPath)` catalog reads: same shape, with
-// any allowlisted private family merged into `.families` when not already
-// present. Private-source fetch errors are collected as warnings, never
-// thrown here — a public-family run must not fail just because some other
-// private repo isn't checked out locally. Only resolveTemplateBrandContract
-// (below), for that specific family, throws.
+// Enriches the raw commerce catalog with private family entries. The returned
+// object carries an extra `_private_source_warnings` array (not present in the
+// raw catalog) documenting any private-source fetch errors encountered while
+// building the merged family map — callers that spread or JSON.stringify the
+// result will see this key; callers that only read `.families` are unaffected.
+// Private-source fetch errors are collected as warnings, never thrown here — a
+// public-family run must not fail just because some other private repo isn't
+// checked out locally. Only resolveTemplateBrandContract (below), for that
+// specific family, throws.
 export function resolveCommerceCatalog(catalogPath = defaultCommerceCatalogPath()) {
-  const catalog = existsSync(catalogPath) ? JSON.parse(readFileSync(catalogPath, "utf8")) : { families: {} };
+  let catalog = { families: {} };
+  if (existsSync(catalogPath)) {
+    try {
+      catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
+    } catch (error) {
+      throw privateTemplateSourceError(
+        "parse_error",
+        `Commerce catalog ${catalogPath} failed to parse: ${error instanceof Error ? error.message : String(error)}.`,
+        error,
+      );
+    }
+  }
   const families = { ...(catalog.families || {}) };
   const warnings = [];
   for (const family of Object.keys(loadPrivateTemplateSources())) {
@@ -141,11 +155,26 @@ export function resolveCommerceCatalog(catalogPath = defaultCommerceCatalogPath(
 // contracts/ directory, since a private family's `extends` (e.g.
 // "template-brand-contract.shared-commerce.v0.json") points at a genuinely
 // shared, public file that lives here, not in the private repo.
+//
+// If a public contract file exists but fails to parse/validate, the error is
+// caught and the private fragment is tried as a fallback (matching this
+// function's intent: a corrected private fragment should resolve even when a
+// stale public stub is still on disk). If no private fallback applies either,
+// the original public error is re-thrown so the operator sees the root cause.
 export function resolveTemplateBrandContract(family) {
-  const publicContract = loadTemplateBrandContract(family);
+  let publicContract = null;
+  let publicError = null;
+  try {
+    publicContract = loadTemplateBrandContract(family);
+  } catch (err) {
+    publicError = err;
+  }
   if (publicContract) return publicContract;
   const fragment = resolvePrivateTemplateSourceFragment(family);
-  if (!fragment?.brandContract) return null;
+  if (!fragment?.brandContract) {
+    if (publicError) throw publicError;
+    return null;
+  }
   const contract = resolveContractExtendsChain(fragment.brandContract, {
     dir: join(ROOT, "contracts"),
     label: fragment.fragmentPath,
