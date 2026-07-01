@@ -166,9 +166,7 @@
         "items_json",
         "vouchers_json",
         "accept_text",
-        "decline_text",
-        "display_selector_id",
-        "header_discount_selector_id"
+        "decline_text"
       ],
       "sourceOfTruth": [
         "CampaignSpec upsell/downsell pages",
@@ -644,7 +642,7 @@
               "data-next-bundle-selector",
               "data-next-bundle-card"
             ],
-            "note": "product and tiles card styles show coupon extra savings via data-next-discounts=\"voucher\" gated by cart.hasCoupon(). Styling lives in shared next-core.css — no per-page bundle-card CSS link."
+            "note": "product and classic card styles show additive coupon extra savings via data-next-discounts=\"voucher\" gated by cart.hasCoupon(); tiles omits the badge and reflects coupon savings in struck/current pricing. Styling lives in shared next-core.css — no per-page bundle-card CSS link."
           },
           {
             "name": "selector-area order bump",
@@ -750,7 +748,7 @@
         "agentNotes": [
           "Use Apollo when the design has the Apollo checkout shell (trust bar, product heading, promo banner/timer, as-seen-in, reviews slider, guarantee) plus tiered bundle cards — not a generic Olympus clone.",
           "Two bump slots: selector_order_bump_variant (check03 below selector) vs order_bump_variant (later form-section bumps). check03 config reads order_bump.check03.* frontmatter only.",
-          "Do not add per-page checkout component CSS files; promoted styles live in canonical next-core.css synced across all nine families."
+          "Do not add per-page checkout component CSS files; promoted styles live in canonical next-core.css synced across all eight families."
         ],
         "qaStructure": {
           "checkout": {
@@ -2361,6 +2359,6 @@
     }
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
-  "_synced_from_ref": "feat/apollo-template",
-  "_synced_from_sha": "f3bbd706a91a0720ce4703a6a81ec9d429973cb5"
+  "_synced_from_ref": "main",
+  "_synced_from_sha": "4869c46b4c02742fbb587257375773347ad2a973"
 }
