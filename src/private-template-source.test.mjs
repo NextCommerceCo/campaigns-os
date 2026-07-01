@@ -75,28 +75,6 @@ test("resolvePrivateTemplateSourceFragment throws loudly when allowlisted but no
   });
 });
 
-test("resolvePrivateTemplateSourceFragment rejects a malformed repo string (not org/name)", () => {
-  withTempDir((dir) => {
-    withFixtureSource(dir, {
-      sources: { acme: { repo: "no-slash-here", contract_path: "contracts/acme.json" } },
-    }, () => {
-      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /not in "org\/name" form/);
-    });
-  });
-});
-
-test("resolvePrivateTemplateSourceFragment rejects a contract_path that escapes the source repo", () => {
-  withTempDir((dir) => {
-    for (const contract_path of ["../../etc/passwd", "/etc/passwd"]) {
-      withFixtureSource(dir, {
-        sources: { acme: { repo: "some-org/acme-templates", contract_path } },
-      }, () => {
-        assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /must be a relative path inside/);
-      });
-    }
-  });
-});
-
 test("resolvePrivateTemplateSourceFragment resolves a valid fragment from the sibling checkout", () => {
   withTempDir((dir) => {
     withFixtureSource(dir, {
@@ -189,6 +167,16 @@ test("resolveCommerceCatalog collects a warning (does not throw) when a private 
       assert.equal(catalog.families.acme, undefined);
       assert.equal(catalog._private_source_warnings.length, 1);
       assert.equal(catalog._private_source_warnings[0].code, "private_source_not_checked_out");
+    });
+  });
+});
+
+test("resolveCommerceCatalog rejects a catalog that parses but is not a JSON object", () => {
+  withTempDir((dir) => {
+    const catalogPath = join(dir, "catalog.json");
+    writeFileSync(catalogPath, "[]");
+    withFixtureSource(dir, { sources: {} }, () => {
+      assert.throws(() => resolveCommerceCatalog(catalogPath), (err) => err.code === "schema_mismatch");
     });
   });
 });

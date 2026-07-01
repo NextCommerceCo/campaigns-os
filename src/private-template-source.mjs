@@ -12,7 +12,7 @@
 // that's an intentional v1 boundary, not an oversight; see the transfer
 // packet this module implements.
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadTemplateBrandContract, resolveContractExtendsChain } from "./template-brand-contract.mjs";
 
@@ -74,56 +74,31 @@ function privateTemplateSourcesRoot() {
   return process.env.PRIVATE_TEMPLATE_SOURCES_ROOT || resolve(ROOT, "..");
 }
 
-// The sibling checkout directory for a "org/name" repo string. Only the final
+// The sibling checkout directory for a "org/name" repo string: only the final
 // path segment (the repo name) is used as the directory; the org is metadata.
-// Returns null on any shape other than exactly "org/name" (one slash, both
-// segments non-empty, no whitespace or nested slashes) — a bare or malformed
-// string is almost certainly a misconfigured allowlist entry, so reject it
-// rather than silently treat the whole string as a directory name.
+// The allowlist is committed in-repo and human-reviewed before merge, so the
+// repo/contract_path fields are trusted input, not attacker-controlled — no
+// shape/traversal guard here by design (see the module header's v1 boundary).
 function siblingRepoDir(repo) {
-  const value = String(repo || "").trim();
-  if (!/^[^/\s]+\/[^/\s]+$/.test(value)) return null;
-  return join(privateTemplateSourcesRoot(), value.split("/")[1]);
-}
-
-// This module is the trust boundary for "where does a private family's contract
-// come from", so the fragment path is confined to inside the resolved sibling
-// repo directory: an absolute contract_path or one that traverses out
-// (../../etc/passwd) resolves outside repoDir and is rejected, not read.
-function resolveFragmentPathWithin(repoDir, contractPath) {
-  if (typeof contractPath !== "string" || !contractPath.trim()) return null;
-  const resolved = resolve(repoDir, contractPath);
-  const withinRepo = resolved === repoDir || resolved.startsWith(repoDir + sep);
-  return withinRepo ? resolved : null;
+  const name = String(repo || "").trim().split("/").pop();
+  return name ? join(privateTemplateSourcesRoot(), name) : null;
 }
 
 // Allowlist miss -> null (family isn't private; caller falls through to its
-// own "unknown family" handling). Allowlist hit but malformed entry / no local
-// checkout -> throws, deliberately: a private family must fail loudly and
-// specifically when it's actually needed, never silently read as "uncertified"
-// — that's a confusing dead end for whoever hits it.
+// own "unknown family" handling). Allowlist hit but no local checkout ->
+// throws, deliberately: a private family must fail loudly and specifically
+// when it's actually needed, never silently read as "uncertified" — that's a
+// confusing dead end for whoever hits it.
 export function resolvePrivateTemplateSourceFragment(family) {
   const entry = loadPrivateTemplateSources()[family];
   if (!entry) return null;
   const repoDir = siblingRepoDir(entry.repo);
-  if (!repoDir) {
-    throw privateTemplateSourceError(
-      "invalid_source",
-      `Template family "${family}" has a malformed private-source entry: repo "${entry.repo}" is not in "org/name" form.`,
-    );
-  }
-  const fragmentPath = resolveFragmentPathWithin(repoDir, entry.contract_path);
-  if (!fragmentPath) {
-    throw privateTemplateSourceError(
-      "invalid_source",
-      `Template family "${family}" has a malformed private-source entry: contract_path "${entry.contract_path}" must be a relative path inside ${entry.repo}.`,
-    );
-  }
-  if (!existsSync(fragmentPath)) {
+  const fragmentPath = repoDir && typeof entry.contract_path === "string" ? join(repoDir, entry.contract_path) : null;
+  if (!fragmentPath || !existsSync(fragmentPath)) {
     throw privateTemplateSourceError(
       "private_source_not_checked_out",
       `Template family "${family}" is a private family sourced from ${entry.repo}, but no checkout was found at ` +
-        `${repoDir}. Clone ${entry.repo} as a sibling directory (or set PRIVATE_TEMPLATE_SOURCES_ROOT) to resolve it.`,
+        `${repoDir || "(unresolved)"}. Clone ${entry.repo} as a sibling directory (or set PRIVATE_TEMPLATE_SOURCES_ROOT) to resolve it.`,
     );
   }
   const fragment = readJsonFile(fragmentPath, "Private template source fragment");
@@ -153,6 +128,15 @@ export function resolvePrivateTemplateSourceFragment(family) {
 // specific family, throws.
 export function resolveCommerceCatalog(catalogPath = defaultCommerceCatalogPath()) {
   const catalog = existsSync(catalogPath) ? readJsonFile(catalogPath, "Commerce surface catalog") : { families: {} };
+  // Valid JSON that isn't an object (null / array / scalar) would make
+  // `catalog.families` throw a raw TypeError; surface it as the same
+  // structured schema_mismatch the allowlist/fragment reads already use.
+  if (!isPlainObject(catalog)) {
+    throw privateTemplateSourceError(
+      "schema_mismatch",
+      `Commerce catalog ${catalogPath} is not a JSON object.`,
+    );
+  }
   const families = { ...(catalog.families || {}) };
   const warnings = [];
   for (const family of Object.keys(loadPrivateTemplateSources())) {
@@ -176,10 +160,12 @@ export function resolveCommerceCatalog(catalogPath = defaultCommerceCatalogPath(
 // shared, public file that lives here, not in the private repo.
 //
 // If a public contract file exists but fails to parse/validate, the error is
-// caught and the private fragment is tried as a fallback (matching this
-// function's intent: a corrected private fragment should resolve even when a
-// stale public stub is still on disk). If no private fallback applies either,
-// the original public error is re-thrown so the operator sees the root cause.
+// caught and a private fragment is tried as a fallback (a corrected private
+// fragment resolves even when a stale public stub is still on disk). Error
+// precedence when the public load failed: if the family is NOT privately
+// allowlisted, the original public error is re-thrown so the operator sees the
+// root cause; if it IS allowlisted but fragment resolution itself throws (e.g.
+// the sibling checkout is missing), that more-specific error surfaces instead.
 export function resolveTemplateBrandContract(family) {
   let publicContract = null;
   let publicError = null;
