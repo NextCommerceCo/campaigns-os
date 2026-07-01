@@ -62,11 +62,10 @@ test("every catalog family has a loadable brand/residue/pricing contract and inv
   }
 });
 
-test("non-Demeter families inherit residue and pricing rules", () => {
+test("olympus inherits residue and pricing rules", () => {
   const olympus = loadTemplateBrandContract("olympus");
   assert.deepEqual(forbiddenComputedColors(olympus).map((color) => color.rgb), ["rgb(60, 125, 255)", "rgb(10, 38, 92)"]);
   assert.ok(findForbiddenPriceHides(olympus, ".price-display { display:none }").length === 1);
-  // Every family inherits the shared-commerce top-level exit_pop residue rules.
   assert.ok(olympus.exit_pop.residue_literals.includes('data-coupon-code="EXIT10"'));
 });
 
