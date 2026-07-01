@@ -337,8 +337,8 @@ test("resolveQaInputsFromSite builds topologies + brand contract from a built _s
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, "index.html"), html);
     }
-    const resolved = resolveQaInputsFromSite({ site: repo, "base-url": "http://localhost:8080", family: "arjuna", slug: "acme" });
-    assert.equal(resolved.templateFamily, "arjuna");
+    const resolved = resolveQaInputsFromSite({ site: repo, "base-url": "http://localhost:8080", family: "olympus", slug: "acme" });
+    assert.equal(resolved.templateFamily, "olympus");
     assert.equal(resolved.brandContractStatus, "loaded");
     assert.ok(resolved.brandContract, "brand contract loaded for the QA residue gates");
     assert.equal(resolved.topologies[0].pages.length, 3);
@@ -357,7 +357,7 @@ test("resolveQaInputsFromSite requires --base-url", () => {
     const dir = join(repo, "_site", "acme");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "index.html"), "<h1>Landing</h1>");
-    assert.throws(() => resolveQaInputsFromSite({ site: repo, family: "arjuna", slug: "acme" }), /base-url/);
+    assert.throws(() => resolveQaInputsFromSite({ site: repo, family: "olympus", slug: "acme" }), /base-url/);
   });
 });
 

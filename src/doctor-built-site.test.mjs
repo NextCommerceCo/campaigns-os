@@ -27,7 +27,7 @@ test("H3.3 doctor --built: runs residue/text/demo gates against a built _site/ w
   withTempDir((repo) => {
     writePage(repo, "acme", "", "<h1>Lorem ipsum dolor</h1><img src=\"/c/images/1x1_1.svg\">");
     writePage(repo, "acme", "checkout", "<h1>Checkout</h1><p>Product Name</p>");
-    const result = doctorBuiltOutput({ built: repo, family: "arjuna", slug: "acme" });
+    const result = doctorBuiltOutput({ built: repo, family: "olympus", slug: "acme" });
 
     assert.equal(result.mode, "built_site");
     assert.equal(result.ok, true, "warnings do not block; built-site doctor is advisory");
@@ -35,7 +35,7 @@ test("H3.3 doctor --built: runs residue/text/demo gates against a built _site/ w
     assert.ok(codes(result.warnings).includes("template_contract.demo_asset_residue"), "1x1 demo asset flagged");
     assert.equal(result.scope.html_count, 2);
     // Auto-emitted minimal packet points back at the built output + family.
-    assert.equal(result.synthesized_packet.assembly.template_family, "arjuna");
+    assert.equal(result.synthesized_packet.assembly.template_family, "olympus");
     assert.equal(result.synthesized_packet.campaign.public_route_slug, "acme");
   });
 });
@@ -44,7 +44,7 @@ test("H3.3 doctor --built: a clean built campaign yields ready lines and no resi
   withTempDir((repo) => {
     writePage(repo, "acme", "", "<h1>Cold Brew Concentrate</h1><img src=\"/c/images/hero.jpg\">");
     writePage(repo, "acme", "checkout", "<h1>Secure checkout</h1>");
-    const result = doctorBuiltOutput({ built: repo, family: "arjuna", slug: "acme" });
+    const result = doctorBuiltOutput({ built: repo, family: "olympus", slug: "acme" });
     assert.equal(codes(result.warnings).includes("template_contract.placeholder_text_residue"), false);
     assert.equal(codes(result.warnings).includes("template_contract.demo_asset_residue"), false);
     assert.ok(result.ready.some((note) => note.includes("no literal template placeholder text")));
@@ -63,11 +63,11 @@ test("H3.3 doctor --built: warns (does not crash) when no --family is provided",
 test("H3.3 doctor --built --emit-packet: writes a consumable minimal packet to disk", () => {
   withTempDir((repo) => {
     writePage(repo, "acme", "", "<h1>Landing</h1>");
-    const result = doctorBuiltOutput({ built: repo, family: "arjuna", slug: "acme", "emit-packet": true });
+    const result = doctorBuiltOutput({ built: repo, family: "olympus", slug: "acme", "emit-packet": true });
     assert.ok(result.emitted_packet_path);
     const onDisk = JSON.parse(readFileSync(result.emitted_packet_path, "utf8"));
     assert.equal(onDisk._synthesized.from, "built_site");
-    assert.equal(onDisk.assembly.template_family, "arjuna");
+    assert.equal(onDisk.assembly.template_family, "olympus");
 
     const packetDoctor = doctorPacket(result.emitted_packet_path, { contextPath: null, reportPath: null });
     assert.equal(packetDoctor.ok, true);
@@ -81,7 +81,7 @@ test("H3.3 doctor --built: blocks with a clear error when scope cannot resolve",
   withTempDir((repo) => {
     // _site/ exists but the named slug has no pages
     mkdirSync(join(repo, "_site", "empty"), { recursive: true });
-    const result = doctorBuiltOutput({ built: repo, family: "arjuna", slug: "empty" });
+    const result = doctorBuiltOutput({ built: repo, family: "olympus", slug: "empty" });
     assert.equal(result.ok, false);
     assert.ok(codes(result.errors).includes("built_site.scope"));
   });

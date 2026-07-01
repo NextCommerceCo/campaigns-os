@@ -242,8 +242,13 @@ test("placeholderTextResidueMatches handles empty/missing input", () => {
 
 // --- H3.2: demo-asset fidelity contract + detectors ---
 
-test("arjuna declares its own demo-asset set and a repeated-icon selector", () => {
-  const config = demoAssetConfig(loadTemplateBrandContract("arjuna"));
+test("demoAssetConfig parses a family's demo-asset set and a repeated-icon selector", () => {
+  const config = demoAssetConfig({
+    demo_assets: {
+      assets: ["images/1x1_1.svg", "images/benefit-icon.svg"],
+      repeated_icon: { selector: ".benefit-icon img", min_repeats: 3 },
+    },
+  });
   assert.ok(config);
   assert.ok(config.assetBasenames.includes("1x1_1.svg"));
   assert.ok(config.assetBasenames.includes("benefit-icon.svg"));

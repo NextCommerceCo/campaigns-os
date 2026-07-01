@@ -29,8 +29,6 @@ export function loadTemplateBrandContract(family) {
 }
 
 function loadTemplateBrandContractFile(path, seen = new Set()) {
-  if (seen.has(path)) throw templateBrandContractError("extends_cycle", `Template brand contract extends cycle at ${path}.`);
-  seen.add(path);
   let contract = null;
   try {
     contract = JSON.parse(readFileSync(path, "utf8"));
@@ -41,17 +39,31 @@ function loadTemplateBrandContractFile(path, seen = new Set()) {
       error,
     );
   }
+  return resolveContractExtendsChain(contract, { dir: dirname(path), label: path, seen });
+}
+
+// Walks the `extends` chain starting from an already-parsed contract object,
+// resolving each `extends` filename against `dir`. Shared by the on-disk
+// loader above and by privately-sourced contract fragments (fetched from a
+// third-party repo, not read from a file at `dir`) that still need to extend
+// a shared file living in this repo's own contracts/ directory — callers
+// pass that directory in as `dir` regardless of where the leaf contract
+// itself came from. Exported so private-template-source.mjs reuses this
+// instead of re-implementing cycle-detection/merge.
+export function resolveContractExtendsChain(contract, { dir, label = dir, seen = new Set() } = {}) {
+  if (seen.has(label)) throw templateBrandContractError("extends_cycle", `Template brand contract extends cycle at ${label}.`);
+  seen.add(label);
   if (!isPlainObject(contract) || contract.schema_version !== TEMPLATE_BRAND_CONTRACT_SCHEMA) {
     throw templateBrandContractError(
       "schema_mismatch",
-      `Template brand contract ${path} has schema_version "${contract?.schema_version}"; expected "${TEMPLATE_BRAND_CONTRACT_SCHEMA}".`,
+      `Template brand contract ${label} has schema_version "${contract?.schema_version}"; expected "${TEMPLATE_BRAND_CONTRACT_SCHEMA}".`,
     );
   }
   const parentRef = typeof contract.extends === "string" && contract.extends.trim() ? contract.extends.trim() : null;
   if (!parentRef) return contract;
-  const parentPath = join(dirname(path), parentRef);
+  const parentPath = join(dir, parentRef);
   if (!existsSync(parentPath)) {
-    throw templateBrandContractError("extends_missing_parent", `Template brand contract ${path} extends missing file "${parentRef}".`);
+    throw templateBrandContractError("extends_missing_parent", `Template brand contract ${label} extends missing file "${parentRef}".`);
   }
   const merged = mergeContractObjects(loadTemplateBrandContractFile(parentPath, seen), contract);
   delete merged.extends;

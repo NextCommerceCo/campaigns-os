@@ -156,13 +156,13 @@ test("synthesizeMinimalBuildPacket marks itself synthetic and points at the buil
       schemaVersion: "campaign-runtime-build-packet/v0",
       targetRepo: repo,
       scope,
-      family: "arjuna",
+      family: "olympus",
       baseUrl: "http://localhost:8080/",
     });
     assert.equal(packet.schema_version, "campaign-runtime-build-packet/v0");
     assert.equal(packet._synthesized.from, "built_site");
     assert.equal(packet.campaign.public_route_slug, "acme");
-    assert.equal(packet.assembly.template_family, "arjuna");
+    assert.equal(packet.assembly.template_family, "olympus");
     assert.equal(packet.assembly.output_dir, "_site/acme");
     assert.equal(packet.deploy.preview_url, "http://localhost:8080/");
     assert.equal(packet.qa.test_orders_allowed, false);

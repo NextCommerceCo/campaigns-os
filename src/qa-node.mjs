@@ -5,7 +5,7 @@ import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChec
 import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
-import { loadTemplateBrandContract } from "./template-brand-contract.mjs";
+import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 
@@ -240,7 +240,7 @@ function loadCommerceStructureContract({ packet, packetPath, templateFamily }) {
   const catalogPath = resolveFromFile(packetPath, catalogPathValue);
   if (!catalogPath || !existsSync(catalogPath)) return { family: templateFamily, status: "missing_catalog", pages: {} };
   try {
-    const catalog = readJson(catalogPath);
+    const catalog = resolveCommerceCatalog(catalogPath);
     const qaStructure = catalog?.families?.[templateFamily]?.agentContract?.qaStructure;
     return {
       family: templateFamily,
@@ -318,7 +318,7 @@ function themeGateScopeFromTopologies(topologies = []) {
 function loadBrandContract(templateFamily) {
   if (!templateFamily) return { contract: null, status: "no_template_family" };
   try {
-    const contract = loadTemplateBrandContract(templateFamily);
+    const contract = resolveTemplateBrandContract(templateFamily);
     return { contract, status: contract ? "loaded" : "none" };
   } catch (error) {
     return { contract: null, status: `error: ${error instanceof Error ? error.message : String(error)}` };
