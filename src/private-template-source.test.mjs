@@ -75,6 +75,28 @@ test("resolvePrivateTemplateSourceFragment throws loudly when allowlisted but no
   });
 });
 
+test("resolvePrivateTemplateSourceFragment rejects a malformed repo string (not org/name)", () => {
+  withTempDir((dir) => {
+    withFixtureSource(dir, {
+      sources: { acme: { repo: "no-slash-here", contract_path: "contracts/acme.json" } },
+    }, () => {
+      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /not in "org\/name" form/);
+    });
+  });
+});
+
+test("resolvePrivateTemplateSourceFragment rejects a contract_path that escapes the source repo", () => {
+  withTempDir((dir) => {
+    for (const contract_path of ["../../etc/passwd", "/etc/passwd"]) {
+      withFixtureSource(dir, {
+        sources: { acme: { repo: "some-org/acme-templates", contract_path } },
+      }, () => {
+        assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /must be a relative path inside/);
+      });
+    }
+  });
+});
+
 test("resolvePrivateTemplateSourceFragment resolves a valid fragment from the sibling checkout", () => {
   withTempDir((dir) => {
     withFixtureSource(dir, {
@@ -110,6 +132,30 @@ test("resolvePrivateTemplateSourceFragment rejects a fragment declaring the wron
     }, () => {
       assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /declares family "not-acme"/);
     });
+  });
+});
+
+test("resolvePrivateTemplateSourceFragment surfaces a malformed fragment as a structured parse_error", () => {
+  withTempDir((dir) => {
+    const sourcesRoot = join(dir, "root");
+    mkdirSync(join(sourcesRoot, "acme-templates", "contracts"), { recursive: true });
+    writeFileSync(join(sourcesRoot, "acme-templates", "contracts", "acme.json"), "{ not valid json");
+    writeFileSync(
+      join(dir, "private-template-sources.json"),
+      JSON.stringify({ schema_version: "private-template-source/v0", sources: { acme: { repo: "some-org/acme-templates", contract_path: "contracts/acme.json" } } }),
+    );
+    const prevPath = process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+    const prevRoot = process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+    process.env.PRIVATE_TEMPLATE_SOURCES_PATH = join(dir, "private-template-sources.json");
+    process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = sourcesRoot;
+    try {
+      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), (err) => err.code === "parse_error");
+    } finally {
+      if (prevPath === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+      else process.env.PRIVATE_TEMPLATE_SOURCES_PATH = prevPath;
+      if (prevRoot === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+      else process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = prevRoot;
+    }
   });
 });
 

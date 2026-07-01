@@ -50,6 +50,14 @@ function loadTemplateBrandContractFile(path, seen = new Set()) {
 // pass that directory in as `dir` regardless of where the leaf contract
 // itself came from. Exported so private-template-source.mjs reuses this
 // instead of re-implementing cycle-detection/merge.
+//
+// `seen` need not be passed by external callers: it defaults per top-level
+// call and is threaded through the whole chain automatically (this function
+// passes it to loadTemplateBrandContractFile at the recursion point, which
+// passes it back in here), so cross-file cycles within a single resolution
+// are detected regardless of entry point. It is a parameter only so the
+// recursion can share one set; separate top-level calls are independent by
+// design.
 export function resolveContractExtendsChain(contract, { dir, label = dir, seen = new Set() } = {}) {
   if (seen.has(label)) throw templateBrandContractError("extends_cycle", `Template brand contract extends cycle at ${label}.`);
   seen.add(label);

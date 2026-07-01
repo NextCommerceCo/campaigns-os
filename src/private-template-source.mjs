@@ -12,7 +12,7 @@
 // that's an intentional v1 boundary, not an oversight; see the transfer
 // packet this module implements.
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadTemplateBrandContract, resolveContractExtendsChain } from "./template-brand-contract.mjs";
 
@@ -20,6 +20,24 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const PRIVATE_TEMPLATE_SOURCE_SCHEMA = "private-template-source/v0";
 export const PRIVATE_TEMPLATE_SOURCE_FRAGMENT_SCHEMA = "private-template-source-fragment/v0";
+
+// One JSON read + parse path for every file this module reads, so a malformed
+// file surfaces as a structured parse_error (with the syntax error preserved
+// as `cause`) instead of a bare SyntaxError — the same convention the on-disk
+// brand-contract loader uses. Callers that want to swallow it (e.g.
+// certifiedTemplateFamilies) still catch a throw; callers that surface
+// diagnostics get a code to key on.
+function readJsonFile(path, what) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw privateTemplateSourceError(
+      "parse_error",
+      `${what} ${path} failed to parse: ${error instanceof Error ? error.message : String(error)}.`,
+      error,
+    );
+  }
+}
 
 export function defaultCommerceCatalogPath() {
   return join(ROOT, "contracts", "commerce-surface-catalog.json");
@@ -37,16 +55,7 @@ function privateTemplateSourcesPath() {
 export function loadPrivateTemplateSources() {
   const path = privateTemplateSourcesPath();
   if (!existsSync(path)) return {};
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    throw privateTemplateSourceError(
-      "parse_error",
-      `Private template source allowlist ${path} failed to parse: ${error instanceof Error ? error.message : String(error)}.`,
-      error,
-    );
-  }
+  const parsed = readJsonFile(path, "Private template source allowlist");
   if (!isPlainObject(parsed) || parsed.schema_version !== PRIVATE_TEMPLATE_SOURCE_SCHEMA) {
     throw privateTemplateSourceError(
       "schema_mismatch",
@@ -65,38 +74,59 @@ function privateTemplateSourcesRoot() {
   return process.env.PRIVATE_TEMPLATE_SOURCES_ROOT || resolve(ROOT, "..");
 }
 
+// The sibling checkout directory for a "org/name" repo string. Only the final
+// path segment (the repo name) is used as the directory; the org is metadata.
+// Returns null on any shape other than exactly "org/name" (one slash, both
+// segments non-empty, no whitespace or nested slashes) — a bare or malformed
+// string is almost certainly a misconfigured allowlist entry, so reject it
+// rather than silently treat the whole string as a directory name.
 function siblingRepoDir(repo) {
-  const name = String(repo || "").trim().split("/").pop();
-  return name ? join(privateTemplateSourcesRoot(), name) : null;
+  const value = String(repo || "").trim();
+  if (!/^[^/\s]+\/[^/\s]+$/.test(value)) return null;
+  return join(privateTemplateSourcesRoot(), value.split("/")[1]);
+}
+
+// This module is the trust boundary for "where does a private family's contract
+// come from", so the fragment path is confined to inside the resolved sibling
+// repo directory: an absolute contract_path or one that traverses out
+// (../../etc/passwd) resolves outside repoDir and is rejected, not read.
+function resolveFragmentPathWithin(repoDir, contractPath) {
+  if (typeof contractPath !== "string" || !contractPath.trim()) return null;
+  const resolved = resolve(repoDir, contractPath);
+  const withinRepo = resolved === repoDir || resolved.startsWith(repoDir + sep);
+  return withinRepo ? resolved : null;
 }
 
 // Allowlist miss -> null (family isn't private; caller falls through to its
-// own "unknown family" handling). Allowlist hit but no local checkout ->
-// throws, deliberately: a private family must fail loudly and specifically
-// when it's actually needed, never silently read as "uncertified" — that's a
-// confusing dead end for whoever hits it.
+// own "unknown family" handling). Allowlist hit but malformed entry / no local
+// checkout -> throws, deliberately: a private family must fail loudly and
+// specifically when it's actually needed, never silently read as "uncertified"
+// — that's a confusing dead end for whoever hits it.
 export function resolvePrivateTemplateSourceFragment(family) {
   const entry = loadPrivateTemplateSources()[family];
   if (!entry) return null;
   const repoDir = siblingRepoDir(entry.repo);
-  const fragmentPath = repoDir && typeof entry.contract_path === "string" ? join(repoDir, entry.contract_path) : null;
-  if (!fragmentPath || !existsSync(fragmentPath)) {
+  if (!repoDir) {
+    throw privateTemplateSourceError(
+      "invalid_source",
+      `Template family "${family}" has a malformed private-source entry: repo "${entry.repo}" is not in "org/name" form.`,
+    );
+  }
+  const fragmentPath = resolveFragmentPathWithin(repoDir, entry.contract_path);
+  if (!fragmentPath) {
+    throw privateTemplateSourceError(
+      "invalid_source",
+      `Template family "${family}" has a malformed private-source entry: contract_path "${entry.contract_path}" must be a relative path inside ${entry.repo}.`,
+    );
+  }
+  if (!existsSync(fragmentPath)) {
     throw privateTemplateSourceError(
       "private_source_not_checked_out",
       `Template family "${family}" is a private family sourced from ${entry.repo}, but no checkout was found at ` +
-        `${repoDir || "(unresolved)"}. Clone ${entry.repo} as a sibling directory (or set PRIVATE_TEMPLATE_SOURCES_ROOT) to resolve it.`,
+        `${repoDir}. Clone ${entry.repo} as a sibling directory (or set PRIVATE_TEMPLATE_SOURCES_ROOT) to resolve it.`,
     );
   }
-  let fragment;
-  try {
-    fragment = JSON.parse(readFileSync(fragmentPath, "utf8"));
-  } catch (error) {
-    throw privateTemplateSourceError(
-      "parse_error",
-      `Private template source fragment ${fragmentPath} failed to parse: ${error instanceof Error ? error.message : String(error)}.`,
-      error,
-    );
-  }
+  const fragment = readJsonFile(fragmentPath, "Private template source fragment");
   if (!isPlainObject(fragment) || fragment.schema_version !== PRIVATE_TEMPLATE_SOURCE_FRAGMENT_SCHEMA) {
     throw privateTemplateSourceError(
       "schema_mismatch",
@@ -122,18 +152,7 @@ export function resolvePrivateTemplateSourceFragment(family) {
 // checked out locally. Only resolveTemplateBrandContract (below), for that
 // specific family, throws.
 export function resolveCommerceCatalog(catalogPath = defaultCommerceCatalogPath()) {
-  let catalog = { families: {} };
-  if (existsSync(catalogPath)) {
-    try {
-      catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
-    } catch (error) {
-      throw privateTemplateSourceError(
-        "parse_error",
-        `Commerce catalog ${catalogPath} failed to parse: ${error instanceof Error ? error.message : String(error)}.`,
-        error,
-      );
-    }
-  }
+  const catalog = existsSync(catalogPath) ? readJsonFile(catalogPath, "Commerce surface catalog") : { families: {} };
   const families = { ...(catalog.families || {}) };
   const warnings = [];
   for (const family of Object.keys(loadPrivateTemplateSources())) {
