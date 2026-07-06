@@ -28,6 +28,95 @@
       "minLength": 1,
       "description": "Optional producer hint. Manifest page paths still resolve relative to the source root passed to prepare-build."
     },
+    "producer_provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional producer evidence. Required by doctor for Figma exporter manifests.",
+      "properties": {
+        "source_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For figma-sections-export output this must be semantic_figma_export."
+        },
+        "screenshot_fallback_used": {
+          "type": "boolean"
+        },
+        "generator_repo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generator_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "export_log": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "figma_file_key": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "figma_file_keys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "semantic_section_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "breakpoint_image_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "material_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "section_exports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["section", "type"],
+            "properties": {
+              "section": { "type": "string", "minLength": 1 },
+              "type": { "type": "string", "minLength": 1 },
+              "file_key": { "type": ["string", "null"], "minLength": 1 },
+              "node_ids": { "type": "object" },
+              "partial": { "type": ["string", "null"], "minLength": 1 },
+              "images": { "type": "array" },
+              "command": { "type": ["string", "null"], "minLength": 1 },
+              "warnings": { "type": "array" }
+            }
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "description": "Optional material inventory for drift/provenance checks.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["path", "role", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "role": {
+            "type": "string",
+            "enum": ["page", "partial", "layout", "asset", "export_log", "support"]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
     "pages": {
       "type": "array",
       "items": {

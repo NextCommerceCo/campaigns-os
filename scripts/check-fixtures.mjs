@@ -734,12 +734,49 @@ try {
   for (const file of ["landing-section-a.html", "checkout-step.html", "upsell-step.html", "receipt-step.html"]) {
     writeFileSync(resolve(sourceRoot, file), `<html><body>${file}</body></html>`);
   }
+  mkdirSync(resolve(sourceRoot, "assets/images/landing"), { recursive: true });
+  writeFileSync(resolve(sourceRoot, "assets/images/landing/reference.png"), "fixture-png");
+  const manifestFiles = [
+    { path: "landing-section-a.html", role: "partial" },
+    { path: "checkout-step.html", role: "partial" },
+    { path: "upsell-step.html", role: "partial" },
+    { path: "receipt-step.html", role: "partial" },
+    { path: "assets/images/landing/reference.png", role: "asset" },
+  ].map((entry) => {
+    const content = readFileSync(resolve(sourceRoot, entry.path));
+    return {
+      ...entry,
+      sha256: createHash("sha256").update(content).digest("hex"),
+      bytes: content.byteLength,
+    };
+  });
+  const materialFingerprint = createHash("sha256")
+    .update(JSON.stringify(manifestFiles.map(({ path, sha256 }) => ({ path, sha256 }))))
+    .digest("hex");
   writeJson(resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json"), {
     schema_version: "source-html-manifest/v0",
     generated_at: "2026-05-23T00:00:00.000Z",
     generator: "figma-sections-export@1.0.0",
     campaign_slug: "runtime-packet-demo",
     root: ".",
+    producer_provenance: {
+      source_type: "semantic_figma_export",
+      screenshot_fallback_used: false,
+      semantic_section_count: 1,
+      breakpoint_image_count: 1,
+      material_fingerprint: materialFingerprint,
+      section_exports: [
+        {
+          section: "landing",
+          type: "semantic_section",
+          node_ids: { desktop: "1:2" },
+          partial: "landing-section-a.html",
+          images: ["assets/images/landing/reference.png"],
+          warnings: [],
+        },
+      ],
+    },
+    files: manifestFiles,
     pages: [
       { page_id: "landing", path: "landing-section-a.html", page_type: "landing" },
       { page_id: "checkout", path: "checkout-step.html", page_type: "checkout" },
