@@ -30,7 +30,7 @@ test("knownCommands covers the real dispatch branches", () => {
     "start",
     "prepare-build",
     "build",
-    "build",
+    "standardize",
     "doctor",
     "standardize",
     "standardization-report",
