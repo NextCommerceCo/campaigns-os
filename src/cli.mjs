@@ -89,6 +89,11 @@ import {
   validateThemeContextBlock,
   writeThemeArtifacts,
 } from "./brand-theme.mjs";
+import {
+  attachBuiltOutputDoctor,
+  createStandardizationReport,
+  formatStandardizationReportMarkdown,
+} from "./standardization-report.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import {
   evaluatePageKitBuildSummary,
@@ -253,6 +258,8 @@ Usage:
                      [--allow-uncertified-template "<reason>"] [--no-run-session]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
+  campaigns-os standardize --target <page-kit-repo-or-cpk-repo> [--family <family>] [--slug <slug>] [--no-doctor] [--json]
+  campaigns-os standardization-report --target <page-kit-repo-or-cpk-repo> [--family <family>] [--slug <slug>] [--no-doctor] [--json]   # alias for standardize
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
@@ -303,6 +310,8 @@ Examples:
   npm run campaigns-os -- doctor --packet examples/build-packet.basic.json --json
 
   npm run campaigns-os -- theme inspect --packet examples/build-packet.basic.json --json
+
+  npm run campaigns-os -- standardize --target examples/target-page-kit --json
 `;
 
 // Top-level commands the CLI dispatches, used to offer a did-you-mean
@@ -605,6 +614,18 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     const result = doctorCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
+    return;
+  }
+
+  if (command === "standardize") {
+    const result = standardizationReportCommand(args);
+    writeStandardizationReportResult(result, args);
+    return;
+  }
+
+  if (command === "standardization-report") {
+    const result = standardizationReportCommand(args);
+    writeStandardizationReportResult(result, args);
     return;
   }
 
@@ -1712,6 +1733,54 @@ export function doctorBuiltOutput(args) {
     emitted_packet_path: emittedPacketPath,
     next,
   };
+}
+
+function standardizationReportCommand(args) {
+  const target = optionalString(args.target);
+  if (!target) {
+    throw new Error("standardize requires --target <page-kit-repo-or-cpk-repo>.");
+  }
+  const family = optionalString(args.family) || optionalString(args["template-family"]);
+  const slug = optionalString(args.slug);
+  const report = createStandardizationReport({
+    targetRepo: resolve(target),
+    slug,
+    templateFamily: family,
+  });
+  if (args["no-doctor"] === true) {
+    for (const root of report.roots || []) {
+      if (root.built_output?.present) {
+        root.built_output.doctor = { status: "skipped", reason: "--no-doctor was provided" };
+      }
+    }
+    return report;
+  }
+  for (const root of report.roots || []) {
+    if (!root.built_output?.present || !root.built_output?.html_count) continue;
+    const inferredFamily = optionalString(root.identity?.template_family?.value);
+    if (!inferredFamily) {
+      root.built_output.doctor = { status: "skipped", reason: "template family unknown" };
+      continue;
+    }
+    try {
+      const doctor = doctorBuiltOutput({
+        built: root.identity.page_kit_root,
+        family: inferredFamily,
+        slug: slug || root.built_output.slug || undefined,
+      });
+      attachBuiltOutputDoctor(report, root.id, doctor);
+    } catch (error) {
+      attachBuiltOutputDoctor(report, root.id, {
+        ok: false,
+        status: "blocked",
+        mode: "built_site",
+        errors: [{ code: "built_site.doctor_exception", message: error.message }],
+        warnings: [],
+        ready: [],
+      });
+    }
+  }
+  return report;
 }
 
 function themeCommand(args) {
@@ -5813,6 +5882,15 @@ function writeResult(result, args, failureCode) {
     printResult(result);
   }
   if (failureCode) process.exitCode = failureCode;
+}
+
+function writeStandardizationReportResult(result, args) {
+  if (args.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(formatStandardizationReportMarkdown(result));
+  }
+  if (!result.ok) process.exitCode = 2;
 }
 
 // --- Workflow Findings Sidecar -------------------------------------------

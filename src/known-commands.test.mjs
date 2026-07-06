@@ -31,6 +31,8 @@ test("knownCommands covers the real dispatch branches", () => {
     "prepare-build",
     "build",
     "doctor",
+    "standardize",
+    "standardization-report",
     "theme",
     "tooling",
     "next",
