@@ -65,6 +65,7 @@ npm run campaigns-os -- install-skills --platform codex --dry-run
 npm run skills -- status
 npm run campaigns-os -- prepare-build --spec <spec.json> --source <html-dir> --target <page-kit-repo> --template-family <family> --brief <campaign-build-brief.yaml>
 npm run campaigns-os -- doctor --packet <page-kit-repo>/campaign-runtime.build.json
+npm run campaigns-os -- standardize --target <page-kit-repo-or-cpk-repo> --json
 npm run campaigns-os -- theme inspect --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- theme generate --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- next setup --packet <page-kit-repo>/campaign-runtime.build.json
@@ -136,6 +137,7 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 - [Brand Theme Bridge](docs/brand-theme-bridge.md)
 - [CampaignSpec Authoring Examples](docs/campaignspec-authoring-examples.md)
 - [Campaigns OS Build Flow](docs/campaigns-os-build-flow.md)
+- [Campaign Standardization Report](docs/campaign-standardization-report.md)
 - [Entry Points](docs/entry-points.md) — five intake shapes (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and which producer / manifest each one ships with
 - [Source Adapters](docs/source-adapters.md)
 - [Setup Profile Parity](docs/setup-profile-parity.md)
