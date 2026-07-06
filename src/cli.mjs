@@ -1762,6 +1762,10 @@ function standardizationReportCommand(args) {
       root.built_output.doctor = { status: "skipped", reason: "template family unknown" };
       continue;
     }
+    if (root.identity?.template_family?.confidence === "tentative") {
+      root.built_output.doctor = { status: "skipped", reason: "template family tentative" };
+      continue;
+    }
     try {
       const doctor = doctorBuiltOutput({
         built: root.identity.page_kit_root,

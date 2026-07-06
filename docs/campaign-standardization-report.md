@@ -54,8 +54,8 @@ Each root contains these sections:
   dependency, template family evidence, Campaigns OS artifact presence, and
   built-site presence.
 - `source_structure`: HTML/page/include/layout counts, Liquid helper counts,
-  raw blocks, document wrappers, hardcoded root asset refs, and payment-method
-  include detection.
+  raw blocks, document wrappers, hardcoded root asset refs, unreadable files,
+  and payment-method include detection.
 - `runtime_contract`: `data-next-*` anchor summary, checkout/upsell/receipt
   surface signals, package/shipping refs, source manifest presence, and
   `.campaign-runtime` inventory.
@@ -75,8 +75,8 @@ or standard without repair. Current blockers include missing or invalid
 `standardization_warning` means the repo can be inspected but may drift from the
 modern CPK contract. Current warnings include older SDK/Page Kit versions,
 missing Campaigns OS artifacts, hardcoded `/assets/...` refs, page-level
-document wrappers, missing `campaign_asset`, missing `data-next-*` anchors, and
-tentative payment-method include gaps.
+document wrappers, unreadable source files, missing `campaign_asset`, missing
+`data-next-*` anchors, and tentative payment-method include gaps.
 
 `operator_readiness` means the repo may be technically inspectable but lacks
 proof or business context. Current readiness items include missing built output,
