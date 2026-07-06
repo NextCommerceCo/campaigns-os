@@ -23,6 +23,9 @@ const SKIP_DIRS = new Set([
 ]);
 const STRUCTURE_EXTENSIONS = new Set([".html", ".liquid"]);
 const TEXT_EXTENSIONS = new Set([".html", ".liquid", ".js", ".css"]);
+const RAW_BLOCK_PATTERN = /{%-?\s*raw\s*-?%}/g;
+const HARDCODED_ROOT_ASSET_ATTR_PATTERN = /\b(?:src|href)\s*=\s*(["'])\/assets\/[^"']*\1/g;
+const HARDCODED_ROOT_ASSET_URL_PATTERN = /\burl\(\s*(["']?)\/assets\/[^)"']*\1\s*\)/g;
 
 export function createStandardizationReport({
   targetRepo,
@@ -74,11 +77,11 @@ export function attachBuiltOutputDoctor(report, rootId, doctorResult) {
   if (!root) return report;
   root.built_output.doctor = summarizeDoctorResult(doctorResult);
   if (doctorResult?.errors?.length) {
-    for (const issue of doctorResult.errors) {
+    for (const [index, issue] of doctorResult.errors.entries()) {
       root.findings.push(finding({
         severity: "blocker",
         category: "standardization_blocker",
-        code: `built_doctor.${issue.code || "error"}`,
+        code: builtDoctorFindingCode(issue, "error", index),
         message: issue.message || String(issue),
         evidence: issue.detail || null,
         next_action: "Resolve built-output doctor blockers, then rerun the standardization report.",
@@ -86,11 +89,11 @@ export function attachBuiltOutputDoctor(report, rootId, doctorResult) {
     }
   }
   if (doctorResult?.warnings?.length) {
-    for (const issue of doctorResult.warnings) {
+    for (const [index, issue] of doctorResult.warnings.entries()) {
       root.findings.push(finding({
         severity: "warning",
         category: "standardization_warning",
-        code: `built_doctor.${issue.code || "warning"}`,
+        code: builtDoctorFindingCode(issue, "warning", index),
         message: issue.message || String(issue),
         evidence: issue.detail || null,
         next_action: "Use the built-output doctor finding as the concrete repair target.",
@@ -140,7 +143,7 @@ export function formatStandardizationReportMarkdown(report) {
     lines.push("### Source Structure");
     lines.push(`- HTML files: ${root.source_structure.html_file_count}; pages: ${root.source_structure.page_file_count}; includes: ${root.source_structure.include_file_count}; layouts: ${root.source_structure.layout_file_count}`);
     lines.push(`- Helpers: campaign_asset=${root.source_structure.helper_counts.campaign_asset}, campaign_include=${root.source_structure.helper_counts.campaign_include}, campaign_link=${root.source_structure.helper_counts.campaign_link}`);
-    lines.push(`- Raw blocks: ${root.source_structure.raw_blocks.count}; document wrappers in pages: ${root.source_structure.document_wrappers.count}; hardcoded /assets refs: ${root.source_structure.hardcoded_root_assets.count}`);
+    lines.push(`- Raw blocks: ${root.source_structure.raw_blocks.count}; document wrappers in pages: ${root.source_structure.document_wrappers.count}; hardcoded /assets refs: ${root.source_structure.hardcoded_root_assets.count}; unreadable files: ${root.source_structure.unreadable_files.count}`);
     lines.push(`- Payment methods include: ${root.source_structure.payment_methods_include.detected ? "detected" : "not detected"}`);
     lines.push("");
     lines.push("### Runtime Contract");
@@ -469,6 +472,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
   };
   const rawBlocks = [];
   const hardcodedAssets = [];
+  const unreadableFiles = [];
   const documentWrappers = [];
   const paymentMethodFiles = [];
   const dataNextCounts = new Map();
@@ -487,13 +491,21 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
 
   for (const file of sourceFiles) {
     const rel = relPath(rootPath, file);
-    const content = safeReadText(file);
-    if (!content) continue;
+    const readResult = safeReadText(file);
+    if (!readResult.ok) {
+      unreadableFiles.push({
+        path: rel,
+        line: 1,
+        match: readResult.error,
+      });
+      continue;
+    }
+    const content = readResult.value;
     if (STRUCTURE_EXTENSIONS.has(extname(file).toLowerCase())) {
       helperCounts.campaign_asset += countLiteral(content, "campaign_asset");
       helperCounts.campaign_include += countLiteral(content, "campaign_include");
       helperCounts.campaign_link += countLiteral(content, "campaign_link");
-      collectPatternSamples(rawBlocks, rootPath, file, content, /{%\s*raw\s*%}/g);
+      collectPatternSamples(rawBlocks, rootPath, file, content, RAW_BLOCK_PATTERN);
       collectHardcodedAssetSamples(hardcodedAssets, rootPath, file, content, slugs);
       if (isPaymentMethodsInclude(file, content)) {
         paymentMethodFiles.push(rel);
@@ -519,6 +531,16 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
     }
   }
 
+  if (unreadableFiles.length) {
+    findings.push(finding({
+      severity: "warning",
+      category: "standardization_warning",
+      code: "source.file_unreadable",
+      message: `${unreadableFiles.length} source file(s) could not be read; skipped files may hide standardization issues.`,
+      evidence: unreadableFiles.slice(0, MAX_SAMPLE_COUNT),
+      next_action: "Fix file permissions or remove unreadable source artifacts, then rerun the standardization report.",
+    }));
+  }
   if (rawBlocks.length) {
     findings.push(finding({
       severity: "blocker",
@@ -586,6 +608,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
       helper_counts: helperCounts,
       raw_blocks: { count: rawBlocks.length, samples: rawBlocks.slice(0, MAX_SAMPLE_COUNT) },
       hardcoded_root_assets: { count: hardcodedAssets.length, samples: hardcodedAssets.slice(0, MAX_SAMPLE_COUNT) },
+      unreadable_files: { count: unreadableFiles.length, samples: unreadableFiles.slice(0, MAX_SAMPLE_COUNT) },
       document_wrappers: { count: documentWrappers.length, samples: documentWrappers.slice(0, MAX_SAMPLE_COUNT) },
       payment_methods_include: {
         detected: paymentMethodFiles.length > 0,
@@ -722,7 +745,8 @@ function buildRemediation(root) {
     `campaigns-os standardize --target ${shellQuote(root.identity.page_kit_root)} --json`,
   ];
   const family = root.identity.template_family.value;
-  if (root.built_output.present && family) {
+  const familyConfirmed = family && root.identity.template_family.confidence !== "tentative";
+  if (root.built_output.present && familyConfirmed) {
     const slugFlag = root.built_output.slug ? ` --slug ${shellQuote(root.built_output.slug)}` : "";
     proof.push(`campaigns-os doctor --built ${shellQuote(root.identity.page_kit_root)} --family ${shellQuote(family)}${slugFlag} --json`);
   } else if (root.built_output.present) {
@@ -839,12 +863,19 @@ function documentWrapperMatchIndex(content) {
 
 function maskHtmlAndLiquidComments(content) {
   return String(content || "")
-    .replace(/<!--[\s\S]*?-->/g, maskComment)
-    .replace(/{%\s*comment\s*%}[\s\S]*?{%\s*endcomment\s*%}/gi, maskComment);
+    .replace(/<!--[\s\S]*?-->/g, maskIgnoredRegion)
+    .replace(/{%-?\s*comment\s*-?%}[\s\S]*?{%-?\s*endcomment\s*-?%}/gi, maskIgnoredRegion);
 }
 
-function maskComment(comment) {
-  return comment.replace(/[^\r\n]/g, " ");
+function maskScriptsAndComments(content) {
+  return maskHtmlAndLiquidComments(content)
+    .replace(/(<script\b[^>]*>)([\s\S]*?)(<\/script\s*>)/gi, (_match, open, body, close) =>
+      `${open}${maskIgnoredRegion(body)}${close}`
+    );
+}
+
+function maskIgnoredRegion(value) {
+  return String(value).replace(/[^\r\n]/g, " ");
 }
 
 function componentTokens(component) {
@@ -862,17 +893,23 @@ function hasTokenSequence(tokens, sequence) {
 }
 
 function collectHardcodedAssetSamples(out, rootPath, file, content, slugs) {
-  collectPatternSamples(out, rootPath, file, content, /(?:src|href)=["']\/assets\/[^"']+["']|url\(["']?\/assets\/[^)"']+["']?\)/g);
+  const searchable = maskScriptsAndComments(content);
+  collectPatternSamples(out, rootPath, file, content, HARDCODED_ROOT_ASSET_ATTR_PATTERN, searchable);
+  collectPatternSamples(out, rootPath, file, content, HARDCODED_ROOT_ASSET_URL_PATTERN, searchable);
   for (const entry of slugs || []) {
     const slug = escapeRegExp(entry.slug);
     if (!slug) continue;
-    collectPatternSamples(out, rootPath, file, content, new RegExp(`(?:src|href)=["']/${slug}/assets/[^"']+["']|url\\(["']?/${slug}/assets/[^)"']+["']?\\)`, "g"));
+    collectPatternSamples(out, rootPath, file, content, new RegExp(`\\b(?:src|href)\\s*=\\s*(["'])/${slug}/assets/[^"']*\\1`, "g"), searchable);
+    collectPatternSamples(out, rootPath, file, content, new RegExp(`\\burl\\(\\s*(["']?)/${slug}/assets/[^)"']*\\1\\s*\\)`, "g"), searchable);
   }
 }
 
-function collectPatternSamples(out, rootPath, file, content, pattern) {
-  for (const match of content.matchAll(pattern)) {
-    out.push(sample(rootPath, file, content, match.index || 0, match[0]));
+function collectPatternSamples(out, rootPath, file, content, pattern, searchableContent = content) {
+  const globalPattern = withGlobalFlag(pattern);
+  globalPattern.lastIndex = 0;
+  for (const match of String(searchableContent).matchAll(globalPattern)) {
+    const index = match.index || 0;
+    out.push(sample(rootPath, file, content, index, String(content).slice(index, index + match[0].length)));
   }
 }
 
@@ -918,10 +955,21 @@ function safeReadDir(dir) {
 
 function safeReadText(path) {
   try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return "";
+    return { ok: true, value: readFileSync(path, "utf8") };
+  } catch (error) {
+    return { ok: false, error: error.message || String(error) };
   }
+}
+
+function builtDoctorFindingCode(issue, fallback, index) {
+  const code = normalizeString(issue?.code);
+  return `built_doctor.${code || `${fallback}.${index + 1}`}`;
+}
+
+function withGlobalFlag(pattern) {
+  if (!(pattern instanceof RegExp)) return new RegExp(String(pattern), "g");
+  if (pattern.flags.includes("g")) return pattern;
+  return new RegExp(pattern.source, `${pattern.flags}g`);
 }
 
 function readJsonFile(path) {

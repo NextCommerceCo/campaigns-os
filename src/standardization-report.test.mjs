@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -138,6 +138,64 @@ layout: base
   });
 });
 
+test("standardization report handles raw dash forms and unreadable source files", () => {
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({
+      dependencies: { "next-campaign-page-kit": "^0.1.1" },
+    }, null, 2));
+    write(join(dir, "_data", "campaigns.json"), JSON.stringify({
+      acme: { sdk_version: "0.4.25", store_url: "https://acme.example/" },
+    }, null, 2));
+    write(join(dir, "src", "acme", "checkout.html"), `
+<section>
+  {%-raw-%}{{ 'image.jpg' | campaign_asset }}{%-endraw-%}
+  <form data-next-checkout="form"></form>
+</section>
+`);
+    const unreadable = join(dir, "src", "acme", "blocked.html");
+    write(unreadable, "<main></main>");
+    chmodSync(unreadable, 0);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+
+    assert.equal(root.source_structure.raw_blocks.count, 1);
+    assert.equal(root.source_structure.unreadable_files.count, 1);
+    assert.ok(codes(root).includes("source.raw_block"));
+    assert.ok(codes(root).includes("source.file_unreadable"));
+  });
+});
+
+test("hardcoded root asset scan ignores scripts and comments", () => {
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({
+      dependencies: { "next-campaign-page-kit": "^0.1.1" },
+    }, null, 2));
+    write(join(dir, "_data", "campaigns.json"), JSON.stringify({
+      acme: { sdk_version: "0.4.25", store_url: "https://acme.example/" },
+    }, null, 2));
+    write(join(dir, "src", "acme", "checkout.html"), `
+<!-- <img src="/assets/commented.png"> -->
+{% comment %}<a href="/assets/liquid-comment.png"></a>{% endcomment %}
+<script>
+  const template = '<img src="/assets/script-string.png">';
+</script>
+<img src="/assets/real.png">
+<form data-next-checkout="form"></form>
+`);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+    const evidence = root.findings
+      .find((finding) => finding.code === "source.hardcoded_root_assets")
+      ?.evidence.map((sample) => sample.match).join("\n") || "";
+
+    assert.equal(root.source_structure.hardcoded_root_assets.count, 1);
+    assert.match(evidence, /real\.png/);
+    assert.doesNotMatch(evidence, /commented|liquid-comment|script-string/);
+  });
+});
+
 test("standardization report marks built output unresolved when slug scope is ambiguous", () => {
   withTempDir((dir) => {
     writeFixtureRoot(dir, { sdkVersion: "0.4.25", pageKitVersion: "^0.1.1" });
@@ -183,5 +241,26 @@ test("built-output doctor warnings attach as standardization findings", () => {
     assert.equal(root.built_output.doctor.status, "ready_with_warnings");
     assert.ok(codes(root).includes("built_doctor.template_contract.literal_residue"));
     assert.ok(root.remediation.safe_agent_repairs.some((item) => item.includes("starter/template residue")));
+  });
+});
+
+test("built-output doctor codeless findings keep unique codes", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.25", pageKitVersion: "^0.1.1" });
+    const report = createStandardizationReport({ targetRepo: dir });
+    attachBuiltOutputDoctor(report, report.roots[0].id, {
+      ok: false,
+      status: "blocked",
+      mode: "built_site",
+      errors: [{ message: "First codeless error." }, { message: "Second codeless error." }],
+      warnings: [{ message: "First codeless warning." }, { message: "Second codeless warning." }],
+      ready: [],
+    });
+
+    const root = report.roots[0];
+    assert.ok(codes(root).includes("built_doctor.error.1"));
+    assert.ok(codes(root).includes("built_doctor.error.2"));
+    assert.ok(codes(root).includes("built_doctor.warning.1"));
+    assert.ok(codes(root).includes("built_doctor.warning.2"));
   });
 });
