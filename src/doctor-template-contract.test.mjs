@@ -108,6 +108,36 @@ test("template_contract.upsell_refs clean when the upsell declares an offer ref"
   assert.equal(codes(errors).includes("template_contract.upsell_refs"), false);
 });
 
+test("template_contract.upsell_offer_binding errors for code-less discount offers when the template only exposes vouchers_json", () => {
+  const { errors } = run({
+    family: "apollo",
+    contract: {
+      status: "agent-ready",
+      frontmatter: {
+        requiredWhenCloning: ["packages.main_package"],
+        optionalWhenSupported: ["upsell_offer"],
+        replaceFromSpecOrApi: ["upsell_offer.*", "upsell_bundle_tiers[].vouchers_json"],
+        demoOnlyValues: ['upsell_offer.vouchers_json=["UP50"]'],
+      },
+    },
+    spec: specWith([
+      { id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] },
+      {
+        id: "upsell",
+        type: "upsell",
+        offers: [
+          {
+            ref_id: "6",
+            code: null,
+            benefit: { type: "package_percentage", value: "70.00" },
+          },
+        ],
+      },
+    ]),
+  });
+  assert.ok(codes(errors).includes("template_contract.upsell_offer_binding"));
+});
+
 test("template_contract.spec_family errors when a page family disagrees with the packet family", () => {
   const { errors } = run({
     contract: checkoutContract,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -34,6 +34,18 @@ function runCliJson(args) {
     env: { ...process.env, CAMPAIGNS_API_KEY: "" },
   });
   return JSON.parse(output);
+}
+
+function runCliJsonAllowFailure(args) {
+  const result = spawnSync(process.execPath, [CLI, ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, CAMPAIGNS_API_KEY: "" },
+  });
+  const text = result.stdout.trim();
+  if (!text) throw new Error(`CLI produced no JSON. stderr=${result.stderr}`);
+  return JSON.parse(text);
 }
 
 function withIntakeFixture(run) {
@@ -186,6 +198,66 @@ test("source-html manifest validator rejects missing page paths", () => {
 
   assert.equal(validation.ok, false);
   assert.equal(validation.errors.some((error) => error.code === "manifest.pages[0].path"), true);
+});
+
+test("source-html manifest validator accepts producer provenance and file inventory", () => {
+  const validation = validateSourceHtmlManifest({
+    schema_version: "source-html-manifest/v0",
+    generator: "figma-sections-export@1.0.0",
+    producer_provenance: {
+      source_type: "semantic_figma_export",
+      screenshot_fallback_used: false,
+      semantic_section_count: 1,
+      breakpoint_image_count: 1,
+      material_fingerprint: "a".repeat(64),
+      section_exports: [
+        {
+          section: "hero-1",
+          type: "hotspot",
+          node_ids: { desktop: "1:2" },
+          images: ["images/hero-1/hero-1-desktop.png"],
+          warnings: [],
+        },
+      ],
+    },
+    files: [
+      { path: "landing.html", role: "page", sha256: "b".repeat(64), bytes: 12 },
+      { path: "_includes/landing/hero-1.html", role: "partial", sha256: "c".repeat(64), bytes: 34 },
+      { path: "assets/images/hero-1/hero-1-desktop.png", role: "asset", sha256: "d".repeat(64), bytes: 56 },
+    ],
+    pages: [{ page_id: "landing", path: "landing.html" }],
+  });
+
+  assert.equal(validation.ok, true);
+});
+
+test("doctor blocks Figma exporter manifests without producer provenance", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const manifestPath = resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json");
+    const manifest = readJson(manifestPath);
+    manifest.generator = "figma-sections-export@1.0.0";
+    writeJson(manifestPath, manifest);
+
+    const spec = readJson(specPath);
+    const landing = spec.funnels[0].pages.find((page) => page.id === "landing");
+    landing.design_source = {
+      type: "figma",
+      file_url: "https://www.figma.com/design/abc/Figma?node-id=1-2",
+    };
+    writeJson(specPath, spec);
+
+    const result = runCliJsonAllowFailure([
+      "start",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+
+    const codes = new Set((result.doctor?.errors || []).map((issue) => issue.code));
+    assert.equal(codes.has("source_html.producer_provenance"), true);
+  });
 });
 
 test("published source-html manifest schema agrees with runtime constant", () => {

@@ -1309,6 +1309,8 @@ function prepareBuild(args, options = {}) {
             generated_at: manifestResult.manifest.generated_at || null,
             campaign_slug: manifestResult.manifest.campaign_slug || null,
             page_count: Array.isArray(manifestResult.manifest.pages) ? manifestResult.manifest.pages.length : 0,
+            file_count: Array.isArray(manifestResult.manifest.files) ? manifestResult.manifest.files.length : 0,
+            producer_provenance: manifestResult.manifest.producer_provenance || null,
           }
         : null,
       manifest_warnings: manifestWarnings,
@@ -3647,7 +3649,7 @@ function coverageErrorDetail(page) {
 function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}) {
   const pages = packet.source_html?.pages || [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
-  validateSourceHtmlManifestAtRoot(sourceRoot, warnings, ready);
+  validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready });
   const active = activeSpecPages(spec);
   const specPartialScope = spec?.build_scope?.mode === "partial";
   const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
@@ -3765,7 +3767,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   }
 }
 
-function validateSourceHtmlManifestAtRoot(sourceRoot, warnings, ready) {
+function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready } = {}) {
   if (!isNonEmptyString(sourceRoot) || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
   const result = readSourceHtmlManifestFile(sourceRoot);
   if (!result.path) return;
@@ -3778,7 +3780,84 @@ function validateSourceHtmlManifestAtRoot(sourceRoot, warnings, ready) {
     addIssue(warnings, "source_html.manifest", result.warning);
     return;
   }
+  validateSourceProducerProvenance(result.manifest, { spec, errors, warnings, ready });
   ready.push(`Source-html manifest ${SOURCE_HTML_MANIFEST_SCHEMA} validated`);
+}
+
+function validateSourceProducerProvenance(manifest, { spec, errors, warnings, ready }) {
+  const generator = optionalString(manifest?.generator);
+  const provenance = manifest?.producer_provenance;
+  const expectsFigma = generator.startsWith("figma-sections-export@") || activeSpecPages(spec).some(hasFigmaDesignSource);
+  if (!expectsFigma) return;
+
+  if (!provenance) {
+    addIssue(
+      errors,
+      "source_html.producer_provenance",
+      "Figma source manifest is missing producer_provenance. Re-run figma-sections-export handoff so Campaigns OS can gate semantic exporter provenance before assembly."
+    );
+    return;
+  }
+
+  if (provenance.source_type !== "semantic_figma_export") {
+    addIssue(
+      errors,
+      "source_html.producer_provenance.source_type",
+      `Figma source manifest source_type is "${provenance.source_type || "missing"}"; expected "semantic_figma_export". Screenshot or hand-authored fallback output cannot satisfy the Figma provenance gate.`
+    );
+  }
+  if (provenance.screenshot_fallback_used !== false) {
+    addIssue(
+      errors,
+      "source_html.producer_provenance.screenshot_fallback_used",
+      "Figma source manifest reports screenshot_fallback_used=true. Re-run semantic figma-sections-export before assembly."
+    );
+  }
+  if (!Number.isInteger(provenance.semantic_section_count) || provenance.semantic_section_count <= 0) {
+    addIssue(
+      errors,
+      "source_html.producer_provenance.semantic_section_count",
+      "Figma source manifest must report semantic_section_count > 0."
+    );
+  }
+  if (!/^[0-9a-f]{64}$/.test(String(provenance.material_fingerprint || ""))) {
+    addIssue(
+      errors,
+      "source_html.producer_provenance.material_fingerprint",
+      "Figma source manifest must include a 64-character material_fingerprint over the handed-off source package."
+    );
+  }
+
+  const files = Array.isArray(manifest?.files) ? manifest.files : [];
+  if (!files.some((entry) => entry.role === "partial")) {
+    addIssue(errors, "source_html.files.partial", "Figma source manifest files[] must include section partials.");
+  }
+  if (!files.some((entry) => entry.role === "asset")) {
+    addIssue(errors, "source_html.files.asset", "Figma source manifest files[] must include exported assets.");
+  }
+
+  const sectionExports = Array.isArray(provenance.section_exports) ? provenance.section_exports : [];
+  if (!sectionExports.length) {
+    addIssue(errors, "source_html.producer_provenance.section_exports", "Figma source manifest must include section_exports with Figma node IDs and extraction commands.");
+  } else {
+    const withoutNodeIds = sectionExports.filter((entry) => !entry?.node_ids || !Object.keys(entry.node_ids).length).map((entry) => entry?.section || "unknown");
+    if (withoutNodeIds.length) {
+      addIssue(
+        warnings,
+        "source_html.producer_provenance.section_exports.node_ids",
+        `Some Figma section exports do not list node_ids: ${withoutNodeIds.slice(0, 6).join(", ")}${withoutNodeIds.length > 6 ? ", ..." : ""}.`
+      );
+    }
+  }
+
+  if (errors.every((issue) => !String(issue.code || "").startsWith("source_html.producer_provenance") && !["source_html.files.partial", "source_html.files.asset"].includes(issue.code))) {
+    ready.push("Figma producer provenance gate passed: semantic_figma_export with package fingerprint");
+  }
+}
+
+function hasFigmaDesignSource(page) {
+  const designSource = page && isObject(page.design_source) ? page.design_source : null;
+  return Boolean(designSource && (String(designSource.type || "").toLowerCase() === "figma" || /figma\.com\//i.test(optionalString(designSource.file_url))));
 }
 
 // Helpers ported from the private build-packet doctor (ADR-003 step 2) so the
@@ -3960,8 +4039,55 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
         `Template family "${family}" exposes upsell frontmatter, but active upsell/downsell pages have no package or offer refs to replace demo values.`
       );
     }
+    validateCodeLessUpsellOfferBinding({ familyAutomatable, contract, family, upsellPages, errors, ready });
     validateExitPopContract(brandContract, spec, family, warnings, ready, derived, buildState);
   }
+}
+
+function validateCodeLessUpsellOfferBinding({ familyAutomatable, contract, family, upsellPages, errors, ready }) {
+  if (!familyAutomatable || !Array.isArray(upsellPages) || upsellPages.length === 0) return;
+  const usesVoucherJson = contractMentions(contract, /\bvouchers_json\b/, ["replaceFromSpecOrApi", "demoOnlyValues", "optionalWhenSupported"]);
+  const supportsOfferRef = contractMentions(contract, /\boffer_ref(?:_id)?\b/, ["replaceFromSpecOrApi", "demoOnlyValues", "optionalWhenSupported", "requiredWhenCloning"]);
+  if (!usesVoucherJson || supportsOfferRef) return;
+
+  const codeLessDiscountOffers = [];
+  for (const page of upsellPages) {
+    for (const offer of Array.isArray(page.offers) ? page.offers : []) {
+      if (!isCodeLessDiscountOffer(offer)) continue;
+      codeLessDiscountOffers.push({
+        page_id: page.id,
+        label: page.label || null,
+        offer_ref_id: offer.ref_id || offer.id || null,
+        benefit_type: offer.benefit?.type || null,
+        benefit_value: offer.benefit?.value || null,
+      });
+    }
+  }
+
+  if (!codeLessDiscountOffers.length) {
+    ready.push(`${family} upsell offers have code-backed discounts or no code-less discount offer binding requirement`);
+    return;
+  }
+
+  addIssue(
+    errors,
+    "template_contract.upsell_offer_binding",
+    `Template family "${family}" exposes post-purchase upsell vouchers_json but CampaignSpec has code-less discount offer refs: ${codeLessDiscountOffers.map((offer) => `${offer.page_id}:${offer.offer_ref_id || "unknown"}`).join(", ")}. Add a supported offer-ref binding to the template/SDK adapter, use a code-backed offer, or block assembly; otherwise accepted upsells can commit at full price.`,
+    { offers: codeLessDiscountOffers, template_family: family }
+  );
+}
+
+function isCodeLessDiscountOffer(offer) {
+  if (!isObject(offer)) return false;
+  if (isNonEmptyString(offer.code)) return false;
+  const benefit = isObject(offer.benefit) ? offer.benefit : null;
+  const benefitType = String(benefit?.type || "").toLowerCase();
+  const value = benefit?.value;
+  return Boolean(
+    benefit
+      && (/(percentage|percent|discount|fixed|amount)/.test(benefitType) || value !== undefined)
+      && (offer.ref_id !== undefined || offer.id !== undefined)
+  );
 }
 
 export function validateTemplateFamilyInventory(contract, errors, ready) {
