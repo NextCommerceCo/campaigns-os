@@ -79,6 +79,7 @@ import {
 } from "./source-html-intake.mjs";
 import {
   readSourceHtmlManifestFile,
+  SOURCE_HASH_PATTERN,
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "./source-html-manifest.mjs";
 import { crawlSourceAssetPaths } from "./source-asset-crawl.mjs";
@@ -3785,18 +3786,18 @@ function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, 
 }
 
 function validateSourceProducerProvenance(manifest, { spec, errors, warnings, ready }) {
-  const generator = optionalString(manifest?.generator);
-  const provenance = manifest?.producer_provenance;
+  const generator = optionalString(manifest?.generator) || "";
+  const rawProvenance = manifest?.producer_provenance;
+  const provenance = isObject(rawProvenance) ? rawProvenance : {};
   const expectsFigma = generator.startsWith("figma-sections-export@") || activeSpecPages(spec).some(hasFigmaDesignSource);
   if (!expectsFigma) return;
 
-  if (!provenance) {
+  if (!rawProvenance) {
     addIssue(
       errors,
       "source_html.producer_provenance",
       "Figma source manifest is missing producer_provenance. Re-run figma-sections-export handoff so Campaigns OS can gate semantic exporter provenance before assembly."
     );
-    return;
   }
 
   if (provenance.source_type !== "semantic_figma_export") {
@@ -3820,7 +3821,7 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
       "Figma source manifest must report semantic_section_count > 0."
     );
   }
-  if (!/^[0-9a-f]{64}$/.test(String(provenance.material_fingerprint || ""))) {
+  if (!SOURCE_HASH_PATTERN.test(String(provenance.material_fingerprint || ""))) {
     addIssue(
       errors,
       "source_html.producer_provenance.material_fingerprint",
@@ -3840,7 +3841,12 @@ function validateSourceProducerProvenance(manifest, { spec, errors, warnings, re
   if (!sectionExports.length) {
     addIssue(errors, "source_html.producer_provenance.section_exports", "Figma source manifest must include section_exports with Figma node IDs and extraction commands.");
   } else {
-    const withoutNodeIds = sectionExports.filter((entry) => !entry?.node_ids || !Object.keys(entry.node_ids).length).map((entry) => entry?.section || "unknown");
+    const withoutNodeIds = sectionExports
+      .filter((entry) => {
+        const nodeIds = isObject(entry?.node_ids) ? entry.node_ids : null;
+        return !nodeIds || !Object.keys(nodeIds).length;
+      })
+      .map((entry) => entry?.section || "unknown");
     if (withoutNodeIds.length) {
       addIssue(
         warnings,
@@ -4080,14 +4086,13 @@ function validateCodeLessUpsellOfferBinding({ familyAutomatable, contract, famil
 function isCodeLessDiscountOffer(offer) {
   if (!isObject(offer)) return false;
   if (isNonEmptyString(offer.code)) return false;
+  if (offer.ref_id === undefined && offer.id === undefined) return false;
   const benefit = isObject(offer.benefit) ? offer.benefit : null;
   const benefitType = String(benefit?.type || "").toLowerCase();
   const value = benefit?.value;
-  return Boolean(
-    benefit
-      && (/(percentage|percent|discount|fixed|amount)/.test(benefitType) || value !== undefined)
-      && (offer.ref_id !== undefined || offer.id !== undefined)
-  );
+  if (!benefit || !/(percentage|percent|discount|fixed|amount)/.test(benefitType)) return false;
+  if (value === undefined || value === null) return false;
+  return String(value).trim().length > 0 && Number.isFinite(Number(value));
 }
 
 export function validateTemplateFamilyInventory(contract, errors, ready) {

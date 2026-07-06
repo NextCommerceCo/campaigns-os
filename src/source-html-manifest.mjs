@@ -4,8 +4,7 @@ import { resolve } from "node:path";
 export const SOURCE_HTML_MANIFEST_REL_PATH = ".campaigns-os/source-html-manifest.json";
 export const SOURCE_HTML_MANIFEST_SCHEMA = "source-html-manifest/v0";
 
-const SOURCE_HASH_PATTERN = /^[0-9a-f]{64}$/;
-const MATERIAL_HASH_PATTERN = SOURCE_HASH_PATTERN;
+export const SOURCE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const FILE_ROLES = new Set(["page", "partial", "layout", "asset", "export_log", "support"]);
 
 export function validateSourceHtmlManifest(manifest) {
@@ -123,13 +122,14 @@ function validateProducerProvenance(provenance, add) {
       add(`manifest.producer_provenance.${field}`, `producer_provenance.${field} must be a non-empty string when present.`);
     }
   }
-  if (provenance.material_fingerprint != null && !MATERIAL_HASH_PATTERN.test(provenance.material_fingerprint)) {
+  if (provenance.material_fingerprint != null && !SOURCE_HASH_PATTERN.test(provenance.material_fingerprint)) {
     add("manifest.producer_provenance.material_fingerprint", "producer_provenance.material_fingerprint must be a 64-character lowercase sha256 hex string when present.");
   }
-  for (const field of ["semantic_section_count", "breakpoint_image_count"]) {
-    if (provenance[field] != null && (!Number.isInteger(provenance[field]) || provenance[field] < 0)) {
-      add(`manifest.producer_provenance.${field}`, `producer_provenance.${field} must be a non-negative integer when present.`);
-    }
+  if (provenance.semantic_section_count != null && (!Number.isInteger(provenance.semantic_section_count) || provenance.semantic_section_count <= 0)) {
+    add("manifest.producer_provenance.semantic_section_count", "producer_provenance.semantic_section_count must be a positive integer when present.");
+  }
+  if (provenance.breakpoint_image_count != null && (!Number.isInteger(provenance.breakpoint_image_count) || provenance.breakpoint_image_count < 0)) {
+    add("manifest.producer_provenance.breakpoint_image_count", "producer_provenance.breakpoint_image_count must be a non-negative integer when present.");
   }
   if (provenance.figma_file_keys != null && !Array.isArray(provenance.figma_file_keys)) {
     add("manifest.producer_provenance.figma_file_keys", "producer_provenance.figma_file_keys must be an array when present.");
@@ -173,8 +173,8 @@ function validateManifestFile(entry, index, add) {
   if (!isNonEmptyString(entry.path)) {
     add(`${location}.path`, `${location}.path is required and must be a non-empty string.`);
   }
-  if (entry.role != null && (!isNonEmptyString(entry.role) || !FILE_ROLES.has(entry.role))) {
-    add(`${location}.role`, `${location}.role must be one of ${[...FILE_ROLES].join(", ")} when present.`);
+  if (!isNonEmptyString(entry.role) || !FILE_ROLES.has(entry.role)) {
+    add(`${location}.role`, `${location}.role is required and must be one of ${[...FILE_ROLES].join(", ")}.`);
   }
   if (!isNonEmptyString(entry.sha256) || !SOURCE_HASH_PATTERN.test(entry.sha256)) {
     add(`${location}.sha256`, `${location}.sha256 is required and must be a 64-character lowercase sha256 hex string.`);

@@ -138,6 +138,36 @@ test("template_contract.upsell_offer_binding errors for code-less discount offer
   assert.ok(codes(errors).includes("template_contract.upsell_offer_binding"));
 });
 
+test("template_contract.upsell_offer_binding ignores code-less non-discount offers", () => {
+  const { errors } = run({
+    family: "apollo",
+    contract: {
+      status: "agent-ready",
+      frontmatter: {
+        requiredWhenCloning: ["packages.main_package"],
+        optionalWhenSupported: ["upsell_offer"],
+        replaceFromSpecOrApi: ["upsell_offer.*", "upsell_bundle_tiers[].vouchers_json"],
+        demoOnlyValues: ['upsell_offer.vouchers_json=["UP50"]'],
+      },
+    },
+    spec: specWith([
+      { id: "checkout", type: "checkout", packages: [{ ref_id: "1" }] },
+      {
+        id: "upsell",
+        type: "upsell",
+        offers: [
+          {
+            ref_id: "ship",
+            code: null,
+            benefit: { type: "shipping", value: null },
+          },
+        ],
+      },
+    ]),
+  });
+  assert.equal(codes(errors).includes("template_contract.upsell_offer_binding"), false);
+});
+
 test("template_contract.spec_family errors when a page family disagrees with the packet family", () => {
   const { errors } = run({
     contract: checkoutContract,

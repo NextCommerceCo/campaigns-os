@@ -63,7 +63,7 @@
         },
         "semantic_section_count": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "breakpoint_image_count": {
           "type": "integer",
@@ -99,7 +99,7 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "required": ["path", "sha256"],
+        "required": ["path", "role", "sha256"],
         "properties": {
           "path": { "type": "string", "minLength": 1 },
           "role": {

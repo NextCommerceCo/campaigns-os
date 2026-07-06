@@ -231,6 +231,25 @@ test("source-html manifest validator accepts producer provenance and file invent
   assert.equal(validation.ok, true);
 });
 
+test("source-html manifest validator requires positive semantic section count and file roles", () => {
+  const validation = validateSourceHtmlManifest({
+    schema_version: "source-html-manifest/v0",
+    generator: "figma-sections-export@1.0.0",
+    producer_provenance: {
+      source_type: "semantic_figma_export",
+      screenshot_fallback_used: false,
+      semantic_section_count: 0,
+      material_fingerprint: "a".repeat(64),
+    },
+    files: [{ path: "landing.html", sha256: "b".repeat(64) }],
+    pages: [{ page_id: "landing", path: "landing.html" }],
+  });
+
+  assert.equal(validation.ok, false);
+  assert.equal(validation.errors.some((error) => error.code === "manifest.producer_provenance.semantic_section_count"), true);
+  assert.equal(validation.errors.some((error) => error.code === "manifest.files[0].role"), true);
+});
+
 test("doctor blocks Figma exporter manifests without producer provenance", () => {
   withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
     const manifestPath = resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json");
@@ -257,6 +276,73 @@ test("doctor blocks Figma exporter manifests without producer provenance", () =>
 
     const codes = new Set((result.doctor?.errors || []).map((issue) => issue.code));
     assert.equal(codes.has("source_html.producer_provenance"), true);
+  });
+});
+
+test("doctor handles Figma design source when manifest generator is missing", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    const manifestPath = resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json");
+    const manifest = readJson(manifestPath);
+    delete manifest.generator;
+    writeJson(manifestPath, manifest);
+
+    const spec = readJson(specPath);
+    const landing = spec.funnels[0].pages.find((page) => page.id === "landing");
+    landing.design_source = {
+      type: "figma",
+      file_url: "https://www.figma.com/design/abc/Figma?node-id=1-2",
+    };
+    writeJson(specPath, spec);
+
+    const result = runCliJsonAllowFailure([
+      "start",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+
+    const codes = new Set((result.doctor?.errors || []).map((issue) => issue.code));
+    assert.equal(codes.has("source_html.producer_provenance"), true);
+  });
+});
+
+test("doctor warns instead of throwing when Figma section export omits node_ids", () => {
+  withIntakeFixture(({ sourceRoot, targetRepo, specPath }) => {
+    mkdirSync(resolve(sourceRoot, "assets/images/hero-1"), { recursive: true });
+    writeFileSync(resolve(sourceRoot, "assets/images/hero-1/hero-1-desktop.png"), "png");
+
+    const manifestPath = resolve(sourceRoot, ".campaigns-os", "source-html-manifest.json");
+    const manifest = readJson(manifestPath);
+    manifest.generator = "figma-sections-export@1.0.0";
+    manifest.producer_provenance = {
+      source_type: "semantic_figma_export",
+      screenshot_fallback_used: false,
+      semantic_section_count: 1,
+      breakpoint_image_count: 1,
+      material_fingerprint: "a".repeat(64),
+      section_exports: [{ section: "hero-1", type: "hotspot" }],
+    };
+    manifest.files = [
+      { path: "figma/landing-page.html", role: "partial", sha256: "b".repeat(64) },
+      { path: "assets/images/hero-1/hero-1-desktop.png", role: "asset", sha256: "c".repeat(64) },
+    ];
+    writeJson(manifestPath, manifest);
+
+    const result = runCliJsonAllowFailure([
+      "start",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--json",
+    ]);
+
+    const errors = new Set((result.doctor?.errors || []).map((issue) => issue.code));
+    const warnings = new Set((result.doctor?.warnings || []).map((issue) => issue.code));
+    assert.equal(errors.has("source_html.producer_provenance.section_exports"), false);
+    assert.equal(warnings.has("source_html.producer_provenance.section_exports.node_ids"), true);
   });
 });
 
