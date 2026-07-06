@@ -135,7 +135,7 @@ export function formatStandardizationReportMarkdown(report) {
     lines.push(`- Page Kit: ${root.identity.page_kit_dependency?.name || "(unknown)"} ${root.identity.page_kit_dependency?.version || "(unknown)"}`);
     lines.push(`- Template family: ${root.identity.template_family.value || "(unknown)"} (${root.identity.template_family.source || "unknown"})`);
     lines.push(`- Campaigns OS artifacts: ${root.identity.has_campaign_runtime ? "yes" : "no"}`);
-    lines.push(`- Built _site: ${root.identity.has_built_site ? "yes" : "no"}`);
+    lines.push(`- Built _site: ${formatBuiltSiteState(root)}`);
     lines.push("");
     lines.push("### Source Structure");
     lines.push(`- HTML files: ${root.source_structure.html_file_count}; pages: ${root.source_structure.page_file_count}; includes: ${root.source_structure.include_file_count}; layouts: ${root.source_structure.layout_file_count}`);
@@ -216,7 +216,7 @@ function scanPageKitRoot({
   const sourceFiles = files.filter((file) => TEXT_EXTENSIONS.has(extname(file).toLowerCase()));
   const campaigns = readCampaigns(rootPath);
   const packageInfo = readPackageInfo(rootPath);
-  const runtime = readRuntimeArtifacts(rootPath, targetRepo);
+  const runtime = readRuntimeArtifacts(rootPath, targetRepo, files);
   const sourceScan = scanSourceFiles(rootPath, structureFiles, sourceFiles, campaigns.slugs);
   const templateFamily = inferTemplateFamily({
     explicitTemplateFamily,
@@ -409,7 +409,7 @@ function findPageKitDependency(pkg) {
   return null;
 }
 
-function readRuntimeArtifacts(rootPath, targetRepo) {
+function readRuntimeArtifacts(rootPath, targetRepo, rootFiles = []) {
   const runtimeDirs = unique([join(rootPath, ".campaign-runtime"), join(targetRepo, ".campaign-runtime")]);
   const artifactFiles = [];
   for (const dir of runtimeDirs) {
@@ -420,7 +420,7 @@ function readRuntimeArtifacts(rootPath, targetRepo) {
     })));
   }
   const sourceManifestFiles = [
-    ...listFiles(rootPath).filter((file) => file.endsWith(".campaigns-os/source-html-manifest.json")),
+    ...rootFiles.filter((file) => file.endsWith(".campaigns-os/source-html-manifest.json")),
     ...runtimeDirs.flatMap((dir) => listFiles(dir, { includeRuntime: true })
       .filter((file) => file.endsWith("source-html-manifest.json"))),
   ];
@@ -495,11 +495,12 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
       helperCounts.campaign_link += countLiteral(content, "campaign_link");
       collectPatternSamples(rawBlocks, rootPath, file, content, /{%\s*raw\s*%}/g);
       collectHardcodedAssetSamples(hardcodedAssets, rootPath, file, content, slugs);
-      if (basename(file) === "payment-methods.html" || /payment-methods/i.test(content)) {
+      if (isPaymentMethodsInclude(file, content)) {
         paymentMethodFiles.push(rel);
       }
-      if (pageFiles.includes(file) && /<\s*(?:html|body)\b/i.test(content)) {
-        documentWrappers.push(sample(rootPath, file, content.search(/<\s*(?:html|body)\b/i), "document wrapper"));
+      const documentWrapperIndex = pageFiles.includes(file) ? documentWrapperMatchIndex(content) : -1;
+      if (documentWrapperIndex >= 0) {
+        documentWrappers.push(sample(rootPath, file, content, documentWrapperIndex, "document wrapper"));
       }
       if (/checkout/i.test(rel) || /data-next-checkout|data-next-action=["'](?:create-order|add-to-cart)/i.test(content)) {
         checkoutFiles.add(rel);
@@ -507,11 +508,11 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
       if (/upsell/i.test(rel) || /data-next-upsell/i.test(content)) {
         upsellFiles.add(rel);
       }
-      if (/receipt|thank/i.test(rel) || /data-next-(?:order|receipt)|order\./i.test(content)) {
+      if (/receipt|thank/i.test(rel) || /\bdata-next-(?:order|receipt)[a-zA-Z0-9_-]*/i.test(content)) {
         receiptFiles.add(rel);
       }
       collectDataNextAttributes(dataNextCounts, content);
-      collectPatternSamples(packageRefs, rootPath, file, content, /(?:packageId|package_id|data-next-package-id|package\.)/g);
+      collectPatternSamples(packageRefs, rootPath, file, content, /(?:\bpackageId\b|\bpackage_id\b|\bdata-next-package-id\b|\bdata-next-display=["']package\.[^"']+["'])/g);
       collectPatternSamples(shippingRefs, rootPath, file, content, /(?:shippingId|shipping_id|data-next-shipping-id|shipping\.)/g);
     } else {
       collectDataNextAttributes(dataNextCounts, content);
@@ -608,6 +609,7 @@ function inspectBuiltOutput(rootPath, requestedSlug) {
   if (!existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) {
     return {
       present: false,
+      scope_resolved: false,
       site_root: siteRoot,
       slug: requestedSlug || null,
       html_count: 0,
@@ -626,6 +628,7 @@ function inspectBuiltOutput(rootPath, requestedSlug) {
   if (!scope.ok) {
     return {
       present: true,
+      scope_resolved: false,
       site_root: siteRoot,
       slug: requestedSlug || null,
       html_count: 0,
@@ -644,6 +647,7 @@ function inspectBuiltOutput(rootPath, requestedSlug) {
   }
   return {
     present: true,
+    scope_resolved: true,
     site_root: scope.site_root,
     slug: scope.slug || null,
     html_count: scope.html_count,
@@ -762,12 +766,15 @@ function inferTemplateFamily({ explicitTemplateFamily, runtime, files, rootPath 
 }
 
 function inferTemplateFamilyFromPaths(files, rootPath) {
-  const joined = files.map((file) => relPath(rootPath, file).toLowerCase()).join("\n");
-  if (joined.includes("olympus-mv") || joined.includes("upsell-mv")) return "olympus-mv-single-step";
-  if (joined.includes("olympus")) return "olympus";
-  if (joined.includes("apollo")) return "apollo";
-  if (joined.includes("shop-three-step")) return "shop-three-step";
-  if (joined.includes("shop-single-step")) return "shop-single-step";
+  const tokenSets = files
+    .map((file) => relPath(rootPath, file).toLowerCase())
+    .filter((rel) => !rel.includes("/assets/"))
+    .map((rel) => rel.split("/").flatMap(componentTokens));
+  if (tokenSets.some((tokens) => hasTokenSequence(tokens, ["olympus", "mv"]) || hasTokenSequence(tokens, ["upsell", "mv"]))) return "olympus-mv-single-step";
+  if (tokenSets.some((tokens) => hasTokenSequence(tokens, ["shop", "three", "step"]))) return "shop-three-step";
+  if (tokenSets.some((tokens) => hasTokenSequence(tokens, ["shop", "single", "step"]))) return "shop-single-step";
+  if (tokenSets.some((tokens) => tokens.includes("olympus"))) return "olympus";
+  if (tokenSets.some((tokens) => tokens.includes("apollo"))) return "apollo";
   return null;
 }
 
@@ -810,6 +817,50 @@ function summarizeDataNext(counts) {
   };
 }
 
+function formatBuiltSiteState(root) {
+  if (!root.identity.has_built_site) return "no";
+  return root.built_output?.scope_resolved === false ? "unresolved" : "yes";
+}
+
+function isPaymentMethodsInclude(file, content) {
+  if (basename(file) === "payment-methods.html") return true;
+  return /{%\s*(?:campaign_)?include\s+["'][^"']*payment-methods(?:\.html)?["']/i.test(content);
+}
+
+function documentWrapperMatchIndex(content) {
+  const masked = maskHtmlAndLiquidComments(content);
+  const head = masked.slice(0, 4096);
+  const htmlMatch = head.search(/<\s*html\b/i);
+  if (htmlMatch >= 0) return htmlMatch;
+  const bodyMatch = head.search(/<\s*body\b/i);
+  if (bodyMatch >= 0 && /<\/\s*(?:body|html)\s*>/i.test(masked)) return bodyMatch;
+  return -1;
+}
+
+function maskHtmlAndLiquidComments(content) {
+  return String(content || "")
+    .replace(/<!--[\s\S]*?-->/g, maskComment)
+    .replace(/{%\s*comment\s*%}[\s\S]*?{%\s*endcomment\s*%}/gi, maskComment);
+}
+
+function maskComment(comment) {
+  return comment.replace(/[^\r\n]/g, " ");
+}
+
+function componentTokens(component) {
+  return component
+    .replace(/\.[a-z0-9]+$/i, "")
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean);
+}
+
+function hasTokenSequence(tokens, sequence) {
+  for (let index = 0; index <= tokens.length - sequence.length; index += 1) {
+    if (sequence.every((token, offset) => tokens[index + offset] === token)) return true;
+  }
+  return false;
+}
+
 function collectHardcodedAssetSamples(out, rootPath, file, content, slugs) {
   collectPatternSamples(out, rootPath, file, content, /(?:src|href)=["']\/assets\/[^"']+["']|url\(["']?\/assets\/[^)"']+["']?\)/g);
   for (const entry of slugs || []) {
@@ -821,12 +872,12 @@ function collectHardcodedAssetSamples(out, rootPath, file, content, slugs) {
 
 function collectPatternSamples(out, rootPath, file, content, pattern) {
   for (const match of content.matchAll(pattern)) {
-    out.push(sample(rootPath, file, match.index || 0, match[0]));
+    out.push(sample(rootPath, file, content, match.index || 0, match[0]));
   }
 }
 
-function sample(rootPath, file, index, match) {
-  const before = safeReadText(file).slice(0, Math.max(0, index));
+function sample(rootPath, file, content, index, match) {
+  const before = content.slice(0, Math.max(0, index));
   return {
     path: relPath(rootPath, file),
     line: before.split(/\r?\n/).length,

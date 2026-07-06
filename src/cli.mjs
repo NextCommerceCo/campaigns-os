@@ -1736,9 +1736,7 @@ export function doctorBuiltOutput(args) {
 }
 
 function standardizationReportCommand(args) {
-  const target = optionalString(args.target)
-    || optionalString(args.repo)
-    || optionalString(args._[1]);
+  const target = optionalString(args.target);
   if (!target) {
     throw new Error("standardize requires --target <page-kit-repo-or-cpk-repo>.");
   }

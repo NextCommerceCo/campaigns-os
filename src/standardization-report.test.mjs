@@ -105,6 +105,54 @@ test("standardization report discovers multiple nested Page Kit roots", () => {
   });
 });
 
+test("standardization report keeps tentative source heuristics narrow", () => {
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({
+      dependencies: { "next-campaign-page-kit": "^0.1.1" },
+    }, null, 2));
+    write(join(dir, "_data", "campaigns.json"), JSON.stringify({
+      acme: { sdk_version: "0.4.25", store_url: "https://acme.example/" },
+    }, null, 2));
+    write(join(dir, "src", "acme", "checkout.html"), `
+---
+layout: base
+---
+<!-- <html> is mentioned in a comment, not used as a document wrapper. -->
+{% comment %}<body>also not a wrapper</body>{% endcomment %}
+<section>
+  <p>Copy says payment-methods, but this is not an include.</p>
+  <p>Do not count package.json or order.fetch as runtime bindings.</p>
+  <form data-next-checkout="form"></form>
+</section>
+`);
+    write(join(dir, "src", "acme", "assets", "images", "olympus-mv-screenshot.png"), "not really an image");
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+    assert.equal(root.source_structure.document_wrappers.count, 0);
+    assert.equal(root.source_structure.payment_methods_include.detected, false);
+    assert.equal(root.runtime_contract.package_refs.count, 0);
+    assert.equal(root.runtime_contract.receipt_surface.detected, false);
+    assert.equal(root.identity.template_family.value, null);
+    assert.ok(codes(root).includes("source.payment_methods_include_not_detected"));
+  });
+});
+
+test("standardization report marks built output unresolved when slug scope is ambiguous", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.25", pageKitVersion: "^0.1.1" });
+    write(join(dir, "_site", "beta", "index.html"), "<h1>Built Beta</h1>");
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+    assert.equal(root.built_output.present, true);
+    assert.equal(root.built_output.scope_resolved, false);
+    assert.equal(root.built_output.html_count, 0);
+    assert.match(formatStandardizationReportMarkdown(report), /Built _site: unresolved/);
+    assert.ok(codes(root).includes("built_output.scope_unresolved"));
+  });
+});
+
 test("standardization markdown is operator-readable", () => {
   withTempDir((dir) => {
     writeFixtureRoot(dir);

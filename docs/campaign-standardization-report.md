@@ -59,7 +59,8 @@ Each root contains these sections:
 - `runtime_contract`: `data-next-*` anchor summary, checkout/upsell/receipt
   surface signals, package/shipping refs, source manifest presence, and
   `.campaign-runtime` inventory.
-- `built_output`: built page inventory and optional built-output doctor result.
+- `built_output`: built page inventory, slug-scope resolution state, and
+  optional built-output doctor result.
 - `findings`: normalized blocker, warning, and operator-readiness items with
   evidence and next action.
 - `remediation`: safe agent repairs, clarification needed, product or merchant
