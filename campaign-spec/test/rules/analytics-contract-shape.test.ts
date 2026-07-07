@@ -173,6 +173,23 @@ describe('AnalyticsContractShape rule', () => {
       .toContain('blocked-events-shape')
   })
 
+  test('accepts blockedEvents naming known SDK dl_* events', () => {
+    const c = checks(baseSpec({ providers: { gtm: { enabled: true, containerId: 'GTM-X', blockedEvents: ['dl_purchase', 'dl_upsell_purchase'] } } }))
+    expect(c).toEqual([])
+  })
+
+  test('flags a blockedEvent that is not a known dl_* event (the drift bug)', () => {
+    // "purchase" (no dl_ prefix) is exactly the silent no-op this keystone closes:
+    // blockedEvents matches by exact name, so it would block nothing at runtime.
+    const c = checks(baseSpec({ providers: { gtm: { enabled: true, containerId: 'GTM-X', blockedEvents: ['purchase'] } } }))
+    expect(c).toContain('blocked-event-unknown')
+  })
+
+  test('flags each unknown blockedEvent and leaves known ones alone', () => {
+    const c = checks(baseSpec({ providers: { facebook: { enabled: true, pixelId: '1', blockedEvents: ['dl_purchase', 'dl_porchase', 'checkout'] } } }))
+    expect(c.filter((x) => x === 'blocked-event-unknown').length).toBe(2)
+  })
+
   test('flags an out-of-band pixel missing its vendor', () => {
     expect(checks(baseSpec({ out_of_band_pixels: [{ vendor: '' }] }))).toContain('oob-vendor-missing')
   })

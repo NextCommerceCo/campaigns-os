@@ -16,9 +16,11 @@
  *      etc.), warn once and stop — there is no contract shape to inspect.
  *      Genuinely-absent `analytics` stays silent (optional, non-gating).
  *   1. `mode`, if present, is one of auto | manual | disabled.
- *   2. Each provider: `blockedEvents` (when present) is a string[]; an enabled
- *      gtm provider should declare `containerId`, facebook `pixelId`, custom
- *      `endpoint` (warning — the id is what doctor/QA bind to).
+ *   2. Each provider: `blockedEvents` (when present) is a string[], and each
+ *      entry is a known SDK `dl_*` event (a misspelled/legacy name like
+ *      "purchase" blocks nothing — the original drift bug this keystone closes);
+ *      an enabled gtm provider should declare `containerId`, facebook `pixelId`,
+ *      custom `endpoint` (warning — the id is what doctor/QA bind to).
  *   3. Each `out_of_band_pixels[]` entry has a non-empty `vendor`.
  *   4. Each `manual_events[]` entry has a non-empty `event`; if it names a
  *      `page`, that page id must exist; a purchase manual event SHOULD name a
@@ -34,6 +36,7 @@
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
+import { isKnownDlEvent } from '../analytics-vocabulary.ts'
 
 const VALID_MODES = new Set(['auto', 'manual', 'disabled'])
 const PURCHASE_EVENT = /^(?:dl_)?purchase$/i
@@ -138,6 +141,17 @@ export const AnalyticsContractShape: Rule = {
         const enabled = provider.enabled !== false
         if (provider.blockedEvents !== undefined && !isStringArray(provider.blockedEvents)) {
           warn(`analytics.providers.${kind}.blockedEvents must be an array of event-name strings.`, `${base}/blockedEvents`, 'blocked-events-shape', { kind })
+        } else if (isStringArray(provider.blockedEvents)) {
+          // Each blocked event must be a known SDK dl_* event. blockedEvents
+          // matches by EXACT event name at runtime, so a misspelled or legacy
+          // name (e.g. "purchase" instead of "dl_purchase") silently blocks
+          // nothing — caught here at doctor time, not in production.
+          const blocked = provider.blockedEvents as string[]
+          blocked.forEach((evt, i) => {
+            if (!isKnownDlEvent(evt)) {
+              warn(`analytics.providers.${kind}.blockedEvents[${i}] "${evt}" is not a known SDK dl_* event. blockedEvents matches by exact event name, so a misspelled or legacy name (e.g. "purchase" instead of "dl_purchase") blocks nothing.`, `${base}/blockedEvents/${i}`, 'blocked-event-unknown', { kind, event: evt })
+            }
+          })
         }
         if (enabled && kind === 'gtm' && !isNonEmptyString(provider.containerId)) {
           warn(`analytics.providers.gtm is enabled but has no containerId (e.g. "GTM-…"); doctor/QA bind to it.`, `${base}/containerId`, 'gtm-container-missing', { kind })
