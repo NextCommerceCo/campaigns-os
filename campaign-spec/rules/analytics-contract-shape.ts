@@ -46,6 +46,12 @@ function isStringArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((v) => typeof v === 'string')
 }
 
+function isPlainAnalyticsObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
 function collectPageIds(spec: CampaignSpec): { pageIds: Set<string>; checkoutPageIds: Set<string> } {
   const pageIds = new Set<string>()
   const checkoutPageIds = new Set<string>()
@@ -84,8 +90,7 @@ export const AnalyticsContractShape: Rule = {
     // primitives (new String("auto") passes `typeof === 'object'` but is not a
     // plain contract block). Only Object.prototype and null-prototype objects
     // are accepted as valid analytics blocks.
-    const analyticsProto = typeof analytics === 'object' ? Object.getPrototypeOf(analytics as object) : null
-    if (typeof analytics !== 'object' || Array.isArray(analytics) || (analyticsProto !== Object.prototype && analyticsProto !== null)) {
+    if (!isPlainAnalyticsObject(analytics)) {
       const label = Array.isArray(analytics) ? 'an array' : typeof analytics !== 'object' ? typeof analytics : 'a non-plain object'
       violations.push({
         ruleId: 'AnalyticsContractShape',
