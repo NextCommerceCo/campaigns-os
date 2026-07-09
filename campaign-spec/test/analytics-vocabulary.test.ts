@@ -1,5 +1,7 @@
 import { describe, expect, test } from './harness.ts'
 import {
+  CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION,
+  CAMPAIGN_CART_ANALYTICS_VOCABULARY_SDK_VERSION,
   DL_EVENTS,
   DL_EVENT_NAMES,
   DL_EVENT_NAME_SET,
@@ -26,6 +28,15 @@ describe('analytics dl_* vocabulary (synced snapshot)', () => {
     for (const def of DL_EVENTS) {
       expect(typeof def.category).toBe('string')
       expect(def.category.length > 0).toBe(true)
+    }
+  })
+
+  test('every event carries picker metadata', () => {
+    expect(CAMPAIGN_CART_ANALYTICS_VOCABULARY_SDK_VERSION).toBe('0.4.30')
+    expect(CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION).toBe('0.4.30')
+    for (const def of DL_EVENTS) {
+      expect(typeof def.description).toBe('string')
+      expect(def.description.length > 0).toBe(true)
     }
   })
 

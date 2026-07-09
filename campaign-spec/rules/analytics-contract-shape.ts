@@ -33,10 +33,17 @@
  *      `maps_to` (half a mapping silently drops the affiliate click id).
  *   7. `params.tracking.preserve` / `utmTransfer.paramsToCopy`, when present,
  *      are string[].
+ *   8. If analytics is active (the block is present and mode is not
+ *      "disabled"; missing mode means SDK defaults apply), runtime/global_config
+ *      sdk_version should be an exact released semver >= the SDK identity
+ *      baseline so events carry campaign/session ids.
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
-import { isKnownDlEvent } from '../analytics-vocabulary.ts'
+import {
+  CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION,
+  isKnownDlEvent,
+} from '../analytics-vocabulary.ts'
 
 const VALID_MODES = new Set(['auto', 'manual', 'disabled'])
 const PURCHASE_EVENT = /^(?:dl_)?purchase$/i
@@ -53,6 +60,37 @@ function isPlainAnalyticsObject(value: unknown): value is Record<string, unknown
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const proto = Object.getPrototypeOf(value)
   return proto === Object.prototype || proto === null
+}
+
+function parseReleasedVersion(version: string): number[] | null {
+  const match = version.trim().match(/^v?(\d+)\.(\d+)\.(\d+)$/)
+  if (!match) return null
+  return [Number(match[1]), Number(match[2]), Number(match[3])]
+}
+
+function compareVersions(a: string, b: string): number | null {
+  const left = parseReleasedVersion(a)
+  const right = parseReleasedVersion(b)
+  if (!left || !right) return null
+  for (let i = 0; i < 3; i += 1) {
+    if (left[i] > right[i]) return 1
+    if (left[i] < right[i]) return -1
+  }
+  return 0
+}
+
+function sdkVersionRef(spec: CampaignSpec): { version: string; path: string } | null {
+  const runtimeVersion = spec.runtime?.sdk_version
+  if (isNonEmptyString(runtimeVersion)) return { version: runtimeVersion, path: '/runtime/sdk_version' }
+  const globalVersion = spec.global_config?.sdk_version
+  if (isNonEmptyString(globalVersion)) return { version: globalVersion, path: '/global_config/sdk_version' }
+  return null
+}
+
+function analyticsContractIsActive(analytics: Record<string, unknown>): boolean {
+  // A present analytics block with no mode still means "SDK defaults apply";
+  // only the explicit disabled mode opts out of the SDK identity baseline check.
+  return analytics.mode !== 'disabled'
 }
 
 function collectPageIds(spec: CampaignSpec): { pageIds: Set<string>; checkoutPageIds: Set<string> } {
@@ -113,6 +151,34 @@ export const AnalyticsContractShape: Rule = {
         path,
         data: { check, ...data },
       })
+    }
+
+    // 8. SDK identity baseline
+    const versionRef = sdkVersionRef(spec)
+    if (analyticsContractIsActive(analytics) && versionRef) {
+      const comparison = compareVersions(versionRef.version, CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION)
+      if (comparison === null) {
+        warn(
+          `analytics is declared, but Campaign Cart SDK version "${versionRef.version}" is not an exact released semver pin. Use a concrete release such as "${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}" so Campaigns OS can verify whether campaign_* identifiers and ncsid-backed campaign_session_id are stamped on every event.`,
+          versionRef.path,
+          'sdk-version-unparseable',
+          {
+            sdkVersion: versionRef.version,
+            expectedFormat: 'MAJOR.MINOR.PATCH',
+            minimumSdkVersion: CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION,
+          },
+        )
+      } else if (comparison < 0) {
+        warn(
+          `analytics is declared, but Campaign Cart SDK ${versionRef.version} is below ${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}. campaign_* identifiers and ncsid-backed campaign_session_id are stamped on every event starting in ${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}; upgrade the SDK for analytics attribution/joinability or record the intentional pin.`,
+          versionRef.path,
+          'sdk-identity-baseline',
+          {
+            sdkVersion: versionRef.version,
+            minimumSdkVersion: CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION,
+          },
+        )
+      }
     }
 
     // 1. mode

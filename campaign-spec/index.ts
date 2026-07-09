@@ -55,6 +55,8 @@ export { allRules, fastRules, specOnlyRules } from './rules/index.ts'
 // The AnalyticsContractShape rule validates blockedEvents against it; the Map
 // Builder picker (via the campaign-spec.js shim) autocompletes from it.
 export {
+  CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION,
+  CAMPAIGN_CART_ANALYTICS_VOCABULARY_SDK_VERSION,
   DL_EVENTS,
   DL_EVENT_NAMES,
   DL_EVENT_NAME_SET,

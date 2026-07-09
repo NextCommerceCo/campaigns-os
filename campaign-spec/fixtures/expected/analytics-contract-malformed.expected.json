@@ -3,6 +3,17 @@
     {
       "ruleId": "AnalyticsContractShape",
       "severity": "warning",
+      "message": "analytics is declared, but Campaign Cart SDK 0.4.27 is below 0.4.30. campaign_* identifiers and ncsid-backed campaign_session_id are stamped on every event starting in 0.4.30; upgrade the SDK for analytics attribution/joinability or record the intentional pin.",
+      "path": "/runtime/sdk_version",
+      "data": {
+        "check": "sdk-identity-baseline",
+        "sdkVersion": "0.4.27",
+        "minimumSdkVersion": "0.4.30"
+      }
+    },
+    {
+      "ruleId": "AnalyticsContractShape",
+      "severity": "warning",
       "message": "analytics.mode \"on\" is not recognized; expected auto | manual | disabled.",
       "path": "/analytics/mode",
       "data": {
