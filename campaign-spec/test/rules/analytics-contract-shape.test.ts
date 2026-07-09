@@ -5,10 +5,10 @@ import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'
 import type { AnalyticsContract, CampaignSpec } from '../../types.ts'
 
-function baseSpec(analytics?: AnalyticsContract): CampaignSpec {
+function baseSpec(analytics?: AnalyticsContract, sdkVersion = '0.4.30'): CampaignSpec {
   return {
     schema_version: '4.3',
-    runtime: { sdk_version: '0.4.27' },
+    runtime: { sdk_version: sdkVersion },
     campaign: { ref_id: 1, slug: 'test', payment_env_key: 'test_key' },
     shipping_methods: [{ ref_id: 'ship-standard' }],
     funnels: [
@@ -149,6 +149,20 @@ describe('AnalyticsContractShape rule', () => {
 
   test('flags an invalid mode', () => {
     expect(checks(baseSpec({ mode: 'on' as never }))).toContain('mode-invalid')
+  })
+
+  test('warns when analytics is declared below the SDK identity baseline', () => {
+    const spec = baseSpec({ mode: 'auto' }, '0.4.29')
+    const violations = AnalyticsContractShape.check(normalize(spec))
+    const warning = violations.find((v) => v.data?.check === 'sdk-identity-baseline')
+    expect(warning?.path).toBe('/runtime/sdk_version')
+    expect(warning?.data?.sdkVersion).toBe('0.4.29')
+    expect(warning?.data?.minimumSdkVersion).toBe('0.4.30')
+  })
+
+  test('does not warn on the SDK identity baseline or when analytics is disabled', () => {
+    expect(checks(baseSpec({ mode: 'auto' }, '0.4.30')).includes('sdk-identity-baseline')).toBe(false)
+    expect(checks(baseSpec({ mode: 'disabled' }, '0.4.29')).includes('sdk-identity-baseline')).toBe(false)
   })
 
   test('flags enabled providers missing their binding id', () => {

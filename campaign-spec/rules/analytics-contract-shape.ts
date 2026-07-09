@@ -33,10 +33,15 @@
  *      `maps_to` (half a mapping silently drops the affiliate click id).
  *   7. `params.tracking.preserve` / `utmTransfer.paramsToCopy`, when present,
  *      are string[].
+ *   8. If analytics is active, runtime/global_config sdk_version should be
+ *      >= the SDK identity baseline so events carry campaign/session ids.
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
-import { isKnownDlEvent } from '../analytics-vocabulary.ts'
+import {
+  CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION,
+  isKnownDlEvent,
+} from '../analytics-vocabulary.ts'
 
 const VALID_MODES = new Set(['auto', 'manual', 'disabled'])
 const PURCHASE_EVENT = /^(?:dl_)?purchase$/i
@@ -53,6 +58,31 @@ function isPlainAnalyticsObject(value: unknown): value is Record<string, unknown
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const proto = Object.getPrototypeOf(value)
   return proto === Object.prototype || proto === null
+}
+
+function parseVersion(version: string): number[] | null {
+  const match = version.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/)
+  if (!match) return null
+  return [Number(match[1]), Number(match[2]), Number(match[3])]
+}
+
+function compareVersions(a: string, b: string): number | null {
+  const left = parseVersion(a)
+  const right = parseVersion(b)
+  if (!left || !right) return null
+  for (let i = 0; i < 3; i += 1) {
+    if (left[i] > right[i]) return 1
+    if (left[i] < right[i]) return -1
+  }
+  return 0
+}
+
+function sdkVersionRef(spec: CampaignSpec): { version: string; path: string } | null {
+  const runtimeVersion = spec.runtime?.sdk_version
+  if (isNonEmptyString(runtimeVersion)) return { version: runtimeVersion, path: '/runtime/sdk_version' }
+  const globalVersion = spec.global_config?.sdk_version
+  if (isNonEmptyString(globalVersion)) return { version: globalVersion, path: '/global_config/sdk_version' }
+  return null
 }
 
 function collectPageIds(spec: CampaignSpec): { pageIds: Set<string>; checkoutPageIds: Set<string> } {
@@ -113,6 +143,23 @@ export const AnalyticsContractShape: Rule = {
         path,
         data: { check, ...data },
       })
+    }
+
+    // 8. SDK identity baseline
+    const versionRef = sdkVersionRef(spec)
+    if (String(analytics.mode) !== 'disabled' && versionRef) {
+      const comparison = compareVersions(versionRef.version, CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION)
+      if (comparison !== null && comparison < 0) {
+        warn(
+          `analytics is declared, but Campaign Cart SDK ${versionRef.version} is below ${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}. campaign_* identifiers and ncsid-backed campaign_session_id are stamped on every event starting in ${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}; upgrade the SDK for analytics attribution/joinability or record the intentional pin.`,
+          versionRef.path,
+          'sdk-identity-baseline',
+          {
+            sdkVersion: versionRef.version,
+            minimumSdkVersion: CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION,
+          },
+        )
+      }
     }
 
     // 1. mode

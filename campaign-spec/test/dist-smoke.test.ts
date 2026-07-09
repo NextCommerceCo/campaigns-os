@@ -13,7 +13,19 @@ import * as dist from '../dist/index.js'
 
 describe('compiled dist bundle', () => {
   test('exposes the full public surface', () => {
-    for (const name of ['normalize', 'runRules', 'validateSpec', 'allRules', 'fastRules', 'specOnlyRules', 'NormalizeError']) {
+    for (const name of [
+      'normalize',
+      'runRules',
+      'validateSpec',
+      'allRules',
+      'fastRules',
+      'specOnlyRules',
+      'NormalizeError',
+      'DL_EVENTS',
+      'DL_EVENT_NAMES',
+      'CAMPAIGN_CART_ANALYTICS_VOCABULARY_SDK_VERSION',
+      'CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION',
+    ]) {
       expect(typeof (dist as Record<string, unknown>)[name] !== 'undefined').toBe(true)
     }
   })
