@@ -160,9 +160,32 @@ describe('AnalyticsContractShape rule', () => {
     expect(warning?.data?.minimumSdkVersion).toBe('0.4.30')
   })
 
+  test('warns when analytics is declared with an unparseable SDK pin', () => {
+    for (const sdkVersion of ['^0.4.30', 'latest', '0.4', '1.0', '~0.4.30']) {
+      const violations = AnalyticsContractShape.check(normalize(baseSpec({ mode: 'auto' }, sdkVersion)))
+      const warning = violations.find((v) => v.data?.check === 'sdk-version-unparseable')
+      expect(warning?.path).toBe('/runtime/sdk_version')
+      expect(warning?.data?.sdkVersion).toBe(sdkVersion)
+      expect(warning?.data?.expectedFormat).toBe('MAJOR.MINOR.PATCH')
+    }
+  })
+
+  test('warns when analytics is declared with prerelease or build-metadata SDK pins', () => {
+    for (const sdkVersion of ['0.4.30-rc.1', '0.4.30-alpha.1', '0.4.30+sha.deadbeef']) {
+      const c = checks(baseSpec({ mode: 'auto' }, sdkVersion))
+      expect(c).toContain('sdk-version-unparseable')
+      expect(c.includes('sdk-identity-baseline')).toBe(false)
+    }
+  })
+
   test('does not warn on the SDK identity baseline or when analytics is disabled', () => {
     expect(checks(baseSpec({ mode: 'auto' }, '0.4.30')).includes('sdk-identity-baseline')).toBe(false)
     expect(checks(baseSpec({ mode: 'disabled' }, '0.4.29')).includes('sdk-identity-baseline')).toBe(false)
+  })
+
+  test('treats a present analytics block with no mode as active SDK-default intent', () => {
+    const c = checks(baseSpec({}, '0.4.29'))
+    expect(c).toContain('sdk-identity-baseline')
   })
 
   test('flags enabled providers missing their binding id', () => {
