@@ -181,6 +181,7 @@ describe('AnalyticsContractShape rule', () => {
   test('does not warn on the SDK identity baseline or when analytics is disabled', () => {
     expect(checks(baseSpec({ mode: 'auto' }, '0.4.30')).includes('sdk-identity-baseline')).toBe(false)
     expect(checks(baseSpec({ mode: 'disabled' }, '0.4.29')).includes('sdk-identity-baseline')).toBe(false)
+    expect(checks(baseSpec({ enabled: false, mode: 'auto' }, '0.4.29')).includes('sdk-identity-baseline')).toBe(false)
   })
 
   test('treats a present analytics block with no mode as active SDK-default intent', () => {
