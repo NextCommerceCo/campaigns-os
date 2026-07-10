@@ -89,8 +89,9 @@ function sdkVersionRef(spec: CampaignSpec): { version: string; path: string } | 
 
 function analyticsContractIsActive(analytics: Record<string, unknown>): boolean {
   // A present analytics block with no mode still means "SDK defaults apply";
-  // only the explicit disabled mode opts out of the SDK identity baseline check.
-  return analytics.mode !== 'disabled'
+  // either supported explicit disable mechanism opts out of the SDK identity
+  // baseline check.
+  return analytics.enabled !== false && analytics.mode !== 'disabled'
 }
 
 function collectPageIds(spec: CampaignSpec): { pageIds: Set<string>; checkoutPageIds: Set<string> } {
