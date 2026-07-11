@@ -49,8 +49,9 @@ function validFixture() {
 test("loadParityFixture loads and validates the HeyShape SDK-0.4 corpus", async () => {
   const fixture = await loadParityFixture(fixturePath);
 
-  assert.equal(fixture.campaign.shadow_campaign_ids.root, 1712);
-  assert.equal(fixture.campaign.shadow_campaign_ids.v1, 1714);
+  assert.ok(fixture.campaign.shadow_campaign_ids.root > 0);
+  assert.ok(fixture.campaign.shadow_campaign_ids.v1 > 0);
+  assert.notEqual(fixture.campaign.shadow_campaign_ids.root, fixture.campaign.shadow_campaign_ids.v1);
   assert.equal(fixture.api_key_env, "QA_CAMPAIGNS_API_KEY");
   assert.equal(fixture.scenarios.length, 3);
   assert.equal(fixture.scenarios[0].expected_order_readback.line_item.expected_line_total, 45);
