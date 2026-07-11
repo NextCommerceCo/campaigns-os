@@ -6,6 +6,15 @@ import { assessParityCapture, __qaParityCaptureTestHooks } from "./qa-parity-cap
 import { computeDisposition, SEVERITY, STATUS } from "./qa-verdict.mjs";
 
 const fixture = {
+  analytics_contract: {
+    mode: "auto",
+    providers: {
+      gtm: { enabled: true, containerId: "GTM-TEST123" },
+    },
+    manual_events: [
+      { event: "dl_purchase", page: "upsell-1", trigger: "page-load" },
+    ],
+  },
   expected_analytics: {
     purchase_event: "dl_purchase",
     purchase_expected: true,

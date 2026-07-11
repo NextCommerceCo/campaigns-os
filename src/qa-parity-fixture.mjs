@@ -106,6 +106,7 @@ export function validateParityFixture(fixture) {
   }
 
   validateExpectedAnalytics(fixture.expected_analytics, errors);
+  validateAnalyticsContract(fixture.analytics_contract, errors);
   return errors;
 }
 
@@ -284,6 +285,17 @@ function validateExpectedAnalytics(expected, errors) {
   const gtm = expected.candidate_inventory?.gtm;
   if (!Array.isArray(gtm) || gtm.length === 0 || gtm.some((id) => !nonEmptyString(id))) {
     errors.push("expected_analytics.candidate_inventory.gtm: must be a non-empty string array");
+  }
+}
+
+function validateAnalyticsContract(contract, errors) {
+  if (contract === undefined) return;
+  if (!isObject(contract)) {
+    errors.push("analytics_contract: must be an object");
+    return;
+  }
+  if (contract.providers !== undefined && !isObject(contract.providers)) {
+    errors.push("analytics_contract.providers: must be an object");
   }
 }
 

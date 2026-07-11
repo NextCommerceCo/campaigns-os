@@ -1,0 +1,74 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-analytics-contract-declared"
+  },
+  "campaign": {
+    "ref_id": 13,
+    "slug": "analytics-contract-declared",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.30"
+  },
+  "global_config": {
+    "sdk_version": "0.4.30"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "shadow-migration",
+      "name": "Shadow migration",
+      "hypothesis": "Checkout purchase tracking remains intact through the first upsell redirect.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "checkout",
+          "type": "checkout",
+          "label": "Checkout",
+          "success_url": "upsell-1"
+        },
+        {
+          "id": "upsell-1",
+          "type": "upsell",
+          "label": "Upsell",
+          "on_accept": "thankyou",
+          "on_decline": "thankyou",
+          "packages": [
+            {
+              "ref_id": 1,
+              "name": "Upsell offer",
+              "price": 29.99,
+              "price_retail": 39.99
+            }
+          ]
+        },
+        {
+          "id": "thankyou",
+          "type": "thankyou",
+          "label": "Thank You"
+        }
+      ]
+    }
+  ],
+  "analytics": {
+    "mode": "auto",
+    "providers": {
+      "gtm": {
+        "enabled": true,
+        "containerId": "GTM-PWBWV4P7"
+      }
+    },
+    "manual_events": [
+      {
+        "event": "dl_purchase",
+        "page": "upsell-1",
+        "trigger": "page-load"
+      }
+    ]
+  }
+}

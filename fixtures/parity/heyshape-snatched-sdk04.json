@@ -8,7 +8,7 @@
       "v1": 1714
     }
   },
-  "candidate_base_url": "https://deploy-preview-34--heyshape.netlify.app",
+  "candidate_base_url": "https://deploy-preview-34--heyshape.netlify.app/snatchedbodysuit",
   "sdk_version": "0.4.30",
   "gtm_container_id": "GTM-PWBWV4P7",
   "api_key_env": "QA_CAMPAIGNS_API_KEY",
@@ -107,6 +107,22 @@
         "GTM-PWBWV4P7"
       ]
     }
+  },
+  "analytics_contract": {
+    "mode": "auto",
+    "providers": {
+      "gtm": {
+        "enabled": true,
+        "containerId": "GTM-PWBWV4P7"
+      }
+    },
+    "manual_events": [
+      {
+        "event": "dl_purchase",
+        "page": "upsell-1",
+        "trigger": "page-load"
+      }
+    ]
   },
   "known_good_disposition": "ready_with_exceptions"
 }

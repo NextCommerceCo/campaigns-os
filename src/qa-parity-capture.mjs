@@ -62,34 +62,6 @@ function matchingPersistedLines(order, expectedLine) {
   });
 }
 
-function analyticsContract(expectedAnalytics = {}) {
-  const inventory = expectedAnalytics.candidate_inventory || {};
-  const providers = {};
-  const outOfBand = [];
-
-  for (const [rawKind, rawIds] of Object.entries(inventory)) {
-    const ids = Array.isArray(rawIds) ? rawIds.filter(Boolean).map(String) : [];
-    if (!ids.length) continue;
-    const kind = rawKind === "facebook" ? "meta" : rawKind;
-    if (kind === "gtm") {
-      providers.gtm = { enabled: true, containerId: ids[0] };
-      for (const id of ids.slice(1)) outOfBand.push({ vendor: "gtm", id });
-    } else if (kind === "meta") {
-      providers.facebook = { enabled: true, pixelId: ids[0] };
-      for (const id of ids.slice(1)) outOfBand.push({ vendor: "meta", id });
-    } else {
-      for (const id of ids) outOfBand.push({ vendor: kind, id });
-    }
-  }
-
-  return {
-    providers,
-    out_of_band_pixels: outOfBand,
-    // Keeps the contract path active even for a purchase-only fixture.
-    manual_events: expectedAnalytics.purchase_expected ? [expectedAnalytics.purchase_event] : [],
-  };
-}
-
 function assessPersistedLine(scenario, order) {
   const expectedLine = scenario.expected_order_readback?.line_item || {};
   const matches = matchingPersistedLines(order, expectedLine);
@@ -210,7 +182,7 @@ export function assessParityCapture({ fixture, scenario, order, capture, baselin
 
   const correctness = assessAnalyticsCorrectness(
     candidate,
-    analyticsContract(fixture.expected_analytics),
+    fixture.analytics_contract || {},
   ).map((assertion) => ({ ...assertion, family: "parity-capture" }));
   assertions.push(...correctness);
 

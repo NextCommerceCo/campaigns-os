@@ -115,10 +115,12 @@ describe('AnalyticsContractShape rule', () => {
     expect(fastWarnings).toEqual(specWarnings)
   })
 
-  test('matches corpus fixture violations', () => {
-    const fixture = fixtureByName('analytics-contract-malformed')
-    const violations = AnalyticsContractShape.check(normalize(fixture.spec))
-    expect(violations).toEqual(fixture.expected.violations)
+  test('declared fixture passes while malformed fixture retains its known violations', () => {
+    const declared = fixtureByName('analytics-contract-declared')
+    const malformed = fixtureByName('analytics-contract-malformed')
+
+    expect(AnalyticsContractShape.check(normalize(declared.spec))).toEqual([])
+    expect(AnalyticsContractShape.check(normalize(malformed.spec))).toEqual(malformed.expected.violations)
   })
 
   test('accepts a well-formed analytics block (the worked example shape)', () => {

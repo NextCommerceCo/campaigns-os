@@ -44,6 +44,11 @@ function validFixture() {
       purchase_expected: true,
       candidate_inventory: { gtm: ["GTM-FIXTURE"] },
     },
+    analytics_contract: {
+      mode: "auto",
+      providers: { gtm: { enabled: true, containerId: "GTM-FIXTURE" } },
+      manual_events: [{ event: "dl_purchase", page: "upsell-1", trigger: "page-load" }],
+    },
     known_good_disposition: "ready_with_exceptions",
   };
 }
@@ -63,6 +68,8 @@ test("loadParityFixture loads and validates the HeyShape SDK-0.4 corpus", async 
   assert.equal(fixture.scenarios[1].checkout_path, "v1/checkout.html");
   assert.equal(fixture.scenarios[1].upsell_route, "v1/oto-snatch-bodysuit.html");
   assert.deepEqual(fixture.scenarios[2].expected_pricing.map((entry) => entry.expected_total), [29.99, 53.98, 71.97]);
+  assert.equal(fixture.analytics_contract.providers.gtm.containerId, fixture.gtm_container_id);
+  assert.equal(fixture.analytics_contract.manual_events[0].page, "upsell-1");
   assert.deepEqual(validateParityFixture(fixture), []);
 });
 
@@ -274,6 +281,16 @@ test("validateParityFixture reports scenario and analytics shape failures", () =
   assert.ok(errors.includes("scenarios[0].scenario_type: must be funnel_offer or pricing_ladder"));
   assert.ok(errors.includes("expected_analytics.purchase_expected: must be a boolean"));
   assert.ok(errors.includes("expected_analytics.candidate_inventory.gtm: must be a non-empty string array"));
+});
+
+test("validateParityFixture minimally validates the runtime analytics contract boundary", () => {
+  const nonObjectContract = validFixture();
+  nonObjectContract.analytics_contract = [];
+  assert.ok(validateParityFixture(nonObjectContract).includes("analytics_contract: must be an object"));
+
+  const nonObjectProviders = validFixture();
+  nonObjectProviders.analytics_contract.providers = [];
+  assert.ok(validateParityFixture(nonObjectProviders).includes("analytics_contract.providers: must be an object"));
 });
 
 test("validateParityFixture rejects non-object input", () => {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import { normalizeCapture } from "./qa-analytics-parity.mjs";
-import { SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { computeDisposition, SEVERITY, STATUS } from "./qa-verdict.mjs";
 
 const byId = (assertions) => Object.fromEntries(assertions.map((a) => [a.id, a]));
 
@@ -29,6 +29,34 @@ test("no declared contract → non-gating manual_review only (nothing blocks)", 
   assert.equal(a[0].severity, SEVERITY.INFO);
   // Nothing gating.
   assert.ok(!a.some((x) => x.severity === SEVERITY.BLOCKER));
+});
+
+test("declared analytics contract lifts missing GTM and purchase from INFO to blockers", () => {
+  const sameCapture = normalizeCapture({ events: [], tagFires: [] });
+  const declaredContract = {
+    mode: "auto",
+    providers: {
+      gtm: { enabled: true, containerId: "GTM-DECLARED123" },
+    },
+    manual_events: [
+      { event: "dl_purchase", page: "upsell-1", trigger: "page-load" },
+    ],
+  };
+
+  const withoutContract = assessAnalyticsCorrectness(sameCapture, {});
+  assert.deepEqual(withoutContract.map(({ id, status, severity }) => ({ id, status, severity })), [{
+    id: "analytics-correctness:no-contract",
+    status: STATUS.MANUAL_REVIEW,
+    severity: SEVERITY.INFO,
+  }]);
+  assert.equal(computeDisposition(withoutContract), "ready_with_exceptions");
+
+  const withContract = assessAnalyticsCorrectness(sameCapture, declaredContract);
+  assert.deepEqual(withContract.map(({ id, status, severity }) => ({ id, status, severity })), [
+    { id: "analytics-correctness:tag:gtm", status: STATUS.FAIL, severity: SEVERITY.BLOCKER },
+    { id: "analytics-correctness:purchase-fires", status: STATUS.FAIL, severity: SEVERITY.BLOCKER },
+  ]);
+  assert.equal(computeDisposition(withContract), "blocked");
 });
 
 test("declared tags + purchase all present → all pass", () => {
