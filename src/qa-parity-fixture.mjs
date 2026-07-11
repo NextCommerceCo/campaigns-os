@@ -19,7 +19,7 @@ const REQUIRED_STRING_FIELDS = Object.freeze([
 // credentials. `*_env` indirection keys are not exempt from scrutiny: they
 // name an env var, so their value must LOOK like one (UPPER_SNAKE name),
 // otherwise the "_env" suffix would smuggle an arbitrary literal through.
-const CREDENTIAL_TERMS = /(^|_)(api_?key|secrets?|tokens?|passwords?|passwd|credentials?|private_?key|auth)(_|$)/;
+const CREDENTIAL_TERMS = /(^|_)(api_?key|secrets?|tokens?|passwords?|passwd|credentials?|private_?key|auth|authorizations?)(_|$)/;
 const ENV_VAR_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 
 function normalizeKey(key) {
@@ -140,7 +140,10 @@ function validateCredentialFields(value, errors, path = "", visited = new WeakSe
     const entryPath = path ? `${path}.${key}` : key;
     if (isCredentialKey(key) && typeof entry === "string" && entry.length > 0) {
       errors.push(`${entryPath}: literal values are forbidden; supply credentials at runtime via api_key_env or CLI`);
-    } else if (isCredentialEnvKey(key) && typeof entry === "string" && entry.length > 0 && !ENV_VAR_NAME_PATTERN.test(entry)) {
+    } else if (isCredentialEnvKey(key) && entry !== null
+      && !(typeof entry === "string" && ENV_VAR_NAME_PATTERN.test(entry))) {
+      // Any non-name value on an _env key (number, object wrapper, empty or
+      // literal string) is a smuggling vector, not indirection — reject it.
       errors.push(`${entryPath}: must name an environment variable (UPPER_SNAKE), not carry a literal value`);
     }
     validateCredentialFields(entry, errors, entryPath, visited);

@@ -157,6 +157,25 @@ test("validateParityFixture rejects literal values smuggled through _env alias k
   assert.deepEqual(validateParityFixture(legit), []);
 });
 
+test("validateParityFixture rejects Authorization headers and non-string _env values", () => {
+  const fixture = validFixture();
+  fixture.request = {
+    headers: { Authorization: "Bearer literal-token" },
+    client_secret_env: { value: "literal-secret" },
+    accessTokenEnv: 42,
+  };
+
+  const errors = validateParityFixture(fixture);
+  assert.ok(errors.includes(
+    "request.headers.Authorization: literal values are forbidden; supply credentials at runtime via api_key_env or CLI",
+  ));
+  for (const key of ["client_secret_env", "accessTokenEnv"]) {
+    assert.ok(errors.includes(
+      `request.${key}: must name an environment variable (UPPER_SNAKE), not carry a literal value`,
+    ), `expected env-name rejection for ${key}`);
+  }
+});
+
 test("validateParityFixture allows environment indirection and null credential fields", () => {
   const fixture = validFixture();
   fixture.api_key_env = "QA_CAMPAIGNS_API_KEY";
