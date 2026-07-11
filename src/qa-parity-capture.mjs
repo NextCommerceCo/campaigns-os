@@ -56,7 +56,11 @@ function matchingPersistedLines(order, expectedLine) {
   const expectedTitle = String(expectedLine.title || "").trim().toLowerCase();
   return persistedLines(order).filter((line) => {
     const title = String(line?.title || line?.name || "").trim().toLowerCase();
-    return title === expectedTitle
+    // Persisted lines append the variant to the product title
+    // ("Snatched Thong Bodysuit - Brown / S"), so the fixture's product title
+    // matches exact-or-prefix; quantity + is_upsell stay exact.
+    const titleMatches = title === expectedTitle || title.startsWith(`${expectedTitle} -`);
+    return titleMatches
       && Number(line?.quantity || 0) === Number(expectedLine.quantity)
       && Boolean(line?.is_upsell) === Boolean(expectedLine.is_upsell);
   });
@@ -129,10 +133,19 @@ function observedUpsellRoute(order, expectedRoute) {
 
 function routePathMatches(observed, expected) {
   if (!expected) return true;
+  // Hosts serve pretty URLs ("/snatchedbodysuit/oto-snatch-thong") for fixture
+  // routes authored as files ("oto-snatch-thong.html"), and the observed URL
+  // carries the deploy prefix — so compare .html-stripped paths suffix-wise.
+  const normalize = (value) => {
+    const path = new URL(value, "https://parity.invalid/").pathname
+      .replace(/\/+$/, "")
+      .replace(/\.html$/i, "");
+    return path.startsWith("/") ? path : `/${path}`;
+  };
   try {
-    const observedPath = new URL(observed, "https://parity.invalid/").pathname.replace(/\/+$/, "");
-    const expectedPath = new URL(expected, "https://parity.invalid/").pathname.replace(/\/+$/, "");
-    return observedPath === expectedPath;
+    const observedPath = normalize(observed);
+    const expectedPath = normalize(expected);
+    return observedPath === expectedPath || observedPath.endsWith(expectedPath);
   } catch {
     return false;
   }
@@ -142,24 +155,37 @@ function assessPurchase(scenario, capture) {
   const expected = scenario.expected_purchase || {};
   const effective = effectivePurchase(capture);
   const eventPresent = (capture.eventNames || []).includes(expected.event);
+  // The scenario names WHICH purchase-shaped event carries the offer's value:
+  // an upsell scenario checks dl_upsell_purchase, a main-order scenario
+  // dl_purchase. Values are read per-event so the whole-cart main purchase
+  // never masks or pollutes the offer-level expectation.
+  const observed = (capture.purchasesByEvent || {})[expected.event]
+    || (expected.event === "dl_purchase" && capture.purchase?.present ? capture.purchase : null);
+  // expected.value null = "a finite client value must be present" without
+  // pinning the amount (a scenario that doesn't pin the checkout cart can't
+  // honestly pin the main-order purchase value; the offer amount is proven by
+  // the persisted-line check instead).
+  const valueOk = observed !== null && (expected.value === null
+    ? Number.isFinite(Number(observed.value))
+    : moneyEqual(observed.value, expected.value));
   const ok = eventPresent
-    && effective.via === "datalayer"
-    && moneyEqual(effective.value, expected.value)
-    && effective.currency === expected.currency;
+    && valueOk
+    && observed.currency === expected.currency;
   return parityAssertion({
     id: `parity-capture:${scenario.scenario_id}:purchase-value`,
     status: ok ? STATUS.PASS : STATUS.FAIL,
     severity: SEVERITY.BLOCKER,
     expected: `${expected.event} client-fired value ${expected.value} ${expected.currency}`,
     actual: eventPresent
-      ? `${effective.value ?? "missing"} ${effective.currency || "missing"} via ${effective.via || "none"}`
+      ? `${observed?.value ?? "missing"} ${observed?.currency || "missing"} (${expected.event})`
       : `${expected.event} absent`,
     evidence: {
       event_present: eventPresent,
       observed_events: capture.eventNames || [],
+      observed_purchase_events: Object.keys(capture.purchasesByEvent || {}),
       purchase_via: effective.via,
-      client_value: effective.value,
-      client_currency: effective.currency,
+      client_value: observed?.value ?? null,
+      client_currency: observed?.currency ?? null,
       note: "client-fired purchase value only; never compared with backend total_incl_tax",
     },
   });

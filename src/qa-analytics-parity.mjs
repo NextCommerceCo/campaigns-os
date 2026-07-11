@@ -81,7 +81,13 @@ export function analyticsInitScript(layers = HOOKED_DATA_LAYERS) {
     };
     const record = (layer, args) => {
       for (const arg of args) {
-        if (arg && typeof arg === "object") store.events.push({ layer, data: clone(arg) });
+        if (arg && typeof arg === "object") {
+          const entry = { layer, data: clone(arg) };
+          store.events.push(entry);
+          // Mirror to the Node side immediately (exposeBinding survives
+          // navigations; this in-page store does not). Fire-and-forget.
+          try { window.__nextQaAnalyticsEmit && window.__nextQaAnalyticsEmit(entry); } catch (_) {}
+        }
       }
     };
     const wrap = (layer, arr) => {
@@ -110,6 +116,21 @@ export function analyticsInitScript(layers = HOOKED_DATA_LAYERS) {
 export async function attachAnalyticsCapture(page, options = {}) {
   const extraHosts = Array.isArray(options.extraHosts) ? options.extraHosts : [];
   const tagFires = [];
+  // Node-side event accumulator: a funnel traversal navigates through several
+  // documents (checkout → upsell → receipt) and each navigation discards the
+  // in-page store, so the init script mirrors every event out through this
+  // binding. Best-effort — pages without binding support fall back to the
+  // per-document store in collect().
+  const accumulatedEvents = [];
+  let bindingAttached = false;
+  if (typeof page.exposeBinding === "function") {
+    try {
+      await page.exposeBinding("__nextQaAnalyticsEmit", (_source, event) => {
+        if (event && typeof event === "object") accumulatedEvents.push(event);
+      });
+      bindingAttached = true;
+    } catch (_) { /* binding may already exist on a reused page */ }
+  }
   await page.addInitScript(analyticsInitScript());
   const onRequest = (request) => {
     const url = typeof request.url === "function" ? request.url() : request.url;
@@ -125,6 +146,11 @@ export async function attachAnalyticsCapture(page, options = {}) {
         events = await page.evaluate(() => (window.__nextQaAnalytics?.events) || []);
       } catch (_) {
         events = [];
+      }
+      // The binding stream is authoritative when attached (it saw every
+      // document); the current-document read only backfills non-binding pages.
+      if (bindingAttached && accumulatedEvents.length >= events.length) {
+        events = accumulatedEvents;
       }
       return normalizeCapture({ events, tagFires });
     },
@@ -191,11 +217,25 @@ export function extractPurchase(event) {
   // GA4-only and some legacy funnels push the name as `event_name`, not `event`.
   const name = String(event.event || event.event_name || "").toLowerCase();
   if (name !== "purchase" && name !== "dl_purchase") return null;
+  return extractPurchaseFields(event);
+}
+
+// Field extraction shared by the main-purchase reader and the per-event
+// purchase map (dl_upsell_purchase and friends carry the same GA4 shape).
+function extractPurchaseFields(event) {
+  if (!event || typeof event !== "object") return null;
   const ec = (event.ecommerce && typeof event.ecommerce === "object") ? event.ecommerce : {};
-  const value = firstNumber([ec.value, ec.revenue, event.value, event.revenue]);
-  const currency = firstString([ec.currency, event.currency]);
+  // Elevar-style dl_* shape (the campaign-cart SDK's): value/currency live at
+  // ecommerce.purchase.actionField.revenue + ecommerce.currencyCode.
+  const actionField = (ec.purchase && typeof ec.purchase === "object"
+    && ec.purchase.actionField && typeof ec.purchase.actionField === "object")
+    ? ec.purchase.actionField
+    : {};
+  const value = firstNumber([ec.value, ec.revenue, actionField.revenue, event.value, event.revenue]);
+  const currency = firstString([ec.currency, ec.currencyCode, event.currency]);
   const transactionId = firstString([
-    ec.transaction_id, ec.order_id, event.transaction_id, event.order_id, event.order_number,
+    ec.transaction_id, ec.order_id, actionField.id,
+    event.transaction_id, event.order_id, event.order_number,
   ]);
   return { value, currency, transactionId };
 }
@@ -224,12 +264,20 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
   const rawEvents = events.map((e) => (e && e.data ? e.data : e)).filter(Boolean);
   const eventNames = [];
   let purchase = null;
+  // Per-event purchase extraction: upsell purchases (dl_upsell_purchase) carry
+  // their own value/currency distinct from the main dl_purchase; keyed here so
+  // scenario checks can target a specific purchase-shaped event.
+  const purchasesByEvent = {};
   for (const ev of rawEvents) {
     const name = ev && typeof ev === "object" ? String(ev.event || ev.event_name || "") : "";
     if (name && !eventNames.includes(name)) eventNames.push(name);
     if (!purchase) {
       const p = extractPurchase(ev);
       if (p) purchase = p;
+    }
+    if (name && /purchase/i.test(name) && !purchasesByEvent[name]) {
+      const fields = extractPurchaseFields(ev);
+      if (fields) purchasesByEvent[name] = fields;
     }
   }
 
@@ -258,6 +306,7 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
   return {
     eventNames,
     purchase: purchase ? { present: true, ...purchase } : { present: false },
+    purchasesByEvent,
     inventory,
     metaPurchaseEventId,
     // Purchase can fire from any of three sources (dataLayer event, Meta pixel,

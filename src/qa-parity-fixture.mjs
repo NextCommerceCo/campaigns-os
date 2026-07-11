@@ -240,7 +240,11 @@ function validateFunnelOfferScenario(scenario, prefix, errors) {
     for (const field of ["event", "currency"]) {
       if (!nonEmptyString(purchase[field])) errors.push(`${prefix}.expected_purchase.${field}: required non-empty string`);
     }
-    validateMoney(purchase.value, `${prefix}.expected_purchase.value`, errors);
+    // null = "present with a finite client value" without pinning the amount
+    // (an unpinned checkout cart cannot honestly pin the main-order value).
+    if (purchase.value !== null) {
+      validateMoney(purchase.value, `${prefix}.expected_purchase.value`, errors);
+    }
   }
 }
 

@@ -687,6 +687,17 @@ async function runParityQa(args) {
     };
   } else {
     result = await runParityCapture({ fixture, scenarioId, args: { ...args, "base-url": baseUrl, run_id: runId } });
+    // Persist the live evidence bundle beside the verdict: replay runs
+    // (--parity-order-json) and negative controls assess the exact same
+    // order + capture the live traversal produced.
+    const bundleDir = join(resolve(args["output-dir"] || "qa-output"), fixture.campaign.slug);
+    mkdirSync(bundleDir, { recursive: true });
+    writeJson(join(bundleDir, `${runId}.parity-bundle.json`), {
+      scenario_id: scenario.scenario_id,
+      order: result.orders[0] || null,
+      capture: result.captures?.candidate || null,
+      ...(result.captures?.baseline ? { baseline_capture: result.captures.baseline } : {}),
+    });
   }
 
   const page = { page_id: "parity", page_type: "checkout", url: baseUrl };

@@ -1955,6 +1955,7 @@ async function fillCheckoutFields(page, args, email) {
   await selectByField(page, "country", address.country);
   await fillByField(page, "address1", address.address1);
   await settleAddressAutocomplete(page);
+  await revealProgressiveLocationFields(page, address.address1);
   await fillByField(page, "city", address.city);
   await selectByField(page, "province", address.province);
   await fillByField(page, "postal", address.postal);
@@ -1962,7 +1963,10 @@ async function fillCheckoutFields(page, args, email) {
 
   const sameAsShipping = page.locator("#use_shipping_address").first();
   if (await sameAsShipping.count().catch(() => 0)) {
-    await sameAsShipping.check().catch(() => {});
+    // Best-effort with a short timeout: funnels that collapse the billing
+    // section leave this checkbox hidden (already checked), and a default
+    // 30s wait on it would eat most of the step budget for nothing.
+    await sameAsShipping.check({ timeout: 3000 }).catch(() => {});
   }
 
   await fillByField(page, "billing-fname", address.firstName, { optional: true, onlyVisible: true });
@@ -2277,7 +2281,14 @@ async function fillByField(page, field, value, options = {}) {
     if (options.optional) return false;
     throw new Error(`Missing checkout field: ${field}`);
   }
-  await locator.click().catch(() => {});
+  // Optional fields are best-effort: a field that reports visible but cannot
+  // accept input (covered by a collapsed section, disabled by the funnel's
+  // billing toggle) must not eat the step budget with a full default wait —
+  // the focusing click included.
+  await locator.click(options.optional ? { timeout: 3000 } : {}).catch(() => {});
+  if (options.optional) {
+    return locator.fill(value, { timeout: 3000 }).then(() => true).catch(() => false);
+  }
   await locator.fill(value);
   return true;
 }
@@ -2287,6 +2298,9 @@ async function selectByField(page, field, value, options = {}) {
   if (!await fieldUsable(locator, options)) {
     if (options.optional) return false;
     throw new Error(`Missing checkout select: ${field}`);
+  }
+  if (options.optional) {
+    return locator.selectOption(value, { timeout: 3000 }).then(() => true).catch(() => false);
   }
   await locator.selectOption(value);
   return true;
@@ -2317,6 +2331,23 @@ async function settleAddressAutocomplete(page) {
     await suggestion.click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
   }
+}
+
+// Some funnels progressively disclose city/province/postal only after real
+// keystrokes land in address1 (predictive-address UIs listen for key events,
+// which locator.fill() does not synthesize). When the city field exists but
+// stays hidden after a plain fill, re-enter address1 with typed keystrokes and
+// wait for the disclosure — generic behavior, no funnel-specific hooks.
+async function revealProgressiveLocationFields(page, address1) {
+  const city = page.locator('[data-next-checkout-field="city"]').first();
+  if (!await city.count().catch(() => 0)) return;
+  if (await city.isVisible().catch(() => false)) return;
+  const input = page.locator('[data-next-checkout-field="address1"]').first();
+  await input.click().catch(() => {});
+  await input.fill("").catch(() => {});
+  await input.pressSequentially(address1, { delay: 25 }).catch(() => {});
+  await page.keyboard.press("Escape").catch(() => {});
+  await city.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
 }
 
 async function closeAddressAutocomplete(page) {

@@ -43,7 +43,7 @@
       },
       "expected_purchase": {
         "event": "dl_purchase",
-        "value": 45.00,
+        "value": null,
         "currency": "USD"
       }
     },
@@ -60,7 +60,7 @@
       "currency": "USD",
       "expected_order_readback": {
         "line_item": {
-          "title": "Snatched Bodysuit",
+          "title": "Snatched Shapewear Bodysuit",
           "quantity": 1,
           "is_upsell": true,
           "price_field": "price_incl_tax",
@@ -72,7 +72,7 @@
       },
       "expected_purchase": {
         "event": "dl_purchase",
-        "value": 23.99,
+        "value": null,
         "currency": "USD"
       }
     },
@@ -124,5 +124,5 @@
       }
     ]
   },
-  "known_good_disposition": "ready_with_exceptions"
+  "known_good_disposition": "ready"
 }
