@@ -206,6 +206,10 @@ What the diff asserts (BLOCKER unless noted):
   baseline (GTM, Meta, Everflow, GA4, …) is **absent on the candidate** — a likely
   attribution regression flagged for human review, not an auto-block.
 
+For a real SDK 0.4 migration example that required typed-card OTO traversal,
+persisted-order price verification, receipt-context analytics, and independent Admin
+API readback, see [SDK 0.4 Migration Proof: HeyShape Snatched Bodysuit](sdk04-migration-proof-heyshape.md).
+
 ## Test Orders
 
 Test Orders use **global test cards** that work on any live store and integration.
