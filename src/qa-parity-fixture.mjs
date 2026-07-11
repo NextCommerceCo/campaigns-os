@@ -12,7 +12,22 @@ const REQUIRED_STRING_FIELDS = Object.freeze([
   "known_good_disposition",
 ]);
 
-const CREDENTIAL_FIELD_PATTERN = /^(api[_-]?key|apikey|.*_api_key|secret|token|password|credential)s?$/i;
+// Credential detection is TERM-based, not exact-name-based: keys are
+// normalized (camelCase → snake_case, kebab → snake) and any credential term
+// anywhere in the key rejects a literal string value — api_key, apiKey,
+// vendor-api-key, client_secret, access_token, private_key, authPassword,
+// credentials. `*_env` indirection keys are exempt (they name an env var,
+// never carry its value).
+const CREDENTIAL_TERMS = /(^|_)(api_?key|secrets?|tokens?|passwords?|passwd|credentials?|private_?key|auth)(_|$)/;
+
+function isCredentialKey(key) {
+  const normalized = String(key)
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/-/g, "_")
+    .toLowerCase();
+  if (normalized.endsWith("_env")) return false;
+  return CREDENTIAL_TERMS.test(normalized);
+}
 const KNOWN_DISPOSITIONS = new Set(["ready", "ready_with_exceptions", "blocked"]);
 
 // Loads fixture data only. Runtime credentials remain an orchestrator concern:
@@ -111,7 +126,7 @@ function validateCredentialFields(value, errors, path = "", visited = new WeakSe
 
   for (const [key, entry] of Object.entries(value)) {
     const entryPath = path ? `${path}.${key}` : key;
-    if (CREDENTIAL_FIELD_PATTERN.test(key) && typeof entry === "string" && entry.length > 0) {
+    if (isCredentialKey(key) && typeof entry === "string" && entry.length > 0) {
       errors.push(`${entryPath}: literal values are forbidden; supply credentials at runtime via api_key_env or CLI`);
     }
     validateCredentialFields(entry, errors, entryPath, visited);

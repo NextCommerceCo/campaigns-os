@@ -121,6 +121,23 @@ test("validateParityFixture rejects nested and aliased literal credentials", () 
   ));
 });
 
+test("validateParityFixture rejects conventional credential aliases in any casing", () => {
+  const fixture = validFixture();
+  fixture.integrations = {
+    client_secret: "literal-secret",
+    accessToken: "literal-token",
+    "vendor-api-key": "literal-key",
+    private_key: "-----BEGIN KEY-----",
+  };
+
+  const errors = validateParityFixture(fixture);
+  for (const key of ["client_secret", "accessToken", "vendor-api-key", "private_key"]) {
+    assert.ok(errors.includes(
+      `integrations.${key}: literal values are forbidden; supply credentials at runtime via api_key_env or CLI`,
+    ), `expected rejection for ${key}`);
+  }
+});
+
 test("validateParityFixture allows environment indirection and null credential fields", () => {
   const fixture = validFixture();
   fixture.api_key_env = "QA_CAMPAIGNS_API_KEY";
