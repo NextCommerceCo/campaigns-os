@@ -123,6 +123,16 @@ test("validateParityFixture rejects absolute funnel routes", () => {
   assert.ok(errors.includes("scenarios[0].upsell_route: must be a relative path"));
 });
 
+test("validateParityFixture rejects backslash routes and unsupported funnel paths", () => {
+  const fixture = validFixture();
+  fixture.scenarios[0].checkout_path = "\\\\evil.test\\checkout.html";
+  fixture.scenarios[0].funnel_path = "accept-foo";
+
+  const errors = validateParityFixture(fixture);
+  assert.ok(errors.includes("scenarios[0].checkout_path: must be a relative path"));
+  assert.ok(errors.includes('scenarios[0].funnel_path: must be "checkout" or a chain of accept/decline steps'));
+});
+
 test("validateParityFixture rejects an inlined API key", () => {
   const fixture = validFixture();
   fixture.api_key = "literal-secret-value";

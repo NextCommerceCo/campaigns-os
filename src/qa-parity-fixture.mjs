@@ -192,8 +192,19 @@ function validateFunnelOfferScenario(scenario, prefix, errors) {
     if (!nonEmptyString(scenario[field])) errors.push(`${prefix}.${field}: required non-empty string`);
   }
   validateRelativePath(scenario.checkout_path, `${prefix}.checkout_path`, errors, { required: true });
-  const hasOfferStep = String(scenario.funnel_path || "").split("-")
-    .some((step) => step === "accept" || step === "decline");
+  // The whole path must be a valid --test-order mode: "checkout" alone, or a
+  // chain of accept/decline steps ("accept", "decline", "accept-decline-accept").
+  // A partially-valid path ("accept-foo") must fail at load time, not later in
+  // the live driver's testOrderPaths().
+  const funnelSteps = String(scenario.funnel_path || "").split("-").filter(Boolean);
+  const validFunnelPath = funnelSteps.length > 0 && (
+    (funnelSteps.length === 1 && funnelSteps[0] === "checkout")
+    || funnelSteps.every((step) => step === "accept" || step === "decline")
+  );
+  if (nonEmptyString(scenario.funnel_path) && !validFunnelPath) {
+    errors.push(`${prefix}.funnel_path: must be "checkout" or a chain of accept/decline steps`);
+  }
+  const hasOfferStep = funnelSteps.some((step) => step === "accept" || step === "decline");
   if (hasOfferStep) {
     validateRelativePath(scenario.upsell_route, `${prefix}.upsell_route`, errors, { required: true });
   } else if (scenario.upsell_route !== undefined) {
@@ -238,7 +249,10 @@ function validateRelativePath(value, path, errors, { required = false } = {}) {
     return;
   }
   const route = value.trim();
-  if (/^[a-z][a-z\d+.-]*:/i.test(route) || route.startsWith("//") || route.startsWith("#") || route.startsWith("?")) {
+  // Backslashes are rejected outright: WHATWG URL resolution normalizes
+  // "\\evil.test\x" to "https://evil.test/x", which would silently escape the
+  // candidate origin (and leak any configured auth headers to another host).
+  if (/^[a-z][a-z\d+.-]*:/i.test(route) || route.startsWith("//") || route.startsWith("#") || route.startsWith("?") || route.includes("\\")) {
     errors.push(`${path}: must be a relative path`);
   }
 }
