@@ -199,3 +199,31 @@ test("persisted-line cents tolerance accepts 45.004 and rejects 45.01", () => {
   const edgeFail = assessParityCapture({ fixture, scenario, order: order(45.01), capture: capture() });
   assert.equal(byId(edgeFail)["parity-capture:fixture-offer:persisted-line"].status, STATUS.FAIL);
 });
+
+test("non-decimal money strings never coerce to a passing value", () => {
+  // Number("0x2d") === 45; a hex-string price must read as unparseable, not 45.
+  const assertions = assessParityCapture({ fixture, scenario, order: order("0x2d"), capture: capture() });
+  const persisted = byId(assertions)["parity-capture:fixture-offer:persisted-line"];
+  assert.equal(persisted.status, STATUS.FAIL);
+  assert.equal(computeDisposition(assertions), "blocked");
+
+  const decimalString = assessParityCapture({ fixture, scenario, order: order("45.00"), capture: capture() });
+  assert.equal(byId(decimalString)["parity-capture:fixture-offer:persisted-line"].status, STATUS.PASS);
+});
+
+test("stray persisted upsell lines surface a manual-review warning", () => {
+  const withStray = order();
+  withStray.receipt_line_items.push({
+    ref_id: "stray-line",
+    title: "Upsell Adjustment",
+    quantity: 1,
+    is_upsell: true,
+    price_incl_tax: 45,
+  });
+  const assertions = assessParityCapture({ fixture, scenario, order: withStray, capture: capture() });
+  const stray = byId(assertions)["parity-capture:fixture-offer:unexpected-upsell-lines"];
+  assert.equal(stray.status, STATUS.MANUAL_REVIEW);
+  assert.equal(stray.severity, SEVERITY.WARN);
+  // Review-grade, not blocking: the declared-line proof still decides the gate.
+  assert.equal(byId(assertions)["parity-capture:fixture-offer:paired-summary"].status, STATUS.PASS);
+});

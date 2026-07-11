@@ -38,9 +38,15 @@ function moneyEqual(actual, expected) {
   return Number.isFinite(value) && Math.abs(value - Number(expected)) <= MONEY_EPSILON;
 }
 
+// Money strings must be plain decimals ("45.00"): Number() alone would also
+// coerce hex/exponent forms ("0x2d" → 45), which no real order readback emits
+// — treat those as unparseable rather than silently equal.
+const DECIMAL_MONEY_PATTERN = /^-?\d+(\.\d+)?$/;
+
 function lineValue(line, priceField) {
   const candidate = line?.[priceField];
   if (candidate === null || candidate === undefined || candidate === "") return null;
+  if (typeof candidate === "string" && !DECIMAL_MONEY_PATTERN.test(candidate.trim())) return null;
   const value = Number(candidate);
   return Number.isFinite(value) ? value : null;
 }
@@ -205,6 +211,29 @@ export function assessParityCapture({ fixture, scenario, order, capture, baselin
   const persisted = assessPersistedLine(scenario, order || {});
   const purchase = assessPurchase(scenario, candidate);
   assertions.push(persisted, purchase);
+
+  // Unexpected extra upsell lines are surfaced for review: the blocking check
+  // scopes to the declared offer line, so a stray persisted upsell charge
+  // would otherwise ride along invisibly.
+  const expectedLine = scenario.expected_order_readback?.line_item || {};
+  const matched = new Set(matchingPersistedLines(order || {}, expectedLine));
+  const strayUpsells = persistedLines(order || {}).filter((line) => line?.is_upsell && !matched.has(line));
+  if (strayUpsells.length) {
+    assertions.push(parityAssertion({
+      id: `parity-capture:${scenario.scenario_id}:unexpected-upsell-lines`,
+      status: STATUS.MANUAL_REVIEW,
+      severity: SEVERITY.WARN,
+      expected: "no persisted upsell lines beyond the scenario's declared offer",
+      actual: `${strayUpsells.length} unmatched persisted upsell line(s)`,
+      evidence: {
+        unmatched_upsell_lines: strayUpsells.map((line) => ({
+          title: line?.title || line?.name || null,
+          quantity: line?.quantity ?? null,
+          [expectedLine.price_field || "price"]: line?.[expectedLine.price_field || "price"] ?? null,
+        })),
+      },
+    }));
+  }
 
   const correctness = assessAnalyticsCorrectness(
     candidate,
