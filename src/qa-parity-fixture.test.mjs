@@ -105,6 +105,73 @@ test("validateParityFixture rejects an inlined API key", () => {
   ));
 });
 
+test("validateParityFixture rejects nested and aliased literal credentials", () => {
+  const fixture = validFixture();
+  fixture.runtime = {
+    nested: [{ token: "literal-token" }],
+    vendor_api_key: "literal-api-key",
+  };
+
+  const errors = validateParityFixture(fixture);
+  assert.ok(errors.includes(
+    "runtime.nested[0].token: literal values are forbidden; supply credentials at runtime via api_key_env or CLI",
+  ));
+  assert.ok(errors.includes(
+    "runtime.vendor_api_key: literal values are forbidden; supply credentials at runtime via api_key_env or CLI",
+  ));
+});
+
+test("validateParityFixture allows environment indirection and null credential fields", () => {
+  const fixture = validFixture();
+  fixture.api_key_env = "QA_CAMPAIGNS_API_KEY";
+  fixture.api_key = null;
+
+  assert.deepEqual(validateParityFixture(fixture), []);
+});
+
+test("validateParityFixture rejects an undeclared shadow campaign name", () => {
+  const fixture = validFixture();
+  fixture.scenarios[0].shadow_campaign = "missing";
+
+  assert.ok(validateParityFixture(fixture).includes(
+    "scenarios[0].shadow_campaign: must reference campaign.shadow_campaign_ids",
+  ));
+});
+
+test("validateParityFixture rejects a shadow campaign id mismatch", () => {
+  const fixture = validFixture();
+  fixture.scenarios[0].shadow_campaign_id = 2;
+
+  assert.ok(validateParityFixture(fixture).includes(
+    "scenarios[0].shadow_campaign_id: must match campaign.shadow_campaign_ids.root",
+  ));
+});
+
+test("validateParityFixture rejects an undeclared voucher", () => {
+  const fixture = validFixture();
+  fixture.scenarios[0].voucher_code = "UNKNOWN_VOUCHER";
+
+  assert.ok(validateParityFixture(fixture).includes(
+    "scenarios[0].voucher_code: must be listed in voucher_codes",
+  ));
+});
+
+test("validateParityFixture rejects invalid constrained string values", () => {
+  const cases = [
+    ["schema_version", "2", "schema_version: unsupported version; expected 1"],
+    ["candidate_base_url", "ftp://example.test", "candidate_base_url: must be a valid http(s) URL"],
+    ["sdk_version", "0.4", "sdk_version: must match MAJOR.MINOR.PATCH"],
+    ["gtm_container_id", "GTM-invalid", "gtm_container_id: must match GTM-[A-Z0-9]+"],
+    ["known_good_disposition", "unknown", "known_good_disposition: must be ready, ready_with_exceptions, or blocked"],
+  ];
+
+  for (const [field, value, expectedError] of cases) {
+    const fixture = validFixture();
+    fixture[field] = value;
+    assert.ok(validateParityFixture(fixture).includes(expectedError), field);
+  }
+});
+
 test("validateParityFixture reports scenario and analytics shape failures", () => {
   const fixture = validFixture();
   fixture.scenarios[0].scenario_type = "unknown";

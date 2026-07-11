@@ -12,6 +12,9 @@ const REQUIRED_STRING_FIELDS = Object.freeze([
   "known_good_disposition",
 ]);
 
+const CREDENTIAL_FIELD_PATTERN = /^(api[_-]?key|apikey|.*_api_key|secret|token|password|credential)s?$/i;
+const KNOWN_DISPOSITIONS = new Set(["ready", "ready_with_exceptions", "blocked"]);
+
 // Loads fixture data only. Runtime credentials remain an orchestrator concern:
 // fixtures name an environment variable but may never carry its secret value.
 export async function loadParityFixture(path) {
@@ -39,6 +42,8 @@ export function validateParityFixture(fixture) {
     }
   }
 
+  validateConstrainedStrings(fixture, errors);
+
   if (!isObject(fixture.campaign?.shadow_campaign_ids)) {
     errors.push("campaign.shadow_campaign_ids: required object");
   } else {
@@ -50,9 +55,7 @@ export function validateParityFixture(fixture) {
     }
   }
 
-  if (Object.hasOwn(fixture, "api_key") && fixture.api_key !== null) {
-    errors.push("api_key: literal values are forbidden; supply credentials at runtime via api_key_env or CLI");
-  }
+  validateCredentialFields(fixture, errors);
   if (nonEmptyString(fixture.api_key_env) && !/^[A-Z][A-Z0-9_]*$/.test(fixture.api_key_env)) {
     errors.push("api_key_env: must be an uppercase environment variable name");
   }
@@ -66,14 +69,56 @@ export function validateParityFixture(fixture) {
   if (!Array.isArray(fixture.scenarios) || fixture.scenarios.length === 0) {
     errors.push("scenarios: must contain at least one scenario");
   } else {
-    fixture.scenarios.forEach((scenario, index) => validateScenario(scenario, index, errors));
+    fixture.scenarios.forEach((scenario, index) => validateScenario(
+      scenario,
+      index,
+      fixture.campaign?.shadow_campaign_ids,
+      fixture.voucher_codes,
+      errors,
+    ));
   }
 
   validateExpectedAnalytics(fixture.expected_analytics, errors);
   return errors;
 }
 
-function validateScenario(scenario, index, errors) {
+function validateConstrainedStrings(fixture, errors) {
+  if (nonEmptyString(fixture.schema_version) && fixture.schema_version !== "1") {
+    errors.push("schema_version: unsupported version; expected 1");
+  }
+  if (nonEmptyString(fixture.candidate_base_url) && !isHttpUrl(fixture.candidate_base_url)) {
+    errors.push("candidate_base_url: must be a valid http(s) URL");
+  }
+  if (nonEmptyString(fixture.sdk_version) && !/^\d+\.\d+\.\d+$/.test(fixture.sdk_version)) {
+    errors.push("sdk_version: must match MAJOR.MINOR.PATCH");
+  }
+  if (nonEmptyString(fixture.gtm_container_id) && !/^GTM-[A-Z0-9]+$/.test(fixture.gtm_container_id)) {
+    errors.push("gtm_container_id: must match GTM-[A-Z0-9]+");
+  }
+  if (nonEmptyString(fixture.known_good_disposition) && !KNOWN_DISPOSITIONS.has(fixture.known_good_disposition)) {
+    errors.push("known_good_disposition: must be ready, ready_with_exceptions, or blocked");
+  }
+}
+
+function validateCredentialFields(value, errors, path = "", visited = new WeakSet()) {
+  if (value === null || typeof value !== "object" || visited.has(value)) return;
+  visited.add(value);
+
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => validateCredentialFields(entry, errors, `${path}[${index}]`, visited));
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    const entryPath = path ? `${path}.${key}` : key;
+    if (CREDENTIAL_FIELD_PATTERN.test(key) && typeof entry === "string" && entry.length > 0) {
+      errors.push(`${entryPath}: literal values are forbidden; supply credentials at runtime via api_key_env or CLI`);
+    }
+    validateCredentialFields(entry, errors, entryPath, visited);
+  }
+}
+
+function validateScenario(scenario, index, shadowCampaignIds, voucherCodes, errors) {
   const prefix = `scenarios[${index}]`;
   if (!isObject(scenario)) {
     errors.push(`${prefix}: must be an object`);
@@ -85,6 +130,20 @@ function validateScenario(scenario, index, errors) {
   }
   if (!positiveInteger(scenario.shadow_campaign_id)) {
     errors.push(`${prefix}.shadow_campaign_id: must be a positive integer`);
+  }
+  if (nonEmptyString(scenario.shadow_campaign) && isObject(shadowCampaignIds)) {
+    if (!Object.hasOwn(shadowCampaignIds, scenario.shadow_campaign)) {
+      errors.push(`${prefix}.shadow_campaign: must reference campaign.shadow_campaign_ids`);
+    } else if (scenario.shadow_campaign_id !== shadowCampaignIds[scenario.shadow_campaign]) {
+      errors.push(`${prefix}.shadow_campaign_id: must match campaign.shadow_campaign_ids.${scenario.shadow_campaign}`);
+    }
+  }
+  if (
+    nonEmptyString(scenario.voucher_code)
+    && Array.isArray(voucherCodes)
+    && !voucherCodes.includes(scenario.voucher_code)
+  ) {
+    errors.push(`${prefix}.voucher_code: must be listed in voucher_codes`);
   }
 
   if (scenario.scenario_type === "funnel_offer") {
@@ -183,4 +242,13 @@ function nonEmptyString(value) {
 
 function positiveInteger(value) {
   return Number.isInteger(value) && value > 0;
+}
+
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
