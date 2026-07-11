@@ -1,0 +1,108 @@
+{
+  "schema_version": "1",
+  "campaign": {
+    "name": "HeyShape Snatched",
+    "slug": "heyshape-snatched",
+    "shadow_campaign_ids": {
+      "root": 1712,
+      "v1": 1714
+    }
+  },
+  "candidate_base_url": "https://deploy-preview-34--heyshape.netlify.app",
+  "sdk_version": "0.4.30",
+  "gtm_container_id": "GTM-PWBWV4P7",
+  "api_key_env": "QA_CAMPAIGNS_API_KEY",
+  "voucher_codes": [
+    "SNATCHED_BODYSUIT_OTO20",
+    "SNATCHED_THONG_OTO50"
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "root-thong-oto50",
+      "scenario_type": "funnel_offer",
+      "shadow_campaign": "root",
+      "shadow_campaign_id": 1712,
+      "offer": "thong-oto50",
+      "funnel_path": "accept",
+      "voucher_code": "SNATCHED_THONG_OTO50",
+      "currency": "USD",
+      "expected_order_readback": {
+        "line_item": {
+          "title": "Snatched Thong Bodysuit",
+          "quantity": 2,
+          "is_upsell": true,
+          "price_field": "price_incl_tax",
+          "base_unit_price": 45.00,
+          "base_subtotal": 90.00,
+          "discount_amount": 45.00,
+          "expected_line_total": 45.00,
+          "dropped_voucher_line_total": 90.00
+        }
+      },
+      "expected_purchase": {
+        "event": "dl_purchase",
+        "value": 45.00,
+        "currency": "USD"
+      }
+    },
+    {
+      "scenario_id": "v1-bodysuit-oto20",
+      "scenario_type": "funnel_offer",
+      "shadow_campaign": "v1",
+      "shadow_campaign_id": 1714,
+      "offer": "bodysuit-oto20",
+      "funnel_path": "accept",
+      "voucher_code": "SNATCHED_BODYSUIT_OTO20",
+      "currency": "USD",
+      "expected_order_readback": {
+        "line_item": {
+          "title": "Snatched Bodysuit",
+          "quantity": 1,
+          "is_upsell": true,
+          "price_field": "price_incl_tax",
+          "base_unit_price": 29.99,
+          "base_subtotal": 29.99,
+          "discount_amount": 6.00,
+          "expected_line_total": 23.99
+        }
+      },
+      "expected_purchase": {
+        "event": "dl_purchase",
+        "value": 23.99,
+        "currency": "USD"
+      }
+    },
+    {
+      "scenario_id": "v1-bodysuit-quantity-ladder",
+      "scenario_type": "pricing_ladder",
+      "shadow_campaign": "v1",
+      "shadow_campaign_id": 1714,
+      "offer": "bodysuit-oto20",
+      "currency": "USD",
+      "expected_pricing": [
+        {
+          "quantity": 1,
+          "expected_total": 29.99
+        },
+        {
+          "quantity": 2,
+          "expected_total": 53.98
+        },
+        {
+          "quantity": 3,
+          "expected_total": 71.97
+        }
+      ]
+    }
+  ],
+  "expected_analytics": {
+    "purchase_event": "dl_purchase",
+    "purchase_expected": true,
+    "candidate_inventory": {
+      "gtm": [
+        "GTM-PWBWV4P7"
+      ]
+    }
+  },
+  "known_good_disposition": "ready_with_exceptions"
+}
