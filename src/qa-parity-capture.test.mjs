@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { normalizeCapture } from "./qa-analytics-parity.mjs";
-import { assessParityCapture } from "./qa-parity-capture.mjs";
+import { assessParityCapture, __qaParityCaptureTestHooks } from "./qa-parity-capture.mjs";
 import { computeDisposition, SEVERITY, STATUS } from "./qa-verdict.mjs";
 
 const fixture = {
@@ -17,6 +17,7 @@ const scenario = {
   scenario_id: "fixture-offer",
   scenario_type: "funnel_offer",
   currency: "USD",
+  upsell_route: "oto-fixture.html",
   expected_order_readback: {
     line_item: {
       title: "Fixture Upsell",
@@ -77,6 +78,73 @@ test("negative control: dropped voucher persisted at base total blocks", () => {
   assert.equal(persisted.status, STATUS.FAIL);
   assert.equal(persisted.severity, SEVERITY.BLOCKER);
   assert.equal(computeDisposition(assertions), "blocked");
+});
+
+test("derived price cannot substitute for an absent declared persisted field", () => {
+  const missingDeclaredField = order();
+  delete missingDeclaredField.receipt_line_items[0].price_incl_tax;
+  missingDeclaredField.receipt_line_items[0].price = 45;
+
+  const assertions = assessParityCapture({ fixture, scenario, order: missingDeclaredField, capture: capture() });
+  const persisted = byId(assertions)["parity-capture:fixture-offer:persisted-line"];
+  assert.equal(persisted.status, STATUS.FAIL);
+  assert.equal(persisted.severity, SEVERITY.BLOCKER);
+  assert.match(persisted.actual, /declared price field price_incl_tax was absent/);
+});
+
+test("declared persisted price field remains authoritative", () => {
+  const assertions = assessParityCapture({ fixture, scenario, order: order(45), capture: capture() });
+  assert.equal(byId(assertions)["parity-capture:fixture-offer:persisted-line"].status, STATUS.PASS);
+});
+
+test("offer page mismatch blocks persisted-line proof when route evidence is present", () => {
+  const assertions = assessParityCapture({
+    fixture,
+    scenario,
+    order: { ...order(), evidence: { upsell_page_url: "https://example.test/other-oto.html" } },
+    capture: capture(),
+  });
+  const persisted = byId(assertions)["parity-capture:fixture-offer:persisted-line"];
+  assert.equal(persisted.status, STATUS.FAIL);
+  assert.match(persisted.actual, /unexpected offer page/);
+});
+
+test("offer-looking final URL mismatch blocks persisted-line proof", () => {
+  const assertions = assessParityCapture({
+    fixture,
+    scenario,
+    order: { ...order(), final_url: "https://example.test/wrong-oto.html" },
+    capture: capture(),
+  });
+  assert.equal(byId(assertions)["parity-capture:fixture-offer:persisted-line"].status, STATUS.FAIL);
+});
+
+test("scenario topology carries distinct checkout and first-offer URLs", () => {
+  const { scenarioTopology } = __qaParityCaptureTestHooks;
+  const root = scenarioTopology("https://example.test", {
+    ...scenario,
+    scenario_id: "root",
+    checkout_path: "checkout.html",
+    upsell_route: "oto-thong.html",
+    funnel_path: "accept",
+  });
+  const v1 = scenarioTopology("https://example.test", {
+    ...scenario,
+    scenario_id: "v1",
+    checkout_path: "v1/checkout.html",
+    upsell_route: "v1/oto-bodysuit.html",
+    funnel_path: "accept",
+  });
+
+  assert.deepEqual(root[0].pages.map((page) => page.url), [
+    "https://example.test/checkout.html",
+    "https://example.test/oto-thong.html",
+  ]);
+  assert.deepEqual(v1[0].pages.map((page) => page.url), [
+    "https://example.test/v1/checkout.html",
+    "https://example.test/v1/oto-bodysuit.html",
+  ]);
+  assert.notDeepEqual(root[0].pages, v1[0].pages);
 });
 
 test("missing dl_purchase blocks the analytics leg", () => {

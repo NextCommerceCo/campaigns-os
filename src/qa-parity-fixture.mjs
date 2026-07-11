@@ -191,6 +191,14 @@ function validateFunnelOfferScenario(scenario, prefix, errors) {
   for (const field of ["funnel_path", "voucher_code"]) {
     if (!nonEmptyString(scenario[field])) errors.push(`${prefix}.${field}: required non-empty string`);
   }
+  validateRelativePath(scenario.checkout_path, `${prefix}.checkout_path`, errors, { required: true });
+  const hasOfferStep = String(scenario.funnel_path || "").split("-")
+    .some((step) => step === "accept" || step === "decline");
+  if (hasOfferStep) {
+    validateRelativePath(scenario.upsell_route, `${prefix}.upsell_route`, errors, { required: true });
+  } else if (scenario.upsell_route !== undefined) {
+    validateRelativePath(scenario.upsell_route, `${prefix}.upsell_route`, errors);
+  }
 
   const lineItem = scenario.expected_order_readback?.line_item;
   if (!isObject(lineItem)) {
@@ -221,6 +229,17 @@ function validateFunnelOfferScenario(scenario, prefix, errors) {
       if (!nonEmptyString(purchase[field])) errors.push(`${prefix}.expected_purchase.${field}: required non-empty string`);
     }
     validateMoney(purchase.value, `${prefix}.expected_purchase.value`, errors);
+  }
+}
+
+function validateRelativePath(value, path, errors, { required = false } = {}) {
+  if (!nonEmptyString(value)) {
+    if (required) errors.push(`${path}: required non-empty relative path`);
+    return;
+  }
+  const route = value.trim();
+  if (/^[a-z][a-z\d+.-]*:/i.test(route) || route.startsWith("//") || route.startsWith("#") || route.startsWith("?")) {
+    errors.push(`${path}: must be a relative path`);
   }
 }
 

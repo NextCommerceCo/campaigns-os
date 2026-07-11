@@ -21,6 +21,8 @@ function validFixture() {
       shadow_campaign: "root",
       shadow_campaign_id: 1,
       offer: "offer",
+      checkout_path: "checkout.html",
+      upsell_route: "oto.html",
       funnel_path: "accept",
       voucher_code: "FIXTURE_VOUCHER",
       currency: "USD",
@@ -56,6 +58,10 @@ test("loadParityFixture loads and validates the HeyShape SDK-0.4 corpus", async 
   assert.equal(fixture.scenarios.length, 3);
   assert.equal(fixture.scenarios[0].expected_order_readback.line_item.expected_line_total, 45);
   assert.equal(fixture.scenarios[0].expected_order_readback.line_item.dropped_voucher_line_total, 90);
+  assert.equal(fixture.scenarios[0].checkout_path, "checkout.html");
+  assert.equal(fixture.scenarios[0].upsell_route, "oto-snatch-thong.html");
+  assert.equal(fixture.scenarios[1].checkout_path, "v1/checkout.html");
+  assert.equal(fixture.scenarios[1].upsell_route, "v1/oto-snatch-bodysuit.html");
   assert.deepEqual(fixture.scenarios[2].expected_pricing.map((entry) => entry.expected_total), [29.99, 53.98, 71.97]);
   assert.deepEqual(validateParityFixture(fixture), []);
 });
@@ -95,6 +101,26 @@ test("validateParityFixture rejects non-numeric funnel and ladder prices", () =>
   const errors = validateParityFixture(fixture);
   assert.ok(errors.includes("scenarios[0].expected_order_readback.line_item.expected_line_total: must be a non-negative finite number"));
   assert.ok(errors.includes("scenarios[1].expected_pricing[0].expected_total: must be a non-negative finite number"));
+});
+
+test("validateParityFixture requires deterministic funnel routes", () => {
+  const fixture = validFixture();
+  delete fixture.scenarios[0].checkout_path;
+  delete fixture.scenarios[0].upsell_route;
+
+  const errors = validateParityFixture(fixture);
+  assert.ok(errors.includes("scenarios[0].checkout_path: required non-empty relative path"));
+  assert.ok(errors.includes("scenarios[0].upsell_route: required non-empty relative path"));
+});
+
+test("validateParityFixture rejects absolute funnel routes", () => {
+  const fixture = validFixture();
+  fixture.scenarios[0].checkout_path = "https://other.test/checkout.html";
+  fixture.scenarios[0].upsell_route = "//other.test/oto.html";
+
+  const errors = validateParityFixture(fixture);
+  assert.ok(errors.includes("scenarios[0].checkout_path: must be a relative path"));
+  assert.ok(errors.includes("scenarios[0].upsell_route: must be a relative path"));
 });
 
 test("validateParityFixture rejects an inlined API key", () => {

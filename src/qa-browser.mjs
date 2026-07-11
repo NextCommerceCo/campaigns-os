@@ -2063,6 +2063,7 @@ async function buildOrderEvidence({ page, events, path, email, checkoutPage, arg
 }
 
 async function clickUpsellPath(page, path, _options = {}) {
+  const offerUrl = safePageUrl(page);
   const action = path === "accept" ? "add" : "skip";
   const selector = `[data-next-upsell-action="${action}"]`;
   const control = page.locator(selector).first();
@@ -2086,6 +2087,7 @@ async function clickUpsellPath(page, path, _options = {}) {
   return {
     path,
     clicked: true,
+    offer_url: offerUrl,
     final_url: page.url(),
     expected_items: expectedItems,
     api_response_seen: Boolean(mutationResponse),
@@ -2428,6 +2430,8 @@ function extractReceiptLines(order) {
     title: line.product_title || line.title || line.name || null,
     quantity: Number(line.quantity || 0),
     is_upsell: Boolean(line.is_upsell),
+    price_incl_tax: line.price_incl_tax ?? null,
+    price_excl_tax: line.price_excl_tax ?? null,
     price: line.price_incl_tax || line.price_excl_tax || line.price || null,
     sku: line.product_sku || line.sku || null,
     product_id: line.product_id ?? null,
@@ -2762,4 +2766,5 @@ export const __qaBrowserTestHooks = Object.freeze({
   placeholderTextResidueAssertion,
   demoAssetResidueAssertion,
   testOrderAssertion,
+  extractReceiptLines,
 });

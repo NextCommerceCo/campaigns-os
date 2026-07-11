@@ -33,18 +33,16 @@ function normalizedCapture(capture) {
 }
 
 function moneyEqual(actual, expected) {
+  if (actual === null || actual === undefined || actual === "") return false;
   const value = Number(actual);
   return Number.isFinite(value) && Math.abs(value - Number(expected)) <= MONEY_EPSILON;
 }
 
 function lineValue(line, priceField) {
-  const candidates = [line?.[priceField], line?.price, line?.line_total, line?.total];
-  for (const candidate of candidates) {
-    if (candidate === null || candidate === undefined || candidate === "") continue;
-    const value = Number(candidate);
-    if (Number.isFinite(value)) return value;
-  }
-  return null;
+  const candidate = line?.[priceField];
+  if (candidate === null || candidate === undefined || candidate === "") return null;
+  const value = Number(candidate);
+  return Number.isFinite(value) ? value : null;
 }
 
 function persistedLines(order) {
@@ -96,16 +94,29 @@ function assessPersistedLine(scenario, order) {
   const expectedLine = scenario.expected_order_readback?.line_item || {};
   const matches = matchingPersistedLines(order, expectedLine);
   const values = matches.map((line) => lineValue(line, expectedLine.price_field));
+  const declaredFieldAbsent = matches.length > 0
+    && matches.every((line) => line?.[expectedLine.price_field] === null
+      || line?.[expectedLine.price_field] === undefined
+      || line?.[expectedLine.price_field] === "");
+  const expectedRoute = scenario.upsell_route || scenario.expected_upsell_path || null;
+  const observedRoute = observedUpsellRoute(order, expectedRoute);
+  const routeMatches = !observedRoute || routePathMatches(observedRoute, expectedRoute);
   const ok = values.length > 0
+    && !declaredFieldAbsent
+    && routeMatches
     && values.every((value) => moneyEqual(value, expectedLine.expected_line_total));
   return parityAssertion({
     id: `parity-capture:${scenario.scenario_id}:persisted-line`,
     status: ok ? STATUS.PASS : STATUS.FAIL,
     severity: SEVERITY.BLOCKER,
     expected: `persisted ${expectedLine.is_upsell ? "upsell" : "order"} line total ${expectedLine.expected_line_total} ${scenario.currency}`,
-    actual: matches.length
-      ? `matching persisted line total(s): ${values.map((value) => value ?? "missing").join(", ")}`
-      : "matching persisted order line absent",
+    actual: !matches.length
+      ? "matching persisted order line absent"
+      : declaredFieldAbsent
+        ? `declared price field ${expectedLine.price_field} was absent from matching persisted evidence`
+        : !routeMatches
+          ? `persisted line observed after unexpected offer page ${observedRoute}; expected ${expectedRoute}`
+          : `matching persisted ${expectedLine.price_field} total(s): ${values.map((value) => value ?? "missing").join(", ")}`,
     evidence: {
       source: Array.isArray(order?.final_receipt_line_items)
         ? "final_receipt_line_items"
@@ -114,11 +125,45 @@ function assessPersistedLine(scenario, order) {
       expected_quantity: expectedLine.quantity ?? null,
       expected_is_upsell: expectedLine.is_upsell ?? null,
       expected_line_total: expectedLine.expected_line_total ?? null,
+      declared_price_field: expectedLine.price_field || null,
+      declared_price_field_absent: declaredFieldAbsent,
       observed_line_totals: values,
+      expected_upsell_route: expectedRoute,
+      observed_upsell_route: observedRoute,
+      upsell_route_matches: routeMatches,
       persisted_order_total_incl_tax: order?.verification?.total_incl_tax ?? null,
       persisted_order_currency: order?.verification?.currency ?? null,
     },
   });
+}
+
+function observedUpsellRoute(order, expectedRoute) {
+  const explicit = [
+    ...(Array.isArray(order?.evidence?.upsell_page_urls) ? order.evidence.upsell_page_urls : []),
+    order?.evidence?.upsell_page_url,
+    ...(Array.isArray(order?.upsell_steps) ? order.upsell_steps.map((step) => step?.offer_url) : []),
+    order?.upsell?.offer_url,
+  ].find((value) => typeof value === "string" && value.trim());
+  if (explicit) return explicit;
+  const finalUrl = typeof order?.final_url === "string" ? order.final_url : null;
+  if (!finalUrl || !expectedRoute) return null;
+  try {
+    const path = new URL(finalUrl, "https://parity.invalid/").pathname;
+    return /(?:oto|upsell)/i.test(path) ? finalUrl : null;
+  } catch {
+    return null;
+  }
+}
+
+function routePathMatches(observed, expected) {
+  if (!expected) return true;
+  try {
+    const observedPath = new URL(observed, "https://parity.invalid/").pathname.replace(/\/+$/, "");
+    const expectedPath = new URL(expected, "https://parity.invalid/").pathname.replace(/\/+$/, "");
+    return observedPath === expectedPath;
+  } catch {
+    return false;
+  }
 }
 
 function assessPurchase(scenario, capture) {
@@ -218,6 +263,9 @@ function scenarioTopology(baseUrl, scenario) {
       ...Array.from({ length: depth }, (_, index) => ({
         page_id: `offer-${index + 1}`,
         page_type: "upsell",
+        ...(index === 0 && scenario.upsell_route
+          ? { url: new URL(scenario.upsell_route, `${baseUrl.replace(/\/+$/, "")}/`).toString() }
+          : {}),
       })),
     ],
   }];
@@ -272,3 +320,5 @@ export async function runParityCapture({ fixture, scenarioId, args = {} }) {
   ];
   return { assertions, orders: orderResult.orders, captures };
 }
+
+export const __qaParityCaptureTestHooks = Object.freeze({ scenarioTopology });
