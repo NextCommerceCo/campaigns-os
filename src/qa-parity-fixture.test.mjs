@@ -138,6 +138,25 @@ test("validateParityFixture rejects conventional credential aliases in any casin
   }
 });
 
+test("validateParityFixture rejects literal values smuggled through _env alias keys", () => {
+  const fixture = validFixture();
+  fixture.integrations = {
+    client_secret_env: "literal-secret",
+    accessTokenEnv: "literal token value",
+    "private-key-env": "-----BEGIN KEY-----",
+  };
+
+  const errors = validateParityFixture(fixture);
+  for (const key of ["client_secret_env", "accessTokenEnv", "private-key-env"]) {
+    assert.ok(errors.includes(
+      `integrations.${key}: must name an environment variable (UPPER_SNAKE), not carry a literal value`,
+    ), `expected env-name rejection for ${key}`);
+  }
+  const legit = validFixture();
+  legit.integrations = { client_secret_env: "VENDOR_CLIENT_SECRET" };
+  assert.deepEqual(validateParityFixture(legit), []);
+});
+
 test("validateParityFixture allows environment indirection and null credential fields", () => {
   const fixture = validFixture();
   fixture.api_key_env = "QA_CAMPAIGNS_API_KEY";

@@ -16,17 +16,29 @@ const REQUIRED_STRING_FIELDS = Object.freeze([
 // normalized (camelCase → snake_case, kebab → snake) and any credential term
 // anywhere in the key rejects a literal string value — api_key, apiKey,
 // vendor-api-key, client_secret, access_token, private_key, authPassword,
-// credentials. `*_env` indirection keys are exempt (they name an env var,
-// never carry its value).
+// credentials. `*_env` indirection keys are not exempt from scrutiny: they
+// name an env var, so their value must LOOK like one (UPPER_SNAKE name),
+// otherwise the "_env" suffix would smuggle an arbitrary literal through.
 const CREDENTIAL_TERMS = /(^|_)(api_?key|secrets?|tokens?|passwords?|passwd|credentials?|private_?key|auth)(_|$)/;
+const ENV_VAR_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 
-function isCredentialKey(key) {
-  const normalized = String(key)
+function normalizeKey(key) {
+  return String(key)
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/-/g, "_")
     .toLowerCase();
+}
+
+function isCredentialKey(key) {
+  const normalized = normalizeKey(key);
   if (normalized.endsWith("_env")) return false;
   return CREDENTIAL_TERMS.test(normalized);
+}
+
+// A credential-term key ending in `_env` must reference an env var by name.
+function isCredentialEnvKey(key) {
+  const normalized = normalizeKey(key);
+  return normalized.endsWith("_env") && CREDENTIAL_TERMS.test(normalized.slice(0, -"_env".length) + "_");
 }
 const KNOWN_DISPOSITIONS = new Set(["ready", "ready_with_exceptions", "blocked"]);
 
@@ -128,6 +140,8 @@ function validateCredentialFields(value, errors, path = "", visited = new WeakSe
     const entryPath = path ? `${path}.${key}` : key;
     if (isCredentialKey(key) && typeof entry === "string" && entry.length > 0) {
       errors.push(`${entryPath}: literal values are forbidden; supply credentials at runtime via api_key_env or CLI`);
+    } else if (isCredentialEnvKey(key) && typeof entry === "string" && entry.length > 0 && !ENV_VAR_NAME_PATTERN.test(entry)) {
+      errors.push(`${entryPath}: must name an environment variable (UPPER_SNAKE), not carry a literal value`);
     }
     validateCredentialFields(entry, errors, entryPath, visited);
   }
