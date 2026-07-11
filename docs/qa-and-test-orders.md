@@ -206,6 +206,11 @@ What the diff asserts (BLOCKER unless noted):
   baseline (GTM, Meta, Everflow, GA4, …) is **absent on the candidate** — a likely
   attribution regression flagged for human review, not an auto-block.
 
+For a real SDK 0.4 migration example that required typed-card post-purchase
+traversal, persisted-order price verification, receipt-context analytics, and
+independent order readback, see
+[SDK 0.4 Migration Proof Case Study](sdk04-migration-proof-case-study.md).
+
 ## Test Orders
 
 Test Orders use **global test cards** that work on any live store and integration.
