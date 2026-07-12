@@ -228,6 +228,11 @@ function validateFunnelOfferScenario(scenario, prefix, errors) {
     for (const field of ["base_unit_price", "base_subtotal", "expected_line_total"]) {
       validateMoney(lineItem[field], `${prefix}.expected_order_readback.line_item.${field}`, errors);
     }
+    // Both fields are OPTIONAL corpus documentation, validated only when
+    // present: `dropped_voucher_line_total` records the known-bad base price a
+    // negative-control replay should carry (omitting it just means the corpus
+    // doesn't document that scenario's regression amount — no assertion is
+    // generated from it), and `discount_amount` records the offer math.
     for (const field of ["discount_amount", "dropped_voucher_line_total"]) {
       if (lineItem[field] !== undefined) validateMoney(lineItem[field], `${prefix}.expected_order_readback.line_item.${field}`, errors);
     }

@@ -98,7 +98,9 @@ function assessPersistedLine(scenario, order) {
         ? `declared price field ${expectedLine.price_field} was absent from matching persisted evidence`
         : !routeMatches
           ? `persisted line observed after unexpected offer page ${observedRoute}; expected ${expectedRoute}`
-          : `matching persisted ${expectedLine.price_field} total(s): ${values.map((value) => value ?? "missing").join(", ")}`,
+          : `matching persisted ${expectedLine.price_field} total(s): ${values.map((value, index) => (
+            value ?? `unparseable(${JSON.stringify(matches[index]?.[expectedLine.price_field] ?? null)})`
+          )).join(", ")}`,
     evidence: {
       source: Array.isArray(order?.final_receipt_line_items)
         ? "final_receipt_line_items"

@@ -2346,7 +2346,12 @@ async function revealProgressiveLocationFields(page, address1) {
   await input.click().catch(() => {});
   await input.fill("").catch(() => {});
   await input.pressSequentially(address1, { delay: 25 }).catch(() => {});
-  await page.keyboard.press("Escape").catch(() => {});
+  // Dismiss only a predictive-address dropdown the keystrokes opened; a global
+  // Escape could close unrelated modals/drawers the funnel has open.
+  const suggestions = page.locator(".pac-container, [role=listbox]").first();
+  if (await suggestions.isVisible().catch(() => false)) {
+    await input.press("Escape").catch(() => {});
+  }
   await city.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
 }
 

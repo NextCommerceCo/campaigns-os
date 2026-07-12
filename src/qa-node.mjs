@@ -694,7 +694,11 @@ async function runParityQa(args) {
     mkdirSync(bundleDir, { recursive: true });
     writeJson(join(bundleDir, `${runId}.parity-bundle.json`), {
       scenario_id: scenario.scenario_id,
+      // Both shapes on purpose: `order` is the assessed primary,
+      // `orders` mirrors the in-memory result so bundle readers and
+      // parityReplayEvidence see the same array shape as the live run.
       order: result.orders[0] || null,
+      orders: result.orders,
       capture: result.captures?.candidate || null,
       ...(result.captures?.baseline ? { baseline_capture: result.captures.baseline } : {}),
     });
