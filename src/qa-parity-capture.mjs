@@ -229,7 +229,11 @@ export function assessParityCapture({ fixture, scenario, order, capture, baselin
         unmatched_upsell_lines: strayUpsells.map((line) => ({
           title: line?.title || line?.name || null,
           quantity: line?.quantity ?? null,
-          [expectedLine.price_field || "price"]: line?.[expectedLine.price_field || "price"] ?? null,
+          // Stable keys regardless of the scenario's declared price_field, so a
+          // consumer can read the value without knowing which field was declared
+          // (avoids an inconsistent computed JSON key across scenarios).
+          declared_price_field: expectedLine.price_field || "price",
+          declared_price_field_value: line?.[expectedLine.price_field || "price"] ?? null,
         })),
       },
     }));

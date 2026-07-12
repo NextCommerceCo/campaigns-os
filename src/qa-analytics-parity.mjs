@@ -271,13 +271,19 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
   for (const ev of rawEvents) {
     const name = ev && typeof ev === "object" ? String(ev.event || ev.event_name || "") : "";
     if (name && !eventNames.includes(name)) eventNames.push(name);
-    if (!purchase) {
+    // Keep the first purchase-shaped event, but let a later event carrying an
+    // actual value upgrade an earlier value-less one: a malformed first
+    // dl_purchase (value == null) must not shadow the real purchase and mask a
+    // missing value as "present with no value."
+    if (!purchase || purchase.value === null) {
       const p = extractPurchase(ev);
       if (p) purchase = p;
     }
-    if (name && /purchase/i.test(name) && !purchasesByEvent[name]) {
+    if (name && /purchase/i.test(name)) {
       const fields = extractPurchaseFields(ev);
-      if (fields) purchasesByEvent[name] = fields;
+      if (fields && (!purchasesByEvent[name] || purchasesByEvent[name].value === null)) {
+        purchasesByEvent[name] = fields;
+      }
     }
   }
 
