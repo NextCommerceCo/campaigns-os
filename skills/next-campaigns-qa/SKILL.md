@@ -11,6 +11,8 @@ Use this after the campaign has a preview or production URL and the assembly rep
 npm run qa:install-browser
 npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url>
+# Fixture-driven migration parity proof. Publishes to the QA portal by default.
+npm run campaigns-os -- qa parity --fixture <parity-fixture.json> --scenario <scenario-id> --base-url <preview-url>
 # Browser QA + typed-card proof. Publishes to the QA portal by default and prints the portal link.
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url <preview-url> --browser --test-order common
 # Offline / dev / CI only: keep the verdict local
@@ -31,6 +33,10 @@ Inputs:
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
+- Use `qa parity` for migration cells that carry a parity fixture; select the fixture scenario and drive that offer through the candidate funnel.
+- Parity capture blocking proof is the voucher-adjusted persisted line from typed-card order readback. Browser totals and client state do not replace the persisted-line voucher guard.
+- Read client purchase values per event. A whole-cart `dl_purchase` must not mask or supply an offer-level upsell purchase expectation.
+- Live `qa parity` runs publish to the QA portal by default like other QA runs. Pass `--no-post-verdict` for dev, replay, negative-control, and other local proof runs.
 - Theme gate: `qa run` refuses to run when a generatable brand theme is not applied to commerce pages and no waiver exists. Apply the brand layer or record a waiver (`campaigns-os theme waive` / `qa run --theme-waive "<reason>"`); do not bypass the gate another way. A waived run still reports template-residue findings at warn severity.
 - Template residue is a QA dimension, not advice: promoted starter families must have a brand/residue/pricing contract (`contracts/template-brand-contract.<family>.v0.json`). Browser QA inspects computed styles on commerce surfaces and fails pages that still render starter defaults (`#3c7dff`/`#0a265c`, starter `next-logo.png`, paypal/klarna chrome absent from the spec).
 - Pricing visibility is a blocker: an upsell/downsell offer with zero visible price rows fails QA. Pricing surfaces render via template pricing modes (`full_price`, `compare_at_current`, `unit_price_plus_total`, `savings_badge_amount`, `code_discounted_post_checkout`), never via campaign CSS `display:none` on price wrappers.

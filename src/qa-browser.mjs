@@ -1,5 +1,5 @@
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
-import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-parity.mjs";
+import { attachAnalyticsCapture, diffAnalyticsParity, normalizeCapture } from "./qa-analytics-parity.mjs";
 import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import {
   demoAssetConfig,
@@ -73,7 +73,7 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
   }
 }
 
-export async function runBrowserTestOrders(topologies, args = {}, runId = "local") {
+export async function runBrowserTestOrders(topologies, args = {}, runId = "local", options = {}) {
   const checkoutPage = findPage(topologies, "checkout");
   if (!checkoutPage?.url) {
     return {
@@ -98,12 +98,14 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
 
   const assertions = [];
   const orders = [];
+  const captures = [];
   const paths = testOrderPaths(args["test-order"], topologies);
   enforceTestOrderLimit(paths, args);
   try {
     for (const path of paths) {
-      const result = await runSingleBrowserTestOrder(context, checkoutPage, path, args, runId);
+      const result = await runSingleBrowserTestOrder(context, checkoutPage, path, args, runId, options);
       orders.push(result.order);
+      if (result.analytics_capture) captures.push(result.analytics_capture);
       assertions.push(testOrderAssertion(checkoutPage, path, result));
     }
   } catch (error) {
@@ -124,7 +126,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
     await browser.close().catch(() => {});
   }
 
-  return { orders, assertions };
+  return { orders, assertions, ...(options.captureAnalytics ? { captures } : {}) };
 }
 
 // Analytics-parity leg: capture the live dataLayer event stream + GTM/pixel
@@ -268,7 +270,7 @@ function analyticsExtraHosts(args) {
   return String(raw).split(",").map((h) => h.trim()).filter(Boolean);
 }
 
-async function captureAnalyticsForUrl(context, url, args, extraHosts) {
+export async function captureAnalyticsForUrl(context, url, args, extraHosts = []) {
   const page = await context.newPage();
   const capture = await attachAnalyticsCapture(page, { extraHosts });
   const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
@@ -285,6 +287,28 @@ async function captureAnalyticsForUrl(context, url, args, extraHosts) {
   } finally {
     capture.detach();
     await page.close().catch(() => {});
+  }
+}
+
+// Batch wrapper used by fixture-driven parity capture. Browser ownership stays
+// in this module so callers reuse the established Playwright launch/context
+// policy instead of importing or reimplementing it.
+export async function captureAnalyticsForUrls(urls = {}, args = {}) {
+  const browser = await launchChromium(args);
+  const context = await browser.newContext({
+    viewport: viewportFromArgs(args),
+    extraHTTPHeaders: args["auth-cookie"] ? { Cookie: String(args["auth-cookie"]) } : undefined,
+  });
+  const extraHosts = analyticsExtraHosts(args);
+  try {
+    const captures = {};
+    for (const [name, url] of Object.entries(urls)) {
+      if (url) captures[name] = await captureAnalyticsForUrl(context, url, args, extraHosts);
+    }
+    return captures;
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
   }
 }
 
@@ -1655,27 +1679,36 @@ function skipRemainingSteps(ladder, stepNames, reason) {
   }
 }
 
-async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runId) {
+async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runId, options = {}) {
   const orderTimeoutMs = numberArg(args["order-timeout-ms"], DEFAULT_ORDER_TIMEOUT_MS);
   const ladder = createStepLadder();
   let page = null;
+  let analyticsCapture = null;
   let events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
   const email = testEmail(args);
 
   try {
     page = await context.newPage();
+    if (options.captureAnalytics) {
+      analyticsCapture = await attachAnalyticsCapture(page, { extraHosts: analyticsExtraHosts(args) });
+    }
     page.setDefaultTimeout(numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
     events = captureCheckoutEvents(page);
     // The outer race is the hard guarantee: whatever hangs inside the path,
     // this returns and the run writes a verdict instead of dying with nothing.
-    return await withStepTimeout(
+    const result = await withStepTimeout(
       executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args, deadline: Date.now() + orderTimeoutMs }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${path}`,
     );
+    if (analyticsCapture) result.analytics_capture = await analyticsCapture.collect().catch(() => normalizeCapture());
+    return result;
   } catch (error) {
-    return failedTestOrderResult({ path, email, error, events, ladder, page });
+    const result = failedTestOrderResult({ path, email, error, events, ladder, page });
+    if (analyticsCapture) result.analytics_capture = await analyticsCapture.collect().catch(() => normalizeCapture());
+    return result;
   } finally {
+    analyticsCapture?.detach();
     await page?.close().catch(() => {});
   }
 }
@@ -1922,6 +1955,7 @@ async function fillCheckoutFields(page, args, email) {
   await selectByField(page, "country", address.country);
   await fillByField(page, "address1", address.address1);
   await settleAddressAutocomplete(page);
+  await revealProgressiveLocationFields(page, address.address1);
   await fillByField(page, "city", address.city);
   await selectByField(page, "province", address.province);
   await fillByField(page, "postal", address.postal);
@@ -1929,7 +1963,10 @@ async function fillCheckoutFields(page, args, email) {
 
   const sameAsShipping = page.locator("#use_shipping_address").first();
   if (await sameAsShipping.count().catch(() => 0)) {
-    await sameAsShipping.check().catch(() => {});
+    // Best-effort with a short timeout: funnels that collapse the billing
+    // section leave this checkbox hidden (already checked), and a default
+    // 30s wait on it would eat most of the step budget for nothing.
+    await sameAsShipping.check({ timeout: 3000 }).catch(() => {});
   }
 
   await fillByField(page, "billing-fname", address.firstName, { optional: true, onlyVisible: true });
@@ -2030,6 +2067,7 @@ async function buildOrderEvidence({ page, events, path, email, checkoutPage, arg
 }
 
 async function clickUpsellPath(page, path, _options = {}) {
+  const offerUrl = safePageUrl(page);
   const action = path === "accept" ? "add" : "skip";
   const selector = `[data-next-upsell-action="${action}"]`;
   const control = page.locator(selector).first();
@@ -2053,6 +2091,7 @@ async function clickUpsellPath(page, path, _options = {}) {
   return {
     path,
     clicked: true,
+    offer_url: offerUrl,
     final_url: page.url(),
     expected_items: expectedItems,
     api_response_seen: Boolean(mutationResponse),
@@ -2242,7 +2281,14 @@ async function fillByField(page, field, value, options = {}) {
     if (options.optional) return false;
     throw new Error(`Missing checkout field: ${field}`);
   }
-  await locator.click().catch(() => {});
+  // Optional fields are best-effort: a field that reports visible but cannot
+  // accept input (covered by a collapsed section, disabled by the funnel's
+  // billing toggle) must not eat the step budget with a full default wait —
+  // the focusing click included.
+  await locator.click(options.optional ? { timeout: 3000 } : {}).catch(() => {});
+  if (options.optional) {
+    return locator.fill(value, { timeout: 3000 }).then(() => true).catch(() => false);
+  }
   await locator.fill(value);
   return true;
 }
@@ -2252,6 +2298,9 @@ async function selectByField(page, field, value, options = {}) {
   if (!await fieldUsable(locator, options)) {
     if (options.optional) return false;
     throw new Error(`Missing checkout select: ${field}`);
+  }
+  if (options.optional) {
+    return locator.selectOption(value, { timeout: 3000 }).then(() => true).catch(() => false);
   }
   await locator.selectOption(value);
   return true;
@@ -2282,6 +2331,28 @@ async function settleAddressAutocomplete(page) {
     await suggestion.click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
   }
+}
+
+// Some funnels progressively disclose city/province/postal only after real
+// keystrokes land in address1 (predictive-address UIs listen for key events,
+// which locator.fill() does not synthesize). When the city field exists but
+// stays hidden after a plain fill, re-enter address1 with typed keystrokes and
+// wait for the disclosure — generic behavior, no funnel-specific hooks.
+async function revealProgressiveLocationFields(page, address1) {
+  const city = page.locator('[data-next-checkout-field="city"]').first();
+  if (!await city.count().catch(() => 0)) return;
+  if (await city.isVisible().catch(() => false)) return;
+  const input = page.locator('[data-next-checkout-field="address1"]').first();
+  await input.click().catch(() => {});
+  await input.fill("").catch(() => {});
+  await input.pressSequentially(address1, { delay: 25 }).catch(() => {});
+  // Dismiss only a predictive-address dropdown the keystrokes opened; a global
+  // Escape could close unrelated modals/drawers the funnel has open.
+  const suggestions = page.locator(".pac-container, [role=listbox]").first();
+  if (await suggestions.isVisible().catch(() => false)) {
+    await input.press("Escape").catch(() => {});
+  }
+  await city.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
 }
 
 async function closeAddressAutocomplete(page) {
@@ -2395,6 +2466,8 @@ function extractReceiptLines(order) {
     title: line.product_title || line.title || line.name || null,
     quantity: Number(line.quantity || 0),
     is_upsell: Boolean(line.is_upsell),
+    price_incl_tax: line.price_incl_tax ?? null,
+    price_excl_tax: line.price_excl_tax ?? null,
     price: line.price_incl_tax || line.price_excl_tax || line.price || null,
     sku: line.product_sku || line.sku || null,
     product_id: line.product_id ?? null,
@@ -2729,4 +2802,5 @@ export const __qaBrowserTestHooks = Object.freeze({
   placeholderTextResidueAssertion,
   demoAssetResidueAssertion,
   testOrderAssertion,
+  extractReceiptLines,
 });

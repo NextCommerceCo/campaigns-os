@@ -8,6 +8,8 @@ import { evaluateThemeGate } from "./theme-gate.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
+import { loadParityFixture } from "./qa-parity-fixture.mjs";
+import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
@@ -15,6 +17,7 @@ const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
 const HELP = `campaigns-os qa — Node/npm spec-aware QA
 
 Usage:
+  campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--json]
   campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--no-remit] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
@@ -23,6 +26,10 @@ Usage:
   campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
 
 Options:
+  --fixture <path>                Parity-capture fixture (required by qa parity).
+  --scenario <id|offer>           Fixture scenario_id or unique offer selector (required by qa parity).
+  --baseline <url>                Optional live analytics baseline for qa parity.
+  --parity-order-json <path>      Assessment-only saved order + analytics capture bundle; skips Playwright.
   --packet <path>                 Read Map ID, local CampaignSpec, deploy URL, and QA metadata from a Build Packet.
   --site <path>                   L7 non-packet QA: resolve scope (pages + funnel types) from a built page-kit _site/.
                                   Requires --base-url and --family. No Map ID / CampaignSpec needed.
@@ -93,6 +100,12 @@ export async function runQaCli(args) {
   }
   if (subcommand === "run") {
     const result = await runQa(args);
+    output(result, args);
+    process.exitCode = result.verdict.disposition === "blocked" ? 4 : 0;
+    return result;
+  }
+  if (subcommand === "parity") {
+    const result = await runParityQa(args);
     output(result, args);
     process.exitCode = result.verdict.disposition === "blocked" ? 4 : 0;
     return result;
@@ -633,7 +646,85 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze([
   "browser-test-order",
   "analytics-correctness",
   "analytics-parity",
+  "parity-capture",
 ]);
+
+function parityReplayEvidence(bundle) {
+  const order = bundle?.order || bundle?.orders?.[0] || null;
+  const capture = bundle?.capture || bundle?.candidate_capture || bundle?.captures?.candidate || null;
+  const baselineCapture = bundle?.baseline_capture || bundle?.baselineCapture || bundle?.captures?.baseline || null;
+  if (!order || !capture) {
+    throw new Error("--parity-order-json must contain order + capture evidence (or orders[0] + captures.candidate).");
+  }
+  return { order, capture, baselineCapture, orders: Array.isArray(bundle.orders) ? bundle.orders : [order] };
+}
+
+async function runParityQa(args) {
+  const fixturePath = stringArg(args.fixture);
+  const scenarioId = stringArg(args.scenario) || stringArg(args._[2]);
+  if (!fixturePath) throw new Error("QA parity requires --fixture <parity-fixture.json>.");
+  if (!scenarioId) throw new Error("QA parity requires --scenario <scenario-id>.");
+
+  const fixture = await loadParityFixture(resolve(fixturePath));
+  const scenario = resolveParityScenario(fixture, scenarioId);
+  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]) || fixture.candidate_base_url);
+  const startedAt = new Date().toISOString();
+  const runId = generateRunId();
+  let result;
+
+  if (stringArg(args["parity-order-json"])) {
+    const replay = parityReplayEvidence(readJson(resolve(args["parity-order-json"])));
+    result = {
+      assertions: assessParityCapture({
+        fixture,
+        scenario,
+        order: replay.order,
+        capture: replay.capture,
+        baselineCapture: replay.baselineCapture,
+      }),
+      orders: replay.orders,
+      captures: { candidate: replay.capture, ...(replay.baselineCapture ? { baseline: replay.baselineCapture } : {}) },
+    };
+  } else {
+    result = await runParityCapture({ fixture, scenarioId, args: { ...args, "base-url": baseUrl, run_id: runId } });
+    // Persist the live evidence bundle beside the verdict: replay runs
+    // (--parity-order-json) and negative controls assess the exact same
+    // order + capture the live traversal produced.
+    const bundleDir = join(resolve(args["output-dir"] || "qa-output"), fixture.campaign.slug);
+    mkdirSync(bundleDir, { recursive: true });
+    writeJson(join(bundleDir, `${runId}.parity-bundle.json`), {
+      scenario_id: scenario.scenario_id,
+      // Both shapes on purpose: `order` is the assessed primary,
+      // `orders` mirrors the in-memory result so bundle readers and
+      // parityReplayEvidence see the same array shape as the live run.
+      order: result.orders[0] || null,
+      orders: result.orders,
+      capture: result.captures?.candidate || null,
+      ...(result.captures?.baseline ? { baseline_capture: result.captures.baseline } : {}),
+    });
+  }
+
+  const page = { page_id: "parity", page_type: "checkout", url: baseUrl };
+  const resolved = {
+    themeGate: { status: "not_applicable", code: "theme_gate.not_applicable", reason: "Parity capture is fixture-driven." },
+    polishGate: { status: "not_applicable", code: "polish.not_applicable", reason: "Parity capture is fixture-driven." },
+    mapId: fixture.campaign.slug,
+    proxyBase: stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE,
+    baseUrl,
+    spec: { campaign: { ref_id: String(scenario.shadow_campaign_id) } },
+    specVersion: `parity-fixture-${fixture.schema_version}`,
+    specHash: computeSpecHash(fixture),
+    topologies: [{ topology_id: `parity-${scenario.scenario_id}`, pages: [page] }],
+  };
+  return finalizeQaRun({
+    args,
+    resolved,
+    runId,
+    startedAt,
+    assertions: result.assertions,
+    testOrders: result.orders,
+  });
+}
 
 async function runQa(args) {
   const resolved = await resolveQaInputs(args);

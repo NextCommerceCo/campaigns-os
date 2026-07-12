@@ -211,6 +211,72 @@ traversal, persisted-order price verification, receipt-context analytics, and
 independent order readback, see
 [SDK 0.4 Migration Proof Case Study](sdk04-migration-proof-case-study.md).
 
+## Parity capture (fixture-driven migration proof)
+
+Parity capture codifies the migration **PARITY-QA** leg: one declared offer is
+driven through the candidate funnel by a typed-card test order while analytics
+are captured across the checkout and post-purchase navigation. The persisted
+order and client event stream are then assessed against a versioned fixture
+corpus.
+
+Run the live candidate traversal with a fixture scenario. A legacy analytics
+baseline is optional; add `--baseline` when the migration cell requires a
+candidate-vs-baseline diff:
+
+```bash
+npm run campaigns-os -- qa parity \
+  --fixture fixtures/parity/heyshape-snatched-sdk04.json \
+  --scenario root-thong-oto50 \
+  --base-url https://preview.example.com/campaign/ \
+  --baseline https://legacy.example.com/campaign/ \
+  --no-post-verdict
+```
+
+Every live run writes
+`qa-output/<campaign-slug>/<runId>.parity-bundle.json` beside the verdict. The
+bundle contains the order readback, candidate analytics capture, and optional
+baseline capture. Replay that exact evidence without Playwright:
+
+```bash
+npm run campaigns-os -- qa parity \
+  --fixture fixtures/parity/heyshape-snatched-sdk04.json \
+  --scenario root-thong-oto50 \
+  --parity-order-json qa-output/heyshape-snatched/<runId>.parity-bundle.json \
+  --no-post-verdict
+```
+
+The required negative control is a copy of the bundle doctored to restore the
+dropped-voucher line total. It must fail the persisted-line blocker:
+
+```bash
+npm run campaigns-os -- qa parity \
+  --fixture fixtures/parity/heyshape-snatched-sdk04.json \
+  --scenario root-thong-oto50 \
+  --parity-order-json qa-output/heyshape-snatched/<runId>.dropped-voucher.parity-bundle.json \
+  --no-post-verdict
+```
+
+**A harness that cannot fail the bug it guards is not proven.** Preserve the
+passing replay and the dropped-voucher failing replay as paired migration
+evidence.
+
+Fixture essentials:
+
+- `scenarios` declares the selectable regression cases; live capture accepts a
+  `funnel_offer` scenario.
+- `checkout_path` and `upsell_route` bind the typed-card traversal to the exact
+  candidate surfaces.
+- `expected_order_readback.line_item.price_field` names the persisted field to
+  assess; do not infer a different price field at runtime.
+- `expected_purchase.value` may be `null`: the named client event must still
+  carry a finite value, while the offer amount is proven by persisted-line
+  readback.
+- `analytics_contract` declares the expected providers and events so missing
+  analytics gate at blocker severity instead of the no-contract INFO path.
+- Credentials are never fixture data. Credential lint permits environment-name
+  indirection such as `api_key_env: "QA_CAMPAIGNS_API_KEY"`; literal keys,
+  tokens, passwords, and other credential values are rejected.
+
 ## Test Orders
 
 Test Orders use **global test cards** that work on any live store and integration.

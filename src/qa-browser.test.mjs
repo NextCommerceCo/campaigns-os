@@ -3,6 +3,25 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
+test("receipt evidence preserves raw declared price fields", () => {
+  const { extractReceiptLines } = __qaBrowserTestHooks;
+  const [line] = extractReceiptLines({ lines: [{
+    product_title: "Fixture",
+    quantity: 1,
+    price_incl_tax: 45,
+    price_excl_tax: 40,
+  }] });
+
+  assert.equal(line.price_incl_tax, 45);
+  assert.equal(line.price_excl_tax, 40);
+  assert.equal(line.price, 45);
+
+  const [missing] = extractReceiptLines({ lines: [{ product_title: "Fixture", quantity: 1, price: 45 }] });
+  assert.equal(missing.price_incl_tax, null);
+  assert.equal(missing.price_excl_tax, null);
+  assert.equal(missing.price, 45);
+});
+
 test("order upsell response matcher accepts query strings", () => {
   const { isOrderUpsellsUrl } = __qaBrowserTestHooks;
 

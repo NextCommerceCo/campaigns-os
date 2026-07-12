@@ -289,7 +289,7 @@ test("GATE_SUPPRESSED_FAMILIES matches the families the QA runner actually emits
   // list (or vice versa) fails here instead of silently changing the
   // gate-blocked verdict shape.
   const emitted = new Set();
-  for (const module of ["./qa-node.mjs", "./qa-browser.mjs"]) {
+  for (const module of ["./qa-node.mjs", "./qa-browser.mjs", "./qa-parity-capture.mjs"]) {
     const source = readFileSync(fileURLToPath(new URL(module, import.meta.url)), "utf8");
     for (const match of source.matchAll(/family:\s*"([a-z_-]+)"/g)) emitted.add(match[1]);
   }
