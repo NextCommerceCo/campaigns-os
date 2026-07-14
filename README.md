@@ -164,5 +164,5 @@ automatically by the `add-to-project` workflow.
 Before starting work on an issue: check it is not assigned to someone else,
 assign yourself (`gh issue edit <n> --add-assignee @me`), and move the card to
 In Progress. Open PRs with `Closes #<n>` so the card moves to Done on merge.
-Full conventions: `docs/agents/project-board.md` in the `next-mind` repo; the
-`/next-board` skill wraps board operations.
+Contributors have a `/next-board` skill that wraps these board operations
+(status, claim, move, create).
