@@ -153,3 +153,16 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 Developer preview. Build output still needs the normal proof gates: build/lint evidence, polish, preview deploy or local dev URL, Playwright browser QA, and typed-card test-order proof via `--test-order common` (global test cards bypass the gateway and create no transactions; no approval needed — depth is the only control). Localhost on any port is a Campaigns App Development domain, so SDK calls are allowed and analytics are suppressed there; non-localhost preview/production origins still need SDK origin allowlist confirmation.
 
 Launch readiness is separate from Campaigns OS proof. Before real shoppers see a campaign, confirm the production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration.
+
+## Issue tracking
+
+Work in this repo is tracked with GitHub Issues and coordinated on the
+org-level **[Operations](https://github.com/orgs/NextCommerceCo/projects/10)**
+Kanban board (Todo / In Progress / Done). New issues are added to the board
+automatically by the `add-to-project` workflow.
+
+Before starting work on an issue: check it is not assigned to someone else,
+assign yourself (`gh issue edit <n> --add-assignee @me`), and move the card to
+In Progress. Open PRs with `Closes #<n>`; when the issue closes on merge, the board's built-in "Item closed" automation moves the card to Done.
+Contributors have a `/next-board` skill that wraps these board operations
+(status, claim, move, create).
