@@ -163,6 +163,6 @@ automatically by the `add-to-project` workflow.
 
 Before starting work on an issue: check it is not assigned to someone else,
 assign yourself (`gh issue edit <n> --add-assignee @me`), and move the card to
-In Progress. Open PRs with `Closes #<n>` so the card moves to Done on merge.
+In Progress. Open PRs with `Closes #<n>`; when the issue closes on merge, the board's built-in "Item closed" automation moves the card to Done.
 Contributors have a `/next-board` skill that wraps these board operations
 (status, claim, move, create).
