@@ -1,44 +1,44 @@
 {
   "schema_version": "1",
   "campaign": {
-    "name": "HeyShape Snatched",
-    "slug": "heyshape-snatched",
+    "name": "Example SDK 0.4 Offers",
+    "slug": "example-sdk04-offers",
     "shadow_campaign_ids": {
-      "root": 1712,
-      "v1": 1714
+      "root": 1001,
+      "v1": 1002
     }
   },
-  "candidate_base_url": "https://deploy-preview-34--heyshape.netlify.app/snatchedbodysuit",
+  "candidate_base_url": "https://preview.example.test/campaign",
   "sdk_version": "0.4.30",
-  "gtm_container_id": "GTM-PWBWV4P7",
+  "gtm_container_id": "GTM-EXAMPLE1",
   "api_key_env": "QA_CAMPAIGNS_API_KEY",
   "voucher_codes": [
-    "SNATCHED_BODYSUIT_OTO20",
-    "SNATCHED_THONG_OTO50"
+    "EXAMPLE_UPSELL20",
+    "EXAMPLE_UPSELL50"
   ],
   "scenarios": [
     {
-      "scenario_id": "root-thong-oto50",
+      "scenario_id": "root-accessory-oto50",
       "scenario_type": "funnel_offer",
       "shadow_campaign": "root",
-      "shadow_campaign_id": 1712,
-      "offer": "thong-oto50",
+      "shadow_campaign_id": 1001,
+      "offer": "accessory-oto50",
       "checkout_path": "checkout.html",
-      "upsell_route": "oto-snatch-thong.html",
+      "upsell_route": "oto-accessory.html",
       "funnel_path": "accept",
-      "voucher_code": "SNATCHED_THONG_OTO50",
+      "voucher_code": "EXAMPLE_UPSELL50",
       "currency": "USD",
       "expected_order_readback": {
         "line_item": {
-          "title": "Snatched Thong Bodysuit",
+          "title": "Example Accessory",
           "quantity": 2,
           "is_upsell": true,
           "price_field": "price_incl_tax",
-          "base_unit_price": 45.00,
-          "base_subtotal": 90.00,
-          "discount_amount": 45.00,
-          "expected_line_total": 45.00,
-          "dropped_voucher_line_total": 90.00
+          "base_unit_price": 25.00,
+          "base_subtotal": 50.00,
+          "discount_amount": 25.00,
+          "expected_line_total": 25.00,
+          "dropped_voucher_line_total": 50.00
         }
       },
       "expected_purchase": {
@@ -48,26 +48,26 @@
       }
     },
     {
-      "scenario_id": "v1-bodysuit-oto20",
+      "scenario_id": "v1-base-product-oto20",
       "scenario_type": "funnel_offer",
       "shadow_campaign": "v1",
-      "shadow_campaign_id": 1714,
-      "offer": "bodysuit-oto20",
+      "shadow_campaign_id": 1002,
+      "offer": "base-product-oto20",
       "checkout_path": "v1/checkout.html",
-      "upsell_route": "v1/oto-snatch-bodysuit.html",
+      "upsell_route": "v1/oto-base-product.html",
       "funnel_path": "accept",
-      "voucher_code": "SNATCHED_BODYSUIT_OTO20",
+      "voucher_code": "EXAMPLE_UPSELL20",
       "currency": "USD",
       "expected_order_readback": {
         "line_item": {
-          "title": "Snatched Shapewear Bodysuit",
+          "title": "Example Base Product",
           "quantity": 1,
           "is_upsell": true,
           "price_field": "price_incl_tax",
-          "base_unit_price": 29.99,
-          "base_subtotal": 29.99,
-          "discount_amount": 6.00,
-          "expected_line_total": 23.99
+          "base_unit_price": 20.00,
+          "base_subtotal": 20.00,
+          "discount_amount": 4.00,
+          "expected_line_total": 16.00
         }
       },
       "expected_purchase": {
@@ -77,24 +77,24 @@
       }
     },
     {
-      "scenario_id": "v1-bodysuit-quantity-ladder",
+      "scenario_id": "v1-base-product-quantity-ladder",
       "scenario_type": "pricing_ladder",
       "shadow_campaign": "v1",
-      "shadow_campaign_id": 1714,
-      "offer": "bodysuit-oto20",
+      "shadow_campaign_id": 1002,
+      "offer": "base-product-oto20",
       "currency": "USD",
       "expected_pricing": [
         {
           "quantity": 1,
-          "expected_total": 29.99
+          "expected_total": 20.00
         },
         {
           "quantity": 2,
-          "expected_total": 53.98
+          "expected_total": 36.00
         },
         {
           "quantity": 3,
-          "expected_total": 71.97
+          "expected_total": 48.00
         }
       ]
     }
@@ -104,7 +104,7 @@
     "purchase_expected": true,
     "candidate_inventory": {
       "gtm": [
-        "GTM-PWBWV4P7"
+        "GTM-EXAMPLE1"
       ]
     }
   },
@@ -113,7 +113,7 @@
     "providers": {
       "gtm": {
         "enabled": true,
-        "containerId": "GTM-PWBWV4P7"
+        "containerId": "GTM-EXAMPLE1"
       }
     },
     "manual_events": [

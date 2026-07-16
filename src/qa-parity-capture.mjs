@@ -63,7 +63,7 @@ function matchingPersistedLines(order, expectedLine) {
   return persistedLines(order).filter((line) => {
     const title = String(line?.title || line?.name || "").trim().toLowerCase();
     // Persisted lines append the variant to the product title
-    // ("Snatched Thong Bodysuit - Brown / S"), so the fixture's product title
+    // ("Example Accessory - Blue / S"), so the fixture's product title
     // matches exact-or-prefix; quantity + is_upsell stay exact.
     const titleMatches = title === expectedTitle || title.startsWith(`${expectedTitle} -`);
     return titleMatches
@@ -141,7 +141,7 @@ function observedUpsellRoute(order, expectedRoute) {
 
 function routePathMatches(observed, expected) {
   if (!expected) return true;
-  // Hosts serve pretty URLs ("/snatchedbodysuit/oto-snatch-thong") for fixture
+  // Hosts may serve pretty URLs ("/campaign/oto-accessory") for fixture
   // routes authored as files ("oto-snatch-thong.html"), and the observed URL
   // carries the deploy prefix — so compare .html-stripped paths suffix-wise.
   const normalize = (value) => {

@@ -225,8 +225,8 @@ candidate-vs-baseline diff:
 
 ```bash
 npm run campaigns-os -- qa parity \
-  --fixture fixtures/parity/heyshape-snatched-sdk04.json \
-  --scenario root-thong-oto50 \
+  --fixture fixtures/parity/example-sdk04-offers.json \
+  --scenario root-accessory-oto50 \
   --base-url https://preview.example.com/campaign/ \
   --baseline https://legacy.example.com/campaign/ \
   --no-post-verdict
@@ -239,9 +239,9 @@ baseline capture. Replay that exact evidence without Playwright:
 
 ```bash
 npm run campaigns-os -- qa parity \
-  --fixture fixtures/parity/heyshape-snatched-sdk04.json \
-  --scenario root-thong-oto50 \
-  --parity-order-json qa-output/heyshape-snatched/<runId>.parity-bundle.json \
+  --fixture fixtures/parity/example-sdk04-offers.json \
+  --scenario root-accessory-oto50 \
+  --parity-order-json qa-output/example-sdk04-offers/<runId>.parity-bundle.json \
   --no-post-verdict
 ```
 
@@ -250,9 +250,9 @@ dropped-voucher line total. It must fail the persisted-line blocker:
 
 ```bash
 npm run campaigns-os -- qa parity \
-  --fixture fixtures/parity/heyshape-snatched-sdk04.json \
-  --scenario root-thong-oto50 \
-  --parity-order-json qa-output/heyshape-snatched/<runId>.dropped-voucher.parity-bundle.json \
+  --fixture fixtures/parity/example-sdk04-offers.json \
+  --scenario root-accessory-oto50 \
+  --parity-order-json qa-output/example-sdk04-offers/<runId>.dropped-voucher.parity-bundle.json \
   --no-post-verdict
 ```
 
