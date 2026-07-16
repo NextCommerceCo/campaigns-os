@@ -142,7 +142,7 @@ function observedUpsellRoute(order, expectedRoute) {
 function routePathMatches(observed, expected) {
   if (!expected) return true;
   // Hosts may serve pretty URLs ("/campaign/oto-accessory") for fixture
-  // routes authored as files ("oto-snatch-thong.html"), and the observed URL
+  // routes authored as files ("oto-accessory.html"), and the observed URL
   // carries the deploy prefix — so compare .html-stripped paths suffix-wise.
   const normalize = (value) => {
     const path = new URL(value, "https://parity.invalid/").pathname

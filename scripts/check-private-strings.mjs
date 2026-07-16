@@ -101,11 +101,22 @@ function walk(dir) {
           if (!synthetic.test(fixture?.campaign?.slug ?? "")) {
             hits.push(`${rel}: parity campaign.slug must be visibly synthetic`);
           }
-          const hostname = new URL(fixture?.candidate_base_url).hostname;
-          if (!(hostname === "example.com" || hostname.endsWith(".example.com") || hostname.endsWith(".test"))) {
+          let hostname = null;
+          try {
+            hostname = new URL(fixture?.candidate_base_url).hostname;
+          } catch {
+            hits.push(`${rel}: parity candidate_base_url must be a valid example/test URL`);
+          }
+          if (
+            hostname !== null &&
+            !(hostname === "example.com" || hostname.endsWith(".example.com") || hostname.endsWith(".test"))
+          ) {
             hits.push(`${rel}: parity candidate_base_url must use an example/test host`);
           }
-          if (fixture?.gtm_container_id && !synthetic.test(fixture.gtm_container_id.replace(/^GTM-/, ""))) {
+          if (
+            fixture?.gtm_container_id &&
+            !(/^GTM-/.test(fixture.gtm_container_id) && synthetic.test(fixture.gtm_container_id.replace(/^GTM-/, "")))
+          ) {
             hits.push(`${rel}: parity gtm_container_id must be visibly synthetic`);
           }
         } catch {
