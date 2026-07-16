@@ -1,0 +1,44 @@
+{
+  "schema_version": "campaign-cart-checkout-field-contract/v0",
+  "provenance": {
+    "source": "NextCommerceCo/campaign-cart src/enhancers/checkout (constants/field-mappings.ts, constants/selectors.ts)",
+    "sdk_version": "0.4.30",
+    "captured_at": "2026-07-16"
+  },
+  "binding_attributes": ["data-next-checkout-field", "os-checkout-field"],
+  "canonical_fields": [
+    "email",
+    "phone",
+    "fname",
+    "lname",
+    "address1",
+    "address2",
+    "city",
+    "province",
+    "postal",
+    "country",
+    "cc-number",
+    "cc-month",
+    "cc-year",
+    "cvv",
+    "cc-name",
+    "coupon",
+    "payment-method"
+  ],
+  "accepted_aliases": {
+    "exp-month": "cc-month",
+    "exp-year": "cc-year"
+  },
+  "prefixes": ["billing-"],
+  "stale_aliases": {
+    "state": "province",
+    "region": "province",
+    "postal_code": "postal",
+    "zip": "postal",
+    "postcode": "postal",
+    "town": "city",
+    "first_name": "fname",
+    "last_name": "lname",
+    "street": "address1"
+  }
+}

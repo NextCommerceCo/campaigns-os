@@ -1,0 +1,11 @@
+{
+  "schema_version": "campaign-cart-sdk-support-policy/v0",
+  "provenance": {
+    "source": "NextCommerceCo/campaign-cart release tags",
+    "latest_known_release": "0.4.30",
+    "captured_at": "2026-07-16"
+  },
+  "source": "contracts/campaign-cart-sdk-support-policy.v0.json",
+  "minimum_supported": "0.4.20",
+  "preferred_minimum": "0.4.30"
+}

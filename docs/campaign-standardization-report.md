@@ -1,12 +1,32 @@
 # Campaign Standardization Report
 
-The Campaign Standardization Report is a read-only repo audit for modern CPK
-campaigns. It inventories source structure, Campaign Cart SDK version, Page Kit
-dependency version, Campaigns OS artifact presence, built output, and the next
-safe remediation category without editing the target campaign repo.
+The Campaign Standardization Report is a read-only audit for campaign
+repositories across the campaign ecosystem. It discovers campaign roots,
+classifies each root's implementation, inventories source structure and
+runtime contracts, validates checkout field bindings and SDK loader versions
+against contracts, and names the next safe remediation category without
+editing the target repo.
 
-Run it against either a Page Kit root or a parent `*-cpk` repo that may contain
-one or more Page Kit roots:
+Two implementation kinds are recognized:
+
+- `page_kit` — modern CPK roots (`_data/campaigns.json` or a
+  `next-campaign-page-kit` dependency). Existing sections and finding codes
+  are unchanged.
+- `campaign_cart_app` — non-Page-Kit applications (Vite/React/Express apps,
+  static HTML funnels) detected through portable Campaign Cart evidence: the
+  loader script URL, `meta[name="next-campaign-id"]`, `window.nextConfig`, or
+  a sufficient density of `data-next-*` anchors. Evidence is rolled up to the
+  nearest `package.json` boundary; one strong signal (or ≥5 weak anchors)
+  classifies the root. Directories already claimed as Page Kit roots are never
+  double-claimed, and a parent repo may contain both kinds side by side.
+
+Every root carries `implementation` (`kind`, `evidence`, `frameworks`) and
+`capabilities` — the inspections that ran for that root. Composition is
+capability-based rather than a repository-type switch (see
+`campaign-ecosystem-standardization-design.md`).
+
+Run it against a Page Kit root, a parent `*-cpk` repo, or any campaign
+application checkout:
 
 ```bash
 campaigns-os standardize --target /path/to/example-cpk --json
@@ -48,7 +68,42 @@ Top-level shape:
 }
 ```
 
-Each root contains these sections:
+### Campaign Cart application roots
+
+`campaign_cart_app` roots contain: `implementation`, `capabilities`,
+`identity` (campaign IDs, loader-discovered SDK versions, runtime artifact
+presence), `sdk_loader` (each loader reference with path/line/URL/version),
+`version_policy` (policy source + per-version evaluations, separate from
+version discovery), `checkout_fields` (every
+`data-next-checkout-field`/`os-checkout-field` binding classified as
+`supported`, `stale_alias`, or `unknown` against
+`contracts/campaign-cart-checkout-field-contract.v0.json`), `payment`
+(SDK `payment_method` radios, hidden radios, custom triggers, synchronization
+script evidence, and `proof_state`), `runtime_contract`, `findings`, and
+`remediation`.
+
+Ecosystem findings carry a `confidence` field:
+
+- `static_contract` — provable from source against a named contract (stale
+  field aliases, SDK version below policy). Safe repair targets.
+- `static_inference` — heuristic source evidence. Informs risk only.
+- `runtime_proof_required` — behavior only a DOM/browser test can confirm
+  (custom payment controls driving the real radios). Reported as *missing
+  proof*, explicitly not a confirmed failure.
+
+The SDK support policy lives in
+`contracts/campaign-cart-sdk-support-policy.v0.json` and is injectable per run
+via `createStandardizationReport({ sdkSupportPolicy })`; the field contract is
+similarly injectable via `fieldContract`. "Latest" is never frozen into
+scanner code.
+
+When no root of either kind is detected, the report carries a single
+`campaign.root_not_found` error (this replaced the earlier
+`page_kit.root_not_found` code when ecosystem detection landed).
+
+### Page Kit root sections
+
+Each Page Kit root contains these sections:
 
 - `identity`: repo name, Page Kit root, slug inventory, SDK versions, Page Kit
   dependency, template family evidence, Campaigns OS artifact presence, and
@@ -105,3 +160,22 @@ leaving private operational workflow outside the public package.
 - Add repo-set orchestration in an internal campaign-ops wrapper for private
   sample sets and follow-up generation.
 - Add waiver support for intentional one-off template deviations.
+
+## Ecosystem Follow-Up Backlog
+
+- Packetless `qa resolve/run` for existing funnels, keyed off the
+  standardization report, to convert `runtime_proof_required` payment findings
+  into behavioral proof (deterministic DOM test of custom controls driving
+  `input[name="payment_method"]`).
+- Deployed-URL-only assessment (no source checkout).
+- Origin/environment diagnosis as operator readiness: SDK origin allowlist
+  rejection (CORS) must be classified as merchant/environment configuration,
+  never conflated with an application integration defect.
+- Additional adapters: source-only exports, legacy CampaignsJS funnels,
+  CampaignSpec/Build Packet cross-checking for campaigns that carry full
+  Campaigns OS evidence.
+- Unify the Page Kit `campaigns.json` SDK cutoff onto the SDK support policy
+  contract (currently the legacy hardcoded cutoff is preserved for
+  compatibility).
+- Provenance refresh script for the field/policy contracts, mirroring the
+  starter-template catalog refresh.

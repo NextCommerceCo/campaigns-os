@@ -258,8 +258,8 @@ Usage:
                      [--allow-uncertified-template "<reason>"] [--no-run-session]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
-  campaigns-os standardize --target <page-kit-repo-or-cpk-repo> [--family <family>] [--slug <slug>] [--no-doctor] [--json]
-  campaigns-os standardization-report --target <page-kit-repo-or-cpk-repo> [--family <family>] [--slug <slug>] [--no-doctor] [--json]   # alias for standardize
+  campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--no-doctor] [--json]
+  campaigns-os standardization-report --target <campaign-repo> [--family <family>] [--slug <slug>] [--no-doctor] [--json]   # alias for standardize
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
@@ -1738,7 +1738,7 @@ export function doctorBuiltOutput(args) {
 function standardizationReportCommand(args) {
   const target = optionalString(args.target);
   if (!target) {
-    throw new Error("standardize requires --target <page-kit-repo-or-cpk-repo>.");
+    throw new Error("standardize requires --target <campaign-repo> (a Page Kit root, a parent repo, or a Campaign Cart application checkout).");
   }
   const family = optionalString(args.family) || optionalString(args["template-family"]);
   const slug = optionalString(args.slug);
