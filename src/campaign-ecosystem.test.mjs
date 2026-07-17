@@ -145,6 +145,28 @@ function writePageKitFixture(root) {
 `);
 }
 
+function writeBundledSdkAppFixture(root, { sdkVersion = "0.4.30" } = {}) {
+  write(join(root, "package.json"), JSON.stringify({
+    name: "bundled-funnel-app",
+    type: "module",
+    dependencies: { "campaign-cart": `^${sdkVersion}`, react: "^18.3.0" },
+    devDependencies: { vite: "^5.4.0" },
+  }, null, 2));
+  write(join(root, "src", "main.js"), 'import { CampaignCart } from "campaign-cart";\nCampaignCart.init();\n');
+  write(join(root, "public", "checkout", "index.html"), `<!doctype html>
+<html>
+<head><meta name="next-campaign-id" content="4321"></head>
+<body>
+  <form>
+    <input data-next-checkout-field="email">
+    <input data-next-checkout-field="fname">
+    <select data-next-checkout-field="province"></select>
+    <input data-next-checkout-field="postal">
+  </form>
+</body></html>
+`);
+}
+
 const codes = (root) => root.findings.map((finding) => finding.code);
 const findingByCode = (root, code) => root.findings.find((finding) => finding.code === code);
 
@@ -449,6 +471,157 @@ test("scanning does not mutate the target repository", () => {
     const before = snapshot(dir);
     createStandardizationReport({ targetRepo: dir });
     assert.deepEqual(snapshot(dir), before);
+  });
+});
+
+test("an unclosed HTML comment masks its stale tail through EOF", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.30", provinceField: "province", postalField: "postal" });
+    // A truncated/corrupt file: the comment opens but never closes. Everything
+    // from `<!--` to EOF must be masked, or the stale tail reintroduces
+    // findings the active markup above it does not have.
+    write(join(dir, "client", "public", "checkout", "index.html"), `${checkoutHtml({
+      sdkVersion: "0.4.30",
+      provinceField: "province",
+      postalField: "postal",
+    })}
+<!-- truncated legacy tail with no closing marker
+  <input data-next-checkout-field="state">
+  <input data-next-checkout-field="postal_code">
+  <input type="radio" name="payment_method" value="legacy" style="display:none;">
+  <script>radio.dispatchEvent(new Event("change")); // payment_method</script>
+`);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    assert.equal(root.checkout_fields.unsupported.length, 0);
+    assert.equal(root.payment.synchronization_script.detected, false);
+    assert.ok(!root.checkout_fields.bindings.some((entry) => entry.value === "state"));
+    assert.ok(!codes(root).includes("checkout.unsupported_field_binding"));
+  });
+});
+
+test("a wired sync handler is detected even when tokens are >600 chars apart in one script", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.30", provinceField: "province", postalField: "postal", paymentSyncScript: true });
+    const filler = Array.from({ length: 40 }, (_, i) =>
+      `    const step${i} = computeStep(${i}); // intermediate handler logic keeps the body long`).join("\n");
+    const scriptPath = join(dir, "client", "public", "checkout", "payment-methods.js");
+    write(scriptPath, `(function () {
+  document.querySelectorAll("[data-pay]").forEach(function (trigger) {
+    trigger.addEventListener("click", function () {
+      var radio = document.querySelector('input[name="payment_method"]');
+${filler}
+      radio.checked = true;
+      radio.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+})();
+`);
+    const body = readFileSync(scriptPath, "utf8");
+    const gap = body.indexOf("dispatchEvent") - body.indexOf("payment_method");
+    assert.ok(gap > 600, `expected the tokens >600 chars apart, got ${gap}`);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    assert.equal(root.payment.synchronization_script.detected, true);
+  });
+});
+
+test("an unrelated dispatchEvent far from a markup payment_method is not sync evidence", () => {
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({ name: "markup-only-funnel" }, null, 2));
+    const filler = "x".repeat(1200);
+    write(join(dir, "index.html"), `<!doctype html>
+<html><head>
+  <meta name="next-campaign-id" content="9001">
+</head><body>
+  <form>
+    <input data-next-checkout-field="email">
+    <input type="radio" name="payment_method" value="credit">
+    <input type="radio" name="payment_method" value="paypal">
+  </form>
+  <div class="analytics-a">${filler}</div>
+  <div class="analytics-b">${filler}</div>
+  <script>
+    // unrelated analytics far below the payment markup
+    window.analytics.dispatchEvent(new Event("pageview"));
+  </script>
+</body></html>
+`);
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    assert.equal(root.payment.synchronization_script.detected, false);
+    assert.equal(root.payment.proof_state, "undetermined");
+  });
+});
+
+test("bundled SDK dependency suppresses sdk_version_unknown and feeds version policy", () => {
+  withTempDir((dir) => {
+    writeBundledSdkAppFixture(dir, { sdkVersion: "0.4.30" });
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+
+    assert.equal(root.implementation.kind, "campaign_cart_app");
+    assert.equal(root.sdk_loader.references.length, 0);
+    assert.ok(!codes(root).includes("version.sdk_version_unknown"));
+    assert.equal(root.sdk_loader.bundled_dependency.name, "campaign-cart");
+    assert.equal(root.sdk_loader.bundled_dependency.resolved_version, "0.4.30");
+
+    assert.equal(root.version_policy.evaluations.length, 1);
+    const [evaluation] = root.version_policy.evaluations;
+    assert.equal(evaluation.version, "0.4.30");
+    assert.equal(evaluation.source, "bundled_dependency");
+    assert.equal(evaluation.meets_minimum, true);
+    assert.equal(evaluation.meets_preferred, true);
+  });
+});
+
+test("a bundled SDK pin below policy is evaluated and blocks, not a version-unknown gap", () => {
+  withTempDir((dir) => {
+    writeBundledSdkAppFixture(dir, { sdkVersion: "0.4.10" });
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+
+    assert.ok(!codes(root).includes("version.sdk_version_unknown"));
+    assert.ok(codes(root).includes("version.sdk_below_minimum_supported"));
+    assert.equal(root.version_policy.evaluations[0].source, "bundled_dependency");
+    assert.equal(report.status, "blocked");
+  });
+});
+
+test("generic data-next-* anchors below the weak-anchor cutoff do not classify", () => {
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({ name: "slider-widget" }, null, 2));
+    write(join(dir, "index.html"), `<!doctype html>
+<html><body>
+  <div data-next-step="1"></div>
+  <div data-next-slide="a"></div>
+  <div data-next-step="2"></div>
+  <div data-next-slide="b"></div>
+</body></html>
+`);
+    const report = createStandardizationReport({ targetRepo: dir });
+    assert.equal(report.summary.root_count, 0);
+    assert.equal(report.errors[0].code, "campaign.root_not_found");
+  });
+});
+
+test("five data-next-* anchors reach the documented weak-anchor cutoff and classify", () => {
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({ name: "slider-widget" }, null, 2));
+    write(join(dir, "index.html"), `<!doctype html>
+<html><body>
+  <div data-next-step="1"></div>
+  <div data-next-slide="a"></div>
+  <div data-next-step="2"></div>
+  <div data-next-slide="b"></div>
+  <div data-next-step="3"></div>
+</body></html>
+`);
+    const report = createStandardizationReport({ targetRepo: dir });
+    assert.equal(report.summary.root_count, 1);
+    assert.equal(report.roots[0].implementation.kind, "campaign_cart_app");
   });
 });
 

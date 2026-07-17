@@ -113,6 +113,18 @@ via `createStandardizationReport({ sdkSupportPolicy })`; the field contract is
 similarly injectable via `fieldContract`. "Latest" is never frozen into
 scanner code.
 
+Both are also injectable from the CLI: pass
+`--sdk-support-policy <path-to-json>` and/or `--field-contract <path-to-json>`
+to `standardize`/`standardization-report`. Each file is read and JSON-parsed
+(a missing or unparseable file is a clear, named error) and overrides the
+bundled contract for that run:
+
+```bash
+campaigns-os standardize --target /path/to/example-cpk \
+  --sdk-support-policy ./my-sdk-policy.json \
+  --field-contract ./my-field-contract.json --json
+```
+
 When no root of either kind is detected, the report carries a single
 `campaign.root_not_found` error (this replaced the earlier
 `page_kit.root_not_found` code when ecosystem detection landed).

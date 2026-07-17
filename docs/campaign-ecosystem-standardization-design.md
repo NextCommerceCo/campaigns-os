@@ -62,6 +62,23 @@ switch:
 5. **Runtime/behavioral surfaces** are reported as interaction-risk items that
    require proof, never as static failure claims (see Evidence confidence).
 
+### Weak-anchor classification cutoff
+
+A root classifies on either **one strong signal** (loader/dist URL,
+`next-campaign-id` meta, `window.nextConfig`) **or ≥5 weak `data-next-*`
+anchors**. The strong signals are self-evidently Campaign Cart; the weak-anchor
+path exists only to catch funnels that inline SDK markup without a discoverable
+loader. The cutoff is calibrated so weak anchors *alone* classify only at a
+density implausible for incidental use of a `data-next-*` naming convention:
+generic component libraries and sliders sprinkle a handful of `data-next-step`
+/ `data-next-slide` style hooks, so 1–4 anchors stay unclassified (see the
+negative-control test with 4 generic anchors), while 5+ distinct
+`data-next-*` occurrences on one root is the documented cutoff where the
+convention is almost certainly SDK-owned checkout/upsell/receipt markup. Any
+strong signal bypasses the count entirely, so the cutoff never suppresses a
+genuine Campaign Cart root — it only guards the weak-only path against
+false positives.
+
 ## Evidence confidence
 
 Every ecosystem finding carries a `confidence` field:

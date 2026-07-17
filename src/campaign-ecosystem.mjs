@@ -29,6 +29,19 @@ const NEXT_CONFIG_PATTERN = /window\.nextConfig\s*=/;
 const DATA_NEXT_PATTERN = /\bdata-next-[a-zA-Z0-9_-]+/g;
 const PAYMENT_RADIO_TAG_PATTERN = /<input\b[^>]*name=["']payment_method["'][^>]*>/gi;
 
+// Proximity window for markup-embedded sync evidence: a payment_method
+// reference and the dispatchEvent that fires the change must sit within this
+// many characters of each other. ~600 chars ≈ a typical handler function body,
+// so a realistic handler co-locates both tokens; the rejected alternative —
+// treating any file-level co-occurrence as evidence (an analytics dispatchEvent
+// elsewhere in the file) — would overclaim wiring. Script scopes below
+// PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS are scanned whole (see hasSyncSignals) so
+// a handler longer than this window still counts, while large vendored bundles
+// fall back to proximity and never co-occur their way into a false positive.
+const PAYMENT_SYNC_PROXIMITY_WINDOW_CHARS = 600;
+const PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS = 20000;
+const SCRIPT_BLOCK_PATTERN = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+
 export const CAMPAIGN_CART_APP_CAPABILITIES = [
   "campaign_cart_runtime_inventory",
   "sdk_loader_discovery",
@@ -96,7 +109,7 @@ export function discoverCampaignCartAppRoots(targetRepo, { excludeRoots = [] } =
     if (isHtml) {
       const anchors = content.match(DATA_NEXT_PATTERN) || [];
       if (anchors.length) {
-        signals.push({ signal: "data_next_anchors", strength: "weak", count: anchors.length, detail: `${anchors.length} occurrence(s)` });
+        signals.push({ signal: "data_next_anchors", strength: "weak", count: anchors.length, detail: "data-next anchors" });
       }
     }
     if (!signals.length) continue;
@@ -147,7 +160,21 @@ export function scanCampaignCartAppRoot({
 
   const frameworks = detectFrameworks(root);
   const loader = collectLoaderReferences(root, [...htmlFiles, ...scriptFiles]);
-  const versionPolicy = evaluateVersionPolicy(loader.versions, policy, findings);
+  // Delivery can be a hosted loader URL OR a bundled npm dependency. When the
+  // SDK ships as a dependency there is no loader ref to discover, but the pin
+  // is still a real version signal — record it and feed a resolved semver into
+  // version policy like a discovered version (source-distinguishable below).
+  const bundled = detectBundledSdkDependency(root);
+  loader.bundled_dependency = bundled
+    ? { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version }
+    : null;
+  const versionEntries = [
+    ...loader.versions.map((version) => ({ version, source: "loader" })),
+    ...(bundled?.resolved_version && !loader.versions.includes(bundled.resolved_version)
+      ? [{ version: bundled.resolved_version, source: "bundled_dependency" }]
+      : []),
+  ];
+  const versionPolicy = evaluateVersionPolicy(versionEntries, policy, findings);
   const checkoutFields = inspectCheckoutFields(root, htmlFiles, contract, findings);
   const payment = inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings);
   const dataNext = inspectDataNext(root, htmlFiles);
@@ -166,12 +193,12 @@ export function scanCampaignCartAppRoot({
       next_action: "Pin the loader to an explicit supported version so version policy and QA reproducibility hold.",
     }));
   }
-  if (!loader.references.length) {
+  if (!loader.references.length && !bundled) {
     findings.push(finding({
       severity: "operator_readiness",
       category: "operator_readiness",
       code: "version.sdk_version_unknown",
-      message: "Campaign Cart evidence exists but no loader reference could be discovered from source.",
+      message: "Campaign Cart evidence exists but no loader reference or bundled dependency could be discovered from source.",
       confidence: "static_inference",
       next_action: "Confirm how the SDK is delivered (bundled, self-hosted, or injected) before applying version policy.",
     }));
@@ -212,6 +239,21 @@ export function scanCampaignCartAppRoot({
   };
 }
 
+// Detect a bundled Campaign Cart SDK delivered as an npm dependency. Returns
+// the pin spec plus a resolved semver (extracted from ranges like `^0.4.30`)
+// or null when no such dependency is declared.
+function detectBundledSdkDependency(root) {
+  const pkg = readJson(join(root, "package.json"));
+  const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
+  for (const name of ["campaign-cart", "@nextcommerce/campaign-cart"]) {
+    const spec = deps[name];
+    if (typeof spec !== "string" || !spec.trim()) continue;
+    const semver = spec.match(/(\d+\.\d+\.\d+)/);
+    return { name, version: spec, resolved_version: semver ? semver[1] : null };
+  }
+  return null;
+}
+
 export function detectFrameworks(root) {
   const pkg = readJson(join(root, "package.json"));
   const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
@@ -243,9 +285,10 @@ function collectLoaderReferences(root, files) {
   };
 }
 
-function evaluateVersionPolicy(versions, policy, findings) {
-  const evaluations = versions.map((version) => ({
+function evaluateVersionPolicy(versionEntries, policy, findings) {
+  const evaluations = versionEntries.map(({ version, source }) => ({
     version,
+    source,
     meets_minimum: policy.minimum_supported ? compareVersions(version, policy.minimum_supported) >= 0 : null,
     meets_preferred: policy.preferred_minimum ? compareVersions(version, policy.preferred_minimum) >= 0 : null,
   }));
@@ -386,7 +429,7 @@ function inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings) {
   for (const file of scriptFiles) {
     const content = safeReadText(file);
     if (content === null) continue;
-    if (hasSyncSignals(content)) syncFiles.push(relPath(root, file));
+    if (hasSyncSignals(content, { isScript: true })) syncFiles.push(relPath(root, file));
   }
 
   const customControls = hiddenRadioFiles.length > 0 || customTriggerFiles.length > 0;
@@ -429,14 +472,40 @@ function inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings) {
   };
 }
 
-// Synchronization evidence requires dispatchEvent NEAR a payment_method
-// reference — file-level co-occurrence (an analytics snippet elsewhere in the
-// file) is not evidence that the payment controls are wired.
-function hasSyncSignals(content) {
+// Synchronization evidence requires a dispatchEvent co-located with a
+// payment_method reference. "Co-located" is scoped, not file-global: a real
+// wiring handler keeps both tokens in one handler/script body, so we scan each
+// script scope whole (standalone script files and inline <script> blocks under
+// a size cap) and only fall back to the proximity window for markup-embedded
+// handlers. That keeps a long-but-real handler detectable while an unrelated
+// analytics dispatchEvent far from a markup payment_method never counts.
+function hasSyncSignals(content, { isScript = false } = {}) {
   const text = String(content || "");
+  if (isScript) {
+    if (text.length <= PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS && scopeHasSyncSignals(text)) return true;
+    return proximityHasSyncSignals(text);
+  }
+  for (const match of text.matchAll(SCRIPT_BLOCK_PATTERN)) {
+    const body = match[1] || "";
+    if (body.length <= PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS && scopeHasSyncSignals(body)) return true;
+  }
+  return proximityHasSyncSignals(text);
+}
+
+// Whole-scope co-occurrence: both tokens present anywhere in one script scope.
+function scopeHasSyncSignals(text) {
+  return text.includes("payment_method") && /dispatchEvent\s*\(/.test(text);
+}
+
+// Proximity co-occurrence: a dispatchEvent within the window of a
+// payment_method reference (used for markup outside a single script scope).
+function proximityHasSyncSignals(text) {
   let index = text.indexOf("payment_method");
   while (index !== -1) {
-    const window = text.slice(Math.max(0, index - 600), index + 600);
+    const window = text.slice(
+      Math.max(0, index - PAYMENT_SYNC_PROXIMITY_WINDOW_CHARS),
+      index + PAYMENT_SYNC_PROXIMITY_WINDOW_CHARS,
+    );
     if (/dispatchEvent\s*\(/.test(window)) return true;
     index = text.indexOf("payment_method", index + 1);
   }
@@ -446,7 +515,15 @@ function hasSyncSignals(content) {
 // Blank out HTML comment bodies while preserving offsets/line numbers so
 // commented-out markup never produces bindings, radios, or sync evidence.
 function maskHtmlComments(content) {
-  return String(content || "").replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\r\n]/g, " "));
+  const masked = String(content || "").replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\r\n]/g, " "));
+  // After closed comments are masked, any surviving `<!--` opens a comment
+  // that never closes (truncated/corrupt file). Everything from that opener to
+  // EOF is commented-out, so mask it too — otherwise a stale binding/radio/
+  // loader in the unterminated tail would reintroduce false positives.
+  const openIndex = masked.indexOf("<!--");
+  if (openIndex === -1) return masked;
+  const tail = masked.slice(openIndex).replace(/[^\r\n]/g, " ");
+  return `${masked.slice(0, openIndex)}${tail}`;
 }
 
 function inspectDataNext(root, htmlFiles) {
