@@ -49,13 +49,18 @@ export function createStandardizationReport({
     requestedSlug: normalizeString(slug),
     explicitTemplateFamily: normalizeString(templateFamily),
   }));
-  for (const discovered of discoverCampaignCartAppRoots(target, { excludeRoots: pageKitRootPaths })) {
+  const appRoots = discoverCampaignCartAppRoots(target, { excludeRoots: pageKitRootPaths });
+  for (const discovered of appRoots) {
     const root = scanCampaignCartAppRoot({
       targetRepo: target,
       rootPath: discovered.rootPath,
       evidence: discovered.evidence,
       fieldContract,
       sdkSupportPolicy,
+      excludeRoots: [
+        ...pageKitRootPaths,
+        ...appRoots.map((entry) => entry.rootPath),
+      ],
     });
     finalizeRoot(root);
     roots.push(root);
@@ -93,7 +98,7 @@ export function createStandardizationReport({
 
 export function attachBuiltOutputDoctor(report, rootId, doctorResult) {
   const root = (report?.roots || []).find((entry) => entry.id === rootId);
-  if (!root) return report;
+  if (!root?.built_output) return report;
   root.built_output.doctor = summarizeDoctorResult(doctorResult);
   if (doctorResult?.errors?.length) {
     for (const [index, issue] of doctorResult.errors.entries()) {

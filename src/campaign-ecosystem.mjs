@@ -19,7 +19,11 @@ const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 const SCRIPT_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const MAX_SAMPLE_COUNT = 8;
 
-const LOADER_URL_PATTERN = /https?:\/\/[^"'\s]*campaign-cart@v?(\d+\.\d+\.\d+)[^"'\s]*/g;
+// Any http(s) reference to a campaign-cart artifact, pinned or not. The
+// semver (when pinned) is extracted separately so @latest/@main/commit pins
+// are still discovered — they just can't be evaluated against version policy.
+const LOADER_URL_PATTERN = /https?:\/\/[^"'\s]*campaign-cart@([^"'\s/]+)[^"'\s]*/g;
+const LOADER_ARTIFACT_PATTERN = /\/loader(?:\.min)?\.js\b|\/dist\//;
 const CAMPAIGN_ID_META_PATTERN = /<meta\s+[^>]*name=["']next-campaign-id["'][^>]*>/gi;
 const NEXT_CONFIG_PATTERN = /window\.nextConfig\s*=/;
 const DATA_NEXT_PATTERN = /\bdata-next-[a-zA-Z0-9_-]+/g;
@@ -35,7 +39,11 @@ export const CAMPAIGN_CART_APP_CAPABILITIES = [
 
 export function loadCheckoutFieldContract(override = null) {
   if (override && typeof override === "object") return override;
-  return readJson(FIELD_CONTRACT_PATH);
+  const contract = readJson(FIELD_CONTRACT_PATH);
+  if (!contract) {
+    throw new Error(`Checkout field contract is missing or unparseable: ${FIELD_CONTRACT_PATH}`);
+  }
+  return contract;
 }
 
 export function loadSdkSupportPolicy(override = null) {
@@ -47,6 +55,9 @@ export function loadSdkSupportPolicy(override = null) {
     };
   }
   const policy = readJson(SDK_POLICY_PATH);
+  if (!policy) {
+    throw new Error(`SDK support policy contract is missing or unparseable: ${SDK_POLICY_PATH}`);
+  }
   return {
     source: normalizeString(policy?.source) || "contracts/campaign-cart-sdk-support-policy.v0.json",
     minimum_supported: normalizeString(policy?.minimum_supported),
@@ -66,12 +77,13 @@ export function discoverCampaignCartAppRoots(targetRepo, { excludeRoots = [] } =
     const isHtml = HTML_EXTENSIONS.has(ext);
     const isScript = SCRIPT_EXTENSIONS.has(ext);
     if (!isHtml && !isScript) continue;
-    const content = safeReadText(file);
-    if (content === null) continue;
+    const raw = safeReadText(file);
+    if (raw === null) continue;
+    const content = isHtml ? maskHtmlComments(raw) : raw;
 
     const signals = [];
     for (const match of content.matchAll(withGlobal(LOADER_URL_PATTERN))) {
-      if (/\/loader(?:\.min)?\.js\b/.test(match[0]) || /\/dist\//.test(match[0])) {
+      if (LOADER_ARTIFACT_PATTERN.test(match[0])) {
         signals.push({ signal: "campaign_cart_loader", strength: "strong", detail: match[0] });
       }
     }
@@ -116,12 +128,19 @@ export function scanCampaignCartAppRoot({
   evidence = [],
   fieldContract = null,
   sdkSupportPolicy = null,
+  excludeRoots = [],
 }) {
   const target = resolve(targetRepo);
   const root = resolve(rootPath);
   const contract = loadCheckoutFieldContract(fieldContract);
   const policy = loadSdkSupportPolicy(sdkSupportPolicy);
-  const files = listFiles(root);
+  // Only sibling roots nested INSIDE this root are excluded; ancestors are
+  // irrelevant (listFiles never leaves root) and must not mask the scan.
+  const excluded = excludeRoots
+    .map((entry) => resolve(entry))
+    .filter((entry) => entry !== root && entry.startsWith(`${root}${sep}`));
+  const files = listFiles(root)
+    .filter((file) => !excluded.some((other) => file === other || file.startsWith(`${other}${sep}`)));
   const htmlFiles = files.filter((file) => HTML_EXTENSIONS.has(extname(file).toLowerCase()));
   const scriptFiles = files.filter((file) => SCRIPT_EXTENSIONS.has(extname(file).toLowerCase()));
   const findings = [];
@@ -135,14 +154,26 @@ export function scanCampaignCartAppRoot({
   const runtime = inspectRuntimeArtifacts(root, target, findings);
   const campaignIds = collectCampaignIds(htmlFiles);
 
-  if (!loader.versions.length) {
+  const unpinned = loader.references.filter((entry) => !entry.version);
+  if (unpinned.length) {
+    findings.push(finding({
+      severity: "warning",
+      category: "standardization_warning",
+      code: "version.sdk_loader_unpinned",
+      message: `${unpinned.length} Campaign Cart loader reference(s) use a non-semver ref (${unique(unpinned.map((entry) => entry.ref)).join(", ")}); version policy cannot be evaluated against an unpinned loader.`,
+      confidence: "static_contract",
+      evidence: unpinned.slice(0, MAX_SAMPLE_COUNT).map(({ path, line, url }) => ({ path, line, url })),
+      next_action: "Pin the loader to an explicit supported version so version policy and QA reproducibility hold.",
+    }));
+  }
+  if (!loader.references.length) {
     findings.push(finding({
       severity: "operator_readiness",
       category: "operator_readiness",
       code: "version.sdk_version_unknown",
-      message: "Campaign Cart evidence exists but no loader version could be discovered from source.",
+      message: "Campaign Cart evidence exists but no loader reference could be discovered from source.",
       confidence: "static_inference",
-      next_action: "Locate the Campaign Cart loader reference or confirm how the SDK is delivered before applying version policy.",
+      next_action: "Confirm how the SDK is delivered (bundled, self-hosted, or injected) before applying version policy.",
     }));
   }
 
@@ -191,14 +222,18 @@ export function detectFrameworks(root) {
 function collectLoaderReferences(root, files) {
   const references = [];
   for (const file of files) {
-    const content = safeReadText(file);
-    if (content === null) continue;
+    const raw = safeReadText(file);
+    if (raw === null) continue;
+    const content = HTML_EXTENSIONS.has(extname(file).toLowerCase()) ? maskHtmlComments(raw) : raw;
     for (const match of content.matchAll(withGlobal(LOADER_URL_PATTERN))) {
+      if (!LOADER_ARTIFACT_PATTERN.test(match[0])) continue;
+      const semver = match[1].match(/^v?(\d+\.\d+\.\d+)$/);
       references.push({
         path: relPath(root, file),
         line: lineOf(content, match.index || 0),
         url: match[0],
-        version: match[1],
+        ref: match[1],
+        version: semver ? semver[1] : null,
       });
     }
   }
@@ -248,8 +283,9 @@ function inspectCheckoutFields(root, htmlFiles, contract, findings) {
   const attributes = contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"];
   const attributePattern = new RegExp(`\\b(${attributes.map(escapeRegExp).join("|")})\\s*=\\s*(["'])([^"']*)\\2`, "g");
   for (const file of htmlFiles) {
-    const content = safeReadText(file);
-    if (content === null) continue;
+    const raw = safeReadText(file);
+    if (raw === null) continue;
+    const content = maskHtmlComments(raw);
     for (const match of content.matchAll(attributePattern)) {
       const value = match[3].trim();
       const verdict = classifyFieldBinding(value, contract);
@@ -334,11 +370,12 @@ function inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings) {
   const syncFiles = [];
 
   for (const file of htmlFiles) {
-    const content = safeReadText(file);
-    if (content === null) continue;
+    const raw = safeReadText(file);
+    if (raw === null) continue;
+    const content = maskHtmlComments(raw);
     const radios = content.match(withGlobal(PAYMENT_RADIO_TAG_PATTERN)) || [];
     if (radios.length) radioFiles.push(relPath(root, file));
-    if (radios.some((tag) => /display\s*:\s*none|\bhidden\b/i.test(tag))) {
+    if (radios.some((tag) => /display\s*:\s*none/i.test(tag) || /(?<![\w-])hidden(?![\w-])/i.test(tag))) {
       hiddenRadioFiles.push(relPath(root, file));
     }
     if (/\bdata-pay\b|\bdata-payment-method-trigger\b/i.test(content)) {
@@ -354,7 +391,15 @@ function inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings) {
 
   const customControls = hiddenRadioFiles.length > 0 || customTriggerFiles.length > 0;
   const syncDetected = syncFiles.length > 0;
-  const proofState = customControls ? "runtime_proof_required" : "not_required";
+  // "not_applicable" only when no SDK payment radios exist at all. When radios
+  // exist but no custom-control evidence was found, stay "undetermined" —
+  // external CSS can hide radios in ways static scanning cannot exclude, so
+  // the scanner never affirms that behavioral proof is unnecessary.
+  const proofState = customControls
+    ? "runtime_proof_required"
+    : radioFiles.length
+      ? "undetermined"
+      : "not_applicable";
 
   if (customControls) {
     findings.push(finding({
@@ -384,8 +429,24 @@ function inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings) {
   };
 }
 
+// Synchronization evidence requires dispatchEvent NEAR a payment_method
+// reference — file-level co-occurrence (an analytics snippet elsewhere in the
+// file) is not evidence that the payment controls are wired.
 function hasSyncSignals(content) {
-  return content.includes("payment_method") && /dispatchEvent\s*\(/.test(content);
+  const text = String(content || "");
+  let index = text.indexOf("payment_method");
+  while (index !== -1) {
+    const window = text.slice(Math.max(0, index - 600), index + 600);
+    if (/dispatchEvent\s*\(/.test(window)) return true;
+    index = text.indexOf("payment_method", index + 1);
+  }
+  return false;
+}
+
+// Blank out HTML comment bodies while preserving offsets/line numbers so
+// commented-out markup never produces bindings, radios, or sync evidence.
+function maskHtmlComments(content) {
+  return String(content || "").replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\r\n]/g, " "));
 }
 
 function inspectDataNext(root, htmlFiles) {
@@ -394,8 +455,9 @@ function inspectDataNext(root, htmlFiles) {
   const upsellFiles = new Set();
   const receiptFiles = new Set();
   for (const file of htmlFiles) {
-    const content = safeReadText(file);
-    if (content === null) continue;
+    const raw = safeReadText(file);
+    if (raw === null) continue;
+    const content = maskHtmlComments(raw);
     const rel = relPath(root, file);
     for (const match of content.matchAll(DATA_NEXT_PATTERN)) {
       counts.set(match[0], (counts.get(match[0]) || 0) + 1);
@@ -446,8 +508,9 @@ function inspectRuntimeArtifacts(rootPath, targetRepo, findings) {
 function collectCampaignIds(htmlFiles) {
   const ids = new Set();
   for (const file of htmlFiles) {
-    const content = safeReadText(file);
-    if (content === null) continue;
+    const raw = safeReadText(file);
+    if (raw === null) continue;
+    const content = maskHtmlComments(raw);
     for (const match of content.matchAll(withGlobal(CAMPAIGN_ID_META_PATTERN))) {
       const value = match[0].match(/content=["']([^"']+)["']/i);
       if (value) ids.add(value[1]);

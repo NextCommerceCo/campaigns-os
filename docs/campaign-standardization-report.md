@@ -18,7 +18,11 @@ Two implementation kinds are recognized:
   a sufficient density of `data-next-*` anchors. Evidence is rolled up to the
   nearest `package.json` boundary; one strong signal (or ≥5 weak anchors)
   classifies the root. Directories already claimed as Page Kit roots are never
-  double-claimed, and a parent repo may contain both kinds side by side.
+  double-claimed, nested application roots are scanned independently (a parent
+  root never re-reports a nested root's files), and a parent repo may contain
+  both kinds side by side. HTML comments are masked throughout, so
+  commented-out loaders, bindings, or radios never produce evidence or
+  findings.
 
 Every root carries `implementation` (`kind`, `evidence`, `frameworks`) and
 `capabilities` — the inspections that ran for that root. Composition is
@@ -81,6 +85,18 @@ version discovery), `checkout_fields` (every
 (SDK `payment_method` radios, hidden radios, custom triggers, synchronization
 script evidence, and `proof_state`), `runtime_contract`, `findings`, and
 `remediation`.
+
+`sdk_loader.references` records pinned and unpinned loader refs alike
+(`version` is null for `@latest`/branch/commit pins, which raise
+`version.sdk_loader_unpinned` instead of a policy evaluation). Only URLs that
+point at a loader/dist artifact count; incidental `campaign-cart@x.y.z`
+strings elsewhere in source are ignored.
+
+`payment.proof_state` is one of `runtime_proof_required` (custom-control
+evidence found), `undetermined` (radios exist; static scanning cannot exclude
+externally-styled custom controls), or `not_applicable` (no `payment_method`
+radios). The scanner never affirms that behavioral proof is unnecessary when
+payment radios exist.
 
 Ecosystem findings carry a `confidence` field:
 
@@ -179,3 +195,8 @@ leaving private operational workflow outside the public package.
   compatibility).
 - Provenance refresh script for the field/policy contracts, mirroring the
   starter-template catalog refresh.
+- Symlinked source directories are currently skipped (silent false negative)
+  and large vendored files are read whole; add link-following policy and a
+  file-size cap.
+- CSS-aware hidden-control detection (external stylesheets are not scanned;
+  `undetermined` proof state covers the gap honestly for now).

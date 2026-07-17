@@ -252,6 +252,50 @@ test("repaired funnel: supported fields, policy-clean SDK, and improved payment 
   });
 });
 
+test("commented-out markup produces no bindings, payment evidence, or classification", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.30", provinceField: "province", postalField: "postal" });
+    write(join(dir, "client", "public", "checkout", "index.html"), `${checkoutHtml({
+      sdkVersion: "0.4.30",
+      provinceField: "province",
+      postalField: "postal",
+    })}
+<!--
+  Legacy block kept for reference:
+  <input data-next-checkout-field="state">
+  <input data-next-checkout-field="postal_code">
+  <input type="radio" name="payment_method" value="legacy" style="display:none;">
+  <script>radio.dispatchEvent(new Event("change")); // payment_method</script>
+-->
+`);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    assert.equal(root.checkout_fields.unsupported.length, 0);
+    assert.equal(root.payment.synchronization_script.detected, false);
+    assert.ok(!root.checkout_fields.bindings.some((entry) => entry.value === "state"));
+  });
+});
+
+test("a repo whose only campaign cart evidence is commented out is not classified", () => {
+  withTempDir((dir) => {
+    writeUnrelatedAppFixture(dir);
+    write(join(dir, "client", "landing.html"), `<!doctype html>
+<html><body>
+<!--
+  <script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.4.30/dist/loader.js"></script>
+  <meta name="next-campaign-id" content="1234">
+-->
+<p>Nothing active here.</p>
+</body></html>
+`);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    assert.equal(report.summary.root_count, 0);
+    assert.equal(report.errors[0].code, "campaign.root_not_found");
+  });
+});
+
 test("unrelated application is not classified as a campaign", () => {
   withTempDir((dir) => {
     writeUnrelatedAppFixture(dir);
@@ -305,6 +349,86 @@ test("SDK support policy is injectable", () => {
     const [root] = report.roots;
     assert.ok(codes(root).includes("version.sdk_below_minimum_supported"));
     assert.equal(root.version_policy.source, "test-policy");
+  });
+});
+
+test("nested application roots are scanned independently, not double-counted", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.30", provinceField: "province", postalField: "postal" });
+    writeCampaignCartAppFixture(join(dir, "legacy-subapp"), { sdkVersion: "0.4.10", provinceField: "state", postalField: "postal_code" });
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    assert.equal(report.summary.root_count, 2);
+
+    const parent = report.roots.find((root) => root.identity.campaign_root_relative === ".");
+    const child = report.roots.find((root) => root.identity.campaign_root_relative === "legacy-subapp");
+    assert.deepEqual(parent.identity.sdk_versions, ["0.4.30"]);
+    assert.equal(parent.checkout_fields.unsupported.length, 0);
+    assert.equal(parent.status !== "blocked", true);
+    assert.deepEqual(child.identity.sdk_versions, ["0.4.10"]);
+    assert.equal(child.checkout_fields.unsupported.length, 2);
+    assert.equal(child.status, "blocked");
+  });
+});
+
+test("non-loader campaign-cart strings in scripts do not become version findings", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.30", provinceField: "province", postalField: "postal" });
+    write(join(dir, "client", "notes.js"), "// see https://cdn.jsdelivr.net/npm/campaign-cart@0.3.0/+esm for the old approach\n");
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    assert.deepEqual(root.identity.sdk_versions, ["0.4.30"]);
+    assert.ok(!codes(root).includes("version.sdk_below_minimum_supported"));
+  });
+});
+
+test("unpinned loader refs are discovered and flagged instead of hiding the campaign", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.30", provinceField: "state", postalField: "postal" });
+    const checkout = join(dir, "client", "public", "checkout", "index.html");
+    write(checkout, readFileSync(checkout, "utf8").replace("campaign-cart@v0.4.30", "campaign-cart@latest"));
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    assert.equal(report.summary.root_count, 1);
+    const [root] = report.roots;
+    assert.deepEqual(root.identity.sdk_versions, []);
+    assert.equal(root.sdk_loader.references.length, 1);
+    assert.equal(root.sdk_loader.references[0].ref, "latest");
+    assert.ok(codes(root).includes("version.sdk_loader_unpinned"));
+    assert.ok(codes(root).includes("checkout.unsupported_field_binding"), "checkout audit still runs for unpinned loaders");
+  });
+});
+
+test("payment proof state distinguishes not_applicable, undetermined, and runtime_proof_required", () => {
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({ name: "plain-funnel" }, null, 2));
+    write(join(dir, "index.html"), `<!doctype html>
+<html><body>
+  <meta name="next-campaign-id" content="1234">
+  <form>
+    <input data-next-checkout-field="email">
+    <input type="radio" name="payment_method" value="credit">
+    <input type="radio" name="payment_method" value="paypal">
+  </form>
+</body></html>
+`);
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    assert.equal(root.payment.proof_state, "undetermined");
+    assert.ok(!codes(root).includes("payment.custom_controls_proof_required"));
+  });
+  withTempDir((dir) => {
+    write(join(dir, "package.json"), JSON.stringify({ name: "landing-only" }, null, 2));
+    write(join(dir, "index.html"), `<!doctype html>
+<html><body>
+  <meta name="next-campaign-id" content="1234">
+  <div data-next-display="package.name">Product</div>
+</body></html>
+`);
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    assert.equal(root.payment.proof_state, "not_applicable");
   });
 });
 
