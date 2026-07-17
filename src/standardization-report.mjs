@@ -3,6 +3,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import {
+  detectFrameworks,
   discoverCampaignCartAppRoots,
   scanCampaignCartAppRoot,
 } from "./campaign-ecosystem.mjs";
@@ -302,7 +303,7 @@ function scanPageKitRoot({
     implementation: {
       kind: "page_kit",
       evidence: pageKitImplementationEvidence(rootPath, packageInfo),
-      frameworks: [],
+      frameworks: detectFrameworks(rootPath),
     },
     capabilities: [
       "page_kit_source_contract",

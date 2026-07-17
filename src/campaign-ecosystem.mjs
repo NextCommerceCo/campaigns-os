@@ -84,7 +84,7 @@ export function discoverCampaignCartAppRoots(targetRepo, { excludeRoots = [] } =
     if (isHtml) {
       const anchors = content.match(DATA_NEXT_PATTERN) || [];
       if (anchors.length) {
-        signals.push({ signal: "data_next_anchors", strength: "weak", detail: `${anchors.length} occurrence(s)` });
+        signals.push({ signal: "data_next_anchors", strength: "weak", count: anchors.length, detail: `${anchors.length} occurrence(s)` });
       }
     }
     if (!signals.length) continue;
@@ -102,7 +102,7 @@ export function discoverCampaignCartAppRoots(targetRepo, { excludeRoots = [] } =
     const strong = evidence.filter((entry) => entry.strength === "strong");
     const weakAnchorTotal = evidence
       .filter((entry) => entry.signal === "data_next_anchors")
-      .reduce((total, entry) => total + Number((entry.detail || "0").split(" ")[0]), 0);
+      .reduce((total, entry) => total + (Number.isFinite(entry.count) ? entry.count : 0), 0);
     if (strong.length >= 1 || weakAnchorTotal >= 5) {
       roots.push({ rootPath, evidence: dedupeEvidence(evidence) });
     }
@@ -181,7 +181,7 @@ export function scanCampaignCartAppRoot({
   };
 }
 
-function detectFrameworks(root) {
+export function detectFrameworks(root) {
   const pkg = readJson(join(root, "package.json"));
   const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
   const known = ["vite", "react", "express", "next", "svelte", "vue", "astro"];
