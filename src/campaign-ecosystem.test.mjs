@@ -556,6 +556,44 @@ test("an unrelated dispatchEvent far from a markup payment_method is not sync ev
   });
 });
 
+test("an over-cap script containing both tokens is never claimed as sync evidence", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { sdkVersion: "0.4.30", provinceField: "province", postalField: "postal", paymentSyncScript: true });
+    // A vendored bundle over the scope cap: payment_method and dispatchEvent
+    // co-occur at file level, but that is not proof of wiring — the scanner
+    // must under-claim (proof stays runtime_proof_required), not overclaim.
+    const filler = `// vendored analytics bundle\n${"var x = 0; ".repeat(2200)}\n`;
+    write(join(dir, "client", "public", "checkout", "payment-methods.js"),
+      `${filler}tracker.watch("payment_method");\n${filler}window.dispatchEvent(new Event("pageview"));\n`);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    assert.equal(root.payment.synchronization_script.detected, false);
+    assert.equal(root.payment.proof_state, "runtime_proof_required");
+    const finding = findingByCode(root, "payment.custom_controls_proof_required");
+    assert.equal(finding.severity, "warning");
+  });
+});
+
+test("a prerelease bundled pin is flagged and never evaluated against release policy", () => {
+  withTempDir((dir) => {
+    writeBundledSdkAppFixture(dir, { sdkVersion: "0.4.30-beta.1" });
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+
+    // Delivery is known (bundled), so no version-unknown gap...
+    assert.ok(!codes(root).includes("version.sdk_version_unknown"));
+    // ...but the prerelease pin is flagged and never passes the release gate.
+    const finding = findingByCode(root, "version.sdk_prerelease_pin");
+    assert.ok(finding, "expected version.sdk_prerelease_pin finding");
+    assert.equal(finding.severity, "warning");
+    assert.equal(finding.confidence, "static_contract");
+    assert.equal(root.sdk_loader.bundled_dependency.resolved_version, "0.4.30-beta.1");
+    assert.equal(root.version_policy.evaluations.length, 0);
+    assert.ok(!root.version_policy.evaluations.some((entry) => entry.meets_minimum === true));
+  });
+});
+
 test("bundled SDK dependency suppresses sdk_version_unknown and feeds version policy", () => {
   withTempDir((dir) => {
     writeBundledSdkAppFixture(dir, { sdkVersion: "0.4.30" });

@@ -36,11 +36,13 @@ const PAYMENT_RADIO_TAG_PATTERN = /<input\b[^>]*name=["']payment_method["'][^>]*
 // treating any file-level co-occurrence as evidence (an analytics dispatchEvent
 // elsewhere in the file) — would overclaim wiring. Script scopes below
 // PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS are scanned whole (see hasSyncSignals) so
-// a handler longer than this window still counts, while large vendored bundles
-// fall back to proximity and never co-occur their way into a false positive.
+// a handler longer than this window still counts; over-cap script content
+// (vendored bundles) is never claimed as sync evidence at all — the proof
+// state stays honestly unproven instead of overclaimed. Proximity applies only
+// to markup with script bodies masked out.
 const PAYMENT_SYNC_PROXIMITY_WINDOW_CHARS = 600;
 const PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS = 20000;
-const SCRIPT_BLOCK_PATTERN = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+const SCRIPT_BLOCK_PATTERN = /(<script\b[^>]*>)([\s\S]*?)(<\/script\s*>)/gi;
 
 export const CAMPAIGN_CART_APP_CAPABILITIES = [
   "campaign_cart_runtime_inventory",
@@ -168,13 +170,30 @@ export function scanCampaignCartAppRoot({
   loader.bundled_dependency = bundled
     ? { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version }
     : null;
+  // A prerelease pin sorts strictly before its GA release, so it is never fed
+  // into version policy as a clean semver — the numeric triple would wrongly
+  // pass the release gate. It is recorded on sdk_loader and flagged instead.
+  const bundledPolicyVersion = bundled?.resolved_version && !bundled.prerelease
+    ? bundled.resolved_version
+    : null;
   const versionEntries = [
     ...loader.versions.map((version) => ({ version, source: "loader" })),
-    ...(bundled?.resolved_version && !loader.versions.includes(bundled.resolved_version)
-      ? [{ version: bundled.resolved_version, source: "bundled_dependency" }]
+    ...(bundledPolicyVersion && !loader.versions.includes(bundledPolicyVersion)
+      ? [{ version: bundledPolicyVersion, source: "bundled_dependency" }]
       : []),
   ];
   const versionPolicy = evaluateVersionPolicy(versionEntries, policy, findings);
+  if (bundled?.prerelease) {
+    findings.push(finding({
+      severity: "warning",
+      category: "standardization_warning",
+      code: "version.sdk_prerelease_pin",
+      message: `Bundled Campaign Cart dependency pins prerelease ${bundled.resolved_version} (${bundled.name}@${bundled.version}); a prerelease sorts before its release and cannot be evaluated against the release support policy.`,
+      confidence: "static_contract",
+      evidence: { name: bundled.name, version: bundled.version, resolved_version: bundled.resolved_version },
+      next_action: "Pin the bundled campaign-cart dependency to a released version so version policy can be evaluated.",
+    }));
+  }
   const checkoutFields = inspectCheckoutFields(root, htmlFiles, contract, findings);
   const payment = inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings);
   const dataNext = inspectDataNext(root, htmlFiles);
@@ -240,16 +259,24 @@ export function scanCampaignCartAppRoot({
 }
 
 // Detect a bundled Campaign Cart SDK delivered as an npm dependency. Returns
-// the pin spec plus a resolved semver (extracted from ranges like `^0.4.30`)
-// or null when no such dependency is declared.
+// the pin spec plus a resolved version (extracted from ranges like `^0.4.30`,
+// prerelease suffix preserved: `^0.4.30-beta.1` → `0.4.30-beta.1`) or null
+// when no such dependency is declared. A prerelease pin sorts strictly BEFORE
+// its GA release in semver, so `prerelease: true` tells the caller the pin
+// must NOT be evaluated against the release policy as if it were the release.
 function detectBundledSdkDependency(root) {
   const pkg = readJson(join(root, "package.json"));
   const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
   for (const name of ["campaign-cart", "@nextcommerce/campaign-cart"]) {
     const spec = deps[name];
     if (typeof spec !== "string" || !spec.trim()) continue;
-    const semver = spec.match(/(\d+\.\d+\.\d+)/);
-    return { name, version: spec, resolved_version: semver ? semver[1] : null };
+    const semver = spec.match(/(\d+\.\d+\.\d+)(-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?/);
+    return {
+      name,
+      version: spec,
+      resolved_version: semver ? `${semver[1]}${semver[2] || ""}` : null,
+      prerelease: Boolean(semver && semver[2]),
+    };
   }
   return null;
 }
@@ -474,22 +501,31 @@ function inspectPaymentSurfaces(root, htmlFiles, scriptFiles, findings) {
 
 // Synchronization evidence requires a dispatchEvent co-located with a
 // payment_method reference. "Co-located" is scoped, not file-global: a real
-// wiring handler keeps both tokens in one handler/script body, so we scan each
-// script scope whole (standalone script files and inline <script> blocks under
-// a size cap) and only fall back to the proximity window for markup-embedded
-// handlers. That keeps a long-but-real handler detectable while an unrelated
-// analytics dispatchEvent far from a markup payment_method never counts.
+// wiring handler keeps both tokens in one handler/script body, so each script
+// scope (standalone script file or inline <script> block) under the size cap
+// is scanned whole. Over-cap script content is never claimed as sync evidence
+// — a vendored bundle's file-level co-occurrence is not proof of wiring, and
+// under-claiming keeps the proof state honest (runtime_proof_required /
+// undetermined) rather than overclaimed. The proximity window applies only to
+// markup, with script bodies masked out first.
 function hasSyncSignals(content, { isScript = false } = {}) {
   const text = String(content || "");
   if (isScript) {
-    if (text.length <= PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS && scopeHasSyncSignals(text)) return true;
-    return proximityHasSyncSignals(text);
+    return text.length <= PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS && scopeHasSyncSignals(text);
   }
   for (const match of text.matchAll(SCRIPT_BLOCK_PATTERN)) {
-    const body = match[1] || "";
+    const body = match[2] || "";
     if (body.length <= PAYMENT_SYNC_SCRIPT_SCOPE_MAX_CHARS && scopeHasSyncSignals(body)) return true;
   }
-  return proximityHasSyncSignals(text);
+  return proximityHasSyncSignals(maskScriptBodies(text));
+}
+
+// Blank out <script> bodies (preserving offsets/newlines) so the markup
+// proximity fallback never reads script content that the scoped scan above
+// already judged — including over-cap bundles it deliberately excluded.
+function maskScriptBodies(text) {
+  return text.replace(SCRIPT_BLOCK_PATTERN, (_match, open, body, close) =>
+    `${open}${body.replace(/[^\r\n]/g, " ")}${close}`);
 }
 
 // Whole-scope co-occurrence: both tokens present anywhere in one script scope.
