@@ -60,7 +60,7 @@
     "providers": {
       "gtm": {
         "enabled": true,
-        "containerId": "GTM-PWBWV4P7"
+        "containerId": "GTM-EXAMPLE1"
       }
     },
     "manual_events": [

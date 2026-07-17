@@ -86,6 +86,43 @@ function walk(dir) {
       for (const pattern of forbidden) {
         if (pattern.test(text)) hits.push(`${rel}: ${pattern}`);
       }
+
+      // Versioned parity fixtures in the public package are executable examples,
+      // not a storage location for a customer's real run packet. Keep identity,
+      // URL, and analytics values visibly synthetic; private evidence belongs in
+      // the operator's ignored qa-output or an internal system of record.
+      if (rel.startsWith("fixtures/parity/") && rel.endsWith(".json")) {
+        try {
+          const fixture = JSON.parse(text);
+          const synthetic = /^(example|fixture|synthetic)/i;
+          if (!synthetic.test(fixture?.campaign?.name ?? "")) {
+            hits.push(`${rel}: parity campaign.name must be visibly synthetic`);
+          }
+          if (!synthetic.test(fixture?.campaign?.slug ?? "")) {
+            hits.push(`${rel}: parity campaign.slug must be visibly synthetic`);
+          }
+          let hostname = null;
+          try {
+            hostname = new URL(fixture?.candidate_base_url).hostname;
+          } catch {
+            hits.push(`${rel}: parity candidate_base_url must be a valid example/test URL`);
+          }
+          if (
+            hostname !== null &&
+            !(hostname === "example.com" || hostname.endsWith(".example.com") || hostname.endsWith(".test"))
+          ) {
+            hits.push(`${rel}: parity candidate_base_url must use an example/test host`);
+          }
+          if (
+            fixture?.gtm_container_id &&
+            !(/^GTM-/.test(fixture.gtm_container_id) && synthetic.test(fixture.gtm_container_id.replace(/^GTM-/, "")))
+          ) {
+            hits.push(`${rel}: parity gtm_container_id must be visibly synthetic`);
+          }
+        } catch {
+          hits.push(`${rel}: parity fixture must be valid JSON with synthetic provenance`);
+        }
+      }
     }
   }
 }

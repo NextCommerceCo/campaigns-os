@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadParityFixture, validateParityFixture } from "./qa-parity-fixture.mjs";
 
-const fixturePath = fileURLToPath(new URL("../fixtures/parity/heyshape-snatched-sdk04.json", import.meta.url));
+const fixturePath = fileURLToPath(new URL("../fixtures/parity/example-sdk04-offers.json", import.meta.url));
 
 function validFixture() {
   return {
@@ -53,7 +53,7 @@ function validFixture() {
   };
 }
 
-test("loadParityFixture loads and validates the HeyShape SDK-0.4 corpus", async () => {
+test("loadParityFixture loads and validates the generic SDK-0.4 corpus", async () => {
   const fixture = await loadParityFixture(fixturePath);
 
   assert.ok(fixture.campaign.shadow_campaign_ids.root > 0);
@@ -61,13 +61,13 @@ test("loadParityFixture loads and validates the HeyShape SDK-0.4 corpus", async 
   assert.notEqual(fixture.campaign.shadow_campaign_ids.root, fixture.campaign.shadow_campaign_ids.v1);
   assert.equal(fixture.api_key_env, "QA_CAMPAIGNS_API_KEY");
   assert.equal(fixture.scenarios.length, 3);
-  assert.equal(fixture.scenarios[0].expected_order_readback.line_item.expected_line_total, 45);
-  assert.equal(fixture.scenarios[0].expected_order_readback.line_item.dropped_voucher_line_total, 90);
+  assert.equal(fixture.scenarios[0].expected_order_readback.line_item.expected_line_total, 25);
+  assert.equal(fixture.scenarios[0].expected_order_readback.line_item.dropped_voucher_line_total, 50);
   assert.equal(fixture.scenarios[0].checkout_path, "checkout.html");
-  assert.equal(fixture.scenarios[0].upsell_route, "oto-snatch-thong.html");
+  assert.equal(fixture.scenarios[0].upsell_route, "oto-accessory.html");
   assert.equal(fixture.scenarios[1].checkout_path, "v1/checkout.html");
-  assert.equal(fixture.scenarios[1].upsell_route, "v1/oto-snatch-bodysuit.html");
-  assert.deepEqual(fixture.scenarios[2].expected_pricing.map((entry) => entry.expected_total), [29.99, 53.98, 71.97]);
+  assert.equal(fixture.scenarios[1].upsell_route, "v1/oto-base-product.html");
+  assert.deepEqual(fixture.scenarios[2].expected_pricing.map((entry) => entry.expected_total), [20, 36, 48]);
   assert.equal(fixture.analytics_contract.providers.gtm.containerId, fixture.gtm_container_id);
   assert.equal(fixture.analytics_contract.manual_events[0].page, "upsell-1");
   assert.deepEqual(validateParityFixture(fixture), []);
