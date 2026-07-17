@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
@@ -71,4 +73,43 @@ test("an unrelated command gets no suggestion but still points at help", () => {
   assert.match(out, /Unknown command: frobnicate\./);
   assert.doesNotMatch(out, /Did you mean/);
   assert.match(out, /campaigns-os --help/);
+});
+
+test("standardize --sdk-support-policy names the flag when the file is missing", () => {
+  const out = runCli([
+    "standardize",
+    "--target", resolve(ROOT, "examples/target-page-kit"),
+    "--sdk-support-policy", resolve(ROOT, "does/not/exist.json"),
+    "--json",
+  ]);
+  assert.match(out, /Could not read --sdk-support-policy file/);
+});
+
+test("standardize --field-contract reports a clear error on unparseable JSON", () => {
+  const badPath = join(mkdtempSync(join(tmpdir(), "campaigns-os-flags-")), "field-contract.json");
+  writeFileSync(badPath, "{ not valid json");
+  const out = runCli([
+    "standardize",
+    "--target", resolve(ROOT, "examples/target-page-kit"),
+    "--field-contract", badPath,
+    "--json",
+  ]);
+  assert.match(out, /Could not parse --field-contract JSON at/);
+});
+
+test("standardize accepts injectable policy/contract flags and still runs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-flags-"));
+  const policyPath = join(dir, "policy.json");
+  writeFileSync(policyPath, JSON.stringify({
+    source: "cli-injected-policy",
+    minimum_supported: "0.4.25",
+    preferred_minimum: "0.4.99",
+  }));
+  const out = runCli([
+    "standardize",
+    "--target", resolve(ROOT, "examples/target-page-kit"),
+    "--sdk-support-policy", policyPath,
+    "--json",
+  ]);
+  assert.doesNotMatch(out, /Could not (read|parse)/);
 });

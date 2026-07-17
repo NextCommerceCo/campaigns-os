@@ -2,6 +2,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
+import {
+  detectFrameworks,
+  discoverCampaignCartAppRoots,
+  scanCampaignCartAppRoot,
+} from "./campaign-ecosystem.mjs";
 
 export const STANDARDIZATION_REPORT_SCHEMA = "campaign-standardization-report/v0";
 
@@ -32,15 +37,34 @@ export function createStandardizationReport({
   slug = null,
   templateFamily = null,
   generatedAt = new Date().toISOString(),
+  fieldContract = null,
+  sdkSupportPolicy = null,
 } = {}) {
   if (!targetRepo) throw new Error("createStandardizationReport requires targetRepo");
   const target = resolve(targetRepo);
-  const roots = discoverPageKitRoots(target).map((rootPath) => scanPageKitRoot({
+  const pageKitRootPaths = discoverPageKitRoots(target);
+  const roots = pageKitRootPaths.map((rootPath) => scanPageKitRoot({
     targetRepo: target,
     rootPath,
     requestedSlug: normalizeString(slug),
     explicitTemplateFamily: normalizeString(templateFamily),
   }));
+  const appRoots = discoverCampaignCartAppRoots(target, { excludeRoots: pageKitRootPaths });
+  for (const discovered of appRoots) {
+    const root = scanCampaignCartAppRoot({
+      targetRepo: target,
+      rootPath: discovered.rootPath,
+      evidence: discovered.evidence,
+      fieldContract,
+      sdkSupportPolicy,
+      excludeRoots: [
+        ...pageKitRootPaths,
+        ...appRoots.map((entry) => entry.rootPath),
+      ],
+    });
+    finalizeRoot(root);
+    roots.push(root);
+  }
   const report = {
     schema_version: STANDARDIZATION_REPORT_SCHEMA,
     generated_at: generatedAt,
@@ -63,8 +87,8 @@ export function createStandardizationReport({
     });
   } else if (roots.length === 0) {
     report.errors.push({
-      code: "page_kit.root_not_found",
-      message: "No Page Kit root was detected. Expected package.json with next-campaign-page-kit or _data/campaigns.json.",
+      code: "campaign.root_not_found",
+      message: "No campaign root was detected. Expected a Page Kit root (package.json with next-campaign-page-kit or _data/campaigns.json) or portable Campaign Cart evidence (loader script, next-campaign-id meta, window.nextConfig, or data-next-* anchors).",
     });
   }
 
@@ -74,7 +98,7 @@ export function createStandardizationReport({
 
 export function attachBuiltOutputDoctor(report, rootId, doctorResult) {
   const root = (report?.roots || []).find((entry) => entry.id === rootId);
-  if (!root) return report;
+  if (!root?.built_output) return report;
   root.built_output.doctor = summarizeDoctorResult(doctorResult);
   if (doctorResult?.errors?.length) {
     for (const [index, issue] of doctorResult.errors.entries()) {
@@ -115,7 +139,7 @@ export function formatStandardizationReportMarkdown(report) {
   lines.push("");
   lines.push("## Summary");
   const summary = report.summary || {};
-  lines.push(`- Page Kit roots: ${summary.root_count ?? 0}`);
+  lines.push(`- Campaign roots: ${summary.root_count ?? 0}`);
   lines.push(`- Findings: ${summary.blockers ?? 0} blocker(s), ${summary.warnings ?? 0} warning(s), ${summary.operator_readiness ?? 0} operator-readiness item(s)`);
   lines.push(`- Home recommendation: ${report.recommendation?.home || "unknown"} - ${report.recommendation?.summary || ""}`);
   if (report.errors?.length) {
@@ -125,6 +149,10 @@ export function formatStandardizationReportMarkdown(report) {
   }
 
   for (const root of report.roots || []) {
+    if (root.implementation?.kind === "campaign_cart_app") {
+      appendCampaignCartAppMarkdown(lines, root);
+      continue;
+    }
     const rootLabel = root.identity.page_kit_root_relative === "."
       ? `${root.identity.repo} (repo root)`
       : root.identity.page_kit_root_relative;
@@ -133,6 +161,7 @@ export function formatStandardizationReportMarkdown(report) {
     lines.push("");
     lines.push("### Identity");
     lines.push(`- Status: ${String(root.status || "unknown").toUpperCase()}`);
+    lines.push(`- Implementation: ${root.implementation?.kind || "page_kit"}`);
     lines.push(`- Slug(s): ${root.identity.campaign_slugs.map((entry) => entry.slug).join(", ") || "(none)"}`);
     lines.push(`- SDK: ${root.identity.sdk_versions.join(", ") || "(unknown)"}`);
     lines.push(`- Page Kit: ${root.identity.page_kit_dependency?.name || "(unknown)"} ${root.identity.page_kit_dependency?.version || "(unknown)"}`);
@@ -170,6 +199,50 @@ export function formatStandardizationReportMarkdown(report) {
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+function appendCampaignCartAppMarkdown(lines, root) {
+  const rootLabel = root.identity.campaign_root_relative === "."
+    ? `${root.identity.repo} (repo root)`
+    : root.identity.campaign_root_relative;
+  lines.push("");
+  lines.push(`## ${rootLabel || root.identity.campaign_root}`);
+  lines.push("");
+  lines.push("### Identity");
+  lines.push(`- Status: ${String(root.status || "unknown").toUpperCase()}`);
+  lines.push(`- Implementation: ${root.implementation.kind}`);
+  lines.push(`- Frameworks: ${root.implementation.frameworks.join(", ") || "(none detected)"}`);
+  lines.push(`- Campaign ID(s): ${root.identity.campaign_ids.join(", ") || "(unknown)"}`);
+  lines.push(`- SDK loader version(s): ${root.identity.sdk_versions.join(", ") || "(undiscovered)"}`);
+  lines.push(`- Version policy: min ${root.version_policy.minimum_supported || "(none)"}, preferred ${root.version_policy.preferred_minimum || "(none)"} (${root.version_policy.source})`);
+  lines.push(`- Campaigns OS artifacts: ${root.identity.has_campaign_runtime ? "yes" : "no"}`);
+  lines.push("");
+  lines.push("### Checkout Fields");
+  lines.push(`- Bindings: ${root.checkout_fields.bindings.length}; unsupported stale aliases: ${root.checkout_fields.unsupported.length}; unknown: ${root.checkout_fields.unknown.length}`);
+  for (const entry of root.checkout_fields.unsupported.slice(0, 8)) {
+    lines.push(`- Stale alias \`${entry.value}\` -> \`${entry.canonical}\` (${entry.path}:${entry.line})`);
+  }
+  lines.push("");
+  lines.push("### Payment Interaction");
+  lines.push(`- SDK payment_method radios: ${root.payment.sdk_method_radios.detected ? "detected" : "not detected"}; hidden radios: ${root.payment.hidden_radios.detected ? "yes" : "no"}; custom triggers: ${root.payment.custom_triggers.detected ? "yes" : "no"}`);
+  lines.push(`- Synchronization script: ${root.payment.synchronization_script.detected ? "detected" : "not detected"}; proof state: ${root.payment.proof_state}`);
+  lines.push("");
+  lines.push("### Runtime Contract");
+  lines.push(`- data-next anchors: ${root.runtime_contract.data_next.total_occurrences} occurrence(s), ${root.runtime_contract.data_next.unique_attributes.length} unique attribute(s)`);
+  if (root.findings.length) {
+    lines.push("");
+    lines.push("### Findings");
+    for (const item of root.findings) {
+      const confidence = item.confidence ? ` (confidence: ${item.confidence})` : "";
+      lines.push(`- [${item.severity}] ${item.code}: ${item.message}${confidence}`);
+    }
+  }
+  lines.push("");
+  lines.push("### Remediation");
+  appendList(lines, "Safe agent repairs", root.remediation.safe_agent_repairs);
+  appendList(lines, "Clarification needed", root.remediation.clarification_needed);
+  appendList(lines, "Product or merchant risks", root.remediation.product_or_merchant_risks);
+  appendList(lines, "Proof commands", root.remediation.proof_commands);
 }
 
 export function discoverPageKitRoots(targetRepo) {
@@ -232,6 +305,17 @@ function scanPageKitRoot({
     id: rootId(targetRepo, rootPath),
     status: "unknown",
     ok: false,
+    implementation: {
+      kind: "page_kit",
+      evidence: pageKitImplementationEvidence(rootPath, packageInfo),
+      frameworks: detectFrameworks(rootPath),
+    },
+    capabilities: [
+      "page_kit_source_contract",
+      "sdk_version_policy",
+      "built_output_doctor",
+      "campaign_cart_runtime_inventory",
+    ],
     identity: {
       repo: basename(targetRepo),
       target_repo: targetRepo,
@@ -306,7 +390,9 @@ function finalizeReport(report) {
 
 function finalizeRoot(root) {
   dedupeFindings(root);
-  root.remediation = buildRemediation(root);
+  if (root.implementation?.kind !== "campaign_cart_app") {
+    root.remediation = buildRemediation(root);
+  }
   if (root.findings.some((item) => item.severity === "blocker")) {
     root.status = "blocked";
   } else if (root.findings.some((item) => item.severity === "warning" || item.severity === "operator_readiness")) {
@@ -315,6 +401,22 @@ function finalizeRoot(root) {
     root.status = "ready";
   }
   root.ok = root.status !== "blocked";
+}
+
+function pageKitImplementationEvidence(rootPath, packageInfo) {
+  const evidence = [];
+  if (existsSync(join(rootPath, "_data", "campaigns.json"))) {
+    evidence.push({ signal: "campaigns_json", strength: "strong", path: "_data/campaigns.json", detail: null });
+  }
+  if (packageInfo.page_kit_dependency) {
+    evidence.push({
+      signal: "page_kit_dependency",
+      strength: "strong",
+      path: "package.json",
+      detail: `${packageInfo.page_kit_dependency.name}@${packageInfo.page_kit_dependency.version}`,
+    });
+  }
+  return evidence;
 }
 
 function isPageKitRoot(dir) {
