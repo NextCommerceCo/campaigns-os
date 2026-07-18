@@ -107,6 +107,8 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       orders.push(result.order);
       if (result.analytics_capture) captures.push(result.analytics_capture);
       assertions.push(testOrderAssertion(checkoutPage, path, result));
+      const renderedReceiptAssertion = receiptRenderingAssertion(checkoutPage, path, result.order);
+      if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
     }
   } catch (error) {
     // Convert runner-level surprises into a blocker assertion so the run still
@@ -1568,6 +1570,7 @@ const TEST_ORDER_STEP_LADDER = Object.freeze([
   "order_submitted",
   "upsell_action",
   "receipt_reached",
+  "receipt_rendered",
 ]);
 
 function formatStepEvent(entry) {
@@ -1593,6 +1596,7 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
     steps,
     has: (step) => steps.some((entry) => entry.step === step),
     ok: (step, detail = null) => record(step, "ok", { detail }),
+    fail: (step, error, detail = null) => record(step, "failed", { error, detail }),
     skip: (step, reason) => record(step, "skipped", { detail: reason }),
     // Run a step with a bounded timeout. A resolved string becomes the step
     // detail; a resolved { skip } object records the step as skipped.
@@ -1763,6 +1767,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   const order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
   order.evidence.steps = ladder.steps;
   const stepFailures = [];
+  const receiptFailures = [];
   const upsellSteps = testOrderSteps(path);
 
   if (order.ok && upsellSteps.length) {
@@ -1816,8 +1821,22 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   const finalUrl = safePageUrl(page) || "";
   if (/receipt|thank/i.test(finalUrl)) {
     ladder.ok("receipt_reached", redactUrlQuery(finalUrl));
+    const renderedReceipt = await receiptRenderingEvidence(page);
+    const renderedReceiptAssessment = assessReceiptRendering(order.receipt_line_items.length, renderedReceipt);
+    order.receipt_rendering = renderedReceipt;
+    order.verification.receipt_rendering = renderedReceiptAssessment;
+    order.evidence.receipt_rendering = renderedReceipt;
+    if (!renderedReceiptAssessment.required) {
+      ladder.skip("receipt_rendered", renderedReceiptAssessment.reason);
+    } else if (renderedReceiptAssessment.ok) {
+      ladder.ok("receipt_rendered", renderedReceiptAssessment.reason);
+    } else {
+      ladder.fail("receipt_rendered", renderedReceiptAssessment.reason);
+      receiptFailures.push(`buyer-visible receipt line items: ${renderedReceiptAssessment.reason}`);
+    }
   } else {
     ladder.skip("receipt_reached", `path ended at ${redactUrlQuery(finalUrl) || "(unknown url)"}`);
+    ladder.skip("receipt_rendered", "receipt page was not reached");
   }
 
   const acceptedSteps = (order.upsell_steps || []).filter((step) => step.path === "accept");
@@ -1827,11 +1846,13 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     order.verification.accepted_upsell_matches = acceptedSteps.map((step) => step.verification?.accepted_upsell_match).filter(Boolean);
   }
   if (stepFailures.length) order.verification.upsell_step_failures = stepFailures;
+  if (receiptFailures.length) order.verification.receipt_rendering_failures = receiptFailures;
 
-  const ok = order.ok && stepFailures.length === 0;
+  const pathFailures = [...stepFailures, ...receiptFailures];
+  const ok = order.ok && pathFailures.length === 0;
   return {
     ok,
-    error: ok ? null : order.error || order.upsell?.error || stepFailures.join("; ") || "accepted upsell did not appear in final order lines",
+    error: ok ? null : order.error || order.upsell?.error || pathFailures.join("; ") || "accepted upsell did not appear in final order lines",
     order,
     events: sanitizedEvents(events),
   };
@@ -1843,7 +1864,7 @@ async function hostedRedirectOutcome({ page, events, email, checkoutPage, args, 
   ladder.ok("hosted_redirect_observed", `redirected to hosted checkout: ${hosted.redacted_url}`);
   skipRemainingSteps(
     ladder,
-    ["order_submitted", "upsell_action", "receipt_reached"],
+    ["order_submitted", "upsell_action", "receipt_reached", "receipt_rendered"],
     "hosted checkout flow is platform-owned; typed-card runner stops at the handoff",
   );
   let order;
@@ -1896,6 +1917,176 @@ function redactUrlQuery(value) {
   } catch {
     return String(value || "").split("?")[0] || null;
   }
+}
+
+// Persisted order lines prove that the platform created the order. They do not
+// prove that a buyer can see those lines on the receipt: a populated
+// data-next-order-items node can still be hidden by cart-state presentation.
+// Capture rendered truth separately and never include buyer/order copy in the
+// evidence payload.
+async function receiptRenderingEvidence(page) {
+  await page.waitForFunction(() => {
+    const containers = Array.from(document.querySelectorAll("[data-next-order-items]"));
+    return containers.some((container) => (
+      container.classList.contains("order-has-items")
+      && container.childElementCount > 0
+    ));
+  }, null, { timeout: 3000 }).catch(() => {});
+
+  return page.evaluate(() => {
+    const cleanLength = (value) => String(value || "").replace(/\s+/g, " ").trim().length;
+    const visible = (element) => {
+      if (!(element instanceof Element) || element.hidden) return false;
+      if (element.closest('[hidden], [aria-hidden="true"]')) return false;
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return false;
+      if (Number.parseFloat(style.opacity || "1") === 0) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && element.getClientRects().length > 0;
+    };
+    const containers = Array.from(document.querySelectorAll("[data-next-order-items]"));
+    const details = containers.map((container, index) => {
+      const directChildren = Array.from(container.children);
+      // Prefer one marker family at a time so nested aliases cannot inflate a
+      // single rendered line into multiple candidates.
+      const explicitItemGroups = [
+        ["data-order-line-id", Array.from(container.querySelectorAll("[data-order-line-id]"))],
+        ["data-next-order-item", Array.from(container.querySelectorAll("[data-next-order-item]"))],
+        ["data-next-order-line", Array.from(container.querySelectorAll("[data-next-order-line]"))],
+        ["data-next-line-item", Array.from(container.querySelectorAll("[data-next-line-item]"))],
+        ["direct-listitem", Array.from(container.querySelectorAll(':scope > [role="listitem"]'))],
+      ];
+      const explicitItemGroup = explicitItemGroups.find(([, items]) => items.length > 0);
+      const explicitItems = explicitItemGroup?.[1] || [];
+      // OrderItemListEnhancer owns this state class. It distinguishes rendered
+      // line roots from its loading/error/empty copy when a custom item
+      // template does not carry an explicit line marker.
+      const hasItemsState = container.classList.contains("order-has-items")
+        && !container.classList.contains("order-loading")
+        && !container.classList.contains("order-error")
+        && !container.classList.contains("order-empty");
+      const itemCandidates = explicitItems.length
+        ? explicitItems
+        : (hasItemsState ? directChildren : []);
+      const containerVisible = visible(container);
+      const visibleItemCount = itemCandidates.filter(visible).length;
+      const textLength = cleanLength(container.textContent);
+      const visibleTextLength = containerVisible ? cleanLength(container.innerText) : 0;
+      return {
+        index,
+        visible: containerVisible,
+        child_element_count: container.childElementCount,
+        item_candidate_count: itemCandidates.length,
+        visible_item_count: visibleItemCount,
+        item_detection: explicitItemGroup?.[0] || (hasItemsState ? "order-has-items-direct-children" : "none"),
+        has_items_state: hasItemsState,
+        text_length: textLength,
+        visible_text_length: visibleTextLength,
+        populated: container.childElementCount > 0 || textLength > 0,
+        buyer_visible_content: containerVisible && visibleItemCount > 0,
+      };
+    });
+    const sum = (field) => details.reduce((total, detail) => total + detail[field], 0);
+    return {
+      selector: "[data-next-order-items]",
+      container_count: details.length,
+      visible_container_count: details.filter((detail) => detail.visible).length,
+      populated_container_count: details.filter((detail) => detail.populated).length,
+      visible_populated_container_count: details.filter((detail) => detail.buyer_visible_content).length,
+      rendered_item_count: sum("item_candidate_count"),
+      visible_rendered_item_count: sum("visible_item_count"),
+      max_visible_rendered_item_count: Math.max(0, ...details
+        .filter((detail) => detail.visible)
+        .map((detail) => detail.visible_item_count)),
+      visible_text_length: sum("visible_text_length"),
+      containers: details,
+    };
+  }).catch((error) => ({
+    selector: "[data-next-order-items]",
+    container_count: 0,
+    visible_container_count: 0,
+    populated_container_count: 0,
+    visible_populated_container_count: 0,
+    rendered_item_count: 0,
+    visible_rendered_item_count: 0,
+    visible_text_length: 0,
+    containers: [],
+    inspection_error: error instanceof Error ? error.message : String(error),
+  }));
+}
+
+function assessReceiptRendering(persistedLineCount, evidence = {}) {
+  const persisted = Math.max(0, Number.parseInt(persistedLineCount, 10) || 0);
+  const containerCount = Math.max(0, Number(evidence.container_count) || 0);
+  const visibleContainerCount = Math.max(0, Number(evidence.visible_container_count) || 0);
+  const visiblePopulatedCount = Math.max(0, Number(evidence.visible_populated_container_count) || 0);
+  // Receipts commonly carry separate desktop/mobile copies. One complete
+  // buyer-visible surface must cover the order; partial copies cannot be
+  // added together to manufacture coverage.
+  const visibleItemCount = Math.max(0, Number(
+    evidence.max_visible_rendered_item_count ?? evidence.visible_rendered_item_count,
+  ) || 0);
+  const common = {
+    persisted_line_count: persisted,
+    rendered_container_count: containerCount,
+    visible_container_count: visibleContainerCount,
+    visible_populated_container_count: visiblePopulatedCount,
+    visible_rendered_item_count: visibleItemCount,
+  };
+  if (persisted === 0) {
+    return {
+      ...common,
+      required: false,
+      ok: null,
+      reason: "order read-back has no persisted lines; buyer-visible receipt-line assertion not applicable",
+    };
+  }
+  if (evidence.inspection_error) {
+    return {
+      ...common,
+      required: true,
+      ok: false,
+      reason: `receipt DOM inspection failed: ${evidence.inspection_error}`,
+    };
+  }
+  if (containerCount === 0) {
+    return {
+      ...common,
+      required: true,
+      ok: false,
+      reason: "persisted order has lines but [data-next-order-items] is missing",
+    };
+  }
+  if (visibleContainerCount === 0) {
+    return {
+      ...common,
+      required: true,
+      ok: false,
+      reason: "persisted order has lines but every [data-next-order-items] container is hidden",
+    };
+  }
+  if (visiblePopulatedCount === 0) {
+    return {
+      ...common,
+      required: true,
+      ok: false,
+      reason: "persisted order has lines but visible [data-next-order-items] containers have no buyer-visible line items",
+    };
+  }
+  if (visibleItemCount < persisted) {
+    return {
+      ...common,
+      required: true,
+      ok: false,
+      reason: `persisted order has ${persisted} line(s) but only ${visibleItemCount} buyer-visible receipt line item(s) rendered`,
+    };
+  }
+  return {
+    ...common,
+    required: true,
+    ok: true,
+    reason: `${visibleItemCount} buyer-visible rendered item candidate(s) across ${visiblePopulatedCount} populated receipt container(s)`,
+  };
 }
 
 async function gotoAndSettle(page, url, args) {
@@ -2101,6 +2292,38 @@ async function clickUpsellPath(page, path, _options = {}) {
   };
 }
 
+function receiptProofEvidence(order) {
+  if (!order?.verification?.receipt_rendering && !order?.receipt_rendering) return null;
+  return {
+    persisted_order: {
+      line_count: Array.isArray(order.receipt_line_items) ? order.receipt_line_items.length : 0,
+      order_read_status: order.verification?.order_read_status ?? null,
+    },
+    buyer_visible_rendering: order.receipt_rendering || null,
+    assessment: order.verification?.receipt_rendering || null,
+  };
+}
+
+function receiptRenderingAssertion(page, path, order) {
+  const assessment = order?.verification?.receipt_rendering;
+  if (!assessment) return null;
+  const proof = receiptProofEvidence(order);
+  const receiptPage = {
+    page_id: `${page.page_id || "checkout"}:receipt:${path}`,
+    url: redactUrlQuery(order.final_url),
+  };
+  return assertion({
+    id: `browser-receipt-rendering:${path}`,
+    family: "browser-receipt-rendering",
+    page: receiptPage,
+    status: assessment.required ? (assessment.ok ? STATUS.PASS : STATUS.FAIL) : STATUS.SKIPPED,
+    severity: assessment.required && !assessment.ok ? SEVERITY.BLOCKER : undefined,
+    expected: "persisted order lines and a visible, populated [data-next-order-items] receipt surface",
+    actual: assessment.reason,
+    evidence: proof,
+  });
+}
+
 function testOrderAssertion(page, path, result) {
   if (result.manual_review) {
     return assertion({
@@ -2134,6 +2357,7 @@ function testOrderAssertion(page, path, result) {
           final_url: result.order.final_url,
           is_test: result.order.is_test,
           line_count: result.order.receipt_line_items.length,
+          ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
           ...(path === "accept" ? { accepted_upsell_line_present: result.order.verification?.accepted_upsell_line_present } : {}),
           ...(result.order.upsell ? { upsell_clicked: result.order.upsell.clicked, upsell_final_url: result.order.upsell.final_url } : {}),
           ...(result.order.upsell_steps ? { upsell_steps: result.order.upsell_steps.map(summarizeUpsellStep) } : {}),
@@ -2143,6 +2367,7 @@ function testOrderAssertion(page, path, result) {
       : {
           final_url: result.order?.final_url,
           steps: result.order?.evidence?.steps,
+          ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
           events: result.events,
         },
   });
@@ -2799,6 +3024,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   paymentChromeResidueAssertion,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
+  assessReceiptRendering,
+  receiptRenderingAssertion,
   placeholderTextResidueAssertion,
   demoAssetResidueAssertion,
   testOrderAssertion,
