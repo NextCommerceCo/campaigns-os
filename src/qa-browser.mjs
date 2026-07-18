@@ -1928,8 +1928,8 @@ async function receiptRenderingEvidence(page) {
   await page.waitForFunction(() => {
     const containers = Array.from(document.querySelectorAll("[data-next-order-items]"));
     return containers.some((container) => (
-      container.childElementCount > 0
-      || String(container.textContent || "").trim().length > 0
+      container.classList.contains("order-has-items")
+      && container.childElementCount > 0
     ));
   }, null, { timeout: 3000 }).catch(() => {});
 
@@ -1947,13 +1947,27 @@ async function receiptRenderingEvidence(page) {
     const containers = Array.from(document.querySelectorAll("[data-next-order-items]"));
     const details = containers.map((container, index) => {
       const directChildren = Array.from(container.children);
-      const explicitItems = Array.from(container.querySelectorAll([
-        "[data-next-order-item]",
-        "[data-next-order-line]",
-        "[data-next-line-item]",
-        '[role="listitem"]',
-      ].join(",")));
-      const itemCandidates = directChildren.length ? directChildren : explicitItems;
+      // Prefer one marker family at a time so nested aliases cannot inflate a
+      // single rendered line into multiple candidates.
+      const explicitItemGroups = [
+        ["data-order-line-id", Array.from(container.querySelectorAll("[data-order-line-id]"))],
+        ["data-next-order-item", Array.from(container.querySelectorAll("[data-next-order-item]"))],
+        ["data-next-order-line", Array.from(container.querySelectorAll("[data-next-order-line]"))],
+        ["data-next-line-item", Array.from(container.querySelectorAll("[data-next-line-item]"))],
+        ["direct-listitem", Array.from(container.querySelectorAll(':scope > [role="listitem"]'))],
+      ];
+      const explicitItemGroup = explicitItemGroups.find(([, items]) => items.length > 0);
+      const explicitItems = explicitItemGroup?.[1] || [];
+      // OrderItemListEnhancer owns this state class. It distinguishes rendered
+      // line roots from its loading/error/empty copy when a custom item
+      // template does not carry an explicit line marker.
+      const hasItemsState = container.classList.contains("order-has-items")
+        && !container.classList.contains("order-loading")
+        && !container.classList.contains("order-error")
+        && !container.classList.contains("order-empty");
+      const itemCandidates = explicitItems.length
+        ? explicitItems
+        : (hasItemsState ? directChildren : []);
       const containerVisible = visible(container);
       const visibleItemCount = itemCandidates.filter(visible).length;
       const textLength = cleanLength(container.textContent);
@@ -1964,10 +1978,12 @@ async function receiptRenderingEvidence(page) {
         child_element_count: container.childElementCount,
         item_candidate_count: itemCandidates.length,
         visible_item_count: visibleItemCount,
+        item_detection: explicitItemGroup?.[0] || (hasItemsState ? "order-has-items-direct-children" : "none"),
+        has_items_state: hasItemsState,
         text_length: textLength,
         visible_text_length: visibleTextLength,
         populated: container.childElementCount > 0 || textLength > 0,
-        buyer_visible_content: containerVisible && (visibleItemCount > 0 || visibleTextLength > 0),
+        buyer_visible_content: containerVisible && visibleItemCount > 0,
       };
     });
     const sum = (field) => details.reduce((total, detail) => total + detail[field], 0);
@@ -1979,6 +1995,9 @@ async function receiptRenderingEvidence(page) {
       visible_populated_container_count: details.filter((detail) => detail.buyer_visible_content).length,
       rendered_item_count: sum("item_candidate_count"),
       visible_rendered_item_count: sum("visible_item_count"),
+      max_visible_rendered_item_count: Math.max(0, ...details
+        .filter((detail) => detail.visible)
+        .map((detail) => detail.visible_item_count)),
       visible_text_length: sum("visible_text_length"),
       containers: details,
     };
@@ -2001,7 +2020,12 @@ function assessReceiptRendering(persistedLineCount, evidence = {}) {
   const containerCount = Math.max(0, Number(evidence.container_count) || 0);
   const visibleContainerCount = Math.max(0, Number(evidence.visible_container_count) || 0);
   const visiblePopulatedCount = Math.max(0, Number(evidence.visible_populated_container_count) || 0);
-  const visibleItemCount = Math.max(0, Number(evidence.visible_rendered_item_count) || 0);
+  // Receipts commonly carry separate desktop/mobile copies. One complete
+  // buyer-visible surface must cover the order; partial copies cannot be
+  // added together to manufacture coverage.
+  const visibleItemCount = Math.max(0, Number(
+    evidence.max_visible_rendered_item_count ?? evidence.visible_rendered_item_count,
+  ) || 0);
   const common = {
     persisted_line_count: persisted,
     rendered_container_count: containerCount,
@@ -2046,7 +2070,15 @@ function assessReceiptRendering(persistedLineCount, evidence = {}) {
       ...common,
       required: true,
       ok: false,
-      reason: "persisted order has lines but visible [data-next-order-items] containers have no buyer-visible content",
+      reason: "persisted order has lines but visible [data-next-order-items] containers have no buyer-visible line items",
+    };
+  }
+  if (visibleItemCount < persisted) {
+    return {
+      ...common,
+      required: true,
+      ok: false,
+      reason: `persisted order has ${persisted} line(s) but only ${visibleItemCount} buyer-visible receipt line item(s) rendered`,
     };
   }
   return {

@@ -98,7 +98,7 @@ test("rendered receipt fails when the order-item container is missing", () => {
   assert.match(result.reason, /is missing/);
 });
 
-test("rendered receipt fails when a visible order-item container is empty", () => {
+test("rendered receipt fails when a visible order-item container has no line items", () => {
   const { assessReceiptRendering } = __qaBrowserTestHooks;
   const result = assessReceiptRendering(1, {
     container_count: 1,
@@ -111,7 +111,51 @@ test("rendered receipt fails when a visible order-item container is empty", () =
 
   assert.equal(result.required, true);
   assert.equal(result.ok, false);
-  assert.match(result.reason, /no buyer-visible content/);
+  assert.match(result.reason, /no buyer-visible line items/);
+});
+
+test("rendered receipt fails when loading or empty copy is the only visible content", () => {
+  const { assessReceiptRendering } = __qaBrowserTestHooks;
+  const result = assessReceiptRendering(1, {
+    container_count: 1,
+    visible_container_count: 1,
+    populated_container_count: 1,
+    visible_populated_container_count: 0,
+    rendered_item_count: 0,
+    visible_rendered_item_count: 0,
+    visible_text_length: 22,
+    containers: [{
+      index: 0,
+      visible: true,
+      child_element_count: 1,
+      item_candidate_count: 0,
+      visible_item_count: 0,
+      has_items_state: false,
+      populated: true,
+      buyer_visible_content: false,
+    }],
+  });
+
+  assert.equal(result.required, true);
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /no buyer-visible line items/);
+});
+
+test("rendered receipt fails when fewer lines render than persisted", () => {
+  const { assessReceiptRendering } = __qaBrowserTestHooks;
+  const result = assessReceiptRendering(5, {
+    container_count: 2,
+    visible_container_count: 2,
+    populated_container_count: 2,
+    visible_populated_container_count: 2,
+    rendered_item_count: 5,
+    visible_rendered_item_count: 5,
+    max_visible_rendered_item_count: 3,
+  });
+
+  assert.equal(result.required, true);
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /persisted order has 5 line\(s\) but only 3/);
 });
 
 test("rendered receipt check is skipped when order read-back has no lines", () => {
