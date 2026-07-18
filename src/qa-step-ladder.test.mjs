@@ -16,6 +16,7 @@ test("step ladder declares the canonical ordered step names", () => {
     "order_submitted",
     "upsell_action",
     "receipt_reached",
+    "receipt_rendered",
   ]);
 });
 

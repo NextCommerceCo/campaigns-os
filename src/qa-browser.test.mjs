@@ -32,6 +32,101 @@ test("order upsell response matcher accepts query strings", () => {
   assert.equal(isOrderUpsellsUrl("https://api.example.com/api/v1/orders/123/upsells-extra?source=checkout"), false);
 });
 
+test("rendered receipt passes only when persisted lines have a visible populated surface", () => {
+  const { assessReceiptRendering } = __qaBrowserTestHooks;
+  const result = assessReceiptRendering(2, {
+    container_count: 2,
+    visible_container_count: 1,
+    populated_container_count: 2,
+    visible_populated_container_count: 1,
+    rendered_item_count: 4,
+    visible_rendered_item_count: 2,
+  });
+
+  assert.equal(result.required, true);
+  assert.equal(result.ok, true);
+  assert.equal(result.persisted_line_count, 2);
+  assert.equal(result.visible_rendered_item_count, 2);
+});
+
+test("rendered receipt fails when populated order-item containers are hidden", () => {
+  const { assessReceiptRendering, receiptRenderingAssertion } = __qaBrowserTestHooks;
+  const rendering = {
+    selector: "[data-next-order-items]",
+    container_count: 1,
+    visible_container_count: 0,
+    populated_container_count: 1,
+    visible_populated_container_count: 0,
+    rendered_item_count: 2,
+    visible_rendered_item_count: 0,
+    containers: [{ index: 0, visible: false, child_element_count: 2, populated: true, buyer_visible_content: false }],
+  };
+  const assessment = assessReceiptRendering(2, rendering);
+  const assertionResult = receiptRenderingAssertion(
+    { page_id: "checkout", url: "https://example.test/checkout/" },
+    "checkout",
+    {
+      final_url: "https://example.test/receipt/?ref_id=redacted",
+      receipt_line_items: [{}, {}],
+      receipt_rendering: rendering,
+      verification: { order_read_status: 200, receipt_rendering: assessment },
+    },
+  );
+
+  assert.equal(assessment.ok, false);
+  assert.match(assessment.reason, /every .* container is hidden/);
+  assert.equal(assertionResult.status, "fail");
+  assert.equal(assertionResult.severity, "blocker");
+  assert.equal(assertionResult.url, "https://example.test/receipt/");
+  assert.equal(assertionResult.evidence.persisted_order.line_count, 2);
+  assert.equal(assertionResult.evidence.buyer_visible_rendering.rendered_item_count, 2);
+});
+
+test("rendered receipt fails when the order-item container is missing", () => {
+  const { assessReceiptRendering } = __qaBrowserTestHooks;
+  const result = assessReceiptRendering(1, {
+    container_count: 0,
+    visible_container_count: 0,
+    populated_container_count: 0,
+    visible_populated_container_count: 0,
+    rendered_item_count: 0,
+    visible_rendered_item_count: 0,
+  });
+
+  assert.equal(result.required, true);
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /is missing/);
+});
+
+test("rendered receipt fails when a visible order-item container is empty", () => {
+  const { assessReceiptRendering } = __qaBrowserTestHooks;
+  const result = assessReceiptRendering(1, {
+    container_count: 1,
+    visible_container_count: 1,
+    populated_container_count: 0,
+    visible_populated_container_count: 0,
+    rendered_item_count: 0,
+    visible_rendered_item_count: 0,
+  });
+
+  assert.equal(result.required, true);
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /no buyer-visible content/);
+});
+
+test("rendered receipt check is skipped when order read-back has no lines", () => {
+  const { assessReceiptRendering } = __qaBrowserTestHooks;
+  const result = assessReceiptRendering(0, {
+    container_count: 0,
+    visible_container_count: 0,
+    visible_populated_container_count: 0,
+    visible_rendered_item_count: 0,
+  });
+
+  assert.equal(result.required, false);
+  assert.equal(result.ok, null);
+});
+
 test("accepted upsell proof requires exact expected quantity", () => {
   const { acceptedUpsellProof } = __qaBrowserTestHooks;
   const expected = [{ package_id: "pkg-oto", quantity: 1, display_name: "OTO" }];

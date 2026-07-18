@@ -644,6 +644,7 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze([
   "template_residue",
   "pricing",
   "browser-test-order",
+  "browser-receipt-rendering",
   "analytics-correctness",
   "analytics-parity",
   "parity-capture",
