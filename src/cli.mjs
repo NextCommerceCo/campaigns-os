@@ -4423,11 +4423,22 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
         `Built output still renders a needs-merchant-input marker (${finding.file}: "${finding.excerpt}"). Collect the missing merchant input (attestation lane) before publish.`,
       );
     } else if (id === "unverified_urgency_countdown") {
-      addIssue(
-        errors,
-        "content_residue.unverified_urgency",
-        `Built output renders countdown chrome without verified offer urgency (${finding.file}). Set offer.urgency.verified in ${BRIEF_PAYLOAD_REL_PATH} from a real promotion window, or blank the urgency slots.`,
-      );
+      // Hard-block only on the AI-assembled path (a brief payload exists and
+      // does not verify urgency). A designed-source campaign with no brief
+      // payload may carry an intentional countdown — that stays review-tier.
+      if (brief) {
+        addIssue(
+          errors,
+          "content_residue.unverified_urgency",
+          `Built output renders countdown chrome without verified offer urgency (${finding.file}). Set offer.urgency.verified in ${BRIEF_PAYLOAD_REL_PATH} from a real promotion window, or blank the urgency slots.`,
+        );
+      } else {
+        addIssue(
+          warnings,
+          "content_residue.urgency_unattested",
+          `Built output renders countdown chrome and no brief payload attests the promotion window (${finding.file}). Confirm the urgency is real (a genuine offer window or live inventory) before launch.`,
+        );
+      }
     } else if (id === "demo_residue_term" || id === "bracket_placeholder_stub") {
       addIssue(
         warnings,

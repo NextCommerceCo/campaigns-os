@@ -32,12 +32,19 @@ export const COUNTDOWN_CHROME = /data-countdown-(?:hrs|min|sec)/;
 export const BRACKET_STUB = /\[(?:[A-Z][A-Za-z0-9/&().,'’-]*)(?:\s+[A-Za-z0-9/&().,'’-]+)*\]/;
 
 // Public starter-template demo values that must never survive into a built
-// campaign (the templates de-fabricated these; hits mean a stale template or
-// unreplaced demo frontmatter).
+// campaign. The templates deliberately keep realistic, proof-shaped demo
+// content (demo teaches the SHAPE of typical content); this exact-string list
+// is what keeps that demo content from silently shipping — a hit means an
+// unreplaced demo slot or a stale template.
 export const DEMO_RESIDUE_TERMS = Object.freeze([
   "Sarah Mitchell",
   "Wellness Insider",
   "10 Reasons Why You Need This",
+  "10 Reasons Why Thousands Are Switching",
+  "Backed by Over 1,200 Five-Star Reviews",
+  "Trusted by 50,000+ Happy Customers",
+  "Doctor-Formulated for Real Results",
+  "Made in an FDA-Registered Facility",
   "Lowest Price of the Year",
   "DEAL ENDING IN:",
   "1,247 reviews",
