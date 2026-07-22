@@ -106,6 +106,15 @@ import {
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
 } from "./template-brand-contract.mjs";
+import {
+  scanBuiltOutputContentResidue,
+  loadBriefPayload,
+  briefUrgencyVerified,
+  collectRenderedHtmlFiles,
+  evaluateProofAssets,
+  attestationBlockers,
+  BRIEF_PAYLOAD_REL_PATH,
+} from "./content-residue.mjs";
 import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import {
   resolveBuiltSiteScope,
@@ -2102,6 +2111,16 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "built_output.route_drift",
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltRouteDrift(spec, packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: "built_output.content_residue",
+    phase: "built-output",
+    run: ({ packet, errors, warnings, ready, derived, buildState }) => validateBuiltContentResidue(packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: "built_output.proof_attestation",
+    phase: "built-output",
+    run: ({ packet, errors, warnings, ready, derived, buildState }) => validateProofAttestation(packet, errors, warnings, ready, derived, buildState),
   },
 ], { registryId: "packet.spec" });
 
@@ -4371,6 +4390,111 @@ function collectPlaceholderTextResidueMatches(root, terms) {
   return matches;
 }
 
+// Rendered-output content-residue scan (assembly-surfaces prototype): scans
+// BUILT pages for the needs-merchant-input marker and urgency chrome rendered
+// without verified offer urgency (blockers), plus demo/placeholder residue and
+// generic content anti-pattern hits (warnings feeding the review/attestation
+// queue). Scans _site output, not frontmatter — layout/script-rendered chrome
+// only exists after the build.
+export function validateBuiltContentResidue(packet, errors, warnings, ready, derived, buildState = {}) {
+  if (!isStageComplete(buildState.report, "assembly")) return;
+  const targetOutputDir = derived.target_output_dir;
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return;
+  const brief = loadBriefPayload(derived.target_repo);
+  const urgencyVerified = briefUrgencyVerified(brief?.payload);
+  const findings = scanBuiltOutputContentResidue(targetOutputDir, { urgencyVerified });
+  if (!findings.length) {
+    ready.push("Built output carries no needs-input markers, unverified urgency chrome, or content-residue hits");
+    return;
+  }
+  const byId = new Map();
+  for (const finding of findings) {
+    if (!byId.has(finding.id)) byId.set(finding.id, finding);
+  }
+  for (const [id, finding] of byId) {
+    if (id === "needs_merchant_input_marker") {
+      addIssue(
+        errors,
+        "content_residue.needs_merchant_input",
+        `Built output still renders a needs-merchant-input marker (${finding.file}: "${finding.excerpt}"). Collect the missing merchant input (attestation lane) before publish.`,
+      );
+    } else if (id === "unverified_urgency_countdown") {
+      addIssue(
+        errors,
+        "content_residue.unverified_urgency",
+        `Built output renders countdown chrome without verified offer urgency (${finding.file}). Set offer.urgency.verified in ${BRIEF_PAYLOAD_REL_PATH} from a real promotion window, or blank the urgency slots.`,
+      );
+    } else if (id === "demo_residue_term" || id === "bracket_placeholder_stub") {
+      addIssue(
+        warnings,
+        "content_residue.demo_residue",
+        `Built output carries template demo/placeholder residue (${finding.file}: "${finding.excerpt}"). Fill or blank the slot — demo values must never ship.`,
+      );
+    } else {
+      addIssue(
+        warnings,
+        "content_residue.anti_pattern",
+        `Built output matches content anti-pattern "${id}" (${finding.file}: "${finding.excerpt}"). ${finding.rule || "Remove it or route it through brief-sourced proof."} Detection fails closed: remove or evidence the claim, never make it more plausible.`,
+      );
+    }
+  }
+}
+
+// Proof-attestation gate over the brief payload's proof_assets (click-wrap
+// lane). Usable = verified:true OR attestation_status:"accepted". Enforcement
+// keys on whether a non-usable asset's content actually SHIPPED in built
+// output: shipped pending/non-attestable content blocks (collect-inputs);
+// non-shipped, non-usable assets stay warnings (the attestation queue), so a
+// producer that correctly excluded them is not blocked.
+export function validateProofAttestation(packet, errors, warnings, ready, derived, buildState = {}) {
+  const brief = loadBriefPayload(derived.target_repo);
+  if (!brief) return; // not an AI-assembled run — no brief payload, no gate
+  if (brief.error) {
+    addIssue(warnings, "proof_attestation.unreadable", `Brief payload at ${BRIEF_PAYLOAD_REL_PATH} failed to parse: ${brief.error}.`);
+    return;
+  }
+  const proofAssets = brief.payload?.proof_assets;
+  if (!Array.isArray(proofAssets) || proofAssets.length === 0) {
+    ready.push("Brief payload declares no proof assets (scenario-framing fallback applies)");
+    return;
+  }
+  const assemblyComplete = isStageComplete(buildState.report, "assembly");
+  const targetOutputDir = derived.target_output_dir;
+  let renderedText = "";
+  if (assemblyComplete && targetOutputDir && existsSync(targetOutputDir)) {
+    renderedText = collectRenderedHtmlFiles(targetOutputDir)
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+  }
+  const findings = evaluateProofAssets(proofAssets, renderedText);
+  const usable = findings.filter((f) => f.state === "verified" || f.state === "accepted").length;
+  const pending = findings.filter((f) => f.state === "pending");
+  const nonAttestable = findings.filter((f) => f.state === "non_attestable");
+  const { shippedNonAttestable, shippedPending } = attestationBlockers(findings);
+  for (const finding of shippedNonAttestable) {
+    addIssue(
+      errors,
+      "proof_attestation.non_attestable_shipped",
+      `Built output ships non-attestable proof asset ${finding.assetId ?? "(unidentified)"} (${finding.modality ?? "unknown modality"}). This proof class is never attestable — remove it from the content.`,
+    );
+  }
+  for (const finding of shippedPending) {
+    addIssue(
+      errors,
+      "proof_attestation.pending_shipped",
+      `Built output ships proof asset ${finding.assetId ?? "(unidentified)"} (${finding.modality ?? "unknown modality"}) whose attestation is not accepted. Collect the merchant's click-wrap attestation or remove the claim.`,
+    );
+  }
+  if (!shippedNonAttestable.length && !shippedPending.length && (pending.length || nonAttestable.length)) {
+    addIssue(
+      warnings,
+      "proof_attestation.queue",
+      `Brief payload carries ${pending.length} attestation-pending and ${nonAttestable.length} non-attestable proof asset(s); none shipped in built output. Pending items are the merchant attestation checklist.`,
+    );
+  }
+  if (usable) ready.push(`${usable} proof asset(s) usable (verified or attestation accepted)`);
+}
+
 // H3.2 (doctor surface): the family's own demo placeholder assets surviving
 // into built output. Reuses the literal-match infra over the demo-asset
 // basenames declared in the brand contract. Warning only — the agent re-skins.
@@ -5412,6 +5536,15 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
   if (codes.has("template_contract.demo_asset_residue")) {
     actions.push("Re-skin template demo placeholder assets (spacer SVGs, repeated benefit icons, starter imagery) to the campaign's real assets before launch.");
+  }
+  if (codes.has("content_residue.needs_merchant_input")) {
+    actions.push("Collect the flagged merchant inputs (byline identity, proof data) via the attestation lane, re-inject the slots, and rebuild — the needs-input marker must never ship.");
+  }
+  if (codes.has("content_residue.unverified_urgency")) {
+    actions.push("Blank the urgency slots (countdown/sell-out) or record verified offer urgency in the brief payload's offer.urgency, then rebuild.");
+  }
+  if (codes.has("proof_attestation.pending_shipped") || codes.has("proof_attestation.non_attestable_shipped")) {
+    actions.push("Resolve shipped proof against the brief payload's proof_assets: collect the merchant's click-wrap attestation for attestable items; remove non-attestable proof outright.");
   }
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");
