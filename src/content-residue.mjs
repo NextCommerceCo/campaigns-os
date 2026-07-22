@@ -55,7 +55,11 @@ export const CONTENT_ANTI_PATTERNS = Object.freeze([
     id: "invented_counts",
     antiPattern: 1,
     rule: "Counts/ratings/percent-recommend claims require a real, brief-sourced basis.",
-    regex: /\b\d{1,3}(?:,\d{3})*\+?\s+(?:reviews?|ratings?|customers?|users?|famil(?:y|ies)|wearers?|sold|pairs|people)\b|\b(?:4\.[5-9]|5\.0)\s*(?:\/\s*5|stars?)|\b(?:9[0-9]|100)%\b[^<]{0,60}\b(?:recommend|reported|said|would)\b/i,
+    // Count branch requires a proof-scaled number (comma groups, 4+ digits, or
+    // a trailing +) so ordinary commerce quantities ("Choose 3 pairs and
+    // save") never enter the review queue; "pairs"/"sold" dropped as nouns
+    // for the same reason. Small invented counts are a knowingly accepted gap.
+    regex: /\b(?:\d{1,3}(?:,\d{3})+|\d{4,}|\d+\+)\s+(?:reviews?|ratings?|customers?|users?|famil(?:y|ies)|wearers?|people)\b|\b(?:4\.[5-9]|5\.0)\s*(?:\/\s*5|stars?)|\b(?:9[0-9]|100)%\b[^<]{0,60}\b(?:recommend|reported|said|would)\b/i,
   },
   {
     id: "verified_buyer_chrome",
@@ -101,11 +105,35 @@ export const CONTENT_ANTI_PATTERNS = Object.freeze([
   },
 ]);
 
-function isHtmlComment(html, index) {
-  const open = html.lastIndexOf("<!--", index);
-  if (open === -1) return false;
-  const close = html.indexOf("-->", open);
-  return close !== -1 && close > index;
+const ENTITIES = new Map([
+  ["&amp;", "&"], ["&lt;", "<"], ["&gt;", ">"], ["&quot;", '"'],
+  ["&#39;", "'"], ["&apos;", "'"], ["&nbsp;", " "], ["&#8217;", "’"], ["&#8212;", "—"],
+]);
+
+function decodeEntities(value) {
+  return String(value)
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&[a-z]+;/gi, (m) => ENTITIES.get(m.toLowerCase()) ?? m);
+}
+
+// Markup view: comments and script/style BODIES removed, tags and attributes
+// kept. The scan surface for hard checks — a `<!-- NEEDS MERCHANT INPUT -->`
+// note or a `querySelector('[data-countdown-hrs]')` reference must not block,
+// but a marker in an alt attribute is shipped content and must.
+export function markupView(html) {
+  return String(html)
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "<script></script>")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "<style></style>");
+}
+
+// Visible-text view: markup view with tags stripped and entities decoded —
+// what a shopper (or screen reader, via appended alt text) actually reads.
+export function visibleText(html) {
+  const markup = markupView(html);
+  const altText = [...markup.matchAll(/\balt="([^"]*)"/gi)].map((m) => m[1]).join(" ");
+  return decodeEntities(`${markup.replace(/<[^>]*>/g, " ")} ${altText}`).replace(/\s+/g, " ");
 }
 
 function excerptAt(html, index, span = 80) {
@@ -114,43 +142,47 @@ function excerptAt(html, index, span = 80) {
 }
 
 // Pure scan of one rendered HTML document. Returns { hard: [], review: [] };
-// each finding: { id, tier, rule?, excerpt }.
+// each finding: { id, tier, rule?, excerpt }. Hard checks run on the markup
+// view (attributes count, comments/scripts do not); review checks run on the
+// visible-text view for precision, except exact-string demo terms and bracket
+// stubs which run on markup so attribute residue is still caught.
 export function scanRenderedHtml(html, { urgencyVerified = false } = {}) {
-  const text = typeof html === "string" ? html : "";
+  const markup = markupView(typeof html === "string" ? html : "");
+  const text = visibleText(typeof html === "string" ? html : "");
   const hard = [];
   const review = [];
 
-  const marker = NEEDS_INPUT_MARKER.exec(text);
+  const marker = NEEDS_INPUT_MARKER.exec(markup);
   if (marker) {
-    hard.push({ id: "needs_merchant_input_marker", tier: "hard", excerpt: excerptAt(text, marker.index) });
+    hard.push({ id: "needs_merchant_input_marker", tier: "hard", excerpt: excerptAt(markup, marker.index) });
   }
 
-  const countdown = COUNTDOWN_CHROME.exec(text);
+  const countdown = COUNTDOWN_CHROME.exec(markup);
   if (countdown && !urgencyVerified) {
     hard.push({
       id: "unverified_urgency_countdown",
       tier: "hard",
       rule: "Countdown chrome rendered without verified offer urgency (offer.urgency.verified).",
-      excerpt: excerptAt(text, countdown.index),
+      excerpt: excerptAt(markup, countdown.index),
     });
   }
 
-  const bracket = BRACKET_STUB.exec(text);
-  if (bracket && !isHtmlComment(text, bracket.index)) {
-    review.push({ id: "bracket_placeholder_stub", tier: "review", excerpt: excerptAt(text, bracket.index) });
+  const bracket = BRACKET_STUB.exec(markup.replace(/<[^>]*>/g, " "));
+  if (bracket) {
+    review.push({ id: "bracket_placeholder_stub", tier: "review", excerpt: bracket[0] });
   }
 
   for (const term of DEMO_RESIDUE_TERMS) {
-    const index = text.indexOf(term);
+    const index = markup.indexOf(term);
     if (index !== -1) {
-      review.push({ id: "demo_residue_term", tier: "review", term, excerpt: excerptAt(text, index) });
+      review.push({ id: "demo_residue_term", tier: "review", term, excerpt: excerptAt(markup, index) });
     }
   }
 
   for (const pattern of CONTENT_ANTI_PATTERNS) {
     if (pattern.id === "scarcity_theater" && urgencyVerified) continue;
     const match = pattern.regex.exec(text);
-    if (match && !isHtmlComment(text, match.index)) {
+    if (match) {
       review.push({
         id: pattern.id,
         tier: "review",
@@ -223,21 +255,26 @@ function normalizeForMatch(value) {
 }
 
 // Pure: attestation findings for one set of proof assets against the
-// concatenated rendered text. Returns findings:
-// { id, assetId, modality, state, shipped } where state is
-// "verified" | "accepted" | "pending" | "non_attestable".
-export function evaluateProofAssets(proofAssets, renderedText) {
+// rendered output. Pass the RAW built HTML (or a concatenation of pages);
+// matching happens against the decoded visible-text view so entity encoding
+// (`&amp;`) and inline tags (`<strong>` inside a claim) cannot hide shipped
+// proof. Returns findings: { id, assetId, modality, state, shipped } where
+// state is "verified" | "accepted" | "pending" | "non_attestable".
+export function evaluateProofAssets(proofAssets, renderedHtml) {
   const findings = [];
-  const haystack = normalizeForMatch(renderedText);
+  const haystack = normalizeForMatch(visibleText(renderedHtml || ""));
   for (const asset of Array.isArray(proofAssets) ? proofAssets : []) {
     const verified = asset?.verified === true;
     const accepted = asset?.attestation_status === "accepted";
     const attestable = asset?.attestable === true;
     const state = verified ? "verified" : accepted ? "accepted" : attestable ? "pending" : "non_attestable";
-    // Match on a distinctive prefix of the asset content; short contents
-    // match whole. Whitespace-normalized, case-insensitive.
-    const needle = normalizeForMatch(asset?.content).slice(0, 60);
-    const shipped = needle.length >= 8 && haystack.includes(needle);
+    // Match on the whole normalized content (short claims like "4.9/5" or
+    // "89%" count), falling back to a distinctive 60-char prefix for long
+    // assets. Fail-closed direction: a false "shipped" costs a review, a
+    // false "absent" ships unapproved proof.
+    const normalized = normalizeForMatch(asset?.content);
+    const needle = normalized.slice(0, 60);
+    const shipped = needle.length >= 3 && haystack.includes(needle);
     findings.push({ assetId: asset?.id ?? null, modality: asset?.modality ?? null, state, shipped });
   }
   return findings;

@@ -37,7 +37,10 @@ const templatesRoot = resolve(
 // Flat frontmatter keys of a page-kit page: lines matching `key: ...` between
 // the --- fences at column 0. Nested structure lines are indented and
 // deliberately ignored — structured objects are declared via their flat
-// parent key (commerce slots).
+// parent key (commerce slots). The capture is deliberately WIDE (any
+// non-comment token before a colon): a key with unsupported syntax
+// (`promo-headline:`, `"quoted":`, uppercase) must reach the subset
+// comparison and fail as undeclared, not be silently skipped.
 export function flatFrontmatterKeys(text) {
   const keys = [];
   let fences = 0;
@@ -48,8 +51,9 @@ export function flatFrontmatterKeys(text) {
       continue;
     }
     if (fences !== 1) continue;
-    const match = /^([a-z0-9_]+):/.exec(line);
-    if (match) keys.push(match[1]);
+    if (/^[#\s-]/.test(line)) continue; // comments, nested lines, list items
+    const match = /^(\S+?):(\s|$)/.exec(line);
+    if (match) keys.push(match[1].replace(/^["']|["']$/g, ""));
   }
   return keys;
 }
@@ -94,6 +98,11 @@ function main() {
   const srcRoot = join(templatesRoot, "src");
   if (!existsSync(srcRoot)) fail(`Starter-templates checkout has no src/ at ${srcRoot}.`);
 
+  // Known non-family directories in the templates checkout (the composable
+  // landing section library). Anything else without a manifest FAILS — a new
+  // or renamed family must ship its slot manifest, not silently bypass CI.
+  const EXEMPT_NON_FAMILY_DIRS = new Set(["landing"]);
+
   let families = 0;
   let pagesChecked = 0;
   const allViolations = [];
@@ -102,7 +111,17 @@ function main() {
     if (!entry.isDirectory()) continue;
     const family = entry.name;
     const manifest = loadTemplateSlotManifest(family);
-    if (!manifest) continue; // e.g. the landing section library — no manifest, no gate
+    if (!manifest) {
+      if (!EXEMPT_NON_FAMILY_DIRS.has(family)) {
+        allViolations.push({
+          family,
+          page: "(family)",
+          key: "(manifest)",
+          reason: "family directory has no template-slot-manifest and is not an exempt non-family dir",
+        });
+      }
+      continue;
+    }
     families += 1;
     const pages = [];
     for (const file of readdirSync(join(srcRoot, family))) {
@@ -111,6 +130,15 @@ function main() {
       const keys = flatFrontmatterKeys(readFileSync(join(srcRoot, family, file), "utf8"));
       pages.push({ page, keys });
       pagesChecked += 1;
+    }
+    if (!pages.length) {
+      allViolations.push({
+        family,
+        page: "(family)",
+        key: "(pages)",
+        reason: "manifested family has zero top-level pages — nothing was checked (moved/nested pages bypass the gate)",
+      });
+      continue;
     }
     const { violations, notes } = checkFamilyPages(manifest, pages);
     for (const v of violations) allViolations.push({ family, ...v });

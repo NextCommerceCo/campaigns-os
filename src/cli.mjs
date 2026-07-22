@@ -4450,7 +4450,9 @@ export function validateProofAttestation(packet, errors, warnings, ready, derive
   const brief = loadBriefPayload(derived.target_repo);
   if (!brief) return; // not an AI-assembled run — no brief payload, no gate
   if (brief.error) {
-    addIssue(warnings, "proof_attestation.unreadable", `Brief payload at ${BRIEF_PAYLOAD_REL_PATH} failed to parse: ${brief.error}.`);
+    // Fail closed: the brief payload is the source of attestation state. If
+    // it exists but cannot be read, unapproved proof could ship unevaluated.
+    addIssue(errors, "proof_attestation.unreadable", `Brief payload at ${BRIEF_PAYLOAD_REL_PATH} failed to parse: ${brief.error}. Repair or regenerate it — the attestation gate cannot evaluate proof states.`);
     return;
   }
   const proofAssets = brief.payload?.proof_assets;

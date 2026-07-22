@@ -88,6 +88,36 @@ test("proof attestation: usable states ship freely; shipped pending/non-attestab
   assert.equal(blockers.shippedPending.length, 0);
 });
 
+test("comments and scripts never trigger hard findings; attributes still do", () => {
+  const commentOnly = "<!-- NEEDS MERCHANT INPUT docs --><script>document.querySelector('[data-countdown-hrs]')</script>";
+  const { hard } = scanRenderedHtml(commentOnly);
+  assert.equal(hard.length, 0);
+  const inAlt = '<img alt="⚠ NEEDS MERCHANT INPUT: author_name ⚠">';
+  assert.equal(scanRenderedHtml(inAlt).hard[0].id, "needs_merchant_input_marker");
+});
+
+test("a comment occurrence does not mask a later visible anti-pattern hit", () => {
+  const html = "<!-- Verified Buyer component --><p>ok</p><span>Verified Buyer</span>";
+  const { review } = scanRenderedHtml(html);
+  assert.ok(review.some((f) => f.id === "verified_buyer_chrome"));
+});
+
+test("ordinary commerce quantities are not invented counts", () => {
+  const { review } = scanRenderedHtml("<p>Choose 3 pairs and save. Buy 2 items today.</p>");
+  assert.ok(!review.some((f) => f.id === "invented_counts"));
+});
+
+test("attestation matching survives entity encoding, inline tags, and short claims", () => {
+  const assets = [
+    { id: "pa-a", modality: "study", content: "Smith & Jones study", verified: false, attestable: true, attestation_status: "pending" },
+    { id: "pa-b", modality: "count", content: "89%", verified: false, attestable: false, attestation_status: "none" },
+  ];
+  const html = "<p>Backed by the Smith &amp; Jones <strong>study</strong>. 89% agreed.</p>";
+  const { shippedNonAttestable, shippedPending } = attestationBlockers(evaluateProofAssets(assets, html));
+  assert.deepEqual(shippedPending.map((f) => f.assetId), ["pa-a"]);
+  assert.deepEqual(shippedNonAttestable.map((f) => f.assetId), ["pa-b"]);
+});
+
 test("briefUrgencyVerified reads offer.urgency.verified", () => {
   assert.equal(briefUrgencyVerified({ offer: { urgency: { verified: true } } }), true);
   assert.equal(briefUrgencyVerified({ offer: { urgency: { verified: false } } }), false);
