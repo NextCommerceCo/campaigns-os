@@ -4398,11 +4398,15 @@ function collectPlaceholderTextResidueMatches(root, terms) {
 // only exists after the build.
 export function validateBuiltContentResidue(packet, errors, warnings, ready, derived, buildState = {}) {
   if (!isStageComplete(buildState.report, "assembly")) return;
-  const targetOutputDir = derived.target_output_dir;
-  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return;
+  // Scan the RENDERED _site output, not the campaign source dir: the Liquid
+  // guards ({% if countdown_label %}) only resolve at build time, and layout/
+  // script-rendered chrome only exists in the built pages.
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = derived.target_repo && publicRouteSlug ? join(derived.target_repo, "_site", publicRouteSlug) : null;
+  if (!siteRoot || !existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) return;
   const brief = loadBriefPayload(derived.target_repo);
   const urgencyVerified = briefUrgencyVerified(brief?.payload);
-  const findings = scanBuiltOutputContentResidue(targetOutputDir, { urgencyVerified });
+  const findings = scanBuiltOutputContentResidue(siteRoot, { urgencyVerified });
   if (!findings.length) {
     ready.push("Built output carries no needs-input markers, unverified urgency chrome, or content-residue hits");
     return;
@@ -4461,10 +4465,11 @@ export function validateProofAttestation(packet, errors, warnings, ready, derive
     return;
   }
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
-  const targetOutputDir = derived.target_output_dir;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = derived.target_repo && publicRouteSlug ? join(derived.target_repo, "_site", publicRouteSlug) : null;
   let renderedText = "";
-  if (assemblyComplete && targetOutputDir && existsSync(targetOutputDir)) {
-    renderedText = collectRenderedHtmlFiles(targetOutputDir)
+  if (assemblyComplete && siteRoot && existsSync(siteRoot)) {
+    renderedText = collectRenderedHtmlFiles(siteRoot)
       .map((file) => readFileSync(file, "utf8"))
       .join("\n");
   }

@@ -93,7 +93,10 @@ function setLine(key, value) {
     missing.push(key);
     return false;
   }
-  fm = fm.replace(rx, `$1: ${JSON.stringify(value)}`);
+  // Replacer FUNCTION, not a replacement string: producer copy legitimately
+  // contains "$1"-style sequences ("$130") that a string replacement would
+  // interpret as capture-group references and corrupt.
+  fm = fm.replace(rx, (_, matchedKey) => `${matchedKey}: ${JSON.stringify(value)}`);
   return true;
 }
 
