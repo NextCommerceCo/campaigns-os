@@ -18,6 +18,11 @@ test("flatFrontmatterKeys reads column-0 keys between the fences only", () => {
   assert.deepEqual(flatFrontmatterKeys(page), ["title", "styles", "article_title"]);
 });
 
+test("flatFrontmatterKeys surfaces no-space and odd-syntax keys instead of skipping them", () => {
+  const page = ["---", "canonical:https://example.com/foo", "promo-headline: x", '"quoted": y', "---"].join("\n");
+  assert.deepEqual(flatFrontmatterKeys(page), ["canonical", "promo-headline", "quoted"]);
+});
+
 test("checkFamilyPages flags undeclared keys and unmanifested pages", () => {
   const manifest = loadTemplateSlotManifest("apollo");
   const { violations } = checkFamilyPages(manifest, [

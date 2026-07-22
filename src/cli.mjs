@@ -4411,45 +4411,63 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
     ready.push("Built output carries no needs-input markers, unverified urgency chrome, or content-residue hits");
     return;
   }
+  // One issue per finding id, carrying the FULL file inventory: the id keeps
+  // the issue list readable (a demo term on every page is one problem, not
+  // five), while the file list tells the operator everything to fix.
   const byId = new Map();
   for (const finding of findings) {
-    if (!byId.has(finding.id)) byId.set(finding.id, finding);
+    const group = byId.get(finding.id) || { first: finding, files: new Set() };
+    group.files.add(finding.file);
+    byId.set(finding.id, group);
   }
-  for (const [id, finding] of byId) {
+  const describeFiles = (files) => {
+    const list = [...files].sort();
+    const shown = list.slice(0, 5).join(", ");
+    return list.length > 5 ? `${list.length} pages: ${shown}, …` : shown;
+  };
+  // The AI-assembled path is "a READABLE brief payload exists" — an unreadable
+  // one already blocks via proof_attestation.unreadable, and pointing the
+  // operator at offer.urgency.verified inside a file that cannot be parsed
+  // would be wrong remediation copy.
+  const briefReadable = Boolean(brief && !brief.error && brief.payload);
+  for (const [id, group] of byId) {
+    const finding = group.first;
+    const where = describeFiles(group.files);
     if (id === "needs_merchant_input_marker") {
       addIssue(
         errors,
         "content_residue.needs_merchant_input",
-        `Built output still renders a needs-merchant-input marker (${finding.file}: "${finding.excerpt}"). Collect the missing merchant input (attestation lane) before publish.`,
+        `Built output still renders needs-merchant-input marker(s) (${where}; e.g. "${finding.excerpt}"). Collect the missing merchant input (attestation lane) before publish.`,
       );
     } else if (id === "unverified_urgency_countdown") {
-      // Hard-block only on the AI-assembled path (a brief payload exists and
-      // does not verify urgency). A designed-source campaign with no brief
-      // payload may carry an intentional countdown — that stays review-tier.
-      if (brief) {
+      // The scanner emits this only when the brief does not verify urgency
+      // (urgencyVerified=false). Severity keys on the path: with a readable
+      // brief payload (AI-assembled) it blocks; a designed-source campaign
+      // with no brief payload may carry an intentional countdown — warning.
+      if (briefReadable) {
         addIssue(
           errors,
           "content_residue.unverified_urgency",
-          `Built output renders countdown chrome without verified offer urgency (${finding.file}). Set offer.urgency.verified in ${BRIEF_PAYLOAD_REL_PATH} from a real promotion window, or blank the urgency slots.`,
+          `Built output renders countdown chrome without verified offer urgency (${where}). Set offer.urgency.verified in ${BRIEF_PAYLOAD_REL_PATH} from a real promotion window, or blank the urgency slots.`,
         );
       } else {
         addIssue(
           warnings,
           "content_residue.urgency_unattested",
-          `Built output renders countdown chrome and no brief payload attests the promotion window (${finding.file}). Confirm the urgency is real (a genuine offer window or live inventory) before launch.`,
+          `Built output renders countdown chrome and no readable brief payload attests the promotion window (${where}). Confirm the urgency is real (a genuine offer window or live inventory) before launch.`,
         );
       }
     } else if (id === "demo_residue_term" || id === "bracket_placeholder_stub") {
       addIssue(
         warnings,
         "content_residue.demo_residue",
-        `Built output carries template demo/placeholder residue (${finding.file}: "${finding.excerpt}"). Fill or blank the slot — demo values must never ship.`,
+        `Built output carries template demo/placeholder residue (${where}; e.g. "${finding.excerpt}"). Fill or blank the slot — demo values must never ship.`,
       );
     } else {
       addIssue(
         warnings,
         "content_residue.anti_pattern",
-        `Built output matches content anti-pattern "${id}" (${finding.file}: "${finding.excerpt}"). ${finding.rule || "Remove it or route it through brief-sourced proof."} Detection fails closed: remove or evidence the claim, never make it more plausible.`,
+        `Built output matches content anti-pattern "${id}" (${where}; e.g. "${finding.excerpt}"). ${finding.rule || "Remove it or route it through brief-sourced proof."} Detection fails closed: remove or evidence the claim, never make it more plausible.`,
       );
     }
   }
@@ -4488,6 +4506,15 @@ export function validateProofAttestation(packet, errors, warnings, ready, derive
   const usable = findings.filter((f) => f.state === "verified" || f.state === "accepted").length;
   const pending = findings.filter((f) => f.state === "pending");
   const nonAttestable = findings.filter((f) => f.state === "non_attestable");
+  if (!assemblyComplete) {
+    // Shipped-content evaluation needs built output; before assembly there is
+    // nothing to judge and a "none shipped" warning would be both misleading
+    // and noisy on every pre-build doctor run.
+    ready.push(
+      `Brief payload declares ${proofAssets.length} proof asset(s) (${usable} usable, ${pending.length} pending attestation, ${nonAttestable.length} non-attestable); shipped-content evaluation runs after assembly.`,
+    );
+    return;
+  }
   const { shippedNonAttestable, shippedPending } = attestationBlockers(findings);
   for (const finding of shippedNonAttestable) {
     addIssue(

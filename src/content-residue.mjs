@@ -275,13 +275,21 @@ export function evaluateProofAssets(proofAssets, renderedHtml) {
     const accepted = asset?.attestation_status === "accepted";
     const attestable = asset?.attestable === true;
     const state = verified ? "verified" : accepted ? "accepted" : attestable ? "pending" : "non_attestable";
-    // Match on the whole normalized content (short claims like "4.9/5" or
-    // "89%" count), falling back to a distinctive 60-char prefix for long
-    // assets. Fail-closed direction: a false "shipped" costs a review, a
-    // false "absent" ships unapproved proof.
+    // Match on the whole normalized content, falling back to a distinctive
+    // 60-char prefix for long assets. Fail-closed direction: a false
+    // "shipped" costs a review, a false "absent" ships unapproved proof.
+    // Short claims ("4.9/5", "89%") still count, but match on token
+    // boundaries so "4.9" cannot fire inside "$14.99" — a bare substring
+    // scan over the whole visible-text haystack would flag noise.
     const normalized = normalizeForMatch(asset?.content);
     const needle = normalized.slice(0, 60);
-    const shipped = needle.length >= 3 && haystack.includes(needle);
+    let shipped = false;
+    if (needle.length >= 8) {
+      shipped = haystack.includes(needle);
+    } else if (needle.length >= 3) {
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      shipped = new RegExp(`(?<![\\w.$])${escaped}(?![\\w.%])`).test(haystack);
+    }
     findings.push({ assetId: asset?.id ?? null, modality: asset?.modality ?? null, state, shipped });
   }
   return findings;

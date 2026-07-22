@@ -27,6 +27,7 @@ import {
   loadTemplateSlotManifest,
   declaredSlotKeys,
   commerceOwnedPages,
+  sharedContentCorePath,
 } from "../src/template-slot-manifest.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
@@ -52,7 +53,11 @@ export function flatFrontmatterKeys(text) {
     }
     if (fences !== 1) continue;
     if (/^[#\s-]/.test(line)) continue; // comments, nested lines, list items
-    const match = /^(\S+?):(\s|$)/.exec(line);
+    // Capture up to the FIRST colon ([^\s:]+ cannot backtrack across colons),
+    // with no trailing-whitespace requirement — a no-space line like
+    // `canonical:https://x` still surfaces "canonical" for the subset
+    // comparison instead of being silently skipped.
+    const match = /^([^\s:]+):/.exec(line);
     if (match) keys.push(match[1].replace(/^["']|["']$/g, ""));
   }
   return keys;
@@ -98,10 +103,19 @@ function main() {
   const srcRoot = join(templatesRoot, "src");
   if (!existsSync(srcRoot)) fail(`Starter-templates checkout has no src/ at ${srcRoot}.`);
 
-  // Known non-family directories in the templates checkout (the composable
-  // landing section library). Anything else without a manifest FAILS — a new
+  // Non-family directories (e.g. the composable landing section library) are
+  // declared by the shared content-slot core — the contract owns the
+  // allowlist, not this script. Anything else without a manifest FAILS: a new
   // or renamed family must ship its slot manifest, not silently bypass CI.
-  const EXEMPT_NON_FAMILY_DIRS = new Set(["landing"]);
+  let core = null;
+  try {
+    core = JSON.parse(readFileSync(sharedContentCorePath(), "utf8"));
+  } catch (error) {
+    fail(`Cannot read the shared content-slot core: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const EXEMPT_NON_FAMILY_DIRS = new Set(
+    Array.isArray(core?.non_family_dirs?.dirs) ? core.non_family_dirs.dirs.map(String) : [],
+  );
 
   let families = 0;
   let pagesChecked = 0;

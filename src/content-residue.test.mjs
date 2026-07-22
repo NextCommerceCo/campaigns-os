@@ -107,6 +107,16 @@ test("ordinary commerce quantities are not invented counts", () => {
   assert.ok(!review.some((f) => f.id === "invented_counts"));
 });
 
+test("short proof claims match on token boundaries, not bare substrings", () => {
+  const assets = [
+    { id: "pa-short", modality: "count", content: "4.9", verified: false, attestable: false, attestation_status: "none" },
+  ];
+  const noise = evaluateProofAssets(assets, "<p>Only $14.99 today. Version 4.95 shipped.</p>");
+  assert.equal(attestationBlockers(noise).shippedNonAttestable.length, 0, "4.9 must not fire inside 14.99 / 4.95");
+  const real = evaluateProofAssets(assets, "<p>Rated 4.9 by our customers.</p>");
+  assert.equal(attestationBlockers(real).shippedNonAttestable.length, 1);
+});
+
 test("attestation matching survives entity encoding, inline tags, and short claims", () => {
   const assets = [
     { id: "pa-a", modality: "study", content: "Smith & Jones study", verified: false, attestable: true, attestation_status: "pending" },

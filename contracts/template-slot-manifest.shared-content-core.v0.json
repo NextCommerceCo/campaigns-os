@@ -7,6 +7,12 @@
     "derived_at": "2026-07-22",
     "note": "Includes article_rating_text and urgency-conditional defaults from the proof-guards template PR (starter-templates #112)."
   },
+  "non_family_dirs": {
+    "description": "src/ directories in the starter-templates checkout that are NOT template families (no manifest required). Anything else without a family manifest fails the CI subset guard.",
+    "dirs": [
+      "landing"
+    ]
+  },
   "source_policies": {
     "generated": "Producer-filled (copy-gen/image-gen) from the brief payload and slot contract. Claims must trace to the claims whitelist or proof_assets.",
     "merchant_asset_required": "Real merchant-supplied data or asset (review data, UGC, byline identity, product photography). Never generated; blank means the surface's guarded chrome stays absent (photo-less/section-absent variant).",
@@ -834,7 +840,7 @@
               "key": "article_rating_text",
               "kind": "copy",
               "role": "micro",
-              "description": "Aggregate rating text beside the star glyphs, e.g. '4.8/5 (1,024 reviews)'. Real review-platform data only \u2014 never composed. Empty \u2192 the star-rating row does not render (the chrome is guarded).",
+              "description": "Aggregate rating text beside the star glyphs, e.g. '4.8/5 (1,024 reviews)'. Real review-platform data only \u2014 never composed. Empty \u2192 the star-rating row does not render (the chrome is guarded). The adjacent star glyphs are fixed five-star chrome \u2014 only fill this slot when the real rating rounds to five stars; materially lower ratings need a star-count surface the template does not yet ship (roadmap).",
               "source_policy": "merchant_asset_required",
               "length_band_chars": {
                 "min": 9,
