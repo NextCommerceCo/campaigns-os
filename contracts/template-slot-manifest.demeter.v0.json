@@ -1,0 +1,30 @@
+{
+  "schema_version": "template-slot-manifest/v0",
+  "family": "demeter",
+  "extends": "template-slot-manifest.shared-content-core.v0.json",
+  "description": "Content-slot manifest for the demeter starter-template family. Shared slots come from the content-slot core; this overlay declares family-specific keys and commerce-owned pages.",
+  "overlay": {
+    "pages": {
+      "receipt": {
+        "sections": [
+          {
+            "section": "family_overlay",
+            "slots": [
+              {
+                "key": "receipt_summary",
+                "kind": "commerce",
+                "role": "commerce_structure",
+                "owner": "commerce",
+                "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+                "reference": "integrated_commerce_surface_ref"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "commerce_owned_pages": [
+    "checkout"
+  ]
+}

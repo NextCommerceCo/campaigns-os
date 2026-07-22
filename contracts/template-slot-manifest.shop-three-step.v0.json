@@ -1,0 +1,33 @@
+{
+  "schema_version": "template-slot-manifest/v0",
+  "family": "shop-three-step",
+  "extends": "template-slot-manifest.shared-content-core.v0.json",
+  "description": "Content-slot manifest for the shop-three-step starter-template family. Shared slots come from the content-slot core; this overlay declares family-specific keys and commerce-owned pages.",
+  "overlay": {
+    "pages": {
+      "landing": {
+        "sections": [
+          {
+            "section": "family_overlay",
+            "slots": [
+              {
+                "key": "cta_params",
+                "kind": "commerce",
+                "role": "commerce_structure",
+                "owner": "commerce",
+                "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+                "reference": "integrated_commerce_surface_ref"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "commerce_owned_pages": [
+    "checkout",
+    "information",
+    "shipping",
+    "billing"
+  ]
+}
