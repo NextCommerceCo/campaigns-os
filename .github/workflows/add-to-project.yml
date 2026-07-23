@@ -82,7 +82,7 @@ jobs:
               exit 1
               ;;
           esac
-      - uses: actions/add-to-project@244f685bbc3b7adfa8466e08b698b5577571133e # v1.0.2
+      - uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
         if: steps.gate.outputs.ok == 'true'
         with:
           project-url: https://github.com/orgs/NextCommerceCo/projects/10
