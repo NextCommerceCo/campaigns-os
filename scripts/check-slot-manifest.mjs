@@ -113,9 +113,16 @@ function main() {
   } catch (error) {
     fail(`Cannot read the shared content-slot core: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const EXEMPT_NON_FAMILY_DIRS = new Set(
-    Array.isArray(core?.non_family_dirs?.dirs) ? core.non_family_dirs.dirs.map(String) : [],
-  );
+  if (!Array.isArray(core?.non_family_dirs?.dirs)) {
+    // Fail on the REAL problem: without this field every non-family dir would
+    // error as "no manifest", which reads as template drift instead of a
+    // stale core contract.
+    fail(
+      `Shared content-slot core at ${sharedContentCorePath()} is missing non_family_dirs.dirs — ` +
+        `update the core contract (it owns the non-family directory allowlist).`,
+    );
+  }
+  const EXEMPT_NON_FAMILY_DIRS = new Set(core.non_family_dirs.dirs.map(String));
 
   let families = 0;
   let pagesChecked = 0;

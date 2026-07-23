@@ -4450,11 +4450,17 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
           "content_residue.unverified_urgency",
           `Built output renders countdown chrome without verified offer urgency (${where}). Set offer.urgency.verified in ${BRIEF_PAYLOAD_REL_PATH} from a real promotion window, or blank the urgency slots.`,
         );
+      } else if (brief?.error) {
+        // Unreadable brief payload: the run is already blocked by
+        // proof_attestation.unreadable with the right remediation (repair the
+        // brief). Urgency is re-evaluated on the next doctor run once the
+        // brief parses — "confirm the urgency is real" copy here would point
+        // the operator at the wrong fix.
       } else {
         addIssue(
           warnings,
           "content_residue.urgency_unattested",
-          `Built output renders countdown chrome and no readable brief payload attests the promotion window (${where}). Confirm the urgency is real (a genuine offer window or live inventory) before launch.`,
+          `Built output renders countdown chrome and no brief payload attests the promotion window (${where}). Confirm the urgency is real (a genuine offer window or live inventory) before launch.`,
         );
       }
     } else if (id === "demo_residue_term" || id === "bracket_placeholder_stub") {
