@@ -1,0 +1,4254 @@
+{
+  "schema_version": "template-slot-manifest/v0",
+  "kind": "shared-content-core",
+  "description": "Shared content-slot core for the certified starter-template families. Every family's flat page frontmatter must stay a subset of this core plus its family overlay (CI: scripts/check-slot-manifest.mjs). Slots carry semantic descriptions, length bands, source policies, and proof/urgency flags so producers (copy-gen, image-gen) and the doctor share one contract.",
+  "provenance": {
+    "derived_from": "NextCommerceCo/campaign-cart-starter-templates src/<family>/*.html frontmatter",
+    "derived_at": "2026-07-22",
+    "note": "Includes article_rating_text and urgency-conditional defaults from the proof-guards template PR (starter-templates #112)."
+  },
+  "non_family_dirs": {
+    "description": "src/ directories in the starter-templates checkout that are NOT template families (no manifest required). Anything else without a family manifest fails the CI subset guard.",
+    "dirs": [
+      "landing"
+    ]
+  },
+  "source_policies": {
+    "generated": "Producer-filled (copy-gen/image-gen) from the brief payload and slot contract. Claims must trace to the claims whitelist or proof_assets.",
+    "merchant_asset_required": "Real merchant-supplied data or asset (review data, UGC, byline identity, product photography). Never generated; blank means the surface's guarded chrome stays absent (photo-less/section-absent variant).",
+    "spec_truth": "Copied verbatim from CampaignSpec/offer/store data (prices, guarantee, shipping, routes). Never composed by a producer (hard rule 5).",
+    "brand": "Merchant brand asset resolved via the template brand contract (logos, brand tokens).",
+    "template_static": "Template-owned chrome. Assembly never touches it."
+  },
+  "flags": {
+    "needs_merchant_input_able": "When required input is missing, the producer routes this slot to needs_merchant_input instead of inventing a value; the builder UX (attestation/click-wrap lane) resolves it before publish.",
+    "proof_surface": "Slot renders proof (counts, ratings, reviews, UGC, identity). Content is governed by the negative-corpus anti-pattern classes; proof_modality mirrors the proof_assets modality vocabulary.",
+    "enabled_by_verified_urgency": "Urgency chrome (countdown/sell-out) renders only when the slot is non-empty AND the value comes from offer.urgency with verified:true. The doctor blocks rendered urgency without verified offer urgency."
+  },
+  "pages": {
+    "presell": {
+      "sections": [
+        {
+          "section": "main",
+          "slots": [
+            {
+              "key": "page_layout",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "title",
+              "kind": "meta",
+              "role": "meta_title",
+              "description": "HTML page <title> (browser tab, history, social share). Part of the copy slot set: fill alongside article_title or demo residue ships in the tab title.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 14,
+                "max": 45
+              },
+              "demo_value": "10 Reasons Why You Need This"
+            },
+            {
+              "key": "page_type",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "styles",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "scripts",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "article_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Advertorial H1 \u2014 the hook of the persuasion arc. Winning presell hooks combine pain + specificity (+ credibility only when real proof exists).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 36,
+                "max": 84
+              },
+              "demo_value": "10 Reasons Why Thousands Are Switching To This Every Morning"
+            },
+            {
+              "key": "article_subtitle",
+              "kind": "copy",
+              "role": "body",
+              "description": "Bold standfirst paragraph under the H1: expands the hook into the reader's felt problem and promises the payoff of reading on.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 68,
+                "max": 218
+              },
+              "demo_value": "If you've been struggling with low energy, brain fog, or sluggish mornings, this might be the most i"
+            },
+            {
+              "key": "author_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Byline author display name. Must be a real, authorized identity supplied by the merchant brief \u2014 never invented (negative-corpus anti-pattern 3). Empty \u2192 the byline row does not render.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 7,
+                "max": 28
+              },
+              "demo_value": "Sarah Mitchell",
+              "proof_surface": true,
+              "proof_modality": "byline",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "author_publication",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Publication/outlet name in the byline row. Same identity rules as author_name: real and authorized or absent.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 8,
+                "max": 32
+              },
+              "demo_value": "Wellness Insider",
+              "proof_surface": true,
+              "proof_modality": "byline",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "author_date",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Human-readable article 'Updated' date, e.g. 'March 15, 2026'. Producers fill via the {{PUBLISH_DATE}} harness token.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 25
+              },
+              "demo_value": "March 15, 2026"
+            },
+            {
+              "key": "read_time",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Estimated read-time chip, e.g. '6 min read'. Derive from actual article length.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "6 min read"
+            },
+            {
+              "key": "promo_headline",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Top promo-bar sale name, e.g. 'SPRING SALE'. Offer framing copied from spec/offer data, not invented.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "SPRING SALE"
+            },
+            {
+              "key": "promo_subtext",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Top promo-bar offer line, e.g. 'SAVE 20% OFF + FREE SHIPPING'. Verbatim offer terms from spec truth.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 11,
+                "max": 50
+              },
+              "demo_value": "SAVE 20% OFF + FREE SHIPPING"
+            },
+            {
+              "key": "reason_1_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 1's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_1_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 1. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 22,
+                "max": 50
+              },
+              "demo_value": "It Works From the Very First Morning"
+            },
+            {
+              "key": "reason_1_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 1. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 94,
+                "max": 302
+              },
+              "demo_value": "Unlike other supplements that take weeks to \\\"build up\\\", most users report feeling a noticeable dif"
+            },
+            {
+              "key": "reason_1_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 1. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_2_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 2's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_2_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 2. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 48
+              },
+              "demo_value": "Doctor-Formulated for Real Results"
+            },
+            {
+              "key": "reason_2_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 2. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 80,
+                "max": 258
+              },
+              "demo_value": "Every ingredient was chosen by a board-certified physician, not a marketing team. The formula target"
+            },
+            {
+              "key": "reason_2_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 2. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_3_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 3's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_3_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 3. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 14,
+                "max": 34
+              },
+              "demo_value": "Zero Jitters, Zero Crash"
+            },
+            {
+              "key": "reason_3_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 3. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 87,
+                "max": 278
+              },
+              "demo_value": "You get sustained, clean energy all morning long \u2014 no spike, no 2pm crash. The patented slow-release"
+            },
+            {
+              "key": "reason_3_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 3. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_4_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 4's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_4_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 4. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 23,
+                "max": 53
+              },
+              "demo_value": "Backed by Over 1,200 Five-Star Reviews"
+            },
+            {
+              "key": "reason_4_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 4. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 78,
+                "max": 251
+              },
+              "demo_value": "Real customers. Real results. Our verified review platform doesn't allow purchased reviews \u2014 every r"
+            },
+            {
+              "key": "reason_4_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 4. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_4_link_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Optional inline link label under reason 4 (renders only when non-empty).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 9,
+                "max": 32
+              },
+              "demo_value": "Read the reviews \u2192"
+            },
+            {
+              "key": "reason_5_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 5's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_5_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 5. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 48
+              },
+              "demo_value": "Made in an FDA-Registered Facility"
+            },
+            {
+              "key": "reason_5_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 5. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 77,
+                "max": 246
+              },
+              "demo_value": "Every batch is third-party lab tested for purity, potency, and safety. We publish our certificates o"
+            },
+            {
+              "key": "reason_5_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 5. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_5_link_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Optional inline link label under reason 5 (renders only when non-empty).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 9,
+                "max": 32
+              },
+              "demo_value": "View lab results \u2192"
+            },
+            {
+              "key": "reason_6_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 6's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_6_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 6. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 14,
+                "max": 34
+              },
+              "demo_value": "Ships Free, Arrives Fast"
+            },
+            {
+              "key": "reason_6_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 6. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 70,
+                "max": 222
+              },
+              "demo_value": "All US orders ship free, with most arriving in 2\u20134 business days. We partner with FedEx and USPS for"
+            },
+            {
+              "key": "reason_6_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 6. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_6_link_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Optional inline link label under reason 6 (renders only when non-empty).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 34
+              },
+              "demo_value": "See shipping info \u2192"
+            },
+            {
+              "key": "reason_7_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 7's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_7_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 7. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 22,
+                "max": 50
+              },
+              "demo_value": "Thousands Save With Subscribe & Save"
+            },
+            {
+              "key": "reason_7_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 7. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 80,
+                "max": 254
+              },
+              "demo_value": "Join our subscribe & save program and get 20% off every order, free priority shipping, and the flexi"
+            },
+            {
+              "key": "reason_7_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 7. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_7_link_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Optional inline link label under reason 7 (renders only when non-empty).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 14,
+                "max": 49
+              },
+              "demo_value": "Learn about subscriptions \u2192"
+            },
+            {
+              "key": "reason_8_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 8's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_8_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 8. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 35
+              },
+              "demo_value": "100% Money-Back Guarantee"
+            },
+            {
+              "key": "reason_8_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 8. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 88,
+                "max": 283
+              },
+              "demo_value": "We're so confident you'll love it, we offer a full 60-day money-back guarantee. If you're not comple"
+            },
+            {
+              "key": "reason_8_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 8. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_8_link_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Optional inline link label under reason 8 (renders only when non-empty).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 12,
+                "max": 41
+              },
+              "demo_value": "See guarantee details \u2192"
+            },
+            {
+              "key": "reason_9_tag",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Category chip on reason 9's image card (short, may carry an emoji).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "\u26a1 All-Day Energy"
+            },
+            {
+              "key": "reason_9_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for reason 9. Reasons follow the persuasion arc; proof-flavored reasons (reviews, certifications, counts) may claim ONLY brief-sourced, real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 48
+              },
+              "demo_value": "Trusted by 50,000+ Happy Customers"
+            },
+            {
+              "key": "reason_9_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for reason 9. Prefer lived-moment embeds over abstract claims; every count/study/expert reference must trace to proof_assets or the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 76,
+                "max": 245
+              },
+              "demo_value": "We've helped over 50,000 people reclaim their mornings. Join a growing community of people who've ma"
+            },
+            {
+              "key": "reason_9_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Illustration for reason 9. AI-generated lifestyle imagery from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "reason_9_link_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Optional inline link label under reason 9 (renders only when non-empty).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 11,
+                "max": 40
+              },
+              "demo_value": "See customer stories \u2192"
+            },
+            {
+              "key": "cta_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "'Reason #10' bridge heading that turns the article toward the offer. Savings/scarcity wording only when backed by offer data.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 42,
+                "max": 98
+              },
+              "demo_value": "Reason #10 \u2014 Right Now, You Can Get It at the Lowest Price of the Year"
+            },
+            {
+              "key": "cta_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Short paragraph under cta_heading setting up the offer box. No synthetic scarcity (anti-pattern 10).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 70,
+                "max": 226
+              },
+              "demo_value": "We partnered directly with the manufacturer to secure an exclusive discount for our readers. But sto"
+            },
+            {
+              "key": "offer_badge",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Badge pinned to the offer box border, e.g. the sale name. Spec-truth offer framing.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "SPRING SALE"
+            },
+            {
+              "key": "offer_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Small overline label inside the offer box between divider rules (all-caps).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 5,
+                "max": 23
+              },
+              "demo_value": "ALL CAPS TEXT"
+            },
+            {
+              "key": "offer_headline",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Offer headline line 1 (uppercase), e.g. 'UP TO 60% OFF FOR'. Discount figure must be verbatim spec truth.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 10,
+                "max": 24
+              },
+              "demo_value": "UP TO 60% OFF FOR"
+            },
+            {
+              "key": "offer_headline_red",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Offer headline line 2, rendered red (uppercase). Time-limited wording only from a verified promotion window.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 11,
+                "max": 27
+              },
+              "demo_value": "A LIMITED TIME ONLY"
+            },
+            {
+              "key": "offer_subheadline",
+              "kind": "copy",
+              "role": "body",
+              "description": "Supporting sentence under the offer headline. No invented demand/stock claims.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 34,
+                "max": 110
+              },
+              "demo_value": "This limited-time deal is in high demand and stock keeps selling out."
+            },
+            {
+              "key": "cta_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "CTA button label, e.g. 'GET 60% OFF'. Discount figures verbatim from offer data.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 6,
+                "max": 20
+              },
+              "demo_value": "GET 60% OFF"
+            },
+            {
+              "key": "next_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Funnel route the CTA advances to (page-kit route, usually landing or checkout). Owned by the Build Packet/CampaignSpec funnel topology.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "product_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Offer-box product image. Merchant-supplied product photography \u2014 product imagery is supplied, not generated (D20).",
+              "source_policy": "merchant_asset_required"
+            },
+            {
+              "key": "countdown_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Label before the ticking countdown, e.g. 'OFFER ENDS IN:'. The countdown block renders ONLY when this is non-empty, and it may be filled ONLY from verified offer urgency (a real promotion window). Unverified \u2192 leave empty (hard rule 4).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 6,
+                "max": 27
+              },
+              "demo_value": "DEAL ENDING IN:",
+              "urgency": true,
+              "enabled_by_verified_urgency": true
+            },
+            {
+              "key": "sell_out_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "LABEL half of the sell-out indicator, e.g. 'Sell-Out Risk:' \u2014 the field name shown to the shopper, not the value. Pairs with sell_out_risk.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 6,
+                "max": 25
+              },
+              "demo_value": "Sell-Out Risk:",
+              "urgency": true,
+              "enabled_by_verified_urgency": true
+            },
+            {
+              "key": "sell_out_risk",
+              "kind": "copy",
+              "role": "micro",
+              "description": "VALUE half of the sell-out indicator, e.g. 'High'. The sell-out half of the bar renders ONLY when this is non-empty; fill only from a real inventory signal (anti-pattern 10: scarcity theater).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "High",
+              "urgency": true,
+              "enabled_by_verified_urgency": true
+            },
+            {
+              "key": "shipping_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "VALUE half of the shipping chip, e.g. 'FREE' \u2014 rendered bold before shipping_label. This is the value, not the label (canonical value-vs-fieldname confusion: do not fill with a shipping promise sentence).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "FREE"
+            },
+            {
+              "key": "shipping_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "LABEL half of the shipping chip, e.g. 'Shipping' \u2014 the field name rendered after shipping_text ('FREE Shipping').",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 3,
+                "max": 14
+              },
+              "demo_value": "Shipping"
+            },
+            {
+              "key": "guarantee_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Guarantee line by the CTA, e.g. '30 Day Money Back Guarantee'. Verbatim guarantee terms from spec truth \u2014 never a composed/rounded number.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 11,
+                "max": 49
+              },
+              "demo_value": "30 Day Money Back Guarantee"
+            },
+            {
+              "key": "footer_copyright",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Footer copyright line. Uses the merchant legal name ({{YEAR}} harness token supported).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 12,
+                "max": 52
+              },
+              "demo_value": "Copyright \u00a92026 Next Commerce"
+            },
+            {
+              "key": "article_rating_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Aggregate rating text beside the star glyphs, e.g. '4.8/5 (1,024 reviews)'. Real review-platform data only \u2014 never composed. Empty \u2192 the star-rating row does not render (the chrome is guarded). The adjacent star glyphs are fixed five-star chrome \u2014 only fill this slot when the real rating rounds to five stars; materially lower ratings need a star-count surface the template does not yet ship (roadmap).",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 9,
+                "max": 41
+              },
+              "demo_value": "[4.8/5 (1,024 reviews)]",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            }
+          ]
+        }
+      ]
+    },
+    "landing": {
+      "sections": [
+        {
+          "section": "main",
+          "slots": [
+            {
+              "key": "page_layout",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "title",
+              "kind": "meta",
+              "role": "meta_title",
+              "description": "HTML page <title>. Part of the copy slot set \u2014 pair with hero_1_headline.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 25,
+                "max": 80
+              },
+              "demo_value": "[Product] \u2014 Fall Asleep Faster, Stay Asleep Longer"
+            },
+            {
+              "key": "page_type",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "next_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Funnel route every CTA advances to (usually checkout). Owned by Build Packet/CampaignSpec topology.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "cta_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Primary CTA label reused by nav, hero, and section CTAs. Discount figures verbatim from offer data.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 12,
+                "max": 41
+              },
+              "demo_value": "Claim Your 60% Discount"
+            },
+            {
+              "key": "guarantee_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Guarantee line shown under CTAs. Verbatim guarantee terms from spec truth.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 11,
+                "max": 49
+              },
+              "demo_value": "30-Day Money-Back Guarantee"
+            },
+            {
+              "key": "nav_logo_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Header logo image.",
+              "source_policy": "brand"
+            },
+            {
+              "key": "nav_logo_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "nav_1_cta_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Header anchor-link label.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "Claim Offer"
+            },
+            {
+              "key": "nav_1_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Header anchor-link label.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 3,
+                "max": 14
+              },
+              "demo_value": "Benefits"
+            },
+            {
+              "key": "nav_1_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Header anchor-link target (on-page anchor).",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "nav_1_nav_2_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Header anchor-link label.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "Ingredients"
+            },
+            {
+              "key": "nav_1_nav_2_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Header anchor-link target (on-page anchor).",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "nav_1_nav_3_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Header anchor-link label.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 3,
+                "max": 13
+              },
+              "demo_value": "Reviews"
+            },
+            {
+              "key": "nav_1_nav_3_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Header anchor-link target (on-page anchor).",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "nav_1_cta_flag",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Template chrome (flag/menu icon) \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "nav_1_cta_flag_alt",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Template chrome (flag/menu icon) \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "nav_1_menu_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Template chrome (flag/menu icon) \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "nav_1_menu_icon_alt",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Template chrome (flag/menu icon) \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "hero_1_hero_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Hero lifestyle image. AI-generated from merchant references (D20).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "hero_1_hero_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "hero_1_headline",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Primary landing hook (H1). Winning landing hooks combine promise + specificity.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 25,
+                "max": 59
+              },
+              "demo_value": "Fall Asleep in Minutes \u2014 Wake Up Refreshed"
+            },
+            {
+              "key": "hero_1_body_text",
+              "kind": "copy",
+              "role": "body",
+              "description": "Hero supporting paragraph. Mechanism/ingredient claims must trace to the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 68,
+                "max": 219
+              },
+              "demo_value": "Clinically formulated with Ashwagandha, Magnesium Glycinate & L-Theanine to silence your racing mind"
+            },
+            {
+              "key": "hero_1_review_count",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Hero proof count, e.g. '48,312+ 5-Star Reviews'. Real, sourceable review-platform data only \u2014 invented counts are negative-corpus anti-pattern 1. Empty when no real count exists.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 9,
+                "max": 40
+              },
+              "demo_value": "48,312+ 5-Star Reviews",
+              "proof_surface": true,
+              "proof_modality": "count",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "hero_1_benefit_1",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Hero checkmark bullet: one concrete, specific benefit.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 11,
+                "max": 49
+              },
+              "demo_value": "Fall Asleep Up To 3x Faster"
+            },
+            {
+              "key": "hero_1_benefit_2",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Hero checkmark bullet: one concrete, specific benefit.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 12,
+                "max": 52
+              },
+              "demo_value": "Stay Asleep Through the Night"
+            },
+            {
+              "key": "hero_1_benefit_3",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Hero checkmark bullet: one concrete, specific benefit.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 47
+              },
+              "demo_value": "Wake Up Without Grogginess"
+            },
+            {
+              "key": "hero_1_benefit_4",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Hero checkmark bullet: one concrete, specific benefit.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 45
+              },
+              "demo_value": "Non-Habit Forming Formula"
+            },
+            {
+              "key": "hero_1_benefit_5",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Hero checkmark bullet: one concrete, specific benefit.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 7,
+                "max": 32
+              },
+              "demo_value": "Doctor Recommended"
+            },
+            {
+              "key": "hero_1_review_quote",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Hero pull-quote headline from a real customer review (verbatim from the review source).",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 24,
+                "max": 106
+              },
+              "demo_value": "\\\"Best sleep I've had in years \u2014 nothing else comes close.\\",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "hero_1_review_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Hero review body text \u2014 a real review, verbatim or lightly trimmed, from the merchant's review platform (anti-pattern 2: never fabricate testimonials).",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 80,
+                "max": 258
+              },
+              "demo_value": "I've struggled with sleep for over a decade. After two weeks on [Product] I sleep through the night ",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "hero_1_review_author",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name for the hero review, as it appears on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "Sandra M.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "icons_5_item_1",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 7,
+                "max": 31
+              },
+              "demo_value": "Non-Habit Forming"
+            },
+            {
+              "key": "icons_5_item_2",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 27
+              },
+              "demo_value": "Made in the USA"
+            },
+            {
+              "key": "icons_5_item_3",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 7,
+                "max": 32
+              },
+              "demo_value": "Third-Party Tested"
+            },
+            {
+              "key": "icons_5_item_4",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 8,
+                "max": 38
+              },
+              "demo_value": "No Morning Grogginess"
+            },
+            {
+              "key": "icons_5_item_5",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "60-Day Guarantee"
+            },
+            {
+              "key": "icons_5_item_6",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 8,
+                "max": 34
+              },
+              "demo_value": "Vegan & Gluten Free"
+            },
+            {
+              "key": "icons_5_item_7",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 9,
+                "max": 40
+              },
+              "demo_value": "GMP Certified Facility"
+            },
+            {
+              "key": "icons_5_item_8",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 12,
+                "max": 54
+              },
+              "demo_value": "Clinically Studied Ingredients"
+            },
+            {
+              "key": "icons_5_item_9",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 5,
+                "max": 22
+              },
+              "demo_value": "No Sedatives"
+            },
+            {
+              "key": "icons_5_item_10",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Trust/benefit chip in the icon strip (2-4 words). Certification wording (e.g. 'FDA Registered') only when brief-substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 7,
+                "max": 32
+              },
+              "demo_value": "Doctor Recommended"
+            },
+            {
+              "key": "problemsolution_1_problem_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "problemsolution_1_problem_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Overline label for the problem panel.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "The Problem"
+            },
+            {
+              "key": "problemsolution_1_problem_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for the problem panel (persuasion-arc role: failure mechanism / solution mechanism).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 19,
+                "max": 45
+              },
+              "demo_value": "Poor Sleep Is Draining Your Life"
+            },
+            {
+              "key": "problemsolution_1_problem_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for the problem panel. Mechanism claims must trace to the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 148,
+                "max": 475
+              },
+              "demo_value": "Lying awake at 2am, staring at the ceiling with a mind that won't slow down. Day after day of exhaus"
+            },
+            {
+              "key": "problemsolution_1_solution_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "problemsolution_1_solution_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Overline label for the solution panel.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 5,
+                "max": 22
+              },
+              "demo_value": "The Solution"
+            },
+            {
+              "key": "problemsolution_1_solution_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Heading for the solution panel (persuasion-arc role: failure mechanism / solution mechanism).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 18,
+                "max": 42
+              },
+              "demo_value": "Deep Sleep, Naturally Restored"
+            },
+            {
+              "key": "problemsolution_1_solution_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Body copy for the solution panel. Mechanism claims must trace to the claims whitelist.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 135,
+                "max": 432
+              },
+              "demo_value": "Our formula works with your body's own sleep systems \u2014 not against them. Our synergistic blend lower"
+            },
+            {
+              "key": "benefits_2_section_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Benefits section heading. The demo carries a customer-count claim \u2014 keep a count in this heading ONLY when it is real proof; otherwise write a count-free benefit heading.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 22,
+                "max": 52
+              },
+              "demo_value": "Why 48,000+ Sleepers Choose [Product]"
+            },
+            {
+              "key": "benefits_2_product_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Product image in the benefits section. Merchant-supplied product photography.",
+              "source_policy": "merchant_asset_required"
+            },
+            {
+              "key": "benefits_2_product_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "benefits_2_benefit_1_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Benefit card title.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 13,
+                "max": 31
+              },
+              "demo_value": "Quiets Racing Thoughts"
+            },
+            {
+              "key": "benefits_2_benefit_1_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Benefit card body. Evidence-less benefits render as scenario framing, never as claims.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 64,
+                "max": 206
+              },
+              "demo_value": "Ashwagandha and L-Theanine lower cortisol and promote alpha brainwave activity \u2014 your brain finally "
+            },
+            {
+              "key": "benefits_2_benefit_2_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Benefit card title.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 11,
+                "max": 27
+              },
+              "demo_value": "Deeper Sleep Cycles"
+            },
+            {
+              "key": "benefits_2_benefit_2_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Benefit card body. Evidence-less benefits render as scenario framing, never as claims.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 58,
+                "max": 184
+              },
+              "demo_value": "Magnesium Glycinate supports the nervous system relaxation needed to cycle through all stages of res"
+            },
+            {
+              "key": "benefits_2_benefit_3_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Benefit card title.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 24
+              },
+              "demo_value": "Zero Next-Day Fog"
+            },
+            {
+              "key": "benefits_2_benefit_3_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Benefit card body. Evidence-less benefits render as scenario framing, never as claims.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 54,
+                "max": 174
+              },
+              "demo_value": "Unlike prescription sleep aids, this formula contains no sedatives. You wake up clear-headed and rea"
+            },
+            {
+              "key": "benefits_2_benefit_4_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Benefit card title.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 24
+              },
+              "demo_value": "Non-Habit Forming"
+            },
+            {
+              "key": "benefits_2_benefit_4_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Benefit card body. Evidence-less benefits render as scenario framing, never as claims.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 49,
+                "max": 157
+              },
+              "demo_value": "Natural adaptogens and minerals \u2014 not chemicals. Use it nightly without worrying about dependency."
+            },
+            {
+              "key": "benefits_2_review_quote",
+              "kind": "copy",
+              "role": "body",
+              "description": "Inline customer quote in the benefits section \u2014 real review content only.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 60,
+                "max": 194
+              },
+              "demo_value": "\\\"Two capsules before bed and I'm out within 20 minutes. I've cancelled three doctor's appointments ",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "benefits_2_review_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name for the benefits-section quote.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Derek H.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "results_4_headline",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Timeline section heading.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 35
+              },
+              "demo_value": "[Product] Works In Phases"
+            },
+            {
+              "key": "results_4_product_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "results_4_phase_1_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Time range label for phase 1 (e.g. 'Days 1-7').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 3,
+                "max": 14
+              },
+              "demo_value": "Days 1\u20137"
+            },
+            {
+              "key": "results_4_phase_1_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Phase 1 title in the results timeline.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 22
+              },
+              "demo_value": "Foundation Phase"
+            },
+            {
+              "key": "results_4_phase_1_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Phase 1 body. Outcome claims must stay within the claims whitelist (health-adjacent categories: structure/function limits).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 74,
+                "max": 237
+              },
+              "demo_value": "The adaptogenic compounds begin absorbing into your system. Most customers notice it's easier to win"
+            },
+            {
+              "key": "results_4_phase_2_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Time range label for phase 2 (e.g. 'Days 1-7').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Days 8\u201321"
+            },
+            {
+              "key": "results_4_phase_2_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Phase 2 title in the results timeline.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 22
+              },
+              "demo_value": "Regulation Phase"
+            },
+            {
+              "key": "results_4_phase_2_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Phase 2 body. Outcome claims must stay within the claims whitelist (health-adjacent categories: structure/function limits).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 83,
+                "max": 266
+              },
+              "demo_value": "Cortisol levels stabilise and your nervous system settles into a consistent rhythm. Falling asleep f"
+            },
+            {
+              "key": "results_4_phase_3_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Time range label for phase 3 (e.g. 'Days 1-7').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "Days 22\u201345"
+            },
+            {
+              "key": "results_4_phase_3_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Phase 3 title in the results timeline.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 12,
+                "max": 28
+              },
+              "demo_value": "Transformation Phase"
+            },
+            {
+              "key": "results_4_phase_3_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Phase 3 body. Outcome claims must stay within the claims whitelist (health-adjacent categories: structure/function limits).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 76,
+                "max": 242
+              },
+              "demo_value": "Deep, restorative sleep becomes reliable. Energy is noticeably higher during the day, brain fog lift"
+            },
+            {
+              "key": "results_4_phase_4_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Time range label for phase 4 (e.g. 'Days 1-7').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 3,
+                "max": 13
+              },
+              "demo_value": "Day 45+"
+            },
+            {
+              "key": "results_4_phase_4_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Phase 4 title in the results timeline.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 5,
+                "max": 13
+              },
+              "demo_value": "Peak Rest"
+            },
+            {
+              "key": "results_4_phase_4_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Phase 4 body. Outcome claims must stay within the claims whitelist (health-adjacent categories: structure/function limits).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 77,
+                "max": 246
+              },
+              "demo_value": "The compounding effect reaches its peak. Consistent deep sleep every night, sustained daytime energy"
+            },
+            {
+              "key": "ingredients_3_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Ingredients/components section heading copy.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 16,
+                "max": 38
+              },
+              "demo_value": "What's Inside Every Capsule"
+            },
+            {
+              "key": "ingredients_3_subheading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Ingredients/components section heading copy.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 74,
+                "max": 172
+              },
+              "demo_value": "Six clinically studied ingredients, each chosen for a specific role in your sleep cycle. Nothing fil"
+            },
+            {
+              "key": "ingredients_3_card_1_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Ingredient/component card image. AI-generated or merchant reference imagery.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "ingredients_3_card_1_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card name.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 7,
+                "max": 32
+              },
+              "demo_value": "Ashwagandha KSM-66"
+            },
+            {
+              "key": "ingredients_3_card_1_subtitle",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card role line (what it does).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 45
+              },
+              "demo_value": "Stress & Cortisol Control"
+            },
+            {
+              "key": "ingredients_3_card_1_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Ingredient/component card body. 'Clinically shown' phrasing only with a brief-sourced citation (anti-pattern 9).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 76,
+                "max": 242
+              },
+              "demo_value": "The gold-standard ashwagandha extract. Clinically shown to reduce cortisol by up to 28%, making it e"
+            },
+            {
+              "key": "ingredients_3_card_2_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Ingredient/component card image. AI-generated or merchant reference imagery.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "ingredients_3_card_2_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card name.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 8,
+                "max": 34
+              },
+              "demo_value": "Magnesium Glycinate"
+            },
+            {
+              "key": "ingredients_3_card_2_subtitle",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card role line (what it does).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 9,
+                "max": 40
+              },
+              "demo_value": "Deep Muscle Relaxation"
+            },
+            {
+              "key": "ingredients_3_card_2_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Ingredient/component card body. 'Clinically shown' phrasing only with a brief-sourced citation (anti-pattern 9).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 68,
+                "max": 218
+              },
+              "demo_value": "The most bioavailable form of magnesium. Relaxes muscles, calms the nervous system, and supports the"
+            },
+            {
+              "key": "ingredients_3_card_3_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Ingredient/component card image. AI-generated or merchant reference imagery.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "ingredients_3_card_3_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card name.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "L-Theanine"
+            },
+            {
+              "key": "ingredients_3_card_3_subtitle",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card role line (what it does).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 43
+              },
+              "demo_value": "Alpha Brainwave Activity"
+            },
+            {
+              "key": "ingredients_3_card_3_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Ingredient/component card body. 'Clinically shown' phrasing only with a brief-sourced citation (anti-pattern 9).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 77,
+                "max": 246
+              },
+              "demo_value": "Found naturally in green tea. Promotes alpha brainwave states \u2014 the relaxed-but-alert baseline your "
+            },
+            {
+              "key": "ingredients_3_card_4_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Ingredient/component card image. AI-generated or merchant reference imagery.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "ingredients_3_card_4_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card name.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 25
+              },
+              "demo_value": "Rhodiola Rosea"
+            },
+            {
+              "key": "ingredients_3_card_4_subtitle",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card role line (what it does).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 7,
+                "max": 31
+              },
+              "demo_value": "Stress Adaptation"
+            },
+            {
+              "key": "ingredients_3_card_4_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Ingredient/component card body. 'Clinically shown' phrasing only with a brief-sourced citation (anti-pattern 9).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 61,
+                "max": 195
+              },
+              "demo_value": "A Scandinavian adaptogen shown to reduce stress-related fatigue and improve sleep quality in people "
+            },
+            {
+              "key": "ingredients_3_card_5_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Ingredient/component card image. AI-generated or merchant reference imagery.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "ingredients_3_card_5_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card name.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "B-Complex"
+            },
+            {
+              "key": "ingredients_3_card_5_subtitle",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card role line (what it does).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 8,
+                "max": 38
+              },
+              "demo_value": "Mood & Nervous System"
+            },
+            {
+              "key": "ingredients_3_card_5_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Ingredient/component card body. 'Clinically shown' phrasing only with a brief-sourced citation (anti-pattern 9).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 64,
+                "max": 206
+              },
+              "demo_value": "Full-spectrum B vitamins support serotonin production and regulate the nervous system signals that c"
+            },
+            {
+              "key": "ingredients_3_card_6_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Ingredient/component card image. AI-generated or merchant reference imagery.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "ingredients_3_card_6_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card name.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 7,
+                "max": 31
+              },
+              "demo_value": "Zinc Bisglycinate"
+            },
+            {
+              "key": "ingredients_3_card_6_subtitle",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card role line (what it does).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "Hormonal Balance"
+            },
+            {
+              "key": "ingredients_3_card_6_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Ingredient/component card body. 'Clinically shown' phrasing only with a brief-sourced citation (anti-pattern 9).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 62,
+                "max": 200
+              },
+              "demo_value": "Chelated zinc with superior absorption. Supports melatonin production and hormonal balance for consi"
+            },
+            {
+              "key": "ingredients_3_card_7_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Ingredient/component card image. AI-generated or merchant reference imagery.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "ingredients_3_card_7_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card name.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 7,
+                "max": 32
+              },
+              "demo_value": "Ashwagandha KSM-66"
+            },
+            {
+              "key": "ingredients_3_card_7_subtitle",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card role line (what it does).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 45
+              },
+              "demo_value": "Stress & Cortisol Control"
+            },
+            {
+              "key": "ingredients_3_card_7_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Ingredient/component card body. 'Clinically shown' phrasing only with a brief-sourced citation (anti-pattern 9).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 76,
+                "max": 242
+              },
+              "demo_value": "The gold-standard ashwagandha extract. Clinically shown to reduce cortisol by up to 28%, making it e"
+            },
+            {
+              "key": "ingredients_3_card_8_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Ingredient/component card image. AI-generated or merchant reference imagery.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "ingredients_3_card_8_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card name.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 8,
+                "max": 34
+              },
+              "demo_value": "Magnesium Glycinate"
+            },
+            {
+              "key": "ingredients_3_card_8_subtitle",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Ingredient/component card role line (what it does).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 9,
+                "max": 40
+              },
+              "demo_value": "Deep Muscle Relaxation"
+            },
+            {
+              "key": "ingredients_3_card_8_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Ingredient/component card body. 'Clinically shown' phrasing only with a brief-sourced citation (anti-pattern 9).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 68,
+                "max": 218
+              },
+              "demo_value": "The most bioavailable form of magnesium. Relaxes muscles, calms the nervous system, and supports the"
+            },
+            {
+              "key": "ingredients_3_ingredients_link_text",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Supplement-facts expander link label.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 13,
+                "max": 47
+              },
+              "demo_value": "View Full Supplement Facts"
+            },
+            {
+              "key": "ingredients_3_ingredients_link_text_close",
+              "kind": "copy",
+              "role": "cta",
+              "description": "Supplement-facts expander link label.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 10,
+                "max": 38
+              },
+              "demo_value": "Hide Supplement Facts"
+            },
+            {
+              "key": "ingredients_3_ingredients_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Supplement-facts link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "ingredients_3_promise_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Section heading copy.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 11,
+                "max": 25
+              },
+              "demo_value": "Our Promise to You"
+            },
+            {
+              "key": "ingredients_3_promise_1_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Promise chip label (e.g. 'All Natural'). Certification wording only when substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "All Natural"
+            },
+            {
+              "key": "ingredients_3_promise_2_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Promise chip label (e.g. 'All Natural'). Certification wording only when substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 3,
+                "max": 13
+              },
+              "demo_value": "Non-GMO"
+            },
+            {
+              "key": "ingredients_3_promise_3_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Promise chip label (e.g. 'All Natural'). Certification wording only when substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "Gluten Free"
+            },
+            {
+              "key": "ingredients_3_promise_4_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Promise chip label (e.g. 'All Natural'). Certification wording only when substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "Made In USA"
+            },
+            {
+              "key": "ingredients_3_promise_5_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Promise chip label (e.g. 'All Natural'). Certification wording only when substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "No Fillers"
+            },
+            {
+              "key": "ingredients_3_promise_6_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Promise chip label (e.g. 'All Natural'). Certification wording only when substantiated.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "Sugar Free"
+            },
+            {
+              "key": "ingredients_3_promise_1_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Promise chip icon \u2014 template chrome.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "ingredients_3_promise_2_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Promise chip icon \u2014 template chrome.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "ingredients_3_promise_3_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Promise chip icon \u2014 template chrome.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "ingredients_3_promise_4_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Promise chip icon \u2014 template chrome.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "ingredients_3_promise_5_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Promise chip icon \u2014 template chrome.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "ingredients_3_promise_6_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Promise chip icon \u2014 template chrome.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "science_1_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Mechanism/science section heading.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 17,
+                "max": 39
+              },
+              "demo_value": "The Science Behind [Product]"
+            },
+            {
+              "key": "science_1_intro",
+              "kind": "copy",
+              "role": "body",
+              "description": "Mechanism section intro: why alternatives fail, why this works (arc roles 2-3). Study/science claims must be brief-sourced (anti-pattern 9: science theater).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 164,
+                "max": 523
+              },
+              "demo_value": "Most sleep supplements throw melatonin at the problem and call it done. Our formula works differentl"
+            },
+            {
+              "key": "science_1_card_1_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Mechanism card diagram/illustration. AI-generated from merchant references.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "science_1_card_1_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "science_1_card_1_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Mechanism card title.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 48
+              },
+              "demo_value": "Lower Cortisol, Fall Asleep Faster"
+            },
+            {
+              "key": "science_1_card_1_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Mechanism card body. Every study/clinical reference must trace to proof_assets.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 105,
+                "max": 336
+              },
+              "demo_value": "Cortisol is the #1 reason people lie awake at night. KSM-66 Ashwagandha has been shown in multiple t"
+            },
+            {
+              "key": "science_1_card_2_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Mechanism card diagram/illustration. AI-generated from merchant references.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "science_1_card_2_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "science_1_card_2_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Mechanism card title.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 19,
+                "max": 43
+              },
+              "demo_value": "Activate Your Body's Off Switch"
+            },
+            {
+              "key": "science_1_card_2_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Mechanism card body. Every study/clinical reference must trace to proof_assets.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 108,
+                "max": 347
+              },
+              "demo_value": "Magnesium Glycinate activates GABA receptors \u2014 the neurological brakes that slow down brain activity"
+            },
+            {
+              "key": "science_1_card_3_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Mechanism card diagram/illustration. AI-generated from merchant references.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "science_1_card_3_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "science_1_card_3_title",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Mechanism card title.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 35
+              },
+              "demo_value": "Stay in Deep Sleep Longer"
+            },
+            {
+              "key": "science_1_card_3_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Mechanism card body. Every study/clinical reference must trace to proof_assets.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 117,
+                "max": 374
+              },
+              "demo_value": "The B-Complex and Zinc Bisglycinate in our formula support serotonin and melatonin production from t"
+            },
+            {
+              "key": "testimonials_2_heading_prefix",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Testimonials heading, part 1 (before the stat), e.g. 'Trusted by'.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "Trusted by"
+            },
+            {
+              "key": "testimonials_2_heading_stat",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Customer-count stat in the testimonials heading, e.g. '48,000+'. Real order/review data only (anti-pattern 1); coordinate with other counts on the page \u2014 contradictory counts are anti-pattern 6.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 13
+              },
+              "demo_value": "48,000+",
+              "proof_surface": true,
+              "proof_modality": "count",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "testimonials_2_heading_suffix",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Testimonials heading, part 3 (after the stat), e.g. 'Better Sleepers'.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 27
+              },
+              "demo_value": "Better Sleepers"
+            },
+            {
+              "key": "testimonials_2_review_1_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Testimonial reviewer display name from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "Sandra M.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "testimonials_2_review_1_text",
+              "kind": "copy",
+              "role": "body",
+              "description": "Testimonial body \u2014 a real review, verbatim or lightly trimmed (anti-pattern 2).",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 84,
+                "max": 267
+              },
+              "demo_value": "I've tried melatonin, magnesium spray, sleep apps \u2014 nothing worked. Two weeks in and I'm sleeping th",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "testimonials_2_review_1_likes",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Social-count line under the testimonial (e.g. '3.1k people liked this'). Real platform data only; omit otherwise.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 9,
+                "max": 40
+              },
+              "demo_value": "3.1k people liked this",
+              "proof_surface": true,
+              "proof_modality": "count",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "testimonials_2_review_2_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Testimonial reviewer display name from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Kevin R.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "testimonials_2_review_2_text",
+              "kind": "copy",
+              "role": "body",
+              "description": "Testimonial body \u2014 a real review, verbatim or lightly trimmed (anti-pattern 2).",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 93,
+                "max": 298
+              },
+              "demo_value": "The difference is dramatic. No grogginess in the morning, no dependency feeling, just genuinely bett",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "testimonials_2_review_2_likes",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Social-count line under the testimonial (e.g. '3.1k people liked this'). Real platform data only; omit otherwise.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 9,
+                "max": 40
+              },
+              "demo_value": "2.4k people liked this",
+              "proof_surface": true,
+              "proof_modality": "count",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "testimonials_2_review_3_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Testimonial reviewer display name from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Priya L.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "testimonials_2_review_3_text",
+              "kind": "copy",
+              "role": "body",
+              "description": "Testimonial body \u2014 a real review, verbatim or lightly trimmed (anti-pattern 2).",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 77,
+                "max": 246
+              },
+              "demo_value": "As someone who's dealt with anxiety-driven insomnia for 5 years, I was skeptical. I ordered on a whi",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_badge_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Recommendation-rate badge, e.g. '96% of Users Would Recommend'. Real survey/review-platform data only (anti-pattern 1).",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 11,
+                "max": 50
+              },
+              "demo_value": "96% of Users Would Recommend",
+              "proof_surface": true,
+              "proof_modality": "count",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Reviews section heading.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 35
+              },
+              "demo_value": "What Our Users Are Saying"
+            },
+            {
+              "key": "reviews_3_cat_1_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category label (e.g. 'Sleep Quality').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 5,
+                "max": 23
+              },
+              "demo_value": "Sleep Quality"
+            },
+            {
+              "key": "reviews_3_cat_1_score",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category score from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "4.9",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_cat_2_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category label (e.g. 'Sleep Quality').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 4,
+                "max": 20
+              },
+              "demo_value": "Ease of Use"
+            },
+            {
+              "key": "reviews_3_cat_2_score",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category score from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "4.9",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_cat_3_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category label (e.g. 'Sleep Quality').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 27
+              },
+              "demo_value": "Value for Money"
+            },
+            {
+              "key": "reviews_3_cat_3_score",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category score from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "4.8",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_cat_4_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category label (e.g. 'Sleep Quality').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "Speed of Results"
+            },
+            {
+              "key": "reviews_3_cat_4_score",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category score from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "4.7",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_cat_5_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category label (e.g. 'Sleep Quality').",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 5,
+                "max": 23
+              },
+              "demo_value": "Overall Score"
+            },
+            {
+              "key": "reviews_3_cat_5_score",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating-breakdown category score from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "4.9",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_overall_score",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Overall aggregate rating (e.g. '4.9') from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "4.9",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_review_basis",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Basis line under the score, e.g. 'Based on reviews from 48,312 verified customers'. Must match the review platform's real total.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 19,
+                "max": 85
+              },
+              "demo_value": "Based on reviews from 48,312 verified customers",
+              "proof_surface": true,
+              "proof_modality": "count",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_1_photo",
+              "kind": "image",
+              "role": "image",
+              "description": "Customer UGC photo on the review card. Real UGC supplied by the merchant \u2014 fake UGC is a compliance non-starter; when absent use the photo-less review variant, never generation.",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_1_avatar",
+              "kind": "image",
+              "role": "image",
+              "description": "Reviewer avatar. Real UGC/brand asset from the merchant; never generated (photo-less fallback otherwise).",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_1_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name as on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "Sandra M.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_1_posted",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review recency line (e.g. 'Posted Today') \u2014 must reflect the real review date.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 5,
+                "max": 22
+              },
+              "demo_value": "Posted Today",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_1_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review card title from the real review.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 14,
+                "max": 61
+              },
+              "demo_value": "Finally sleeping through the night",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_1_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Review card body \u2014 real review content, verbatim or lightly trimmed.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 76,
+                "max": 242
+              },
+              "demo_value": "I was skeptical after trying so many things. Two weeks in and I sleep 7\u20138 solid hours. Zero groggine",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_2_photo",
+              "kind": "image",
+              "role": "image",
+              "description": "Customer UGC photo on the review card. Real UGC supplied by the merchant \u2014 fake UGC is a compliance non-starter; when absent use the photo-less review variant, never generation.",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_2_avatar",
+              "kind": "image",
+              "role": "image",
+              "description": "Reviewer avatar. Real UGC/brand asset from the merchant; never generated (photo-less fallback otherwise).",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_2_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name as on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Kevin R.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_2_posted",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review recency line (e.g. 'Posted Today') \u2014 must reflect the real review date.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 5,
+                "max": 22
+              },
+              "demo_value": "Posted Today",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_2_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review card title from the real review.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 10,
+                "max": 43
+              },
+              "demo_value": "Replaced my prescription",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_2_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Review card body \u2014 real review content, verbatim or lightly trimmed.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 80,
+                "max": 256
+              },
+              "demo_value": "My doctor helped me wean off my prescription sleep med and transition to our formula. It works just ",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_3_photo",
+              "kind": "image",
+              "role": "image",
+              "description": "Customer UGC photo on the review card. Real UGC supplied by the merchant \u2014 fake UGC is a compliance non-starter; when absent use the photo-less review variant, never generation.",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_3_avatar",
+              "kind": "image",
+              "role": "image",
+              "description": "Reviewer avatar. Real UGC/brand asset from the merchant; never generated (photo-less fallback otherwise).",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_3_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name as on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Priya L.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_3_posted",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review recency line (e.g. 'Posted Today') \u2014 must reflect the real review date.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "Posted Yesterday",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_3_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review card title from the real review.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 10,
+                "max": 43
+              },
+              "demo_value": "Anxiety insomnia is gone",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_3_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Review card body \u2014 real review content, verbatim or lightly trimmed.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 76,
+                "max": 245
+              },
+              "demo_value": "My mind used to race the second I got into bed. Now I take two capsules, read for 20 minutes, and I'",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_4_photo",
+              "kind": "image",
+              "role": "image",
+              "description": "Customer UGC photo on the review card. Real UGC supplied by the merchant \u2014 fake UGC is a compliance non-starter; when absent use the photo-less review variant, never generation.",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_4_avatar",
+              "kind": "image",
+              "role": "image",
+              "description": "Reviewer avatar. Real UGC/brand asset from the merchant; never generated (photo-less fallback otherwise).",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_4_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name as on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 12
+              },
+              "demo_value": "Tom B.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_4_posted",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review recency line (e.g. 'Posted Today') \u2014 must reflect the real review date.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "Posted Yesterday",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_4_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review card title from the real review.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 9,
+                "max": 41
+              },
+              "demo_value": "Husband uses it too now",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_4_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Review card body \u2014 real review content, verbatim or lightly trimmed.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 70,
+                "max": 226
+              },
+              "demo_value": "I ordered for myself and my husband started stealing my capsules. We both sleep so much better. Just",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_5_photo",
+              "kind": "image",
+              "role": "image",
+              "description": "Customer UGC photo on the review card. Real UGC supplied by the merchant \u2014 fake UGC is a compliance non-starter; when absent use the photo-less review variant, never generation.",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_5_avatar",
+              "kind": "image",
+              "role": "image",
+              "description": "Reviewer avatar. Real UGC/brand asset from the merchant; never generated (photo-less fallback otherwise).",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_5_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name as on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 6,
+                "max": 22
+              },
+              "demo_value": "Michelle D.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_5_posted",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review recency line (e.g. 'Posted Today') \u2014 must reflect the real review date.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "Posted Yesterday",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_5_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review card title from the real review.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 10,
+                "max": 43
+              },
+              "demo_value": "No grogginess whatsoever",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_5_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Review card body \u2014 real review content, verbatim or lightly trimmed.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 74,
+                "max": 235
+              },
+              "demo_value": "The fact that I wake up clear-headed is the biggest difference from everything else I've tried. Real",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_6_photo",
+              "kind": "image",
+              "role": "image",
+              "description": "Customer UGC photo on the review card. Real UGC supplied by the merchant \u2014 fake UGC is a compliance non-starter; when absent use the photo-less review variant, never generation.",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_6_avatar",
+              "kind": "image",
+              "role": "image",
+              "description": "Reviewer avatar. Real UGC/brand asset from the merchant; never generated (photo-less fallback otherwise).",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_6_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name as on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Anita K.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_6_posted",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review recency line (e.g. 'Posted Today') \u2014 must reflect the real review date.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "Posted Last Week",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_6_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review card title from the real review.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 11,
+                "max": 50
+              },
+              "demo_value": "Works within the first night",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_6_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Review card body \u2014 real review content, verbatim or lightly trimmed.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 87,
+                "max": 278
+              },
+              "demo_value": "I felt a difference on night one. Subtle but real \u2014 I just felt calmer getting into bed and didn't w",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_7_photo",
+              "kind": "image",
+              "role": "image",
+              "description": "Customer UGC photo on the review card. Real UGC supplied by the merchant \u2014 fake UGC is a compliance non-starter; when absent use the photo-less review variant, never generation.",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_7_avatar",
+              "kind": "image",
+              "role": "image",
+              "description": "Reviewer avatar. Real UGC/brand asset from the merchant; never generated (photo-less fallback otherwise).",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_7_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name as on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Derek H.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_7_posted",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review recency line (e.g. 'Posted Today') \u2014 must reflect the real review date.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "Posted Last Week",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_7_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review card title from the real review.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 14,
+                "max": 63
+              },
+              "demo_value": "Cancelled three doctor appointments",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_7_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Review card body \u2014 real review content, verbatim or lightly trimmed.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 87,
+                "max": 278
+              },
+              "demo_value": "I was going to see a sleep specialist. Decided to try this first. Haven't needed the appointment. Sl",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_8_photo",
+              "kind": "image",
+              "role": "image",
+              "description": "Customer UGC photo on the review card. Real UGC supplied by the merchant \u2014 fake UGC is a compliance non-starter; when absent use the photo-less review variant, never generation.",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_8_avatar",
+              "kind": "image",
+              "role": "image",
+              "description": "Reviewer avatar. Real UGC/brand asset from the merchant; never generated (photo-less fallback otherwise).",
+              "source_policy": "merchant_asset_required",
+              "proof_surface": true,
+              "proof_modality": "ugc_photo",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_8_name",
+              "kind": "copy",
+              "role": "identity",
+              "description": "Reviewer display name as on the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 14
+              },
+              "demo_value": "Lena J.",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_8_posted",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review recency line (e.g. 'Posted Today') \u2014 must reflect the real review date.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 6,
+                "max": 29
+              },
+              "demo_value": "Posted Last Week",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_8_title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Review card title from the real review.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 13,
+                "max": 58
+              },
+              "demo_value": "Best thing I've bought this year",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "reviews_3_card_8_body",
+              "kind": "copy",
+              "role": "body",
+              "description": "Review card body \u2014 real review content, verbatim or lightly trimmed.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 80,
+                "max": 256
+              },
+              "demo_value": "I don't write reviews but this earned one. Three months in and still going strong. No tolerance buil",
+              "proof_surface": true,
+              "proof_modality": "review",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "guarantee_1_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Guarantee section heading.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 20,
+                "max": 48
+              },
+              "demo_value": "Try [Product] Completely Risk-Free"
+            },
+            {
+              "key": "guarantee_1_body_text",
+              "kind": "copy",
+              "role": "body",
+              "description": "Guarantee body copy. Day counts and terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 128,
+                "max": 411
+              },
+              "demo_value": "We're so confident in what our formula can do that we back every order with a 60-day money-back guar"
+            },
+            {
+              "key": "guarantee_1_badge_image",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Guarantee badge graphic \u2014 template chrome (day count must match spec truth).",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "guarantee_1_badge_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "guarantee_1_side_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Lifestyle image beside the guarantee copy. AI-generated from merchant references (pending final policy confirmation from the dry-run decision list).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "guarantee_1_side_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "faq_1_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "FAQ section heading.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 16,
+                "max": 36
+              },
+              "demo_value": "Frequently Asked Questions"
+            },
+            {
+              "key": "faq_1_product_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Product image beside the FAQ accordion. Merchant-supplied product photography.",
+              "source_policy": "merchant_asset_required"
+            },
+            {
+              "key": "faq_1_product_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "faq_1_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 12,
+                "max": 54
+              },
+              "demo_value": "How long before I see results?"
+            },
+            {
+              "key": "faq_1_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 90,
+                "max": 286
+              },
+              "demo_value": "Many customers notice a difference within the first 1\u20133 nights. Full results \u2014 improved sleep archit"
+            },
+            {
+              "key": "faq_1_faq_2_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 68
+              },
+              "demo_value": "Is [Product] safe to take every night?"
+            },
+            {
+              "key": "faq_1_faq_2_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 86,
+                "max": 275
+              },
+              "demo_value": "Yes. This formula is formulated with natural adaptogens and minerals that are safe for nightly use. "
+            },
+            {
+              "key": "faq_1_faq_3_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 16,
+                "max": 70
+              },
+              "demo_value": "Can I take this with other supplements?"
+            },
+            {
+              "key": "faq_1_faq_3_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 93,
+                "max": 298
+              },
+              "demo_value": "This supplement is designed to complement your existing supplement stack. If you're on prescription "
+            },
+            {
+              "key": "faq_1_faq_4_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 9,
+                "max": 40
+              },
+              "demo_value": "When should I take it?"
+            },
+            {
+              "key": "faq_1_faq_4_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 44,
+                "max": 142
+              },
+              "demo_value": "Take two capsules with water 30\u201360 minutes before your intended bedtime for best results."
+            },
+            {
+              "key": "faq_1_faq_5_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 12,
+                "max": 56
+              },
+              "demo_value": "What if it doesn't work for me?"
+            },
+            {
+              "key": "faq_1_faq_5_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 74,
+                "max": 235
+              },
+              "demo_value": "We offer a 60-day money-back guarantee. If you're not completely satisfied for any reason, contact o"
+            },
+            {
+              "key": "faq_1_faq_6_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 14,
+                "max": 63
+              },
+              "demo_value": "Is [Product] vegan and gluten-free?"
+            },
+            {
+              "key": "faq_1_faq_6_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 53,
+                "max": 170
+              },
+              "demo_value": "Yes. This product is 100% vegan, gluten-free, and free from artificial colors, flavors, and preserva"
+            },
+            {
+              "key": "faq_1_faq_7_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 12,
+                "max": 54
+              },
+              "demo_value": "How long does one bottle last?"
+            },
+            {
+              "key": "faq_1_faq_7_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 56,
+                "max": 181
+              },
+              "demo_value": "One bottle contains a 30-day supply (60 capsules at 2 capsules per night). Subscribe and save for th"
+            },
+            {
+              "key": "faq_1_faq_8_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 13,
+                "max": 58
+              },
+              "demo_value": "Where is [Product] manufactured?"
+            },
+            {
+              "key": "faq_1_faq_8_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 71,
+                "max": 227
+              },
+              "demo_value": "Our product is manufactured in the USA in an FDA-registered, GMP-certified facility. Every batch is "
+            },
+            {
+              "key": "faq_1_faq_9_question",
+              "kind": "copy",
+              "role": "micro",
+              "description": "FAQ question \u2014 draw from the vertical's canonical objection list plus brief objections.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 13,
+                "max": 59
+              },
+              "demo_value": "Is this different from melatonin?"
+            },
+            {
+              "key": "faq_1_faq_9_answer",
+              "kind": "copy",
+              "role": "body",
+              "description": "FAQ answer \u2014 objection handling; guarantee/shipping/offer terms verbatim from spec truth.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 105,
+                "max": 336
+              },
+              "demo_value": "Very different. Melatonin only signals your body to sleep \u2014 it doesn't address the cortisol and nerv"
+            },
+            {
+              "key": "faq_1_accordion_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Accordion chevron \u2014 template chrome.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "bottomcta_1_hero_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Final CTA lifestyle image. AI-generated from merchant references.",
+              "source_policy": "generated"
+            },
+            {
+              "key": "bottomcta_1_hero_image_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "bottomcta_1_rating_label",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Rating word next to the bottom-CTA stars, e.g. 'Excellent'. Only alongside real rating data.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 4,
+                "max": 16
+              },
+              "demo_value": "Excellent",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "bottomcta_1_rating_value",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Bottom-CTA aggregate rating value (e.g. '4.9') from the review platform.",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 8
+              },
+              "demo_value": "4.9",
+              "proof_surface": true,
+              "proof_modality": "rating",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "bottomcta_1_review_count",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Bottom-CTA review count (numeric). Real review-platform total; must not contradict other counts on the page (anti-pattern 6).",
+              "source_policy": "merchant_asset_required",
+              "length_band_chars": {
+                "min": 3,
+                "max": 9
+              },
+              "demo_value": "48312",
+              "proof_surface": true,
+              "proof_modality": "count",
+              "needs_merchant_input_able": true
+            },
+            {
+              "key": "bottomcta_1_heading",
+              "kind": "copy",
+              "role": "headline",
+              "description": "Final CTA heading. Time-limited/offer wording only from verified offer data (anti-pattern 10).",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 31,
+                "max": 73
+              },
+              "demo_value": "Start Sleeping Better Tonight \u2014 60% Off Limited Time"
+            },
+            {
+              "key": "bottomcta_1_subheading",
+              "kind": "copy",
+              "role": "body",
+              "description": "Final CTA subheading. Customer-count claims only when backed by real proof.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 73,
+                "max": 234
+              },
+              "demo_value": "Join over 48,000 customers who've transformed their sleep with [Product]. Backed by our 60-day money"
+            },
+            {
+              "key": "bottomcta_1_bullet_icon",
+              "kind": "image",
+              "role": "chrome",
+              "description": "Bullet icon \u2014 template chrome.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "bottomcta_1_bullet_1",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Final CTA checkmark bullet (offer/guarantee facts from spec truth).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 11,
+                "max": 49
+              },
+              "demo_value": "Free shipping on all orders"
+            },
+            {
+              "key": "bottomcta_1_bullet_2",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Final CTA checkmark bullet (offer/guarantee facts from spec truth).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 11,
+                "max": 49
+              },
+              "demo_value": "60-Day Money-Back Guarantee"
+            },
+            {
+              "key": "bottomcta_1_bullet_3",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Final CTA checkmark bullet (offer/guarantee facts from spec truth).",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 15,
+                "max": 67
+              },
+              "demo_value": "Made in USA in GMP-certified facility"
+            },
+            {
+              "key": "footer_1_logo_image",
+              "kind": "image",
+              "role": "image",
+              "description": "Footer logo image.",
+              "source_policy": "brand"
+            },
+            {
+              "key": "footer_1_logo_alt",
+              "kind": "alt_text",
+              "role": "alt_text",
+              "description": "Alt text for the sibling image slot (accessibility; follows the image's content).",
+              "source_policy": "generated"
+            },
+            {
+              "key": "footer_1_terms_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Footer legal link label.",
+              "source_policy": "template_static",
+              "length_band_chars": {
+                "min": 5,
+                "max": 22
+              },
+              "demo_value": "Terms of Use"
+            },
+            {
+              "key": "footer_1_terms_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Footer legal link URL from store config.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "footer_1_privacy_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Footer legal link label.",
+              "source_policy": "template_static",
+              "length_band_chars": {
+                "min": 6,
+                "max": 25
+              },
+              "demo_value": "Privacy Policy"
+            },
+            {
+              "key": "footer_1_privacy_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Footer legal link URL from store config.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "footer_1_contact_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Footer legal link label.",
+              "source_policy": "template_static",
+              "length_band_chars": {
+                "min": 4,
+                "max": 18
+              },
+              "demo_value": "Contact Us"
+            },
+            {
+              "key": "footer_1_contact_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Footer legal link URL from store config.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "footer_1_copyright_text",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Footer copyright line using the merchant legal name.",
+              "source_policy": "spec_truth",
+              "length_band_chars": {
+                "min": 15,
+                "max": 68
+              },
+              "demo_value": "\u00a9 2026 [Product]. All Rights Reserved."
+            }
+          ]
+        }
+      ]
+    },
+    "upsell-bundle-stepper": {
+      "sections": [
+        {
+          "section": "main",
+          "slots": [
+            {
+              "key": "title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Short copy slot.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 15,
+                "max": 67
+              },
+              "demo_value": "Apollo \u2014 Upsell (bundle stepper)"
+            },
+            {
+              "key": "page_type",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "next_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "decline_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "styles",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "scripts",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "upsell_offer",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "swiper_slides",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "swiper_thumbs",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            }
+          ]
+        }
+      ]
+    },
+    "upsell-bundle-tier-cards": {
+      "sections": [
+        {
+          "section": "main",
+          "slots": [
+            {
+              "key": "title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Short copy slot.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 16,
+                "max": 72
+              },
+              "demo_value": "Apollo \u2014 Upsell (bundle tier cards)"
+            },
+            {
+              "key": "page_type",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "next_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "decline_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "styles",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "scripts",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "upsell_offer",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "upsell_bundle_tiers",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "swiper_slides",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "swiper_thumbs",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            }
+          ]
+        }
+      ]
+    },
+    "upsell-bundle-tier-pills": {
+      "sections": [
+        {
+          "section": "main",
+          "slots": [
+            {
+              "key": "title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Short copy slot.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 16,
+                "max": 72
+              },
+              "demo_value": "Apollo \u2014 Upsell (bundle tier pills)"
+            },
+            {
+              "key": "page_type",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "next_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "decline_url",
+              "kind": "link",
+              "role": "routing",
+              "description": "Route/link target.",
+              "source_policy": "spec_truth"
+            },
+            {
+              "key": "styles",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "scripts",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "upsell_offer",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "upsell_bundle_tiers",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "swiper_slides",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            },
+            {
+              "key": "swiper_thumbs",
+              "kind": "commerce",
+              "role": "commerce_structure",
+              "owner": "commerce",
+              "description": "Structured commerce configuration \u2014 owned by the commerce-surface catalog and the family brand contract, not the content-slot layer.",
+              "reference": "integrated_commerce_surface_ref"
+            }
+          ]
+        }
+      ]
+    },
+    "receipt": {
+      "sections": [
+        {
+          "section": "main",
+          "slots": [
+            {
+              "key": "title",
+              "kind": "copy",
+              "role": "micro",
+              "description": "Short copy slot.",
+              "source_policy": "generated",
+              "length_band_chars": {
+                "min": 8,
+                "max": 38
+              },
+              "demo_value": "Apollo \u2014 Receipt"
+            },
+            {
+              "key": "page_type",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            },
+            {
+              "key": "styles",
+              "kind": "meta",
+              "role": "page_meta",
+              "owner": "template",
+              "description": "Page-kit page metadata \u2014 template-owned, assembly never touches.",
+              "source_policy": "template_static"
+            }
+          ]
+        }
+      ]
+    },
+    "checkout": {
+      "commerce_owned": true,
+      "integrated_commerce_surface_ref": {
+        "commerce_surface_catalog": "contracts/commerce-surface-catalog.json",
+        "template_brand_contract": "contracts/template-brand-contract.<family>.v0.json"
+      },
+      "note": "Checkout keys are commerce wiring (bundles, shipping_methods, order bumps, MV variant slots) and diverge by design. The slot manifest references the commerce contracts instead of duplicating them; checkout content imagery is governed by the family brand contract."
+    }
+  },
+  "roadmap": {
+    "note": "Corpus section-coverage audit (2026-07-22): sections winning campaigns use that the shared vocabulary cannot yet express, in descending revenue exposure. Proposed as shared-core additions \u2014 NOT forced into families whose templates lack the surface.",
+    "proposed_sections": [
+      {
+        "section": "announcement_1",
+        "covers": "urgency/promo strips",
+        "revenue_exposure_usd_m": 39.7,
+        "notes": "must carry enabled_by_verified_urgency semantics"
+      },
+      {
+        "section": "media_1",
+        "covers": "visual/carousel + video/demo surfaces",
+        "revenue_exposure_usd_m": 34.4
+      },
+      {
+        "section": "credibility_1",
+        "covers": "press-logo credibility ('as seen in')",
+        "revenue_exposure_usd_m": 31.5,
+        "notes": "every logo requires a brief-supplied working URL (anti-pattern 8)"
+      },
+      {
+        "section": "comparison_1",
+        "covers": "comparison tables",
+        "revenue_exposure_usd_m": 19.0,
+        "notes": "requires a brief-supplied comparison matrix and test record (anti-pattern 11)"
+      },
+      {
+        "section": "socialproof_1",
+        "covers": "typed social-proof modalities; UGC merchant_asset_required",
+        "revenue_exposure_usd_m": null
+      },
+      {
+        "section": "article_meta_1",
+        "covers": "article identity/byline metadata",
+        "revenue_exposure_usd_m": 12.1
+      },
+      {
+        "section": "sticky_offer_1",
+        "covers": "sticky buy box",
+        "revenue_exposure_usd_m": 7.5
+      },
+      {
+        "section": "process_1 / specs_1",
+        "covers": "how-it-works / spec tables",
+        "revenue_exposure_usd_m": null
+      },
+      {
+        "section": "transformation_1",
+        "covers": "transformation timelines",
+        "revenue_exposure_usd_m": 6.8
+      },
+      {
+        "section": "offer_close_1",
+        "covers": "normalized offer-close block",
+        "revenue_exposure_usd_m": null
+      },
+      {
+        "section": "mapper_aliases",
+        "covers": "CI-checked aliases for offer_*/cta_*/author_* mapper drift",
+        "revenue_exposure_usd_m": 50.0
+      }
+    ]
+  }
+}

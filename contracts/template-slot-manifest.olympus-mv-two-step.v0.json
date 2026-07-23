@@ -1,0 +1,15 @@
+{
+  "schema_version": "template-slot-manifest/v0",
+  "family": "olympus-mv-two-step",
+  "extends": "template-slot-manifest.shared-content-core.v0.json",
+  "description": "Content-slot manifest for the olympus-mv-two-step starter-template family. Shared slots come from the content-slot core; this overlay declares family-specific keys and commerce-owned pages.",
+  "overlay": {
+    "pages": {}
+  },
+  "commerce_owned_pages": [
+    "checkout",
+    "upsell-mv",
+    "variant-picker",
+    "select"
+  ]
+}
