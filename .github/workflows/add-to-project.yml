@@ -6,9 +6,9 @@ on:
 
 # Both steps authenticate with the ADD_TO_PROJECT_PAT org secret. It is a
 # fine-grained PAT (since 2026-07-23), so it advertises no X-OAuth-Scopes
-# header at all — see the 404 branch of the gate below, which still reads
-# that header. It carries access to this repo, Issues: Read for the gate,
-# and org Projects: Read & Write for the add step.
+# header at all — never gate behaviour on token scope strings here. It
+# carries access to this repo, Issues: Read for the gate, and org
+# Projects: Read & Write for the add step.
 permissions: {}
 
 jobs:
@@ -26,16 +26,15 @@ jobs:
       # 29990823853); and GITHUB_TOKEN answers the collaborators endpoint
       # with a false 404 for collaborators whose access derives from org
       # roles (run 29991353247). So: check the collaborators endpoint with
-      # the PAT, and only trust a 404 when the token's advertised scopes
-      # prove it could actually see the collaborator list — otherwise fail
-      # loudly instead of silently skipping.
+      # the PAT, and only trust a 404 when a probe proves the token can
+      # actually read this repo's collaborator list — otherwise fail loudly
+      # instead of silently skipping.
       - name: Gate on collaborator status
         id: gate
         env:
           PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}
           AUTHOR: ${{ github.event.issue.user.login }}
           ASSOCIATION: ${{ github.event.issue.author_association }}
-          REPO_PRIVATE: ${{ github.event.repository.private }}
         run: |
           if [ -z "$PAT" ]; then
             echo "::error::ADD_TO_PROJECT_PAT is empty. Org secrets do not reach private repos on the GitHub Free plan — set a repo-level Actions secret named ADD_TO_PROJECT_PAT with the same PAT value."
@@ -61,22 +60,23 @@ jobs:
               echo "ok=true" >> "$GITHUB_OUTPUT"
               ;;
             404)
-              # A 404 is only authoritative if the PAT could see the repo's
-              # collaborators at all: full repo scope always can; public_repo
-              # suffices on public repos. Anything else is indistinguishable
-              # from a scope problem — fail loudly.
-              if printf '%s' "$scopes" | grep -qE '(^|, )repo(,|$)'; then
-                authoritative=true
-              elif [ "$REPO_PRIVATE" = "false" ] && printf '%s' "$scopes" | grep -qE '(^|, )public_repo(,|$)'; then
-                authoritative=true
-              else
-                authoritative=false
-              fi
-              if [ "$authoritative" = "true" ]; then
+              # A 404 means "not a collaborator" only if the PAT can read this
+              # repo's collaborator list at all. Probe that capability directly
+              # rather than inferring it from X-OAuth-Scopes: fine-grained PATs
+              # never send that header, so scope-grepping treated every
+              # fine-grained token as blind and failed the run on every
+              # outsider-authored issue. A classic repo-scoped PAT still probes
+              # 200, so this is strictly more general than the scope check.
+              list_code=$(curl -s -o /dev/null -w '%{http_code}' \
+                -H "Authorization: Bearer $PAT" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/collaborators?per_page=1")
+              echo "collaborator-list probe: HTTP $list_code"
+              if [ "$list_code" = "200" ]; then
                 echo "author=$AUTHOR is not a collaborator — leaving for human triage"
                 echo "ok=false" >> "$GITHUB_OUTPUT"
               else
-                echo "::error::Collaborator check returned 404 but ADD_TO_PROJECT_PAT does not advertise a repo scope that could see this repo's collaborators (scopes: ${scopes:-none}). Grant the PAT repo scope (or repo access, if fine-grained) so the gate can distinguish outsiders from scope failures."
+                echo "::error::Cannot determine whether $AUTHOR is a collaborator: the per-user check returned 404 and the collaborator-list probe returned HTTP $list_code, so ADD_TO_PROJECT_PAT cannot read this repo's collaborators. Grant it repo access (classic: repo scope; fine-grained: this repo + Metadata: Read), then re-run."
                 exit 1
               fi
               ;;
