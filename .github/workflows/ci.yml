@@ -35,7 +35,7 @@ jobs:
           repository: NextCommerceCo/campaign-cart-starter-templates
           ref: ${{ steps.pin.outputs.ref }}
           path: campaign-cart-starter-templates
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           # The campaign-spec test suite runs as TypeScript via `node --test`
           # (native type stripping, unflagged since 23.6). The PUBLISHED package
