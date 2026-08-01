@@ -1615,7 +1615,7 @@ function toConstantCase(value) {
   return normalized || "WARNING";
 }
 
-function doctorCommand(args) {
+export function doctorCommand(args) {
   // Non-packet mode (learnings L7): doctor a `campaign-build`'d page-kit
   // campaign that has only a built _site/ and no full Build Packet. Resolves
   // scope from the built output and runs the built-output residue/text/
@@ -1626,11 +1626,23 @@ function doctorCommand(args) {
   }
   const packetPath = resolve(requireArg(args, "packet"));
   const explicitSidecarArgs = Boolean(args.context || args.report);
-  return doctorPacket(packetPath, {
+  const result = doctorPacket(packetPath, {
     contextPath: args.context ? resolve(args.context) : explicitSidecarArgs ? null : undefined,
     reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   });
+  // Refresh the retained sidecar so it never silently stays an earlier stage's
+  // snapshot: before this, only prepare-build/start wrote doctor-output.json,
+  // and every later standalone doctor run reported fresh state on stdout while
+  // the artifact on disk stayed frozen at intake (NEXT-114 dogfood finding
+  // wf_1785566917680). Opt out with --no-write.
+  if (args["no-write"] !== true) {
+    const doctorOutPath = resolve(
+      args["doctor-out"] || join(dirname(packetPath), ".campaign-runtime/doctor-output.json"),
+    );
+    writeJson(doctorOutPath, result);
+  }
+  return result;
 }
 
 // L7 non-packet doctor: resolve scope from a built _site/, run the built-output

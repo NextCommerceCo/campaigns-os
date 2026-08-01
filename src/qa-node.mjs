@@ -778,7 +778,7 @@ async function runQa(args) {
   // its declared tags/pixels + a Purchase (source-aware re blockedEvents). The
   // foundation the parity differ sits on — correctness before parity.
   const analyticsContract = resolved.spec?.analytics;
-  if (analyticsContract || booleanArg(args["analytics-correctness"], "analytics-correctness")) {
+  if (analyticsContract || forcedAnalyticsCorrectness(args)) {
     assertions.push(...await runAnalyticsCorrectnessChecks(args, analyticsContract || {}));
   }
 
@@ -1542,6 +1542,15 @@ function booleanArg(value, key) {
   if (["true", "1", "yes", "y", "on"].includes(normalized)) return true;
   if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
   throw new Error(`--${key} must be true or false.`);
+}
+
+// Absent flag means "not forced" — only parse the value when supplied. Before
+// this, a spec with no analytics block made booleanArg(undefined) throw on
+// every qa run that omitted --analytics-correctness (NEXT-114 dogfood finding
+// wf_1785565103144). Explicit garbage values still error.
+export function forcedAnalyticsCorrectness(args) {
+  if (args?.["analytics-correctness"] == null) return false;
+  return booleanArg(args["analytics-correctness"], "analytics-correctness");
 }
 
 export function shouldPublishVerdict(args) {

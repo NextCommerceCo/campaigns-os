@@ -384,3 +384,36 @@ test("polish gate accepts a cleared brand_bleed attestation (A3)", () => {
   })) });
   assert.equal(gate.status, "pass");
 });
+
+test("certified favicon object may mention the starter path without reading as leakage (NEXT-114)", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      brand_review: {
+        logo_checked: true,
+        brand_bleed: { cleared: true },
+        favicon: {
+          status: "matched_source",
+          byte_match: true,
+          notes: "Source favicon copied over assets/images/favicon.png; verified byte-distinct from the starter icon.",
+        },
+      },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "pass");
+});
+
+test("free-text favicon evidence mentioning the starter path still reads as leakage", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      brand_review: {
+        logo_checked: true,
+        brand_bleed: { cleared: true },
+        favicon: "still shipping images/favicon.png from the template",
+      },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.ok(gate.problems.some((p) => p.includes("favicon")));
+});

@@ -110,3 +110,13 @@ test("unknown out-of-band vendor → manual review, not a false fail", () => {
   assert.equal(a["analytics-correctness:oob:triplepixel"].status, STATUS.MANUAL_REVIEW);
   assert.equal(a["analytics-correctness:oob:triplepixel"].severity, SEVERITY.WARN);
 });
+
+test("forcedAnalyticsCorrectness: absent flag is not forced and does not throw (NEXT-114)", async () => {
+  const { forcedAnalyticsCorrectness } = await import("./qa-node.mjs");
+  assert.equal(forcedAnalyticsCorrectness({}), false);
+  assert.equal(forcedAnalyticsCorrectness({ "analytics-correctness": undefined }), false);
+  assert.equal(forcedAnalyticsCorrectness({ "analytics-correctness": null }), false);
+  assert.equal(forcedAnalyticsCorrectness({ "analytics-correctness": "true" }), true);
+  assert.equal(forcedAnalyticsCorrectness({ "analytics-correctness": "false" }), false);
+  assert.throws(() => forcedAnalyticsCorrectness({ "analytics-correctness": "maybe" }), /must be true or false/);
+});
