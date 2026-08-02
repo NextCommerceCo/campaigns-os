@@ -2774,7 +2774,14 @@ export function validateRouteSlugIdentity(spec, packet, errors, ready) {
   }
 
   if (specSlug) {
-    ready.push(`Packet public_route_slug "${packetSlug}" matches CampaignSpec identity and is not the Map ID`);
+    // Kilo review (PR #174): only claim "not the Map ID" when that is true —
+    // a spec may (confusingly, but authoritatively) declare its route slug
+    // equal to its Map ID, and the packet matching it is not an error here.
+    ready.push(
+      specDeclaresMapIdSlug
+        ? `Packet public_route_slug "${packetSlug}" matches CampaignSpec identity (note: the spec declares its public route slug equal to its Map ID)`
+        : `Packet public_route_slug "${packetSlug}" matches CampaignSpec identity and is not the Map ID`
+    );
   }
 }
 
@@ -2791,8 +2798,11 @@ export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, d
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!targetRepo || !publicRouteSlug) return;
 
+  // isDirectory, not bare existence: a stray regular file at _site/<slug>
+  // must not read as a found root — downstream built_output.* checks would
+  // still skip on it (Kilo review, PR #174).
   const siteRoot = join(targetRepo, "_site", publicRouteSlug);
-  if (existsSync(siteRoot)) {
+  if (existsSync(siteRoot) && statSync(siteRoot).isDirectory()) {
     ready.push(`Built output root found at _site/${publicRouteSlug}/`);
     return;
   }

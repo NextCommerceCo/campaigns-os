@@ -528,3 +528,29 @@ test("target root: existing _site/<slug>/ records a ready line", () => {
     assert.ok(ready.some((note) => note.includes(`_site/${SLUG}/`)));
   });
 });
+
+test("route-slug identity: spec-declared slug==Map-ID match passes without the false 'not the Map ID' claim", () => {
+  const errors = [];
+  const ready = [];
+  const spec = { spec_identity: { map_id: "acme-x1", public_route_slug: "acme-x1" } };
+  const packet = { campaign: { public_route_slug: "acme-x1" }, spec: { map_id: "acme-x1" } };
+  validateRouteSlugIdentity(spec, packet, errors, ready);
+  assert.deepEqual(errors, []);
+  assert.equal(ready.length, 1);
+  assert.match(ready[0], /declares its public route slug equal to its Map ID/);
+  assert.doesNotMatch(ready[0], /and is not the Map ID/);
+});
+
+test("target root: a stray regular file at _site/<slug> is not a found root", () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "_site"), { recursive: true });
+    writeFileSync(join(dir, "_site", SLUG), "not a directory");
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    const buildState = { report: { stages: { assembly: { status: "completed" } } } };
+    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+    assert.deepEqual(codes(errors), ["built_output.target_root"]);
+    assert.equal(ready.some((note) => note.includes("Built output root found")), false);
+  });
+});
