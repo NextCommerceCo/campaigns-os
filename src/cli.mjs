@@ -16,7 +16,7 @@ import {
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runQaCli } from "./qa-node.mjs";
+import { runQaCli, shellToken } from "./qa-node.mjs";
 import {
   appendFinding,
   buildFinding,
@@ -5185,7 +5185,10 @@ export function nextStage(stage, args, ambient = null) {
   // rewrite also clears any stale stamp. Opt out with --no-write.
   if (args["no-write"] !== true) {
     try {
-      writeJson(join(targetRepo, ".campaign-runtime/doctor-output.json"), doctor);
+      // Atomic like the assembly report: a torn sidecar would be a corrupted
+      // freshness artifact — the exact green-lie shape this refresh exists to
+      // prevent (Kilo review, PR #176).
+      writeJsonAtomic(join(targetRepo, ".campaign-runtime/doctor-output.json"), doctor);
     } catch {
       // sidecar refresh is best-effort; orchestration must not fail on it
     }
@@ -5427,9 +5430,9 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     // optional nicety — the dogfood run ended at a terminal stage with the
     // session open and no durable Run Record, and nothing prompted otherwise.
     if (ambient) {
-      push("run_end", "command", `campaigns-os run end${ambient.session?.packet ? "" : ` --packet ${packetPath}`}`, "Close the active run session: assemble the aggregated Run Record and clear run-session.json. Required — the run's durable record depends on it.", { required: true });
+      push("run_end", "command", `campaigns-os run end${ambient.session?.packet ? "" : ` --packet ${shellToken(packetPath)}`}`, "Close the active run session: assemble the aggregated Run Record and clear run-session.json. Required — the run's durable record depends on it.", { required: true });
     } else {
-      push("run_record_closeout", "command", `campaigns-os run-record --packet ${packetPath} --json`, "Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.", { required: true });
+      push("run_record_closeout", "command", `campaigns-os run-record --packet ${shellToken(packetPath)} --json`, "Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.", { required: true });
     }
   }
   return actions;

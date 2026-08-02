@@ -47,3 +47,9 @@ test("qa run closeout shell-quotes paths that need it", () => {
   assert.match(actions[0].command, /--packet '\/camp aigns\/demo\/campaign-runtime\.build\.json'/);
   assert.match(actions[0].command, /--qa-verdict 'qa-output\/de mo\/RUN1\.json'/);
 });
+
+test("next picker done closeout shell-quotes a packet path that needs it", () => {
+  const actions = buildNextActions({ ...BASE, packetPath: "/camp aigns/demo/campaign-runtime.build.json", result: { stage: "done" }, ambient: null });
+  const closeout = actions.find((action) => action.id === "run_record_closeout");
+  assert.match(closeout.command, /--packet '\/camp aigns\/demo\/campaign-runtime\.build\.json'/);
+});

@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const DOCTOR_SIDECAR_REL_PATH = ".campaign-runtime/doctor-output.json";
@@ -30,6 +31,10 @@ export function markDoctorSidecarStale(targetBaseDir, { command = null, reason =
     stale_reason: reason
       || "A later command changed doctor inputs after this snapshot was written. Re-run campaigns-os doctor (or campaigns-os next) for current state.",
   };
-  writeFileSync(path, `${JSON.stringify(stamped, null, 2)}\n`);
+  // Atomic tmp+rename, matching the assembly-report write discipline: a torn
+  // sidecar would itself break the freshness contract this stamp implements.
+  const tmp = `${path}.${randomUUID()}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(stamped, null, 2)}\n`);
+  renameSync(tmp, path);
   return path;
 }
