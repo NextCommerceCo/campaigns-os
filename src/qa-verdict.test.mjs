@@ -153,8 +153,12 @@ test("QA_ASSERTION_FAMILY_VOCABULARY matches every family literal the runner emi
   const emitted = new Set();
   for (const name of readdirSync(srcDir)) {
     if (!name.endsWith(".mjs") || name.endsWith(".test.mjs")) continue;
-    const source = readFileSync(`${srcDir}${name}`, "utf8");
-    for (const match of source.matchAll(/family:\s*["']([A-Za-z_-]+)["']/g)) {
+    // Strip comments so a family named in prose never counts as emitted; the
+    // lookbehind keeps prefixed keys like template_family: out of the scan.
+    const source = readFileSync(`${srcDir}${name}`, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|\s)\/\/.*$/gm, "$1");
+    for (const match of source.matchAll(/(?<![\w$])family:\s*["']([A-Za-z_-]+)["']/g)) {
       emitted.add(match[1]);
     }
   }
