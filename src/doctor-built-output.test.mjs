@@ -418,3 +418,98 @@ test("analytics contract: data-next-show handler (not just hide) also counts", (
   validateBuiltAnalyticsContract(content, "/repo/_site/c/lp/index.html", "/repo", LANDING, ANALYTICS_SPEC(["landing"]), issues);
   assert.equal(issues.length, 0);
 });
+
+// #170: campaign.public_route_slug is the root key for every built_output.*
+// check; corrupting it (classically: to the Map ID) silently disarmed the whole
+// family. These tests pin the identity cross-check and the loud target-root
+// failure that replaced the silent skip.
+import { validateRouteSlugIdentity, validateBuiltOutputTargetRoot } from "./cli.mjs";
+
+const IDENTITY_SPEC = {
+  spec_identity: { map_id: "test-campaign-k9x2", public_route_slug: SLUG },
+};
+
+test("route-slug identity: packet slug corrupted to the Map ID is a named blocker", () => {
+  const errors = [];
+  const ready = [];
+  const packet = { campaign: { public_route_slug: "test-campaign-k9x2" }, spec: { map_id: "test-campaign-k9x2" } };
+  validateRouteSlugIdentity(IDENTITY_SPEC, packet, errors, ready);
+  assert.deepEqual(codes(errors), ["campaign.route_slug_identity"]);
+  assert.match(errors[0].message, /Map ID/);
+});
+
+test("route-slug identity: packet slug that differs from the spec declared slug is a named blocker", () => {
+  const errors = [];
+  const ready = [];
+  const packet = { campaign: { public_route_slug: "some-other-route" }, spec: { map_id: "test-campaign-k9x2" } };
+  validateRouteSlugIdentity(IDENTITY_SPEC, packet, errors, ready);
+  assert.deepEqual(codes(errors), ["campaign.route_slug_identity"]);
+  assert.match(errors[0].message, /does not match/);
+});
+
+test("route-slug identity: matching slug passes with a ready line", () => {
+  const errors = [];
+  const ready = [];
+  const packet = { campaign: { public_route_slug: SLUG }, spec: { map_id: "test-campaign-k9x2" } };
+  validateRouteSlugIdentity(IDENTITY_SPEC, packet, errors, ready);
+  assert.deepEqual(errors, []);
+  assert.ok(ready.some((note) => note.includes("matches CampaignSpec")));
+});
+
+test("route-slug identity: silent when the spec declares no identity and the slug is not the Map ID", () => {
+  const errors = [];
+  const ready = [];
+  const packet = { campaign: { public_route_slug: SLUG }, spec: { map_id: "test-campaign-k9x2" } };
+  validateRouteSlugIdentity({}, packet, errors, ready);
+  assert.deepEqual(errors, []);
+});
+
+test("target root: missing _site/<slug>/ after assembly completes is a loud error, not a silent skip", () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "_site", "actual-route"), { recursive: true });
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    const buildState = { report: { stages: { assembly: { status: "completed" } } } };
+    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+    assert.deepEqual(codes(errors), ["built_output.target_root"]);
+    assert.match(errors[0].message, /Target route not found in _site/);
+    assert.deepEqual(errors[0].detail.built_roots, ["actual-route"]);
+  });
+});
+
+test("target root: missing slug root before assembly with built output present is a warning", () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "_site", "actual-route"), { recursive: true });
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    assert.deepEqual(errors, []);
+    assert.deepEqual(codes(warnings), ["built_output.target_root"]);
+  });
+});
+
+test("target root: pre-build state (no _site, assembly incomplete) stays silent", () => {
+  withTempDir((dir) => {
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warnings, []);
+  });
+});
+
+test("target root: existing _site/<slug>/ records a ready line", () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, "_site", SLUG), { recursive: true });
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warnings, []);
+    assert.ok(ready.some((note) => note.includes(`_site/${SLUG}/`)));
+  });
+});

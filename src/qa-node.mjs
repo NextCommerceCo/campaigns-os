@@ -173,6 +173,7 @@ async function resolveQaInputs(args) {
     packetPath,
     packet,
     mapId,
+    publicRouteSlug,
     proxyBase,
     baseUrl,
     specPath,
@@ -800,6 +801,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   const verdict = createVerdict({
     runId,
     mapId: resolved.mapId,
+    publicRouteSlug: resolved.publicRouteSlug || null,
     campaignRefId: resolved.spec.campaign?.ref_id || null,
     specVersion: resolved.specVersion,
     specHash: resolved.specHash,
@@ -840,6 +842,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     status: verdict.disposition,
     run_id: verdict.run_id,
     map_id: resolved.mapId,
+    public_route_slug: resolved.publicRouteSlug || null,
     base_url: resolved.baseUrl,
     entry_urls: entryUrls,
     page_urls: pageUrls,

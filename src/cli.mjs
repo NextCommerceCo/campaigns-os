@@ -2070,6 +2070,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ spec, warnings, ready }) => validateSpecIdentityExport(spec, warnings, ready),
   },
   {
+    id: "campaign.route_slug_identity",
+    phase: "spec",
+    run: ({ spec, packet, errors, ready }) => validateRouteSlugIdentity(spec, packet, errors, ready),
+  },
+  {
     id: "spec.public_routes",
     phase: "spec",
     run: ({ spec, errors, ready }) => validateSpecPublicRoutes(spec, errors, ready),
@@ -2103,6 +2108,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "spec.package_availability",
     phase: "spec",
     run: ({ spec, warnings, ready }) => validateSpecPackageAvailability(spec, warnings, ready),
+  },
+  {
+    id: "built_output.target_root",
+    phase: "built-output",
+    run: ({ packet, errors, warnings, ready, derived, buildState }) => validateBuiltOutputTargetRoot(packet, errors, warnings, ready, derived, buildState),
   },
   {
     id: "built_output.pages",
@@ -2721,6 +2731,84 @@ function validateSpecIdentityExport(spec, warnings, ready) {
     warnings,
     "spec_identity.export",
     "CampaignSpec is missing complete spec_identity.map_id/public_route_slug. Prefer re-exporting from a saved Map Builder map; CLI identity overrides should stay diagnostic-only."
+  );
+}
+
+// Identity cross-check for the root key of every built-output gate. The c1
+// negative control (2026-08-02) showed that corrupting campaign.public_route_slug
+// (classically: to the Map ID) raises no blocker — every built_output.* check
+// roots at _site/<public_route_slug>/, finds nothing to check, and silently
+// stops running, so doctor output is indistinguishable from a healthy run
+// while all built-output guarantees are off. The packet slug must match the
+// spec's declared public route slug and must not be the Map ID.
+export function validateRouteSlugIdentity(spec, packet, errors, ready) {
+  const packetSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!packetSlug) return;
+
+  const mapId = optionalString(spec?.spec_identity?.map_id)
+    || optionalString(spec?.map_id)
+    || optionalString(packet?.spec?.map_id);
+  const specSlug = normalizePublicRouteSlug(
+    optionalString(spec?.spec_identity?.public_route_slug)
+    || optionalString(spec?.campaign?.slug)
+    || optionalString(spec?.campaign?.id)
+  );
+  const specDeclaresMapIdSlug = Boolean(specSlug) && Boolean(mapId) && specSlug === mapId;
+
+  if (mapId && packetSlug === mapId && !specDeclaresMapIdSlug) {
+    addIssue(
+      errors,
+      "campaign.route_slug_identity",
+      `Packet campaign.public_route_slug "${packetSlug}" equals the Map ID. The Map ID is spec identity (spec_identity.map_id), not a route; built output lives at _site/<public_route_slug>/, so this slug disarms every built-output check. Set the packet slug to the campaign's public route slug${specSlug ? ` ("${specSlug}")` : ""} or re-run prepare-build from the spec.`
+    );
+    return;
+  }
+
+  if (specSlug && packetSlug !== specSlug) {
+    addIssue(
+      errors,
+      "campaign.route_slug_identity",
+      `Packet campaign.public_route_slug "${packetSlug}" does not match the CampaignSpec declared public route slug "${specSlug}". Built-output checks root at _site/<public_route_slug>/, so a wrong slug silently disarms them. Correct the packet slug or re-run prepare-build from the spec.`
+    );
+    return;
+  }
+
+  if (specSlug) {
+    ready.push(`Packet public_route_slug "${packetSlug}" matches CampaignSpec identity and is not the Map ID`);
+  }
+}
+
+// Loud failure for the state the c1 control exposed: built output exists (or
+// assembly is recorded complete) but _site/<public_route_slug>/ is absent, so
+// the whole built_output.* family is about to silently skip. Pre-build state
+// (no _site/ and assembly incomplete) stays quiet — sdk_hints.meta_tags
+// already reports that deferral.
+export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, derived = {}, buildState = {}) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!targetRepo || !publicRouteSlug) return;
+
+  const siteRoot = join(targetRepo, "_site", publicRouteSlug);
+  if (existsSync(siteRoot)) {
+    ready.push(`Built output root found at _site/${publicRouteSlug}/`);
+    return;
+  }
+
+  const siteDir = join(targetRepo, "_site");
+  const siteDirExists = existsSync(siteDir) && statSync(siteDir).isDirectory();
+  const assemblyComplete = isStageComplete(buildState.report, "assembly");
+  if (!siteDirExists && !assemblyComplete) return;
+
+  const builtRoots = siteDirExists
+    ? readdirSync(siteDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()
+    : [];
+  addIssue(
+    assemblyComplete ? errors : warnings,
+    "built_output.target_root",
+    `Target route not found in _site: expected built output at _site/${publicRouteSlug}/ but `
+      + (siteDirExists ? `the slug root does not exist (built root(s): ${builtRoots.length ? builtRoots.join(", ") : "none"})` : "_site/ has not been built")
+      + `. Every built_output.* check roots at _site/<public_route_slug>/ and skips when it is missing, so built-output verification cannot run until the route exists or campaign.public_route_slug is corrected.`,
+    { expected_root: `_site/${publicRouteSlug}/`, built_roots: builtRoots, assembly_complete: assemblyComplete }
   );
 }
 
