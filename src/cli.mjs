@@ -54,6 +54,7 @@ import {
   createDoctorCheckRegistry,
   runDoctorCheckRegistry,
 } from "./doctor-check-registry.mjs";
+import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
@@ -1857,6 +1858,12 @@ function themeCommand(args) {
     force: args.force === true,
     packetPath,
   });
+  // #171: generated theme artifacts change what doctor's theme gate would
+  // conclude; the retained doctor sidecar (if any) now predates them.
+  markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
+    command: "theme generate",
+    reason: "Theme artifacts were generated after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+  });
   return { ...written, css: undefined };
 }
 
@@ -1864,7 +1871,7 @@ function themeCommand(args) {
 // generatable brand layer. Records who/why/when on the assembly report so the
 // theme gate (next/doctor/qa) reads one explicit decision instead of an agent
 // improvising past advisory prose.
-function themeWaive(args) {
+export function themeWaive(args) {
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
   const reason = optionalString(args.reason);
@@ -1886,6 +1893,12 @@ function themeWaive(args) {
     `Theme gate waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`,
   ];
   writeJsonAtomic(reportPath, report);
+  // #171: the waiver changes what doctor would conclude; the retained doctor
+  // sidecar (if any) now predates it.
+  markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
+    command: "theme waive",
+    reason: "A theme-gate waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+  });
   return {
     ok: true,
     action: "theme-waive",
@@ -5149,7 +5162,7 @@ function pickNextStage(report, doctor) {
   };
 }
 
-function nextStage(stage, args, ambient = null) {
+export function nextStage(stage, args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
   const packet = readJson(packetPath);
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
@@ -5160,6 +5173,18 @@ function nextStage(stage, args, ambient = null) {
     contextPath: existsSync(contextPath) ? contextPath : null,
     reportPath: report ? reportPath : null,
   });
+  // #171: `next` recomputes doctor state on every call; persist that fresh
+  // snapshot so the retained sidecar can never stay a green lie from an
+  // earlier stage while the campaign degrades (the dogfood target sat
+  // QA-BLOCKED while its committed sidecar still showed 0 errors). A full
+  // rewrite also clears any stale stamp. Opt out with --no-write.
+  if (args["no-write"] !== true) {
+    try {
+      writeJson(join(targetRepo, ".campaign-runtime/doctor-output.json"), doctor);
+    } catch {
+      // sidecar refresh is best-effort; orchestration must not fail on it
+    }
+  }
   const themeGate = doctor.derived?.theme_gate || null;
   const polishGate = doctor.derived?.polish_gate || evaluatePolishGate({ report });
   // Every return path runs through this finalizer so the machine-readable
@@ -5340,9 +5365,9 @@ function buildNextGates({ doctor, report, themeGate, polishGate }) {
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-function buildNextActions({ result, packetPath, packet, themeGate, polishGate, ambient }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, ambient }) {
   const actions = [];
-  const push = (id, kind, command, description) => actions.push({ id, kind, command, description, stage: result.stage });
+  const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   if (result.stage === "doctor-blocked") {
     push("doctor_recheck", "command", `campaigns-os doctor --packet ${packetPath} --json`, "Re-run the doctor after resolving the listed errors.");
     return actions;
@@ -5393,8 +5418,13 @@ function buildNextActions({ result, packetPath, packet, themeGate, polishGate, a
     push("install_browser", "command", "npm run qa:install-browser", "Install the Playwright browser once after install/update.");
     push("qa_run", "command", `campaigns-os qa run --packet ${packetPath} --base-url ${url} --browser --test-order common`, "Run browser + typed-card QA and publish the verdict.");
   } else if (result.stage === "done") {
+    // #171: run-record closeout is a REQUIRED terminal action, not an
+    // optional nicety — the dogfood run ended at a terminal stage with the
+    // session open and no durable Run Record, and nothing prompted otherwise.
     if (ambient) {
-      push("run_end", "command", `campaigns-os run end${ambient.session?.packet ? "" : ` --packet ${packetPath}`}`, "Close the active run session: assemble the aggregated Run Record and clear run-session.json.");
+      push("run_end", "command", `campaigns-os run end${ambient.session?.packet ? "" : ` --packet ${packetPath}`}`, "Close the active run session: assemble the aggregated Run Record and clear run-session.json. Required — the run's durable record depends on it.", { required: true });
+    } else {
+      push("run_record_closeout", "command", `campaigns-os run-record --packet ${packetPath} --json`, "Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.", { required: true });
     }
   }
   return actions;

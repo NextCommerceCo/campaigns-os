@@ -8,6 +8,7 @@ import { evaluateThemeGate } from "./theme-gate.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
+import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
 
@@ -603,6 +604,30 @@ function resolvePayload(resolved) {
   };
 }
 
+function resolveTargetBaseDir(packet, packetPath) {
+  return resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+}
+
+// #171: run-record closeout is a REQUIRED terminal action after every qa run
+// (including blocked runs) — the dogfood operator finished `qa run` exit 4 and
+// stopped, the session stayed open, and no durable Run Record existed.
+// With an active run session the CLI auto-assembles the Run Record after
+// `qa run`; this action is the explicit contract for every other path.
+export function buildQaCloseoutActions({ packetPath = null, localPath = null } = {}) {
+  const packetRef = packetPath || "<campaign-runtime.build.json>";
+  const verdictRef = localPath ? ` --qa-verdict ${localPath}` : "";
+  return [
+    {
+      id: "run_record_closeout",
+      kind: "command",
+      required: true,
+      stage: "qa",
+      command: `campaigns-os run-record --packet ${packetRef}${verdictRef} --json`,
+      description: "Assemble the durable Run Record closeout for this QA run. Required at every terminal QA state, including blocked — the verdict alone is not the run's durable record. Skipped automatically only when an active run session already auto-assembled it after qa run.",
+    },
+  ];
+}
+
 function updateQaPolicy(args) {
   const packetPath = args.packet ? resolve(args.packet) : null;
   if (!packetPath) throw new Error("qa policy set requires --packet <campaign-runtime.build.json>.");
@@ -619,7 +644,15 @@ function updateQaPolicy(args) {
   setOptionalString(packet.deploy, "production_url", args, "production-url", changed);
   setOptionalString(packet.deploy, "target", args, "deploy-target", changed);
 
-  if (changed.length) writeJson(packetPath, packet);
+  if (changed.length) {
+    writeJson(packetPath, packet);
+    // #171: packet edits change what doctor would conclude; the retained
+    // doctor sidecar (if any) now predates them.
+    markDoctorSidecarStale(resolveTargetBaseDir(packet, packetPath), {
+      command: "qa policy set",
+      reason: "The Build Packet changed after this doctor snapshot (qa policy set). Re-run campaigns-os doctor (or next) for current state.",
+    });
+  }
   return {
     ok: true,
     action: "qa-policy-set",
@@ -852,6 +885,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
+    next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath }),
     verdict,
   };
 }
@@ -1379,6 +1413,12 @@ function output(value, args) {
       console.log(`QA portal: publish skipped (--no-post-verdict); local verdict only.`);
     } else {
       console.log(`QA portal: publish failed${value.post_error ? ` (${value.post_error})` : ""}; local verdict kept at ${value.local_path}. Re-run with network access, or pass --no-post-verdict to silence.`);
+    }
+    for (const action of value.next_actions || []) {
+      if (action.required) {
+        console.log(`Required next: ${action.command}`);
+        console.log(`  ${action.description}`);
+      }
     }
     console.log(`Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
     return;
