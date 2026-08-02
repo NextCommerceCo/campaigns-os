@@ -130,6 +130,15 @@ QA tab and the run picker, and the command prints the portal link. No flag neede
 Pass `--no-post-verdict` (or `--local-only`) for offline / dev / CI runs that should
 stay local-only; publishing never fails the QA run if the portal is unreachable.
 
+The default rides the telemetry consent seam: with consent off
+(`CAMPAIGNS_OS_TELEMETRY=off` or `campaigns-os telemetry off`), a run whose spec
+came from a **local file** (client projects, fixtures, local shakeouts) stays
+local-only, and the output names the destination plus the opt-in
+(`--post-verdict`, or `campaigns-os telemetry on`). Portal-managed campaigns —
+spec resolved from the portal for the run — keep publish-by-default regardless
+of consent: those verdicts are the QA tab's product surface, not telemetry.
+Explicit flags always win in both directions.
+
 ```bash
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \

@@ -8,6 +8,7 @@ import { evaluateThemeGate } from "./theme-gate.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
+import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
@@ -179,6 +180,9 @@ async function resolveQaInputs(args) {
     baseUrl,
     specPath,
     specSource,
+    // Portal-managed: the spec was fetched from the portal for this run, so
+    // the verdict belongs on the portal QA tab by default (#172).
+    portalManaged: specPath == null,
     rawSpec,
     spec: normalized,
     specVersion: String(rawSpec.schema_version || rawSpec.schemaVersion || "unknown"),
@@ -860,7 +864,19 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   // Publish to the QA portal by default so runs land in the Campaign Map QA tab without the
   // operator needing to know a flag (LLM/agent UIs are the primary interface). Opt out with
   // --no-post-verdict / --local-only / --post-verdict false. Never fail the run if publish is unreachable.
-  const shouldPublish = shouldPublishVerdict(args);
+  // #172: the default rides the telemetry consent seam — consent off means
+  // local-only for non-portal-managed runs; portal-managed campaigns keep
+  // publish-by-default; explicit flags always win.
+  // resolveConsent's default warn stays on: a malformed env value, malformed
+  // config, or scope mismatch should be visible on the QA path too, not just
+  // on remit (Kilo review, PR #177).
+  const consent = resolveConsent({ proxyBase: resolved.proxyBase });
+  const publishDecision = decidePublishVerdict({ args, portalManaged: resolved.portalManaged === true, consent });
+  if (publishDecision.flag_invalid) {
+    process.stderr.write(`[campaigns-os] --post-verdict "${args["post-verdict"]}" is not a recognized value (use true|1|yes|y|on or false|0|no|n|off); the flag was ignored and the default publish decision applied.\n`);
+  }
+  const shouldPublish = publishDecision.publish;
+  const publishDestination = `${resolved.proxyBase.replace(/\/+$/, "")}/api/qa/verdicts`;
   let postResult = null;
   let postError = null;
   if (shouldPublish) {
@@ -888,6 +904,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     posted: postResult,
     post_error: postError,
     publish_skipped: !shouldPublish,
+    publish_decision: { ...publishDecision, destination: publishDestination, consent_state: consent?.state ?? null },
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
@@ -1415,6 +1432,9 @@ function output(value, args) {
     console.log(`Local copy: ${value.local_path}`);
     if (value.posted?.ok && value.dashboard_url) {
       console.log(`QA portal: ${value.dashboard_url}`);
+    } else if (value.publish_skipped && value.publish_decision?.reason === "consent_off") {
+      console.log(`QA portal: publish skipped — telemetry consent is off, so this non-portal-managed verdict stays local.`);
+      console.log(`  Destination would be ${value.publish_decision.destination}. Opt in for this run with --post-verdict, or enable with \`campaigns-os telemetry on\`.`);
     } else if (value.publish_skipped) {
       console.log(`QA portal: publish skipped (--no-post-verdict); local verdict only.`);
     } else {
@@ -1610,6 +1630,37 @@ export function shouldPublishVerdict(args) {
     if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
   }
   return true;
+}
+
+// #172: the default verdict POST sits inside the telemetry consent seam.
+// Precedence: explicit flags > portal-managed default > consent state >
+// legacy publish-by-default. Portal-managed means the spec for this run was
+// resolved FROM the portal (no local spec file) — those verdicts are the
+// product surface of the QA tab and keep publish-by-default. For everything
+// else (client projects, fixtures, local shakeouts on a local spec), consent
+// off (CAMPAIGNS_OS_TELEMETRY=off / `campaigns-os telemetry off`) means the
+// verdict stays local, with the destination and the opt-in flag named in the
+// run output. Publishing for the portal path is never weakened.
+export function decidePublishVerdict({ args = {}, portalManaged = false, consent = null } = {}) {
+  if (args["no-post-verdict"] === true || args["local-only"] === true) {
+    return { publish: false, reason: "flag_opt_out" };
+  }
+  let flagInvalid = false;
+  if ("post-verdict" in args) {
+    const value = args["post-verdict"];
+    if (value === true) return { publish: true, reason: "flag_opt_in" };
+    const normalized = String(value).trim().toLowerCase();
+    if (["true", "1", "yes", "y", "on"].includes(normalized)) return { publish: true, reason: "flag_opt_in" };
+    if (["false", "0", "no", "n", "off"].includes(normalized)) return { publish: false, reason: "flag_opt_out" };
+    // Unrecognized value: never a silent opt-in (Kilo review, PR #177) —
+    // ignore the flag, continue the precedence chain, and surface the
+    // garbage value on the decision so the run summary shows the signal.
+    flagInvalid = true;
+  }
+  const decorate = (decision) => (flagInvalid ? { ...decision, flag_invalid: true } : decision);
+  if (portalManaged) return decorate({ publish: true, reason: "portal_managed_default" });
+  if (consent?.state === "off") return decorate({ publish: false, reason: "consent_off" });
+  return decorate({ publish: true, reason: "default" });
 }
 
 function policySnapshot(packet) {
