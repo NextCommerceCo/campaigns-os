@@ -139,6 +139,15 @@ function buildBriefBlocksTemplateFavicon(report) {
   return policy?.block_template_favicon === true;
 }
 
+const STARTER_FAVICON_LEAK_RE = /\b(?:starter|template)\s+favicon\s+(?:found|present|matched|leaked|retained|kept|remaining)|images\/favicon\.png\b/i;
+
+function faviconRecordCertifiesOk(record) {
+  return isObject(record) && (
+    record.byte_match === true
+    || ["matched_source", "promoted_source", "confirmed_non_template", "no_source_candidate"].includes(String(record.status || record.result || ""))
+  );
+}
+
 function faviconTextConfirmsSourceMatch(text) {
   return /(?:byte[-_\s]?match|matched|matches|matching).{0,40}(?:source|brand|candidate)|(?:source|brand|candidate).{0,40}(?:matched|matches|matching|byte[-_\s]?match)|promoted.{0,40}source|confirmed.{0,40}(?:non[-_\s]?template|not[-_\s]?template)|\b(?:no|none)\s+source\s+candidate\b/i.test(text);
 }
@@ -156,10 +165,7 @@ function semanticEvidenceProblems(evidence, report) {
   const residueReview = evidence?.template_residue_review;
 
   const favicon = isObject(brandReview) ? brandReview.favicon : null;
-  const faviconCertifiedOk = isObject(favicon) && (
-    favicon.byte_match === true
-    || ["matched_source", "promoted_source", "confirmed_non_template", "no_source_candidate"].includes(String(favicon.status || favicon.result || ""))
-  );
+  const faviconCertifiedOk = faviconRecordCertifiesOk(favicon);
   if (buildBriefBlocksTemplateFavicon(report)) {
     const faviconText = reviewText(favicon);
     const faviconTextOk = faviconTextConfirmsSourceMatch(faviconText);
@@ -174,10 +180,10 @@ function semanticEvidenceProblems(evidence, report) {
   // accepted status) is authoritative — do not let a note that merely mentions
   // the starter path (e.g. "copied over assets/images/favicon.png") read as
   // leakage. Free-text-only evidence still gets the negative scan.
-  if (!faviconCertifiedOk && hasNegativeEvidence(favicon, /\b(?:starter|template)\s+favicon\s+(?:found|present|matched|leaked|retained|kept|remaining)|images\/favicon\.png\b/i)) {
+  if (!faviconCertifiedOk && hasNegativeEvidence(favicon, STARTER_FAVICON_LEAK_RE)) {
     problems.push("stages.polish.evidence.brand_review.favicon still indicates starter-template favicon leakage.");
   }
-  if (hasNegativeEvidence(residueReview?.starter_favicon, /\b(?:found|present|matched|leaked|retained|kept|remaining)|images\/favicon\.png\b/i)) {
+  if (!faviconRecordCertifiesOk(residueReview?.starter_favicon) && hasNegativeEvidence(residueReview?.starter_favicon, STARTER_FAVICON_LEAK_RE)) {
     problems.push("stages.polish.evidence.template_residue_review.starter_favicon still indicates starter-template favicon leakage.");
   }
 
