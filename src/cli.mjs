@@ -1859,11 +1859,16 @@ function themeCommand(args) {
     packetPath,
   });
   // #171: generated theme artifacts change what doctor's theme gate would
-  // conclude; the retained doctor sidecar (if any) now predates them.
-  markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
-    command: "theme generate",
-    reason: "Theme artifacts were generated after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
-  });
+  // conclude; the retained doctor sidecar (if any) now predates them. Only
+  // when something was actually written — a failed or no-op generation
+  // (blocked, already-current CSS) leaves doctor's inputs untouched (Kilo
+  // review, PR #176).
+  if (written.wrote?.report || written.wrote?.css) {
+    markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
+      command: "theme generate",
+      reason: "Theme artifacts were generated after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+    });
+  }
   return { ...written, css: undefined };
 }
 

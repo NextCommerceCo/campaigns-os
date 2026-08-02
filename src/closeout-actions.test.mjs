@@ -35,8 +35,15 @@ test("qa run closeout action is required, names the packet and verdict, and surv
   assert.match(closeout.description, /including blocked/);
 });
 
-test("qa run closeout action degrades to placeholders without a packet", () => {
-  const actions = buildQaCloseoutActions({});
-  assert.match(actions[0].command, /--packet <campaign-runtime\.build\.json>/);
-  assert.equal(actions[0].required, true);
+test("qa run closeout emits no action for packetless modes (site / parity)", () => {
+  // run-record requires a Build Packet; a required-but-impossible command is
+  // worse than none (Kilo review, PR #176).
+  assert.deepEqual(buildQaCloseoutActions({}), []);
+  assert.deepEqual(buildQaCloseoutActions({ localPath: "qa-output/demo/RUN1.json" }), []);
+});
+
+test("qa run closeout shell-quotes paths that need it", () => {
+  const actions = buildQaCloseoutActions({ packetPath: "/camp aigns/demo/campaign-runtime.build.json", localPath: "qa-output/de mo/RUN1.json" });
+  assert.match(actions[0].command, /--packet '\/camp aigns\/demo\/campaign-runtime\.build\.json'/);
+  assert.match(actions[0].command, /--qa-verdict 'qa-output\/de mo\/RUN1\.json'/);
 });

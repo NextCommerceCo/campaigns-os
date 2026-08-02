@@ -613,16 +613,19 @@ function resolveTargetBaseDir(packet, packetPath) {
 // stopped, the session stayed open, and no durable Run Record existed.
 // With an active run session the CLI auto-assembles the Run Record after
 // `qa run`; this action is the explicit contract for every other path.
+// Packetless modes (qa --site, parity fixtures) get no action: run-record
+// requires a Build Packet, and a required-but-impossible command is worse
+// than none (Kilo review, PR #176). Paths are shell-quoted when needed.
 export function buildQaCloseoutActions({ packetPath = null, localPath = null } = {}) {
-  const packetRef = packetPath || "<campaign-runtime.build.json>";
-  const verdictRef = localPath ? ` --qa-verdict ${localPath}` : "";
+  if (!packetPath) return [];
+  const verdictRef = localPath ? ` --qa-verdict ${shellToken(localPath)}` : "";
   return [
     {
       id: "run_record_closeout",
       kind: "command",
       required: true,
       stage: "qa",
-      command: `campaigns-os run-record --packet ${packetRef}${verdictRef} --json`,
+      command: `campaigns-os run-record --packet ${shellToken(packetPath)}${verdictRef} --json`,
       description: "Assemble the durable Run Record closeout for this QA run. Required at every terminal QA state, including blocked — the verdict alone is not the run's durable record. Skipped automatically only when an active run session already auto-assembled it after qa run.",
     },
   ];
