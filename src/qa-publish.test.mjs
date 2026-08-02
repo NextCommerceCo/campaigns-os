@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { qaResolveNextProofLines, shouldPublishVerdict } from "./qa-node.mjs";
+import { decidePublishVerdict, qaResolveNextProofLines, shouldPublishVerdict } from "./qa-node.mjs";
 
 // Publishing the QA verdict to the Campaign Map QA portal is the default shape:
 // LLM/agent UIs are the primary interface, so a run should land in the portal
@@ -86,7 +86,6 @@ test("qa resolve preserves custom proxy base in the next proof command", () => {
 // non-portal-managed runs, with the destination and opt-in flag named.
 // Portal-managed campaigns (spec resolved from the portal) keep
 // publish-by-default; explicit flags always win.
-import { decidePublishVerdict } from "./qa-node.mjs";
 
 const CONSENT_ON = { state: "on", source: "default", resolved: true };
 const CONSENT_OFF = { state: "off", source: "env", resolved: true };
@@ -123,4 +122,21 @@ test("consent on keeps the existing publish-by-default shape", () => {
 
 test("missing consent stays publish-by-default (legacy shape, never fail-open on garbage)", () => {
   assert.equal(decidePublishVerdict({ args: {}, portalManaged: false, consent: null }).publish, true);
+});
+
+test("garbage --post-verdict is never a silent opt-in: chain continues, flag_invalid surfaces", () => {
+  const withConsentOff = decidePublishVerdict({ args: { "post-verdict": "banana" }, portalManaged: false, consent: CONSENT_OFF });
+  assert.equal(withConsentOff.publish, false);
+  assert.equal(withConsentOff.reason, "consent_off");
+  assert.equal(withConsentOff.flag_invalid, true);
+
+  const withConsentOn = decidePublishVerdict({ args: { "post-verdict": "banana" }, portalManaged: false, consent: CONSENT_ON });
+  assert.equal(withConsentOn.publish, true);
+  assert.equal(withConsentOn.reason, "default");
+  assert.equal(withConsentOn.flag_invalid, true);
+});
+
+test("--post-verdict true-ish strings opt in explicitly", () => {
+  assert.equal(decidePublishVerdict({ args: { "post-verdict": "true" }, portalManaged: false, consent: CONSENT_OFF }).publish, true);
+  assert.equal(decidePublishVerdict({ args: { "post-verdict": "on" }, portalManaged: false, consent: CONSENT_OFF }).reason, "flag_opt_in");
 });

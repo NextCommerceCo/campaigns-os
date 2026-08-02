@@ -180,7 +180,7 @@ async function resolveQaInputs(args) {
     specSource,
     // Portal-managed: the spec was fetched from the portal for this run, so
     // the verdict belongs on the portal QA tab by default (#172).
-    portalManaged: !specPath,
+    portalManaged: specPath == null,
     rawSpec,
     spec: normalized,
     specVersion: String(rawSpec.schema_version || rawSpec.schemaVersion || "unknown"),
@@ -829,8 +829,14 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   // #172: the default rides the telemetry consent seam — consent off means
   // local-only for non-portal-managed runs; portal-managed campaigns keep
   // publish-by-default; explicit flags always win.
-  const consent = resolveConsent({ proxyBase: resolved.proxyBase, warn: () => {} });
+  // resolveConsent's default warn stays on: a malformed env value, malformed
+  // config, or scope mismatch should be visible on the QA path too, not just
+  // on remit (Kilo review, PR #177).
+  const consent = resolveConsent({ proxyBase: resolved.proxyBase });
   const publishDecision = decidePublishVerdict({ args, portalManaged: resolved.portalManaged === true, consent });
+  if (publishDecision.flag_invalid) {
+    process.stderr.write(`[campaigns-os] --post-verdict "${args["post-verdict"]}" is not a recognized value (use true|false); the flag was ignored and the default publish decision applied.\n`);
+  }
   const shouldPublish = publishDecision.publish;
   const publishDestination = `${resolved.proxyBase.replace(/\/+$/, "")}/api/qa/verdicts`;
   let postResult = null;
@@ -1593,16 +1599,22 @@ export function decidePublishVerdict({ args = {}, portalManaged = false, consent
   if (args["no-post-verdict"] === true || args["local-only"] === true) {
     return { publish: false, reason: "flag_opt_out" };
   }
+  let flagInvalid = false;
   if ("post-verdict" in args) {
     const value = args["post-verdict"];
     if (value === true) return { publish: true, reason: "flag_opt_in" };
     const normalized = String(value).trim().toLowerCase();
+    if (["true", "1", "yes", "y", "on"].includes(normalized)) return { publish: true, reason: "flag_opt_in" };
     if (["false", "0", "no", "n", "off"].includes(normalized)) return { publish: false, reason: "flag_opt_out" };
-    return { publish: true, reason: "flag_opt_in" };
+    // Unrecognized value: never a silent opt-in (Kilo review, PR #177) —
+    // ignore the flag, continue the precedence chain, and surface the
+    // garbage value on the decision so the run summary shows the signal.
+    flagInvalid = true;
   }
-  if (portalManaged) return { publish: true, reason: "portal_managed_default" };
-  if (consent?.state === "off") return { publish: false, reason: "consent_off" };
-  return { publish: true, reason: "default" };
+  const decorate = (decision) => (flagInvalid ? { ...decision, flag_invalid: true } : decision);
+  if (portalManaged) return decorate({ publish: true, reason: "portal_managed_default" });
+  if (consent?.state === "off") return decorate({ publish: false, reason: "consent_off" });
+  return decorate({ publish: true, reason: "default" });
 }
 
 function policySnapshot(packet) {
