@@ -835,7 +835,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   const consent = resolveConsent({ proxyBase: resolved.proxyBase });
   const publishDecision = decidePublishVerdict({ args, portalManaged: resolved.portalManaged === true, consent });
   if (publishDecision.flag_invalid) {
-    process.stderr.write(`[campaigns-os] --post-verdict "${args["post-verdict"]}" is not a recognized value (use true|false); the flag was ignored and the default publish decision applied.\n`);
+    process.stderr.write(`[campaigns-os] --post-verdict "${args["post-verdict"]}" is not a recognized value (use true|1|yes|y|on or false|0|no|n|off); the flag was ignored and the default publish decision applied.\n`);
   }
   const shouldPublish = publishDecision.publish;
   const publishDestination = `${resolved.proxyBase.replace(/\/+$/, "")}/api/qa/verdicts`;
