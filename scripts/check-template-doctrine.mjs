@@ -25,11 +25,11 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
+import { resolveStarterTemplatesRoot } from "./starter-templates-path.mjs";
+
 const root = resolve(new URL("..", import.meta.url).pathname);
 const skillPath = resolve(root, "skills/next-campaigns-build/SKILL.md");
-const templatesRoot = resolve(
-  process.env.STARTER_TEMPLATES_PATH || resolve(root, "../campaign-cart-starter-templates"),
-);
+const templatesRoot = resolveStarterTemplatesRoot(root);
 
 function fail(message) {
   console.error(`check-template-doctrine: ${message}`);
