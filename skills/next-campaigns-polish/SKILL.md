@@ -35,11 +35,47 @@ Responsibilities:
 ## Recording polish evidence
 
 The polish gate (`campaigns-os next polish` / QA handoff) reads structured
-evidence from `stages.polish.evidence`. Record, alongside the favicon
-(`brand_review.favicon`) and order-bump compare-price
-(`checkout_review.bump_compare_price_rule`) attestations the gate already
-checks, a `brand_review.brand_bleed` attestation for the de-brand pass above.
-Without it the gate blocks every completed polish run.
+evidence from `stages.polish.evidence`. The full accepted schema — stage-record
+requirements, every required field's accepted shape, the favicon certification
+shape and its escape semantics, the semantic text scans, and the blocker-code
+ladder — is documented in `docs/polish-evidence.md`. That document is the
+schema reference; this section is the recording guidance.
+
+**All seven evidence fields are required** or the gate blocks with
+`polish.evidence_incomplete`:
+
+- `visual_review` — an **object with a `screenshots` array** (aliases:
+  `screenshot_paths`, `paths`, `urls`) holding at least one non-empty
+  path/URL string for the captured desktop+mobile evidence. A bare string or
+  a screenshot-less object does NOT pass, no matter how real the review was.
+- `brand_review` — object; must include the `favicon` attestation and the
+  `brand_bleed` attestation (below).
+- `checkout_review` — object; must include `field_labels` (aliases
+  `initial_field_hints`, `visible_labels`) confirming legible initial field
+  hints, and `bump_compare_price_rule` (alias `bump_compare_price`)
+  confirming no equal/no-discount compare price renders.
+- `template_residue_review` — non-empty; its `starter_favicon` entry accepts
+  the same certification shape as `brand_review.favicon`.
+- `commerce_flow_review` — non-empty string/array/object.
+- `issues` — **must be an array**; `[]` is the canonical "no issues found".
+- `commands` — non-empty array of the commands polish actually ran; never
+  include build commands (that reads as self-certification).
+
+The stage record itself must carry `performed_by: "next-campaigns-polish"`,
+`source_build_fingerprint` equal to the current
+`stages.assembly.build_fingerprint`, `completed_at`, and — when the report
+fingerprints a Design Source Package — `source_package_material_fingerprint`.
+
+The favicon certification shape is authoritative (it skips the free-text leak
+scan): `{ "byte_match": true }` or `status`/`result` one of `matched_source`,
+`promoted_source`, `confirmed_non_template`, `no_source_candidate`. Free-text
+favicon evidence is scanned for starter-leak phrasing and the literal
+`images/favicon.png` path — certify structurally when you verified byte-level.
+
+Record, alongside the favicon (`brand_review.favicon`) and order-bump
+compare-price (`checkout_review.bump_compare_price_rule`) attestations the
+gate already checks, a `brand_review.brand_bleed` attestation for the de-brand
+pass above. Without it the gate blocks every completed polish run.
 
 Write the cleared result as an object — `cleared: true` is the canonical,
 unambiguous form (the gate accepts it directly and does not then scan the rest

@@ -452,3 +452,51 @@ test("free-text favicon evidence mentioning the starter path still reads as leak
   assert.equal(gate.code, "polish.evidence_incomplete");
   assert.ok(gate.problems.some((p) => p.includes("favicon")));
 });
+
+// #169: the polish evidence schema must stay learnable from the public docs
+// surface. This tripwire pins docs/polish-evidence.md and the bundled
+// next-campaigns-polish skill to the gate's actual contract: every required
+// evidence field and every polish.* blocker code the gate can return must be
+// named in the docs, and the required-field list must appear in the skill.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { POLISH_GATE_REQUIRED_EVIDENCE } from "./polish-gate.mjs";
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const GATE_BLOCKER_CODES = [
+  "polish.report_missing",
+  "polish.not_applicable",
+  "polish.build_fingerprint_missing",
+  "polish.assembly_source_package_fingerprint_missing",
+  "polish.assembly_source_package_stale",
+  "polish.evidence_missing",
+  "polish.blocked",
+  "polish.self_certified",
+  "polish.source_build_fingerprint_missing",
+  "polish.stale",
+  "polish.source_package_material_fingerprint_missing",
+  "polish.source_package_stale",
+  "polish.completed_at_missing",
+  "polish.evidence_incomplete",
+  "polish.evidence_current",
+  "polish.assembly_source_package_waived",
+];
+
+test("docs/polish-evidence.md documents every required evidence field and gate code", () => {
+  const doc = readFileSync(join(REPO_ROOT, "docs", "polish-evidence.md"), "utf8");
+  for (const field of POLISH_GATE_REQUIRED_EVIDENCE) {
+    assert.ok(doc.includes(`\`${field}\``), `docs/polish-evidence.md must document required evidence field "${field}"`);
+  }
+  for (const code of GATE_BLOCKER_CODES) {
+    assert.ok(doc.includes(code), `docs/polish-evidence.md must document gate code "${code}"`);
+  }
+  assert.ok(doc.includes(POLISH_PRODUCER), "docs must name the required producer");
+});
+
+test("the bundled next-campaigns-polish skill names every required evidence field", () => {
+  const skill = readFileSync(join(REPO_ROOT, "skills", "next-campaigns-polish", "SKILL.md"), "utf8");
+  for (const field of POLISH_GATE_REQUIRED_EVIDENCE) {
+    assert.ok(skill.includes(`\`${field}\``), `next-campaigns-polish SKILL.md must name required evidence field "${field}"`);
+  }
+});
