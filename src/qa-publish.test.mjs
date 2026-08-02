@@ -80,3 +80,47 @@ test("qa resolve preserves custom proxy base in the next proof command", () => {
   assert.match(lines[0], /--base-url https:\/\/preview\.example\.test\/simple-home-watch\//);
   assert.match(lines[0], /--browser --test-order common/);
 });
+
+// #172: the default verdict POST must sit inside the telemetry consent seam.
+// Consent off (CAMPAIGNS_OS_TELEMETRY=off) ⇒ local-only verdict for
+// non-portal-managed runs, with the destination and opt-in flag named.
+// Portal-managed campaigns (spec resolved from the portal) keep
+// publish-by-default; explicit flags always win.
+import { decidePublishVerdict } from "./qa-node.mjs";
+
+const CONSENT_ON = { state: "on", source: "default", resolved: true };
+const CONSENT_OFF = { state: "off", source: "env", resolved: true };
+
+test("consent off makes a non-portal run local-only", () => {
+  const decision = decidePublishVerdict({ args: {}, portalManaged: false, consent: CONSENT_OFF });
+  assert.equal(decision.publish, false);
+  assert.equal(decision.reason, "consent_off");
+});
+
+test("portal-managed campaigns keep publish-by-default even with consent off", () => {
+  const decision = decidePublishVerdict({ args: {}, portalManaged: true, consent: CONSENT_OFF });
+  assert.equal(decision.publish, true);
+  assert.equal(decision.reason, "portal_managed_default");
+});
+
+test("explicit --post-verdict opts in past consent off", () => {
+  const decision = decidePublishVerdict({ args: { "post-verdict": true }, portalManaged: false, consent: CONSENT_OFF });
+  assert.equal(decision.publish, true);
+  assert.equal(decision.reason, "flag_opt_in");
+});
+
+test("explicit opt-out wins over portal-managed default", () => {
+  const decision = decidePublishVerdict({ args: { "no-post-verdict": true }, portalManaged: true, consent: CONSENT_ON });
+  assert.equal(decision.publish, false);
+  assert.equal(decision.reason, "flag_opt_out");
+});
+
+test("consent on keeps the existing publish-by-default shape", () => {
+  const decision = decidePublishVerdict({ args: {}, portalManaged: false, consent: CONSENT_ON });
+  assert.equal(decision.publish, true);
+  assert.equal(decision.reason, "default");
+});
+
+test("missing consent stays publish-by-default (legacy shape, never fail-open on garbage)", () => {
+  assert.equal(decidePublishVerdict({ args: {}, portalManaged: false, consent: null }).publish, true);
+});
