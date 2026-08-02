@@ -311,6 +311,27 @@ test("polish gate blocks starter favicon residue evidence", () => {
   assert.ok(gate.problems.some((problem) => problem.includes("starter_favicon")));
 });
 
+test("polish gate does not misread truthful non-leak favicon wording as residue", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      template_residue_review: { next_blue: "not found", starter_favicon: "neutral starter retained; source supplies none", lorem: "not found" },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.ok(!(gate.problems ?? []).some((problem) => problem.includes("template_residue_review.starter_favicon")));
+});
+
+test("polish gate still blocks an explicit starter favicon leak statement", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      template_residue_review: { next_blue: "not found", starter_favicon: "starter favicon retained in built output", lorem: "not found" },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.equal(gate.status, "blocked");
+  assert.ok(gate.problems.some((problem) => problem.includes("template_residue_review.starter_favicon")));
+});
+
 test("polish gate passes current structured polish evidence", () => {
   const gate = evaluatePolishGate({ report: baseReport(validPolish()) });
   assert.equal(gate.status, "pass");

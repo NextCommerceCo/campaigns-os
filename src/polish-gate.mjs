@@ -177,7 +177,7 @@ function semanticEvidenceProblems(evidence, report) {
   if (!faviconCertifiedOk && hasNegativeEvidence(favicon, /\b(?:starter|template)\s+favicon\s+(?:found|present|matched|leaked|retained|kept|remaining)|images\/favicon\.png\b/i)) {
     problems.push("stages.polish.evidence.brand_review.favicon still indicates starter-template favicon leakage.");
   }
-  if (hasNegativeEvidence(residueReview?.starter_favicon, /\b(?:found|present|matched|leaked|retained|kept|remaining)|images\/favicon\.png\b/i)) {
+  if (hasNegativeEvidence(residueReview?.starter_favicon, /\b(?:starter|template)\s+favicon\s+(?:found|present|matched|leaked|retained|kept|remaining)|images\/favicon\.png\b/i)) {
     problems.push("stages.polish.evidence.template_residue_review.starter_favicon still indicates starter-template favicon leakage.");
   }
 
