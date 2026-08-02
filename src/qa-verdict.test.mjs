@@ -123,3 +123,19 @@ test("createVerdict emits empty URL arrays consistently", () => {
   assert.deepEqual(verdict.page_urls, []);
   assert.deepEqual(verdict.tested_urls, []);
 });
+
+// #170: the verdict campaign_slug field carries the Map ID for schema
+// back-compat — the one identity confusion the docs warn about hardest. The
+// true route slug now rides alongside it, additively.
+test("createVerdict surfaces public_route_slug alongside the back-compat campaign_slug Map ID", () => {
+  const verdict = createVerdict({ ...baseVerdict, publicRouteSlug: "shield" });
+
+  assert.equal(verdict.campaign_slug, baseVerdict.mapId);
+  assert.equal(verdict.public_route_slug, "shield");
+});
+
+test("createVerdict emits public_route_slug null when no route slug is known", () => {
+  const verdict = createVerdict(baseVerdict);
+
+  assert.equal(verdict.public_route_slug, null);
+});

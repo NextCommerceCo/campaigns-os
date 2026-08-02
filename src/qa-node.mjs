@@ -9,6 +9,7 @@ import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import { resolveConsent } from "./consent.mjs";
+import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
 
@@ -174,6 +175,7 @@ async function resolveQaInputs(args) {
     packetPath,
     packet,
     mapId,
+    publicRouteSlug,
     proxyBase,
     baseUrl,
     specPath,
@@ -607,6 +609,33 @@ function resolvePayload(resolved) {
   };
 }
 
+function resolveTargetBaseDir(packet, packetPath) {
+  return resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+}
+
+// #171: run-record closeout is a REQUIRED terminal action after every qa run
+// (including blocked runs) — the dogfood operator finished `qa run` exit 4 and
+// stopped, the session stayed open, and no durable Run Record existed.
+// With an active run session the CLI auto-assembles the Run Record after
+// `qa run`; this action is the explicit contract for every other path.
+// Packetless modes (qa --site, parity fixtures) get no action: run-record
+// requires a Build Packet, and a required-but-impossible command is worse
+// than none (Kilo review, PR #176). Paths are shell-quoted when needed.
+export function buildQaCloseoutActions({ packetPath = null, localPath = null } = {}) {
+  if (!packetPath) return [];
+  const verdictRef = localPath ? ` --qa-verdict ${shellToken(localPath)}` : "";
+  return [
+    {
+      id: "run_record_closeout",
+      kind: "command",
+      required: true,
+      stage: "qa",
+      command: `campaigns-os run-record --packet ${shellToken(packetPath)}${verdictRef} --json`,
+      description: "Assemble the durable Run Record closeout for this QA run. Required at every terminal QA state, including blocked — the verdict alone is not the run's durable record. Skipped automatically only when an active run session already auto-assembled it after qa run.",
+    },
+  ];
+}
+
 function updateQaPolicy(args) {
   const packetPath = args.packet ? resolve(args.packet) : null;
   if (!packetPath) throw new Error("qa policy set requires --packet <campaign-runtime.build.json>.");
@@ -623,7 +652,15 @@ function updateQaPolicy(args) {
   setOptionalString(packet.deploy, "production_url", args, "production-url", changed);
   setOptionalString(packet.deploy, "target", args, "deploy-target", changed);
 
-  if (changed.length) writeJson(packetPath, packet);
+  if (changed.length) {
+    writeJson(packetPath, packet);
+    // #171: packet edits change what doctor would conclude; the retained
+    // doctor sidecar (if any) now predates them.
+    markDoctorSidecarStale(resolveTargetBaseDir(packet, packetPath), {
+      command: "qa policy set",
+      reason: "The Build Packet changed after this doctor snapshot (qa policy set). Re-run campaigns-os doctor (or next) for current state.",
+    });
+  }
   return {
     ok: true,
     action: "qa-policy-set",
@@ -804,6 +841,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   const verdict = createVerdict({
     runId,
     mapId: resolved.mapId,
+    publicRouteSlug: resolved.publicRouteSlug || null,
     campaignRefId: resolved.spec.campaign?.ref_id || null,
     specVersion: resolved.specVersion,
     specHash: resolved.specHash,
@@ -856,6 +894,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     status: verdict.disposition,
     run_id: verdict.run_id,
     map_id: resolved.mapId,
+    public_route_slug: resolved.publicRouteSlug || null,
     base_url: resolved.baseUrl,
     entry_urls: entryUrls,
     page_urls: pageUrls,
@@ -869,6 +908,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
+    next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath }),
     verdict,
   };
 }
@@ -1400,6 +1440,12 @@ function output(value, args) {
     } else {
       console.log(`QA portal: publish failed${value.post_error ? ` (${value.post_error})` : ""}; local verdict kept at ${value.local_path}. Re-run with network access, or pass --no-post-verdict to silence.`);
     }
+    for (const action of value.next_actions || []) {
+      if (action.required) {
+        console.log(`Required next: ${action.command}`);
+        console.log(`  ${action.description}`);
+      }
+    }
     console.log(`Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id ${value.run_id}`);
     return;
   }
@@ -1479,7 +1525,7 @@ function isLocalFilePath(value) {
   return typeof value === "string" && value.trim() && !isAbsoluteHttpUrl(value);
 }
 
-function shellToken(value) {
+export function shellToken(value) {
   const text = String(value || "");
   if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(text)) return text;
   return `'${text.replace(/'/g, "'\\''")}'`;
