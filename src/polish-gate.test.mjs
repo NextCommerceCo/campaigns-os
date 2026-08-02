@@ -332,6 +332,20 @@ test("polish gate still blocks an explicit starter favicon leak statement", () =
   assert.ok(gate.problems.some((problem) => problem.includes("template_residue_review.starter_favicon")));
 });
 
+test("polish gate honors a structured certification on the residue favicon record", () => {
+  const report = baseReport(validPolish({
+    evidence: validEvidence({
+      template_residue_review: {
+        next_blue: "not found",
+        starter_favicon: { status: "confirmed_non_template", note: "replaced images/favicon.png with the brand icon" },
+        lorem: "not found",
+      },
+    }),
+  }));
+  const gate = evaluatePolishGate({ report });
+  assert.ok(!(gate.problems ?? []).some((problem) => problem.includes("template_residue_review.starter_favicon")));
+});
+
 test("polish gate passes current structured polish evidence", () => {
   const gate = evaluatePolishGate({ report: baseReport(validPolish()) });
   assert.equal(gate.status, "pass");
