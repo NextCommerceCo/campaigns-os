@@ -29,11 +29,10 @@ import {
   commerceOwnedPages,
   sharedContentCorePath,
 } from "../src/template-slot-manifest.mjs";
+import { resolveStarterTemplatesRoot } from "./starter-templates-path.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
-const templatesRoot = resolve(
-  process.env.STARTER_TEMPLATES_PATH || resolve(root, "../campaign-cart-starter-templates"),
-);
+const templatesRoot = resolveStarterTemplatesRoot(root);
 
 // Flat frontmatter keys of a page-kit page: lines matching `key: ...` between
 // the --- fences at column 0. Nested structure lines are indented and
