@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
-import { createVerdict, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
@@ -673,23 +673,13 @@ function updateQaPolicy(args) {
 // Every assertion family a non-blocked run can emit beyond theme_gate. A
 // gate-blocked verdict carries one skipped audit assertion per family so the
 // verdict shape never drifts for consumers walking assertions[] by family.
-// Drift against the actual emitters is enforced by a test that collects the
-// `family:` literals from qa-node.mjs + qa-browser.mjs and asserts set
-// equality — adding an emitter without updating this list fails CI.
-export const GATE_SUPPRESSED_FAMILIES = Object.freeze([
-  "polish_gate",
-  "funnel-flow",
-  "meta-tags",
-  "api-metadata",
-  "browser-runtime",
-  "template_residue",
-  "pricing",
-  "browser-test-order",
-  "browser-receipt-rendering",
-  "analytics-correctness",
-  "analytics-parity",
-  "parity-capture",
-]);
+// Derived from the canonical vocabulary in qa-verdict.mjs (which preserves
+// this list's emission order); drift against the actual emitters is enforced
+// by tests that collect `family:` literals and assert set equality — adding
+// an emitter without updating the vocabulary fails CI.
+export const GATE_SUPPRESSED_FAMILIES = Object.freeze(
+  QA_ASSERTION_FAMILY_VOCABULARY.filter((family) => family !== "theme_gate"),
+);
 
 function parityReplayEvidence(bundle) {
   const order = bundle?.order || bundle?.orders?.[0] || null;

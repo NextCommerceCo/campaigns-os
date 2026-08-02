@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-import { createVerdict, deriveExceptions, SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { createVerdict, deriveExceptions, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS } from "./qa-verdict.mjs";
 
 const baseVerdict = {
   runId: "RUN1",
@@ -138,4 +140,32 @@ test("createVerdict emits public_route_slug null when no route slug is known", (
   const verdict = createVerdict(baseVerdict);
 
   assert.equal(verdict.public_route_slug, null);
+});
+
+test("QA_ASSERTION_FAMILY_VOCABULARY matches every family literal the runner emits", () => {
+  // Drift guard for external consumers importing the vocabulary (the portal
+  // proxy's verdict allowlist keys off it). Collect every `family: "..."`
+  // literal from non-test runner source and require set equality: a new
+  // emitter family missing from the vocabulary fails here, and so does a
+  // vocabulary entry no emitter uses. An emitter that builds a family from a
+  // constant or template instead of a literal must extend this scan.
+  const srcDir = fileURLToPath(new URL("./", import.meta.url));
+  const emitted = new Set();
+  for (const name of readdirSync(srcDir)) {
+    if (!name.endsWith(".mjs") || name.endsWith(".test.mjs")) continue;
+    // Strip comments so a family named in prose never counts as emitted; the
+    // lookbehind keeps prefixed keys like template_family: out of the scan.
+    const source = readFileSync(`${srcDir}${name}`, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|\s)\/\/.*$/gm, "$1");
+    for (const match of source.matchAll(/(?<![\w$])family:\s*["']([A-Za-z_-]+)["']/g)) {
+      emitted.add(match[1]);
+    }
+  }
+  assert.ok(emitted.size > 0, "expected the emitter scan to find family literals");
+  assert.deepEqual(
+    [...emitted].sort(),
+    [...QA_ASSERTION_FAMILY_VOCABULARY].sort(),
+    "QA_ASSERTION_FAMILY_VOCABULARY must equal the set of family literals emitted by src/*.mjs",
+  );
 });
