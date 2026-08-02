@@ -7,12 +7,13 @@ on:
 # Both steps authenticate with the ADD_TO_PROJECT_PAT org secret. It is a
 # fine-grained PAT (since 2026-07-23), so it advertises no X-OAuth-Scopes
 # header at all — never gate behaviour on token scope strings here. It
-# carries access to this repo, Issues: Read for the gate, and org
-# Projects: Read & Write for the add step.
+# carries access to this repo, Metadata: Read for the gate, Issues: Read
+# for issue lookup, and org Projects: Read & Write for the add step.
 permissions: {}
 
 jobs:
   add-to-project:
+    if: github.repository_owner == 'NextCommerceCo'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
