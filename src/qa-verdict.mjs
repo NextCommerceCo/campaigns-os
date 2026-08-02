@@ -14,6 +14,30 @@ export const SEVERITY = Object.freeze({
   BLOCKER: "blocker",
 });
 
+// Canonical vocabulary of every assertion family the QA runner emits. External
+// consumers (e.g. the portal proxy's verdict allowlist) import this instead of
+// scanning emitter source for `family:` literals. Order is load-bearing:
+// theme_gate first, then the gate-suppressed families in the order a
+// gate-blocked verdict emits its skipped audit assertions —
+// GATE_SUPPRESSED_FAMILIES in qa-node.mjs derives from this list. A drift test
+// in qa-verdict.test.mjs asserts set equality against the literals the
+// emitters actually use.
+export const QA_ASSERTION_FAMILY_VOCABULARY = Object.freeze([
+  "theme_gate",
+  "polish_gate",
+  "funnel-flow",
+  "meta-tags",
+  "api-metadata",
+  "browser-runtime",
+  "template_residue",
+  "pricing",
+  "browser-test-order",
+  "browser-receipt-rendering",
+  "analytics-correctness",
+  "analytics-parity",
+  "parity-capture",
+]);
+
 export function computeDisposition(assertions) {
   let hasBlocker = false;
   let hasSoftIssue = false;
