@@ -11,7 +11,17 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 export function resolveStarterTemplatesRoot(root) {
-  if (process.env.STARTER_TEMPLATES_PATH) return resolve(process.env.STARTER_TEMPLATES_PATH);
+  const override = process.env.STARTER_TEMPLATES_PATH;
+  if (override !== undefined) {
+    // Set-but-empty is an explicit override too — resolve("") would silently
+    // mean cwd, and falling through would silently mean auto-discovery.
+    if (override.trim() === "") {
+      throw new Error(
+        "STARTER_TEMPLATES_PATH is set but empty; unset it or point it at a campaign-cart-starter-templates checkout.",
+      );
+    }
+    return resolve(override);
+  }
   const candidates = [resolve(root, "../campaign-cart-starter-templates")];
   try {
     const commonDir = execSync("git rev-parse --path-format=absolute --git-common-dir", {
