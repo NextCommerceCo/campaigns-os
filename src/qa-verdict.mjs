@@ -36,6 +36,7 @@ export function computeDisposition(assertions) {
 export function createVerdict({
   runId,
   mapId,
+  publicRouteSlug = null,
   campaignRefId = null,
   specVersion,
   specHash,
@@ -61,7 +62,10 @@ export function createVerdict({
   return {
     schema_version: QA_SCHEMA_VERSION,
     run_id: runId,
+    // campaign_slug carries the Map ID for schema back-compat; the true public
+    // route slug rides alongside so consumers stop conflating the two.
     campaign_slug: mapId,
+    public_route_slug: optionalString(publicRouteSlug),
     campaign_ref_id: campaignRefId,
     spec_version: specVersion,
     spec_hash: specHash,
