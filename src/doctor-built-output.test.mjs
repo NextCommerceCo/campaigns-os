@@ -501,6 +501,21 @@ test("target root: pre-build state (no _site, assembly incomplete) stays silent"
   });
 });
 
+test("target root: no _site at all stays silent even when assembly is recorded complete", () => {
+  // Pre-existing contract: lifecycle/gate flows record assembly complete
+  // without ever running page-kit; sdk_hints.meta_tags reports the deferral.
+  // The loud failure is scoped to the c1 shape — _site exists, slug root missing.
+  withTempDir((dir) => {
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    const buildState = { report: { stages: { assembly: { status: "completed" } } } };
+    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warnings, []);
+  });
+});
+
 test("target root: existing _site/<slug>/ records a ready line", () => {
   withTempDir((dir) => {
     mkdirSync(join(dir, "_site", SLUG), { recursive: true });

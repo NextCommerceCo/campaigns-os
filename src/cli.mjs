@@ -2778,11 +2778,14 @@ export function validateRouteSlugIdentity(spec, packet, errors, ready) {
   }
 }
 
-// Loud failure for the state the c1 control exposed: built output exists (or
-// assembly is recorded complete) but _site/<public_route_slug>/ is absent, so
-// the whole built_output.* family is about to silently skip. Pre-build state
-// (no _site/ and assembly incomplete) stays quiet — sdk_hints.meta_tags
-// already reports that deferral.
+// Loud failure for the state the c1 control exposed: _site/ was built but
+// _site/<public_route_slug>/ is absent, so the whole built_output.* family is
+// about to silently skip — the exact shape a slug corrupted to the Map ID
+// produces. When _site/ does not exist at all (pre-build, or gate tests that
+// never run page-kit) this stays quiet regardless of assembly status —
+// sdk_hints.meta_tags already reports that deferral, and "assembly recorded
+// complete without any built output" is a pre-existing contract other
+// lifecycle checks exercise.
 export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, derived = {}, buildState = {}) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
@@ -2795,19 +2798,18 @@ export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, d
   }
 
   const siteDir = join(targetRepo, "_site");
-  const siteDirExists = existsSync(siteDir) && statSync(siteDir).isDirectory();
-  const assemblyComplete = isStageComplete(buildState.report, "assembly");
-  if (!siteDirExists && !assemblyComplete) return;
+  if (!existsSync(siteDir) || !statSync(siteDir).isDirectory()) return;
 
-  const builtRoots = siteDirExists
-    ? readdirSync(siteDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()
-    : [];
+  const assemblyComplete = isStageComplete(buildState.report, "assembly");
+  const builtRoots = readdirSync(siteDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
   addIssue(
     assemblyComplete ? errors : warnings,
     "built_output.target_root",
-    `Target route not found in _site: expected built output at _site/${publicRouteSlug}/ but `
-      + (siteDirExists ? `the slug root does not exist (built root(s): ${builtRoots.length ? builtRoots.join(", ") : "none"})` : "_site/ has not been built")
-      + `. Every built_output.* check roots at _site/<public_route_slug>/ and skips when it is missing, so built-output verification cannot run until the route exists or campaign.public_route_slug is corrected.`,
+    `Target route not found in _site: expected built output at _site/${publicRouteSlug}/ but the slug root does not exist (built root(s): ${builtRoots.length ? builtRoots.join(", ") : "none"}). `
+      + `Every built_output.* check roots at _site/<public_route_slug>/ and skips when it is missing, so built-output verification cannot run until the route exists or campaign.public_route_slug is corrected.`,
     { expected_root: `_site/${publicRouteSlug}/`, built_roots: builtRoots, assembly_complete: assemblyComplete }
   );
 }
