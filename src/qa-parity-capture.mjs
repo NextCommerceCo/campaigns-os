@@ -32,23 +32,54 @@ function normalizedCapture(capture) {
   return normalizeCapture(capture);
 }
 
-function moneyEqual(actual, expected) {
-  if (actual === null || actual === undefined || actual === "") return false;
-  const value = Number(actual);
-  return Number.isFinite(value) && Math.abs(value - Number(expected)) <= MONEY_EPSILON;
-}
-
-// Money strings must be plain decimals ("45.00"): Number() alone would also
-// coerce hex/exponent forms ("0x2d" → 45), which no real order readback emits
-// — treat those as unparseable rather than silently equal.
+// Money is a finite number or a plain decimal string ("45.00"): Number() would
+// also coerce hex/exponent forms ("0x2d" → 45) and non-money types (true → 1,
+// [45] → 45), which no real order readback or client purchase payload emits —
+// treat those as unparseable rather than silently equal.
 const DECIMAL_MONEY_PATTERN = /^-?\d+(\.\d+)?$/;
 
+function moneyNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || !DECIMAL_MONEY_PATTERN.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Both sides go through the same parse: an expectation that is not itself
+// readable money can never be "equal" to an observation.
+function moneyEqual(actual, expected) {
+  const value = moneyNumber(actual);
+  const target = moneyNumber(expected);
+  return value !== null && target !== null && Math.abs(value - target) <= MONEY_EPSILON;
+}
+
+function sameOrigin(a, b) {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
+// --auth-cookie is the CANDIDATE preview credential. An operator naming the
+// baseline on the command line is authorizing that host; a baseline that came
+// from fixture data is not, so it only carries the credential when it is
+// same-origin with the candidate. Without this, fixture data alone could
+// forward the preview cookie to an arbitrary host.
+//
+// Callers must pass the RETURN VALUE to the baseline capture: the withholding
+// path returns a copy, so mutating or reusing the original `args` would put the
+// credential back on the wire.
+function baselineCaptureArgs(args, { baselineUrl, operatorBaseline, candidateBaseUrl }) {
+  if (!baselineUrl || operatorBaseline || sameOrigin(baselineUrl, candidateBaseUrl)) return args;
+  const { "auth-cookie": _withheld, ...withoutCredential } = args;
+  return withoutCredential;
+}
+
 function lineValue(line, priceField) {
-  const candidate = line?.[priceField];
-  if (candidate === null || candidate === undefined || candidate === "") return null;
-  if (typeof candidate === "string" && !DECIMAL_MONEY_PATTERN.test(candidate.trim())) return null;
-  const value = Number(candidate);
-  return Number.isFinite(value) ? value : null;
+  return moneyNumber(line?.[priceField]);
 }
 
 function persistedLines(order) {
@@ -174,7 +205,7 @@ function assessPurchase(scenario, capture) {
   // honestly pin the main-order purchase value; the offer amount is proven by
   // the persisted-line check instead).
   const valueOk = observed !== null && (expected.value === null
-    ? Number.isFinite(Number(observed.value))
+    ? moneyNumber(observed.value) !== null
     : moneyEqual(observed.value, expected.value));
   const ok = eventPresent
     && valueOk
@@ -336,10 +367,12 @@ export async function runParityCapture({ fixture, scenarioId, args = {} }) {
     { captureAnalytics: true },
   );
   const order = orderResult.orders[0] || {};
-  const baselineUrl = args.baseline || args["analytics-baseline"] || fixture.baseline_url || null;
+  const operatorBaseline = args.baseline || args["analytics-baseline"] || null;
+  const baselineUrl = operatorBaseline || fixture.baseline_url || null;
+  const baselineArgs = baselineCaptureArgs(driverArgs, { baselineUrl, operatorBaseline, candidateBaseUrl: baseUrl });
   const captures = {
     candidate: orderResult.captures?.[0] || normalizeCapture(),
-    ...(baselineUrl ? await captureAnalyticsForUrls({ baseline: baselineUrl }, driverArgs) : {}),
+    ...(baselineUrl ? await captureAnalyticsForUrls({ baseline: baselineUrl }, baselineArgs) : {}),
   };
   const assertions = [
     ...orderResult.assertions,
@@ -354,4 +387,4 @@ export async function runParityCapture({ fixture, scenarioId, args = {} }) {
   return { assertions, orders: orderResult.orders, captures };
 }
 
-export const __qaParityCaptureTestHooks = Object.freeze({ scenarioTopology });
+export const __qaParityCaptureTestHooks = Object.freeze({ scenarioTopology, baselineCaptureArgs });

@@ -240,10 +240,22 @@ function extractPurchaseFields(event) {
   return { value, currency, transactionId };
 }
 
+// Money is a finite number or a plain decimal string ("45.00"). Number() would
+// also read a value out of hex/binary/exponent strings ("0x2d" → 45) and out of
+// non-money types entirely (true → 1, [45] → 45), none of which a real
+// dataLayer purchase payload emits — skip those rather than believe them.
+const DECIMAL_MONEY_PATTERN = /^-?\d+(\.\d+)?$/;
+
 function firstNumber(candidates) {
   for (const c of candidates) {
-    if (c === null || c === undefined || c === "") continue;
-    const n = Number(c);
+    if (typeof c === "number") {
+      if (Number.isFinite(c)) return c;
+      continue;
+    }
+    if (typeof c !== "string") continue;
+    const trimmed = c.trim();
+    if (!trimmed || !DECIMAL_MONEY_PATTERN.test(trimmed)) continue;
+    const n = Number(trimmed);
     if (Number.isFinite(n)) return n;
   }
   return null;
