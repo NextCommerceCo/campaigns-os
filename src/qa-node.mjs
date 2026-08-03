@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
 import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { remit } from "./remit.mjs";
@@ -722,7 +722,7 @@ async function runParityQa(args) {
     // Persist the live evidence bundle beside the verdict: replay runs
     // (--parity-order-json) and negative controls assess the exact same
     // order + capture the live traversal produced.
-    const bundleDir = join(resolve(args["output-dir"] || "qa-output"), fixture.campaign.slug);
+    const bundleDir = campaignOutputDir(args["output-dir"] || "qa-output", fixture.campaign.slug);
     mkdirSync(bundleDir, { recursive: true });
     writeJson(join(bundleDir, `${runId}.parity-bundle.json`), {
       scenario_id: scenario.scenario_id,
@@ -1391,8 +1391,21 @@ function assertion({ id, family, page, status, severity, expected, actual, evide
   };
 }
 
+// Every QA artifact lands in <output-dir>/<campaign-slug>/. The slug can come
+// from fixture or spec data, so containment is asserted here rather than
+// trusted: a run refuses to write outside the directory the operator named.
+function campaignOutputDir(outputDir, slug) {
+  const root = resolve(outputDir);
+  const dir = resolve(root, String(slug || ""));
+  const rel = relative(root, dir);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`QA output slug "${slug}" escapes the output directory ${root}.`);
+  }
+  return dir;
+}
+
 function writeLocalVerdict(verdict, outputDir) {
-  const dir = join(outputDir, verdict.campaign_slug);
+  const dir = campaignOutputDir(outputDir, verdict.campaign_slug);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${verdict.run_id}.json`);
   writeFileSync(path, `${JSON.stringify(verdict, null, 2)}\n`);
@@ -1840,6 +1853,7 @@ function extractApiError(raw) {
 }
 
 export const __qaNodeTestHooks = Object.freeze({
+  campaignOutputDir,
   polishBlockedAssertions,
   polishGateAssertion,
   themeBlockedAssertions,

@@ -21,6 +21,11 @@ const REQUIRED_STRING_FIELDS = Object.freeze([
 // otherwise the "_env" suffix would smuggle an arbitrary literal through.
 const CREDENTIAL_TERMS = /(^|_)(api_?key|secrets?|tokens?|passwords?|passwd|credentials?|private_?key|auth|authorizations?)(_|$)/;
 const ENV_VAR_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+// The slug is a PATH SEGMENT: every live run joins it into --output-dir to
+// place the evidence bundle and verdict. Anything but a single lowercase
+// segment ("../", an absolute path, a drive letter, a separator) would write
+// outside the output directory, so constrain it here at the load choke point.
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
 function normalizeKey(key) {
   return String(key)
@@ -116,6 +121,18 @@ function validateConstrainedStrings(fixture, errors) {
   }
   if (nonEmptyString(fixture.candidate_base_url) && !isHttpUrl(fixture.candidate_base_url)) {
     errors.push("candidate_base_url: must be a valid http(s) URL");
+  }
+  if (nonEmptyString(fixture.campaign?.slug)
+    && (!SLUG_PATTERN.test(fixture.campaign.slug) || fixture.campaign.slug.includes(".."))) {
+    errors.push("campaign.slug: must be a single lowercase path-safe segment (a-z, 0-9, dot, dash, underscore)");
+  }
+  // Optional: an omitted baseline just skips the candidate-vs-baseline diff.
+  // When present it drives a live browser fetch, so it gets the same scheme
+  // check as the candidate — a fixture may not point the capture at file:// or
+  // any other non-http transport.
+  if (fixture.baseline_url !== undefined
+    && (!nonEmptyString(fixture.baseline_url) || !isHttpUrl(fixture.baseline_url))) {
+    errors.push("baseline_url: must be a valid http(s) URL when present");
   }
   if (nonEmptyString(fixture.sdk_version) && !/^\d+\.\d+\.\d+$/.test(fixture.sdk_version)) {
     errors.push("sdk_version: must match MAJOR.MINOR.PATCH");

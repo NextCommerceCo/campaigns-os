@@ -296,3 +296,37 @@ test("validateParityFixture minimally validates the runtime analytics contract b
 test("validateParityFixture rejects non-object input", () => {
   assert.deepEqual(validateParityFixture(null), ["fixture: must be an object"]);
 });
+
+test("validateParityFixture constrains campaign.slug to a path-safe segment", () => {
+  const traversal = validFixture();
+  traversal.campaign.slug = "../../../../tmp/evil";
+  assert.ok(validateParityFixture(traversal).some((error) => error.startsWith("campaign.slug:")));
+
+  for (const slug of ["..", "a/b", "/abs", "C:\\out", "Upper"]) {
+    const fixture = validFixture();
+    fixture.campaign.slug = slug;
+    assert.ok(validateParityFixture(fixture).some((error) => error.startsWith("campaign.slug:")), slug);
+  }
+
+  const ok = validFixture();
+  ok.campaign.slug = "example-sdk04-offers";
+  assert.deepEqual(validateParityFixture(ok), []);
+});
+
+test("validateParityFixture requires an http(s) baseline_url when present", () => {
+  const fileUrl = validFixture();
+  fileUrl.baseline_url = "file:///etc/passwd";
+  assert.ok(validateParityFixture(fileUrl).includes("baseline_url: must be a valid http(s) URL when present"));
+
+  const empty = validFixture();
+  empty.baseline_url = "";
+  assert.ok(validateParityFixture(empty).includes("baseline_url: must be a valid http(s) URL when present"));
+
+  const absent = validFixture();
+  delete absent.baseline_url;
+  assert.deepEqual(validateParityFixture(absent), []);
+
+  const present = validFixture();
+  present.baseline_url = "https://legacy.example.test/campaign/";
+  assert.deepEqual(validateParityFixture(present), []);
+});

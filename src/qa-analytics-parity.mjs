@@ -240,9 +240,15 @@ function extractPurchaseFields(event) {
   return { value, currency, transactionId };
 }
 
+// String money must be a plain decimal ("45.00"). Number() alone would also
+// coerce hex/binary/exponent forms ("0x2d" → 45), which no real dataLayer
+// purchase payload emits — skip those instead of reading a value out of them.
+const DECIMAL_MONEY_PATTERN = /^-?\d+(\.\d+)?$/;
+
 function firstNumber(candidates) {
   for (const c of candidates) {
     if (c === null || c === undefined || c === "") continue;
+    if (typeof c === "string" && !DECIMAL_MONEY_PATTERN.test(c.trim())) continue;
     const n = Number(c);
     if (Number.isFinite(n)) return n;
   }

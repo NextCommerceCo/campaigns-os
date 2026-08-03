@@ -227,3 +227,52 @@ test("stray persisted upsell lines surface a manual-review warning", () => {
   // Review-grade, not blocking: the declared-line proof still decides the gate.
   assert.equal(byId(assertions)["parity-capture:fixture-offer:paired-summary"].status, STATUS.PASS);
 });
+
+test("hex/exponent purchase values are unparseable, not silently equal", () => {
+  for (const value of ["0x2d", "4.5e1", "0b101101"]) {
+    const assertions = assessParityCapture({ fixture, scenario, order: order(), capture: capture({ value }) });
+    const purchase = byId(assertions)["parity-capture:fixture-offer:purchase-value"];
+    assert.equal(purchase.status, STATUS.FAIL, value);
+    assert.equal(purchase.severity, SEVERITY.BLOCKER, value);
+  }
+
+  const plain = assessParityCapture({ fixture, scenario, order: order(), capture: capture({ value: "45.00" }) });
+  assert.equal(byId(plain)["parity-capture:fixture-offer:purchase-value"].status, STATUS.PASS);
+});
+
+test("an unpinned expected purchase value still rejects non-decimal client values", () => {
+  const unpinned = { ...scenario, expected_purchase: { event: "dl_purchase", value: null, currency: "USD" } };
+  const hex = assessParityCapture({ fixture, scenario: unpinned, order: order(), capture: capture({ value: "0x2d" }) });
+  assert.equal(byId(hex)["parity-capture:fixture-offer:purchase-value"].status, STATUS.FAIL);
+
+  const plain = assessParityCapture({ fixture, scenario: unpinned, order: order(), capture: capture({ value: "45.00" }) });
+  assert.equal(byId(plain)["parity-capture:fixture-offer:purchase-value"].status, STATUS.PASS);
+});
+
+test("a fixture-supplied cross-origin baseline does not carry the candidate preview credential", () => {
+  const { baselineCaptureArgs } = __qaParityCaptureTestHooks;
+  const args = { "auth-cookie": "session=preview-secret", viewport: "1280x800" };
+  const candidateBaseUrl = "https://preview.example.test/campaign";
+
+  const hostile = baselineCaptureArgs(args, {
+    baselineUrl: "https://attacker.example/collect",
+    operatorBaseline: null,
+    candidateBaseUrl,
+  });
+  assert.equal(Object.hasOwn(hostile, "auth-cookie"), false);
+  assert.equal(hostile.viewport, "1280x800");
+
+  const sameHost = baselineCaptureArgs(args, {
+    baselineUrl: "https://preview.example.test/legacy",
+    operatorBaseline: null,
+    candidateBaseUrl,
+  });
+  assert.equal(sameHost["auth-cookie"], "session=preview-secret");
+
+  const operatorNamed = baselineCaptureArgs(args, {
+    baselineUrl: "https://legacy.example.test/campaign",
+    operatorBaseline: "https://legacy.example.test/campaign",
+    candidateBaseUrl,
+  });
+  assert.equal(operatorNamed["auth-cookie"], "session=preview-secret");
+});

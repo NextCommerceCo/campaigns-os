@@ -285,6 +285,14 @@ Fixture essentials:
 - Credentials are never fixture data. Credential lint permits environment-name
   indirection such as `api_key_env: "QA_CAMPAIGNS_API_KEY"`; literal keys,
   tokens, passwords, and other credential values are rejected.
+- `campaign.slug` is a single path-safe segment (`a-z`, `0-9`, dot, dash,
+  underscore). It names the output subdirectory, so separators and `..` are
+  rejected at load and the writer refuses any slug that would escape
+  `--output-dir`.
+- `baseline_url` is optional and must be an `http(s)` URL. A fixture-supplied
+  baseline only receives `--auth-cookie` when it is same-origin with the
+  candidate; name the baseline with `--baseline` to authorize sending the
+  preview credential to another host.
 
 ## Test Orders
 
