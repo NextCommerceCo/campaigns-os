@@ -126,11 +126,13 @@ function validateConstrainedStrings(fixture, errors) {
     && (!SLUG_PATTERN.test(fixture.campaign.slug) || fixture.campaign.slug.includes(".."))) {
     errors.push("campaign.slug: must be a single lowercase path-safe segment (a-z, 0-9, dot, dash, underscore)");
   }
-  // Optional: an omitted baseline just skips the candidate-vs-baseline diff.
-  // When present it drives a live browser fetch, so it gets the same scheme
-  // check as the candidate — a fixture may not point the capture at file:// or
-  // any other non-http transport.
-  if (fixture.baseline_url !== undefined
+  // Optional: an absent baseline just skips the candidate-vs-baseline diff.
+  // Explicit null is absent too — the capture already reads it as "no
+  // baseline", so authors may write the key out. When a baseline IS named it
+  // drives a live browser fetch, so it gets the same scheme check as the
+  // candidate: a fixture may not point the capture at file:// or any other
+  // non-http transport.
+  if (fixture.baseline_url !== undefined && fixture.baseline_url !== null
     && (!nonEmptyString(fixture.baseline_url) || !isHttpUrl(fixture.baseline_url))) {
     errors.push("baseline_url: must be a valid http(s) URL when present");
   }

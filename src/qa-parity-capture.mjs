@@ -32,22 +32,27 @@ function normalizedCapture(capture) {
   return normalizeCapture(capture);
 }
 
-// Money strings must be plain decimals ("45.00"): Number() alone would also
-// coerce hex/exponent forms ("0x2d" → 45), which no real order readback or
-// client purchase payload emits — treat those as unparseable rather than
-// silently equal.
+// Money is a finite number or a plain decimal string ("45.00"): Number() would
+// also coerce hex/exponent forms ("0x2d" → 45) and non-money types (true → 1,
+// [45] → 45), which no real order readback or client purchase payload emits —
+// treat those as unparseable rather than silently equal.
 const DECIMAL_MONEY_PATTERN = /^-?\d+(\.\d+)?$/;
 
-function moneyNumber(actual) {
-  if (actual === null || actual === undefined || actual === "") return null;
-  if (typeof actual === "string" && !DECIMAL_MONEY_PATTERN.test(actual.trim())) return null;
-  const value = Number(actual);
-  return Number.isFinite(value) ? value : null;
+function moneyNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || !DECIMAL_MONEY_PATTERN.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Both sides go through the same parse: an expectation that is not itself
+// readable money can never be "equal" to an observation.
 function moneyEqual(actual, expected) {
   const value = moneyNumber(actual);
-  return value !== null && Math.abs(value - Number(expected)) <= MONEY_EPSILON;
+  const target = moneyNumber(expected);
+  return value !== null && target !== null && Math.abs(value - target) <= MONEY_EPSILON;
 }
 
 function sameOrigin(a, b) {
@@ -63,6 +68,10 @@ function sameOrigin(a, b) {
 // from fixture data is not, so it only carries the credential when it is
 // same-origin with the candidate. Without this, fixture data alone could
 // forward the preview cookie to an arbitrary host.
+//
+// Callers must pass the RETURN VALUE to the baseline capture: the withholding
+// path returns a copy, so mutating or reusing the original `args` would put the
+// credential back on the wire.
 function baselineCaptureArgs(args, { baselineUrl, operatorBaseline, candidateBaseUrl }) {
   if (!baselineUrl || operatorBaseline || sameOrigin(baselineUrl, candidateBaseUrl)) return args;
   const { "auth-cookie": _withheld, ...withoutCredential } = args;
@@ -70,11 +79,7 @@ function baselineCaptureArgs(args, { baselineUrl, operatorBaseline, candidateBas
 }
 
 function lineValue(line, priceField) {
-  const candidate = line?.[priceField];
-  if (candidate === null || candidate === undefined || candidate === "") return null;
-  if (typeof candidate === "string" && !DECIMAL_MONEY_PATTERN.test(candidate.trim())) return null;
-  const value = Number(candidate);
-  return Number.isFinite(value) ? value : null;
+  return moneyNumber(line?.[priceField]);
 }
 
 function persistedLines(order) {

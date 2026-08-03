@@ -330,3 +330,9 @@ test("validateParityFixture requires an http(s) baseline_url when present", () =
   present.baseline_url = "https://legacy.example.test/campaign/";
   assert.deepEqual(validateParityFixture(present), []);
 });
+
+test("an explicitly null baseline_url means absent, not invalid", () => {
+  const explicitNull = validFixture();
+  explicitNull.baseline_url = null;
+  assert.deepEqual(validateParityFixture(explicitNull), []);
+});

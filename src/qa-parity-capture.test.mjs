@@ -276,3 +276,23 @@ test("a fixture-supplied cross-origin baseline does not carry the candidate prev
   });
   assert.equal(operatorNamed["auth-cookie"], "session=preview-secret");
 });
+
+test("non-money types are unparseable rather than coerced into a passing value", () => {
+  for (const value of [true, [45], ["45"], { valueOf: () => 45 }]) {
+    const assertions = assessParityCapture({ fixture, scenario, order: order(value), capture: capture() });
+    const persisted = byId(assertions)["parity-capture:fixture-offer:persisted-line"];
+    assert.equal(persisted.status, STATUS.FAIL, JSON.stringify(value));
+    assert.equal(persisted.severity, SEVERITY.BLOCKER, JSON.stringify(value));
+  }
+});
+
+test("an unreadable expectation cannot be satisfied by any observation", () => {
+  const unreadable = {
+    ...scenario,
+    expected_order_readback: {
+      line_item: { ...scenario.expected_order_readback.line_item, expected_line_total: "0x2d" },
+    },
+  };
+  const assertions = assessParityCapture({ fixture, scenario: unreadable, order: order(45), capture: capture() });
+  assert.equal(byId(assertions)["parity-capture:fixture-offer:persisted-line"].status, STATUS.FAIL);
+});
