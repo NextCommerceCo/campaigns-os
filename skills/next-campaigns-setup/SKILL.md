@@ -1,5 +1,6 @@
 ---
 name: next-campaigns-setup
+version: 1.0.0
 description: Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring.
 ---
 

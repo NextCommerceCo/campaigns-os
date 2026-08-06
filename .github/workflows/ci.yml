@@ -12,6 +12,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: campaigns-os
+          # Full history ONLY on pull_request, where check-skill-versions diffs
+          # against the base sha to require a version bump per changed skill
+          # package. Pushes to main run no bump step, so they stay shallow.
+          # Quoted values on purpose: Actions treats the number 0 as falsy, so
+          # an unquoted `&& 0 || 1` collapses to 1 in both branches.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       # Pin the templates checkout to the commit the vendored catalog snapshot was
       # built from (`_synced_from_sha`), so check-template-doctrine validates the
       # partial defaults the agent actually consumes rather than drifting live HEAD.
@@ -52,3 +58,11 @@ jobs:
         working-directory: campaigns-os
         env:
           STARTER_TEMPLATES_PATH: ${{ github.workspace }}/campaign-cart-starter-templates
+      # `npm run check` already validates manifest <-> frontmatter parity. This
+      # adds the half that needs git history: a skill package whose files changed
+      # in this PR must also advance its version, so an install can never find
+      # two different builds wearing the same version.
+      - name: Changed skill packages advance their version
+        if: github.event_name == 'pull_request'
+        run: node ./scripts/check-skill-versions.mjs --base "${{ github.event.pull_request.base.sha }}"
+        working-directory: campaigns-os

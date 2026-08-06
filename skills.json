@@ -1,0 +1,47 @@
+{
+  "name": "campaigns-os-skills",
+  "description": "Skills bundled with Campaigns OS. `skills.sh` installs these into the shared agent skill directories (~/.claude/skills, ~/.codex/skills), so each one is a versioned package: bump the version whenever a package changes.",
+  "homepage": "https://github.com/NextCommerceCo/campaigns-os",
+  "skills": [
+    {
+      "id": "next-campaigns-os",
+      "name": "Campaigns OS Lifecycle",
+      "version": "1.0.0",
+      "path": "skills/next-campaigns-os/SKILL.md",
+      "domain": "campaigns",
+      "description": "Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth."
+    },
+    {
+      "id": "next-campaigns-setup",
+      "name": "Campaign Setup",
+      "version": "1.0.0",
+      "path": "skills/next-campaigns-setup/SKILL.md",
+      "domain": "campaigns",
+      "description": "Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring."
+    },
+    {
+      "id": "next-campaigns-build",
+      "name": "Campaign Build",
+      "version": "1.0.0",
+      "path": "skills/next-campaigns-build/SKILL.md",
+      "domain": "campaigns",
+      "description": "Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts."
+    },
+    {
+      "id": "next-campaigns-polish",
+      "name": "Campaign Polish",
+      "version": "1.0.0",
+      "path": "skills/next-campaigns-polish/SKILL.md",
+      "domain": "campaigns",
+      "description": "Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign."
+    },
+    {
+      "id": "next-campaigns-qa",
+      "name": "Campaign QA",
+      "version": "1.0.0",
+      "path": "skills/next-campaigns-qa/SKILL.md",
+      "domain": "campaigns",
+      "description": "Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof."
+    }
+  ]
+}
