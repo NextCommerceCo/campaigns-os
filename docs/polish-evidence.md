@@ -145,6 +145,7 @@ The gate returns the **first** failing code; fix in this order.
 | `polish.build_fingerprint_missing` | Build never recorded `stages.assembly.build_fingerprint`. Re-run build. |
 | `polish.assembly_source_package_fingerprint_missing` | Assembly not tied to the current Design Source Package. Re-run build (or waive, §5). |
 | `polish.assembly_source_package_stale` | Source package changed after build. Re-run build (or waive, §5). |
+| `polish.waiver_expires_at_invalid` | A source freshness waiver has an unparseable `expires_at`. Fix or remove the waiver record (§5). |
 | `polish.evidence_missing` | No `stages.polish` stage, or status neither completed nor blocked. Run next-campaigns-polish. |
 | `polish.blocked` | Polish itself recorded `status: blocked`. Resolve its blockers. |
 | `polish.self_certified` | `performed_by` is not `next-campaigns-polish`, or the record mentions build commands. |
@@ -166,7 +167,12 @@ ALL of: a non-empty `reason`; a matching `scope`
 `source_package_stale_after_build`) **or** an `applies_to[]` entry naming one of
 the fingerprint fields/blocker codes; attribution (`waived_by` or `owner`); a
 timestamp (`waived_at` or `created_at`); and a bound (`expires_at` or
-`review_condition`). Waived runs pass with status `waived`, never silently.
+`review_condition`). When `expires_at` is present it must be a parseable
+timestamp (ISO 8601): an unparseable value blocks the gate with
+`polish.waiver_expires_at_invalid`, and an expiry in the past means the waiver
+is **not** honored — the freshness block fires as if no waiver were recorded
+(the verdict names the expired waiver so a fresh one can be recorded
+deliberately). Waived runs pass with status `waived`, never silently.
 
 ## 6. Complete passing example
 
