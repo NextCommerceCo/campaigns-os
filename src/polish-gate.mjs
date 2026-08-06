@@ -65,12 +65,13 @@ export function assemblySourcePackageMaterialFingerprint(report) {
     || null;
 }
 
-export function assemblySourcePackageFreshnessWaiver(report) {
+export function assessAssemblySourcePackageFreshnessWaivers(report, now = Date.now()) {
   const candidates = [
     ...(Array.isArray(report?.waivers) ? report.waivers : []),
     report?.assembly_source_package_freshness_waiver,
     report?.source_package_freshness_waiver,
   ].filter(Boolean);
+  const assessment = { active: null, expired: [], invalid: [] };
   for (const waiver of candidates) {
     if (!isObject(waiver) || !normalizeString(waiver.reason)) continue;
     const scope = normalizeString(waiver.scope);
@@ -88,10 +89,31 @@ export function assemblySourcePackageFreshnessWaiver(report) {
     ].includes(entry));
     const attributed = Boolean(normalizeString(waiver.waived_by) || normalizeString(waiver.owner));
     const timestamped = Boolean(normalizeString(waiver.waived_at) || normalizeString(waiver.created_at));
-    const bounded = Boolean(normalizeString(waiver.expires_at) || normalizeString(waiver.review_condition));
-    if ((scopeMatches || appliesToMatches) && attributed && timestamped && bounded) return waiver;
+    if (!(scopeMatches || appliesToMatches) || !attributed || !timestamped) continue;
+    const expiresAt = normalizeString(waiver.expires_at);
+    if (expiresAt !== null) {
+      // expires_at must parse as a real timestamp: an unparseable value is a
+      // malformed record the gate refuses to honor, and an explicit expiry
+      // that has passed dominates any review_condition on the same record.
+      const parsed = Date.parse(expiresAt);
+      if (Number.isNaN(parsed)) {
+        assessment.invalid.push(waiver);
+        continue;
+      }
+      if (parsed <= now) {
+        assessment.expired.push(waiver);
+        continue;
+      }
+      if (!assessment.active) assessment.active = waiver;
+      continue;
+    }
+    if (normalizeString(waiver.review_condition) && !assessment.active) assessment.active = waiver;
   }
-  return null;
+  return assessment;
+}
+
+export function assemblySourcePackageFreshnessWaiver(report, now = Date.now()) {
+  return assessAssemblySourcePackageFreshnessWaivers(report, now).active;
 }
 
 function polishEvidence(stage, report) {
@@ -304,7 +326,7 @@ function commandMentionsBuild(stage, evidence) {
   return commands.some((entry) => /next-campaigns-build|campaigns-os\s+next\s+build/i.test(String(isObject(entry) ? entry.command || entry.name || "" : entry)));
 }
 
-export function evaluatePolishGate({ report, required = false } = {}) {
+export function evaluatePolishGate({ report, required = false, now = Date.now() } = {}) {
   if (!isObject(report)) {
     return required
       ? {
@@ -327,7 +349,9 @@ export function evaluatePolishGate({ report, required = false } = {}) {
   const buildFingerprint = currentBuildFingerprint(report);
   const currentSourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   const assemblySourcePackageFingerprint = assemblySourcePackageMaterialFingerprint(report);
-  const sourcePackageFreshnessWaiver = assemblySourcePackageFreshnessWaiver(report);
+  const waiverAssessment = assessAssemblySourcePackageFreshnessWaivers(report, now);
+  const sourcePackageFreshnessWaiver = waiverAssessment.active;
+  const expiredWaiver = waiverAssessment.expired[0] || null;
   const stage = report.stages?.polish;
   const evidence = polishEvidence(stage, report);
   const buildRequiredActions = [
@@ -347,6 +371,25 @@ export function evaluatePolishGate({ report, required = false } = {}) {
     },
   ];
 
+  if (waiverAssessment.invalid.length) {
+    const invalid = waiverAssessment.invalid[0];
+    return {
+      status: "blocked",
+      code: "polish.waiver_expires_at_invalid",
+      reason: `Source freshness waiver has an unparseable expires_at (${JSON.stringify(invalid.expires_at)}). Record a valid ISO 8601 timestamp, or remove the malformed waiver, before Polish/QA.`,
+      build_fingerprint: buildFingerprint,
+      waiver: invalid,
+      required_actions: [
+        {
+          id: "repair_waiver",
+          kind: "manual",
+          command: null,
+          description: "Correct the waiver's expires_at to a valid ISO 8601 timestamp (or remove the malformed waiver record) on the assembly report.",
+        },
+      ],
+    };
+  }
+
   if (!buildFingerprint) {
     return {
       status: "blocked",
@@ -360,9 +403,12 @@ export function evaluatePolishGate({ report, required = false } = {}) {
     return {
       status: "blocked",
       code: "polish.assembly_source_package_fingerprint_missing",
-      reason: "Assembly is not tied to the current Design Source Package material fingerprint. Re-run Build before Polish.",
+      reason: expiredWaiver
+        ? `Assembly is not tied to the current Design Source Package material fingerprint, and the recorded source freshness waiver expired at ${expiredWaiver.expires_at}. Re-run Build before Polish (or record a new waiver).`
+        : "Assembly is not tied to the current Design Source Package material fingerprint. Re-run Build before Polish.",
       build_fingerprint: buildFingerprint,
       source_package_material_fingerprint: currentSourcePackageFingerprint,
+      ...(expiredWaiver ? { expired_waiver: expiredWaiver } : {}),
       required_actions: buildRequiredActions,
     };
   }
@@ -370,10 +416,13 @@ export function evaluatePolishGate({ report, required = false } = {}) {
     return {
       status: "blocked",
       code: "polish.assembly_source_package_stale",
-      reason: "The Design Source Package changed after Build. Re-run Build against the current source package before Polish.",
+      reason: expiredWaiver
+        ? `The Design Source Package changed after Build, and the recorded source freshness waiver expired at ${expiredWaiver.expires_at}. Re-run Build against the current source package before Polish (or record a new waiver).`
+        : "The Design Source Package changed after Build. Re-run Build against the current source package before Polish.",
       build_fingerprint: buildFingerprint,
       source_package_material_fingerprint: currentSourcePackageFingerprint,
       assembly_source_package_material_fingerprint: assemblySourcePackageFingerprint,
+      ...(expiredWaiver ? { expired_waiver: expiredWaiver } : {}),
       required_actions: buildRequiredActions,
     };
   }
