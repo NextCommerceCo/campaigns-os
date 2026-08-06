@@ -171,17 +171,47 @@ export function validateParity(manifest, { readSkill, listSkillDirs }) {
 // slots is a silent-overwrite collision, not a version problem — versioning two
 // DIFFERENT skills wearing one name only makes the drift diagnosable, not safe.
 // contracts/reserved-skill-names.json lists the externally published ids.
+//
+// Matching notes: the installer keys destination dirs on the skills/ DIRECTORY
+// name, not the manifest id, so both are checked — a manifest id dodge with a
+// reserved directory path still lands in the reserved slot. Comparison is
+// lowercased: the default macOS filesystem (where the shared slots live) is
+// case-insensitive, so `Next-Campaigns-Setup` collides with the reserved slot
+// even though the strings differ. Reservation presence uses `in`, not
+// truthiness — an empty-string claim is still a reservation. Retired ids from
+// skills.json must themselves be reserved, so a retired name can never be
+// silently reintroduced.
 export function validateReservedNames(manifest, reserved, label) {
-  if (!reserved || typeof reserved.reserved !== "object" || Array.isArray(reserved.reserved)) {
+  if (!reserved || reserved.reserved === null || typeof reserved.reserved !== "object" || Array.isArray(reserved.reserved)) {
     return [`${label}: expected an object with a reserved map`];
   }
+  const reservedByLower = new Map(
+    Object.entries(reserved.reserved).map(([name, claim]) => [name.toLowerCase(), { name, claim }]),
+  );
   const errors = [];
   for (const entry of manifest.skills) {
-    const claim = reserved.reserved[entry.id];
-    if (claim) {
+    const dirName = packageDirName(entry.path ?? "");
+    const probes = [["id", entry.id]];
+    if (dirName && dirName.toLowerCase() !== String(entry.id ?? "").toLowerCase()) {
+      probes.push(["package directory", dirName]);
+    }
+    for (const [kind, value] of probes) {
+      if (!value) continue;
+      const hit = reservedByLower.get(String(value).toLowerCase());
+      if (hit) {
+        errors.push(
+          `${entry.id}: skill ${kind} ${JSON.stringify(value)} is reserved by an externally published skill ` +
+            `(${hit.claim || hit.name}) — installing it would silently overwrite that skill in the shared ` +
+            `skill directories. Pick a distinct name.`,
+        );
+      }
+    }
+  }
+  for (const record of Array.isArray(manifest.retired_skills) ? manifest.retired_skills : []) {
+    if (record?.id && !reservedByLower.has(String(record.id).toLowerCase())) {
       errors.push(
-        `${entry.id}: skill id is reserved by an externally published skill (${claim}) — ` +
-          `installing it would silently overwrite that skill in the shared skill directories. Pick a distinct id.`,
+        `retired skill id ${JSON.stringify(record.id)} is not in ${label} — reserve retired names so they ` +
+          `cannot be silently reintroduced`,
       );
     }
   }

@@ -261,3 +261,54 @@ test("validateReservedNames fails on a malformed reserved contract instead of pa
   assert.equal(errors.length, 1);
   assert.match(errors[0], /expected an object with a reserved map/);
 });
+
+test("validateReservedNames catches a reserved package DIRECTORY even when the id dodges", () => {
+  const manifest = loadManifest(
+    JSON.stringify({ skills: [{ id: "innocent-id", version: "1.0.0", path: "skills/next-campaigns-setup/SKILL.md" }] }),
+    "m",
+  );
+  const reserved = { reserved: { "next-campaigns-setup": "published scaffolder" } };
+  const errors = validateReservedNames(manifest, reserved, "contracts/reserved-skill-names.json");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /package directory "next-campaigns-setup" is reserved/);
+});
+
+test("validateReservedNames matches case-insensitively — shared slots live on case-insensitive filesystems", () => {
+  const manifest = loadManifest(
+    JSON.stringify({ skills: [{ id: "Next-Campaigns-Setup", version: "1.0.0", path: "skills/Next-Campaigns-Setup/SKILL.md" }] }),
+    "m",
+  );
+  const reserved = { reserved: { "next-campaigns-setup": "published scaffolder" } };
+  const errors = validateReservedNames(manifest, reserved, "contracts/reserved-skill-names.json");
+  assert.equal(errors.length, 1, "one error, deduped between id and same-named dir");
+});
+
+test("validateReservedNames treats an empty-string claim as still reserved", () => {
+  const manifest = loadManifest(
+    JSON.stringify({ skills: [{ id: "next-campaigns-setup", version: "1.0.0", path: "skills/next-campaigns-setup/SKILL.md" }] }),
+    "m",
+  );
+  const errors = validateReservedNames(manifest, { reserved: { "next-campaigns-setup": "" } }, "c");
+  assert.equal(errors.length, 1);
+});
+
+test("validateReservedNames rejects reserved: null instead of crashing with a wrong diagnosis", () => {
+  const manifest = loadManifest(JSON.stringify({ skills: [] }), "m");
+  const errors = validateReservedNames(manifest, { reserved: null }, "c");
+  assert.deepEqual(errors, ["c: expected an object with a reserved map"]);
+});
+
+test("a retired skill id missing from the reserved list fails — retirement must be permanent", () => {
+  const manifest = loadManifest(
+    JSON.stringify({
+      skills: [{ id: "next-campaigns-os-setup", version: "2.0.0", path: "skills/next-campaigns-os-setup/SKILL.md" }],
+      retired_skills: [{ id: "next-campaigns-setup", replaced_by: "next-campaigns-os-setup" }],
+    }),
+    "m",
+  );
+  const unreserved = validateReservedNames(manifest, { reserved: {} }, "c");
+  assert.equal(unreserved.length, 1);
+  assert.match(unreserved[0], /retired skill id "next-campaigns-setup" is not in c/);
+  const reserved = validateReservedNames(manifest, { reserved: { "next-campaigns-setup": "published scaffolder" } }, "c");
+  assert.deepEqual(reserved, []);
+});

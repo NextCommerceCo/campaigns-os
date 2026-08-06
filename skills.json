@@ -2,6 +2,15 @@
   "name": "campaigns-os-skills",
   "description": "Skills bundled with Campaigns OS. `skills.sh` installs these into the shared agent skill directories (~/.claude/skills, ~/.codex/skills), so each one is a versioned package: bump the version whenever a package changes.",
   "homepage": "https://github.com/NextCommerceCo/campaigns-os",
+  "retired_skills": [
+    {
+      "id": "next-campaigns-setup",
+      "replaced_by": "next-campaigns-os-setup",
+      "retired": "2026-08-06",
+      "detect_description_prefix": "Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet",
+      "reason": "Name released to the published page-kit scaffolder (NextCommerceCo/skills). install-skills removes OUR stale installed copy from shared skill directories when frontmatter name + description prefix match; anything else wearing the name is left alone."
+    }
+  ],
   "skills": [
     {
       "id": "next-campaigns-os",

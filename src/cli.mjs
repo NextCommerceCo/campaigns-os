@@ -5903,13 +5903,29 @@ function resolveSkillInstallTargets(targetArg = null, platformArg = null) {
   }));
 }
 
+// Retired-skill records from skills.json. Installs are additive (the copy loop
+// never deletes), so without this a renamed skill leaves its OLD copy behind in
+// every shared skill directory forever — the name is never actually released.
+function loadRetiredSkills() {
+  const manifestPath = join(ROOT, "skills.json");
+  if (!existsSync(manifestPath)) return [];
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    return Array.isArray(manifest.retired_skills) ? manifest.retired_skills : [];
+  } catch {
+    return [];
+  }
+}
+
 function installSkills(targetArg = null, dryRun = false, platformArg = null) {
   const sourceDir = join(ROOT, "skills");
+  const retired = loadRetiredSkills();
   const targets = resolveSkillInstallTargets(targetArg, platformArg);
   const targetResults = targets.map((target) => installSkillsToTarget({
     sourceDir,
     target,
     dryRun,
+    retired,
   }));
 
   if (targetResults.length === 1) {
@@ -6106,7 +6122,64 @@ function isExecutableFile(candidate) {
   }
 }
 
-function installSkillsToTarget({ sourceDir, target, dryRun }) {
+// A retired record only ever removes OUR stale copy: the destination SKILL.md
+// must carry the retired id as its frontmatter name AND a description starting
+// with the recorded prefix. Anything else wearing the name (e.g. the published
+// skill that the name was released to) is left untouched and reported.
+function matchesRetiredSkill(skillText, record) {
+  const lines = String(skillText).split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return false;
+  let name = null;
+  let description = null;
+  for (const line of lines.slice(1)) {
+    if (line.trim() === "---") break;
+    const nameMatch = /^name:\s*['"]?([^'"\s]+)/.exec(line);
+    if (nameMatch) name = nameMatch[1];
+    const descMatch = /^description:\s*['"]?(.*)$/.exec(line);
+    if (descMatch) description = descMatch[1];
+  }
+  if (name !== record.id) return false;
+  const prefix = record.detect_description_prefix;
+  return typeof prefix === "string" && prefix.length > 0 && (description || "").startsWith(prefix);
+}
+
+function sweepRetiredSkills({ retired, target, targetDir, dryRun }) {
+  const swept = [];
+  for (const record of retired) {
+    if (!record || typeof record.id !== "string" || !record.id) continue;
+    const destinationDir = join(targetDir, record.id);
+    const destination = join(destinationDir, "SKILL.md");
+    if (!existsSync(destination)) continue;
+    const ours = matchesRetiredSkill(readFileSync(destination, "utf8"), record);
+    if (ours) {
+      if (!dryRun) rmSync(destinationDir, { recursive: true, force: true });
+      swept.push({
+        name: record.id,
+        action: "retired",
+        platform: target.platform,
+        platform_label: target.platform_label,
+        destination,
+        replaced_by: record.replaced_by || null,
+        note: dryRun
+          ? `Stale retired skill would be removed (renamed to ${record.replaced_by || "a new id"}).`
+          : `Stale retired skill removed (renamed to ${record.replaced_by || "a new id"}).`,
+      });
+    } else {
+      swept.push({
+        name: record.id,
+        action: "occupied_by_other",
+        platform: target.platform,
+        platform_label: target.platform_label,
+        destination,
+        replaced_by: record.replaced_by || null,
+        note: "Slot holds a different skill (not this repo's retired copy) — left in place.",
+      });
+    }
+  }
+  return swept;
+}
+
+function installSkillsToTarget({ sourceDir, target, dryRun, retired = [] }) {
   const targetDir = target.target_directory;
   const entries = readdirSync(sourceDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -6114,6 +6187,8 @@ function installSkillsToTarget({ sourceDir, target, dryRun }) {
   const skills = [];
 
   if (!dryRun) mkdirSync(targetDir, { recursive: true });
+
+  skills.push(...sweepRetiredSkills({ retired, target, targetDir, dryRun }));
 
   for (const entry of entries) {
     const name = entry.name;
@@ -7207,5 +7282,7 @@ function formatSkillInstallSummary(skill) {
     const from = skill.from?.label || "missing";
     return `${prefix}${skill.name}: updated (${from} -> ${skill.to.label})`;
   }
+  if (skill.action === "retired") return `${prefix}${skill.name}: ${skill.note}`;
+  if (skill.action === "occupied_by_other") return `${prefix}${skill.name}: ${skill.note}`;
   return `${prefix}${skill.name}: unchanged (${skill.to.label})`;
 }
