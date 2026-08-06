@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
+import { assemblySourcePackageFreshnessWaiver, evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
 
 const FINGERPRINT = "sha256:build-current";
 const SOURCE_PACKAGE_FINGERPRINT = "sha256:source-package-current";
@@ -175,6 +175,83 @@ test("polish gate rejects source freshness waiver without attribution or review 
   assert.equal(gate.status, "blocked");
   assert.equal(gate.code, "polish.assembly_source_package_stale");
   assert.equal(gate.waiver, undefined);
+});
+
+function staleSourceReportWithWaiver(waiver) {
+  return baseReport(validPolish({
+    source_package_material_fingerprint: SOURCE_PACKAGE_FINGERPRINT,
+  }), {
+    design_source_package: { material_fingerprint: SOURCE_PACKAGE_FINGERPRINT },
+    waivers: [waiver],
+    stages: {
+      assembly: {
+        stage: "assembly",
+        status: "completed",
+        build_fingerprint: FINGERPRINT,
+        source_package_material_fingerprint: "sha256:old-source-package",
+      },
+    },
+  });
+}
+
+const WAIVER_GATE_NOW = Date.parse("2026-08-06T00:00:00.000Z");
+
+test("polish gate rejects expired source freshness waiver", () => {
+  const waiver = { ...sourceFreshnessWaiver(), expires_at: "1970-01-01T00:00:00.000Z" };
+  const gate = evaluatePolishGate({ report: staleSourceReportWithWaiver(waiver), now: WAIVER_GATE_NOW });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.assembly_source_package_stale");
+  assert.equal(gate.waiver, undefined);
+  assert.equal(gate.expired_waiver, waiver);
+  assert.match(gate.reason, /expired at 1970-01-01T00:00:00\.000Z/);
+});
+
+test("polish gate accepts future-dated source freshness waiver", () => {
+  const waiver = { ...sourceFreshnessWaiver(), expires_at: "2026-09-01T00:00:00.000Z" };
+  const gate = evaluatePolishGate({ report: staleSourceReportWithWaiver(waiver), now: WAIVER_GATE_NOW });
+  assert.equal(gate.status, "waived");
+  assert.equal(gate.code, "polish.assembly_source_package_waived");
+  assert.equal(gate.waiver, waiver);
+});
+
+test("polish gate blocks unparseable waiver expires_at loudly", () => {
+  const waiver = { ...sourceFreshnessWaiver(), expires_at: "next week" };
+  const gate = evaluatePolishGate({ report: staleSourceReportWithWaiver(waiver), now: WAIVER_GATE_NOW });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.waiver_expires_at_invalid");
+  assert.equal(gate.waiver, waiver);
+  assert.match(gate.reason, /unparseable expires_at \("next week"\)/);
+  assert.equal(gate.source_package_material_fingerprint, SOURCE_PACKAGE_FINGERPRINT);
+  assert.equal(gate.assembly_source_package_material_fingerprint, "sha256:old-source-package");
+});
+
+test("polish gate treats expires_at exactly equal to now as expired (inclusive boundary)", () => {
+  const waiver = { ...sourceFreshnessWaiver(), expires_at: "2026-08-06T00:00:00.000Z" };
+  const gate = evaluatePolishGate({ report: staleSourceReportWithWaiver(waiver), now: WAIVER_GATE_NOW });
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.assembly_source_package_stale");
+  assert.equal(gate.expired_waiver, waiver);
+});
+
+test("polish gate honors a valid waiver regardless of its position among expired ones", () => {
+  const expired = { ...sourceFreshnessWaiver(), expires_at: "1970-01-01T00:00:00.000Z" };
+  const current = { ...sourceFreshnessWaiver(), expires_at: "2026-09-01T00:00:00.000Z" };
+  for (const waivers of [[expired, current], [current, expired]]) {
+    const report = staleSourceReportWithWaiver(waivers[0]);
+    report.waivers.push(waivers[1]);
+    const gate = evaluatePolishGate({ report, now: WAIVER_GATE_NOW });
+    assert.equal(gate.status, "waived");
+    assert.equal(gate.waiver, current);
+  }
+});
+
+test("assemblySourcePackageFreshnessWaiver returns the effective waiver or null", () => {
+  const expired = { ...sourceFreshnessWaiver(), expires_at: "1970-01-01T00:00:00.000Z" };
+  const invalid = { ...sourceFreshnessWaiver(), expires_at: "next week" };
+  const current = { ...sourceFreshnessWaiver(), expires_at: "2026-09-01T00:00:00.000Z" };
+  assert.equal(assemblySourcePackageFreshnessWaiver({ waivers: [expired] }, WAIVER_GATE_NOW), null);
+  assert.equal(assemblySourcePackageFreshnessWaiver({ waivers: [invalid] }, WAIVER_GATE_NOW), null);
+  assert.equal(assemblySourcePackageFreshnessWaiver({ waivers: [current] }, WAIVER_GATE_NOW), current);
 });
 
 test("polish gate blocks missing source package fingerprint when current source package exists", () => {
@@ -470,6 +547,7 @@ const GATE_BLOCKER_CODES = [
   "polish.build_fingerprint_missing",
   "polish.assembly_source_package_fingerprint_missing",
   "polish.assembly_source_package_stale",
+  "polish.waiver_expires_at_invalid",
   "polish.evidence_missing",
   "polish.blocked",
   "polish.self_certified",
