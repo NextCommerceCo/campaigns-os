@@ -12,6 +12,7 @@ import {
   changedSkillIds,
   validateParity,
   validateBumps,
+  validateReservedNames,
 } from "./check-skill-versions.mjs";
 
 const manifestText = JSON.stringify({
@@ -231,4 +232,32 @@ test("validateBumps ignores newly added and removed packages", () => {
   const old = new Map([["gone", "1.0.0"]]);
   const current = new Map([["fresh", "1.0.0"]]);
   assert.deepEqual(validateBumps(old, current, new Set(["gone", "fresh"])), []);
+});
+
+test("validateReservedNames flags a skills.json id published by another repo", () => {
+  const manifest = loadManifest(
+    JSON.stringify({ skills: [{ id: "next-campaigns-setup", version: "1.0.0", path: "skills/next-campaigns-setup/SKILL.md" }] }),
+    "m",
+  );
+  const reserved = { reserved: { "next-campaigns-setup": "published page-kit scaffolder" } };
+  const errors = validateReservedNames(manifest, reserved, "contracts/reserved-skill-names.json");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /reserved by an externally published skill/);
+  assert.match(errors[0], /published page-kit scaffolder/);
+});
+
+test("validateReservedNames passes ids outside the reserved map", () => {
+  const manifest = loadManifest(
+    JSON.stringify({ skills: [{ id: "next-campaigns-os-setup", version: "2.0.0", path: "skills/next-campaigns-os-setup/SKILL.md" }] }),
+    "m",
+  );
+  const reserved = { reserved: { "next-campaigns-setup": "published page-kit scaffolder" } };
+  assert.deepEqual(validateReservedNames(manifest, reserved, "contracts/reserved-skill-names.json"), []);
+});
+
+test("validateReservedNames fails on a malformed reserved contract instead of passing silently", () => {
+  const manifest = loadManifest(JSON.stringify({ skills: [] }), "m");
+  const errors = validateReservedNames(manifest, { reserved: [] }, "contracts/reserved-skill-names.json");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /expected an object with a reserved map/);
 });

@@ -174,7 +174,7 @@
   },
   "next": {
     "stage": "setup",
-    "owner": "next-campaigns-setup",
+    "owner": "next-campaigns-os-setup",
     "action": "Run Page Kit scaffold using the doctor-cleared packet, then hand setup output to build."
   }
 }

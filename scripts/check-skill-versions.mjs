@@ -167,6 +167,27 @@ export function validateParity(manifest, { readSkill, listSkillDirs }) {
   return errors;
 }
 
+// A skills.json id that another repo already publishes into the shared install
+// slots is a silent-overwrite collision, not a version problem — versioning two
+// DIFFERENT skills wearing one name only makes the drift diagnosable, not safe.
+// contracts/reserved-skill-names.json lists the externally published ids.
+export function validateReservedNames(manifest, reserved, label) {
+  if (!reserved || typeof reserved.reserved !== "object" || Array.isArray(reserved.reserved)) {
+    return [`${label}: expected an object with a reserved map`];
+  }
+  const errors = [];
+  for (const entry of manifest.skills) {
+    const claim = reserved.reserved[entry.id];
+    if (claim) {
+      errors.push(
+        `${entry.id}: skill id is reserved by an externally published skill (${claim}) — ` +
+          `installing it would silently overwrite that skill in the shared skill directories. Pick a distinct id.`,
+      );
+    }
+  }
+  return errors;
+}
+
 export function validateBumps(oldVersions, currentVersions, changedIds) {
   const errors = [];
   for (const id of [...changedIds].sort()) {
@@ -220,6 +241,21 @@ function validate(base) {
         .map((item) => item.name);
     },
   });
+
+  // Required, not optional: if the reserved-names contract goes missing the
+  // guard must fail loudly rather than degrade into the pre-2026-08 state where
+  // nothing could see a cross-repo name collision.
+  const reservedPath = join(root, "contracts", "reserved-skill-names.json");
+  if (!existsSync(reservedPath)) {
+    errors.push("contracts/reserved-skill-names.json missing — the reserved-skill-name guard cannot run");
+  } else {
+    try {
+      const reserved = JSON.parse(readFileSync(reservedPath, "utf8"));
+      errors.push(...validateReservedNames(manifest, reserved, "contracts/reserved-skill-names.json"));
+    } catch (error) {
+      errors.push(`contracts/reserved-skill-names.json: invalid JSON: ${error.message}`);
+    }
+  }
 
   if (!base) return errors;
 

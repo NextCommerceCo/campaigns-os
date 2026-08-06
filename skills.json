@@ -12,12 +12,12 @@
       "description": "Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth."
     },
     {
-      "id": "next-campaigns-setup",
-      "name": "Campaign Setup",
-      "version": "1.0.0",
-      "path": "skills/next-campaigns-setup/SKILL.md",
+      "id": "next-campaigns-os-setup",
+      "name": "Campaigns OS Setup",
+      "version": "2.0.0",
+      "path": "skills/next-campaigns-os-setup/SKILL.md",
       "domain": "campaigns",
-      "description": "Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring."
+      "description": "Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring. Formerly next-campaigns-setup; renamed to release that name to the published NextCommerceCo/skills scaffolder."
     },
     {
       "id": "next-campaigns-build",

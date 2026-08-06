@@ -1373,7 +1373,7 @@ function prepareBuild(args, options = {}) {
       required: !existsSync(resolve(targetRepo, outputDir)),
       target_repo: ".",
       output_dir: portable(resolve(targetRepo, outputDir)),
-      handoff_skill: existsSync(resolve(targetRepo, outputDir)) ? "next-campaigns-build" : "next-campaigns-setup",
+      handoff_skill: existsSync(resolve(targetRepo, outputDir)) ? "next-campaigns-build" : "next-campaigns-os-setup",
       handoff_artifact: ".campaign-runtime/setup-handoff.json",
       reason: existsSync(resolve(targetRepo, outputDir))
         ? "Target campaign output directory already exists."
@@ -1582,7 +1582,7 @@ function createAssemblyReport({ packetPath, contextPath, reportPath, specPath, s
       ? { stage: "collect-inputs", owner: "operator", action: "Resolve source/page blockers before build." }
       : {
           stage: scaffoldRequired ? "setup" : "assembly",
-          owner: scaffoldRequired ? "next-campaigns-setup" : "next-campaigns-build",
+          owner: scaffoldRequired ? "next-campaigns-os-setup" : "next-campaigns-build",
           action: scaffoldRequired ? "Run setup before build." : "Run build with this packet and context.",
         },
   };
@@ -5508,7 +5508,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     return actions;
   }
   if (result.stage === "setup") {
-    push("setup_skill", "skill", "next-campaigns-setup", "Prepare the target page-kit structure and agent context, then record stages.setup in the assembly report.");
+    push("setup_skill", "skill", "next-campaigns-os-setup", "Prepare the target page-kit structure and agent context, then record stages.setup in the assembly report.");
   } else if (result.stage === "build") {
     push("build_skill", "skill", "next-campaigns-build", "Assemble the campaign per the build prompt, then record stages.assembly in the assembly report.");
     if (themeGate?.status === "blocked") {
@@ -5597,7 +5597,7 @@ Rules:
 
 function setupPrompt(packetPath, contextPath, reportPath, packet) {
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
-  return `Use next-campaigns-setup for this Campaigns OS handoff.
+  return `Use next-campaigns-os-setup for this Campaigns OS handoff.
 
 Read first:
 - Build Packet: ${packetPath}
@@ -5820,11 +5820,11 @@ function buildNextStep(errors, warnings, derived, report = null) {
     stage: derived.scaffold_required ? "setup" : "assembly",
     status: warnings.length ? "ready_with_warnings" : "ready",
     owner: derived.scaffold_required ? "setup" : "build",
-    default_skill: derived.scaffold_required ? "next-campaigns-setup" : "next-campaigns-build",
+    default_skill: derived.scaffold_required ? "next-campaigns-os-setup" : "next-campaigns-build",
     command: `campaigns-os next ${derived.scaffold_required ? "setup" : "build"} --packet ${derived.packet_path}`,
     actions: actions.length ? actions : [
       derived.scaffold_required
-        ? "Run next-campaigns-setup, then next-campaigns-build, polish, deploy, and QA."
+        ? "Run next-campaigns-os-setup, then next-campaigns-build, polish, deploy, and QA."
         : "Run next-campaigns-build, then polish, deploy, and QA.",
     ],
     blocked_stages: [...new Set(blockedStages)],
