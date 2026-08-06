@@ -95,6 +95,10 @@ export function assessAssemblySourcePackageFreshnessWaivers(report, now = Date.n
       // expires_at must parse as a real timestamp: an unparseable value is a
       // malformed record the gate refuses to honor, and an explicit expiry
       // that has passed dominates any review_condition on the same record.
+      // The boundary is inclusive — expires_at exactly equal to now is
+      // expired. Selection is first-valid-wins: expired and invalid records
+      // are never selected regardless of position, so order only matters
+      // between multiple currently-valid waivers.
       const parsed = Date.parse(expiresAt);
       if (Number.isNaN(parsed)) {
         assessment.invalid.push(waiver);
@@ -378,6 +382,8 @@ export function evaluatePolishGate({ report, required = false, now = Date.now() 
       code: "polish.waiver_expires_at_invalid",
       reason: `Source freshness waiver has an unparseable expires_at (${JSON.stringify(invalid.expires_at)}). Record a valid ISO 8601 timestamp, or remove the malformed waiver, before Polish/QA.`,
       build_fingerprint: buildFingerprint,
+      source_package_material_fingerprint: currentSourcePackageFingerprint,
+      assembly_source_package_material_fingerprint: assemblySourcePackageFingerprint,
       waiver: invalid,
       required_actions: [
         {

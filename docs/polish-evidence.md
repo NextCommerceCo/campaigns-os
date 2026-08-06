@@ -169,8 +169,11 @@ the fingerprint fields/blocker codes; attribution (`waived_by` or `owner`); a
 timestamp (`waived_at` or `created_at`); and a bound (`expires_at` or
 `review_condition`). When `expires_at` is present it must be a parseable
 timestamp (ISO 8601): an unparseable value blocks the gate with
-`polish.waiver_expires_at_invalid`, and an expiry in the past means the waiver
-is **not** honored — the freshness block fires as if no waiver were recorded
+`polish.waiver_expires_at_invalid`, and an expiry at or before the evaluation
+instant means the waiver is **not** honored (the boundary is inclusive — do
+not record the current run timestamp as `expires_at`; give the waiver real
+headroom). An expired waiver means the freshness block fires as if no waiver
+were recorded
 (the verdict names the expired waiver so a fresh one can be recorded
 deliberately). Waived runs pass with status `waived`, never silently.
 
