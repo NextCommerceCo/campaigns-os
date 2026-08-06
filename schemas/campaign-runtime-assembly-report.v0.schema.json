@@ -257,7 +257,11 @@
         "owner": { "type": ["string", "null"] },
         "waived_at": { "type": ["string", "null"] },
         "created_at": { "type": ["string", "null"] },
-        "expires_at": { "type": ["string", "null"] },
+        "expires_at": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})?)?$",
+          "description": "ISO 8601 date or date-time. The polish gate parses this value: an unparseable string blocks with polish.waiver_expires_at_invalid, and an expiry at or before the evaluation instant (inclusive boundary) means the waiver is not honored."
+        },
         "review_condition": { "type": ["string", "null"] },
         "evidence_refs": { "type": "array" }
       }
