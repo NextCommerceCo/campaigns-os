@@ -66,3 +66,10 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node ./scripts/check-skill-versions.mjs --base "${{ github.event.pull_request.base.sha }}"
         working-directory: campaigns-os
+      # Same discipline for the downstream contract: a hashed supported-surface
+      # file (runtime schemas) changed in this PR must advance surface_version,
+      # so consumers can see the contract move in one place.
+      - name: Changed supported surface advances surface_version
+        if: github.event_name == 'pull_request'
+        run: node ./scripts/check-supported-surface.mjs --base "${{ github.event.pull_request.base.sha }}"
+        working-directory: campaigns-os

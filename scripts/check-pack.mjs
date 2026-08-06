@@ -77,9 +77,25 @@ try {
     fail(`require() of the packed bundle failed (require(ESM) on node ${process.version}): ${err.message}`);
   }
 
-  // 5. Bundle-size visibility (Codex: a registry does nothing for bundle size).
+  // 5. Supported surface ships in the REAL tarball. check-supported-surface.mjs
+  // verifies files[] declarations structurally; this closes the gap between
+  // declaration and reality (nested .npmignore, npm's mandatory excludes, glob
+  // semantics) by asserting against the extracted pack itself. Also covers the
+  // bin entry, which nothing above touches.
+  const surface = JSON.parse(readFileSync(join(ROOT, "contracts/supported-surface.json"), "utf8"));
+  const surfacePaths = [
+    ...Object.keys(surface.hashed ?? {}),
+    ...(surface.named ?? []),
+    ...Object.values(pkg.bin ?? {}),
+  ];
+  const missingSurface = surfacePaths.filter((p) => !existsSync(join(pkgRoot, p)));
+  if (missingSurface.length) {
+    fail(`supported-surface files missing from the packed tarball: ${missingSurface.join(", ")}`);
+  }
+
+  // 6. Bundle-size visibility (Codex: a registry does nothing for bundle size).
   const kb = (statSync(distEntry).size / 1024).toFixed(1);
-  console.log(`pack check passed: campaign-spec subpath ships dist (${kb} KB entry), imports clean, no dev cruft`);
+  console.log(`pack check passed: campaign-spec subpath ships dist (${kb} KB entry), imports clean, surface shipped, no dev cruft`);
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

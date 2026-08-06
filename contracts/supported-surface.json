@@ -1,0 +1,62 @@
+{
+  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
+  "surface_version": "1.0.0",
+  "package_exports": [
+    "./campaign-spec"
+  ],
+  "bin": [
+    "campaigns-os"
+  ],
+  "cli_commands": [
+    "start",
+    "prepare-build",
+    "build",
+    "doctor",
+    "standardize",
+    "standardization-report",
+    "qa",
+    "findings",
+    "run-record",
+    "run"
+  ],
+  "hashed": {
+    "schemas/campaign-build-brief.v1.schema.json": {
+      "sha256": "d524003184131398dc15fdb84385af1be0de0c69d6c5ede7278689a5b6101b81"
+    },
+    "schemas/campaign-runtime-assembly-report.v0.schema.json": {
+      "sha256": "ca3144284c0771ec9b121f51d243d583370aa5c4ce3f50e0eb83cd588dc73992"
+    },
+    "schemas/campaign-runtime-build-context.v0.schema.json": {
+      "sha256": "4f77b8a1afd0bfba71242a49f121d175e2ef794e1c2232e6242879a589c4ca90"
+    },
+    "schemas/campaign-runtime-build-packet.v0.schema.json": {
+      "sha256": "7ec04298da3ed5667056b48ab99571500e5248b0d5433bd487026e05c8bd413a"
+    },
+    "schemas/campaigns-os-run-record.v0.schema.json": {
+      "sha256": "51c7441e73d693d42d201676e35714d94a749b4174fe678d4f4c68e855eba496"
+    },
+    "schemas/campaigns-os-workflow-finding.v0.schema.json": {
+      "sha256": "41ff370de4395149781d7e8c4ad6d7d4e2f896eb2030944399d36f1237726a20"
+    },
+    "schemas/source-html-manifest.v0.schema.json": {
+      "sha256": "7581509683367f88fb64e7c963b727d69c45e7b0e10a6b2f0314f56a54399eb1"
+    }
+  },
+  "named": [
+    "CONTEXT.md",
+    "compatibility.json",
+    "contracts/supported-surface.json",
+    "bin/campaigns-os.mjs",
+    "skills.json",
+    "skills.sh",
+    "docs/supported-surface.md",
+    "docs/campaigns-os-build-flow.md",
+    "docs/build-packet.md",
+    "docs/campaign-build-brief.md",
+    "docs/campaign-standardization-report.md",
+    "docs/brand-theme-bridge.md",
+    "docs/qa-and-test-orders.md",
+    "docs/versioning.md",
+    "docs/workflow-findings-sidecar.md"
+  ]
+}
