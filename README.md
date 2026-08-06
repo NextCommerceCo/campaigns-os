@@ -134,6 +134,7 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 - [Quickstart](docs/quickstart.md)
 - [Access Model](docs/access-model.md)
 - [Build Packet](docs/build-packet.md)
+- [Supported Surface](docs/supported-surface.md) — what downstream consumers may depend on, and the gate that enforces it
 - [Brand Theme Bridge](docs/brand-theme-bridge.md)
 - [CampaignSpec Authoring Examples](docs/campaignspec-authoring-examples.md)
 - [Campaigns OS Build Flow](docs/campaigns-os-build-flow.md)

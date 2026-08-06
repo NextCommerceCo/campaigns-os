@@ -45,6 +45,8 @@
   "named": [
     "CONTEXT.md",
     "compatibility.json",
+    "contracts/supported-surface.json",
+    "bin/campaigns-os.mjs",
     "skills.json",
     "skills.sh",
     "docs/supported-surface.md",
