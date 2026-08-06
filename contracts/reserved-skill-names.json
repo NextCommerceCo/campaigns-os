@@ -1,0 +1,13 @@
+{
+  "_note": "Skill ids this repo must never publish under. skills.sh installs into shared per-machine skill directories (~/.claude/skills, ~/.codex/skills, ~/.agents/skills) keyed on name — one name, one slot, last writer wins silently. Each id below is already published to that slot by another repo, so a skills.json entry reusing it would silently overwrite (or be overwritten by) a different skill wearing the same name. That happened once: this repo's Build-Packet setup skill shipped as next-campaigns-setup, colliding with the published page-kit scaffolder of the same name, and was renamed to next-campaigns-os-setup in 2026-08. check-skill-versions.mjs fails the build if a skills.json id reappears here — add to this list when a new externally published next-* skill name becomes load-bearing.",
+  "source": "NextCommerceCo/skills skills.json — the published install route documented on developers.nextcommerce.com",
+  "reserved": {
+    "next-campaigns-setup": "Published page-kit scaffolder (campaign-init --non-interactive route). This repo's former skill of this name is now next-campaigns-os-setup.",
+    "next-theme-figma": "Published theme skill.",
+    "next-theme-dev": "Published theme skill.",
+    "next-bulk-fulfill": "Published bulk-operations skill.",
+    "next-bulk-move": "Published bulk-operations skill.",
+    "next-bulk-subscription": "Published bulk-operations skill.",
+    "next-ops-scan": "Published ops skill."
+  }
+}

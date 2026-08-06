@@ -2,6 +2,15 @@
   "name": "campaigns-os-skills",
   "description": "Skills bundled with Campaigns OS. `skills.sh` installs these into the shared agent skill directories (~/.claude/skills, ~/.codex/skills), so each one is a versioned package: bump the version whenever a package changes.",
   "homepage": "https://github.com/NextCommerceCo/campaigns-os",
+  "retired_skills": [
+    {
+      "id": "next-campaigns-setup",
+      "replaced_by": "next-campaigns-os-setup",
+      "retired": "2026-08-06",
+      "detect_description_prefix": "Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet",
+      "reason": "Name released to the published page-kit scaffolder (NextCommerceCo/skills). install-skills removes OUR stale installed copy from shared skill directories when frontmatter name + description prefix match; anything else wearing the name is left alone."
+    }
+  ],
   "skills": [
     {
       "id": "next-campaigns-os",
@@ -12,12 +21,12 @@
       "description": "Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth."
     },
     {
-      "id": "next-campaigns-setup",
-      "name": "Campaign Setup",
-      "version": "1.0.0",
-      "path": "skills/next-campaigns-setup/SKILL.md",
+      "id": "next-campaigns-os-setup",
+      "name": "Campaigns OS Setup",
+      "version": "2.0.0",
+      "path": "skills/next-campaigns-os-setup/SKILL.md",
       "domain": "campaigns",
-      "description": "Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring."
+      "description": "Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring. Formerly next-campaigns-setup; renamed to release that name to the published NextCommerceCo/skills scaffolder."
     },
     {
       "id": "next-campaigns-build",

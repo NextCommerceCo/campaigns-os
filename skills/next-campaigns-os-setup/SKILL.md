@@ -1,10 +1,10 @@
 ---
-name: next-campaigns-setup
-version: 1.0.0
-description: Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring.
+name: next-campaigns-os-setup
+version: 2.0.0
+description: Bootstrap or prepare a target page-kit campaign repo from a doctor-cleared Campaigns OS Build Packet before full build wiring. Formerly installed as next-campaigns-setup; renamed 2026-08 to stop colliding with the published NextCommerceCo/skills scaffolder of that name.
 ---
 
-# Next Campaigns Setup
+# Next Campaigns OS Setup
 
 Use this skill when the Build Packet doctor says setup is required before assembly.
 
