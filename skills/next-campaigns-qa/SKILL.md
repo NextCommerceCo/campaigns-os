@@ -1,5 +1,6 @@
 ---
 name: next-campaigns-qa
+version: 1.0.0
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
