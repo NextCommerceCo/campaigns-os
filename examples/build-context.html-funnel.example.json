@@ -62,7 +62,7 @@
     "required": true,
     "target_repo": "/path/to/page-kit-repo",
     "output_dir": "/path/to/page-kit-repo/src/example-campaign",
-    "handoff_skill": "next-campaigns-setup",
+    "handoff_skill": "next-campaigns-os-setup",
     "handoff_artifact": ".campaign-runtime/setup-handoff.json",
     "reason": "Target campaign output directory is missing; run Page Kit scaffold before build."
   },

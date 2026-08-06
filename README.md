@@ -41,7 +41,7 @@ The command writes these target-repo artifacts:
 - `.campaign-runtime/doctor-output.json`
 - `.campaign-runtime/agent-context/*`
 
-Then ask your AI tool to continue from the emitted handoff. Fresh target repos usually start with `next-campaigns-setup`; existing campaign directories can move directly to `next-campaigns-build`.
+Then ask your AI tool to continue from the emitted handoff. Fresh target repos usually start with `next-campaigns-os-setup`; existing campaign directories can move directly to `next-campaigns-build`.
 
 ## Source Files
 
