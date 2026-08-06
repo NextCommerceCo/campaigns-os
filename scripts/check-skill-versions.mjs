@@ -9,10 +9,10 @@
  * path (~/.claude/skills, ~/.codex/skills) next to skills published from other
  * repos — `skills.sh` copies them in by name. Until now none carried a version,
  * so an install could silently overwrite a different skill of the same name and
- * nothing on the machine could tell which build was on disk: not this repo, not
- * next-mind's setup.sh --check (which only validates its own manifest), not the
- * installer. An unversioned skill is undiagnosable drift. This turns it into a
- * build failure instead.
+ * nothing on the machine could tell which build was on disk: not this repo, and
+ * not the installers, which can only compare versions that exist. An
+ * unversioned skill is undiagnosable drift. This turns it into a build failure
+ * instead.
  *
  * Direction of the check: manifest <-> frontmatter <-> disk must agree in BOTH
  * directions. A skill on disk with no manifest entry fails just as loudly as a
