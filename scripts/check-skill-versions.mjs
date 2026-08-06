@@ -94,18 +94,31 @@ export function versionMap(manifest, label) {
 // A changed file belongs to a skill when it sits under that skill's package
 // directory. Keyed on the manifest's declared path so a future layout change
 // moves the packages without silently disabling the bump requirement.
-export function changedSkillIds(paths, packageDirs) {
+export function changedSkillIds(paths, packagePairs) {
   const changed = new Set();
   for (const path of paths) {
-    for (const [id, dir] of packageDirs) {
+    for (const [id, dir] of packagePairs) {
       if (path === dir || path.startsWith(`${dir}/`)) changed.add(id);
     }
   }
   return changed;
 }
 
+// PAIRS, deliberately not a Map: a rename keeps the id and moves the path, so
+// the old and new manifests contribute two different dirs for one id. Collapsing
+// them into a Map keeps only one, and changes under the other side stop counting
+// as a change to that package — which would let a rename skip its own bump.
 export function packageDirs(manifest) {
-  return new Map(manifest.skills.map((entry) => [entry.id, dirname(entry.path ?? "")]));
+  return manifest.skills.map((entry) => [entry.id, dirname(entry.path ?? "")]);
+}
+
+// The package directory a manifest path belongs to, as named directly under
+// skills/. Must agree with what listSkillDirs() reports, so a SKILL.md nested
+// deeper than skills/<pkg>/SKILL.md still resolves to <pkg> on both sides of
+// the parity check rather than to its immediate parent.
+export function packageDirName(path) {
+  const segments = String(path).split("/");
+  return segments[0] === SKILLS_DIR && segments.length > 2 ? segments[1] : null;
 }
 
 export function validateParity(manifest, { readSkill, listSkillDirs }) {
@@ -118,7 +131,8 @@ export function validateParity(manifest, { readSkill, listSkillDirs }) {
       errors.push(`${id}: missing path`);
       continue;
     }
-    declared.add(dirname(path).split("/").pop());
+    const packageDir = packageDirName(path);
+    if (packageDir) declared.add(packageDir);
     const text = readSkill(path);
     if (text === null) {
       errors.push(`${id}: SKILL.md missing at ${path}`);
@@ -170,6 +184,18 @@ function git(...args) {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8" });
 }
 
+function gitSucceeds(...args) {
+  try {
+    execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const refExists = (ref) => gitSucceeds("rev-parse", "--verify", "--quiet", `${ref}^{commit}`);
+const blobExists = (ref, path) => gitSucceeds("cat-file", "-e", `${ref}:${path}`);
+
 function validate(base) {
   const manifestPath = join(root, "skills.json");
   let manifest;
@@ -197,19 +223,26 @@ function validate(base) {
 
   if (!base) return errors;
 
+  // Decide "is there a manifest at the base?" by exit code BEFORE the work,
+  // rather than by pattern-matching a failure message afterwards. A message
+  // test cannot tell an introducing PR from a typo'd ref or a malformed old
+  // manifest, and this gate must never report green because it misread an
+  // error it did not expect.
+  if (!blobExists(base, "skills.json")) {
+    if (!refExists(base)) {
+      return [...errors, `base comparison failed: ${JSON.stringify(base)} is not a resolvable ref`];
+    }
+    console.log(`No skills.json at ${base}; skipping bump comparison (introducing change).`);
+    return errors;
+  }
+
   try {
     const oldManifest = loadManifest(git("show", `${base}:skills.json`), `${base}:skills.json`);
     const oldVersions = versionMap(oldManifest, `${base}:skills.json.skills`);
     const changedPaths = git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
-    const dirs = new Map([...packageDirs(manifest), ...packageDirs(oldManifest)]);
-    errors.push(...validateBumps(oldVersions, currentVersions, changedSkillIds(changedPaths, dirs)));
+    const pairs = [...packageDirs(manifest), ...packageDirs(oldManifest)];
+    errors.push(...validateBumps(oldVersions, currentVersions, changedSkillIds(changedPaths, pairs)));
   } catch (error) {
-    // A base that predates skills.json has nothing to compare; that is the
-    // introducing PR, not a violation.
-    if (/does not exist|exists on disk, but not in/.test(error.message ?? "")) {
-      console.log(`No skills.json at ${base}; skipping bump comparison (introducing change).`);
-      return errors;
-    }
     errors.push(`base comparison failed for ${JSON.stringify(base)}: ${error.message}`);
   }
 

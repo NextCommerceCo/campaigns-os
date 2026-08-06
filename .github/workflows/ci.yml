@@ -12,9 +12,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: campaigns-os
-          # Full history so check-skill-versions can diff a PR against its base
-          # sha and require a version bump for every changed skill package.
-          fetch-depth: 0
+          # Full history ONLY on pull_request, where check-skill-versions diffs
+          # against the base sha to require a version bump per changed skill
+          # package. Pushes to main run no bump step, so they stay shallow.
+          # Quoted values on purpose: Actions treats the number 0 as falsy, so
+          # an unquoted `&& 0 || 1` collapses to 1 in both branches.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       # Pin the templates checkout to the commit the vendored catalog snapshot was
       # built from (`_synced_from_sha`), so check-template-doctrine validates the
       # partial defaults the agent actually consumes rather than drifting live HEAD.

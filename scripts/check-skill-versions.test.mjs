@@ -8,6 +8,7 @@ import {
   loadManifest,
   versionMap,
   packageDirs,
+  packageDirName,
   changedSkillIds,
   validateParity,
   validateBumps,
@@ -169,9 +170,48 @@ test("changedSkillIds maps changed files to their package, ignoring unrelated pa
 });
 
 test("changedSkillIds does not match a sibling directory sharing a name prefix", () => {
-  const dirs = new Map([["a", "skills/a"]]);
+  const dirs = [["a", "skills/a"]];
   assert.deepEqual([...changedSkillIds(["skills/ab/SKILL.md"], dirs)], []);
   assert.deepEqual([...changedSkillIds(["skills/a/SKILL.md"], dirs)], ["a"]);
+});
+
+test("a renamed package keeps BOTH dirs, so a move still counts as a change", () => {
+  // The rename case this gate has to survive: same id, path moves. Pairs (not a
+  // Map) keep both dirs, so edits on either side still require the bump.
+  const current = loadManifest(
+    JSON.stringify({ skills: [{ id: "a", version: "1.0.0", path: "skills/new-name/SKILL.md" }] }),
+    "m",
+  );
+  const old = loadManifest(
+    JSON.stringify({ skills: [{ id: "a", version: "1.0.0", path: "skills/old-name/SKILL.md" }] }),
+    "m",
+  );
+  const pairs = [...packageDirs(current), ...packageDirs(old)];
+  assert.deepEqual([...changedSkillIds(["skills/old-name/SKILL.md"], pairs)], ["a"]);
+  assert.deepEqual([...changedSkillIds(["skills/new-name/SKILL.md"], pairs)], ["a"]);
+  assert.deepEqual(
+    validateBumps(new Map([["a", "1.0.0"]]), new Map([["a", "1.0.0"]]), new Set(["a"])),
+    ["a: package changed but version did not advance (1.0.0 -> 1.0.0)"],
+  );
+});
+
+test("packageDirName resolves the package dir under skills/, however deep the SKILL.md sits", () => {
+  assert.equal(packageDirName("skills/next-campaigns-os/SKILL.md"), "next-campaigns-os");
+  assert.equal(packageDirName("skills/next-campaigns-os/src/SKILL.md"), "next-campaigns-os");
+  assert.equal(packageDirName("elsewhere/thing/SKILL.md"), null);
+  assert.equal(packageDirName("skills/SKILL.md"), null);
+});
+
+test("parity keys agree for a nested SKILL.md instead of falsely flagging the package", () => {
+  const manifest = loadManifest(
+    JSON.stringify({ skills: [{ id: "deep", version: "1.0.0", path: "skills/deep/src/SKILL.md" }] }),
+    "m",
+  );
+  const errors = validateParity(manifest, {
+    readSkill: (path) => (path === "skills/deep/src/SKILL.md" ? skillDoc("deep", "1.0.0") : null),
+    listSkillDirs: () => ["deep"],
+  });
+  assert.deepEqual(errors, [], "reverse check must key on the package dir, not the SKILL.md parent");
 });
 
 test("validateBumps requires an advance for every changed package", () => {
