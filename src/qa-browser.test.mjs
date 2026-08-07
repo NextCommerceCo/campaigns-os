@@ -537,3 +537,92 @@ test("rejected order-create detection matches only the create endpoint with a 4x
     { status: 422, url: "https://api.example.test/api/v1/carts/calculate/", body: {} },
   ] }), null);
 });
+
+test("voucher extraction skips identity-less entries so bare amount rows cannot suppress the discount_total fallback", () => {
+  const { extractOrderVouchers, assessCouponApplication } = __qaBrowserTestHooks;
+
+  // An amount-bearing entry with no code/name is not an identifiable voucher.
+  assert.deepEqual(extractOrderVouchers({ vouchers: [{ amount: "5.00" }] }), []);
+
+  // ...so the discount_total weak-evidence basis still fires for that shape.
+  const weak = assessCouponApplication("SAVE10", {
+    vouchers: extractOrderVouchers({ vouchers: [{ amount: "5.00" }] }),
+    totalDiscount: 5,
+  });
+  assert.equal(weak.ok, true);
+  assert.equal(weak.basis, "discount_total");
+  assert.equal(weak.weak_evidence, true);
+});
+
+test("line-price delta handles per-unit price semantics and unmatched bonus lines", () => {
+  const { assessCouponApplication, linePriceDeltaEvidence } = __qaBrowserTestHooks;
+  const events = { responses: [
+    { status: 200, url: "https://campaigns.example.test/api/v1/campaigns/", body: { packages: [
+      { ref_id: 3, qty: 3, price: "27.00", price_total: "81.00", product_sku: "SKU_A" },
+    ] } },
+  ] };
+
+  // Per-unit FULL price (27.00 × 3 == 81.00 list) must read as undiscounted,
+  // not as a fake (qty-1)× discount — a bogus coupon must fail here.
+  const perUnitFull = assessCouponApplication("BOGUS", {
+    vouchers: [], totalDiscount: 0, events,
+    lines: [{ title: "A", quantity: 3, sku: "SKU_A", price_incl_tax: "27.00" }],
+  });
+  assert.equal(perUnitFull.ok, false);
+  assert.equal(perUnitFull.basis, "line_price_delta");
+  assert.equal(perUnitFull.evidence.charged_total, 81);
+
+  // Per-unit DISCOUNTED price (25.65 × 3 = 76.95) reads as the correct delta.
+  const perUnitDiscounted = assessCouponApplication("SAVE5", {
+    vouchers: [], totalDiscount: 0, events,
+    lines: [{ title: "A", quantity: 3, sku: "SKU_A", price_incl_tax: "25.65" }],
+  });
+  assert.equal(perUnitDiscounted.ok, true);
+  assert.equal(perUnitDiscounted.weak_evidence, true);
+  assert.equal(perUnitDiscounted.evidence.charged_total, 76.95);
+  assert.equal(perUnitDiscounted.evidence.delta, 4.05);
+
+  // A bonus/gift line with no campaign-package equivalent must not defeat the
+  // delta for the line that does resolve.
+  const withBonusLine = linePriceDeltaEvidence([
+    { title: "A", quantity: 3, sku: "SKU_A", price_incl_tax: "76.95" },
+    { title: "Free Gift", quantity: 1, sku: "GIFT_SKU", price_incl_tax: "0.00" },
+  ], events);
+  assert.equal(withBonusLine.list_total, 81);
+  assert.equal(withBonusLine.charged_total, 76.95);
+  assert.equal(withBonusLine.unmatched_line_count, 1);
+  assert.equal(withBonusLine.lines.length, 1);
+});
+
+test("rejected order-create: the most recent create response decides, and query strings still match", () => {
+  const { rejectedOrderCreateResponse } = __qaBrowserTestHooks;
+
+  // Transient 400 followed by a successful 201 retry → not rejected.
+  assert.equal(rejectedOrderCreateResponse({ responses: [
+    { status: 400, url: "https://api.example.test/api/v1/orders/", body: {} },
+    { status: 201, url: "https://api.example.test/api/v1/orders/", body: {} },
+  ] }), null);
+
+  // A create URL carrying a query string is still the create endpoint.
+  const withQuery = rejectedOrderCreateResponse({ responses: [
+    { status: 400, url: "https://api.example.test/api/v1/orders/?expand=line_items", body: {} },
+  ] });
+  assert.equal(withQuery.status, 400);
+});
+
+test("network-level order-create failures are detected, but never alongside a successful create", () => {
+  const { failedOrderCreateRequest } = __qaBrowserTestHooks;
+  const failedCreate = { url: "https://api.example.test/api/v1/orders/", failure: "net::ERR_CONNECTION_RESET" };
+
+  const detected = failedOrderCreateRequest({ responses: [], failed: [
+    { url: "https://api.example.test/api/v1/carts/", failure: "net::ERR_ABORTED" },
+    failedCreate,
+  ] });
+  assert.equal(detected.failure, "net::ERR_CONNECTION_RESET");
+
+  // An aborted duplicate next to a 2xx create is not a failed order.
+  assert.equal(failedOrderCreateRequest({
+    responses: [{ status: 201, url: "https://api.example.test/api/v1/orders/", body: {} }],
+    failed: [failedCreate],
+  }), null);
+});

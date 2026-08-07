@@ -51,6 +51,7 @@ const DEFAULT_MAX_TEST_ORDERS = 6;
 const DEFAULT_QA_TEST_EMAIL = "qa-test@campaigns-os.test";
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 const ORDER_UPSELLS_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/upsells\/?(?:[?#].*)?$/i;
+const ORDER_CREATE_RESPONSE_PATTERN = /\/api\/v1\/orders\/?(?:[?#].*)?$/i;
 
 export async function runBrowserChecks(topologies, args = {}, options = {}) {
   const browser = await launchChromium(args);
@@ -2181,16 +2182,38 @@ async function selectPackageCard(page, item) {
   throw new Error(`--select-package ${item.packageId}: no rendered card matched any of ${selectors.join(", ")}`);
 }
 
-async function packageCardSelectionState(page, selector) {
-  await page.waitForTimeout(500);
-  return page.locator(selector).first().evaluate((element) => {
-    const card = element.closest("[data-next-selector-card], [data-next-bundle-card]") || element;
-    const isSelected = (node) => node.getAttribute("data-next-selected") === "true" || node.classList.contains("next-selected");
-    if (isSelected(card) || Array.from(card.querySelectorAll("*")).some(isSelected)) return "selected";
-    const group = card.closest("[data-next-bundle-selector], [data-next-selector-id], [data-next-cart-selector]") || card.parentElement;
-    const markerExists = Boolean(group?.querySelector('[data-next-selected], .next-selected'));
-    return markerExists ? "unselected" : "unknown";
-  }).catch(() => "unknown");
+// Bounded retry instead of a single fixed wait: SPA selectors can propagate
+// the selected-state marker asynchronously, so "unselected" is only final
+// after the polling budget is spent. "unknown" (no marker contract exposed)
+// and "selected" return immediately.
+async function packageCardSelectionState(page, selector, { attempts = 4, intervalMs = 500 } = {}) {
+  let state = "unknown";
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await page.waitForTimeout(intervalMs);
+    state = await page.locator(selector).first().evaluate((element) => {
+      const card = element.closest("[data-next-selector-card], [data-next-bundle-card]") || element;
+      const isSelected = (node) => node.getAttribute("data-next-selected") === "true" || node.classList.contains("next-selected");
+      if (isSelected(card) || Array.from(card.querySelectorAll("*")).some(isSelected)) return "selected";
+      const group = card.closest("[data-next-bundle-selector], [data-next-selector-id], [data-next-cart-selector]");
+      if (group) {
+        return group.querySelector('[data-next-selected], .next-selected') ? "unselected" : "unknown";
+      }
+      // No known selector-group container: only same-kind sibling cards can
+      // prove a selected-state contract exists. An arbitrary ancestor's
+      // markers (a payment-method selector, another widget) must not turn an
+      // honest "unknown" into a false "unselected".
+      const siblingCards = Array.from(card.parentElement?.children || [])
+        .filter((node) => node !== card && node.matches("[data-next-selector-card], [data-next-bundle-card], [data-next-package-id], [data-next-bundle-id]"));
+      const siblingMarker = siblingCards.some((node) => (
+        node.hasAttribute("data-next-selected")
+        || node.classList.contains("next-selected")
+        || node.querySelector('[data-next-selected], .next-selected')
+      ));
+      return siblingMarker ? "unselected" : "unknown";
+    }).catch(() => "unknown");
+    if (state !== "unselected") return state;
+  }
+  return state;
 }
 
 // --- Coupon application (--apply-coupon) ---
@@ -2214,8 +2237,10 @@ const COUPON_INPUT_SELECTORS = Object.freeze([
 async function applyRequestedCoupon(page, code) {
   let input = await firstUsableCouponInput(page);
   if (!input) {
-    // A collapsed "Have a coupon?" disclosure is common; reveal and retry once.
-    await clickVisibleControlByText(page, /coupon|promo|discount code|voucher/i).catch(() => {});
+    // A collapsed "Have a coupon?" disclosure is common; reveal and retry
+    // once. Scoped to form containers so page chrome that merely mentions
+    // promos/vouchers (nav links, marketing copy) is never clicked.
+    await clickVisibleControlByText(page, /coupon|promo|discount code|voucher/i, { within: "form" }).catch(() => {});
     await page.waitForTimeout(750);
     input = await firstUsableCouponInput(page);
   }
@@ -2227,10 +2252,11 @@ async function applyRequestedCoupon(page, code) {
     // shopper-facing trigger (exit-intent click, etc.) is NOT exercised, so the
     // step detail records the mechanism for the verdict reader.
     const sdkApplied = await applyCouponViaSdkApi(page, code);
-    if (sdkApplied) {
+    if (sdkApplied.available) {
       await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
       await page.waitForTimeout(1000);
-      return `no rendered coupon input; applied ${code} via SDK window.next.applyCoupon API (shopper-facing trigger not exercised); proof deferred to persisted-order voucher read-back`;
+      const returned = sdkApplied.result_summary != null ? `; SDK returned ${sdkApplied.result_summary}` : "";
+      return `no rendered coupon input; applied ${code} via SDK window.next.applyCoupon API (shopper-facing trigger not exercised)${returned}; proof deferred to persisted-order voucher read-back`;
     }
     throw new Error(`--apply-coupon ${code}: no coupon/promo input found on the checkout page (looked for ${COUPON_INPUT_SELECTORS.join(", ")}) and the SDK applyCoupon API is unavailable`);
   }
@@ -2246,9 +2272,18 @@ async function applyRequestedCoupon(page, code) {
 async function applyCouponViaSdkApi(page, code) {
   return page.evaluate(async (couponCode) => {
     const apply = window.next?.applyCoupon;
-    if (typeof apply !== "function") return false;
-    await apply.call(window.next, couponCode);
-    return true;
+    if (typeof apply !== "function") return { available: false };
+    const result = await apply.call(window.next, couponCode);
+    // Surface the SDK's own verdict in the step detail — a resolved-but-falsy
+    // or { ok: false } result means the pathway silently no-oped even though
+    // nothing threw, and the read-back would otherwise be the only clue.
+    let summary;
+    try {
+      summary = result === undefined ? "undefined" : JSON.stringify(result);
+    } catch {
+      summary = String(result);
+    }
+    return { available: true, result_summary: String(summary).slice(0, 200) };
   }, code).catch((error) => {
     throw new Error(`--apply-coupon ${code}: SDK applyCoupon API call failed: ${error instanceof Error ? error.message : String(error)}`);
   });
@@ -2269,7 +2304,7 @@ async function clickCouponApplyControl(page, input) {
     await explicit.click({ timeout: 5000 }).catch(() => {});
     return "clicked explicit apply control";
   }
-  const clicked = await clickVisibleControlByText(page, /^\s*apply\s*(?:code|coupon|discount)?\s*$/i).catch(() => false);
+  const clicked = await clickVisibleControlByText(page, /^\s*apply\s*(?:code|coupon|discount)?\s*$/i, { within: "form" }).catch(() => false);
   if (clicked) return "clicked visible apply control";
   await input.press("Enter").catch(() => {});
   return "pressed Enter in the coupon input";
@@ -2282,18 +2317,22 @@ function extractOrderVouchers(order) {
     if (!Array.isArray(bucket)) continue;
     for (const entry of bucket) {
       if (!entry || typeof entry !== "object") continue;
-      entries.push({
-        code: stringArg(entry.code) || stringArg(entry.voucher_code) || stringArg(entry?.voucher?.code) || null,
-        name: stringArg(entry.name) || stringArg(entry?.voucher?.name) || null,
-        amount: entry.amount ?? entry.discount ?? null,
-      });
+      const code = stringArg(entry.code) || stringArg(entry.voucher_code) || stringArg(entry?.voucher?.code) || null;
+      const name = stringArg(entry.name) || stringArg(entry?.voucher?.name) || null;
+      // Identity-less entries (bare amount rows) can neither prove nor
+      // disprove a specific code; keeping them would only inflate
+      // vouchers.length and suppress the discount_total fallback.
+      if (!code && !name) continue;
+      entries.push({ code, name, amount: entry.amount ?? entry.discount ?? null });
     }
   }
   return entries;
 }
 
+// total_discount_incl_tax deliberately last: it is tax-inflated relative to
+// the coupon's face value, so it only speaks when no tax-neutral key exists.
 function orderDiscountTotal(order) {
-  for (const value of [order?.total_discounts, order?.total_discount_incl_tax, order?.discount_total]) {
+  for (const value of [order?.total_discounts, order?.discount_total, order?.total_discount_incl_tax]) {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -2321,8 +2360,9 @@ function assessCouponApplication(code, { vouchers = [], totalDiscount = null, li
       requested_code: code,
       ok: true,
       basis: "discount_total",
+      weak_evidence: true,
       matched: [],
-      reason: `persisted order exposes no voucher entries but carries a ${discount} discount total; treated as applied (weak evidence)`,
+      reason: `persisted order exposes no voucher entries but carries a ${discount} discount total; treated as applied (weak evidence — the discount is not provably tied to the requested code)`,
     };
   }
   // Some platforms net the voucher into the line prices and itemize nothing:
@@ -2338,9 +2378,10 @@ function assessCouponApplication(code, { vouchers = [], totalDiscount = null, li
         requested_code: code,
         ok: true,
         basis: "line_price_delta",
+        weak_evidence: true,
         matched: [],
         evidence: delta,
-        reason: `persisted order itemizes no vouchers, but charged line total ${delta.charged_total} is below the campaign package list total ${delta.list_total} (delta ${delta.delta}); treated as applied (weak evidence)`,
+        reason: `persisted order itemizes no vouchers, but charged line total ${delta.charged_total} is below the campaign package list total ${delta.list_total} (delta ${delta.delta}); treated as applied (weak evidence — the discount is not provably tied to the requested code)`,
       };
     }
     return {
@@ -2365,21 +2406,39 @@ function linePriceDeltaEvidence(lines, events) {
   if (!events || !Array.isArray(lines) || !lines.length) return null;
   let listTotal = 0;
   let chargedTotal = 0;
+  let unmatchedLineCount = 0;
   const matchedLines = [];
   for (const line of lines) {
     const pkg = campaignPackageMetaForLine(events, line);
     const listPrice = packageListTotal(pkg);
-    const chargedPrice = Number(line.price_incl_tax ?? line.price);
-    if (!pkg || !Number.isFinite(listPrice) || !Number.isFinite(chargedPrice)) return null;
+    const declaredPrice = Number(line.price_incl_tax ?? line.price);
+    if (!pkg || !Number.isFinite(listPrice) || !Number.isFinite(declaredPrice)) {
+      // Bonus/gift/trial lines with no campaign-package equivalent must not
+      // defeat the delta for the lines that DO resolve.
+      unmatchedLineCount += 1;
+      continue;
+    }
+    // Persisted line-price semantics vary by platform shape: 29next stores the
+    // line TOTAL in price_incl_tax, other shapes store a per-unit price. Read
+    // it both ways and take the LARGEST reading that does not exceed the list
+    // total — the conservative (smallest) claimed discount. A per-unit full
+    // price (unit × qty == list) then correctly reads as undiscounted instead
+    // of as a fake (qty−1)× discount.
+    const quantity = Number(line.quantity || 1) || 1;
+    const readings = [declaredPrice, round2(declaredPrice * quantity)];
+    const notOverList = readings.filter((value) => value <= listPrice + 0.009);
+    const chargedPrice = notOverList.length ? Math.max(...notOverList) : Math.min(...readings);
     listTotal += listPrice;
     chargedTotal += chargedPrice;
     matchedLines.push({ title: line.title, quantity: line.quantity, package_ref_id: pkg.ref_id ?? null, list_price: round2(listPrice), charged_price: round2(chargedPrice) });
   }
+  if (!matchedLines.length) return null;
   return {
     list_total: round2(listTotal),
     charged_total: round2(chargedTotal),
     delta: round2(listTotal - chargedTotal),
     lines: matchedLines,
+    ...(unmatchedLineCount ? { unmatched_line_count: unmatchedLineCount } : {}),
   };
 }
 
@@ -2532,11 +2591,16 @@ async function waitForCheckoutResult(page, events = null) {
   const outcomeUrl = /ref_id=|receipt|upsell|thank|order|payment_failed/i;
   const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
+    if (page.isClosed()) throw new Error("checkout page closed during order submit");
     if (outcomeUrl.test(String(safePageUrl(page) || ""))) break;
-    const rejected = events ? rejectedOrderCreateResponse(events) : null;
-    if (rejected) {
-      const detail = typeof rejected.body?.detail === "string" ? `: ${trim(rejected.body.detail)}` : "";
-      throw new Error(`order create rejected: HTTP ${rejected.status}${detail}`);
+    if (events) {
+      const rejected = rejectedOrderCreateResponse(events);
+      if (rejected) {
+        const detail = typeof rejected.body?.detail === "string" ? `: ${trim(rejected.body.detail)}` : "";
+        throw new Error(`order create rejected: HTTP ${rejected.status}${detail}`);
+      }
+      const failed = failedOrderCreateRequest(events);
+      if (failed) throw new Error(`order create request failed: ${failed.failure || "network failure"}`);
     }
     await page.waitForTimeout(250);
   }
@@ -2545,17 +2609,35 @@ async function waitForCheckoutResult(page, events = null) {
   await page.waitForTimeout(1500);
 }
 
+// The MOST RECENT create response decides the outcome: SDKs/platforms retry
+// transient create failures, so [..., 400, 201] means the retry succeeded and
+// the earlier rejection is history, not the result.
 function rejectedOrderCreateResponse(events) {
   for (let index = events.responses.length - 1; index >= 0; index -= 1) {
     const response = events.responses[index];
-    if (/\/api\/v1\/orders\/?$/i.test(response.url) && response.status >= 400) return response;
+    if (!ORDER_CREATE_RESPONSE_PATTERN.test(response.url)) continue;
+    return response.status >= 400 ? response : null;
+  }
+  return null;
+}
+
+// Network-level failures (DNS, reset, abort) land in events.failed, not
+// events.responses. Only meaningful when no create response succeeded — an
+// aborted duplicate alongside a 2xx create is not a failed order.
+function failedOrderCreateRequest(events) {
+  const succeeded = events.responses.some((response) => (
+    ORDER_CREATE_RESPONSE_PATTERN.test(response.url) && response.status >= 200 && response.status < 300
+  ));
+  if (succeeded) return null;
+  for (let index = events.failed.length - 1; index >= 0; index -= 1) {
+    if (ORDER_CREATE_RESPONSE_PATTERN.test(events.failed[index].url)) return events.failed[index];
   }
   return null;
 }
 
 async function buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody = null, allowLateWait = true }) {
   if (allowLateWait) await waitForLateOrderEvidence(page, events);
-  const orderCreate = lastJsonResponse(events, /\/api\/v1\/orders\/?$/i);
+  const orderCreate = lastJsonResponse(events, ORDER_CREATE_RESPONSE_PATTERN);
   const orderRead = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i);
   const upsellOrderResponse = lastJsonResponse(events, ORDER_UPSELLS_RESPONSE_PATTERN);
   const orderBody = preferredOrderBody || upsellOrderResponse?.body || orderRead?.body || orderCreate?.body || null;
@@ -2629,7 +2711,7 @@ function assessOrderCreation({ orderCreate, orderRead, upsellOrderResponse, refI
 // landed in the event log yet, poll briefly for the late capture.
 async function waitForLateOrderEvidence(page, events, { timeoutMs = 4000, intervalMs = 250 } = {}) {
   const hasOrderEvidence = () => Boolean(
-    lastJsonResponse(events, /\/api\/v1\/orders\/?$/i)
+    lastJsonResponse(events, ORDER_CREATE_RESPONSE_PATTERN)
     || lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i)
     || lastJsonResponse(events, ORDER_UPSELLS_RESPONSE_PATTERN),
   );
@@ -2848,8 +2930,9 @@ function summarizeResponseBody(body) {
   };
 }
 
-async function clickVisibleControlByText(page, pattern) {
-  const controls = page.locator('button:visible, a:visible, [role="button"]:visible, input[type="submit"]:visible, input[type="button"]:visible, div[class*="button"]:visible, div[class*="btn"]:visible');
+async function clickVisibleControlByText(page, pattern, { within = null } = {}) {
+  const root = within ? page.locator(within) : page;
+  const controls = root.locator('button:visible, a:visible, [role="button"]:visible, input[type="submit"]:visible, input[type="button"]:visible, div[class*="button"]:visible, div[class*="btn"]:visible');
   const count = await controls.count();
   for (let index = 0; index < count; index += 1) {
     const control = controls.nth(index);
@@ -3405,6 +3488,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   linePriceDeltaEvidence,
   packageMatchesLine,
   rejectedOrderCreateResponse,
+  failedOrderCreateRequest,
   extractOrderVouchers,
   orderDiscountTotal,
   assessOrderCreation,
