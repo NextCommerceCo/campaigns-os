@@ -51,11 +51,16 @@ Options:
   --browser-width <px>            Browser viewport width. Default: 1440.
   --browser-height <px>           Browser viewport height. Default: 1200.
   --browser-timeout <ms>          Browser navigation timeout. Default: 30000.
-  --test-order <off|common|checkout|accept|decline|both|full|accept-decline[-accept...]>
+  --test-order <off|common|checkout|accept|decline|both|full|tiers[:checkout|common|full]|accept-decline[-accept...]>
                                   Create Playwright typed-card test orders through the tested checkout page.
                                   Test cards bypass the gateway and create no transactions, so no permission
                                   flags or packet policy are needed — just pick a mode. Default mode (bare
                                   --test-order, or "common") runs a 3-5 shape sample; "full" is every permutation.
+                                  "tiers" is spec-driven: one strict-selection order per selector tier the
+                                  CampaignSpec declares on the checkout page, plus one coupon order per declared
+                                  offer code (checkout exit_intent / promo_code_input); "tiers:common" and
+                                  "tiers:full" cross every tier with those path shapes. Incompatible with
+                                  --select-package/--apply-coupon (tiers derives them from the spec).
                                   Requires one-time setup: npm run qa:install-browser.
   --max-test-orders <n>           Accidental-flood guard for browser order count (not a permission gate). Default: 6.
   --allowed-domains-confirmed <bool>
@@ -1244,6 +1249,8 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
         expected_accept_url: resolveSibling(pageById, urlById, page.on_accept, baseUrl, publicRouteSlug),
         expected_decline_url: resolveSibling(pageById, urlById, page.on_decline, baseUrl, publicRouteSlug),
         packages: page.packages || [],
+        exit_intent: page.exit_intent || undefined,
+        promo_code_input: page.promo_code_input || undefined,
         template_family: templateFamily || undefined,
         commerce_structure_contract: commerceStructureContract?.pages?.[page.type || "page"] || undefined,
         commerce_structure_contract_status: commerceStructureContract?.status || undefined,

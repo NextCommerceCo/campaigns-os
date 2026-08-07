@@ -336,7 +336,7 @@ for a targeted matrix, and **`full`** — every accept/decline permutation deriv
 from the funnel's sequential upsell/downsell depth (a two-offer funnel = 4 paths,
 a five-offer funnel = 32 paths plus the checkout baseline). Use `full` when you
 explicitly want exhaustive proof. Bundle/quantity and bump coverage come from
-`--cart` and `--select-package`.
+`--cart` and `--select-package`, or spec-driven from **`tiers`** (below).
 
 ### Package/bundle card selection and coupons
 
@@ -370,6 +370,64 @@ Two flags target funnels the default-tier drive cannot prove:
   campaign API during the run (weak, `basis: "line_price_delta"`; charged ==
   list fails as "coupon did not apply"). A mismatched voucher or no discount
   evidence on any basis fails the path.
+
+### Spec-driven tier and coupon iteration (`--test-order tiers`)
+
+`--select-package` and `--apply-coupon` are operator-passed and apply globally
+to every path in a run, so exercising a multi-tier selector one flag at a time
+takes one run per tier. **`--test-order tiers`** derives the order matrix from
+the CampaignSpec instead:
+
+- one strict-selection **checkout baseline per selector tier** the spec declares
+  in the checkout page's `packages` (refs read from `ref_id`/`package_id`/`id`,
+  deduplicated, in declaration order) — each tier goes through the same strict
+  `--select-package` machinery, so a tier whose card is missing or refuses
+  selection fails its path;
+- plus one **checkout order per declared coupon code** — checkout
+  `exit_intent.offer_code` and `promo_code_input.offer_code`, counted only when
+  the surface has `enabled: true` (the same rule build/doctor use for offer
+  surfaces), deduplicated case-insensitively across the two surfaces. Coupon
+  orders run on the default tier selection and are proven by the same
+  persisted-order read-back ladder as `--apply-coupon` (voucher itemization,
+  then discount-total, then the `line_price_delta` weak-evidence basis for
+  platforms that net vouchers into line prices; SDK `applyCoupon` fallback when
+  no shopper-typable input exists).
+
+Two variants cross tiers with path shapes in a single run:
+
+- `tiers:common` — every declared tier × the common path shapes
+  (checkout/accept/decline, plus the deeper mixed path on 2+ offer funnels);
+- `tiers:full` — every declared tier × the full accept/decline permutation
+  matrix. This is single-run tier×path coverage; expect the expanded count to
+  exceed the default `--max-test-orders` and raise the cap deliberately.
+
+Coupon plans stay single checkout orders in every variant: coupon proof is
+persisted-order read-back and does not need upsell traversal. Each planned
+order is labeled in assertions and evidence as `checkout@tier:<ref>`,
+`accept@tier:<ref>`, `checkout@coupon:<code>`, and the verdict records the
+plan (tier ref or coupon code plus its declaring surface) on the order.
+
+`tiers` is incompatible with explicit `--select-package`/`--apply-coupon`
+(the mode derives them from the spec; combining would be ambiguous), and it
+errors when the spec declares neither selector tiers nor an enabled offer
+code — use `common`/`full` or the explicit flags there. Because tiers come
+from the CampaignSpec, `tiers` needs a packet/spec-driven run; non-packet
+`--site` runs have no declared tiers to iterate.
+
+```bash
+npm run campaigns-os -- qa run \
+  --packet campaign-runtime.build.json \
+  --base-url https://preview.example.com/campaign/ \
+  --browser \
+  --test-order tiers
+
+# exhaustive tier×path proof, cap raised deliberately
+npm run campaigns-os -- qa run \
+  --packet campaign-runtime.build.json \
+  --base-url https://preview.example.com/campaign/ \
+  --browser \
+  --test-order tiers:full --max-test-orders 15
+```
 
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
 gate**. `common` always stays under it; if `full` expands past it, the command
