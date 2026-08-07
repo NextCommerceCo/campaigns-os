@@ -378,3 +378,88 @@ test("promoted template families declare checkout commerce structure contracts",
     assert.ok(contract.requiredVisibleSelectors?.length > 0, `${family} should have visible structure selectors`);
   }
 });
+
+test("--select-package builds strict card selectors covering package and bundle refs", () => {
+  const { packageCardSelectors } = __qaBrowserTestHooks;
+  const selectors = packageCardSelectors("7");
+
+  assert.deepEqual(selectors, [
+    '[data-next-selector-card][data-next-package-id="7"]',
+    '[data-next-bundle-card][data-next-bundle-id="7"]',
+    '[data-next-package-id="7"]',
+    '[data-next-bundle-id="7"]',
+  ]);
+
+  // Refs are CSS-escaped so a hostile/odd ref cannot break out of the selector.
+  const escaped = packageCardSelectors('a"b');
+  assert.ok(escaped.every((selector) => selector.includes('a\\"b')));
+});
+
+test("order creation proof: read-back is authoritative when the live create request was missed", () => {
+  const { assessOrderCreation } = __qaBrowserTestHooks;
+  const body = { ref_id: "01ORDER", lines: [] };
+
+  // Observed 2xx create → ok, no observation note.
+  assert.deepEqual(
+    assessOrderCreation({ orderCreate: { status: 201, body }, orderRead: null, upsellOrderResponse: null, refId: "01ORDER" }),
+    { ok: true, observation: null },
+  );
+  // Observed create that failed stays a real failure, even with a read-back.
+  assert.equal(
+    assessOrderCreation({ orderCreate: { status: 422, body: {} }, orderRead: { status: 200, body }, upsellOrderResponse: null, refId: "01ORDER" }).ok,
+    false,
+  );
+  // Missed create + persisted order returned for the ref → ok with observation.
+  const readBack = assessOrderCreation({ orderCreate: null, orderRead: { status: 200, body }, upsellOrderResponse: null, refId: "01ORDER" });
+  assert.equal(readBack.ok, true);
+  assert.match(readBack.observation, /order read-back/);
+  // Upsell mutation response also counts as read-back proof.
+  assert.equal(
+    assessOrderCreation({ orderCreate: null, orderRead: null, upsellOrderResponse: { status: 200, body }, refId: "01ORDER" }).ok,
+    true,
+  );
+  // No ref_id or no evidence at all → not created.
+  assert.equal(assessOrderCreation({ orderCreate: null, orderRead: null, upsellOrderResponse: null, refId: null }).ok, false);
+  assert.equal(assessOrderCreation({ orderCreate: null, orderRead: null, upsellOrderResponse: null, refId: "01ORDER" }).ok, false);
+});
+
+test("coupon proof: persisted voucher code match is authoritative, discount total is weak fallback", () => {
+  const { assessCouponApplication, extractOrderVouchers, orderDiscountTotal } = __qaBrowserTestHooks;
+
+  const vouchers = extractOrderVouchers({ vouchers: [{ code: "SAVE10", name: "Save 10", amount: "5.00" }] });
+  assert.deepEqual(vouchers, [{ code: "SAVE10", name: "Save 10", amount: "5.00" }]);
+
+  const matched = assessCouponApplication("save10", { vouchers, totalDiscount: 5 });
+  assert.equal(matched.ok, true);
+  assert.equal(matched.basis, "persisted_voucher_code");
+
+  // Wrong code present in the order → fail, even with a discount total.
+  const wrong = assessCouponApplication("EXIT5", { vouchers, totalDiscount: 5 });
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.reason, /do not include EXIT5/);
+
+  // No voucher surface at all but a positive discount → weak-evidence pass.
+  const weak = assessCouponApplication("SAVE10", { vouchers: [], totalDiscount: orderDiscountTotal({ total_discounts: "4.50" }) });
+  assert.equal(weak.ok, true);
+  assert.equal(weak.basis, "discount_total");
+
+  // Nothing persisted → fail.
+  const missing = assessCouponApplication("SAVE10", { vouchers: [], totalDiscount: null });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.basis, "missing");
+});
+
+test("voucher extraction reads alternate persisted shapes and discount-total keys", () => {
+  const { extractOrderVouchers, orderDiscountTotal } = __qaBrowserTestHooks;
+
+  const entries = extractOrderVouchers({
+    voucher_discounts: [{ voucher: { code: "FREESHIP", name: "Free shipping" }, amount: "0.00" }],
+    discounts: [{ voucher_code: "SAVE10", discount: "5.00" }],
+  });
+  assert.deepEqual(entries.map((entry) => entry.code), ["FREESHIP", "SAVE10"]);
+
+  assert.equal(orderDiscountTotal({ total_discount_incl_tax: "3.25" }), 3.25);
+  assert.equal(orderDiscountTotal({ discount_total: 2 }), 2);
+  assert.equal(orderDiscountTotal({}), null);
+  assert.equal(orderDiscountTotal({ total_discounts: "not-a-number" }), null);
+});
