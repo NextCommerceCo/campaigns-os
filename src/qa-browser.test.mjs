@@ -258,6 +258,207 @@ test("test-order 'common' preset = checkout + accept/decline sample, scaled to f
   assert.deepEqual(testOrderPaths(true, topo(1)), ["checkout", "accept", "decline"]);
 });
 
+test("operator test-order modes plan one order per path carrying the run-global selection/coupon flags", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const topo = [{ pages: [{ page_type: "checkout" }, { page_type: "upsell" }] }];
+
+  const plans = testOrderPlans("common", topo, { "select-package": "7:2", "apply-coupon": "SAVE10" });
+  assert.deepEqual(plans.map((plan) => plan.path), ["checkout", "accept", "decline"]);
+  // plan ids for operator modes stay the bare path — assertion ids are unchanged
+  assert.deepEqual(plans.map((plan) => planId(plan)), ["checkout", "accept", "decline"]);
+  for (const plan of plans) {
+    assert.equal(plan.select_package, "7:2");
+    assert.equal(plan.apply_coupon, "SAVE10");
+    assert.equal(plan.source, undefined);
+  }
+});
+
+test("test-order 'tiers' plans one strict-selection baseline per declared tier plus one order per declared coupon", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const topo = [{ pages: [
+    {
+      page_type: "checkout",
+      packages: [
+        { ref_id: "1", name: "1x Bottle" },
+        { package_id: 2, title: "3x Bottle" },
+        { id: "2" }, // duplicate ref under an alias key → deduped
+        { name: "no ref at all" }, // ref-less entries are skipped
+      ],
+      exit_intent: { enabled: true, offer_code: "EXIT10" },
+      promo_code_input: { enabled: true, offer_code: "exit10" }, // same code, case-insensitive → one plan, both surfaces
+    },
+    { page_type: "upsell" },
+  ] }];
+
+  const plans = testOrderPlans("tiers", topo, {});
+  assert.deepEqual(plans.map((plan) => planId(plan)), [
+    "checkout@tier:1",
+    "checkout@tier:2",
+    "checkout@coupon:EXIT10",
+  ]);
+  assert.deepEqual(plans[0].source, { type: "selector_tier", ref: "1", declared_by: "1x Bottle" });
+  assert.equal(plans[0].select_package, "1");
+  assert.equal(plans[0].apply_coupon, null);
+  assert.equal(plans[2].select_package, null);
+  assert.equal(plans[2].apply_coupon, "EXIT10");
+  assert.deepEqual(plans[2].source.surfaces, ["exit_intent", "promo_code_input"]);
+});
+
+test("tiers:common and tiers:full cross every declared tier with the path shapes; coupons stay single checkout orders", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const topo = [{ pages: [
+    {
+      page_type: "checkout",
+      packages: [{ ref_id: "1" }, { ref_id: "2" }],
+      promo_code_input: { enabled: true, offer_code: "SAVE10" },
+    },
+    { page_type: "upsell" },
+  ] }];
+
+  assert.deepEqual(testOrderPlans("tiers:common", topo, {}).map((plan) => planId(plan)), [
+    "checkout@tier:1", "accept@tier:1", "decline@tier:1",
+    "checkout@tier:2", "accept@tier:2", "decline@tier:2",
+    "checkout@coupon:SAVE10",
+  ]);
+  assert.deepEqual(testOrderPlans("tiers:full", topo, {}).map((plan) => planId(plan)), [
+    "checkout@tier:1", "decline@tier:1", "accept@tier:1",
+    "checkout@tier:2", "decline@tier:2", "accept@tier:2",
+    "checkout@coupon:SAVE10",
+  ]);
+});
+
+test("tiers mode gates: disabled/blank offer surfaces are skipped, operator flags are rejected, empty specs error", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const checkout = (extra) => [{ pages: [{ page_type: "checkout", ...extra }] }];
+
+  // enabled !== true, or a missing offer_code, declares no coupon surface
+  const plans = testOrderPlans("tiers", checkout({
+    packages: [{ ref_id: "9" }],
+    exit_intent: { offer_code: "NOPE" },
+    promo_code_input: { enabled: false, offer_code: "ALSONOPE" },
+  }), {});
+  assert.deepEqual(plans.map((plan) => planId(plan)), ["checkout@tier:9"]);
+
+  // tiers derives selection/coupons from the spec — explicit flags are ambiguous
+  assert.throws(
+    () => testOrderPlans("tiers", checkout({ packages: [{ ref_id: "9" }] }), { "select-package": "9" }),
+    /drop --select-package/,
+  );
+  assert.throws(
+    () => testOrderPlans("tiers", checkout({ packages: [{ ref_id: "9" }] }), { "apply-coupon": "X" }),
+    /drop --apply-coupon/,
+  );
+
+  // nothing declared → explicit error instead of a silent zero-order "pass"
+  assert.throws(() => testOrderPlans("tiers", checkout({}), {}), /nothing to iterate/);
+
+  // no checkout page at all is a different failure than a bare checkout page
+  assert.throws(
+    () => testOrderPlans("tiers", [{ pages: [{ page_type: "landing" }] }], {}),
+    /no checkout page to derive/,
+  );
+});
+
+test("multi-funnel specs plan every funnel's checkout declarations, each against its own checkout page", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const checkoutA = { page_type: "checkout", page_id: "checkout-a", url: "https://x.test/a/checkout/", packages: [{ ref_id: "1" }] };
+  const checkoutB = {
+    page_type: "checkout",
+    page_id: "checkout-b",
+    url: "https://x.test/b/checkout/",
+    packages: [{ ref_id: "1" }, { ref_id: "8" }],
+    promo_code_input: { enabled: true, offer_code: "OTHER10" },
+  };
+  const topo = [
+    { pages: [checkoutA] },
+    { pages: [checkoutB, { page_type: "upsell" }] },
+  ];
+
+  const warnings = [];
+  const plans = testOrderPlans("tiers", topo, {}, { warn: (line) => warnings.push(line) });
+  // primary-checkout plans keep bare ids; funnel B's plans are qualified by
+  // page id, so ref "1" declared on BOTH checkouts cannot collide
+  assert.deepEqual(plans.map((plan) => planId(plan)), [
+    "checkout@tier:1",
+    "checkout@tier:1#checkout-b",
+    "checkout@tier:8#checkout-b",
+    "checkout@coupon:OTHER10#checkout-b",
+  ]);
+  // each plan names the checkout page that declares it — the runner drives that page
+  assert.equal(plans[0].checkout_page, checkoutA);
+  assert.equal(plans[1].checkout_page, checkoutB);
+  assert.equal(plans[3].source.checkout_page_id, "checkout-b");
+  assert.equal(warnings.length, 0);
+});
+
+test("tiers:common crosses each funnel's tiers with that funnel's own upsell depth", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const topo = [
+    // funnel A: no upsells → checkout baseline only
+    { pages: [{ page_type: "checkout", page_id: "checkout-a", url: "https://x.test/a/", packages: [{ ref_id: "1" }] }] },
+    // funnel B: one upsell → checkout + accept + decline
+    { pages: [
+      { page_type: "checkout", page_id: "checkout-b", url: "https://x.test/b/", packages: [{ ref_id: "8" }] },
+      { page_type: "upsell" },
+    ] },
+  ];
+
+  assert.deepEqual(testOrderPlans("tiers:common", topo, {}).map((plan) => planId(plan)), [
+    "checkout@tier:1",
+    "checkout@tier:8#checkout-b",
+    "accept@tier:8#checkout-b",
+    "decline@tier:8#checkout-b",
+  ]);
+});
+
+test("a non-primary checkout with declarations but no URL cannot be driven — warned, never silently dropped", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const topo = [
+    { pages: [{ page_type: "checkout", page_id: "checkout-a", url: "https://x.test/a/", packages: [{ ref_id: "1" }] }] },
+    { pages: [{ page_type: "checkout", page_id: "checkout-b", packages: [{ ref_id: "8" }], promo_code_input: { enabled: true, offer_code: "OTHER10" } }] },
+  ];
+
+  const warnings = [];
+  const plans = testOrderPlans("tiers", topo, {}, { warn: (line) => warnings.push(line) });
+  assert.deepEqual(plans.map((plan) => planId(plan)), ["checkout@tier:1"]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /checkout-b/);
+  assert.match(warnings[0], /tier\(s\) 8/);
+  assert.match(warnings[0], /coupon\(s\) OTHER10/);
+  assert.match(warnings[0], /no resolvable URL/);
+});
+
+test("the flood guard counts expanded tier plans and previews plan ids", () => {
+  const { testOrderPlans, enforceTestOrderLimit } = __qaBrowserTestHooks;
+  const topo = [{ pages: [
+    { page_type: "checkout", packages: [{ ref_id: "1" }, { ref_id: "2" }, { ref_id: "3" }] },
+    { page_type: "upsell" },
+    { page_type: "upsell" },
+  ] }];
+
+  const plans = testOrderPlans("tiers:full", topo, {});
+  assert.equal(plans.length, 15); // 3 tiers × (checkout + 4 permutations)
+  assert.throws(
+    () => enforceTestOrderLimit(plans, { "test-order": "tiers:full", "max-test-orders": "6" }),
+    /expands to 15 typed-card order\(s\).*checkout@tier:1/s,
+  );
+  // raising the cap clears the guard — it is a flood guard, not a permission gate
+  enforceTestOrderLimit(plans, { "test-order": "tiers:full", "max-test-orders": "15" });
+});
+
+test("argsForPlan overrides the run-global selection/coupon flags with the plan's per-order values", () => {
+  const { argsForPlan } = __qaBrowserTestHooks;
+  const args = { "base-url": "https://x.test/", "select-package": "global", "apply-coupon": "GLOBAL" };
+  assert.deepEqual(
+    argsForPlan(args, { path: "checkout", select_package: "2", apply_coupon: null }),
+    { "base-url": "https://x.test/", "select-package": "2" },
+  );
+  assert.deepEqual(
+    argsForPlan(args, { path: "checkout", select_package: null, apply_coupon: "EXIT10" }),
+    { "base-url": "https://x.test/", "apply-coupon": "EXIT10" },
+  );
+});
+
 test("commerce structure assertion soft-fails when a required family shell selector is missing", () => {
   const { commerceStructureAssertionFromEvidence } = __qaBrowserTestHooks;
   const page = { page_id: "checkout", page_type: "checkout", url: "https://example.test/checkout/" };

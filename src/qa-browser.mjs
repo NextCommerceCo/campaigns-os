@@ -100,15 +100,18 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   const assertions = [];
   const orders = [];
   const captures = [];
-  const paths = testOrderPaths(args["test-order"], topologies);
-  enforceTestOrderLimit(paths, args);
+  const plans = testOrderPlans(args["test-order"], topologies, args);
+  enforceTestOrderLimit(plans, args);
   try {
-    for (const path of paths) {
-      const result = await runSingleBrowserTestOrder(context, checkoutPage, path, args, runId, options);
+    for (const plan of plans) {
+      // Spec-driven plans name the checkout page that declares their tier or
+      // coupon (multi-funnel specs); operator-mode plans drive the primary.
+      const pageForPlan = (typeof plan === "object" && plan?.checkout_page?.url) ? plan.checkout_page : checkoutPage;
+      const result = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
       orders.push(result.order);
       if (result.analytics_capture) captures.push(result.analytics_capture);
-      assertions.push(testOrderAssertion(checkoutPage, path, result));
-      const renderedReceiptAssertion = receiptRenderingAssertion(checkoutPage, path, result.order);
+      assertions.push(testOrderAssertion(pageForPlan, plan, result));
+      const renderedReceiptAssertion = receiptRenderingAssertion(pageForPlan, planId(plan), result.order);
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
     }
   } catch (error) {
@@ -122,7 +125,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       severity: SEVERITY.BLOCKER,
       expected: "typed-card test-order runner completes every planned path",
       actual: error instanceof Error ? error.message : String(error),
-      evidence: { planned_paths: paths, completed_paths: orders.map((order) => order.path) },
+      evidence: { planned_paths: plans.map((plan) => planId(plan)), completed_paths: orders.map((order) => order.plan_id || order.path) },
     }));
   } finally {
     await context.close().catch(() => {});
@@ -1685,34 +1688,44 @@ function skipRemainingSteps(ladder, stepNames, reason) {
   }
 }
 
-async function runSingleBrowserTestOrder(context, checkoutPage, path, args, runId, options = {}) {
-  const orderTimeoutMs = numberArg(args["order-timeout-ms"], DEFAULT_ORDER_TIMEOUT_MS);
+async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runId, options = {}) {
+  const normalizedPlan = normalizeTestOrderPlan(plan, args);
+  const planArgs = argsForPlan(args, normalizedPlan);
+  const path = normalizedPlan.path;
+  const orderTimeoutMs = numberArg(planArgs["order-timeout-ms"], DEFAULT_ORDER_TIMEOUT_MS);
   const ladder = createStepLadder();
   let page = null;
   let analyticsCapture = null;
   let events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
-  const email = testEmail(args);
+  const email = testEmail(planArgs);
+  const annotate = (result) => {
+    if (result?.order && normalizedPlan.source) {
+      result.order.plan_id = planId(normalizedPlan);
+      result.order.plan = summarizeTestOrderPlan(normalizedPlan);
+    }
+    return result;
+  };
 
   try {
     page = await context.newPage();
     if (options.captureAnalytics) {
-      analyticsCapture = await attachAnalyticsCapture(page, { extraHosts: analyticsExtraHosts(args) });
+      analyticsCapture = await attachAnalyticsCapture(page, { extraHosts: analyticsExtraHosts(planArgs) });
     }
-    page.setDefaultTimeout(numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
+    page.setDefaultTimeout(numberArg(planArgs["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
     events = captureCheckoutEvents(page);
     // The outer race is the hard guarantee: whatever hangs inside the path,
     // this returns and the run writes a verdict instead of dying with nothing.
     const result = await withStepTimeout(
-      executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args, deadline: Date.now() + orderTimeoutMs }),
+      executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args: planArgs, deadline: Date.now() + orderTimeoutMs }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
-      `order-path:${path}`,
+      `order-path:${planId(normalizedPlan)}`,
     );
     if (analyticsCapture) result.analytics_capture = await analyticsCapture.collect().catch(() => normalizeCapture());
-    return result;
+    return annotate(result);
   } catch (error) {
     const result = failedTestOrderResult({ path, email, error, events, ladder, page });
     if (analyticsCapture) result.analytics_capture = await analyticsCapture.collect().catch(() => normalizeCapture());
-    return result;
+    return annotate(result);
   } finally {
     analyticsCapture?.detach();
     await page?.close().catch(() => {});
@@ -2791,10 +2804,14 @@ function receiptRenderingAssertion(page, path, order) {
   });
 }
 
-function testOrderAssertion(page, path, result) {
+function testOrderAssertion(page, plan, result) {
+  // Accepts a plan object or (legacy) a bare path string.
+  const id = planId(plan);
+  const path = typeof plan === "string" ? plan : plan.path;
+  const planEvidence = typeof plan === "object" && plan?.source ? { plan: summarizeTestOrderPlan(plan) } : {};
   if (result.manual_review) {
     return assertion({
-      id: `browser-test-order:${path}`,
+      id: `browser-test-order:${id}`,
       family: "browser-test-order",
       page,
       status: STATUS.MANUAL_REVIEW,
@@ -2802,6 +2819,7 @@ function testOrderAssertion(page, path, result) {
       expected: "test order created through deployed checkout page",
       actual: `hosted checkout redirect observed: ${result.order?.hosted_checkout_url || "(unknown)"}`,
       evidence: {
+        ...planEvidence,
         hosted_checkout_url: result.order?.hosted_checkout_url || null,
         final_url: result.order?.final_url,
         steps: result.order?.evidence?.steps,
@@ -2810,7 +2828,7 @@ function testOrderAssertion(page, path, result) {
     });
   }
   return assertion({
-    id: `browser-test-order:${path}`,
+    id: `browser-test-order:${id}`,
     family: "browser-test-order",
     page,
     status: result.ok ? STATUS.PASS : STATUS.FAIL,
@@ -2819,6 +2837,7 @@ function testOrderAssertion(page, path, result) {
     actual: result.ok ? result.order.next_order_id || result.order.ref_id : result.error || result.order?.verification?.error || "order not created",
     evidence: result.ok
       ? {
+          ...planEvidence,
           ref_id: result.order.ref_id,
           order_number: result.order.next_order_id,
           final_url: result.order.final_url,
@@ -2833,6 +2852,7 @@ function testOrderAssertion(page, path, result) {
           card_last4: result.order.card.last4,
         }
       : {
+          ...planEvidence,
           final_url: result.order?.final_url,
           steps: result.order?.evidence?.steps,
           ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
@@ -3070,6 +3090,197 @@ function testOrderPaths(mode, topologies = []) {
   throw new Error(`Unknown --test-order mode: ${mode}`);
 }
 
+// --- Spec-driven order planning (--test-order tiers) ---
+// Every planned order is a plan object: the ladder path plus the effective
+// per-order --select-package / --apply-coupon values. Operator modes produce
+// plans that carry the run-global flags unchanged, so the strict-selection and
+// coupon read-back machinery is shared verbatim. `tiers` derives the plans
+// from what the CampaignSpec itself declares on the checkout page:
+//
+//   tiers          one strict-selection checkout baseline per declared selector
+//                  tier, plus one checkout order per declared coupon code
+//   tiers:common   every declared tier crossed with the common path shapes
+//   tiers:full     every declared tier crossed with the full accept/decline
+//                  matrix — single-run tier×path coverage
+//
+// Coupon plans stay single checkout orders on the default selection: coupon
+// proof is persisted-order read-back and does not need upsell traversal.
+// The --max-test-orders flood guard applies to the expanded plan count.
+function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
+  const normalized = String(mode || "off").toLowerCase();
+  const tiersMatch = /^tiers(?::(checkout|common|full))?$/.exec(normalized);
+  if (tiersMatch) return specTierPlans(topologies, args, tiersMatch[1] || "checkout", options);
+  const selectPackage = stringArg(args["select-package"]);
+  const applyCoupon = stringArg(args["apply-coupon"]);
+  return testOrderPaths(mode, topologies).map((path) => ({
+    path,
+    select_package: selectPackage,
+    apply_coupon: applyCoupon,
+  }));
+}
+
+function specTierPlans(topologies, args, variant, { warn = (line) => process.stderr.write(`${line}\n`) } = {}) {
+  for (const flag of ["select-package", "apply-coupon"]) {
+    if (stringArg(args[flag])) {
+      throw new Error(`--test-order tiers derives package tiers and coupon codes from the CampaignSpec; drop --${flag} or use an explicit mode (common/full/...) with it.`);
+    }
+  }
+  // Every funnel's checkout page contributes plans, and each plan carries the
+  // checkout page that declares its tier/coupon so the runner drives THAT
+  // page — strict-selecting a ref on a checkout that doesn't render it would
+  // fail for the wrong reason. A later funnel's checkout with declarations
+  // but no resolvable URL cannot be driven; it is warned about, not dropped
+  // silently.
+  const primary = findPage(topologies, "checkout");
+  if (!primary) {
+    throw new Error("--test-order tiers requires a CampaignSpec-driven run with a checkout page; this spec/topology has no checkout page to derive tiers or coupons from (non-packet --site runs have none by design).");
+  }
+  const plans = [];
+  for (const topology of Array.isArray(topologies) ? topologies : []) {
+    const pages = Array.isArray(topology?.pages) ? topology.pages : [];
+    const checkoutPage = pages.find((page) => String(page?.page_type || "").toLowerCase() === "checkout");
+    if (!checkoutPage) continue;
+    const tiers = declaredSelectorTiers(checkoutPage);
+    const coupons = declaredCheckoutCoupons(checkoutPage);
+    if (!tiers.length && !coupons.length) continue;
+    if (checkoutPage !== primary && !checkoutPage.url) {
+      const declared = [
+        ...(tiers.length ? [`tier(s) ${tiers.map((tier) => tier.ref).join(", ")}`] : []),
+        ...(coupons.length ? [`coupon(s) ${coupons.map((coupon) => coupon.code).join(", ")}`] : []),
+      ].join(" and ");
+      warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares ${declared} but has no resolvable URL — not covered by this run; fix the page URL/base-url to prove them.`);
+      continue;
+    }
+    // Path shapes come from this checkout's own funnel: crossing tier plans
+    // with another funnel's upsell depth would plan unwalkable paths.
+    const paths = variant === "common"
+      ? testOrderCommonPaths([topology])
+      : variant === "full"
+        ? ["checkout", ...testOrderPathMatrix(testOrderDepth([topology]))]
+        : ["checkout"];
+    // Plans on the primary checkout keep bare ids (single-funnel specs stay
+    // byte-identical); other funnels' plans are qualified by page id so the
+    // same ref/code declared on two checkouts cannot collide.
+    const qualifier = checkoutPage === primary ? "" : `#${checkoutPage.page_id || checkoutPage.label || "checkout"}`;
+    for (const tier of tiers) {
+      for (const path of paths) {
+        plans.push({
+          path,
+          select_package: tier.ref,
+          apply_coupon: null,
+          checkout_page: checkoutPage,
+          id_qualifier: qualifier,
+          source: {
+            type: "selector_tier",
+            ref: tier.ref,
+            declared_by: tier.declared_by,
+            ...(qualifier ? { checkout_page_id: checkoutPage.page_id || checkoutPage.label || null } : {}),
+          },
+        });
+      }
+    }
+    for (const coupon of coupons) {
+      plans.push({
+        path: "checkout",
+        select_package: null,
+        apply_coupon: coupon.code,
+        checkout_page: checkoutPage,
+        id_qualifier: qualifier,
+        source: {
+          type: "declared_coupon",
+          code: coupon.code,
+          surfaces: coupon.surfaces,
+          ...(qualifier ? { checkout_page_id: checkoutPage.page_id || checkoutPage.label || null } : {}),
+        },
+      });
+    }
+  }
+  if (!plans.length) {
+    throw new Error([
+      "--test-order tiers found nothing to iterate: no CampaignSpec checkout page declares selector-tier packages or an enabled exit_intent/promo_code_input offer code.",
+      "Use --test-order common/full, or drive explicit refs with --select-package / --apply-coupon.",
+    ].join(" "));
+  }
+  return plans;
+}
+
+// Selector tiers are the packages the spec declares on the checkout page —
+// same ref tolerance as the doctor's specPackageRecords (ref_id/package_id/id).
+function declaredSelectorTiers(checkoutPage) {
+  const tiers = [];
+  const seen = new Set();
+  for (const pkg of Array.isArray(checkoutPage?.packages) ? checkoutPage.packages : []) {
+    if (!pkg || typeof pkg !== "object") continue;
+    const ref = [pkg.ref_id, pkg.package_id, pkg.id]
+      .map((value) => (value == null ? "" : String(value).trim()))
+      .find(Boolean);
+    if (!ref || seen.has(ref)) continue;
+    seen.add(ref);
+    tiers.push({ ref, declared_by: stringArg(pkg.name) || stringArg(pkg.title) || undefined });
+  }
+  return tiers;
+}
+
+// Declared coupons follow the repo's offer-surface rule (build-brief, cli
+// exit-pop gates): a surface counts only when `enabled === true` and it maps
+// an offer_code. Both surfaces mapping the same code collapse into one plan.
+function declaredCheckoutCoupons(checkoutPage) {
+  const coupons = [];
+  const add = (surface, block) => {
+    if (!block || typeof block !== "object" || block.enabled !== true) return;
+    const code = stringArg(block.offer_code);
+    if (!code) return;
+    const existing = coupons.find((entry) => normalizeLabel(entry.code) === normalizeLabel(code));
+    if (existing) {
+      if (!existing.surfaces.includes(surface)) existing.surfaces.push(surface);
+      return;
+    }
+    coupons.push({ code, surfaces: [surface] });
+  };
+  add("exit_intent", checkoutPage?.exit_intent);
+  add("promo_code_input", checkoutPage?.promo_code_input);
+  return coupons;
+}
+
+function planId(plan) {
+  if (typeof plan === "string") return plan;
+  const suffix = plan.source?.type === "selector_tier"
+    ? `@tier:${plan.source.ref}`
+    : plan.source?.type === "declared_coupon"
+      ? `@coupon:${plan.source.code}`
+      : "";
+  return `${plan.path}${suffix}${plan.id_qualifier || ""}`;
+}
+
+function normalizeTestOrderPlan(plan, args = {}) {
+  if (typeof plan === "string") {
+    return { path: plan, select_package: stringArg(args["select-package"]), apply_coupon: stringArg(args["apply-coupon"]) };
+  }
+  return plan;
+}
+
+// Per-order effective args: the plan's selection/coupon values replace the
+// run-global flags so every downstream step (strict selection, coupon apply,
+// read-back assessment, cart-state echo) sees exactly this order's inputs.
+function argsForPlan(args, plan) {
+  const merged = { ...args };
+  if (plan.select_package != null) merged["select-package"] = plan.select_package;
+  else delete merged["select-package"];
+  if (plan.apply_coupon != null) merged["apply-coupon"] = plan.apply_coupon;
+  else delete merged["apply-coupon"];
+  return merged;
+}
+
+function summarizeTestOrderPlan(plan) {
+  return {
+    id: planId(plan),
+    path: plan.path,
+    ...(plan.select_package ? { select_package: plan.select_package } : {}),
+    ...(plan.apply_coupon ? { apply_coupon: plan.apply_coupon } : {}),
+    ...(plan.source ? { source: plan.source } : {}),
+  };
+}
+
 // The default "common shapes" sample: checkout baseline, plus first-upsell
 // accept and decline when the funnel has post-checkout offers, plus one deeper
 // mixed path when there are two or more offers. Stays within 1-4 orders so it
@@ -3083,13 +3294,13 @@ function testOrderCommonPaths(topologies = []) {
   return paths;
 }
 
-function enforceTestOrderLimit(paths, args) {
+function enforceTestOrderLimit(plans, args) {
   const maxOrders = numberArg(args["max-test-orders"], DEFAULT_MAX_TEST_ORDERS);
-  if (paths.length <= maxOrders) return;
-  const preview = paths.slice(0, 8).join(", ");
-  const suffix = paths.length > 8 ? ", ..." : "";
+  if (plans.length <= maxOrders) return;
+  const preview = plans.slice(0, 8).map((plan) => planId(plan)).join(", ");
+  const suffix = plans.length > 8 ? ", ..." : "";
   throw new Error([
-    `--test-order ${args["test-order"]} expands to ${paths.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
+    `--test-order ${args["test-order"]} expands to ${plans.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
     `Planned paths: ${preview}${suffix}.`,
     "This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with a higher --max-test-orders for exhaustive proof.",
   ].join(" "));
@@ -3483,6 +3694,12 @@ export const __qaBrowserTestHooks = Object.freeze({
   isOrderUpsellsUrl,
   testEmail,
   testOrderPaths,
+  testOrderPlans,
+  planId,
+  argsForPlan,
+  enforceTestOrderLimit,
+  declaredSelectorTiers,
+  declaredCheckoutCoupons,
   packageCardSelectors,
   assessCouponApplication,
   linePriceDeltaEvidence,
