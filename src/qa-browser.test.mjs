@@ -519,3 +519,21 @@ test("package-line matching requires quantity to disambiguate same-SKU tier pack
   // A line no package matches → no delta evidence at all (null, not partial).
   assert.equal(linePriceDeltaEvidence([{ quantity: 2, sku: "SKU_A", price_incl_tax: "50.00" }], events), null);
 });
+
+test("rejected order-create detection matches only the create endpoint with a 4xx/5xx status", () => {
+  const { rejectedOrderCreateResponse } = __qaBrowserTestHooks;
+  const events = { responses: [
+    { status: 201, url: "https://api.example.test/api/v1/carts/", body: {} },
+    { status: 400, url: "https://api.example.test/api/v1/orders/", body: { detail: "Unknown voucher" } },
+    { status: 404, url: "https://api.example.test/api/v1/orders/123/upsells/", body: {} },
+  ] };
+  const rejected = rejectedOrderCreateResponse(events);
+  assert.equal(rejected.status, 400);
+  assert.match(rejected.url, /\/api\/v1\/orders\/$/);
+
+  // A 2xx create, cart 4xx, or upsell 4xx must not register as a rejected create.
+  assert.equal(rejectedOrderCreateResponse({ responses: [
+    { status: 201, url: "https://api.example.test/api/v1/orders/", body: {} },
+    { status: 422, url: "https://api.example.test/api/v1/carts/calculate/", body: {} },
+  ] }), null);
+});

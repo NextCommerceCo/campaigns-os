@@ -1759,7 +1759,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     await ladder.run("order_submitted", async () => {
       ensurePageFillable(page, checkoutPage.url);
       await submitCheckout(page);
-      await waitForCheckoutResult(page);
+      await waitForCheckoutResult(page, events);
     }, { timeoutMs: budget() });
   } catch (error) {
     const hosted = error?.hostedRedirect || hostedNow();
@@ -2523,11 +2523,34 @@ async function submitCheckout(page) {
   await submit.click();
 }
 
-async function waitForCheckoutResult(page) {
-  await page.waitForURL((url) => /ref_id=|receipt|upsell|thank|order|payment_failed/i.test(String(url)), { timeout: 60000 }).catch(() => {});
+// When events are supplied (the post-submit wait), a platform-rejected order
+// create fails fast with the real cause instead of burning the full step
+// budget and reporting a generic timeout: a 400 on POST /api/v1/orders/ never
+// navigates the page, so without this check the only symptom was
+// "step order_submitted timed out after 45000ms".
+async function waitForCheckoutResult(page, events = null) {
+  const outcomeUrl = /ref_id=|receipt|upsell|thank|order|payment_failed/i;
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    if (outcomeUrl.test(String(safePageUrl(page) || ""))) break;
+    const rejected = events ? rejectedOrderCreateResponse(events) : null;
+    if (rejected) {
+      const detail = typeof rejected.body?.detail === "string" ? `: ${trim(rejected.body.detail)}` : "";
+      throw new Error(`order create rejected: HTTP ${rejected.status}${detail}`);
+    }
+    await page.waitForTimeout(250);
+  }
   await page.waitForLoadState("domcontentloaded", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForTimeout(1500);
+}
+
+function rejectedOrderCreateResponse(events) {
+  for (let index = events.responses.length - 1; index >= 0; index -= 1) {
+    const response = events.responses[index];
+    if (/\/api\/v1\/orders\/?$/i.test(response.url) && response.status >= 400) return response;
+  }
+  return null;
 }
 
 async function buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody = null, allowLateWait = true }) {
@@ -3381,6 +3404,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   assessCouponApplication,
   linePriceDeltaEvidence,
   packageMatchesLine,
+  rejectedOrderCreateResponse,
   extractOrderVouchers,
   orderDiscountTotal,
   assessOrderCreation,
