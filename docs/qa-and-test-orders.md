@@ -361,10 +361,15 @@ Two flags target funnels the default-tier drive cannot prove:
   back to the SDK `applyCoupon` API — the step detail records that the
   shopper-facing trigger was not exercised, so verify that trigger separately.
   The apply mechanics never pass the proof on their own: the path passes only
-  when the **persisted order read-back** carries the requested voucher code
-  (or, when the platform exposes no voucher entries, a positive discount
-  total — recorded as weak evidence). A missing or mismatched voucher fails
-  the path.
+  on **persisted-order read-back evidence**, checked in this order — the
+  requested voucher code itemized on the order (authoritative); a positive
+  discount total when no voucher entries exist (weak); or, on platforms that
+  **net the voucher into line prices and itemize nothing** (no voucher keys,
+  empty `discounts`, zero `total_discounts`), a line-price delta: the charged
+  line total must sit below the campaign package list total captured from the
+  campaign API during the run (weak, `basis: "line_price_delta"`; charged ==
+  list fails as "coupon did not apply"). A mismatched voucher or no discount
+  evidence on any basis fails the path.
 
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
 gate**. `common` always stays under it; if `full` expands past it, the command

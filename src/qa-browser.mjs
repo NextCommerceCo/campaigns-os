@@ -1868,6 +1868,8 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     const couponAssessment = assessCouponApplication(requestedCoupon, {
       vouchers: order.vouchers || [],
       totalDiscount: order.discount_total,
+      lines: order.receipt_line_items || [],
+      events,
     });
     order.verification.coupon = couponAssessment;
     if (order.ok && !couponAssessment.ok) {
@@ -2298,14 +2300,23 @@ function orderDiscountTotal(order) {
   return null;
 }
 
-function assessCouponApplication(code, { vouchers = [], totalDiscount = null } = {}) {
+function assessCouponApplication(code, { vouchers = [], totalDiscount = null, lines = [], events = null } = {}) {
   const requested = normalizeLabel(code);
   const matched = vouchers.filter((voucher) => [voucher.code, voucher.name].some((value) => value && normalizeLabel(value) === requested));
   if (matched.length) {
     return { requested_code: code, ok: true, basis: "persisted_voucher_code", matched, reason: `voucher ${code} present in persisted order` };
   }
+  if (vouchers.length) {
+    return {
+      requested_code: code,
+      ok: false,
+      basis: "missing",
+      matched: [],
+      reason: `persisted order voucher(s) (${vouchers.map((voucher) => voucher.code || voucher.name).join(", ")}) do not include ${code}`,
+    };
+  }
   const discount = Number(totalDiscount);
-  if (!vouchers.length && Number.isFinite(discount) && discount > 0) {
+  if (Number.isFinite(discount) && discount > 0) {
     return {
       requested_code: code,
       ok: true,
@@ -2314,15 +2325,97 @@ function assessCouponApplication(code, { vouchers = [], totalDiscount = null } =
       reason: `persisted order exposes no voucher entries but carries a ${discount} discount total; treated as applied (weak evidence)`,
     };
   }
+  // Some platforms net the voucher into the line prices and itemize nothing:
+  // no voucher collection under any key, discounts [], total_discounts "0.00",
+  // and price_incl_tax already reduced. There the only persisted discount
+  // signal is the delta between the charged line prices and the campaign
+  // package list prices (which the run already captured from the campaign API
+  // responses). Applied → charged < list; rejected → charged == list.
+  const delta = linePriceDeltaEvidence(lines, events);
+  if (delta) {
+    if (delta.charged_total < delta.list_total - 0.009) {
+      return {
+        requested_code: code,
+        ok: true,
+        basis: "line_price_delta",
+        matched: [],
+        evidence: delta,
+        reason: `persisted order itemizes no vouchers, but charged line total ${delta.charged_total} is below the campaign package list total ${delta.list_total} (delta ${delta.delta}); treated as applied (weak evidence)`,
+      };
+    }
+    return {
+      requested_code: code,
+      ok: false,
+      basis: "line_price_delta",
+      matched: [],
+      evidence: delta,
+      reason: `persisted order itemizes no vouchers and charged line total ${delta.charged_total} equals the campaign package list total ${delta.list_total}; no discount evidence`,
+    };
+  }
   return {
     requested_code: code,
     ok: false,
     basis: "missing",
     matched: [],
-    reason: vouchers.length
-      ? `persisted order voucher(s) (${vouchers.map((voucher) => voucher.code || voucher.name).join(", ")}) do not include ${code}`
-      : "persisted order shows no voucher entries and no positive discount total",
+    reason: "persisted order shows no voucher entries, no positive discount total, and campaign package list prices could not be resolved for a price-delta check",
   };
+}
+
+function linePriceDeltaEvidence(lines, events) {
+  if (!events || !Array.isArray(lines) || !lines.length) return null;
+  let listTotal = 0;
+  let chargedTotal = 0;
+  const matchedLines = [];
+  for (const line of lines) {
+    const pkg = campaignPackageMetaForLine(events, line);
+    const listPrice = packageListTotal(pkg);
+    const chargedPrice = Number(line.price_incl_tax ?? line.price);
+    if (!pkg || !Number.isFinite(listPrice) || !Number.isFinite(chargedPrice)) return null;
+    listTotal += listPrice;
+    chargedTotal += chargedPrice;
+    matchedLines.push({ title: line.title, quantity: line.quantity, package_ref_id: pkg.ref_id ?? null, list_price: round2(listPrice), charged_price: round2(chargedPrice) });
+  }
+  return {
+    list_total: round2(listTotal),
+    charged_total: round2(chargedTotal),
+    delta: round2(listTotal - chargedTotal),
+    lines: matchedLines,
+  };
+}
+
+function campaignPackageMetaForLine(events, line) {
+  for (let index = events.responses.length - 1; index >= 0; index -= 1) {
+    const body = events.responses[index]?.body;
+    if (!Array.isArray(body?.packages)) continue;
+    const match = body.packages.find((pkg) => packageMatchesLine(pkg, line));
+    if (match) return match;
+  }
+  return null;
+}
+
+// A campaign typically carries several packages for the same product at
+// different quantities (1x/3x/6x tiers), so a SKU/product match alone is
+// ambiguous — the package quantity must match the persisted line quantity too.
+function packageMatchesLine(pkg, line) {
+  const qty = Number(pkg?.qty ?? pkg?.quantity);
+  if (!Number.isFinite(qty) || qty !== Number(line?.quantity || 0)) return false;
+  if (pkg?.product_sku && line?.sku) return normalizeLabel(pkg.product_sku) === normalizeLabel(line.sku);
+  if (pkg?.product_variant_id != null && line?.variant_id != null) return Number(pkg.product_variant_id) === Number(line.variant_id);
+  if (pkg?.product_id != null && line?.product_id != null) return Number(pkg.product_id) === Number(line.product_id);
+  return false;
+}
+
+function packageListTotal(pkg) {
+  const total = Number(pkg?.price_total);
+  if (Number.isFinite(total) && total > 0) return total;
+  const unit = Number(pkg?.price);
+  const qty = Number(pkg?.qty ?? pkg?.quantity ?? 1);
+  if (!Number.isFinite(unit)) return NaN;
+  return unit * (Number.isFinite(qty) && qty > 0 ? qty : 1);
+}
+
+function round2(value) {
+  return Math.round(value * 100) / 100;
 }
 
 async function advanceToCheckoutForm(page) {
@@ -3286,6 +3379,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   testOrderPaths,
   packageCardSelectors,
   assessCouponApplication,
+  linePriceDeltaEvidence,
+  packageMatchesLine,
   extractOrderVouchers,
   orderDiscountTotal,
   assessOrderCreation,

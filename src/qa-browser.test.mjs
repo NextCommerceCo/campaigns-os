@@ -463,3 +463,59 @@ test("voucher extraction reads alternate persisted shapes and discount-total key
   assert.equal(orderDiscountTotal({}), null);
   assert.equal(orderDiscountTotal({ total_discounts: "not-a-number" }), null);
 });
+
+test("coupon proof: line-price delta rescues platforms that net the voucher into line prices", () => {
+  const { assessCouponApplication } = __qaBrowserTestHooks;
+  // Modeled on bladdersupport order 226826: no voucher keys, discounts [],
+  // total_discounts "0.00", but the 3x line charged 76.95 vs 81.00 list.
+  const events = { responses: [
+    { status: 200, url: "https://campaigns.example.test/api/v1/campaigns/", body: { packages: [
+      { ref_id: 1, qty: 1, price: "31.00", price_total: "31.00", product_sku: "PN_BLADDER_SUPPORT_60_CAP" },
+      { ref_id: 3, qty: 3, price: "27.00", price_total: "81.00", product_sku: "PN_BLADDER_SUPPORT_60_CAP" },
+    ] } },
+  ] };
+  const lines = [{ title: "Bladder Support", quantity: 3, sku: "PN_BLADDER_SUPPORT_60_CAP", price_incl_tax: "76.95", is_upsell: false }];
+
+  const applied = assessCouponApplication("PRIMAL_5", { vouchers: [], totalDiscount: 0, lines, events });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.basis, "line_price_delta");
+  assert.equal(applied.evidence.list_total, 81);
+  assert.equal(applied.evidence.charged_total, 76.95);
+  assert.equal(applied.evidence.delta, 4.05);
+
+  // Same shape but charged == list → the coupon did NOT apply.
+  const rejected = assessCouponApplication("PRIMAL_5", {
+    vouchers: [], totalDiscount: 0, events,
+    lines: [{ title: "Bladder Support", quantity: 3, sku: "PN_BLADDER_SUPPORT_60_CAP", price_incl_tax: "81.00", is_upsell: false }],
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.basis, "line_price_delta");
+
+  // Unresolvable package meta → still fails, with the unverifiable reason.
+  const unresolvable = assessCouponApplication("PRIMAL_5", { vouchers: [], totalDiscount: 0, lines, events: { responses: [] } });
+  assert.equal(unresolvable.ok, false);
+  assert.equal(unresolvable.basis, "missing");
+  assert.match(unresolvable.reason, /could not be resolved/);
+});
+
+test("package-line matching requires quantity to disambiguate same-SKU tier packages", () => {
+  const { packageMatchesLine, linePriceDeltaEvidence } = __qaBrowserTestHooks;
+  const oneX = { ref_id: 1, qty: 1, price: "31.00", price_total: "31.00", product_sku: "SKU_A" };
+  const threeX = { ref_id: 3, qty: 3, price: "27.00", price_total: "81.00", product_sku: "SKU_A" };
+
+  assert.equal(packageMatchesLine(threeX, { quantity: 3, sku: "SKU_A" }), true);
+  assert.equal(packageMatchesLine(oneX, { quantity: 3, sku: "SKU_A" }), false);
+  assert.equal(packageMatchesLine(threeX, { quantity: 3, sku: "SKU_B" }), false);
+  // Variant/product-id fallbacks when SKU is absent.
+  assert.equal(packageMatchesLine({ qty: 1, product_variant_id: 9 }, { quantity: 1, variant_id: 9 }), true);
+  assert.equal(packageMatchesLine({ qty: 1, product_id: 5 }, { quantity: 1, product_id: 5 }), true);
+
+  // price_total absent → unit price × qty fallback.
+  const events = { responses: [{ status: 200, url: "x", body: { packages: [{ ref_id: 3, qty: 3, price: "27.00", product_sku: "SKU_A" }] } }] };
+  const delta = linePriceDeltaEvidence([{ quantity: 3, sku: "SKU_A", price_incl_tax: "76.95" }], events);
+  assert.equal(delta.list_total, 81);
+  assert.equal(delta.lines[0].package_ref_id, 3);
+
+  // A line no package matches → no delta evidence at all (null, not partial).
+  assert.equal(linePriceDeltaEvidence([{ quantity: 2, sku: "SKU_A", price_incl_tax: "50.00" }], events), null);
+});
