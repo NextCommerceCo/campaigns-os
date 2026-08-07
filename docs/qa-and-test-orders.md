@@ -310,6 +310,13 @@ card into the active hosted payment iframes, and clicks the real checkout submit
 button. A hand-built backend API order does not prove the deployed
 checkout/upsell surfaces.
 
+Order-creation proof is read-back tolerant: the live order-create network
+observation is best-effort (a fast post-submit navigation can drop the capture),
+so when the create request was missed but the page redirected with a `ref_id`
+and the order read-back returns the persisted order, the path passes and the
+verdict records an `order_create_observation` note — mirroring the
+accepted-upsell rule. An observed create with a non-2xx status still fails.
+
 ```bash
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
@@ -329,7 +336,40 @@ for a targeted matrix, and **`full`** — every accept/decline permutation deriv
 from the funnel's sequential upsell/downsell depth (a two-offer funnel = 4 paths,
 a five-offer funnel = 32 paths plus the checkout baseline). Use `full` when you
 explicitly want exhaustive proof. Bundle/quantity and bump coverage come from
-`--cart`.
+`--cart` and `--select-package`.
+
+### Package/bundle card selection and coupons
+
+Two flags target funnels the default-tier drive cannot prove:
+
+- `--select-package <ref[:qty],...>` — **strict** package/bundle card selection.
+  Each ref is matched against rendered selector/bundle cards
+  (`[data-next-package-id]`, `[data-next-bundle-card][data-next-bundle-id]`) and
+  clicked; when the selector exposes selected-state markers
+  (`data-next-selected="true"` / `.next-selected`), the card must actually enter
+  the selected state. A ref that matches no card, or a card that refuses
+  selection, **fails the `selected_bundle` step** instead of silently driving
+  the pre-selected default tier. Use this to traverse non-default tiers of a
+  multi-tier selector (for example the 1x tier of a 3-tier funnel). `--cart`
+  remains the best-effort variant.
+- `--apply-coupon <code>` — types the code into the rendered coupon/promo input
+  (`[data-next-checkout-field="coupon"]` and common fallbacks, revealing a
+  collapsed "Have a coupon?" disclosure when needed) and clicks the apply
+  control before card entry, as a new `coupon_applied` ladder step. Funnels
+  with **no shopper-typable coupon surface** (the code is applied by page JS,
+  e.g. an exit-intent overlay calling `window.next.applyCoupon("CODE")`) fall
+  back to the SDK `applyCoupon` API — the step detail records that the
+  shopper-facing trigger was not exercised, so verify that trigger separately.
+  The apply mechanics never pass the proof on their own: the path passes only
+  on **persisted-order read-back evidence**, checked in this order — the
+  requested voucher code itemized on the order (authoritative); a positive
+  discount total when no voucher entries exist (weak); or, on platforms that
+  **net the voucher into line prices and itemize nothing** (no voucher keys,
+  empty `discounts`, zero `total_discounts`), a line-price delta: the charged
+  line total must sit below the campaign package list total captured from the
+  campaign API during the run (weak, `basis: "line_price_delta"`; charged ==
+  list fails as "coupon did not apply"). A mismatched voucher or no discount
+  evidence on any basis fails the path.
 
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
 gate**. `common` always stays under it; if `full` expands past it, the command
@@ -354,7 +394,10 @@ not deliverable.
 The browser driver intentionally behaves like a user:
 
 - package selection uses rendered `[data-next-package-id]` controls when
-  `--cart <package-ref:qty,...>` is supplied
+  `--cart <package-ref:qty,...>` is supplied (best-effort) or
+  `--select-package <ref[:qty],...>` (strict — misses fail the path)
+- coupon codes from `--apply-coupon` are typed into the rendered promo input and
+  proven against the persisted-order voucher read-back
 - checkout is advanced through the visible cart/checkout button
 - address autocomplete is settled or closed before submit
 - Spreedly card and CVV iframes are filled with sequential keystrokes

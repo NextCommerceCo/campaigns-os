@@ -51,6 +51,7 @@ const DEFAULT_MAX_TEST_ORDERS = 6;
 const DEFAULT_QA_TEST_EMAIL = "qa-test@campaigns-os.test";
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 const ORDER_UPSELLS_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/upsells\/?(?:[?#].*)?$/i;
+const ORDER_CREATE_RESPONSE_PATTERN = /\/api\/v1\/orders\/?(?:[?#].*)?$/i;
 
 export async function runBrowserChecks(topologies, args = {}, options = {}) {
   const browser = await launchChromium(args);
@@ -1564,6 +1565,7 @@ const TEST_ORDER_STEP_LADDER = Object.freeze([
   "selected_bundle",
   "bump_state",
   "customer_fields_filled",
+  "coupon_applied",
   "card_fields_filled",
   "cart_created",
   "hosted_redirect_observed",
@@ -1724,8 +1726,10 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
 
   await ladder.run("opened_checkout", () => gotoAndSettle(page, checkoutPage.url, args), { timeoutMs: budget() });
   await ladder.run("selected_bundle", async () => {
+    const strictSelection = await selectRequestedPackages(page, args);
     await selectRequestedCart(page, args);
     await advanceToCheckoutForm(page);
+    if (strictSelection) return `selected requested package card(s): ${strictSelection}`;
     return parseCart(args.cart).length ? `requested cart ${args.cart}` : "default bundle selection";
   }, { timeoutMs: budget() });
   await ladder.run("bump_state", async () => {
@@ -1739,6 +1743,12 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       ensurePageFillable(page, checkoutPage.url);
       await fillCheckoutFields(page, args, email);
     }, { timeoutMs: budget() });
+    await ladder.run("coupon_applied", async () => {
+      const code = stringArg(args["apply-coupon"]);
+      if (!code) return { skip: "no --apply-coupon code requested" };
+      ensurePageFillable(page, checkoutPage.url);
+      return applyRequestedCoupon(page, code);
+    }, { timeoutMs: budget() });
     await ladder.run("card_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
       await fillPaymentFields(page, args);
@@ -1750,7 +1760,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     await ladder.run("order_submitted", async () => {
       ensurePageFillable(page, checkoutPage.url);
       await submitCheckout(page);
-      await waitForCheckoutResult(page);
+      await waitForCheckoutResult(page, events);
     }, { timeoutMs: budget() });
   } catch (error) {
     const hosted = error?.hostedRedirect || hostedNow();
@@ -1792,6 +1802,8 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       if (refreshed.receipt_line_items.length) {
         order.cart_state = refreshed.cart_state;
         order.receipt_line_items = refreshed.receipt_line_items;
+        order.vouchers = refreshed.vouchers;
+        order.discount_total = refreshed.discount_total;
         order.verification.order_read_status = refreshed.verification.order_read_status;
         order.verification.total_incl_tax = refreshed.verification.total_incl_tax;
         order.verification.currency = refreshed.verification.currency;
@@ -1848,7 +1860,25 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   if (stepFailures.length) order.verification.upsell_step_failures = stepFailures;
   if (receiptFailures.length) order.verification.receipt_rendering_failures = receiptFailures;
 
-  const pathFailures = [...stepFailures, ...receiptFailures];
+  // Coupon proof is read-back-authoritative, like accepted upsells: the click
+  // mechanics live in the coupon_applied step, but the pass/fail signal is the
+  // persisted order carrying the requested voucher.
+  const couponFailures = [];
+  const requestedCoupon = stringArg(args["apply-coupon"]);
+  if (requestedCoupon) {
+    const couponAssessment = assessCouponApplication(requestedCoupon, {
+      vouchers: order.vouchers || [],
+      totalDiscount: order.discount_total,
+      lines: order.receipt_line_items || [],
+      events,
+    });
+    order.verification.coupon = couponAssessment;
+    if (order.ok && !couponAssessment.ok) {
+      couponFailures.push(`coupon ${requestedCoupon}: ${couponAssessment.reason}`);
+    }
+  }
+
+  const pathFailures = [...stepFailures, ...receiptFailures, ...couponFailures];
   const ok = order.ok && pathFailures.length === 0;
   return {
     ok,
@@ -1864,12 +1894,12 @@ async function hostedRedirectOutcome({ page, events, email, checkoutPage, args, 
   ladder.ok("hosted_redirect_observed", `redirected to hosted checkout: ${hosted.redacted_url}`);
   skipRemainingSteps(
     ladder,
-    ["order_submitted", "upsell_action", "receipt_reached", "receipt_rendered"],
+    ["coupon_applied", "order_submitted", "upsell_action", "receipt_reached", "receipt_rendered"],
     "hosted checkout flow is platform-owned; typed-card runner stops at the handoff",
   );
   let order;
   try {
-    order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
+    order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args, allowLateWait: false });
   } catch {
     order = {
       path,
@@ -2107,6 +2137,346 @@ async function selectRequestedCart(page, args) {
   }
 }
 
+// --- Strict package/bundle card selection (--select-package) ---
+// `--cart` is best-effort: a ref that matches no rendered card silently falls
+// through to the funnel's default tier, so a multi-tier selector can only ever
+// prove the pre-selected card. `--select-package <ref[:qty][,ref...]>` is the
+// strict variant: the requested card must exist, be clickable, and (when the
+// selector exposes selected-state markers) actually enter the selected state —
+// otherwise the selected_bundle step fails instead of driving the wrong tier.
+function packageCardSelectors(ref) {
+  const escaped = escapeCss(String(ref));
+  return [
+    `[data-next-selector-card][data-next-package-id="${escaped}"]`,
+    `[data-next-bundle-card][data-next-bundle-id="${escaped}"]`,
+    `[data-next-package-id="${escaped}"]`,
+    `[data-next-bundle-id="${escaped}"]`,
+  ];
+}
+
+async function selectRequestedPackages(page, args) {
+  const requested = parseCart(args["select-package"]);
+  if (!requested.length) return null;
+  const details = [];
+  for (const item of requested) {
+    details.push(await selectPackageCard(page, item));
+  }
+  return details.join("; ");
+}
+
+async function selectPackageCard(page, item) {
+  const selectors = packageCardSelectors(item.packageId);
+  for (const selector of selectors) {
+    const target = page.locator(selector).first();
+    if (!await target.count().catch(() => 0)) continue;
+    await target.scrollIntoViewIfNeeded().catch(() => {});
+    await target.click({ timeout: 5000 }).catch(async () => {
+      await target.click({ force: true, timeout: 5000 });
+    });
+    const state = await packageCardSelectionState(page, selector);
+    if (state === "unselected") {
+      throw new Error(`--select-package ${item.packageId}: card matched ${selector} but did not enter a selected state after click`);
+    }
+    return `${item.packageId} via ${selector}${state === "unknown" ? " (card exposes no selected-state marker; click recorded)" : ""}`;
+  }
+  throw new Error(`--select-package ${item.packageId}: no rendered card matched any of ${selectors.join(", ")}`);
+}
+
+// Bounded retry instead of a single fixed wait: SPA selectors can propagate
+// the selected-state marker asynchronously, so "unselected" is only final
+// after the polling budget is spent. "unknown" (no marker contract exposed)
+// and "selected" return immediately.
+async function packageCardSelectionState(page, selector, { attempts = 4, intervalMs = 500 } = {}) {
+  let state = "unknown";
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await page.waitForTimeout(intervalMs);
+    state = await page.locator(selector).first().evaluate((element) => {
+      const card = element.closest("[data-next-selector-card], [data-next-bundle-card]") || element;
+      const isSelected = (node) => node.getAttribute("data-next-selected") === "true" || node.classList.contains("next-selected");
+      if (isSelected(card) || Array.from(card.querySelectorAll("*")).some(isSelected)) return "selected";
+      const group = card.closest("[data-next-bundle-selector], [data-next-selector-id], [data-next-cart-selector]");
+      if (group) {
+        return group.querySelector('[data-next-selected], .next-selected') ? "unselected" : "unknown";
+      }
+      // No known selector-group container: only same-kind sibling cards can
+      // prove a selected-state contract exists. An arbitrary ancestor's
+      // markers (a payment-method selector, another widget) must not turn an
+      // honest "unknown" into a false "unselected".
+      const siblingCards = Array.from(card.parentElement?.children || [])
+        .filter((node) => node !== card && node.matches("[data-next-selector-card], [data-next-bundle-card], [data-next-package-id], [data-next-bundle-id]"));
+      const siblingMarker = siblingCards.some((node) => (
+        node.hasAttribute("data-next-selected")
+        || node.classList.contains("next-selected")
+        || node.querySelector('[data-next-selected], .next-selected')
+      ));
+      return siblingMarker ? "unselected" : "unknown";
+    }).catch(() => "unknown");
+    if (state !== "unselected") return state;
+  }
+  return state;
+}
+
+// --- Coupon application (--apply-coupon) ---
+// The step drives the rendered promo/coupon surface like a shopper: reveal a
+// collapsed disclosure if needed, type the code, click apply (or press Enter).
+// It deliberately does NOT pass/fail on live DOM state — the authoritative
+// proof is the persisted order carrying the voucher (assessCouponApplication),
+// evaluated after the order read-back.
+const COUPON_INPUT_SELECTORS = Object.freeze([
+  '[data-next-checkout-field="coupon"]',
+  '[os-checkout-field="coupon"]',
+  "[data-next-coupon-input]",
+  'input[name*="coupon" i]',
+  'input[name*="voucher" i]',
+  'input[name*="promo" i]',
+  'input[placeholder*="coupon" i]',
+  'input[placeholder*="promo" i]',
+  'input[placeholder*="discount" i]',
+]);
+
+async function applyRequestedCoupon(page, code) {
+  let input = await firstUsableCouponInput(page);
+  if (!input) {
+    // A collapsed "Have a coupon?" disclosure is common; reveal and retry
+    // once. Scoped to form containers so page chrome that merely mentions
+    // promos/vouchers (nav links, marketing copy) is never clicked.
+    await clickVisibleControlByText(page, /coupon|promo|discount code|voucher/i, { within: "form" }).catch(() => {});
+    await page.waitForTimeout(750);
+    input = await firstUsableCouponInput(page);
+  }
+  if (!input) {
+    // Some funnels have no shopper-typable coupon surface at all — the code is
+    // applied by page JS (e.g. an exit-intent overlay calling
+    // window.next.applyCoupon("CODE")). Fall back to the SDK's own coupon API:
+    // the persisted-order voucher read-back stays the proof, but the
+    // shopper-facing trigger (exit-intent click, etc.) is NOT exercised, so the
+    // step detail records the mechanism for the verdict reader.
+    const sdkApplied = await applyCouponViaSdkApi(page, code);
+    if (sdkApplied.available) {
+      await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+      await page.waitForTimeout(1000);
+      const returned = sdkApplied.result_summary != null ? `; SDK returned ${sdkApplied.result_summary}` : "";
+      return `no rendered coupon input; applied ${code} via SDK window.next.applyCoupon API (shopper-facing trigger not exercised)${returned}; proof deferred to persisted-order voucher read-back`;
+    }
+    throw new Error(`--apply-coupon ${code}: no coupon/promo input found on the checkout page (looked for ${COUPON_INPUT_SELECTORS.join(", ")}) and the SDK applyCoupon API is unavailable`);
+  }
+  await input.locator.click({ timeout: 5000 }).catch(() => {});
+  await input.locator.fill("").catch(() => {});
+  await input.locator.pressSequentially(code, { delay: 20 });
+  const applied = await clickCouponApplyControl(page, input.locator);
+  await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await page.waitForTimeout(1000);
+  return `typed ${code} into ${input.selector}, ${applied}; proof deferred to persisted-order voucher read-back`;
+}
+
+async function applyCouponViaSdkApi(page, code) {
+  return page.evaluate(async (couponCode) => {
+    const apply = window.next?.applyCoupon;
+    if (typeof apply !== "function") return { available: false };
+    const result = await apply.call(window.next, couponCode);
+    // Surface the SDK's own verdict in the step detail — a resolved-but-falsy
+    // or { ok: false } result means the pathway silently no-oped even though
+    // nothing threw, and the read-back would otherwise be the only clue.
+    let summary;
+    try {
+      summary = result === undefined ? "undefined" : JSON.stringify(result);
+    } catch {
+      summary = String(result);
+    }
+    return { available: true, result_summary: String(summary).slice(0, 200) };
+  }, code).catch((error) => {
+    throw new Error(`--apply-coupon ${code}: SDK applyCoupon API call failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+}
+
+async function firstUsableCouponInput(page) {
+  for (const selector of COUPON_INPUT_SELECTORS) {
+    const locator = page.locator(selector).first();
+    if (!await locator.count().catch(() => 0)) continue;
+    if (await locator.isVisible().catch(() => false)) return { selector, locator };
+  }
+  return null;
+}
+
+async function clickCouponApplyControl(page, input) {
+  const explicit = page.locator('[data-next-coupon-apply], [data-next-action="apply-coupon"], [data-next-checkout-action="apply-coupon"]').first();
+  if (await explicit.count().catch(() => 0)) {
+    await explicit.click({ timeout: 5000 }).catch(() => {});
+    return "clicked explicit apply control";
+  }
+  const clicked = await clickVisibleControlByText(page, /^\s*apply\s*(?:code|coupon|discount)?\s*$/i, { within: "form" }).catch(() => false);
+  if (clicked) return "clicked visible apply control";
+  await input.press("Enter").catch(() => {});
+  return "pressed Enter in the coupon input";
+}
+
+function extractOrderVouchers(order) {
+  const buckets = [order?.vouchers, order?.voucher_discounts, order?.discounts];
+  const entries = [];
+  for (const bucket of buckets) {
+    if (!Array.isArray(bucket)) continue;
+    for (const entry of bucket) {
+      if (!entry || typeof entry !== "object") continue;
+      const code = stringArg(entry.code) || stringArg(entry.voucher_code) || stringArg(entry?.voucher?.code) || null;
+      const name = stringArg(entry.name) || stringArg(entry?.voucher?.name) || null;
+      // Identity-less entries (bare amount rows) can neither prove nor
+      // disprove a specific code; keeping them would only inflate
+      // vouchers.length and suppress the discount_total fallback.
+      if (!code && !name) continue;
+      entries.push({ code, name, amount: entry.amount ?? entry.discount ?? null });
+    }
+  }
+  return entries;
+}
+
+// total_discount_incl_tax deliberately last: it is tax-inflated relative to
+// the coupon's face value, so it only speaks when no tax-neutral key exists.
+function orderDiscountTotal(order) {
+  for (const value of [order?.total_discounts, order?.discount_total, order?.total_discount_incl_tax]) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function assessCouponApplication(code, { vouchers = [], totalDiscount = null, lines = [], events = null } = {}) {
+  const requested = normalizeLabel(code);
+  const matched = vouchers.filter((voucher) => [voucher.code, voucher.name].some((value) => value && normalizeLabel(value) === requested));
+  if (matched.length) {
+    return { requested_code: code, ok: true, basis: "persisted_voucher_code", matched, reason: `voucher ${code} present in persisted order` };
+  }
+  if (vouchers.length) {
+    return {
+      requested_code: code,
+      ok: false,
+      basis: "missing",
+      matched: [],
+      reason: `persisted order voucher(s) (${vouchers.map((voucher) => voucher.code || voucher.name).join(", ")}) do not include ${code}`,
+    };
+  }
+  const discount = Number(totalDiscount);
+  if (Number.isFinite(discount) && discount > 0) {
+    return {
+      requested_code: code,
+      ok: true,
+      basis: "discount_total",
+      weak_evidence: true,
+      matched: [],
+      reason: `persisted order exposes no voucher entries but carries a ${discount} discount total; treated as applied (weak evidence — the discount is not provably tied to the requested code)`,
+    };
+  }
+  // Some platforms net the voucher into the line prices and itemize nothing:
+  // no voucher collection under any key, discounts [], total_discounts "0.00",
+  // and price_incl_tax already reduced. There the only persisted discount
+  // signal is the delta between the charged line prices and the campaign
+  // package list prices (which the run already captured from the campaign API
+  // responses). Applied → charged < list; rejected → charged == list.
+  const delta = linePriceDeltaEvidence(lines, events);
+  if (delta) {
+    if (delta.charged_total < delta.list_total - 0.009) {
+      return {
+        requested_code: code,
+        ok: true,
+        basis: "line_price_delta",
+        weak_evidence: true,
+        matched: [],
+        evidence: delta,
+        reason: `persisted order itemizes no vouchers, but charged line total ${delta.charged_total} is below the campaign package list total ${delta.list_total} (delta ${delta.delta}); treated as applied (weak evidence — the discount is not provably tied to the requested code)`,
+      };
+    }
+    return {
+      requested_code: code,
+      ok: false,
+      basis: "line_price_delta",
+      matched: [],
+      evidence: delta,
+      reason: `persisted order itemizes no vouchers and charged line total ${delta.charged_total} equals the campaign package list total ${delta.list_total}; no discount evidence`,
+    };
+  }
+  return {
+    requested_code: code,
+    ok: false,
+    basis: "missing",
+    matched: [],
+    reason: "persisted order shows no voucher entries, no positive discount total, and campaign package list prices could not be resolved for a price-delta check",
+  };
+}
+
+function linePriceDeltaEvidence(lines, events) {
+  if (!events || !Array.isArray(lines) || !lines.length) return null;
+  let listTotal = 0;
+  let chargedTotal = 0;
+  let unmatchedLineCount = 0;
+  const matchedLines = [];
+  for (const line of lines) {
+    const pkg = campaignPackageMetaForLine(events, line);
+    const listPrice = packageListTotal(pkg);
+    const declaredPrice = Number(line.price_incl_tax ?? line.price);
+    if (!pkg || !Number.isFinite(listPrice) || !Number.isFinite(declaredPrice)) {
+      // Bonus/gift/trial lines with no campaign-package equivalent must not
+      // defeat the delta for the lines that DO resolve.
+      unmatchedLineCount += 1;
+      continue;
+    }
+    // Persisted line-price semantics vary by platform shape: 29next stores the
+    // line TOTAL in price_incl_tax, other shapes store a per-unit price. Read
+    // it both ways and take the LARGEST reading that does not exceed the list
+    // total — the conservative (smallest) claimed discount. A per-unit full
+    // price (unit × qty == list) then correctly reads as undiscounted instead
+    // of as a fake (qty−1)× discount.
+    const quantity = Number(line.quantity || 1) || 1;
+    const readings = [declaredPrice, round2(declaredPrice * quantity)];
+    const notOverList = readings.filter((value) => value <= listPrice + 0.009);
+    const chargedPrice = notOverList.length ? Math.max(...notOverList) : Math.min(...readings);
+    listTotal += listPrice;
+    chargedTotal += chargedPrice;
+    matchedLines.push({ title: line.title, quantity: line.quantity, package_ref_id: pkg.ref_id ?? null, list_price: round2(listPrice), charged_price: round2(chargedPrice) });
+  }
+  if (!matchedLines.length) return null;
+  return {
+    list_total: round2(listTotal),
+    charged_total: round2(chargedTotal),
+    delta: round2(listTotal - chargedTotal),
+    lines: matchedLines,
+    ...(unmatchedLineCount ? { unmatched_line_count: unmatchedLineCount } : {}),
+  };
+}
+
+function campaignPackageMetaForLine(events, line) {
+  for (let index = events.responses.length - 1; index >= 0; index -= 1) {
+    const body = events.responses[index]?.body;
+    if (!Array.isArray(body?.packages)) continue;
+    const match = body.packages.find((pkg) => packageMatchesLine(pkg, line));
+    if (match) return match;
+  }
+  return null;
+}
+
+// A campaign typically carries several packages for the same product at
+// different quantities (1x/3x/6x tiers), so a SKU/product match alone is
+// ambiguous — the package quantity must match the persisted line quantity too.
+function packageMatchesLine(pkg, line) {
+  const qty = Number(pkg?.qty ?? pkg?.quantity);
+  if (!Number.isFinite(qty) || qty !== Number(line?.quantity || 0)) return false;
+  if (pkg?.product_sku && line?.sku) return normalizeLabel(pkg.product_sku) === normalizeLabel(line.sku);
+  if (pkg?.product_variant_id != null && line?.variant_id != null) return Number(pkg.product_variant_id) === Number(line.variant_id);
+  if (pkg?.product_id != null && line?.product_id != null) return Number(pkg.product_id) === Number(line.product_id);
+  return false;
+}
+
+function packageListTotal(pkg) {
+  const total = Number(pkg?.price_total);
+  if (Number.isFinite(total) && total > 0) return total;
+  const unit = Number(pkg?.price);
+  const qty = Number(pkg?.qty ?? pkg?.quantity ?? 1);
+  if (!Number.isFinite(unit)) return NaN;
+  return unit * (Number.isFinite(qty) && qty > 0 ? qty : 1);
+}
+
+function round2(value) {
+  return Math.round(value * 100) / 100;
+}
+
 async function advanceToCheckoutForm(page) {
   if (await hasVisibleCheckoutFields(page)) return;
   const explicit = page.locator('[data-next-action="add-to-cart"], [data-next-checkout-action="add-to-cart"], [data-next-add-to-cart]').first();
@@ -2212,22 +2582,70 @@ async function submitCheckout(page) {
   await submit.click();
 }
 
-async function waitForCheckoutResult(page) {
-  await page.waitForURL((url) => /ref_id=|receipt|upsell|thank|order|payment_failed/i.test(String(url)), { timeout: 60000 }).catch(() => {});
+// When events are supplied (the post-submit wait), a platform-rejected order
+// create fails fast with the real cause instead of burning the full step
+// budget and reporting a generic timeout: a 400 on POST /api/v1/orders/ never
+// navigates the page, so without this check the only symptom was
+// "step order_submitted timed out after 45000ms".
+async function waitForCheckoutResult(page, events = null) {
+  const outcomeUrl = /ref_id=|receipt|upsell|thank|order|payment_failed/i;
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    if (page.isClosed()) throw new Error("checkout page closed during order submit");
+    if (outcomeUrl.test(String(safePageUrl(page) || ""))) break;
+    if (events) {
+      const rejected = rejectedOrderCreateResponse(events);
+      if (rejected) {
+        const detail = typeof rejected.body?.detail === "string" ? `: ${trim(rejected.body.detail)}` : "";
+        throw new Error(`order create rejected: HTTP ${rejected.status}${detail}`);
+      }
+      const failed = failedOrderCreateRequest(events);
+      if (failed) throw new Error(`order create request failed: ${failed.failure || "network failure"}`);
+    }
+    await page.waitForTimeout(250);
+  }
   await page.waitForLoadState("domcontentloaded", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForTimeout(1500);
 }
 
-async function buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody = null }) {
-  const orderCreate = lastJsonResponse(events, /\/api\/v1\/orders\/?$/i);
+// The MOST RECENT create response decides the outcome: SDKs/platforms retry
+// transient create failures, so [..., 400, 201] means the retry succeeded and
+// the earlier rejection is history, not the result.
+function rejectedOrderCreateResponse(events) {
+  for (let index = events.responses.length - 1; index >= 0; index -= 1) {
+    const response = events.responses[index];
+    if (!ORDER_CREATE_RESPONSE_PATTERN.test(response.url)) continue;
+    return response.status >= 400 ? response : null;
+  }
+  return null;
+}
+
+// Network-level failures (DNS, reset, abort) land in events.failed, not
+// events.responses. Only meaningful when no create response succeeded — an
+// aborted duplicate alongside a 2xx create is not a failed order.
+function failedOrderCreateRequest(events) {
+  const succeeded = events.responses.some((response) => (
+    ORDER_CREATE_RESPONSE_PATTERN.test(response.url) && response.status >= 200 && response.status < 300
+  ));
+  if (succeeded) return null;
+  for (let index = events.failed.length - 1; index >= 0; index -= 1) {
+    if (ORDER_CREATE_RESPONSE_PATTERN.test(events.failed[index].url)) return events.failed[index];
+  }
+  return null;
+}
+
+async function buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody = null, allowLateWait = true }) {
+  if (allowLateWait) await waitForLateOrderEvidence(page, events);
+  const orderCreate = lastJsonResponse(events, ORDER_CREATE_RESPONSE_PATTERN);
   const orderRead = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i);
   const upsellOrderResponse = lastJsonResponse(events, ORDER_UPSELLS_RESPONSE_PATTERN);
   const orderBody = preferredOrderBody || upsellOrderResponse?.body || orderRead?.body || orderCreate?.body || null;
   const refId = stringArg(orderBody?.ref_id) || refIdFromUrl(page.url());
   const number = stringArg(orderBody?.number) || stringArg(orderBody?.id) || null;
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
-  const ok = Boolean(orderCreate && orderCreate.status >= 200 && orderCreate.status < 300 && refId);
+  const proof = assessOrderCreation({ orderCreate, orderRead, upsellOrderResponse, refId });
+  const ok = proof.ok;
   return {
     path,
     ok,
@@ -2241,12 +2659,15 @@ async function buildOrderEvidence({ page, events, path, email, checkoutPage, arg
     final_url: page.url(),
     cart_state: cartStateFromOrder(orderBody) || cartStateFromArgs(args),
     receipt_line_items: extractReceiptLines(orderBody),
+    vouchers: extractOrderVouchers(orderBody),
+    discount_total: orderDiscountTotal(orderBody),
     verification: {
       verified: ok,
       order_create_status: orderCreate?.status || null,
       order_read_status: orderRead?.status || null,
       total_incl_tax: orderBody?.total_incl_tax || null,
       currency: orderBody?.currency || null,
+      ...(proof.observation ? { order_create_observation: proof.observation } : {}),
       error: ok ? null : await visibleErrorText(page),
     },
     evidence: {
@@ -2255,6 +2676,52 @@ async function buildOrderEvidence({ page, events, path, email, checkoutPage, arg
       events: sanitizedEvents(events),
     },
   };
+}
+
+// The live order-create observation is best-effort: the response listener reads
+// bodies asynchronously and a fast post-submit navigation can drop or delay the
+// capture even though the platform created the order (observed in migration QA
+// as a flaky "order request not observed" abort after the order existed). The
+// order read-back is authoritative, mirroring the accepted-upsell rule: a
+// persisted order returned for the ref_id proves creation. An observed create
+// with a non-2xx status is still a real failure.
+function assessOrderCreation({ orderCreate, orderRead, upsellOrderResponse, refId }) {
+  if (!refId) return { ok: false, observation: null };
+  if (orderCreate) {
+    const createOk = orderCreate.status >= 200 && orderCreate.status < 300;
+    return { ok: createOk, observation: null };
+  }
+  const readBack = [orderRead, upsellOrderResponse].find((response) => (
+    response
+    && response.status >= 200 && response.status < 300
+    && response.body && typeof response.body === "object"
+  ));
+  if (readBack) {
+    return {
+      ok: true,
+      observation: "live order-create request not observed; confirmed via order read-back (persisted order returned for ref_id)",
+    };
+  }
+  return { ok: false, observation: null };
+}
+
+// Bounded wait for the async response listener to catch up before concluding
+// "order request not observed": when the page already redirected with a ref_id
+// (the strongest live signal an order exists) but no order API evidence has
+// landed in the event log yet, poll briefly for the late capture.
+async function waitForLateOrderEvidence(page, events, { timeoutMs = 4000, intervalMs = 250 } = {}) {
+  const hasOrderEvidence = () => Boolean(
+    lastJsonResponse(events, ORDER_CREATE_RESPONSE_PATTERN)
+    || lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i)
+    || lastJsonResponse(events, ORDER_UPSELLS_RESPONSE_PATTERN),
+  );
+  if (hasOrderEvidence()) return;
+  if (!refIdFromUrl(safePageUrl(page))) return;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    if (hasOrderEvidence()) return;
+  }
 }
 
 async function clickUpsellPath(page, path, _options = {}) {
@@ -2362,12 +2829,14 @@ function testOrderAssertion(page, path, result) {
           ...(result.order.upsell ? { upsell_clicked: result.order.upsell.clicked, upsell_final_url: result.order.upsell.final_url } : {}),
           ...(result.order.upsell_steps ? { upsell_steps: result.order.upsell_steps.map(summarizeUpsellStep) } : {}),
           ...(result.order.verification?.accepted_upsell_matches ? { accepted_upsell_matches: result.order.verification.accepted_upsell_matches } : {}),
+          ...(result.order.verification?.coupon ? { coupon: result.order.verification.coupon } : {}),
           card_last4: result.order.card.last4,
         }
       : {
           final_url: result.order?.final_url,
           steps: result.order?.evidence?.steps,
           ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
+          ...(result.order?.verification?.coupon ? { coupon: result.order.verification.coupon } : {}),
           events: result.events,
         },
   });
@@ -2461,8 +2930,9 @@ function summarizeResponseBody(body) {
   };
 }
 
-async function clickVisibleControlByText(page, pattern) {
-  const controls = page.locator('button:visible, a:visible, [role="button"]:visible, input[type="submit"]:visible, input[type="button"]:visible, div[class*="button"]:visible, div[class*="btn"]:visible');
+async function clickVisibleControlByText(page, pattern, { within = null } = {}) {
+  const root = within ? page.locator(within) : page;
+  const controls = root.locator('button:visible, a:visible, [role="button"]:visible, input[type="submit"]:visible, input[type="button"]:visible, div[class*="button"]:visible, div[class*="btn"]:visible');
   const count = await controls.count();
   for (let index = 0; index < count; index += 1) {
     const control = controls.nth(index);
@@ -2670,7 +3140,8 @@ export function testEmail(args) {
 }
 
 function cartStateFromArgs(args) {
-  const packages = parseCart(args.cart).map((item) => ({ ref_id: item.packageId, quantity: item.quantity }));
+  const packages = [...parseCart(args.cart), ...parseCart(args["select-package"])]
+    .map((item) => ({ ref_id: item.packageId, quantity: item.quantity }));
   return packages.length ? { packages } : { packages: [] };
 }
 
@@ -3012,6 +3483,15 @@ export const __qaBrowserTestHooks = Object.freeze({
   isOrderUpsellsUrl,
   testEmail,
   testOrderPaths,
+  packageCardSelectors,
+  assessCouponApplication,
+  linePriceDeltaEvidence,
+  packageMatchesLine,
+  rejectedOrderCreateResponse,
+  failedOrderCreateRequest,
+  extractOrderVouchers,
+  orderDiscountTotal,
+  assessOrderCreation,
   TEST_ORDER_STEP_LADDER,
   createStepLadder,
   formatStepEvent,

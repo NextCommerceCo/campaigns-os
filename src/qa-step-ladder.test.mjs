@@ -10,6 +10,7 @@ test("step ladder declares the canonical ordered step names", () => {
     "selected_bundle",
     "bump_state",
     "customer_fields_filled",
+    "coupon_applied",
     "card_fields_filled",
     "cart_created",
     "hosted_redirect_observed",

@@ -378,3 +378,251 @@ test("promoted template families declare checkout commerce structure contracts",
     assert.ok(contract.requiredVisibleSelectors?.length > 0, `${family} should have visible structure selectors`);
   }
 });
+
+test("--select-package builds strict card selectors covering package and bundle refs", () => {
+  const { packageCardSelectors } = __qaBrowserTestHooks;
+  const selectors = packageCardSelectors("7");
+
+  assert.deepEqual(selectors, [
+    '[data-next-selector-card][data-next-package-id="7"]',
+    '[data-next-bundle-card][data-next-bundle-id="7"]',
+    '[data-next-package-id="7"]',
+    '[data-next-bundle-id="7"]',
+  ]);
+
+  // Refs are CSS-escaped so a hostile/odd ref cannot break out of the selector.
+  const escaped = packageCardSelectors('a"b');
+  assert.ok(escaped.every((selector) => selector.includes('a\\"b')));
+});
+
+test("order creation proof: read-back is authoritative when the live create request was missed", () => {
+  const { assessOrderCreation } = __qaBrowserTestHooks;
+  const body = { ref_id: "01ORDER", lines: [] };
+
+  // Observed 2xx create → ok, no observation note.
+  assert.deepEqual(
+    assessOrderCreation({ orderCreate: { status: 201, body }, orderRead: null, upsellOrderResponse: null, refId: "01ORDER" }),
+    { ok: true, observation: null },
+  );
+  // Observed create that failed stays a real failure, even with a read-back.
+  assert.equal(
+    assessOrderCreation({ orderCreate: { status: 422, body: {} }, orderRead: { status: 200, body }, upsellOrderResponse: null, refId: "01ORDER" }).ok,
+    false,
+  );
+  // Missed create + persisted order returned for the ref → ok with observation.
+  const readBack = assessOrderCreation({ orderCreate: null, orderRead: { status: 200, body }, upsellOrderResponse: null, refId: "01ORDER" });
+  assert.equal(readBack.ok, true);
+  assert.match(readBack.observation, /order read-back/);
+  // Upsell mutation response also counts as read-back proof.
+  assert.equal(
+    assessOrderCreation({ orderCreate: null, orderRead: null, upsellOrderResponse: { status: 200, body }, refId: "01ORDER" }).ok,
+    true,
+  );
+  // No ref_id or no evidence at all → not created.
+  assert.equal(assessOrderCreation({ orderCreate: null, orderRead: null, upsellOrderResponse: null, refId: null }).ok, false);
+  assert.equal(assessOrderCreation({ orderCreate: null, orderRead: null, upsellOrderResponse: null, refId: "01ORDER" }).ok, false);
+});
+
+test("coupon proof: persisted voucher code match is authoritative, discount total is weak fallback", () => {
+  const { assessCouponApplication, extractOrderVouchers, orderDiscountTotal } = __qaBrowserTestHooks;
+
+  const vouchers = extractOrderVouchers({ vouchers: [{ code: "SAVE10", name: "Save 10", amount: "5.00" }] });
+  assert.deepEqual(vouchers, [{ code: "SAVE10", name: "Save 10", amount: "5.00" }]);
+
+  const matched = assessCouponApplication("save10", { vouchers, totalDiscount: 5 });
+  assert.equal(matched.ok, true);
+  assert.equal(matched.basis, "persisted_voucher_code");
+
+  // Wrong code present in the order → fail, even with a discount total.
+  const wrong = assessCouponApplication("EXIT5", { vouchers, totalDiscount: 5 });
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.reason, /do not include EXIT5/);
+
+  // No voucher surface at all but a positive discount → weak-evidence pass.
+  const weak = assessCouponApplication("SAVE10", { vouchers: [], totalDiscount: orderDiscountTotal({ total_discounts: "4.50" }) });
+  assert.equal(weak.ok, true);
+  assert.equal(weak.basis, "discount_total");
+
+  // Nothing persisted → fail.
+  const missing = assessCouponApplication("SAVE10", { vouchers: [], totalDiscount: null });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.basis, "missing");
+});
+
+test("voucher extraction reads alternate persisted shapes and discount-total keys", () => {
+  const { extractOrderVouchers, orderDiscountTotal } = __qaBrowserTestHooks;
+
+  const entries = extractOrderVouchers({
+    voucher_discounts: [{ voucher: { code: "FREESHIP", name: "Free shipping" }, amount: "0.00" }],
+    discounts: [{ voucher_code: "SAVE10", discount: "5.00" }],
+  });
+  assert.deepEqual(entries.map((entry) => entry.code), ["FREESHIP", "SAVE10"]);
+
+  assert.equal(orderDiscountTotal({ total_discount_incl_tax: "3.25" }), 3.25);
+  assert.equal(orderDiscountTotal({ discount_total: 2 }), 2);
+  assert.equal(orderDiscountTotal({}), null);
+  assert.equal(orderDiscountTotal({ total_discounts: "not-a-number" }), null);
+});
+
+test("coupon proof: line-price delta rescues platforms that net the voucher into line prices", () => {
+  const { assessCouponApplication } = __qaBrowserTestHooks;
+  // Modeled on bladdersupport order 226826: no voucher keys, discounts [],
+  // total_discounts "0.00", but the 3x line charged 76.95 vs 81.00 list.
+  const events = { responses: [
+    { status: 200, url: "https://campaigns.example.test/api/v1/campaigns/", body: { packages: [
+      { ref_id: 1, qty: 1, price: "31.00", price_total: "31.00", product_sku: "PN_BLADDER_SUPPORT_60_CAP" },
+      { ref_id: 3, qty: 3, price: "27.00", price_total: "81.00", product_sku: "PN_BLADDER_SUPPORT_60_CAP" },
+    ] } },
+  ] };
+  const lines = [{ title: "Bladder Support", quantity: 3, sku: "PN_BLADDER_SUPPORT_60_CAP", price_incl_tax: "76.95", is_upsell: false }];
+
+  const applied = assessCouponApplication("PRIMAL_5", { vouchers: [], totalDiscount: 0, lines, events });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.basis, "line_price_delta");
+  assert.equal(applied.evidence.list_total, 81);
+  assert.equal(applied.evidence.charged_total, 76.95);
+  assert.equal(applied.evidence.delta, 4.05);
+
+  // Same shape but charged == list → the coupon did NOT apply.
+  const rejected = assessCouponApplication("PRIMAL_5", {
+    vouchers: [], totalDiscount: 0, events,
+    lines: [{ title: "Bladder Support", quantity: 3, sku: "PN_BLADDER_SUPPORT_60_CAP", price_incl_tax: "81.00", is_upsell: false }],
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.basis, "line_price_delta");
+
+  // Unresolvable package meta → still fails, with the unverifiable reason.
+  const unresolvable = assessCouponApplication("PRIMAL_5", { vouchers: [], totalDiscount: 0, lines, events: { responses: [] } });
+  assert.equal(unresolvable.ok, false);
+  assert.equal(unresolvable.basis, "missing");
+  assert.match(unresolvable.reason, /could not be resolved/);
+});
+
+test("package-line matching requires quantity to disambiguate same-SKU tier packages", () => {
+  const { packageMatchesLine, linePriceDeltaEvidence } = __qaBrowserTestHooks;
+  const oneX = { ref_id: 1, qty: 1, price: "31.00", price_total: "31.00", product_sku: "SKU_A" };
+  const threeX = { ref_id: 3, qty: 3, price: "27.00", price_total: "81.00", product_sku: "SKU_A" };
+
+  assert.equal(packageMatchesLine(threeX, { quantity: 3, sku: "SKU_A" }), true);
+  assert.equal(packageMatchesLine(oneX, { quantity: 3, sku: "SKU_A" }), false);
+  assert.equal(packageMatchesLine(threeX, { quantity: 3, sku: "SKU_B" }), false);
+  // Variant/product-id fallbacks when SKU is absent.
+  assert.equal(packageMatchesLine({ qty: 1, product_variant_id: 9 }, { quantity: 1, variant_id: 9 }), true);
+  assert.equal(packageMatchesLine({ qty: 1, product_id: 5 }, { quantity: 1, product_id: 5 }), true);
+
+  // price_total absent → unit price × qty fallback.
+  const events = { responses: [{ status: 200, url: "x", body: { packages: [{ ref_id: 3, qty: 3, price: "27.00", product_sku: "SKU_A" }] } }] };
+  const delta = linePriceDeltaEvidence([{ quantity: 3, sku: "SKU_A", price_incl_tax: "76.95" }], events);
+  assert.equal(delta.list_total, 81);
+  assert.equal(delta.lines[0].package_ref_id, 3);
+
+  // A line no package matches → no delta evidence at all (null, not partial).
+  assert.equal(linePriceDeltaEvidence([{ quantity: 2, sku: "SKU_A", price_incl_tax: "50.00" }], events), null);
+});
+
+test("rejected order-create detection matches only the create endpoint with a 4xx/5xx status", () => {
+  const { rejectedOrderCreateResponse } = __qaBrowserTestHooks;
+  const events = { responses: [
+    { status: 201, url: "https://api.example.test/api/v1/carts/", body: {} },
+    { status: 400, url: "https://api.example.test/api/v1/orders/", body: { detail: "Unknown voucher" } },
+    { status: 404, url: "https://api.example.test/api/v1/orders/123/upsells/", body: {} },
+  ] };
+  const rejected = rejectedOrderCreateResponse(events);
+  assert.equal(rejected.status, 400);
+  assert.match(rejected.url, /\/api\/v1\/orders\/$/);
+
+  // A 2xx create, cart 4xx, or upsell 4xx must not register as a rejected create.
+  assert.equal(rejectedOrderCreateResponse({ responses: [
+    { status: 201, url: "https://api.example.test/api/v1/orders/", body: {} },
+    { status: 422, url: "https://api.example.test/api/v1/carts/calculate/", body: {} },
+  ] }), null);
+});
+
+test("voucher extraction skips identity-less entries so bare amount rows cannot suppress the discount_total fallback", () => {
+  const { extractOrderVouchers, assessCouponApplication } = __qaBrowserTestHooks;
+
+  // An amount-bearing entry with no code/name is not an identifiable voucher.
+  assert.deepEqual(extractOrderVouchers({ vouchers: [{ amount: "5.00" }] }), []);
+
+  // ...so the discount_total weak-evidence basis still fires for that shape.
+  const weak = assessCouponApplication("SAVE10", {
+    vouchers: extractOrderVouchers({ vouchers: [{ amount: "5.00" }] }),
+    totalDiscount: 5,
+  });
+  assert.equal(weak.ok, true);
+  assert.equal(weak.basis, "discount_total");
+  assert.equal(weak.weak_evidence, true);
+});
+
+test("line-price delta handles per-unit price semantics and unmatched bonus lines", () => {
+  const { assessCouponApplication, linePriceDeltaEvidence } = __qaBrowserTestHooks;
+  const events = { responses: [
+    { status: 200, url: "https://campaigns.example.test/api/v1/campaigns/", body: { packages: [
+      { ref_id: 3, qty: 3, price: "27.00", price_total: "81.00", product_sku: "SKU_A" },
+    ] } },
+  ] };
+
+  // Per-unit FULL price (27.00 × 3 == 81.00 list) must read as undiscounted,
+  // not as a fake (qty-1)× discount — a bogus coupon must fail here.
+  const perUnitFull = assessCouponApplication("BOGUS", {
+    vouchers: [], totalDiscount: 0, events,
+    lines: [{ title: "A", quantity: 3, sku: "SKU_A", price_incl_tax: "27.00" }],
+  });
+  assert.equal(perUnitFull.ok, false);
+  assert.equal(perUnitFull.basis, "line_price_delta");
+  assert.equal(perUnitFull.evidence.charged_total, 81);
+
+  // Per-unit DISCOUNTED price (25.65 × 3 = 76.95) reads as the correct delta.
+  const perUnitDiscounted = assessCouponApplication("SAVE5", {
+    vouchers: [], totalDiscount: 0, events,
+    lines: [{ title: "A", quantity: 3, sku: "SKU_A", price_incl_tax: "25.65" }],
+  });
+  assert.equal(perUnitDiscounted.ok, true);
+  assert.equal(perUnitDiscounted.weak_evidence, true);
+  assert.equal(perUnitDiscounted.evidence.charged_total, 76.95);
+  assert.equal(perUnitDiscounted.evidence.delta, 4.05);
+
+  // A bonus/gift line with no campaign-package equivalent must not defeat the
+  // delta for the line that does resolve.
+  const withBonusLine = linePriceDeltaEvidence([
+    { title: "A", quantity: 3, sku: "SKU_A", price_incl_tax: "76.95" },
+    { title: "Free Gift", quantity: 1, sku: "GIFT_SKU", price_incl_tax: "0.00" },
+  ], events);
+  assert.equal(withBonusLine.list_total, 81);
+  assert.equal(withBonusLine.charged_total, 76.95);
+  assert.equal(withBonusLine.unmatched_line_count, 1);
+  assert.equal(withBonusLine.lines.length, 1);
+});
+
+test("rejected order-create: the most recent create response decides, and query strings still match", () => {
+  const { rejectedOrderCreateResponse } = __qaBrowserTestHooks;
+
+  // Transient 400 followed by a successful 201 retry → not rejected.
+  assert.equal(rejectedOrderCreateResponse({ responses: [
+    { status: 400, url: "https://api.example.test/api/v1/orders/", body: {} },
+    { status: 201, url: "https://api.example.test/api/v1/orders/", body: {} },
+  ] }), null);
+
+  // A create URL carrying a query string is still the create endpoint.
+  const withQuery = rejectedOrderCreateResponse({ responses: [
+    { status: 400, url: "https://api.example.test/api/v1/orders/?expand=line_items", body: {} },
+  ] });
+  assert.equal(withQuery.status, 400);
+});
+
+test("network-level order-create failures are detected, but never alongside a successful create", () => {
+  const { failedOrderCreateRequest } = __qaBrowserTestHooks;
+  const failedCreate = { url: "https://api.example.test/api/v1/orders/", failure: "net::ERR_CONNECTION_RESET" };
+
+  const detected = failedOrderCreateRequest({ responses: [], failed: [
+    { url: "https://api.example.test/api/v1/carts/", failure: "net::ERR_ABORTED" },
+    failedCreate,
+  ] });
+  assert.equal(detected.failure, "net::ERR_CONNECTION_RESET");
+
+  // An aborted duplicate next to a 2xx create is not a failed order.
+  assert.equal(failedOrderCreateRequest({
+    responses: [{ status: 201, url: "https://api.example.test/api/v1/orders/", body: {} }],
+    failed: [failedCreate],
+  }), null);
+});
