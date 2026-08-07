@@ -414,6 +414,14 @@ code — use `common`/`full` or the explicit flags there. Because tiers come
 from the CampaignSpec, `tiers` needs a packet/spec-driven run; non-packet
 `--site` runs have no declared tiers to iterate.
 
+Derivation is scoped to the **checkout page the runner drives** (the first
+checkout across funnels — the same page every test-order mode drives). In
+multi-funnel specs where a later funnel's checkout declares its own tiers or
+offer codes, those are not covered by the run: the runner prints a
+`[qa:test-order]` warning naming the undriven checkout page and its
+declarations. Rerun `tiers` against that funnel's entry (point `--base-url` /
+the packet at it) to prove them.
+
 ```bash
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \

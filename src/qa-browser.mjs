@@ -3103,10 +3103,10 @@ function testOrderPaths(mode, topologies = []) {
 // Coupon plans stay single checkout orders on the default selection: coupon
 // proof is persisted-order read-back and does not need upsell traversal.
 // The --max-test-orders flood guard applies to the expanded plan count.
-function testOrderPlans(mode, topologies = [], args = {}) {
+function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
   const normalized = String(mode || "off").toLowerCase();
   const tiersMatch = /^tiers(?::(checkout|common|full))?$/.exec(normalized);
-  if (tiersMatch) return specTierPlans(topologies, args, tiersMatch[1] || "checkout");
+  if (tiersMatch) return specTierPlans(topologies, args, tiersMatch[1] || "checkout", options);
   const selectPackage = stringArg(args["select-package"]);
   const applyCoupon = stringArg(args["apply-coupon"]);
   return testOrderPaths(mode, topologies).map((path) => ({
@@ -3116,13 +3116,21 @@ function testOrderPlans(mode, topologies = [], args = {}) {
   }));
 }
 
-function specTierPlans(topologies, args, variant) {
+function specTierPlans(topologies, args, variant, { warn = (line) => process.stderr.write(`${line}\n`) } = {}) {
   for (const flag of ["select-package", "apply-coupon"]) {
     if (stringArg(args[flag])) {
       throw new Error(`--test-order tiers derives package tiers and coupon codes from the CampaignSpec; drop --${flag} or use an explicit mode (common/full/...) with it.`);
     }
   }
+  // Derivation is scoped to the SAME checkout page the runner drives (the
+  // first checkout across topologies): tiers declared on a later funnel's
+  // checkout are not rendered on the driven page, so strict-selecting them
+  // there would fail for the wrong reason. Later-funnel declarations are
+  // surfaced as a warning instead of silently ignored.
   const checkoutPage = findPage(topologies, "checkout");
+  if (!checkoutPage) {
+    throw new Error("--test-order tiers requires a CampaignSpec-driven run with a checkout page; this spec/topology has no checkout page to derive tiers or coupons from (non-packet --site runs have none by design).");
+  }
   const tiers = declaredSelectorTiers(checkoutPage);
   const coupons = declaredCheckoutCoupons(checkoutPage);
   if (!tiers.length && !coupons.length) {
@@ -3131,6 +3139,7 @@ function specTierPlans(topologies, args, variant) {
       "Use --test-order common/full, or drive explicit refs with --select-package / --apply-coupon.",
     ].join(" "));
   }
+  warnUndrivenCheckoutDeclarations(topologies, checkoutPage, warn);
   const paths = variant === "common"
     ? testOrderCommonPaths(topologies)
     : variant === "full"
@@ -3156,6 +3165,26 @@ function specTierPlans(topologies, args, variant) {
     });
   }
   return plans;
+}
+
+// Multi-funnel specs can declare tiers/coupons on checkout pages the runner
+// does not drive. Those cannot be proven in this run — say so loudly so the
+// operator reruns against the other funnel's entry instead of assuming
+// coverage.
+function warnUndrivenCheckoutDeclarations(topologies, drivenCheckoutPage, warn) {
+  const pages = (Array.isArray(topologies) ? topologies : [])
+    .flatMap((topology) => Array.isArray(topology?.pages) ? topology.pages : [])
+    .filter((page) => String(page?.page_type || "").toLowerCase() === "checkout" && page !== drivenCheckoutPage);
+  for (const page of pages) {
+    const tiers = declaredSelectorTiers(page);
+    const coupons = declaredCheckoutCoupons(page);
+    if (!tiers.length && !coupons.length) continue;
+    const declared = [
+      ...(tiers.length ? [`tier(s) ${tiers.map((tier) => tier.ref).join(", ")}`] : []),
+      ...(coupons.length ? [`coupon(s) ${coupons.map((coupon) => coupon.code).join(", ")}`] : []),
+    ].join(" and ");
+    warn(`[qa:test-order] tiers mode drives only the first checkout page; checkout page "${page.page_id || page.label || "(unnamed)"}" also declares ${declared} — not covered by this run, rerun tiers against that funnel's entry to prove them.`);
+  }
 }
 
 // Selector tiers are the packages the spec declares on the checkout page —

@@ -351,6 +351,36 @@ test("tiers mode gates: disabled/blank offer surfaces are skipped, operator flag
 
   // nothing declared → explicit error instead of a silent zero-order "pass"
   assert.throws(() => testOrderPlans("tiers", checkout({}), {}), /nothing to iterate/);
+
+  // no checkout page at all is a different failure than a bare checkout page
+  assert.throws(
+    () => testOrderPlans("tiers", [{ pages: [{ page_type: "landing" }] }], {}),
+    /no checkout page to derive/,
+  );
+});
+
+test("tiers derivation is scoped to the driven (first) checkout page and warns about later funnels' declarations", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const topo = [
+    { pages: [{ page_type: "checkout", packages: [{ ref_id: "1" }] }] },
+    { pages: [{
+      page_type: "checkout",
+      page_id: "checkout-b",
+      packages: [{ ref_id: "8" }],
+      promo_code_input: { enabled: true, offer_code: "OTHER10" },
+    }] },
+  ];
+
+  const warnings = [];
+  const plans = testOrderPlans("tiers", topo, {}, { warn: (line) => warnings.push(line) });
+  // only the driven checkout's tier is planned — funnel B's ref 8 is not
+  // rendered on the driven page, so strict-selecting it there would be wrong
+  assert.deepEqual(plans.map((plan) => planId(plan)), ["checkout@tier:1"]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /checkout-b/);
+  assert.match(warnings[0], /tier\(s\) 8/);
+  assert.match(warnings[0], /coupon\(s\) OTHER10/);
+  assert.match(warnings[0], /not covered by this run/);
 });
 
 test("the flood guard counts expanded tier plans and previews plan ids", () => {
