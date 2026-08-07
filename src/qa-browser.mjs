@@ -2218,7 +2218,19 @@ async function applyRequestedCoupon(page, code) {
     input = await firstUsableCouponInput(page);
   }
   if (!input) {
-    throw new Error(`--apply-coupon ${code}: no coupon/promo input found on the checkout page (looked for ${COUPON_INPUT_SELECTORS.join(", ")})`);
+    // Some funnels have no shopper-typable coupon surface at all — the code is
+    // applied by page JS (e.g. an exit-intent overlay calling
+    // window.next.applyCoupon("CODE")). Fall back to the SDK's own coupon API:
+    // the persisted-order voucher read-back stays the proof, but the
+    // shopper-facing trigger (exit-intent click, etc.) is NOT exercised, so the
+    // step detail records the mechanism for the verdict reader.
+    const sdkApplied = await applyCouponViaSdkApi(page, code);
+    if (sdkApplied) {
+      await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+      await page.waitForTimeout(1000);
+      return `no rendered coupon input; applied ${code} via SDK window.next.applyCoupon API (shopper-facing trigger not exercised); proof deferred to persisted-order voucher read-back`;
+    }
+    throw new Error(`--apply-coupon ${code}: no coupon/promo input found on the checkout page (looked for ${COUPON_INPUT_SELECTORS.join(", ")}) and the SDK applyCoupon API is unavailable`);
   }
   await input.locator.click({ timeout: 5000 }).catch(() => {});
   await input.locator.fill("").catch(() => {});
@@ -2227,6 +2239,17 @@ async function applyRequestedCoupon(page, code) {
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForTimeout(1000);
   return `typed ${code} into ${input.selector}, ${applied}; proof deferred to persisted-order voucher read-back`;
+}
+
+async function applyCouponViaSdkApi(page, code) {
+  return page.evaluate(async (couponCode) => {
+    const apply = window.next?.applyCoupon;
+    if (typeof apply !== "function") return false;
+    await apply.call(window.next, couponCode);
+    return true;
+  }, code).catch((error) => {
+    throw new Error(`--apply-coupon ${code}: SDK applyCoupon API call failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
 }
 
 async function firstUsableCouponInput(page) {

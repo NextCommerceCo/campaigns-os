@@ -355,11 +355,16 @@ Two flags target funnels the default-tier drive cannot prove:
 - `--apply-coupon <code>` — types the code into the rendered coupon/promo input
   (`[data-next-checkout-field="coupon"]` and common fallbacks, revealing a
   collapsed "Have a coupon?" disclosure when needed) and clicks the apply
-  control before card entry, as a new `coupon_applied` ladder step. The click
-  mechanics never pass the proof on their own: the path passes only when the
-  **persisted order read-back** carries the requested voucher code (or, when
-  the platform exposes no voucher entries, a positive discount total — recorded
-  as weak evidence). A missing or mismatched voucher fails the path.
+  control before card entry, as a new `coupon_applied` ladder step. Funnels
+  with **no shopper-typable coupon surface** (the code is applied by page JS,
+  e.g. an exit-intent overlay calling `window.next.applyCoupon("CODE")`) fall
+  back to the SDK `applyCoupon` API — the step detail records that the
+  shopper-facing trigger was not exercised, so verify that trigger separately.
+  The apply mechanics never pass the proof on their own: the path passes only
+  when the **persisted order read-back** carries the requested voucher code
+  (or, when the platform exposes no voucher entries, a positive discount
+  total — recorded as weak evidence). A missing or mismatched voucher fails
+  the path.
 
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
 gate**. `common` always stays under it; if `full` expands past it, the command
