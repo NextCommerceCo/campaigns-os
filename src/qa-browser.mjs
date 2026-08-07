@@ -104,11 +104,14 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   enforceTestOrderLimit(plans, args);
   try {
     for (const plan of plans) {
-      const result = await runSingleBrowserTestOrder(context, checkoutPage, plan, args, runId, options);
+      // Spec-driven plans name the checkout page that declares their tier or
+      // coupon (multi-funnel specs); operator-mode plans drive the primary.
+      const pageForPlan = (typeof plan === "object" && plan?.checkout_page?.url) ? plan.checkout_page : checkoutPage;
+      const result = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
       orders.push(result.order);
       if (result.analytics_capture) captures.push(result.analytics_capture);
-      assertions.push(testOrderAssertion(checkoutPage, plan, result));
-      const renderedReceiptAssertion = receiptRenderingAssertion(checkoutPage, planId(plan), result.order);
+      assertions.push(testOrderAssertion(pageForPlan, plan, result));
+      const renderedReceiptAssertion = receiptRenderingAssertion(pageForPlan, planId(plan), result.order);
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
     }
   } catch (error) {
@@ -3122,69 +3125,83 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       throw new Error(`--test-order tiers derives package tiers and coupon codes from the CampaignSpec; drop --${flag} or use an explicit mode (common/full/...) with it.`);
     }
   }
-  // Derivation is scoped to the SAME checkout page the runner drives (the
-  // first checkout across topologies): tiers declared on a later funnel's
-  // checkout are not rendered on the driven page, so strict-selecting them
-  // there would fail for the wrong reason. Later-funnel declarations are
-  // surfaced as a warning instead of silently ignored.
-  const checkoutPage = findPage(topologies, "checkout");
-  if (!checkoutPage) {
+  // Every funnel's checkout page contributes plans, and each plan carries the
+  // checkout page that declares its tier/coupon so the runner drives THAT
+  // page — strict-selecting a ref on a checkout that doesn't render it would
+  // fail for the wrong reason. A later funnel's checkout with declarations
+  // but no resolvable URL cannot be driven; it is warned about, not dropped
+  // silently.
+  const primary = findPage(topologies, "checkout");
+  if (!primary) {
     throw new Error("--test-order tiers requires a CampaignSpec-driven run with a checkout page; this spec/topology has no checkout page to derive tiers or coupons from (non-packet --site runs have none by design).");
   }
-  const tiers = declaredSelectorTiers(checkoutPage);
-  const coupons = declaredCheckoutCoupons(checkoutPage);
-  if (!tiers.length && !coupons.length) {
-    throw new Error([
-      "--test-order tiers found nothing to iterate: the CampaignSpec checkout page declares no selector-tier packages and no enabled exit_intent/promo_code_input offer code.",
-      "Use --test-order common/full, or drive explicit refs with --select-package / --apply-coupon.",
-    ].join(" "));
-  }
-  warnUndrivenCheckoutDeclarations(topologies, checkoutPage, warn);
-  const paths = variant === "common"
-    ? testOrderCommonPaths(topologies)
-    : variant === "full"
-      ? ["checkout", ...testOrderPathMatrix(testOrderDepth(topologies))]
-      : ["checkout"];
   const plans = [];
-  for (const tier of tiers) {
-    for (const path of paths) {
+  for (const topology of Array.isArray(topologies) ? topologies : []) {
+    const pages = Array.isArray(topology?.pages) ? topology.pages : [];
+    const checkoutPage = pages.find((page) => String(page?.page_type || "").toLowerCase() === "checkout");
+    if (!checkoutPage) continue;
+    const tiers = declaredSelectorTiers(checkoutPage);
+    const coupons = declaredCheckoutCoupons(checkoutPage);
+    if (!tiers.length && !coupons.length) continue;
+    if (checkoutPage !== primary && !checkoutPage.url) {
+      const declared = [
+        ...(tiers.length ? [`tier(s) ${tiers.map((tier) => tier.ref).join(", ")}`] : []),
+        ...(coupons.length ? [`coupon(s) ${coupons.map((coupon) => coupon.code).join(", ")}`] : []),
+      ].join(" and ");
+      warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares ${declared} but has no resolvable URL — not covered by this run; fix the page URL/base-url to prove them.`);
+      continue;
+    }
+    // Path shapes come from this checkout's own funnel: crossing tier plans
+    // with another funnel's upsell depth would plan unwalkable paths.
+    const paths = variant === "common"
+      ? testOrderCommonPaths([topology])
+      : variant === "full"
+        ? ["checkout", ...testOrderPathMatrix(testOrderDepth([topology]))]
+        : ["checkout"];
+    // Plans on the primary checkout keep bare ids (single-funnel specs stay
+    // byte-identical); other funnels' plans are qualified by page id so the
+    // same ref/code declared on two checkouts cannot collide.
+    const qualifier = checkoutPage === primary ? "" : `#${checkoutPage.page_id || checkoutPage.label || "checkout"}`;
+    for (const tier of tiers) {
+      for (const path of paths) {
+        plans.push({
+          path,
+          select_package: tier.ref,
+          apply_coupon: null,
+          checkout_page: checkoutPage,
+          id_qualifier: qualifier,
+          source: {
+            type: "selector_tier",
+            ref: tier.ref,
+            declared_by: tier.declared_by,
+            ...(qualifier ? { checkout_page_id: checkoutPage.page_id || checkoutPage.label || null } : {}),
+          },
+        });
+      }
+    }
+    for (const coupon of coupons) {
       plans.push({
-        path,
-        select_package: tier.ref,
-        apply_coupon: null,
-        source: { type: "selector_tier", ref: tier.ref, declared_by: tier.declared_by },
+        path: "checkout",
+        select_package: null,
+        apply_coupon: coupon.code,
+        checkout_page: checkoutPage,
+        id_qualifier: qualifier,
+        source: {
+          type: "declared_coupon",
+          code: coupon.code,
+          surfaces: coupon.surfaces,
+          ...(qualifier ? { checkout_page_id: checkoutPage.page_id || checkoutPage.label || null } : {}),
+        },
       });
     }
   }
-  for (const coupon of coupons) {
-    plans.push({
-      path: "checkout",
-      select_package: null,
-      apply_coupon: coupon.code,
-      source: { type: "declared_coupon", code: coupon.code, surfaces: coupon.surfaces },
-    });
+  if (!plans.length) {
+    throw new Error([
+      "--test-order tiers found nothing to iterate: no CampaignSpec checkout page declares selector-tier packages or an enabled exit_intent/promo_code_input offer code.",
+      "Use --test-order common/full, or drive explicit refs with --select-package / --apply-coupon.",
+    ].join(" "));
   }
   return plans;
-}
-
-// Multi-funnel specs can declare tiers/coupons on checkout pages the runner
-// does not drive. Those cannot be proven in this run — say so loudly so the
-// operator reruns against the other funnel's entry instead of assuming
-// coverage.
-function warnUndrivenCheckoutDeclarations(topologies, drivenCheckoutPage, warn) {
-  const pages = (Array.isArray(topologies) ? topologies : [])
-    .flatMap((topology) => Array.isArray(topology?.pages) ? topology.pages : [])
-    .filter((page) => String(page?.page_type || "").toLowerCase() === "checkout" && page !== drivenCheckoutPage);
-  for (const page of pages) {
-    const tiers = declaredSelectorTiers(page);
-    const coupons = declaredCheckoutCoupons(page);
-    if (!tiers.length && !coupons.length) continue;
-    const declared = [
-      ...(tiers.length ? [`tier(s) ${tiers.map((tier) => tier.ref).join(", ")}`] : []),
-      ...(coupons.length ? [`coupon(s) ${coupons.map((coupon) => coupon.code).join(", ")}`] : []),
-    ].join(" and ");
-    warn(`[qa:test-order] tiers mode drives only the first checkout page; checkout page "${page.page_id || page.label || "(unnamed)"}" also declares ${declared} — not covered by this run, rerun tiers against that funnel's entry to prove them.`);
-  }
 }
 
 // Selector tiers are the packages the spec declares on the checkout page —
@@ -3232,7 +3249,7 @@ function planId(plan) {
     : plan.source?.type === "declared_coupon"
       ? `@coupon:${plan.source.code}`
       : "";
-  return `${plan.path}${suffix}`;
+  return `${plan.path}${suffix}${plan.id_qualifier || ""}`;
 }
 
 function normalizeTestOrderPlan(plan, args = {}) {

@@ -414,13 +414,17 @@ code — use `common`/`full` or the explicit flags there. Because tiers come
 from the CampaignSpec, `tiers` needs a packet/spec-driven run; non-packet
 `--site` runs have no declared tiers to iterate.
 
-Derivation is scoped to the **checkout page the runner drives** (the first
-checkout across funnels — the same page every test-order mode drives). In
-multi-funnel specs where a later funnel's checkout declares its own tiers or
-offer codes, those are not covered by the run: the runner prints a
-`[qa:test-order]` warning naming the undriven checkout page and its
-declarations. Rerun `tiers` against that funnel's entry (point `--base-url` /
-the packet at it) to prove them.
+**Multi-funnel specs are covered in one run**: every funnel's checkout page
+contributes plans, and each plan is driven against the checkout page that
+declares its tier or coupon (strict-selecting a ref on a checkout that does
+not render it would fail for the wrong reason). Plans from the primary (first)
+checkout keep bare ids; other funnels' plans are qualified by page id —
+`checkout@tier:8#checkout-b` — so the same ref or code declared on two
+checkouts cannot collide, and `tiers:common`/`tiers:full` cross each funnel's
+tiers with **that funnel's own** upsell depth. A non-primary checkout that
+declares tiers/coupons but has no resolvable URL cannot be driven; the runner
+prints a `[qa:test-order]` warning naming it instead of silently dropping the
+declarations.
 
 ```bash
 npm run campaigns-os -- qa run \
