@@ -14,5 +14,11 @@
     "resolveJsonModule": true,
     "types": []
   },
-  "include": ["index.ts", "normalize.ts", "types.ts", "rules/**/*.ts"]
+  "include": [
+    "index.ts",
+    "normalize.ts",
+    "types.ts",
+    "analytics-vocabulary.ts",
+    "rules/**/*.ts"
+  ]
 }
