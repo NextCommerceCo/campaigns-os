@@ -1181,11 +1181,23 @@ function prepareBuild(args, options = {}) {
     console.warn(`[campaigns-os prepare-build] ${manifestResult.warning}`);
   }
   // Root-served campaigns: the spec may declare campaign.route_root "/"
-  // (whole funnel served from the site root, no slug prefix). Carry it onto
-  // the packet so doctor's route composition honors it; default stays the
-  // slug-prefixed root.
-  const specRouteRoot = optionalString(spec.spec_identity?.route_root)
+  // (whole funnel served from the site root, no slug prefix). Canonicalize at
+  // intake and carry only the canonical form onto the packet — the packet
+  // schema and validateRouteRootDeclaration accept exactly "/" or
+  // "/<public_route_slug>/", so a lenient spec shape ("/<slug>", trailing
+  // noise) is normalized here and a foreign prefix fails fast instead of
+  // producing a packet doctor will reject later.
+  const rawSpecRouteRoot = optionalString(spec.spec_identity?.route_root)
     || optionalString(spec.campaign?.route_root);
+  let specRouteRoot = null;
+  if (rawSpecRouteRoot) {
+    const clean = rawSpecRouteRoot.trim();
+    if (clean === "/") specRouteRoot = "/";
+    else if (normalizePublicRouteSlug(clean) === publicRouteSlug) specRouteRoot = `/${publicRouteSlug}/`;
+    else {
+      throw new Error(`CampaignSpec declares route_root ${JSON.stringify(rawSpecRouteRoot)}, which is neither "/" (root-served) nor "/${publicRouteSlug}/" (the public route slug). Fix the spec's route_root or public route slug before assembly.`);
+    }
+  }
   const liveUrlPath = optionalString(args["live-url-path"], specRouteRoot === "/" ? "/" : `/${publicRouteSlug}/`);
   const commerceCatalog = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
   const themePolicy = optionalString(args["theme-policy"], "inspect_only");
@@ -3019,6 +3031,11 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
   const claimed = new Set();
   const drifted = [];
   const unverifiable = [];
+  // Served-route display honors route_root: a root-served campaign's pages
+  // are reached at /<route>/, not /<slug>/<route>/, even though the built
+  // files still live under _site/<slug>/.
+  const routeRoot = campaignRouteRoot(packet);
+  const rootSegments = routeRoot === "/" ? [] : [publicRouteSlug];
   for (const page of pages) {
     const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
     if (!builtPath) {
@@ -3031,11 +3048,6 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
       claimed.add(resolve(builtPath));
       continue;
     }
-    // Served-route display honors route_root: a root-served campaign's pages
-    // are reached at /<route>/, not /<slug>/<route>/, even though the built
-    // files still live under _site/<slug>/.
-    const routeRoot = campaignRouteRoot(packet);
-    const rootSegments = routeRoot === "/" ? [] : [publicRouteSlug];
     const segments = [...rootSegments, ...relFromDir(siteRoot, dirname(builtPath)).split("/")].filter((segment) => segment && segment !== ".");
     drifted.push({
       page_id: page.id,
@@ -3059,7 +3071,7 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
   }
 
   const scope = resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug });
-  const servedPrefix = campaignRouteRoot(packet) === "/" ? "/" : `/${publicRouteSlug}/`;
+  const servedPrefix = routeRoot === "/" ? "/" : `/${publicRouteSlug}/`;
   const unmatched = (scope.ok ? scope.pages : [])
     .filter((builtPage) => !claimed.has(resolve(builtPage.built_path)))
     .map((builtPage) => `${servedPrefix}${builtPage.route ? `${builtPage.route}/` : ""}`.replace(/\/{2,}/g, "/"));
@@ -3515,14 +3527,17 @@ function normalizePublicRouteSlug(value) {
 // how SERVED routes (routing metas, public routes, live URLs) are composed
 // and validated. Returns "/", "/<slug>/", or null when neither is derivable.
 export function campaignRouteRoot(packet) {
+  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const declared = optionalString(packet?.campaign?.route_root);
   if (declared) {
     const clean = declared.trim();
     if (clean === "/") return "/";
-    const slugForm = normalizePublicRouteSlug(clean);
-    if (slugForm) return `/${slugForm}/`;
+    // Exact canonical form only — the same shape the JSON schema accepts.
+    // A malformed or foreign declaration ("/foo", "/ruggie", "//x//") falls
+    // through to the slug default so no check silently roots on it;
+    // validateRouteRootDeclaration raises the named blocker.
+    if (slug && clean === `/${slug}/`) return clean;
   }
-  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   return slug ? `/${slug}/` : null;
 }
 
@@ -3539,14 +3554,17 @@ export function validateRouteRootDeclaration(packet, errors, ready) {
     ready.push(`Campaign is declared root-served (route_root "/"): routing metas and public routes validate against site-root paths; public_route_slug "${slug}" remains identity, not a path prefix`);
     return;
   }
-  if (value && slug && normalizePublicRouteSlug(value) === slug) {
+  // Exact canonical form only, mirroring the schema pattern. Accepting
+  // near-miss shapes here ("/ruggie", "//ruggie//") while the schema rejects
+  // them would recreate the silent-disarm split this check exists to close.
+  if (value && slug && value === `/${slug}/`) {
     ready.push(`Campaign route_root "/${slug}/" matches public_route_slug`);
     return;
   }
   addIssue(
     errors,
     "campaign.route_root",
-    `Packet campaign.route_root ${JSON.stringify(declared)} is invalid. Declare "/" for a root-served campaign or "/${slug || "<public_route_slug>"}/" for the default slug-prefixed root. Any other prefix would contradict public_route_slug, which stays the campaign identity and the _site/<public_route_slug>/ built-output directory name.`
+    `Packet campaign.route_root ${JSON.stringify(declared)} is invalid. Declare exactly "/" for a root-served campaign or exactly "/${slug || "<public_route_slug>"}/" (leading and trailing slash) for the default slug-prefixed root. Any other value would contradict public_route_slug, which stays the campaign identity and the _site/<public_route_slug>/ built-output directory name.`
   );
 }
 

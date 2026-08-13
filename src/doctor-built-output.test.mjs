@@ -129,6 +129,15 @@ test("route_root declaration: '/' and '/<slug>/' pass with ready lines; anything
     assert.deepEqual(codes(errors), ["campaign.route_root"]);
   }
   {
+    // Near-miss shapes the JSON schema rejects must be blockers here too —
+    // accepting them at runtime would recreate the schema/runtime split.
+    for (const nearMiss of ["/ruggie", "//ruggie//", "ruggie/", "//"]) {
+      const errors = [], ready = [];
+      validateRouteRootDeclaration({ campaign: { public_route_slug: "ruggie", route_root: nearMiss } }, errors, ready);
+      assert.deepEqual(codes(errors), ["campaign.route_root"], `expected blocker for ${JSON.stringify(nearMiss)}`);
+    }
+  }
+  {
     const errors = [], ready = [];
     validateRouteRootDeclaration({ campaign: { public_route_slug: "ruggie", route_root: 42 } }, errors, ready);
     assert.deepEqual(codes(errors), ["campaign.route_root"]);
@@ -140,6 +149,40 @@ test("route_root declaration: '/' and '/<slug>/' pass with ready lines; anything
     assert.deepEqual(errors, []);
     assert.deepEqual(ready, []);
   }
+});
+
+test("root-served: a malformed route_root never roots a check — campaignRouteRoot falls back to the slug default", () => {
+  // "/foo" fails the schema; the runtime must not normalize-and-accept it.
+  // Routing metas rooted at the site root therefore still warn (slug default),
+  // and validateRouteRootDeclaration raises the named blocker alongside.
+  const malformed = { campaign: { public_route_slug: "ruggie", route_root: "/foo" } };
+  const warnings = [], ready = [];
+  validateSpecRoutingMetaTags(ROOT_ROUTING_SPEC, malformed, warnings, ready);
+  assert.ok(codes(warnings).includes("routing_meta.runtime_root"));
+  const errors = [], ready2 = [];
+  validateRouteRootDeclaration(malformed, errors, ready2);
+  assert.deepEqual(codes(errors), ["campaign.route_root"]);
+});
+
+test("root-served: route-drift served routes are slug-free under route_root '/'", () => {
+  withTempDir((dir) => {
+    // Spec says checkout/ but the build produced checkout-v2/ (plus a receipt
+    // page the spec doesn't claim). Built files still nest at _site/<slug>/.
+    buildSite(dir, ["checkout-v2", "receipt"]);
+    const packet = { campaign: { public_route_slug: "shield", route_root: "/" } };
+    const errors = [], warnings = [], ready = [];
+    validateBuiltRouteDrift(driftSpec, packet, errors, warnings, ready, { target_repo: dir }, {});
+    const detail = warnings.find((w) => w.code === "built_output.route_drift").detail;
+    for (const d of detail.drifted) {
+      assert.doesNotMatch(d.expected_route, /\/shield\//, `expected_route ${d.expected_route} must be slug-free`);
+      assert.match(d.expected_route, /^\//);
+    }
+    assert.ok(detail.unmatched_built_routes.length > 0);
+    for (const route of detail.unmatched_built_routes) {
+      assert.doesNotMatch(route, /\/shield\//, `unmatched route ${route} must be slug-free`);
+    }
+    assert.ok(detail.unmatched_built_routes.includes("/checkout-v2/"));
+  });
 });
 
 test("root-served: built meta expectation composes against '/' (no phantom /<slug>/ prefix)", () => {
