@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.1.1",
+  "surface_version": "1.2.0",
   "package_exports": [
     "./campaign-spec"
   ],
@@ -30,7 +30,7 @@
       "sha256": "4f77b8a1afd0bfba71242a49f121d175e2ef794e1c2232e6242879a589c4ca90"
     },
     "schemas/campaign-runtime-build-packet.v0.schema.json": {
-      "sha256": "7ec04298da3ed5667056b48ab99571500e5248b0d5433bd487026e05c8bd413a"
+      "sha256": "6c508bc32450f1cfb8e1fbddfb30960da8d4d60f590bfd4b70fef5fc6555c841"
     },
     "schemas/campaigns-os-run-record.v0.schema.json": {
       "sha256": "51c7441e73d693d42d201676e35714d94a749b4174fe678d4f4c68e855eba496"
