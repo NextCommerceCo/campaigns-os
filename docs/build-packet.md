@@ -15,6 +15,28 @@ It answers:
 
 The current schema is `schemas/campaign-runtime-build-packet.v0.schema.json`.
 
+## Root-Served Campaigns (`campaign.route_root`)
+
+Most campaigns are served under a slug prefix (`/<public_route_slug>/...`), and
+that stays the default. A campaign whose whole funnel is served from the **site
+root** — pages at `/checkout-v2`, `/oto-ruggie`, `/receipt` with no slug prefix,
+the normal shape for a single-campaign site or an in-place static deploy —
+declares `campaign.route_root: "/"`. Rules:
+
+- `public_route_slug` stays **required** either way: it is the campaign
+  identity and the `_site/<public_route_slug>/` built-output directory name.
+  `route_root` describes the *served* path shape only.
+- When present, `route_root` must be `"/"` or `"/<public_route_slug>/"`; any
+  other prefix is a doctor blocker (`campaign.route_root`) because it would
+  contradict the slug identity the built-output checks root on.
+- Doctor's routing-meta checks (`routing_meta.runtime_root`,
+  `sdk_hints.meta_tags.route_mismatch`) and route displays validate against the
+  declared route root instead of assuming slug-as-prefix, so a root-served
+  funnel's correct `/receipt`-style metas pass without waivers.
+- The CampaignSpec may carry the same declaration at `campaign.route_root` (or
+  `spec_identity.route_root`); `prepare-build` copies it onto the packet and
+  defaults `live_url_path` to `/`.
+
 Page-kit also needs `campaign.store_url` for `_data/campaigns.json`. Additional Store Profile fields live under `campaign.store_*` as optional storefront/legal metadata because they are operator-entered, not Campaigns API data.
 
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.

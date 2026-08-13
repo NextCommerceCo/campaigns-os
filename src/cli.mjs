@@ -1180,7 +1180,25 @@ function prepareBuild(args, options = {}) {
   if (manifestResult.warning) {
     console.warn(`[campaigns-os prepare-build] ${manifestResult.warning}`);
   }
-  const liveUrlPath = optionalString(args["live-url-path"], `/${publicRouteSlug}/`);
+  // Root-served campaigns: the spec may declare campaign.route_root "/"
+  // (whole funnel served from the site root, no slug prefix). Canonicalize at
+  // intake and carry only the canonical form onto the packet — the packet
+  // schema and validateRouteRootDeclaration accept exactly "/" or
+  // "/<public_route_slug>/", so a lenient spec shape ("/<slug>", trailing
+  // noise) is normalized here and a foreign prefix fails fast instead of
+  // producing a packet doctor will reject later.
+  const rawSpecRouteRoot = optionalString(spec.spec_identity?.route_root)
+    || optionalString(spec.campaign?.route_root);
+  let specRouteRoot = null;
+  if (rawSpecRouteRoot) {
+    const clean = rawSpecRouteRoot.trim();
+    if (clean === "/") specRouteRoot = "/";
+    else if (normalizePublicRouteSlug(clean) === publicRouteSlug) specRouteRoot = `/${publicRouteSlug}/`;
+    else {
+      throw new Error(`CampaignSpec declares route_root ${JSON.stringify(rawSpecRouteRoot)}, which is neither "/" (root-served) nor "/${publicRouteSlug}/" (the public route slug). Fix the spec's route_root or public route slug before assembly.`);
+    }
+  }
+  const liveUrlPath = optionalString(args["live-url-path"], specRouteRoot === "/" ? "/" : `/${publicRouteSlug}/`);
   const commerceCatalog = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
   const themePolicy = optionalString(args["theme-policy"], "inspect_only");
   const portable = (path) => relFromDir(targetRepo, path);
@@ -1248,6 +1266,7 @@ function prepareBuild(args, options = {}) {
     schema_version: PACKET_SCHEMA,
     campaign: {
       public_route_slug: publicRouteSlug,
+      ...(specRouteRoot ? { route_root: specRouteRoot } : {}),
       campaign_directory: optionalString(args["campaign-directory"], basename(outputDir)),
       live_url_path: liveUrlPath,
       campaigns_app_url: optionalString(args["campaigns-app-url"]),
@@ -2093,6 +2112,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ spec, packet, errors, ready }) => validateRouteSlugIdentity(spec, packet, errors, ready),
   },
   {
+    id: "campaign.route_root",
+    phase: "spec",
+    run: ({ packet, errors, ready }) => validateRouteRootDeclaration(packet, errors, ready),
+  },
+  {
     id: "spec.public_routes",
     phase: "spec",
     run: ({ spec, errors, ready }) => validateSpecPublicRoutes(spec, errors, ready),
@@ -2845,6 +2869,7 @@ export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, d
 export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived = {}, buildState = {}) {
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!publicRouteSlug) return;
+  const routeRoot = campaignRouteRoot(packet);
 
   // SELL-362 / R2-B2: the spec only carries unrooted routing-meta *hints*; the
   // page-kit build roots them when it renders _site/<slug>/. Once that built
@@ -2869,13 +2894,13 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
       const value = metaTags[tag];
       if (!isNonEmptyString(value)) continue;
       const route = value.trim();
-      if (isRuntimeRootedRoutingMeta(route, publicRouteSlug)) continue;
+      if (isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) continue;
       hits.push(`${page.id}:${tag}=${route}`);
     }
   }
 
   if (!hits.length) {
-    ready.push(`CampaignSpec SDK routing meta tags are runtime-rooted for /${publicRouteSlug}/`);
+    ready.push(`CampaignSpec SDK routing meta tags are runtime-rooted for ${routeRoot}`);
     return;
   }
 
@@ -2884,11 +2909,11 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
   addIssue(
     warnings,
     "routing_meta.runtime_root",
-    `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "/${publicRouteSlug}/upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
+    `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "${routeRoot}upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
   );
 }
 
-function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState = {}) {
   const expectedPages = activeSpecPages(spec)
     .map((page) => ({
       page,
@@ -2939,7 +2964,7 @@ function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived
         continue;
       }
       if (SDK_ROUTING_META_TAGS.includes(name) && isNonEmptyString(expectedValue)) {
-        const expectedRoute = runtimeRouteForMetaValue(expectedValue, publicRouteSlug);
+        const expectedRoute = runtimeRouteForMetaValue(expectedValue, publicRouteSlug, campaignRouteRoot(packet));
         if (expectedRoute && actualValue.trim() !== expectedRoute) {
           addIssue(
             assemblyComplete ? errors : warnings,
@@ -3006,6 +3031,11 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
   const claimed = new Set();
   const drifted = [];
   const unverifiable = [];
+  // Served-route display honors route_root: a root-served campaign's pages
+  // are reached at /<route>/, not /<slug>/<route>/, even though the built
+  // files still live under _site/<slug>/.
+  const routeRoot = campaignRouteRoot(packet);
+  const rootSegments = routeRoot === "/" ? [] : [publicRouteSlug];
   for (const page of pages) {
     const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
     if (!builtPath) {
@@ -3018,7 +3048,7 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
       claimed.add(resolve(builtPath));
       continue;
     }
-    const segments = [publicRouteSlug, ...relFromDir(siteRoot, dirname(builtPath)).split("/")].filter((segment) => segment && segment !== ".");
+    const segments = [...rootSegments, ...relFromDir(siteRoot, dirname(builtPath)).split("/")].filter((segment) => segment && segment !== ".");
     drifted.push({
       page_id: page.id,
       type: page.type || "page",
@@ -3041,9 +3071,10 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
   }
 
   const scope = resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug });
+  const servedPrefix = routeRoot === "/" ? "/" : `/${publicRouteSlug}/`;
   const unmatched = (scope.ok ? scope.pages : [])
     .filter((builtPage) => !claimed.has(resolve(builtPage.built_path)))
-    .map((builtPage) => `/${publicRouteSlug}/${builtPage.route ? `${builtPage.route}/` : ""}`.replace(/\/{2,}/g, "/"));
+    .map((builtPage) => `${servedPrefix}${builtPage.route ? `${builtPage.route}/` : ""}`.replace(/\/{2,}/g, "/"));
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
   addIssue(
     assemblyComplete ? errors : warnings,
@@ -3442,13 +3473,14 @@ function extractMetaContent(content, name) {
   return contentAttr ? contentAttr[1] : "";
 }
 
-function runtimeRouteForMetaValue(value, publicRouteSlug) {
+function runtimeRouteForMetaValue(value, publicRouteSlug, routeRoot = null) {
   if (!isNonEmptyString(value)) return null;
   const route = value.trim();
   if (isAbsoluteHttpUrl(route)) return route;
-  if (isRuntimeRootedRoutingMeta(route, publicRouteSlug)) return route;
+  if (isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) return route;
+  const root = routeRoot || `/${publicRouteSlug}/`;
   const normalized = runtimeRelativeRouteForSpecValue(route, publicRouteSlug);
-  return normalized ? `/${publicRouteSlug}/${normalized}` : `/${publicRouteSlug}/`;
+  return normalized ? `${root}${normalized}` : root;
 }
 
 function runtimeRelativeRouteForSpecValue(value, publicRouteSlug) {
@@ -3486,11 +3518,66 @@ function normalizePublicRouteSlug(value) {
     .replace(/^\/+|\/+$/g, "");
 }
 
-function isRuntimeRootedRoutingMeta(value, publicRouteSlug) {
+// Root-served campaigns (ruggie root-funnel contract gap, 2026-08): a campaign
+// whose whole funnel is served from the SITE ROOT (/checkout-v2, /oto-ruggie,
+// /receipt — no slug prefix) declares campaign.route_root "/". Absent
+// route_root defaults to "/<public_route_slug>/", so existing packets are
+// unchanged. public_route_slug stays required identity and stays the
+// _site/<public_route_slug>/ built-output directory; route_root only changes
+// how SERVED routes (routing metas, public routes, live URLs) are composed
+// and validated. Returns "/", "/<slug>/", or null when neither is derivable.
+export function campaignRouteRoot(packet) {
+  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const declared = optionalString(packet?.campaign?.route_root);
+  if (declared) {
+    const clean = declared.trim();
+    if (clean === "/") return "/";
+    // Exact canonical form only — the same shape the JSON schema accepts.
+    // A malformed or foreign declaration ("/foo", "/ruggie", "//x//") falls
+    // through to the slug default so no check silently roots on it;
+    // validateRouteRootDeclaration raises the named blocker.
+    if (slug && clean === `/${slug}/`) return clean;
+  }
+  return slug ? `/${slug}/` : null;
+}
+
+// Declared route_root must be "/" or agree with public_route_slug — any other
+// prefix would make the packet describe a route surface that contradicts the
+// slug identity every other check roots on, which is the silent-disarm shape
+// the c1 negative control exposed for the slug itself.
+export function validateRouteRootDeclaration(packet, errors, ready) {
+  const declared = packet?.campaign?.route_root;
+  if (declared == null) return;
+  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const value = typeof declared === "string" ? declared.trim() : null;
+  if (value === "/") {
+    ready.push(`Campaign is declared root-served (route_root "/"): routing metas and public routes validate against site-root paths; public_route_slug "${slug}" remains identity, not a path prefix`);
+    return;
+  }
+  // Exact canonical form only, mirroring the schema pattern. Accepting
+  // near-miss shapes here ("/ruggie", "//ruggie//") while the schema rejects
+  // them would recreate the silent-disarm split this check exists to close.
+  if (value && slug && value === `/${slug}/`) {
+    ready.push(`Campaign route_root "/${slug}/" matches public_route_slug`);
+    return;
+  }
+  addIssue(
+    errors,
+    "campaign.route_root",
+    `Packet campaign.route_root ${JSON.stringify(declared)} is invalid. Declare exactly "/" for a root-served campaign or exactly "/${slug || "<public_route_slug>"}/" (leading and trailing slash) for the default slug-prefixed root. Any other value would contradict public_route_slug, which stays the campaign identity and the _site/<public_route_slug>/ built-output directory name.`
+  );
+}
+
+function isRuntimeRootedRoutingMeta(value, publicRouteSlug, routeRoot = null) {
   if (isAbsoluteHttpUrl(value)) return true;
   const route = value.trim();
   if (!route.startsWith("/")) return false;
-  return route === `/${publicRouteSlug}` || route.startsWith(`/${publicRouteSlug}/`);
+  const root = routeRoot || (publicRouteSlug ? `/${publicRouteSlug}/` : null);
+  // Root-served: every absolute path is rooted at the served surface.
+  if (root === "/") return true;
+  if (!root) return false;
+  const prefix = root.replace(/\/+$/, "");
+  return route === prefix || route.startsWith(`${prefix}/`);
 }
 
 export function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
@@ -5585,7 +5672,7 @@ Rules:
 - Read context.theme and .campaign-runtime/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
 - Generated brand-theme.css v0 is root-variable-only. Do not edit SDK-owned selectors, package controls, payment fields, totals, submit controls, receipt templates, route meta tags, or SDK JavaScript as part of theme application.
 - If you copy starter-template files, copy the selected family atomically with dependent pages, _includes, _layouts, assets/css, and assets/js; do not copy only checkout.html and receipt.html.
-- Resolve SDK routing meta tags to campaign-root paths such as /${packet.campaign.public_route_slug}/upsell/, not source filenames or unrooted spec literals.
+- Resolve SDK routing meta tags to campaign-root paths such as ${campaignRouteRoot(packet) || `/${packet.campaign.public_route_slug}/`}upsell/, not source filenames or unrooted spec literals.
 - For one-time prepurchase/order-bump packages outside the main bundles, default package_sync=false and show_line_total_price=false unless the spec explicitly requires quantity sync.
 - Record spec-driven removals, especially unsupported payment methods, so polish does not reintroduce them.
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
@@ -5647,7 +5734,7 @@ If report.theme/context.theme exists, verify source token parity for primary col
 
 function deployPrompt(packetPath, reportPath, packet) {
   const target = packet.deploy?.target || "unknown";
-  const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || `/${packet.campaign?.public_route_slug || "<slug>"}/`;
+  const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || campaignRouteRoot(packet) || "/<slug>/";
   return `Deploy the built campaign to ${target}.
 
 Read first:

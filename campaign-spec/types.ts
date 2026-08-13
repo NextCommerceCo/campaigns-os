@@ -336,6 +336,16 @@ export type TemplateFamilyHint =
 export interface Campaign {
   ref_id?: number | string
   slug?: string
+  /**
+   * Public route root the campaign is served under. `'/'` declares a
+   * ROOT-SERVED campaign: the whole funnel lives at site-root paths
+   * (`/checkout-v2`, `/receipt`) with no slug prefix — e.g. a single-campaign
+   * site whose deploy publishes the funnel at the domain root. When absent,
+   * consumers default to `'/<slug>/'`. `slug` stays required identity either
+   * way; route_root only changes how public routes and SDK routing metas are
+   * composed and validated (campaigns-os doctor honors it).
+   */
+  route_root?: string
   payment_env_key?: string
   available_shipping_countries?: 'all' | string[]
   tracking?: Record<string, unknown>

@@ -17,7 +17,12 @@
         "public_route_slug": {
           "type": "string",
           "minLength": 1,
-          "description": "Shopper-facing route slug, e.g. theduo-v3. It is often the same as the campaign directory, but the packet keeps them explicit."
+          "description": "Shopper-facing route slug, e.g. theduo-v3. It is often the same as the campaign directory, but the packet keeps them explicit. Always required as campaign identity, even for root-served campaigns (see route_root)."
+        },
+        "route_root": {
+          "type": ["string", "null"],
+          "pattern": "^/(?:[A-Za-z0-9._-]+/)?$",
+          "description": "Public route root the campaign is served under. \"/\" declares a root-served campaign: pages live at site-root paths (/checkout-v2, /receipt) with no slug prefix, so routing metas and public routes are validated against the site root. Defaults to \"/<public_route_slug>/\" when absent; when present and not \"/\", it must equal \"/<public_route_slug>/\". Built output still lives at _site/<public_route_slug>/ either way — route_root describes the SERVED path shape, not the build directory."
         },
         "campaign_directory": {
           "type": ["string", "null"],
