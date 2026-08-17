@@ -5382,12 +5382,18 @@ export function nextStage(stage, args, ambient = null) {
   }
   const themeGate = doctor.derived?.theme_gate || null;
   const polishGate = doctor.derived?.polish_gate || evaluatePolishGate({ report });
+  // Packet 03 (INV-5 first slice): compare the ledger's self-report against
+  // the repo's artifacts before any recommendation goes out. Additive:
+  // `divergences[]` appears on the result only when at least one divergence
+  // exists, so clean-repo output is byte-identical to the pre-change shape.
+  const divergences = detectLedgerDivergence(report, packet, targetRepo);
   // Every return path runs through this finalizer so the machine-readable
   // contract is uniform: `gates` (pass/blocked/waived/not_applicable per
   // gate) and `next_actions` (exact commands — not prose) are always present,
   // and the recommendation is recorded on the active run session for
   // deviation telemetry.
   const finalize = (result) => {
+    if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate });
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, ambient });
     recordNextRecommendation(ambient, result);
@@ -5429,7 +5435,13 @@ export function nextStage(stage, args, ambient = null) {
         errors,
         warnings,
         ready,
-        prompt: "Resolve the prepare-build blockers recorded in the assembly report, then rerun `campaigns-os prepare-build` or `campaigns-os start` before continuing.",
+        // Packet 03: when the artifacts contradict the ledger, do NOT tell
+        // the operator to start over — rerunning prepare-build/start is the
+        // most destructive documented recovery, and the ledger alone is not
+        // trustworthy evidence that it is needed.
+        prompt: divergences.length
+          ? "The assembly report's ledger and the repository's artifacts disagree (see divergences[]). Inspect both sides and decide which is right before acting. Do not rerun `campaigns-os prepare-build` or `campaigns-os start` on the strength of the ledger alone."
+          : "Resolve the prepare-build blockers recorded in the assembly report, then rerun `campaigns-os prepare-build` or `campaigns-os start` before continuing.",
         stage_blocked: true,
       });
     }
@@ -5558,17 +5570,49 @@ function buildNextGates({ doctor, report, themeGate, polishGate }) {
   ];
 }
 
+// Packet 03 (INV-5 first slice): the replacement recommendation when the
+// ledger and the artifacts disagree. Tells the operator to inspect and
+// decide — it resolves nothing, writes nothing, and never claims a stage is
+// complete. The forward hint points at the least-destructive plausible path
+// implied by the artifact evidence instead of re-setup.
+function divergenceInspectAction(divergences, packetPath) {
+  const divergedStages = divergences.map((divergence) => divergence.stage);
+  const forwardHint = divergedStages.includes("qa")
+    ? "The artifacts include a QA verdict for this campaign, so the campaign may already be built, deployed, and QA'd — verify the artifacts before redoing any stage."
+    : divergedStages.includes("deploy")
+      ? `If the recorded deploy URL is real and current, the forward path is QA (campaigns-os next qa --packet ${packetPath}), not re-running earlier stages.`
+      : "If the built output is real and current, the forward path is polish/deploy/QA, not re-running setup or build.";
+  return {
+    id: "divergence_inspect",
+    kind: "manual",
+    command: null,
+    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s) recorded in divergences[]. Inspect both sides (each entry quotes the ledger claim and the artifact evidence) and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint}`,
+    required: true,
+  };
+}
+
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
 export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, ambient }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
+  const divergences = Array.isArray(result.divergences) ? result.divergences : [];
+  if (divergences.length) {
+    const inspect = divergenceInspectAction(divergences, packetPath);
+    push(inspect.id, inspect.kind, inspect.command, inspect.description, { required: inspect.required });
+  }
   if (result.stage === "doctor-blocked") {
     push("doctor_recheck", "command", `campaigns-os doctor --packet ${packetPath} --json`, "Re-run the doctor after resolving the listed errors.");
     return actions;
   }
   if (result.stage === "prepare-build") {
-    push("rerun_prepare_build", "command", `campaigns-os start --map-id ${packet.spec?.map_id || "<map-id>"}`, "Rerun prepare-build/start with the original spec, source, and target inputs to clear the recorded blockers.");
+    // Packet 03: with any divergence present, the "start over" recommendation
+    // (`campaigns-os start` / rerun prepare-build) is suppressed — it is the
+    // most destructive recovery available and the ledger alone cannot
+    // justify it. The divergence_inspect action above replaces it.
+    if (!divergences.length) {
+      push("rerun_prepare_build", "command", `campaigns-os start --map-id ${packet.spec?.map_id || "<map-id>"}`, "Rerun prepare-build/start with the original spec, source, and target inputs to clear the recorded blockers.");
+    }
     return actions;
   }
   // A blocked theme gate owns the action list for any post-build stage: the
@@ -5777,6 +5821,153 @@ Launch readiness note: Campaigns OS can prove the campaign build, SDK wiring, br
 For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, payment methods, and market-specific copy. Summarize blockers, warnings, and remaining launch risks.`;
 }
 
+// Packet 03 (INV-5 first slice): the deploy-output URL scan that
+// buildNextStep's deploySatisfied has always used, extracted so
+// detectLedgerDivergence reads the exact same artifact signal instead of
+// growing a second, slightly different scan.
+function deployUrlFromReportOutputs(report) {
+  for (const output of report?.stages?.deploy?.outputs || []) {
+    if (/^https?:\/\//.test(String(output))) return String(output);
+  }
+  return null;
+}
+
+// Packet 03 (INV-5 first slice): QA verdict artifacts discoverable for THIS
+// campaign from packet + target repo alone, via the qa-output convention
+// (`<target-repo>/qa-output/<map_id|public_route_slug>/*.json`, the same
+// roots inferQaVerdictPath scans). Deterministic projection of repo
+// contents: entries are name-sorted, no mtimes, no clock, no cwd. A JSON
+// file only counts when its campaign_slug matches this campaign's identity,
+// so a neighbouring campaign's verdict never reads as ours.
+function qaVerdictArtifactsForCampaign(packet, targetRepo) {
+  const identifiers = [...new Set([
+    optionalString(packet?.spec?.map_id),
+    normalizePublicRouteSlug(packet?.campaign?.public_route_slug),
+  ].filter(Boolean))];
+  if (!identifiers.length || !isNonEmptyString(targetRepo)) return [];
+  const found = [];
+  for (const identifier of identifiers) {
+    const dirPath = join(targetRepo, "qa-output", identifier);
+    let names = [];
+    try {
+      if (!existsSync(dirPath) || !statSync(dirPath).isDirectory()) continue;
+      names = readdirSync(dirPath, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map((entry) => entry.name)
+        .sort();
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      try {
+        const verdict = readJson(join(dirPath, name));
+        if (!isObject(verdict)) continue;
+        const slug = optionalString(verdict.campaign_slug);
+        if (!slug || !identifiers.includes(slug)) continue;
+        found.push({
+          // Repo-relative on purpose: divergence evidence must be identical
+          // wherever the repo sits on disk (purity contract).
+          path: `qa-output/${identifier}/${name}`,
+          campaign_slug: slug,
+          verdict: optionalString(verdict.verdict),
+        });
+      } catch {
+        // Unreadable candidates are not verdict evidence.
+      }
+    }
+  }
+  found.sort((a, b) => a.path.localeCompare(b.path));
+  return found;
+}
+
+// Packet 03 (INV-5 first slice, EN-1): where the artifacts in the campaign
+// repository contradict the Assembly Report's self-reported stage ladder,
+// report the disagreement — never resolve it, never treat artifact presence
+// as completion, and never let the ledger alone justify a destructive
+// re-setup recommendation.
+//
+// Pure function of (report, packet, target repo contents): no network, no
+// cwd dependence, no clock, no mtimes. Exactly three signals, per the
+// ratified packet scope:
+//   1. built output present while stages.assembly.status is "pending";
+//   2. a deploy URL present (report.stages.deploy.outputs — the same scan
+//      deploySatisfied uses — or packet.deploy.preview_url/production_url)
+//      while stages.deploy.status is "pending";
+//   3. a QA verdict artifact for this campaign present while
+//      stages.qa.status is "pending".
+//
+// Each divergence quotes both sides (ledger claim + artifact evidence).
+// Presence-based only: a stale built output still diverges from a pending
+// ledger, and the entry says the two disagree — it never asserts the stage
+// is complete or the artifact current. This function writes nothing.
+export function detectLedgerDivergence(report, packet, targetRepo) {
+  const divergences = [];
+  const stages = report?.stages;
+  if (!isObject(stages) || !isNonEmptyString(targetRepo)) return divergences;
+  const stagePending = (key) => String(stages?.[key]?.status || "") === "pending";
+
+  if (stagePending("assembly")) {
+    const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+    if (slug) {
+      let builtOutputPresent = false;
+      try {
+        const siteRoot = join(targetRepo, "_site", slug);
+        builtOutputPresent = existsSync(siteRoot) && statSync(siteRoot).isDirectory();
+      } catch {
+        builtOutputPresent = false;
+      }
+      if (builtOutputPresent) {
+        divergences.push({
+          code: "divergence.assembly.built_output_present",
+          stage: "assembly",
+          ledger_claim: 'stages.assembly.status = "pending"',
+          artifact_evidence: `Built output directory _site/${slug}/ exists in the target repo.`,
+          message: `The ledger claims assembly has not run, but built output exists at _site/${slug}/. The ledger and artifacts disagree; inspect both before acting. Presence is not proof the stage is complete or that the output is current for this packet.`,
+        });
+      }
+    }
+  }
+
+  if (stagePending("deploy")) {
+    const reportUrl = deployUrlFromReportOutputs(report);
+    const packetPreviewUrl = optionalString(packet?.deploy?.preview_url);
+    const packetProductionUrl = optionalString(packet?.deploy?.production_url);
+    const url = reportUrl || packetPreviewUrl || packetProductionUrl;
+    if (url) {
+      const source = reportUrl
+        ? "report.stages.deploy.outputs"
+        : packetPreviewUrl
+          ? "packet.deploy.preview_url"
+          : "packet.deploy.production_url";
+      divergences.push({
+        code: "divergence.deploy.url_present",
+        stage: "deploy",
+        ledger_claim: 'stages.deploy.status = "pending"',
+        artifact_evidence: `Deploy URL "${url}" is recorded in ${source}.`,
+        message: `The ledger claims deploy has not run, but a deploy URL ("${url}") is recorded in ${source}. The ledger and artifacts disagree; inspect both before acting. A recorded URL is not proof the stage is complete or that the deployed output is current.`,
+      });
+    }
+  }
+
+  if (stagePending("qa")) {
+    const verdicts = qaVerdictArtifactsForCampaign(packet, targetRepo);
+    if (verdicts.length) {
+      const quoted = verdicts
+        .map((entry) => `${entry.path} (campaign_slug "${entry.campaign_slug}"${entry.verdict ? `, verdict "${entry.verdict}"` : ""})`)
+        .join("; ");
+      divergences.push({
+        code: "divergence.qa.verdict_present",
+        stage: "qa",
+        ledger_claim: 'stages.qa.status = "pending"',
+        artifact_evidence: `QA verdict artifact(s) for this campaign: ${quoted}.`,
+        message: `The ledger claims QA has not run, but verdict artifact(s) for this campaign exist (${quoted}). The ledger and artifacts disagree; inspect both before acting. A recorded verdict is not proof the stage is complete for the current build.`,
+      });
+    }
+  }
+
+  return divergences;
+}
+
 function buildNextStep(errors, warnings, derived, report = null) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const assemblyStatus = report?.stages?.assembly?.status || "";
@@ -5787,7 +5978,7 @@ function buildNextStep(errors, warnings, derived, report = null) {
   const polishBlocked = assemblyComplete && polishGate.status === "blocked";
   const polishSatisfied = assemblyComplete && ["pass", "waived"].includes(polishGate.status);
   const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
-    || (report?.stages?.deploy?.outputs || []).some((output) => /^https?:\/\//.test(String(output)));
+    || Boolean(deployUrlFromReportOutputs(report));
   const qaRecorded = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => qaStatus.startsWith(prefix));
   const blockedStages = [];
   const actions = [];
