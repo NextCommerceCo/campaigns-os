@@ -23,16 +23,33 @@ import { effectivePurchase } from "./qa-analytics-parity.mjs";
 // without host wiring, so they degrade to manual review rather than false-fail.
 const KNOWN_VENDOR_KINDS = new Set(["gtm", "ga4", "google_ads", "meta", "tiktok", "everflow"]);
 
-function correctnessAssertion({ id, status, severity, expected, actual, evidence }) {
+function correctnessAssertion({ id, status, severity, expected, actual, evidence, waiver }) {
   return {
     id,
     family: "analytics-correctness",
     page: "analytics",
     status,
     ...(severity ? { severity } : {}),
+    ...(waiver ? { waiver } : {}),
     expected,
     actual,
     ...(evidence ? { evidence } : {}),
+  };
+}
+
+// The ONLY assertion the QA waiver lane covers today (packet 01, ratified
+// I-9/I-16): a recorded `qa waive` decision for purchase-fires. Returns the
+// waiver record only for a FAILING assertion — a stale waiver on a passing
+// check is inert data, never surfaced.
+function purchaseFiresWaiver(options, fired) {
+  if (fired) return null;
+  const waiver = options?.waivers?.["analytics-correctness:purchase-fires"];
+  if (!waiver || typeof waiver !== "object" || Array.isArray(waiver)) return null;
+  if (typeof waiver.reason !== "string" || !waiver.reason.trim()) return null;
+  return {
+    reason: waiver.reason.trim(),
+    waived_by: (typeof waiver.waived_by === "string" && waiver.waived_by.trim()) || "operator",
+    waived_at: (typeof waiver.waived_at === "string" && waiver.waived_at.trim()) || null,
   };
 }
 
@@ -43,7 +60,9 @@ function inventoryHas(inventory, kind, id) {
 
 // Assess one funnel's capture against its declared analytics contract.
 // `contract` is the spec's `analytics` block (may be undefined/empty).
-export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
+// `options.waivers` is the Assembly Report's recorded `qa waive` decisions
+// (packet 01) — consulted ONLY by the purchase-fires blocker below.
+export function assessAnalyticsCorrectness(capture = {}, contract = {}, options = {}) {
   const assertions = [];
   const inventory = capture.inventory || {};
   const providers = (contract && contract.providers) || {};
@@ -126,14 +145,23 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}) {
   }
 
   // 4. Purchase fires — source-aware (dataLayer event OR Meta/GA4 pixel).
+  // Packet 01 / ratified I-9: this stays a BLOCKER, with exactly one
+  // named-human waiver lane — a recorded `qa waive` decision downgrades the
+  // failing blocker to WARN and carries the attribution (reason / waived_by /
+  // waived_at) on the assertion, so the verdict shows who accepted it and why.
+  // An unwaived failure still blocks (I-16 negative control).
   const eff = effectivePurchase(capture);
+  const waiver = purchaseFiresWaiver(options, eff.fired);
   assertions.push(correctnessAssertion({
     id: "analytics-correctness:purchase-fires",
     status: eff.fired ? STATUS.PASS : STATUS.FAIL,
-    severity: SEVERITY.BLOCKER,
+    severity: waiver ? SEVERITY.WARN : SEVERITY.BLOCKER,
+    ...(waiver ? { waiver } : {}),
     expected: "a Purchase fires on this page (dl_purchase, or Meta/GA4 pixel if the SDK event is blocked)",
-    actual: eff.fired ? `fired via ${eff.via}` : "no Purchase fire captured (dataLayer, Meta, or GA4)",
-    evidence: { via: eff.via, signals: capture.purchaseSignals || {} },
+    actual: eff.fired
+      ? `fired via ${eff.via}`
+      : `no Purchase fire captured (dataLayer, Meta, or GA4)${waiver ? ` — blocker waived by ${waiver.waived_by}${waiver.waived_at ? ` at ${waiver.waived_at}` : ""}: ${waiver.reason}` : ""}`,
+    evidence: { via: eff.via, signals: capture.purchaseSignals || {}, ...(waiver ? { waiver } : {}) },
   }));
 
   return assertions;

@@ -23,6 +23,7 @@ Usage:
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--json]
   campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--no-remit] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
+  campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
   campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
@@ -89,6 +90,14 @@ Options:
                                   dataLayer + GTM/pixel tag-fires on both URLs and diffs them into parity assertions.
                                   Requires one-time setup: npm run qa:install-browser.
   --analytics-candidate <url>     Override the candidate URL for analytics capture (default: --base-url).
+  --assertion <id>                qa waive: the blocking assertion to waive. The waiver lane is scoped to
+                                  analytics-correctness:purchase-fires — other assertions are refused.
+  --reason <text>                 qa waive: REQUIRED — why this blocker is acceptable for this campaign.
+                                  Recorded verbatim on the Assembly Report and carried into the verdict.
+  --waived-by <who>               qa waive: named human accepting the blocker. Default: $USER@local
+                                  (or "operator" when $USER is unset), matching themeWaive's default lane.
+  --report <path>                 qa waive: explicit Assembly Report path. Default: the packet target repo's
+                                  .campaign-runtime/assembly-report.json.
   --analytics-settle <ms>         Extra settle time after page load for async analytics pushes. Default: 5000.
   --analytics-hosts <h1,h2,...>   Extra third-party host patterns to intercept for tag-fire capture (comma-separated).
 `;
@@ -120,6 +129,11 @@ export async function runQaCli(args) {
   if (subcommand === "policy") {
     if (args._[2] !== "set") throw new Error("Unknown qa policy command. Use: campaigns-os qa policy set --packet <campaign-runtime.build.json>");
     const result = updateQaPolicy(args);
+    output(result, args);
+    return result;
+  }
+  if (subcommand === "waive") {
+    const result = qaWaive(args);
     output(result, args);
     return result;
   }
@@ -171,10 +185,12 @@ async function resolveQaInputs(args) {
   const topologies = extractTopologies(normalized, { baseUrl, publicRouteSlug, templateFamily, commerceStructureContract });
   const themeGate = resolveThemeGate({ packetPath, topologies, waive: stringArg(args["theme-waive"]) });
   const polishGate = resolvePolishGate({ packetPath });
+  const qaWaivers = resolveQaWaivers({ packetPath });
   const brandContract = loadBrandContract(templateFamily);
   return {
     themeGate,
     polishGate,
+    qaWaivers,
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath,
@@ -237,6 +253,8 @@ export function resolveQaInputsFromSite(args) {
   return {
     themeGate,
     polishGate,
+    // Non-packet site QA has no Assembly Report, so no recorded waivers.
+    qaWaivers: {},
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath: null,
@@ -675,6 +693,104 @@ function updateQaPolicy(args) {
   };
 }
 
+// The complete set of QA assertions `qa waive` accepts today. Deliberately a
+// one-element list (packet 01, ratified I-9/I-16): analytics-correctness:
+// purchase-fires is the one unwaivable blocker in the estate that gained a
+// named-human lane. Extending the lane to another assertion is a design
+// decision with its own ratification, not a flag — refuse anything else.
+const WAIVABLE_QA_ASSERTIONS = Object.freeze(["analytics-correctness:purchase-fires"]);
+
+// `qa waive`: the ONLY sanctioned way to accept a failing
+// analytics-correctness:purchase-fires blocker. Modeled on `theme waive`
+// (cli.mjs themeWaive): refuses without --reason, records waived_by, stamps
+// waived_at, and writes ONE explicit decision onto the Assembly Report's qa
+// stage ($defs/stage is additionalProperties:true — no schema change, no
+// surface_version bump) so the correctness leg reads a named human's decision
+// instead of an agent improvising past a blocker. The waiver record mirrors
+// report.theme.waiver: { reason, waived_by, waived_at }.
+export function qaWaive(args) {
+  const packetPath = args.packet ? resolve(args.packet) : null;
+  if (!packetPath) throw new Error("qa waive requires --packet <campaign-runtime.build.json>.");
+  const packet = readJson(packetPath);
+  const assertionId = stringArg(args.assertion);
+  if (!assertionId) {
+    throw new Error(`qa waive requires --assertion <id>. Waivable assertions: ${WAIVABLE_QA_ASSERTIONS.join(", ")}.`);
+  }
+  if (!WAIVABLE_QA_ASSERTIONS.includes(assertionId)) {
+    throw new Error(
+      `qa waive does not accept --assertion "${assertionId}". The waiver lane is scoped to exactly: ${WAIVABLE_QA_ASSERTIONS.join(", ")}. `
+      + "Extending the lane to another assertion is a design decision, not a flag.",
+    );
+  }
+  const reason = stringArg(args.reason);
+  if (!reason) {
+    throw new Error("qa waive requires --reason \"<why this failing blocker is acceptable for this campaign>\".");
+  }
+  const reportPath = args.report
+    ? resolve(String(args.report))
+    : join(resolveTargetBaseDir(packet, packetPath), ".campaign-runtime", "assembly-report.json");
+  if (!existsSync(reportPath)) {
+    throw new Error(`qa waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
+  }
+  const report = readJson(reportPath);
+  const waiver = {
+    reason,
+    // Named-human lane: default to the operator identity the QA verdict
+    // already records ($USER@local), falling back to themeWaive's "operator".
+    waived_by: stringArg(args["waived-by"]) || (process.env.USER ? `${process.env.USER}@local` : "operator"),
+    waived_at: new Date().toISOString(),
+  };
+  const stages = isPlainObject(report.stages) ? report.stages : {};
+  const stageQa = isPlainObject(stages.qa) ? stages.qa : { stage: "qa", status: "pending" };
+  stageQa.waivers = { ...(isPlainObject(stageQa.waivers) ? stageQa.waivers : {}), [assertionId]: waiver };
+  stages.qa = stageQa;
+  report.stages = stages;
+  if (Array.isArray(report.evidence)) {
+    report.evidence.push(`QA waiver: ${assertionId} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`);
+  }
+  writeJson(reportPath, report);
+  // #171: the waiver changes what the next qa run concludes; the retained
+  // doctor sidecar (if any) now predates this report edit.
+  markDoctorSidecarStale(resolveTargetBaseDir(packet, packetPath), {
+    command: "qa waive",
+    reason: "A QA assertion waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+  });
+  return {
+    ok: true,
+    action: "qa-waive",
+    assertion: assertionId,
+    waiver,
+    report_path: reportPath,
+    note: `The next qa run downgrades a FAILING ${assertionId} blocker to a warning with this attribution; the disposition becomes ready_with_exceptions, never plain ready. A passing run ignores the waiver.`,
+  };
+}
+
+// Read the recorded `qa waive` decisions off the Assembly Report for a run.
+// Only assertions inside the sanctioned lane with a non-empty reason count —
+// anything else on the report is inert data (reverting the waiver feature
+// must leave recorded waivers harmless, per packet 01's revert contract).
+function resolveQaWaivers({ packetPath }) {
+  const report = loadRuntimeArtifact(packetPath, "assembly-report.json");
+  const recorded = report?.stages?.qa?.waivers;
+  if (!isPlainObject(recorded)) return {};
+  const waivers = {};
+  for (const [assertionId, waiver] of Object.entries(recorded)) {
+    if (!WAIVABLE_QA_ASSERTIONS.includes(assertionId)) continue;
+    if (!isPlainObject(waiver)) continue;
+    if (typeof waiver.reason !== "string" || !waiver.reason.trim()) continue;
+    waivers[assertionId] = {
+      reason: waiver.reason.trim(),
+      waived_by: stringArg(waiver.waived_by) || "operator",
+      waived_at: stringArg(waiver.waived_at) || null,
+    };
+  }
+  return waivers;
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 // Every assertion family a non-blocked run can emit beyond theme_gate. A
 // gate-blocked verdict carries one skipped audit assertion per family so the
 // verdict shape never drifts for consumers walking assertions[] by family.
@@ -815,7 +931,9 @@ async function runQa(args) {
   // foundation the parity differ sits on — correctness before parity.
   const analyticsContract = resolved.spec?.analytics;
   if (analyticsContract || forcedAnalyticsCorrectness(args)) {
-    assertions.push(...await runAnalyticsCorrectnessChecks(args, analyticsContract || {}));
+    assertions.push(...await runAnalyticsCorrectnessChecks(args, analyticsContract || {}, {
+      waivers: resolved.qaWaivers,
+    }));
   }
 
   // Analytics-parity leg (opt-in): when a legacy baseline URL is supplied, capture
@@ -1875,5 +1993,6 @@ export const __qaNodeTestHooks = Object.freeze({
   deriveTestedUrlsFromAssertions,
   resolvePayload,
   resolveQaInputsFromSite,
+  resolveQaWaivers,
   isAdvisoryMetaTag,
 });

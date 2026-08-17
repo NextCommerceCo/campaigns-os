@@ -206,7 +206,10 @@ export async function runAnalyticsParityChecks(args = {}) {
 // declared CampaignSpec `analytics` contract — declared tags/pixels fire,
 // Purchase fires (source-aware). This is the foundation the parity differ sits
 // on; runs whenever a spec carries an `analytics` block (or --analytics-correctness).
-export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}) {
+// `options.waivers` carries the Assembly Report's recorded `qa waive`
+// decisions (packet 01) so the purchase-fires blocker can downgrade with
+// attribution when a named human accepted it.
+export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, options = {}) {
   const url = trim(args["analytics-candidate"]) || trim(args["base-url"]) || null;
   const correctnessPage = { page_id: "analytics", url: url || undefined };
   if (!url) {
@@ -235,7 +238,7 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}) {
   });
   try {
     const capture = await captureAnalyticsForUrl(context, url, args, extraHosts);
-    const assertions = assessAnalyticsCorrectness(capture, contract || {});
+    const assertions = assessAnalyticsCorrectness(capture, contract || {}, { waivers: options.waivers });
     assertions.unshift(assertion({
       id: "analytics-correctness:capture",
       family: "analytics-correctness",
