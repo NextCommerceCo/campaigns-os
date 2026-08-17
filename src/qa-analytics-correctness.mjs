@@ -23,17 +23,22 @@ import { effectivePurchase } from "./qa-analytics-parity.mjs";
 // without host wiring, so they degrade to manual review rather than false-fail.
 const KNOWN_VENDOR_KINDS = new Set(["gtm", "ga4", "google_ads", "meta", "tiktok", "everflow"]);
 
-function correctnessAssertion({ id, status, severity, expected, actual, evidence, waiver }) {
+// Packet 01 / INV-3(c): when the assessment knows the URL it audited, EVERY
+// emitted assertion — pass and fail alike — carries it, top-level and in
+// evidence, so a reader of a blocked verdict can always tell what was
+// measured (only the sibling :capture assertion used to carry it).
+function correctnessAssertion({ id, status, severity, expected, actual, evidence, waiver, url }) {
   return {
     id,
     family: "analytics-correctness",
     page: "analytics",
     status,
+    ...(url ? { url } : {}),
     ...(severity ? { severity } : {}),
     ...(waiver ? { waiver } : {}),
     expected,
     actual,
-    ...(evidence ? { evidence } : {}),
+    ...(evidence || url ? { evidence: { ...(url ? { url } : {}), ...(evidence || {}) } } : {}),
   };
 }
 
@@ -62,8 +67,12 @@ function inventoryHas(inventory, kind, id) {
 // `contract` is the spec's `analytics` block (may be undefined/empty).
 // `options.waivers` is the Assembly Report's recorded `qa waive` decisions
 // (packet 01) — consulted ONLY by the purchase-fires blocker below.
+// `options.url` is the URL the capture actually visited (the resolved capture
+// target) — stamped on every emitted assertion, pass and fail alike.
 export function assessAnalyticsCorrectness(capture = {}, contract = {}, options = {}) {
   const assertions = [];
+  const auditedUrl = (typeof options.url === "string" && options.url.trim()) ? options.url.trim() : null;
+  const emit = (fields) => correctnessAssertion({ url: auditedUrl, ...fields });
   const inventory = capture.inventory || {};
   const providers = (contract && contract.providers) || {};
   const hasContract = !!(contract && (contract.providers || contract.out_of_band_pixels || contract.params || contract.manual_events));
@@ -71,7 +80,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}, options 
   // No declared contract → can't know expected ids; emit a non-gating inventory
   // so the run still records what fired, and flag that nothing was validated.
   if (!hasContract) {
-    assertions.push(correctnessAssertion({
+    assertions.push(emit({
       id: "analytics-correctness:no-contract",
       status: STATUS.MANUAL_REVIEW,
       severity: SEVERITY.INFO,
@@ -92,7 +101,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}, options 
   if (providers.gtm && providers.gtm.enabled !== false) {
     const id = providers.gtm.containerId;
     const present = inventoryHas(inventory, "gtm", id);
-    assertions.push(correctnessAssertion({
+    assertions.push(emit({
       id: "analytics-correctness:tag:gtm",
       status: present ? STATUS.PASS : STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
@@ -106,7 +115,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}, options 
   if (providers.facebook && providers.facebook.enabled !== false) {
     const id = providers.facebook.pixelId;
     const present = inventoryHas(inventory, "meta", id);
-    assertions.push(correctnessAssertion({
+    assertions.push(emit({
       id: "analytics-correctness:tag:meta",
       status: present ? STATUS.PASS : STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
@@ -122,7 +131,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}, options 
     const vendor = String(pixel.vendor).toLowerCase();
     if (KNOWN_VENDOR_KINDS.has(vendor)) {
       const present = inventoryHas(inventory, vendor, pixel.id);
-      assertions.push(correctnessAssertion({
+      assertions.push(emit({
         id: `analytics-correctness:oob:${vendor}`,
         status: present ? STATUS.PASS : STATUS.FAIL,
         severity: SEVERITY.BLOCKER,
@@ -133,7 +142,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}, options 
     } else {
       // Vendor host not in the classifier (e.g. TriplePixel→triplewhale.com).
       // Pass its name as --analytics-hosts to capture it; until then, review.
-      assertions.push(correctnessAssertion({
+      assertions.push(emit({
         id: `analytics-correctness:oob:${vendor}`,
         status: STATUS.MANUAL_REVIEW,
         severity: SEVERITY.WARN,
@@ -152,7 +161,7 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}, options 
   // An unwaived failure still blocks (I-16 negative control).
   const eff = effectivePurchase(capture);
   const waiver = purchaseFiresWaiver(options, eff.fired);
-  assertions.push(correctnessAssertion({
+  assertions.push(emit({
     id: "analytics-correctness:purchase-fires",
     status: eff.fired ? STATUS.PASS : STATUS.FAIL,
     severity: waiver ? SEVERITY.WARN : SEVERITY.BLOCKER,

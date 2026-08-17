@@ -89,7 +89,11 @@ Options:
                                   legacy receipt/thank-you page). Launches a Playwright browser to capture the live
                                   dataLayer + GTM/pixel tag-fires on both URLs and diffs them into parity assertions.
                                   Requires one-time setup: npm run qa:install-browser.
-  --analytics-candidate <url>     Override the candidate URL for analytics capture (default: --base-url).
+  --analytics-candidate <url>     Analytics-PARITY leg only: explicit candidate receipt URL paired with the
+                                  --analytics-baseline legacy receipt (receipt-capture pairing). When omitted,
+                                  the parity candidate — and ALWAYS the correctness leg — captures the URL
+                                  resolved from the campaign's identity (public_route_slug + route_root),
+                                  never a raw --base-url.
   --assertion <id>                qa waive: the blocking assertion to waive. The waiver lane is scoped to
                                   analytics-correctness:purchase-fires — other assertions are refused.
   --reason <text>                 qa waive: REQUIRED — why this blocker is acceptable for this campaign.
@@ -176,6 +180,14 @@ async function resolveQaInputs(args) {
   const normalized = normalizeSpec(rawSpec);
   const publicRouteSlug = resolvePublicRouteSlug({ packet, spec: normalized, rawSpec });
   const baseUrl = normalizeQaBaseUrl(inputBaseUrl, publicRouteSlug);
+  // Packet 01: the analytics legs capture ONE URL derived from resolved
+  // identity (public_route_slug + route_root), composed here where the raw
+  // operator/deploy base is still in hand.
+  const analyticsCaptureTarget = resolveAnalyticsCaptureTarget({
+    inputBaseUrl,
+    publicRouteSlug,
+    routeRoot: resolveCampaignRouteRoot({ packet, spec: normalized, rawSpec, publicRouteSlug }),
+  });
   const specHash = computeSpecHash(rawSpec);
   const templateFamily = stringArg(packet?.assembly?.template_family)
     || stringArg(normalized?.spec_identity?.preferred_template_family)
@@ -191,6 +203,7 @@ async function resolveQaInputs(args) {
     themeGate,
     polishGate,
     qaWaivers,
+    analyticsCaptureTarget,
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath,
@@ -255,6 +268,14 @@ export function resolveQaInputsFromSite(args) {
     polishGate,
     // Non-packet site QA has no Assembly Report, so no recorded waivers.
     qaWaivers: {},
+    // Non-packet site QA: --base-url IS the served campaign root by this
+    // mode's contract (no spec identity exists to compose from).
+    analyticsCaptureTarget: {
+      url: ensureUrlTrailingSlash(baseUrl),
+      public_route_slug: scope.slug || null,
+      route_root: null,
+      source: "built_site_base_url",
+    },
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath: null,
@@ -929,9 +950,13 @@ async function runQa(args) {
   // (or --analytics-correctness is forced). Validates the candidate funnel fires
   // its declared tags/pixels + a Purchase (source-aware re blockedEvents). The
   // foundation the parity differ sits on — correctness before parity.
+  // Packet 01 / INV-2: both analytics legs consume ONE capture target derived
+  // from the campaign's resolved identity (public_route_slug + route_root),
+  // never a raw operator argument.
   const analyticsContract = resolved.spec?.analytics;
   if (analyticsContract || forcedAnalyticsCorrectness(args)) {
     assertions.push(...await runAnalyticsCorrectnessChecks(args, analyticsContract || {}, {
+      target: resolved.analyticsCaptureTarget,
       waivers: resolved.qaWaivers,
     }));
   }
@@ -940,7 +965,7 @@ async function runQa(args) {
   // the live dataLayer + GTM/pixel fires on baseline vs candidate and diff them.
   // No cutover on a non-zero analytics diff — blockers feed computeDisposition.
   if (stringArg(args["analytics-baseline"])) {
-    assertions.push(...await runAnalyticsParityChecks(args));
+    assertions.push(...await runAnalyticsParityChecks(args, { target: resolved.analyticsCaptureTarget }));
   }
 
   const testOrders = await maybeRunTestOrders({ args, resolved, runId, assertions });
@@ -1827,6 +1852,75 @@ function normalizeQaBaseUrl(value, publicRouteSlug) {
   }
 }
 
+// QA-side mirror of doctor's campaignRouteRoot (cli.mjs, #192): resolve the
+// campaign's served route root — "/", "/<slug>/", or null — from the packet
+// first (canonical form) and the spec second (lenient intake shapes, matching
+// prepare-build's canonicalization). A malformed or foreign declaration NEVER
+// roots a check; it falls through to the slug-prefixed default, exactly like
+// doctor. Before packet 01, `route_root` had zero occurrences in this file —
+// doctor learned root-serving in #192, QA did not, so a root-served campaign
+// was audited at a path that does not exist.
+function resolveCampaignRouteRoot({ packet, spec, rawSpec, publicRouteSlug }) {
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
+  const declared = stringArg(packet?.campaign?.route_root)
+    || stringArg(spec?.spec_identity?.route_root)
+    || stringArg(spec?.campaign?.route_root)
+    || stringArg(rawSpec?.spec_identity?.route_root)
+    || stringArg(rawSpec?.campaign?.route_root);
+  if (declared) {
+    const clean = declared.trim();
+    if (clean === "/") return "/";
+    if (slug && normalizePublicRouteSlug(clean) === slug) return `/${slug}/`;
+  }
+  return slug ? `/${slug}/` : null;
+}
+
+// Packet 01 / INV-2: the ONE URL both analytics legs visit derives from the
+// campaign's resolved identity — public_route_slug AND route_root — never
+// from a raw operator argument.
+//
+// Composition mirrors doctor's served-route rule (validateBuiltRouteDrift):
+//   route_root "/"        → the funnel lives at the SITE ROOT, so the target
+//                           is the base URL's origin root; the slug stays
+//                           identity, not a path prefix, and any stray path
+//                           on --base-url is discarded.
+//   route_root "/<slug>/" → the slug-prefixed default: the slug is appended
+//                           to the operator/deploy base unless its last
+//                           segment already is the slug (normalizeQaBaseUrl
+//                           semantics, subdirectory deploys preserved).
+function resolveAnalyticsCaptureTarget({ inputBaseUrl, publicRouteSlug, routeRoot }) {
+  const slug = normalizePublicRouteSlug(publicRouteSlug) || null;
+  const target = {
+    url: null,
+    public_route_slug: slug,
+    route_root: routeRoot || (slug ? `/${slug}/` : null),
+    source: "unresolved",
+  };
+  const base = normalizeBaseUrl(inputBaseUrl);
+  if (!base) return target;
+  if (target.route_root === "/") {
+    try {
+      target.url = new URL("/", base).toString();
+      target.source = "resolved_identity:route_root";
+      return target;
+    } catch {
+      target.url = ensureUrlTrailingSlash(base);
+      target.source = "base_url:unparseable";
+      return target;
+    }
+  }
+  if (slug) {
+    target.url = normalizeQaBaseUrl(base, slug);
+    target.source = "resolved_identity:public_route_slug";
+    return target;
+  }
+  // No slug, no route root (parity fixtures / degenerate specs): the base URL
+  // is the only identity available.
+  target.url = ensureUrlTrailingSlash(base);
+  target.source = "base_url";
+  return target;
+}
+
 function resolvePublicRouteSlug({ packet, spec, rawSpec }) {
   return stringArg(packet?.campaign?.public_route_slug)
     || stringArg(packet?.deploy?.live_url_path)?.replace(/^\/+|\/+$/g, "")
@@ -1994,5 +2088,7 @@ export const __qaNodeTestHooks = Object.freeze({
   resolvePayload,
   resolveQaInputsFromSite,
   resolveQaWaivers,
+  resolveCampaignRouteRoot,
+  resolveAnalyticsCaptureTarget,
   isAdvisoryMetaTag,
 });

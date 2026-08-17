@@ -141,9 +141,17 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
 // receipt page, where dl_purchase fires — pass receipt URLs for both, or drive
 // the same offer through each funnel so the values line up (see the PARITY QA
 // phase of the campaignsjs→SDK-0.4.x migration doctrine).
-export async function runAnalyticsParityChecks(args = {}) {
+// `options.target` is the capture target resolved from the campaign's
+// identity (public_route_slug + route_root) in qa-node — packet 01 / INV-2:
+// the candidate URL is never read from a raw --base-url again.
+// --analytics-candidate survives for ONE narrow purpose: the receipt-capture
+// pairing documented above needs an explicit candidate receipt URL paired
+// with --analytics-baseline's legacy receipt, and identity resolution cannot
+// derive a receipt page yet (receipt-aware capture is out of packet 01's
+// scope). Absent that override, the candidate IS the resolved target.
+export async function runAnalyticsParityChecks(args = {}, options = {}) {
   const baselineUrl = trim(args["analytics-baseline"]) || null;
-  const candidateUrl = trim(args["analytics-candidate"]) || trim(args["base-url"]) || null;
+  const candidateUrl = trim(args["analytics-candidate"]) || trim(options.target?.url) || null;
   const analyticsPage = { page_id: "analytics", url: candidateUrl || baselineUrl || undefined };
 
   if (!baselineUrl || !candidateUrl) {
@@ -153,8 +161,9 @@ export async function runAnalyticsParityChecks(args = {}) {
       page: analyticsPage,
       status: STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
-      expected: "both --analytics-baseline <legacy-url> and a candidate URL (--analytics-candidate or --base-url)",
+      expected: "both --analytics-baseline <legacy-url> and a candidate URL (the campaign's resolved capture target, or an explicit --analytics-candidate receipt override)",
       actual: `baseline=${baselineUrl || "missing"}, candidate=${candidateUrl || "missing"}`,
+      ...(candidateUrl ? { evidence: { url: candidateUrl } } : {}),
     })];
   }
 
@@ -167,7 +176,7 @@ export async function runAnalyticsParityChecks(args = {}) {
   try {
     const baseline = await captureAnalyticsForUrl(context, baselineUrl, args, extraHosts);
     const candidate = await captureAnalyticsForUrl(context, candidateUrl, args, extraHosts);
-    const assertions = diffAnalyticsParity(baseline, candidate);
+    const assertions = diffAnalyticsParity(baseline, candidate, { url: candidateUrl });
     assertions.unshift(assertion({
       id: "analytics-parity:capture",
       family: "analytics-parity",
@@ -176,6 +185,7 @@ export async function runAnalyticsParityChecks(args = {}) {
       expected: "live dataLayer + tag-fire capture on baseline and candidate",
       actual: `baseline events=${baseline.eventNames.length}, candidate events=${candidate.eventNames.length}`,
       evidence: {
+        url: candidateUrl,
         baseline_url: baselineUrl,
         candidate_url: candidateUrl,
         baseline_event_count: baseline.eventNames.length,
@@ -194,7 +204,7 @@ export async function runAnalyticsParityChecks(args = {}) {
       severity: SEVERITY.BLOCKER,
       expected: "analytics-parity capture completes on both URLs",
       actual: error instanceof Error ? error.message : String(error),
-      evidence: { baseline_url: baselineUrl, candidate_url: candidateUrl },
+      evidence: { url: candidateUrl, baseline_url: baselineUrl, candidate_url: candidateUrl },
     })];
   } finally {
     await context.close().catch(() => {});
@@ -206,11 +216,15 @@ export async function runAnalyticsParityChecks(args = {}) {
 // declared CampaignSpec `analytics` contract — declared tags/pixels fire,
 // Purchase fires (source-aware). This is the foundation the parity differ sits
 // on; runs whenever a spec carries an `analytics` block (or --analytics-correctness).
+// `options.target` is the capture target resolved from the campaign's
+// identity (public_route_slug + route_root) in qa-node — packet 01 / INV-2:
+// this leg no longer reads --analytics-candidate or --base-url; the URL it
+// visits is a function of resolved identity, recorded on every assertion.
 // `options.waivers` carries the Assembly Report's recorded `qa waive`
 // decisions (packet 01) so the purchase-fires blocker can downgrade with
 // attribution when a named human accepted it.
 export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, options = {}) {
-  const url = trim(args["analytics-candidate"]) || trim(args["base-url"]) || null;
+  const url = trim(options.target?.url) || null;
   const correctnessPage = { page_id: "analytics", url: url || undefined };
   if (!url) {
     return [assertion({
@@ -219,7 +233,7 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
       page: correctnessPage,
       status: STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
-      expected: "a candidate URL to capture (--analytics-candidate or --base-url)",
+      expected: "a capture target resolved from the campaign's identity (public_route_slug + route_root composed onto --base-url or the packet deploy URL)",
       actual: "missing",
     })];
   }
@@ -238,7 +252,7 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
   });
   try {
     const capture = await captureAnalyticsForUrl(context, url, args, extraHosts);
-    const assertions = assessAnalyticsCorrectness(capture, contract || {}, { waivers: options.waivers });
+    const assertions = assessAnalyticsCorrectness(capture, contract || {}, { url, waivers: options.waivers });
     assertions.unshift(assertion({
       id: "analytics-correctness:capture",
       family: "analytics-correctness",
