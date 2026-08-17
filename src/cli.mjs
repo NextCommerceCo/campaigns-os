@@ -1157,12 +1157,12 @@ function guardAssemblyReportOverwrite(reportPath, args) {
   if (args.force !== true) {
     throw new Error(
       `Assembly report at ${reportPath} already carries stage evidence (${stageKeys.join(", ")}). `
-      + `Rerunning prepare-build/start would reset ${stageKeys.length === 1 ? "this stage" : "these stages"} to pending and destroy that evidence. `
+      + `Rerunning prepare-build/start/build would reset ${stageKeys.length === 1 ? "this stage" : "these stages"} to pending and destroy that evidence. `
       + `Pass --force to overwrite (destructive).`,
     );
   }
   console.warn(
-    `[campaigns-os] --force: overwriting assembly report at ${reportPath}; clearing stage evidence for: ${stageKeys.join(", ")}.`,
+    `[campaigns-os prepare-build] --force: overwriting assembly report at ${reportPath}; clearing stage evidence for: ${stageKeys.join(", ")}.`,
   );
 }
 
