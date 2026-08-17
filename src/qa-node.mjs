@@ -953,8 +953,17 @@ async function runQa(args) {
   // Packet 01 / INV-2: both analytics legs consume ONE capture target derived
   // from the campaign's resolved identity (public_route_slug + route_root),
   // never a raw operator argument.
+  // Packet 04 Stage A / IC-2: the flag is TRI-STATE. Explicit `false` disables
+  // the leg even when the spec declares an analytics block (the documented
+  // opt-out the ops loop-driver force-appends); explicit `true` forces it
+  // without a block; absent defers to the spec — leg runs iff the spec
+  // declares analytics (the negative control: the fix must not become a
+  // global disable). An explicit disable is visibly skipped, never silent.
   const analyticsContract = resolved.spec?.analytics;
-  if (analyticsContract || forcedAnalyticsCorrectness(args)) {
+  const analyticsLeg = analyticsCorrectnessLegDecision(forcedAnalyticsCorrectness(args), analyticsContract);
+  if (analyticsLeg === "disabled") {
+    assertions.push(analyticsCorrectnessDisabledAssertion(analyticsContract));
+  } else if (analyticsLeg === "run") {
     assertions.push(...await runAnalyticsCorrectnessChecks(args, analyticsContract || {}, {
       target: resolved.analyticsCaptureTarget,
       waivers: resolved.qaWaivers,
@@ -1527,6 +1536,36 @@ async function postVerdict(verdict, proxyBase) {
   return remit("/api/qa/verdicts", verdict, proxyBase);
 }
 
+// Packet 04 Stage A / IC-2 dispatch table for the analytics-correctness leg.
+// forced is the tri-state from forcedAnalyticsCorrectness():
+//   false     → "disabled"       (explicit opt-out wins, even over a declared analytics block)
+//   true      → "run"            (forced, with or without a block)
+//   undefined → "run" iff the spec declares an analytics block, else "not-applicable"
+function analyticsCorrectnessLegDecision(forced, analyticsContract) {
+  if (forced === false) return "disabled";
+  if (analyticsContract || forced === true) return "run";
+  return "not-applicable";
+}
+
+// The visible marker for an explicit opt-out — same skipped-assertion
+// convention the polish/theme gates use. SKIPPED is disposition-neutral
+// (computeDisposition ignores it), so the marker records the decision without
+// gating the run.
+function analyticsCorrectnessDisabledAssertion(analyticsContract) {
+  return assertion({
+    id: "analytics-correctness:disabled-by-flag",
+    family: "analytics-correctness",
+    page: { page_id: "campaign" },
+    status: STATUS.SKIPPED,
+    expected: "analytics-correctness leg runs when the spec declares an analytics block",
+    actual: "--analytics-correctness false — leg explicitly disabled by operator flag",
+    evidence: {
+      flag: "analytics-correctness=false",
+      spec_declares_analytics: !!analyticsContract,
+    },
+  });
+}
+
 function assertion({ id, family, page, status, severity, expected, actual, evidence }) {
   return {
     id,
@@ -1763,12 +1802,14 @@ function booleanArg(value, key) {
   throw new Error(`--${key} must be true or false.`);
 }
 
-// Absent flag means "not forced" — only parse the value when supplied. Before
-// this, a spec with no analytics block made booleanArg(undefined) throw on
-// every qa run that omitted --analytics-correctness (NEXT-114 dogfood finding
-// wf_1785565103144). Explicit garbage values still error.
+// Tri-state (packet 04 Stage A / IC-2): `undefined` means the flag was not
+// supplied — defer to the spec; `true` forces the leg; `false` explicitly
+// DISABLES it. Absent must stay non-throwing: before NEXT-114 (dogfood finding
+// wf_1785565103144), a spec with no analytics block made booleanArg(undefined)
+// throw on every qa run that omitted --analytics-correctness. Explicit garbage
+// values still error.
 export function forcedAnalyticsCorrectness(args) {
-  if (args?.["analytics-correctness"] == null) return false;
+  if (args?.["analytics-correctness"] == null) return undefined;
   return booleanArg(args["analytics-correctness"], "analytics-correctness");
 }
 
@@ -2072,6 +2113,8 @@ function extractApiError(raw) {
 }
 
 export const __qaNodeTestHooks = Object.freeze({
+  analyticsCorrectnessLegDecision,
+  analyticsCorrectnessDisabledAssertion,
   campaignOutputDir,
   polishBlockedAssertions,
   polishGateAssertion,
