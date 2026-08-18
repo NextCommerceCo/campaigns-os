@@ -153,6 +153,60 @@ test("Stage A proof 2: no analytics block + --analytics-correctness true → the
   assert.equal(analyticsCorrectnessLegDecision(forced, undefined), "run");
 });
 
+// Kilo review (#195): Stage A covered three of the four (forced x contract)
+// cells. The fourth — an explicit opt-out on a spec that declares NO analytics
+// block — is the one where "disabled" is a design choice rather than an
+// obvious consequence: analyticsCorrectnessLegDecision returns "disabled"
+// unconditionally on forced === false, so the run carries a
+// disabled-by-flag marker even though there was nothing to disable. That is
+// deliberate (the marker is the visible record that the operator's flag was
+// honoured, and the ops loop-driver force-appends the flag), and pinning it
+// here makes it intentional rather than incidental.
+test("Stage A proof 4: NO analytics block + --analytics-correctness false → still disabled, marker records spec_declares_analytics false", async () => {
+  const { __qaNodeTestHooks, forcedAnalyticsCorrectness } = await import("./qa-node.mjs");
+  const { analyticsCorrectnessLegDecision, analyticsCorrectnessDisabledAssertion } = __qaNodeTestHooks;
+
+  const forced = forcedAnalyticsCorrectness({ "analytics-correctness": "false" });
+  assert.equal(analyticsCorrectnessLegDecision(forced, undefined), "disabled",
+    "explicit opt-out wins over the absent-block default — the flag is honoured, not second-guessed");
+
+  // Same marker shape as proof 1, with the one field that distinguishes the
+  // two cells: the spec had no analytics block to disable.
+  const marker = analyticsCorrectnessDisabledAssertion(undefined);
+  assert.equal(marker.id, "analytics-correctness:disabled-by-flag");
+  assert.equal(marker.family, "analytics-correctness");
+  assert.equal(marker.status, STATUS.SKIPPED);
+  assert.equal(marker.evidence.flag, "analytics-correctness=false");
+  assert.equal(marker.evidence.spec_declares_analytics, false,
+    "the marker must distinguish 'disabled something' from 'disabled nothing'");
+  assert.ok(!marker.severity, "skip marker carries no severity");
+  assert.equal(computeDisposition([marker]), "ready", "the marker is disposition-neutral");
+});
+
+// The (forced x contract) matrix is now closed. Asserted as a table so a
+// future edit to the dispatch cannot change one cell unnoticed.
+test("Stage A: the full (forced x analyticsContract) dispatch matrix is closed", async () => {
+  const { __qaNodeTestHooks } = await import("./qa-node.mjs");
+  const { analyticsCorrectnessLegDecision } = __qaNodeTestHooks;
+  const contract = { providers: { gtm: { enabled: true, containerId: "GTM-ABC123" } } };
+
+  assert.deepEqual([
+    analyticsCorrectnessLegDecision(false, contract),
+    analyticsCorrectnessLegDecision(false, undefined),
+    analyticsCorrectnessLegDecision(true, contract),
+    analyticsCorrectnessLegDecision(true, undefined),
+    analyticsCorrectnessLegDecision(undefined, contract),
+    analyticsCorrectnessLegDecision(undefined, undefined),
+  ], [
+    "disabled",       // explicit opt-out, block present
+    "disabled",       // explicit opt-out, no block  <- proof 4
+    "run",            // forced on, block present
+    "run",            // forced on, no block
+    "run",            // default, block present
+    "not-applicable", // default, no block
+  ]);
+});
+
 test("Stage A proof 3 (negative control): analytics-declaring spec, flag absent → the leg still runs", async () => {
   const { __qaNodeTestHooks, forcedAnalyticsCorrectness } = await import("./qa-node.mjs");
   const { analyticsCorrectnessLegDecision } = __qaNodeTestHooks;
