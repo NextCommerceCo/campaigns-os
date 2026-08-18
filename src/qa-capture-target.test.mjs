@@ -14,7 +14,7 @@ import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import { diffAnalyticsParity, normalizeCapture } from "./qa-analytics-parity.mjs";
 import { STATUS } from "./qa-verdict.mjs";
 
-const { resolveCampaignRouteRoot, resolveAnalyticsCaptureTarget } = __qaNodeTestHooks;
+const { resolveCampaignRouteRoot, resolveAnalyticsCaptureTarget, buildAnalyticsCaptureTarget, resolveQaInputsFromSite } = __qaNodeTestHooks;
 
 const CONTRACT = {
   providers: { gtm: { enabled: true, containerId: "GTM-ABC123" } },
@@ -135,4 +135,102 @@ test("degenerate identities: no base URL yields no target; no slug and no route 
   const bare = resolveAnalyticsCaptureTarget({ inputBaseUrl: "https://host.example/page", publicRouteSlug: null, routeRoot: null });
   assert.equal(bare.url, "https://host.example/page/");
   assert.equal(bare.source, "base_url");
+});
+
+// KILO #194/1873: a declared route_root QA cannot honour (multi-segment, or
+// foreign) still falls back to the slug default — that is doctor parity and
+// stays. What changed is that the fallback is no longer SILENT: the discard is
+// recorded, so a campaign actually served at "/x/offer/" leaves a trace in the
+// evidence instead of QA quietly auditing "/x/".
+test("route root: a declared root QA cannot honour is discarded LOUDLY, not silently", () => {
+  for (const declared of ["/x/offer/", "/x/offer", "/other/", "/deep/nested/path/"]) {
+    const notes = [];
+    const resolved = resolveCampaignRouteRoot({
+      packet: { campaign: { public_route_slug: "x", route_root: declared } },
+      publicRouteSlug: "x",
+      notes,
+    });
+    // Behaviour is unchanged: slug default, exactly like doctor.
+    assert.equal(resolved, "/x/", `${declared} must still fall back to the slug default`);
+    // But the discard is now recorded.
+    assert.equal(notes.length, 1, `${declared} must record exactly one discard note`);
+    assert.equal(notes[0].code, "route_root.declared_discarded");
+    assert.equal(notes[0].declared, declared.trim());
+    assert.equal(notes[0].resolved, "/x/");
+    assert.match(notes[0].reason, /auditing the wrong page/);
+  }
+});
+
+test("route root: the shapes QA CAN honour record no discard note", () => {
+  for (const declared of ["/", "/x/", "/x"]) {
+    const notes = [];
+    resolveCampaignRouteRoot({
+      packet: { campaign: { public_route_slug: "x", route_root: declared } },
+      publicRouteSlug: "x",
+      notes,
+    });
+    assert.equal(notes.length, 0, `${declared} is honourable and must not record a discard`);
+  }
+  // Absent declaration is the clean default, not a discard.
+  const notes = [];
+  resolveCampaignRouteRoot({ publicRouteSlug: "x", notes });
+  assert.equal(notes.length, 0);
+});
+
+test("route root: the discard note rides onto the capture target", () => {
+  const notes = [];
+  const routeRoot = resolveCampaignRouteRoot({
+    packet: { campaign: { public_route_slug: "x", route_root: "/x/offer/" } },
+    publicRouteSlug: "x",
+    notes,
+  });
+  const target = resolveAnalyticsCaptureTarget({
+    inputBaseUrl: "https://host.example",
+    publicRouteSlug: "x",
+    routeRoot,
+    routeRootNote: notes[0] || null,
+  });
+  assert.equal(target.route_root_note?.code, "route_root.declared_discarded");
+  assert.equal(target.route_root_note?.declared, "/x/offer/");
+  // The clean path carries an explicit null, not a missing key.
+  const clean = resolveAnalyticsCaptureTarget({ inputBaseUrl: "https://host.example", publicRouteSlug: "x", routeRoot: "/x/" });
+  assert.equal(clean.route_root_note, null);
+});
+
+// KILO #194/1903: root-served composition discards the operator base URL's
+// path — and its query and fragment with it. That is deliberate: the capture
+// target is the canonical page identity both analytics legs must agree on, so
+// a debugging query must not ride into the parity comparison. Pinned so the
+// choice is a contract rather than an accident of `new URL("/", base)`.
+test("capture-target: root-served composition discards query and fragment with the path", () => {
+  const target = resolveAnalyticsCaptureTarget({
+    inputBaseUrl: "https://host.example/wrong-path?utm_source=qa&debug=1#frag",
+    publicRouteSlug: "x",
+    routeRoot: "/",
+  });
+  assert.equal(target.url, "https://host.example/");
+  assert.equal(target.source, "resolved_identity:route_root");
+  assert.ok(!target.url.includes("utm_source"), "operator debugging query must not reach the capture target");
+  assert.ok(!target.url.includes("#"), "fragment must not reach the capture target");
+});
+
+// KILO #194/274: the capture-target shape is enforced by CONSTRUCTION. Every
+// producer goes through buildAnalyticsCaptureTarget, so a new field cannot
+// land on the identity-composed path and skip the built-site path.
+test("capture-target: identity-composed and built-site targets share one shape by construction", () => {
+  const composed = resolveAnalyticsCaptureTarget({ inputBaseUrl: "https://host.example", publicRouteSlug: "x", routeRoot: "/x/" });
+  const builtSite = buildAnalyticsCaptureTarget({
+    url: "https://host.example/",
+    publicRouteSlug: "x",
+    routeRoot: null,
+    source: "built_site_base_url",
+  });
+  assert.deepEqual(
+    Object.keys(composed).sort(),
+    Object.keys(builtSite).sort(),
+    "both producers must emit an identical key set — if this fails, one path grew a field the other did not",
+  );
+  for (const target of [composed, builtSite]) {
+    assert.deepEqual(Object.keys(target).sort(), ["public_route_slug", "route_root", "route_root_note", "source", "url"]);
+  }
 });
