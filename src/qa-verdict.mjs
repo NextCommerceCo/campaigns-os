@@ -38,6 +38,14 @@ export const QA_ASSERTION_FAMILY_VOCABULARY = Object.freeze([
   "parity-capture",
 ]);
 
+// A waiver record riding an assertion (packet 01: the `qa waive` lane for
+// analytics-correctness:purchase-fires). Shape mirrors report.theme.waiver:
+// { reason, waived_by, waived_at }.
+function assertionCarriesWaiver(assertion) {
+  const waiver = assertion?.waiver;
+  return !!(waiver && typeof waiver === "object" && !Array.isArray(waiver));
+}
+
 export function computeDisposition(assertions) {
   let hasBlocker = false;
   let hasSoftIssue = false;
@@ -47,7 +55,12 @@ export function computeDisposition(assertions) {
     } else if (
       assertion.status === STATUS.WARN ||
       assertion.status === STATUS.MANUAL_REVIEW ||
-      (assertion.status === STATUS.FAIL && assertion.severity === SEVERITY.WARN)
+      (assertion.status === STATUS.FAIL && assertion.severity === SEVERITY.WARN) ||
+      // Packet 01 / ratified I-9: a waived blocker is an accepted exception,
+      // never a clean pass — any assertion carrying a waiver record keeps the
+      // disposition at ready_with_exceptions, never plain ready. (An unwaived
+      // failing blocker still lands in the branch above and blocks.)
+      assertionCarriesWaiver(assertion)
     ) {
       hasSoftIssue = true;
     }

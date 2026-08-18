@@ -362,16 +362,21 @@ export function effectivePurchase(capture = {}) {
 // Diff → parity assertions (pure; this is the contract enforcement).
 // ---------------------------------------------------------------------------
 
-function parityAssertion({ id, status, severity, expected, actual, evidence }) {
+// Packet 01 / INV-3(c): when the differ knows the candidate URL that was
+// captured, every emitted assertion — pass and fail alike — carries it,
+// top-level and in evidence, so a blocked verdict always names what was
+// measured (only the sibling :capture assertion used to carry it).
+function parityAssertion({ id, status, severity, expected, actual, evidence, url }) {
   return {
     id,
     family: "analytics-parity",
     page: "analytics",
     status,
+    ...(url ? { url } : {}),
     ...(severity ? { severity } : {}),
     expected,
     actual,
-    ...(evidence ? { evidence } : {}),
+    ...(evidence || url ? { evidence: { ...(url ? { url } : {}), ...(evidence || {}) } } : {}),
   };
 }
 
@@ -383,8 +388,12 @@ function valuesEqual(a, b) {
 // Diff a baseline (legacy) capture against a candidate (migrated) capture and
 // emit parity assertions. Blockers enforce the canonical commerce gate; WARNs
 // flag carried-over-tag regressions for human review.
-export function diffAnalyticsParity(baseline, candidate) {
+// `options.url` is the candidate URL that was captured (the resolved capture
+// target) — stamped on every emitted assertion, pass and fail alike.
+export function diffAnalyticsParity(baseline, candidate, options = {}) {
   const assertions = [];
+  const auditedUrl = (typeof options.url === "string" && options.url.trim()) ? options.url.trim() : null;
+  const emit = (fields) => parityAssertion({ url: auditedUrl, ...fields });
   const b = baseline || {};
   const c = candidate || {};
   const bp = b.purchase || { present: false };
@@ -395,7 +404,7 @@ export function diffAnalyticsParity(baseline, candidate) {
   const cEff = effectivePurchase(c);
 
   // 1. Purchase present on candidate — the highest-value blocking check.
-  assertions.push(parityAssertion({
+  assertions.push(emit({
     id: "analytics-parity:purchase-present",
     status: cEff.fired ? STATUS.PASS : STATUS.FAIL,
     severity: SEVERITY.BLOCKER,
@@ -412,7 +421,7 @@ export function diffAnalyticsParity(baseline, candidate) {
     //    carries no client value in our capture) → else manual review.
     if (bp.present && bp.value !== null && bp.value !== undefined && cp.present && cp.value !== null && cp.value !== undefined) {
       const ok = valuesEqual(bp.value, cp.value);
-      assertions.push(parityAssertion({
+      assertions.push(emit({
         id: "analytics-parity:purchase-value",
         status: ok ? STATUS.PASS : STATUS.FAIL,
         severity: SEVERITY.BLOCKER,
@@ -423,7 +432,7 @@ export function diffAnalyticsParity(baseline, candidate) {
     } else if (!cp.present) {
       // Candidate fired Purchase pixel-only (e.g. dl_purchase blocked) — the
       // client value isn't in our capture, so value parity can't be asserted.
-      assertions.push(parityAssertion({
+      assertions.push(emit({
         id: "analytics-parity:purchase-value",
         status: STATUS.MANUAL_REVIEW,
         severity: SEVERITY.WARN,
@@ -432,7 +441,7 @@ export function diffAnalyticsParity(baseline, candidate) {
         evidence: { via: cEff.via },
       }));
     } else {
-      assertions.push(parityAssertion({
+      assertions.push(emit({
         id: "analytics-parity:purchase-value",
         status: STATUS.MANUAL_REVIEW,
         severity: SEVERITY.WARN,
@@ -445,7 +454,7 @@ export function diffAnalyticsParity(baseline, candidate) {
     // 3. Currency parity (dataLayer-only; skipped for pixel-only purchases).
     if (cp.present && bp.present && bp.currency) {
       const ok = bp.currency === cp.currency;
-      assertions.push(parityAssertion({
+      assertions.push(emit({
         id: "analytics-parity:purchase-currency",
         status: ok ? STATUS.PASS : STATUS.FAIL,
         severity: SEVERITY.BLOCKER,
@@ -454,7 +463,7 @@ export function diffAnalyticsParity(baseline, candidate) {
         evidence: { baseline_currency: bp.currency, candidate_currency: cp.currency },
       }));
     } else {
-      assertions.push(parityAssertion({
+      assertions.push(emit({
         id: "analytics-parity:purchase-currency",
         status: STATUS.MANUAL_REVIEW,
         severity: SEVERITY.WARN,
@@ -467,7 +476,7 @@ export function diffAnalyticsParity(baseline, candidate) {
     // 4. transaction_id PRESENCE (not equality — different orders have different
     //    ids). Only checkable when the dataLayer event fired.
     if (cp.present) {
-      assertions.push(parityAssertion({
+      assertions.push(emit({
         id: "analytics-parity:purchase-transaction-id",
         status: cp.transactionId ? STATUS.PASS : STATUS.FAIL,
         severity: SEVERITY.BLOCKER,
@@ -484,7 +493,7 @@ export function diffAnalyticsParity(baseline, candidate) {
     if (baselineHasMeta || candidateHasMeta) {
       const eid = c.metaPurchaseEventId;
       const consistent = eid && cp.transactionId && String(eid) === String(cp.transactionId);
-      assertions.push(parityAssertion({
+      assertions.push(emit({
         id: "analytics-parity:capi-dedup",
         status: eid ? (consistent ? STATUS.PASS : STATUS.WARN) : STATUS.FAIL,
         severity: eid && !consistent ? SEVERITY.WARN : SEVERITY.BLOCKER,
@@ -505,7 +514,7 @@ export function diffAnalyticsParity(baseline, candidate) {
       if (id === null) {
         // Baseline fired this kind with an unknown/null id — can't reliably match
         // against candidate ids, so a human must confirm carryover.
-        assertions.push(parityAssertion({
+        assertions.push(emit({
           id: `analytics-parity:carryover:${kind}:present`,
           status: STATUS.MANUAL_REVIEW,
           severity: SEVERITY.WARN,
@@ -517,7 +526,7 @@ export function diffAnalyticsParity(baseline, candidate) {
         }));
       } else {
         const present = candidateIds.has(id);
-        assertions.push(parityAssertion({
+        assertions.push(emit({
           id: `analytics-parity:carryover:${kind}:${id}`,
           status: present ? STATUS.PASS : STATUS.WARN,
           severity: present ? undefined : SEVERITY.WARN,
