@@ -1206,26 +1206,36 @@ async function runPageChecks(page, args) {
   const actualMeta = extractMetaTags(html);
   for (const [name, expected] of Object.entries(expectedMeta)) {
     const actual = actualMeta[name] || null;
+    const unsupportedHint = unsupportedSdkMetaHint(name);
+    if (unsupportedHint) {
+      assertions.push(assertion({
+        id: `meta:${page.page_id}:${name}`,
+        family: "meta-tags",
+        page,
+        status: STATUS.MANUAL_REVIEW,
+        severity: SEVERITY.WARN,
+        expected: unsupportedHint.expected,
+        actual: actual
+          ? `${actual} (present but ignored by Campaign Cart)`
+          : unsupportedHint.actual,
+        evidence: {
+          expected,
+          actual,
+          note: unsupportedHint.note,
+        },
+      }));
+      continue;
+    }
     const matches = metaTagMatches(name, actual, expected);
-    // Advisory SDK hints (currency, predictive address) are sourced by the SDK
-    // from config.js — the build legitimately omits them as page meta, so an
-    // ABSENT (or empty-content) advisory hint is a manual-review warning, not a
-    // blocker. A present, non-empty but wrong value still fails (a wrong
-    // currency hint is real). `actual` is already null-coerced above when the
-    // content is empty; the explicit empty-string check keeps that intent
-    // robust if that coercion ever changes.
-    const advisoryAbsent = !matches && isAdvisoryMetaTag(name) && (actual === null || String(actual).trim() === "");
     assertions.push(assertion({
       id: `meta:${page.page_id}:${name}`,
       family: "meta-tags",
       page,
-      status: matches ? STATUS.PASS : advisoryAbsent ? STATUS.MANUAL_REVIEW : STATUS.FAIL,
-      severity: matches ? undefined : advisoryAbsent ? SEVERITY.WARN : SEVERITY.BLOCKER,
+      status: matches ? STATUS.PASS : STATUS.FAIL,
+      severity: matches ? undefined : SEVERITY.BLOCKER,
       expected,
       actual,
-      evidence: matches ? undefined : advisoryAbsent
-        ? { expected, actual, note: "Advisory SDK hint; the SDK sources this from config.js when the meta tag is absent. Verify the behavior (currency/address) in-browser." }
-        : { expected, actual },
+      evidence: matches ? undefined : { expected, actual },
     }));
   }
 
@@ -2048,18 +2058,35 @@ function isRoutingMetaTag(name) {
     "next-success-url",
     "next-upsell-accept-url",
     "next-upsell-decline-url",
-    "next-payment-failed-url",
-  ].includes(String(name || "").toLowerCase());
+    "next-failure-url",
+  ].includes(normalizeMetaName(name));
 }
 
-// Advisory SDK hints the SDK can source from config.js (currency behavior,
-// predictive-address toggle) rather than requiring a page meta tag. Their
-// absence is a manual-review warning, not a QA blocker.
-function isAdvisoryMetaTag(name) {
-  return [
-    "next-currency",
-    "next-predictive-address",
-  ].includes(String(name || "").toLowerCase());
+// Meta names reach these matchers from spec-declared keys and from
+// extractMetaTags, which does not trim the parsed `name` value. Normalize case
+// and surrounding whitespace so a stray-space tag lands on the intended branch
+// instead of falling through to the strict comparison as a BLOCKER.
+function normalizeMetaName(name) {
+  return String(name || "").trim().toLowerCase();
+}
+
+function unsupportedSdkMetaHint(name) {
+  const normalized = normalizeMetaName(name);
+  if (normalized === "next-currency") {
+    return {
+      expected: "Campaign Cart currency from the currency URL parameter, remembered session choice, or SDK default",
+      actual: "No page-level currency override to verify",
+      note: "Campaign Cart does not read a next-currency meta tag. Currency behavior is optional and must be verified through the documented URL/session/default flow.",
+    };
+  }
+  if (normalized === "next-predictive-address") {
+    return {
+      expected: "window.nextConfig.addressConfig.enableAutocomplete",
+      actual: "Autocomplete config requires browser/config review",
+      note: "Campaign Cart does not read a next-predictive-address meta tag. Predictive address is optional and configured through window.nextConfig.addressConfig.enableAutocomplete.",
+    };
+  }
+  return null;
 }
 
 function metaTagMatches(name, actual, expected) {
@@ -2178,5 +2205,6 @@ export const __qaNodeTestHooks = Object.freeze({
   resolveCampaignRouteRoot,
   resolveAnalyticsCaptureTarget,
   buildAnalyticsCaptureTarget,
-  isAdvisoryMetaTag,
+  isRoutingMetaTag,
+  unsupportedSdkMetaHint,
 });

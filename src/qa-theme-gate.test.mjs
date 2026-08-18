@@ -21,6 +21,8 @@ const {
   deriveTestedUrlsFromAssertions,
   resolvePayload,
   resolveQaInputsFromSite,
+  isRoutingMetaTag,
+  unsupportedSdkMetaHint,
 } = __qaNodeTestHooks;
 
 const commerceTopologies = [{
@@ -377,11 +379,17 @@ test("resolveQaInputsFromSite requires a loadable --family brand contract", () =
   });
 });
 
-test("#4 advisory meta tags: currency and predictive-address are advisory (config-sourced), routing/page-type are not", () => {
-  const { isAdvisoryMetaTag } = __qaNodeTestHooks;
-  assert.equal(isAdvisoryMetaTag("next-currency"), true);
-  assert.equal(isAdvisoryMetaTag("next-predictive-address"), true);
-  assert.equal(isAdvisoryMetaTag("NEXT-CURRENCY"), true);
-  assert.equal(isAdvisoryMetaTag("next-page-type"), false);
-  assert.equal(isAdvisoryMetaTag("next-upsell-accept-url"), false);
+test("failure routing uses the released next-failure-url spelling", () => {
+  assert.equal(isRoutingMetaTag("next-failure-url"), true);
+  assert.equal(isRoutingMetaTag("NEXT-FAILURE-URL"), true);
+  assert.equal(isRoutingMetaTag("next-payment-failed-url"), false);
+});
+
+test("unsupported currency and predictive-address meta hints route to supported advisory mechanisms", () => {
+  assert.match(unsupportedSdkMetaHint("next-currency").expected, /URL parameter/);
+  assert.equal(
+    unsupportedSdkMetaHint("next-predictive-address").expected,
+    "window.nextConfig.addressConfig.enableAutocomplete",
+  );
+  assert.equal(unsupportedSdkMetaHint("next-page-type"), null);
 });
