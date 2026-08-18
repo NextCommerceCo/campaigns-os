@@ -1209,14 +1209,14 @@ async function runPageChecks(page, args) {
     const unsupportedHint = unsupportedSdkMetaHint(name);
     if (unsupportedHint) {
       assertions.push(assertion({
-        id: `config:${page.page_id}:${name}`,
+        id: `meta:${page.page_id}:${name}`,
         family: "meta-tags",
         page,
         status: STATUS.MANUAL_REVIEW,
         severity: SEVERITY.WARN,
         expected: unsupportedHint.expected,
         actual: actual
-          ? `${name} is present but ignored by Campaign Cart`
+          ? `${actual} (present but ignored by Campaign Cart)`
           : unsupportedHint.actual,
         evidence: {
           expected,
@@ -2059,11 +2059,19 @@ function isRoutingMetaTag(name) {
     "next-upsell-accept-url",
     "next-upsell-decline-url",
     "next-failure-url",
-  ].includes(String(name || "").toLowerCase());
+  ].includes(normalizeMetaName(name));
+}
+
+// Meta names reach these matchers from spec-declared keys and from
+// extractMetaTags, which does not trim the parsed `name` value. Normalize case
+// and surrounding whitespace so a stray-space tag lands on the intended branch
+// instead of falling through to the strict comparison as a BLOCKER.
+function normalizeMetaName(name) {
+  return String(name || "").trim().toLowerCase();
 }
 
 function unsupportedSdkMetaHint(name) {
-  const normalized = String(name || "").toLowerCase();
+  const normalized = normalizeMetaName(name);
   if (normalized === "next-currency") {
     return {
       expected: "Campaign Cart currency from the currency URL parameter, remembered session choice, or SDK default",

@@ -64,8 +64,11 @@ function checkoutHtml({ sdkVersion, provinceField, postalField, paymentSyncScrip
 `;
 }
 
-function appendCheckoutFields(root, fields) {
-  const checkout = join(root, "client", "public", "checkout", "index.html");
+// Defaults to the writeCampaignCartAppFixture checkout path. Other fixtures in
+// this file lay the checkout out differently (writeBundledSdkAppFixture uses
+// public/checkout/index.html), so pass checkoutPath to reuse this helper there.
+function appendCheckoutFields(root, fields, checkoutPath = ["client", "public", "checkout", "index.html"]) {
+  const checkout = join(root, ...checkoutPath);
   const html = readFileSync(checkout, "utf8");
   const markup = fields.map((field) => `<input data-next-checkout-field="${field}">`).join("\n    ");
   write(checkout, html.replace("  </form>", `    ${markup}\n  </form>`));
