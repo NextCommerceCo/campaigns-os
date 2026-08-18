@@ -64,6 +64,13 @@ function checkoutHtml({ sdkVersion, provinceField, postalField, paymentSyncScrip
 `;
 }
 
+function appendCheckoutFields(root, fields) {
+  const checkout = join(root, "client", "public", "checkout", "index.html");
+  const html = readFileSync(checkout, "utf8");
+  const markup = fields.map((field) => `<input data-next-checkout-field="${field}">`).join("\n    ");
+  write(checkout, html.replace("  </form>", `    ${markup}\n  </form>`));
+}
+
 const PAYMENT_SYNC_SCRIPT = `(function () {
   document.querySelectorAll("[data-pay]").forEach(function (trigger) {
     trigger.addEventListener("click", function () {
@@ -224,6 +231,36 @@ test("original funnel: stale checkout field aliases are blockers with canonical 
 
     assert.equal(root.checkout_fields.unsupported.length, 2);
     assert.ok(root.checkout_fields.bindings.some((entry) => entry.value === "email" && entry.supported));
+  });
+});
+
+test("released checkout fields and supported expiry aliases do not produce unknown-field warnings", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { provinceField: "province", postalField: "postal" });
+    appendCheckoutFields(dir, ["accepts_marketing", "exp-month", "exp-year"]);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    const supported = new Map(root.checkout_fields.bindings.map((entry) => [entry.value, entry.supported]));
+
+    for (const field of ["accepts_marketing", "exp-month", "exp-year", "cc-month", "cc-year"]) {
+      assert.equal(supported.get(field), true, `${field} should be accepted by the released SDK contract`);
+    }
+    assert.ok(!codes(root).includes("checkout.unknown_field_binding"));
+  });
+});
+
+test("a genuinely unknown checkout field still produces an unknown-field warning", () => {
+  withTempDir((dir) => {
+    writeCampaignCartAppFixture(dir, { provinceField: "province", postalField: "postal" });
+    appendCheckoutFields(dir, ["not-a-campaign-cart-field"]);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [root] = report.roots;
+    const finding = findingByCode(root, "checkout.unknown_field_binding");
+
+    assert.ok(finding, "expected checkout.unknown_field_binding finding");
+    assert.deepEqual(finding.evidence.map((entry) => entry.value), ["not-a-campaign-cart-field"]);
   });
 });
 

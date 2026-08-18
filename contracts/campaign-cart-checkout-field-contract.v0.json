@@ -1,9 +1,9 @@
 {
   "schema_version": "campaign-cart-checkout-field-contract/v0",
   "provenance": {
-    "source": "NextCommerceCo/campaign-cart src/enhancers/checkout (constants/field-mappings.ts, constants/selectors.ts)",
-    "sdk_version": "0.4.30",
-    "captured_at": "2026-07-16"
+    "source": "NextCommerceCo/campaign-cart v0.4.36 docs/guides/reference/data-attributes.md and src/features/checkout/checkout-form/expiration-fields.ts",
+    "sdk_version": "0.4.36",
+    "captured_at": "2026-08-18"
   },
   "binding_attributes": ["data-next-checkout-field", "os-checkout-field"],
   "canonical_fields": [
@@ -18,16 +18,17 @@
     "postal",
     "country",
     "cc-number",
-    "cc-month",
-    "cc-year",
+    "exp-month",
+    "exp-year",
     "cvv",
     "cc-name",
     "coupon",
-    "payment-method"
+    "payment-method",
+    "accepts_marketing"
   ],
   "accepted_aliases": {
-    "exp-month": "cc-month",
-    "exp-year": "cc-year"
+    "cc-month": "exp-month",
+    "cc-year": "exp-year"
   },
   "prefixes": ["billing-"],
   "stale_aliases": {
