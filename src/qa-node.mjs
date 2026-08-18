@@ -183,10 +183,12 @@ async function resolveQaInputs(args) {
   // Packet 01: the analytics legs capture ONE URL derived from resolved
   // identity (public_route_slug + route_root), composed here where the raw
   // operator/deploy base is still in hand.
+  const routeRootNotes = [];
   const analyticsCaptureTarget = resolveAnalyticsCaptureTarget({
     inputBaseUrl,
     publicRouteSlug,
-    routeRoot: resolveCampaignRouteRoot({ packet, spec: normalized, rawSpec, publicRouteSlug }),
+    routeRoot: resolveCampaignRouteRoot({ packet, spec: normalized, rawSpec, publicRouteSlug, notes: routeRootNotes }),
+    routeRootNote: routeRootNotes[0] || null,
   });
   const specHash = computeSpecHash(rawSpec);
   const templateFamily = stringArg(packet?.assembly?.template_family)
@@ -270,12 +272,12 @@ export function resolveQaInputsFromSite(args) {
     qaWaivers: {},
     // Non-packet site QA: --base-url IS the served campaign root by this
     // mode's contract (no spec identity exists to compose from).
-    analyticsCaptureTarget: {
+    analyticsCaptureTarget: buildAnalyticsCaptureTarget({
       url: ensureUrlTrailingSlash(baseUrl),
-      public_route_slug: scope.slug || null,
-      route_root: null,
+      publicRouteSlug: scope.slug || null,
+      routeRoot: null,
       source: "built_site_base_url",
-    },
+    }),
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath: null,
@@ -1860,7 +1862,7 @@ function normalizeQaBaseUrl(value, publicRouteSlug) {
 // doctor. Before packet 01, `route_root` had zero occurrences in this file —
 // doctor learned root-serving in #192, QA did not, so a root-served campaign
 // was audited at a path that does not exist.
-function resolveCampaignRouteRoot({ packet, spec, rawSpec, publicRouteSlug }) {
+function resolveCampaignRouteRoot({ packet, spec, rawSpec, publicRouteSlug, notes = null }) {
   const slug = normalizePublicRouteSlug(publicRouteSlug);
   const declared = stringArg(packet?.campaign?.route_root)
     || stringArg(spec?.spec_identity?.route_root)
@@ -1871,8 +1873,43 @@ function resolveCampaignRouteRoot({ packet, spec, rawSpec, publicRouteSlug }) {
     const clean = declared.trim();
     if (clean === "/") return "/";
     if (slug && normalizePublicRouteSlug(clean) === slug) return `/${slug}/`;
+    // A declared root QA cannot honour — a multi-segment root like
+    // "/<slug>/offer/", or a foreign root naming a different campaign. Doctor
+    // only ever canonicalizes to "/" or "/<slug>/", so this is either a
+    // hand-edited packet or a shape doctor grew after this code was written.
+    // Either way the slug default below audits a DIFFERENT page than the one
+    // declared, so the discard is recorded rather than swallowed.
+    if (notes) {
+      notes.push({
+        code: "route_root.declared_discarded",
+        declared: clean,
+        resolved: slug ? `/${slug}/` : null,
+        reason: slug
+          ? `Declared route_root "${clean}" is neither "/" nor "/${slug}/", so QA fell back to the slug default "/${slug}/". If the campaign really is served at "${clean}", QA is auditing the wrong page.`
+          : `Declared route_root "${clean}" could not be checked against a public_route_slug (no slug resolved), so QA fell back to no route root.`,
+      });
+    }
   }
   return slug ? `/${slug}/` : null;
+}
+
+// The ONE place the analytics capture-target shape is defined. Every producer
+// of a capture target — identity-composed (resolveAnalyticsCaptureTarget) and
+// built-site (resolveQaInputsFromSite) — constructs through here, so a new
+// diagnostic field or a new `source` value cannot land on one path and
+// silently skip the other. The shape is enforced by construction, not by a
+// test that happens to cover one branch.
+function buildAnalyticsCaptureTarget({ url, publicRouteSlug, routeRoot, source, routeRootNote = null }) {
+  return {
+    url: url || null,
+    public_route_slug: publicRouteSlug || null,
+    route_root: routeRoot || null,
+    source,
+    // Loud-not-silent: set only when a declared route_root was discarded in
+    // favour of the slug default, so the discard rides on the evidence
+    // instead of vanishing. Null on the overwhelmingly common clean path.
+    route_root_note: routeRootNote || null,
+  };
 }
 
 // Packet 01 / INV-2: the ONE URL both analytics legs visit derives from the
@@ -1883,19 +1920,26 @@ function resolveCampaignRouteRoot({ packet, spec, rawSpec, publicRouteSlug }) {
 //   route_root "/"        → the funnel lives at the SITE ROOT, so the target
 //                           is the base URL's origin root; the slug stays
 //                           identity, not a path prefix, and any stray path
-//                           on --base-url is discarded.
+//                           on --base-url is discarded. The query string and
+//                           fragment go with it: the capture target is the
+//                           canonical page identity both legs must agree on,
+//                           and an operator's debugging query (?utm_source=qa)
+//                           would otherwise ride into the parity comparison as
+//                           if it were part of the campaign's address. Pass
+//                           such parameters to the browser leg, not here.
 //   route_root "/<slug>/" → the slug-prefixed default: the slug is appended
 //                           to the operator/deploy base unless its last
 //                           segment already is the slug (normalizeQaBaseUrl
 //                           semantics, subdirectory deploys preserved).
-function resolveAnalyticsCaptureTarget({ inputBaseUrl, publicRouteSlug, routeRoot }) {
+function resolveAnalyticsCaptureTarget({ inputBaseUrl, publicRouteSlug, routeRoot, routeRootNote = null }) {
   const slug = normalizePublicRouteSlug(publicRouteSlug) || null;
-  const target = {
+  const target = buildAnalyticsCaptureTarget({
     url: null,
-    public_route_slug: slug,
-    route_root: routeRoot || (slug ? `/${slug}/` : null),
+    publicRouteSlug: slug,
+    routeRoot: routeRoot || (slug ? `/${slug}/` : null),
     source: "unresolved",
-  };
+    routeRootNote,
+  });
   const base = normalizeBaseUrl(inputBaseUrl);
   if (!base) return target;
   if (target.route_root === "/") {
@@ -2090,5 +2134,6 @@ export const __qaNodeTestHooks = Object.freeze({
   resolveQaWaivers,
   resolveCampaignRouteRoot,
   resolveAnalyticsCaptureTarget,
+  buildAnalyticsCaptureTarget,
   isAdvisoryMetaTag,
 });
