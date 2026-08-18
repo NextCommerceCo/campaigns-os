@@ -14,7 +14,7 @@ import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import { diffAnalyticsParity, normalizeCapture } from "./qa-analytics-parity.mjs";
 import { STATUS } from "./qa-verdict.mjs";
 
-const { resolveCampaignRouteRoot, resolveAnalyticsCaptureTarget, buildAnalyticsCaptureTarget, resolveQaInputsFromSite } = __qaNodeTestHooks;
+const { resolveCampaignRouteRoot, resolveAnalyticsCaptureTarget, buildAnalyticsCaptureTarget } = __qaNodeTestHooks;
 
 const CONTRACT = {
   providers: { gtm: { enabled: true, containerId: "GTM-ABC123" } },
