@@ -340,3 +340,64 @@ test("stale built output diverges as a disagreement, never as completion", () =>
 
 // Proof 5 (behavioral, real campaign from audit doc 07) is manual and
 // separately authorized; it is intentionally not automated here.
+
+// ---------------------------------------------------------------------------
+// Kilo review (#196, src/cli.mjs:5600 + :5604) — a divergent packet is a
+// stop-and-reconcile state. The inspection action was previously emitted
+// ALONGSIDE the stage-specific actions, so an agent handed a divergence could
+// follow `doctor_recheck` / `deploy` / `qa_run` instead of inspecting — the
+// same "fix doctor before advancing" instruction this packet exists to
+// replace. These proofs pin the suppression by exact action list, so a future
+// branch added below the divergence check cannot quietly reintroduce it.
+// ---------------------------------------------------------------------------
+test("doctor-blocked + divergence emits the inspection action ALONE — no doctor_recheck", () => {
+  const { dir, packetPath } = selfTargetFixture({ builtOutput: true, deployUrlInReport: true, verdict: true });
+  const result = runNext(packetPath);
+
+  assert.equal(result.stage, "doctor-blocked", "fixture must reproduce the doctor-blocked shape");
+  assert.ok((result.divergences || []).length > 0, "fixture must diverge");
+  assert.deepEqual(
+    (result.next_actions || []).map((action) => action.id),
+    ["divergence_inspect"],
+    "doctor_recheck must be suppressed — the doctor errors may themselves be artifacts of the stale ledger",
+  );
+  assertNoStartOverRecommendation(result);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("post-doctor divergence emits the inspection action ALONE — no deploy/advance/qa_run", () => {
+  const { dir, packetPath } = doctorGreenFixture();
+  const result = runNext(packetPath);
+
+  assert.equal(result.stage, "deploy");
+  assert.ok((result.divergences || []).length > 0, "fixture must diverge");
+  assert.deepEqual(
+    (result.next_actions || []).map((action) => action.id),
+    ["divergence_inspect"],
+    "stage actions must be suppressed — every one is derived from the same contradictory evidence",
+  );
+  // Nothing in the list may redo the disputed work.
+  for (const action of result.next_actions || []) {
+    assert.doesNotMatch(String(action.command || ""), /campaigns-os qa run|campaigns-os doctor/);
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("the inspection action tells the agent the list is deliberately truncated", () => {
+  const { dir, packetPath } = doctorGreenFixture();
+  const inspect = (runNext(packetPath).next_actions || []).find((action) => action.id === "divergence_inspect");
+  assert.ok(inspect);
+  assert.match(inspect.description, /ONLY next action/, "an empty-looking action list must not read as a bug");
+  assert.match(inspect.description, /Re-run `campaigns-os next --packet .+ --json`/, "must say how to get the normal list back");
+  assert.equal(inspect.required, true);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a CLEAN packet is untouched by the suppression — stage actions still flow", () => {
+  const { dir, packetPath } = selfTargetFixture();
+  const result = runNext(packetPath);
+
+  assert.equal((result.divergences || []).length, 0, "fixture must be clean");
+  assert.deepEqual((result.next_actions || []).map((action) => action.id), ["doctor_recheck"]);
+  rmSync(dir, { recursive: true, force: true });
+});

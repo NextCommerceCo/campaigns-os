@@ -5575,6 +5575,9 @@ function buildNextGates({ doctor, report, themeGate, polishGate }) {
 // decide — it resolves nothing, writes nothing, and never claims a stage is
 // complete. The forward hint points at the least-destructive plausible path
 // implied by the artifact evidence instead of re-setup.
+//
+// This action is emitted ALONE (see buildNextActions): a divergent packet is
+// a stop-and-reconcile state, not a stage with a recommended command.
 function divergenceInspectAction(divergences, packetPath) {
   const divergedStages = divergences.map((divergence) => divergence.stage);
   const forwardHint = divergedStages.includes("qa")
@@ -5586,7 +5589,7 @@ function divergenceInspectAction(divergences, packetPath) {
     id: "divergence_inspect",
     kind: "manual",
     command: null,
-    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s) recorded in divergences[]. Inspect both sides (each entry quotes the ledger claim and the artifact evidence) and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint}`,
+    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s) recorded in divergences[]. This is the ONLY next action: stage actions are suppressed while the disagreement stands, because every one of them would be derived from the same contradictory evidence. Inspect both sides (each entry quotes the ledger claim and the artifact evidence) and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint} Re-run \`campaigns-os next --packet ${packetPath} --json\` once the report matches the artifacts to get the normal action list.`,
     required: true,
   };
 }
@@ -5598,21 +5601,29 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const divergences = Array.isArray(result.divergences) ? result.divergences : [];
   if (divergences.length) {
+    // Packet 03 / Kilo review: when the ledger and the artifacts disagree,
+    // reconciliation is the ONLY next action. Every stage-specific action
+    // below is derived from the same contradictory evidence, so emitting any
+    // of them alongside the inspection hands an agent a command it can follow
+    // INSTEAD of inspecting — redeploying, rerunning QA, or (at
+    // doctor-blocked) chasing doctor errors that may themselves be artifacts
+    // of the stale ledger. Suppressing branch-by-branch would leave the next
+    // branch someone adds unguarded; returning here cannot rot that way.
+    // The operator reconciles, then re-runs `next` for the normal list.
     const inspect = divergenceInspectAction(divergences, packetPath);
     push(inspect.id, inspect.kind, inspect.command, inspect.description, { required: inspect.required });
+    return actions;
   }
   if (result.stage === "doctor-blocked") {
     push("doctor_recheck", "command", `campaigns-os doctor --packet ${packetPath} --json`, "Re-run the doctor after resolving the listed errors.");
     return actions;
   }
   if (result.stage === "prepare-build") {
-    // Packet 03: with any divergence present, the "start over" recommendation
-    // (`campaigns-os start` / rerun prepare-build) is suppressed — it is the
-    // most destructive recovery available and the ledger alone cannot
-    // justify it. The divergence_inspect action above replaces it.
-    if (!divergences.length) {
-      push("rerun_prepare_build", "command", `campaigns-os start --map-id ${packet.spec?.map_id || "<map-id>"}`, "Rerun prepare-build/start with the original spec, source, and target inputs to clear the recorded blockers.");
-    }
+    // Packet 03: the "start over" recommendation is the most destructive
+    // recovery available and the ledger alone cannot justify it. Divergence
+    // already returned above, so reaching here means the ledger and the
+    // artifacts agree and the rerun is safe to recommend.
+    push("rerun_prepare_build", "command", `campaigns-os start --map-id ${packet.spec?.map_id || "<map-id>"}`, "Rerun prepare-build/start with the original spec, source, and target inputs to clear the recorded blockers.");
     return actions;
   }
   // A blocked theme gate owns the action list for any post-build stage: the
