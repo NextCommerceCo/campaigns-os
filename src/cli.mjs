@@ -259,13 +259,13 @@ Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                     [--allow-uncertified-template "<reason>"] [--no-run-session]
+                     [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                             [--allow-uncertified-template "<reason>"] [--no-run-session]
+                             [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]
   campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                     [--allow-uncertified-template "<reason>"] [--no-run-session]   # intake alias for prepare-build + doctor
+                     [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
@@ -1111,6 +1111,61 @@ function createProofPolicy() {
   };
 }
 
+// Stage keys whose seed states prepare-build itself rewrites on every run
+// (createInitialAssemblyReportStages): prepare_build is re-derived from this
+// run's readiness result, and setup from scaffold detection — so their seed
+// states never count as accumulated agent evidence. setup's seed state may
+// legitimately be "skipped" (scaffold already present); every other stage is
+// seeded "pending" with empty ledger arrays.
+function assemblyReportStagesWithEvidence(existingReport) {
+  const stages = existingReport?.stages;
+  if (!isObject(stages)) return [];
+  const withEvidence = [];
+  for (const key of ASSEMBLY_REPORT_STAGE_KEYS) {
+    if (key === "prepare_build") continue;
+    const stage = stages[key];
+    if (!isObject(stage)) continue;
+    const seedStatuses = key === "setup" ? ["pending", "skipped"] : ["pending"];
+    const nonSeedStatus = !seedStatuses.includes(optionalString(stage.status, "pending"));
+    const recordedContent =
+      ["inputs", "outputs", "commands", "blockers", "warnings", "evidence"].some(
+        (field) => Array.isArray(stage[field]) && stage[field].length > 0,
+      )
+      || (isObject(stage.evidence) && Object.keys(stage.evidence).length > 0);
+    if (nonSeedStatus || recordedContent) withEvidence.push(key);
+  }
+  return withEvidence;
+}
+
+// INV-4 guard (packet 02): prepare-build/start regenerate the assembly report
+// from scratch (createAssemblyReport resets every stage), so an unconditional
+// write silently destroys agent-recorded stage evidence. Mirror the
+// runSessionStart pattern: refuse unless --force, and with --force announce
+// exactly which stage keys are cleared. The guard keys on evidence, not file
+// existence — a report whose stages are all still at their seed states (a real
+// re-prepare before any work) regenerates freely with no flag.
+function guardAssemblyReportOverwrite(reportPath, args) {
+  if (!existsSync(reportPath)) return;
+  let existingReport = null;
+  try {
+    existingReport = readJson(reportPath);
+  } catch {
+    return; // An unreadable report carries no provable evidence; keep today's regeneration path.
+  }
+  const stageKeys = assemblyReportStagesWithEvidence(existingReport);
+  if (stageKeys.length === 0) return;
+  if (args.force !== true) {
+    throw new Error(
+      `Assembly report at ${reportPath} already carries stage evidence (${stageKeys.join(", ")}). `
+      + `Rerunning prepare-build/start/build would reset ${stageKeys.length === 1 ? "this stage" : "these stages"} to pending and destroy that evidence. `
+      + `Pass --force to overwrite (destructive).`,
+    );
+  }
+  console.warn(
+    `[campaigns-os prepare-build] --force: overwriting assembly report at ${reportPath}; clearing stage evidence for: ${stageKeys.join(", ")}.`,
+  );
+}
+
 function prepareBuild(args, options = {}) {
   const specPath = resolve(requireArg(args, "spec"));
   const sourceRoot = resolve(requireArg(args, "source"));
@@ -1124,6 +1179,7 @@ function prepareBuild(args, options = {}) {
   const reportPath = resolve(args["report-out"] || join(targetRepo, ".campaign-runtime/assembly-report.json"));
   const doctorOutPath = resolve(args["doctor-out"] || join(targetRepo, ".campaign-runtime/doctor-output.json"));
   const briefPath = resolve(args["brief-out"] || join(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
+  guardAssemblyReportOverwrite(reportPath, args);
   const spec = readJson(specPath);
   const { mapId, publicRouteSlug } = campaignIdentity(spec, args);
   if (!mapId) throw new Error("CampaignSpec has no map ID. Re-export a saved Map Builder spec with spec_identity.map_id before assembly; use --map-id only for legacy diagnostics.");
