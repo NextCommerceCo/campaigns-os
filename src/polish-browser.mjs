@@ -610,13 +610,16 @@ export async function createPolishBrowserAdapter({
       const cleanupResources = () => {
         if (typeof session?.detach === "function" && !detachPromise) {
           detachPromise = Promise.resolve().then(() => session.detach());
+          // Context closure is authoritative. CDP detach commonly rejects when
+          // that same close wins the race, so observe but never await or expose it.
+          void detachPromise.catch(() => {});
         }
         if (typeof context?.close === "function" && !contextClosePromise) {
           contextClosePromise = Promise.resolve().then(() => context.close());
         }
-        return Promise.allSettled([detachPromise, contextClosePromise].filter(Boolean)).then((results) => {
-          if (results.some((result) => result.status === "rejected")) throw polishProducerCleanupError();
-        });
+        if (!context) return Promise.resolve();
+        if (!contextClosePromise) return Promise.reject(polishProducerCleanupError());
+        return contextClosePromise.catch(() => { throw polishProducerCleanupError(); });
       };
       const assertActive = () => {
         if (!timedOut) return;

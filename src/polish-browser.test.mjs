@@ -33,6 +33,8 @@ function fakeChromium(scenarios = [{}], browserOptions = {}) {
           nextScenario += 1;
           calls.push(["newContext", contextIndex, options]);
           const listeners = new Map();
+          let resolveContextClosed;
+          const contextClosed = new Promise((resolve) => { resolveContextClosed = resolve; });
           let frameTreeCall = 0;
           const emit = (event, payload) => {
             calls.push(["emit", contextIndex, event]);
@@ -70,6 +72,11 @@ function fakeChromium(scenarios = [{}], browserOptions = {}) {
             async detach() {
               calls.push(["detach", contextIndex]);
               if (scenario.detachNever) return new Promise(() => {});
+              if (scenario.detachAfterContextCloseError) {
+                await contextClosed;
+                throw scenario.detachAfterContextCloseError;
+              }
+              if (scenario.detachError) throw scenario.detachError;
             },
           };
           const page = {
@@ -117,6 +124,7 @@ function fakeChromium(scenarios = [{}], browserOptions = {}) {
             async close() {
               calls.push(["context.close", contextIndex]);
               if (scenario.contextCloseNever) return new Promise(() => {});
+              resolveContextClosed();
               if (scenario.contextCloseError) throw scenario.contextCloseError;
             },
           };
@@ -1197,10 +1205,17 @@ test("a never-resolving first DOM snapshot times out, poisons the adapter, and c
   assert.equal(fake.calls.filter(([name]) => name === "browser.close").length, 1);
 });
 
-test("hung detach and context teardown are concurrent, bounded, and never double-close", {
+test("detach rejection or hang is benign when the authoritative context close succeeds", {
   timeout: 500,
 }, async () => {
-  for (const scenario of [{ detachNever: true }, { contextCloseNever: true }]) {
+  for (const scenario of [
+    { detachNever: true },
+    {
+      detachAfterContextCloseError: new Error(
+        "PRIVATE_ALREADY_DETACHED /private/tmp/browser-profile",
+      ),
+    },
+  ]) {
     const fake = fakeChromium([scenario]);
     const adapter = await createPolishBrowserAdapter({
       chromium: fake.chromium,
@@ -1209,18 +1224,41 @@ test("hung detach and context teardown are concurrent, bounded, and never double
       startupDeadlineMs: 20,
     });
 
-    await assert.rejects(
-      adapter.captureRoute({
-        url: "https://shop.example.test/landing/",
-        viewport: { key: "desktop", width: 1_440, height: 1_200 },
-      }),
-      (error) => error.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
-    );
+    const result = await adapter.captureRoute({
+      url: "https://shop.example.test/landing/",
+      viewport: { key: "desktop", width: 1_440, height: 1_200 },
+    });
     await adapter.close();
 
+    assert.equal(result.responseCollectionStatus, "complete");
     assert.equal(fake.calls.filter(([name]) => name === "detach").length, 1);
     assert.equal(fake.calls.filter(([name]) => name === "context.close").length, 1);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_ALREADY_DETACHED|private\/tmp/);
   }
+});
+
+test("a hung authoritative context close remains a bounded producer timeout", {
+  timeout: 500,
+}, async () => {
+  const fake = fakeChromium([{ contextCloseNever: true }]);
+  const adapter = await createPolishBrowserAdapter({
+    chromium: fake.chromium,
+    cellDeadlineMs: 100,
+    cleanupDeadlineMs: 20,
+    startupDeadlineMs: 20,
+  });
+
+  await assert.rejects(
+    adapter.captureRoute({
+      url: "https://shop.example.test/landing/",
+      viewport: { key: "desktop", width: 1_440, height: 1_200 },
+    }),
+    (error) => error.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
+  );
+  await adapter.close();
+
+  assert.equal(fake.calls.filter(([name]) => name === "detach").length, 1);
+  assert.equal(fake.calls.filter(([name]) => name === "context.close").length, 1);
 });
 
 test("a rejecting context cleanup fails closed with one fixed error and poisons the adapter", async () => {
