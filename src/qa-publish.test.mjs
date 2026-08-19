@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { qaResolveNextProofLines, shouldPublishVerdict } from "./qa-node.mjs";
+import { qaResolveNextProofLines, shouldPublishVerdict, __qaNodeTestHooks } from "./qa-node.mjs";
+
+const { resolveCommerceEntryGate, commerceEntryGateAssertion } = __qaNodeTestHooks;
 
 // Publishing the QA verdict to the Campaign Map QA portal is the default shape:
 // LLM/agent UIs are the primary interface, so a run should land in the portal
@@ -69,4 +71,51 @@ test("qa resolve preserves custom proxy base in the next proof command", () => {
   assert.match(lines[0], /--proxy-base 'https:\/\/campaign-map\.example\.test\/qa proxy'/);
   assert.match(lines[0], /--base-url https:\/\/preview\.example\.test\/simple-home-watch\//);
   assert.match(lines[0], /--browser --test-order common/);
+});
+
+test("shop single-step direct checkout blocks when no deterministic cart-entry strategy exists", () => {
+  const gate = resolveCommerceEntryGate({
+    topologies: [{
+      pages: [{
+        page_id: "checkout",
+        page_type: "checkout",
+        template_family: "shop-single-step",
+        url: "https://preview.example.test/shop/checkout/",
+        packages: [{ ref_id: "1" }, { ref_id: "2" }],
+      }],
+    }],
+  });
+  const assertion = commerceEntryGateAssertion(gate);
+
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.blockers[0].code, "commerce_entry.shop_single_step_direct_entry");
+  assert.equal(assertion.status, "fail");
+  assert.equal(assertion.severity, "blocker");
+  assert.match(assertion.actual, /no deterministic direct-entry package strategy/);
+});
+
+test("shop single-step direct checkout allows force-package and single-package strategies", () => {
+  assert.equal(resolveCommerceEntryGate({
+    topologies: [{
+      pages: [{
+        page_id: "checkout",
+        page_type: "checkout",
+        template_family: "shop-single-step",
+        url: "https://preview.example.test/shop/checkout/?forcePackageId=1",
+        packages: [{ ref_id: "1" }, { ref_id: "2" }],
+      }],
+    }],
+  }).status, "ready");
+
+  assert.equal(resolveCommerceEntryGate({
+    topologies: [{
+      pages: [{
+        page_id: "checkout",
+        page_type: "checkout",
+        template_family: "shop-single-step",
+        url: "https://preview.example.test/shop/checkout/",
+        packages: [{ ref_id: "1" }],
+      }],
+    }],
+  }).status, "ready");
 });

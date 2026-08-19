@@ -2,7 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
-const { TEST_ORDER_STEP_LADDER, createStepLadder, formatStepEvent, hostedRedirectInfo, redactUrlQuery, testOrderAssertion } = __qaBrowserTestHooks;
+const {
+  TEST_ORDER_STEP_LADDER,
+  createStepLadder,
+  formatStepEvent,
+  hostedRedirectInfo,
+  redactUrlQuery,
+  observeCartApiActivity,
+  recordCartActivityIfObserved,
+  fillCheckoutFields,
+  testOrderAssertion,
+} = __qaBrowserTestHooks;
 
 test("step ladder declares the canonical ordered step names", () => {
   assert.deepEqual([...TEST_ORDER_STEP_LADDER], [
@@ -10,8 +20,8 @@ test("step ladder declares the canonical ordered step names", () => {
     "selected_bundle",
     "bump_state",
     "customer_fields_filled",
-    "card_fields_filled",
     "cart_created",
+    "card_fields_filled",
     "hosted_redirect_observed",
     "order_submitted",
     "upsell_action",
@@ -49,6 +59,32 @@ test("ladder records failures with the error and rethrows so the path aborts", a
   assert.match(ladder.steps[0].error, /has been closed/);
 });
 
+test("ladder preserves structured evidence returned by a step", async () => {
+  const ladder = createStepLadder({ emit: () => {} });
+  await ladder.run("cart_created", async () => ({
+    detail: "cart API 201 response observed",
+    evidence: { latest_status: 201 },
+  }), { timeoutMs: 1000 });
+
+  assert.equal(ladder.steps[0].detail, "cart API 201 response observed");
+  assert.deepEqual(ladder.steps[0].evidence, { latest_status: 201 });
+});
+
+test("ladder preserves per-field evidence attached to checkout field failures", async () => {
+  const ladder = createStepLadder({ emit: () => {} });
+  await assert.rejects(
+    ladder.run("customer_fields_filled", () => fillCheckoutFields(fakeCheckoutPage({ missing: ["city"] }), {}, "qa@example.test"), { timeoutMs: 1000 }),
+    /city/,
+  );
+
+  const step = ladder.steps[0];
+  assert.equal(step.status, "failed");
+  assert.match(step.detail, /fill city/);
+  assert.equal(step.evidence.fields.at(-1).field, "city");
+  assert.equal(step.evidence.fields.at(-1).status, "missing");
+  assert.equal(step.evidence.fields.some((entry) => entry.field === "fname" && entry.status === "ok"), true);
+});
+
 test("ladder bounds each step: a hung step records timeout instead of hanging forever", async () => {
   const ladder = createStepLadder({ emit: () => {} });
   await assert.rejects(
@@ -83,6 +119,40 @@ test("format of the progress event line is stable", () => {
     formatStepEvent({ step: "customer_fields_filled", status: "ok", duration_ms: 1240 }),
     "[qa:test-order] step=customer_fields_filled status=ok 1240ms",
   );
+});
+
+test("cart API activity is summarized separately from customer-field completion", () => {
+  const result = observeCartApiActivity({
+    responses: [
+      { status: 200, url: "https://api.example.test/api/v1/carts/calculate/", body: { lines: [] } },
+      { status: 201, url: "https://api.example.test/api/v1/carts/", body: { checkout_url: "https://hosted-checkout.example.test/accounts/complete-order/token/?secret=1", lines: [{ id: 1 }] } },
+    ],
+  });
+
+  assert.match(result.detail, /201/);
+  assert.equal(result.evidence.latest_status, 201);
+  assert.equal(result.evidence.latest_line_count, 1);
+  assert.equal(result.evidence.cart_api_responses[0].checkout_url, "https://hosted-checkout.example.test/accounts/complete-order/token/");
+});
+
+test("late cart API activity can be appended after a customer-field failure", () => {
+  const ladder = createStepLadder({ emit: () => {} });
+  ladder.steps.push({
+    step: "customer_fields_filled",
+    status: "timeout",
+    started_at: "2026-06-11T00:00:02.000Z",
+    duration_ms: 45000,
+    error: "step customer_fields_filled timed out after 45000ms",
+  });
+  recordCartActivityIfObserved(ladder, {
+    responses: [
+      { status: 201, url: "https://api.example.test/api/v1/carts/", body: { checkout_url: "https://hosted-checkout.example.test/accounts/complete-order/token/?secret=1", lines: [{ id: 1 }] } },
+    ],
+  });
+
+  assert.equal(ladder.steps.at(-1).step, "cart_created");
+  assert.equal(ladder.steps.at(-1).status, "ok");
+  assert.equal(ladder.steps.at(-1).evidence.latest_status, 201);
 });
 
 test("hosted redirect detection: different origin + /accounts/complete-order/ path, query redacted", () => {
@@ -158,3 +228,60 @@ test("failed path maps to a blocker assertion that carries the step ladder up to
   assert.equal(result.severity, "blocker");
   assert.deepEqual(result.evidence.steps, steps);
 });
+
+function fakeCheckoutPage({ missing = [] } = {}) {
+  const missingSet = new Set(missing);
+  const values = new Map();
+  return {
+    waitForTimeout: async () => {},
+    locator(selector) {
+      const fieldMatch = selector.match(/\[data-next-checkout-field="([^"]+)"\]/);
+      if (fieldMatch) return new FakeLocator({ present: !missingSet.has(fieldMatch[1]), field: fieldMatch[1], values });
+      return new FakeLocator({ present: false, field: selector, values });
+    },
+  };
+}
+
+class FakeLocator {
+  constructor({ present, field, values }) {
+    this.present = present;
+    this.field = field;
+    this.values = values;
+  }
+
+  first() {
+    return this;
+  }
+
+  async count() {
+    return this.present ? 1 : 0;
+  }
+
+  async waitFor() {
+    if (!this.present) throw new Error(`missing ${this.field}`);
+  }
+
+  async isVisible() {
+    return this.present;
+  }
+
+  async isEnabled() {
+    return this.present;
+  }
+
+  async click() {}
+
+  async fill(value) {
+    this.values.set(this.field, String(value));
+  }
+
+  async selectOption(value) {
+    this.values.set(this.field, String(value));
+  }
+
+  async inputValue() {
+    return this.values.get(this.field) || "";
+  }
+
+  async check() {}
+}

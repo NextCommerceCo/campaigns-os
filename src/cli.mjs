@@ -3496,6 +3496,50 @@ function offerRefsFromEntries(entries) {
     .map((value) => String(value));
 }
 
+function pageHasForcePackageStrategy(page) {
+  const hints = isObject(page?.sdk_hints) ? page.sdk_hints : {};
+  const values = [
+    page?.page_url,
+    page?.url,
+    page?.cart_entry_url,
+    page?.force_package_url,
+    page?.force_package_id,
+    page?.forcePackageId,
+    hints.cart_entry_url,
+    hints.force_package_url,
+    hints.force_package_id,
+    hints.forcePackageId,
+    hints.checkout_entry_strategy,
+    hints.checkoutEntryStrategy,
+  ];
+  return values.some((value) => /force[-_]?package|forcePackageId|cart[-_]?entry|selector[-_]?entry/i.test(String(value || "")));
+}
+
+function validateShopSingleStepDirectEntry(specPages, family, errors, ready) {
+  if (family !== "shop-single-step") return;
+  const selectPages = specPages.filter((page) => page.type === "select");
+  for (const checkout of specPages.filter((page) => page.type === "checkout")) {
+    const packageRefs = packageRefsFromEntries(checkout.packages);
+    const hasSelectorEntry = selectPages.some((page) => page.next_page === checkout.id || page.success_url === checkout.id);
+    const hasForceStrategy = pageHasForcePackageStrategy(checkout);
+    if (packageRefs.length === 1 || hasSelectorEntry || hasForceStrategy) {
+      ready.push(`shop-single-step checkout "${checkout.id}" has a deterministic direct-entry package strategy`);
+      continue;
+    }
+    addIssue(
+      errors,
+      "template_contract.shop_direct_entry",
+      `Template family "shop-single-step" checkout "${checkout.id}" has ${packageRefs.length} checkout package ref(s), but no deterministic direct-entry package strategy. Add a single main package, a select/cart-entry page, or a force-package/cart-entry URL contract before QA/test-order proof.`,
+      {
+        template_family: family,
+        page_id: checkout.id,
+        package_ref_count: packageRefs.length,
+        allowed_strategies: ["single_main_package", "select_or_cart_entry_page", "force_package_url"],
+      },
+    );
+  }
+}
+
 function isAutomatableTemplateFamily(family) {
   return isNonEmptyString(family) && family !== "undecided" && family !== "custom";
 }
@@ -3611,6 +3655,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
 
     // ADR-003 step 2: template-contract checks ported from the private doctor.
     const specPages = activeSpecPages(spec);
+    validateShopSingleStepDirectEntry(specPages, family, errors, ready);
 
     const mismatchedFamilies = specPages.filter(
       (page) => isNonEmptyString(page.sdk_hints?.template_family) && page.sdk_hints.template_family !== family

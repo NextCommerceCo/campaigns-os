@@ -108,6 +108,35 @@ test("template_contract.upsell_refs clean when the upsell declares an offer ref"
   assert.equal(codes(errors).includes("template_contract.upsell_refs"), false);
 });
 
+test("template_contract.shop_direct_entry errors for multi-package shop direct checkout without entry strategy", () => {
+  const { errors } = run({
+    family: "shop-single-step",
+    contract: { status: "agent-ready", frontmatter: { requiredWhenCloning: ["page_type=checkout"] } },
+    spec: specWith([{ id: "checkout", type: "checkout", packages: [{ ref_id: "1" }, { ref_id: "2" }] }]),
+  });
+  assert.ok(codes(errors).includes("template_contract.shop_direct_entry"));
+});
+
+test("template_contract.shop_direct_entry allows force-package and selector entry strategies", () => {
+  const contract = { status: "agent-ready", frontmatter: { requiredWhenCloning: ["page_type=checkout"] } };
+  const forced = run({
+    family: "shop-single-step",
+    contract,
+    spec: specWith([{ id: "checkout", type: "checkout", page_url: "checkout/?forcePackageId=1", packages: [{ ref_id: "1" }, { ref_id: "2" }] }]),
+  });
+  assert.equal(codes(forced.errors).includes("template_contract.shop_direct_entry"), false);
+
+  const selected = run({
+    family: "shop-single-step",
+    contract,
+    spec: specWith([
+      { id: "select", type: "select", next_page: "checkout", packages: [{ ref_id: "1" }, { ref_id: "2" }] },
+      { id: "checkout", type: "checkout", packages: [{ ref_id: "1" }, { ref_id: "2" }] },
+    ]),
+  });
+  assert.equal(codes(selected.errors).includes("template_contract.shop_direct_entry"), false);
+});
+
 test("template_contract.spec_family errors when a page family disagrees with the packet family", () => {
   const { errors } = run({
     contract: checkoutContract,

@@ -1358,8 +1358,8 @@ const TEST_ORDER_STEP_LADDER = Object.freeze([
   "selected_bundle",
   "bump_state",
   "customer_fields_filled",
-  "card_fields_filled",
   "cart_created",
+  "card_fields_filled",
   "hosted_redirect_observed",
   "order_submitted",
   "upsell_action",
@@ -1372,7 +1372,7 @@ function formatStepEvent(entry) {
 
 function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), now = () => Date.now() } = {}) {
   const steps = [];
-  const record = (step, status, { startedAt = null, durationMs = 0, detail = null, error = null } = {}) => {
+  const record = (step, status, { startedAt = null, durationMs = 0, detail = null, error = null, evidence = null } = {}) => {
     const entry = {
       step,
       status,
@@ -1380,6 +1380,7 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
       duration_ms: Math.max(0, Math.round(durationMs)),
       ...(detail ? { detail } : {}),
       ...(error ? { error } : {}),
+      ...(evidence ? { evidence } : {}),
     };
     steps.push(entry);
     emit(formatStepEvent(entry));
@@ -1388,8 +1389,8 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
   return {
     steps,
     has: (step) => steps.some((entry) => entry.step === step),
-    ok: (step, detail = null) => record(step, "ok", { detail }),
-    skip: (step, reason) => record(step, "skipped", { detail: reason }),
+    ok: (step, detail = null, evidence = null) => record(step, "ok", { detail, evidence }),
+    skip: (step, reason, evidence = null) => record(step, "skipped", { detail: reason, evidence }),
     // Run a step with a bounded timeout. A resolved string becomes the step
     // detail; a resolved { skip } object records the step as skipped.
     async run(step, fn, { timeoutMs, detail = null } = {}) {
@@ -1398,18 +1399,20 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
       try {
         const value = await withStepTimeout(fn(), timeoutMs, step);
         if (value && typeof value === "object" && typeof value.skip === "string") {
-          record(step, "skipped", { startedAt, durationMs: now() - startedMs, detail: value.skip });
+          record(step, "skipped", { startedAt, durationMs: now() - startedMs, detail: value.skip, evidence: value.evidence || null });
           return value;
         }
-        record(step, "ok", { startedAt, durationMs: now() - startedMs, detail: typeof value === "string" ? value : detail });
+        const resultDetail = typeof value === "string" ? value : value?.detail || detail;
+        record(step, "ok", { startedAt, durationMs: now() - startedMs, detail: resultDetail, evidence: value?.evidence || null });
         return value;
       } catch (error) {
         const timedOut = error?.code === "step_timeout";
         record(step, timedOut ? "timeout" : "failed", {
           startedAt,
           durationMs: now() - startedMs,
-          detail,
+          detail: error?.qaDetail || detail,
           error: error instanceof Error ? error.message : String(error),
+          evidence: error?.qaEvidence || null,
         });
         throw error;
       }
@@ -1520,15 +1523,12 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   try {
     await ladder.run("customer_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
-      await fillCheckoutFields(page, args, email);
+      return fillCheckoutFields(page, args, email);
     }, { timeoutMs: budget() });
+    await ladder.run("cart_created", async () => observeCartApiActivity(events), { timeoutMs: budget() });
     await ladder.run("card_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
       await fillPaymentFields(page, args);
-    }, { timeoutMs: budget() });
-    await ladder.run("cart_created", async () => {
-      const seen = events.responses.some((response) => /\/api\/v1\/carts\/?/i.test(response.url));
-      return seen ? "cart API response observed" : { skip: "no cart API call observed; checkout posts the order directly" };
     }, { timeoutMs: budget() });
     await ladder.run("order_submitted", async () => {
       ensurePageFillable(page, checkoutPage.url);
@@ -1536,6 +1536,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       await waitForCheckoutResult(page);
     }, { timeoutMs: budget() });
   } catch (error) {
+    recordCartActivityIfObserved(ladder, events);
     const hosted = error?.hostedRedirect || hostedNow();
     if (!hosted) throw error;
     return hostedRedirectOutcome({ page, events, email, checkoutPage, args, path, ladder, hosted });
@@ -1722,7 +1723,38 @@ async function hasVisibleCheckoutFields(page) {
     .catch(() => false);
 }
 
+function observeCartApiActivity(events) {
+  const responses = events.responses.filter((response) => /\/api\/v1\/carts\/?$/i.test(response.url));
+  if (!responses.length) {
+    return { skip: "no cart create API response observed yet", evidence: { cart_api_responses: [] } };
+  }
+  const latest = responses.at(-1);
+  const ok = latest.status >= 200 && latest.status < 300;
+  const lineCount = Array.isArray(latest.body?.lines) ? latest.body.lines.length : null;
+  return {
+    detail: ok ? `cart API ${latest.status} response observed` : `cart API response observed with status ${latest.status}`,
+    evidence: {
+      cart_api_responses: responses.slice(-5).map((response) => ({
+        status: response.status,
+        url: response.url,
+        line_count: Array.isArray(response.body?.lines) ? response.body.lines.length : null,
+        checkout_url: typeof response.body?.checkout_url === "string" ? redactUrlQuery(response.body.checkout_url) : null,
+      })),
+      latest_status: latest.status,
+      latest_line_count: lineCount,
+    },
+  };
+}
+
+function recordCartActivityIfObserved(ladder, events) {
+  if (ladder.has("cart_created")) return;
+  const activity = observeCartApiActivity(events);
+  if (activity.skip) return;
+  ladder.ok("cart_created", activity.detail, activity.evidence);
+}
+
 async function fillCheckoutFields(page, args, email) {
+  const fieldTrace = [];
   const address = {
     firstName: stringArg(args["test-first-name"]) || "QA",
     lastName: stringArg(args["test-last-name"]) || "Playwright",
@@ -1735,16 +1767,16 @@ async function fillCheckoutFields(page, args, email) {
     postal: stringArg(args["test-postal"]) || "94043",
   };
 
-  await fillByField(page, "fname", address.firstName);
-  await fillByField(page, "lname", address.lastName);
-  await fillByField(page, "email", address.email);
-  await fillByField(page, "phone", address.phone, { optional: true });
-  await selectByField(page, "country", address.country);
-  await fillByField(page, "address1", address.address1);
+  await fillByField(page, "fname", address.firstName, { trace: fieldTrace });
+  await fillByField(page, "lname", address.lastName, { trace: fieldTrace });
+  await fillByField(page, "email", address.email, { trace: fieldTrace });
+  await fillByField(page, "phone", address.phone, { optional: true, trace: fieldTrace });
+  await selectByField(page, "country", address.country, { trace: fieldTrace });
+  await fillByField(page, "address1", address.address1, { trace: fieldTrace });
   await settleAddressAutocomplete(page);
-  await fillByField(page, "city", address.city);
-  await selectByField(page, "province", address.province);
-  await fillByField(page, "postal", address.postal);
+  await fillByField(page, "city", address.city, { trace: fieldTrace });
+  await selectByField(page, "province", address.province, { trace: fieldTrace });
+  await fillByField(page, "postal", address.postal, { trace: fieldTrace });
   await closeAddressAutocomplete(page);
 
   const sameAsShipping = page.locator("#use_shipping_address").first();
@@ -1752,14 +1784,19 @@ async function fillCheckoutFields(page, args, email) {
     await sameAsShipping.check().catch(() => {});
   }
 
-  await fillByField(page, "billing-fname", address.firstName, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-lname", address.lastName, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-phone", address.phone, { optional: true, onlyVisible: true });
-  await selectByField(page, "billing-country", address.country, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-address1", address.address1, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-city", address.city, { optional: true, onlyVisible: true });
-  await selectByField(page, "billing-province", address.province, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-postal", address.postal, { optional: true, onlyVisible: true });
+  await fillByField(page, "billing-fname", address.firstName, { optional: true, onlyVisible: true, trace: fieldTrace });
+  await fillByField(page, "billing-lname", address.lastName, { optional: true, onlyVisible: true, trace: fieldTrace });
+  await fillByField(page, "billing-phone", address.phone, { optional: true, onlyVisible: true, trace: fieldTrace });
+  await selectByField(page, "billing-country", address.country, { optional: true, onlyVisible: true, trace: fieldTrace });
+  await fillByField(page, "billing-address1", address.address1, { optional: true, onlyVisible: true, trace: fieldTrace });
+  await fillByField(page, "billing-city", address.city, { optional: true, onlyVisible: true, trace: fieldTrace });
+  await selectByField(page, "billing-province", address.province, { optional: true, onlyVisible: true, trace: fieldTrace });
+  await fillByField(page, "billing-postal", address.postal, { optional: true, onlyVisible: true, trace: fieldTrace });
+
+  return {
+    detail: `filled ${fieldTrace.filter((entry) => entry.status === "ok").length} checkout field(s)`,
+    evidence: { fields: fieldTrace },
+  };
 }
 
 async function fillPaymentFields(page, args) {
@@ -2056,24 +2093,81 @@ async function visibleErrorText(page) {
   return messages.join("; ") || "order request not observed";
 }
 
+const FIELD_ACTION_TIMEOUT_MS = 8000;
+
+function fieldTraceEntry(field, action, options = {}) {
+  return {
+    field,
+    action,
+    selector: `[data-next-checkout-field="${field}"]`,
+    required: options.optional !== true,
+    only_visible: options.onlyVisible === true,
+  };
+}
+
+function pushFieldTrace(options, entry) {
+  if (Array.isArray(options.trace)) options.trace.push(entry);
+  return entry;
+}
+
+function checkoutFieldError(message, options, entry) {
+  const error = new Error(message);
+  error.qaDetail = `${entry.action} ${entry.field}: ${entry.status || "failed"}`;
+  error.qaEvidence = { fields: Array.isArray(options.trace) ? options.trace : [entry] };
+  return error;
+}
+
 async function fillByField(page, field, value, options = {}) {
   const locator = page.locator(`[data-next-checkout-field="${field}"]`).first();
-  if (!await fieldUsable(locator, options)) {
+  const entry = await inspectField(locator, field, "fill", options);
+  if (entry.status !== "ready") {
+    pushFieldTrace(options, entry);
     if (options.optional) return false;
-    throw new Error(`Missing checkout field: ${field}`);
+    throw checkoutFieldError(`Checkout field ${field} is not fillable: ${entry.reason}`, options, entry);
   }
-  await locator.click().catch(() => {});
-  await locator.fill(value);
+  try {
+    entry.click_attempted = true;
+    await locator.click({ timeout: FIELD_ACTION_TIMEOUT_MS }).catch((error) => {
+      entry.click_error = error instanceof Error ? error.message : String(error);
+    });
+    entry.fill_attempted = true;
+    await locator.fill(value, { timeout: FIELD_ACTION_TIMEOUT_MS });
+    entry.value_observed = await locator.inputValue({ timeout: FIELD_ACTION_TIMEOUT_MS })
+      .then((observed) => observed === String(value))
+      .catch(() => null);
+    entry.status = entry.value_observed === false ? "value_mismatch" : "ok";
+  } catch (error) {
+    entry.status = "failed";
+    entry.reason = error instanceof Error ? error.message : String(error);
+    pushFieldTrace(options, entry);
+    throw checkoutFieldError(`Checkout field ${field} fill failed: ${entry.reason}`, options, entry);
+  }
+  pushFieldTrace(options, entry);
   return true;
 }
 
 async function selectByField(page, field, value, options = {}) {
   const locator = page.locator(`[data-next-checkout-field="${field}"]`).first();
-  if (!await fieldUsable(locator, options)) {
+  const entry = await inspectField(locator, field, "select", options);
+  if (entry.status !== "ready") {
+    pushFieldTrace(options, entry);
     if (options.optional) return false;
-    throw new Error(`Missing checkout select: ${field}`);
+    throw checkoutFieldError(`Checkout select ${field} is not selectable: ${entry.reason}`, options, entry);
   }
-  await locator.selectOption(value);
+  try {
+    entry.select_attempted = true;
+    await locator.selectOption(value, { timeout: FIELD_ACTION_TIMEOUT_MS });
+    entry.value_observed = await locator.inputValue({ timeout: FIELD_ACTION_TIMEOUT_MS })
+      .then((observed) => observed === String(value))
+      .catch(() => null);
+    entry.status = entry.value_observed === false ? "value_mismatch" : "ok";
+  } catch (error) {
+    entry.status = "failed";
+    entry.reason = error instanceof Error ? error.message : String(error);
+    pushFieldTrace(options, entry);
+    throw checkoutFieldError(`Checkout select ${field} failed: ${entry.reason}`, options, entry);
+  }
+  pushFieldTrace(options, entry);
   return true;
 }
 
@@ -2087,12 +2181,34 @@ async function selectYear(page, value) {
   await locator.selectOption(match.value);
 }
 
-async function fieldUsable(locator, options = {}) {
+async function inspectField(locator, field, action, options = {}) {
+  const entry = fieldTraceEntry(field, action, options);
   const count = await locator.count().catch(() => 0);
-  if (!count) return false;
-  if (options.onlyVisible) return locator.isVisible().catch(() => false);
-  await locator.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
-  return locator.isVisible().catch(() => false);
+  entry.selector_found = count > 0;
+  if (!count) {
+    entry.status = "missing";
+    entry.reason = "selector not found";
+    return entry;
+  }
+  if (!options.onlyVisible) {
+    await locator.waitFor({ state: "visible", timeout: FIELD_ACTION_TIMEOUT_MS }).catch((error) => {
+      entry.wait_visible_error = error instanceof Error ? error.message : String(error);
+    });
+  }
+  entry.visible = await locator.isVisible().catch(() => false);
+  if (!entry.visible) {
+    entry.status = "hidden";
+    entry.reason = options.onlyVisible ? "field is not visible" : entry.wait_visible_error || "field did not become visible";
+    return entry;
+  }
+  entry.enabled = await locator.isEnabled().catch(() => null);
+  if (entry.enabled === false) {
+    entry.status = "disabled";
+    entry.reason = "field is disabled";
+    return entry;
+  }
+  entry.status = "ready";
+  return entry;
 }
 
 async function settleAddressAutocomplete(page) {
@@ -2548,5 +2664,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   checkoutPriceVisibilityAssertion,
   placeholderTextResidueAssertion,
   demoAssetResidueAssertion,
+  observeCartApiActivity,
+  recordCartActivityIfObserved,
+  fillCheckoutFields,
   testOrderAssertion,
 });

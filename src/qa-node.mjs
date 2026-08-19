@@ -556,8 +556,9 @@ function serializeThrownValue(error) {
 }
 
 function resolvePayload(resolved) {
+  const commerceEntryGate = resolveCommerceEntryGate(resolved);
   return {
-    ok: true,
+    ok: commerceEntryGate.status !== "blocked",
     map_id: resolved.mapId,
     ...(resolved.packetPath ? { packet_path: resolved.packetPath } : {}),
     ...(resolved.proxyBase && resolved.proxyBase !== DEFAULT_PROXY_BASE ? { proxy_base: resolved.proxyBase } : {}),
@@ -572,8 +573,86 @@ function resolvePayload(resolved) {
     },
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
+    commerce_entry_gate: commerceEntryGate,
     funnels: resolved.topologies,
   };
+}
+
+function resolveCommerceEntryGate(resolved) {
+  const blockers = [];
+  const ready = [];
+  for (const topology of resolved?.topologies || []) {
+    const selectPages = topology.pages.filter((page) => page.page_type === "select");
+    for (const page of topology.pages.filter((candidate) => candidate.page_type === "checkout" && candidate.template_family === "shop-single-step")) {
+      const packageRefs = packageRefsFromQaPage(page);
+      const hasSelectorEntry = selectPages.some((selectPage) => selectPage.expected_next_url === page.url || selectPage.next_page === page.page_id);
+      const hasForceStrategy = pageHasForcePackageStrategy(page);
+      if (packageRefs.length === 1 || hasSelectorEntry || hasForceStrategy) {
+        ready.push({
+          page_id: page.page_id,
+          status: "ready",
+          strategy: packageRefs.length === 1 ? "single_main_package" : hasSelectorEntry ? "select_or_cart_entry_page" : "force_package_url",
+        });
+        continue;
+      }
+      blockers.push({
+        code: "commerce_entry.shop_single_step_direct_entry",
+        page_id: page.page_id,
+        page_url: page.url,
+        package_ref_count: packageRefs.length,
+        message: `shop-single-step checkout "${page.page_id}" has ${packageRefs.length} package ref(s), but no deterministic direct-entry package strategy.`,
+        allowed_strategies: ["single_main_package", "select_or_cart_entry_page", "force_package_url"],
+      });
+    }
+  }
+  return {
+    status: blockers.length ? "blocked" : "ready",
+    blockers,
+    ready,
+  };
+}
+
+function commerceEntryGateAssertion(gate) {
+  const blocker = gate.blockers[0];
+  return assertion({
+    id: blocker?.code || "commerce_entry.ready",
+    family: "funnel-flow",
+    page: { page_id: blocker?.page_id || "campaign", url: blocker?.page_url },
+    status: blocker ? STATUS.FAIL : STATUS.PASS,
+    severity: blocker ? SEVERITY.BLOCKER : undefined,
+    expected: "direct checkout entry can create or select a main cart before typed-card proof",
+    actual: blocker ? blocker.message : "commerce entry contract ready",
+    evidence: gate,
+  });
+}
+
+function packageRefsFromQaPage(page) {
+  if (!Array.isArray(page?.packages)) return [];
+  return page.packages
+    .map((entry) => entry?.ref_id ?? entry?.package_ref_id ?? entry?.package_id ?? entry?.id)
+    .filter((value) => value !== undefined && value !== null && String(value).trim())
+    .map((value) => String(value));
+}
+
+function pageHasForcePackageStrategy(page) {
+  const hints = page?.sdk_hints && typeof page.sdk_hints === "object" ? page.sdk_hints : {};
+  const metaTags = page?.expected_meta_tags && typeof page.expected_meta_tags === "object" ? page.expected_meta_tags : {};
+  const values = [
+    page?.page_url,
+    page?.url,
+    page?.cart_entry_url,
+    page?.force_package_url,
+    page?.force_package_id,
+    page?.forcePackageId,
+    hints.cart_entry_url,
+    hints.force_package_url,
+    hints.force_package_id,
+    hints.forcePackageId,
+    hints.checkout_entry_strategy,
+    hints.checkoutEntryStrategy,
+    ...Object.values(metaTags),
+  ];
+  return values.some((value) => /force[-_]?package|forcePackageId|cart[-_]?entry|selector[-_]?entry/i.test(String(value || "")));
 }
 
 function updateQaPolicy(args) {
@@ -650,6 +729,11 @@ async function runQa(args) {
   }
 
   const assertions = [polishGateAssertion(polishGate), themeGateAssertion(gate)];
+  const commerceEntryGate = resolveCommerceEntryGate(resolved);
+  if (commerceEntryGate.status === "blocked") {
+    assertions.push(commerceEntryGateAssertion(commerceEntryGate));
+    return finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders: [] });
+  }
   const contractAssertion = templateBrandContractAssertion(resolved);
   if (contractAssertion) assertions.push(contractAssertion);
   for (const topology of resolved.topologies) {
@@ -964,6 +1048,12 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
         order: page.order || 0,
         label: page.label || page.id,
         url: urlById.get(page.id) || null,
+        page_url: page.page_url || null,
+        next_page: page.next_page || page.success_url || null,
+        sdk_hints: page.sdk_hints || undefined,
+        cart_entry_url: page.cart_entry_url || undefined,
+        force_package_url: page.force_package_url || undefined,
+        force_package_id: page.force_package_id || page.forcePackageId || undefined,
         is_entry: Boolean(page.is_entry),
         expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug }),
         expected_next_url: resolveSibling(pageById, urlById, page.next_page || page.success_url, baseUrl, publicRouteSlug),
@@ -1497,5 +1587,7 @@ export const __qaNodeTestHooks = Object.freeze({
   supportedPaymentMethodsFromSpec,
   themeGateSummary,
   templateBrandContractAssertion,
+  resolveCommerceEntryGate,
+  commerceEntryGateAssertion,
   resolveQaInputsFromSite,
 });
