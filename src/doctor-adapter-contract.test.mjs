@@ -61,11 +61,13 @@ function withPreparedBuild(run) {
       "--json",
     ]);
     mkdirSync(resolve(targetRepo, "_data"), { recursive: true });
-    writeJson(resolve(targetRepo, "_data/campaigns.json"), {
-      "runtime-packet-demo": Object.fromEntries([
+    const campaignEntry = Object.fromEntries([
         "store_name", "store_url", "store_terms", "store_privacy", "store_contact",
         "store_returns", "store_shipping", "store_phone", "store_phone_tel",
-      ].map((field) => [field, spec.campaign[field]])),
+      ].map((field) => [field, spec.campaign[field]]));
+    campaignEntry.sdk_version = spec.runtime?.sdk_version || spec.global_config?.sdk_version;
+    writeJson(resolve(targetRepo, "_data/campaigns.json"), {
+      "runtime-packet-demo": campaignEntry,
     });
 
     return run({

@@ -84,6 +84,7 @@ function fixture({ campaigns = "matching", scaffolded = true } = {}) {
       "store_name", "store_url", "store_terms", "store_privacy", "store_contact",
       "store_returns", "store_shipping", "store_phone", "store_phone_tel",
     ].map((field) => [field, spec.campaign[field]]));
+    entry.sdk_version = spec.runtime?.sdk_version || spec.global_config?.sdk_version;
     if (campaigns === "mismatch") entry.store_url = "https://wrong-merchant.test/";
     mkdirSync(join(targetRepo, "_data"), { recursive: true });
     writeJson(join(targetRepo, "_data/campaigns.json"), { [packet.campaign.public_route_slug]: entry });

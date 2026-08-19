@@ -156,6 +156,10 @@ import {
   evaluatePageKitStoreProfile,
   PAGE_KIT_STORE_PROFILE_SCOPE,
 } from "./page-kit-store-profile.mjs";
+import {
+  evaluatePageKitSdkVersion,
+  PAGE_KIT_SDK_VERSION_SCOPE,
+} from "./page-kit-sdk-version.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -287,7 +291,7 @@ Usage:
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
-  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; staged registry currently accepts Store Profile only
+  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # repo/package/skill freshness preflight
@@ -2019,6 +2023,12 @@ function inferredBuildSidecarPaths(packet, packetPath) {
 
 const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
   {
+    id: PAGE_KIT_SDK_VERSION_SCOPE,
+    evaluate: ({ doctor }) => (Array.isArray(doctor?.derived?.checkpoint_gates)
+      ? doctor.derived.checkpoint_gates.find((gate) => gate?.id === PAGE_KIT_SDK_VERSION_SCOPE) || null
+      : null),
+  },
+  {
     id: PAGE_KIT_STORE_PROFILE_SCOPE,
     evaluate: ({ doctor }) => (Array.isArray(doctor?.derived?.checkpoint_gates)
       ? doctor.derived.checkpoint_gates.find((gate) => gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) || null
@@ -2029,7 +2039,7 @@ const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
-    throw new Error('Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. The staged registry currently accepts registered checkpoint gates only.');
+    throw new Error('Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: page_kit.store_profile, page_kit.sdk_version.');
   }
   return checkpointWaive(args);
 }
@@ -2273,9 +2283,9 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ spec, errors, warnings, ready }) => validateSpecStoreProfile(spec, errors, warnings, ready),
   },
   {
-    id: "page_kit.sdk_version",
+    id: PAGE_KIT_SDK_VERSION_SCOPE,
     phase: "target",
-    run: ({ spec, packet, targetRepo, warnings, ready, buildState }) => validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready, buildState.pageKitCampaignConfig),
+    run: ({ spec, errors, warnings, ready, derived, buildState }) => validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildState),
   },
   {
     id: PAGE_KIT_STORE_PROFILE_SCOPE,
@@ -2783,31 +2793,46 @@ export function isLocalhostDevelopmentOrigin(value) {
   return url.hostname.toLowerCase() === "localhost";
 }
 
-function validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready, campaignConfig = null) {
-  const specSdkVersion = firstNonEmptyString(spec?.global_config?.sdk_version, spec?.runtime?.sdk_version);
-  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  if (!targetRepo || !specSdkVersion || !publicRouteSlug) return;
-  const loaded = campaignConfig || loadPageKitCampaignEntry({ targetRepo, publicRouteSlug });
-  if (loaded.status === "invalid_json" || loaded.status === "root_not_object") {
-    addIssue(warnings, "page_kit.campaigns_json", `Could not parse target _data/campaigns.json to compare SDK version (${loaded.status}).`);
-    return;
-  }
-  if (loaded.status !== "ok") return;
+function validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildState) {
+  const report = buildState?.report || null;
+  const required = stageIsTerminal(report?.stages?.setup?.status)
+    || stageIsTerminal(report?.stages?.assembly?.status)
+    || derived.scaffold_required !== true;
+  const gate = evaluatePageKitSdkVersion({
+    spec,
+    targetLoad: buildState?.pageKitCampaignConfig,
+    waivers: report?.waivers,
+    required,
+  });
+  derived.checkpoint_gates.push(gate);
 
-  const entry = loaded.entry;
-  const targetSdkVersion = entry?.sdk_version;
-  if (!isNonEmptyString(targetSdkVersion)) return;
-
-  if (targetSdkVersion.trim() !== specSdkVersion) {
+  const inertCounts = Object.fromEntries(
+    ["stale", "foreign", "malformed", "expired"].map((kind) => [kind, gate.waiver_assessment?.inert_counts?.[kind] || 0]),
+  );
+  const inertTotal = Object.values(inertCounts).reduce((sum, count) => sum + count, 0);
+  if (inertTotal > 0) {
     addIssue(
       warnings,
-      "page_kit.sdk_version",
-      `Target _data/campaigns.json[${publicRouteSlug}].sdk_version "${targetSdkVersion}" does not match CampaignSpec sdk_version "${specSdkVersion}". Update the campaign entry or record the intentional pin before build/QA.`
+      "page_kit.sdk_version.waiver_inert",
+      `SDK-pin waiver history contains ${inertTotal} inert record(s); stale, foreign, malformed, and expired decisions never satisfy the current checkpoint.`,
+      { counts: inertCounts },
     );
-    return;
   }
 
-  ready.push(`Target campaigns.json SDK version matches CampaignSpec (${specSdkVersion})`);
+  if (gate.status === "blocked") {
+    addIssue(errors, gate.code, gate.reason, { checkpoint_gate: gate });
+    return;
+  }
+  if (gate.status === "waived") {
+    addIssue(warnings, gate.code, `${gate.reason} Waived by ${gate.waiver.waived_by}: ${gate.waiver.reason}`, { checkpoint_gate: gate });
+    ready.push(`SDK-pin checkpoint accepted under named-human exception (${gate.waiver.waived_by}).`);
+    return;
+  }
+  if (gate.status === "not_applicable") {
+    ready.push("SDK-pin checkpoint not applicable before Page Kit scaffold; it becomes mandatory once the target entry exists or setup completes.");
+    return;
+  }
+  ready.push(`Target campaigns.json SDK version matches CampaignSpec (${gate.expected_sdk_version}).`);
 }
 
 function validateTargetStoreProfile(spec, errors, warnings, ready, derived, buildState) {
@@ -5822,21 +5847,21 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     return actions;
   }
   if (result.stage === "doctor-blocked") {
-    const checkpointGate = (result.gates || []).find((gate) => gate.id === PAGE_KIT_STORE_PROFILE_SCOPE && gate.status === "blocked");
-    if (checkpointGate) {
-      push(
-        `checkpoint.${PAGE_KIT_STORE_PROFILE_SCOPE}.repair_target`,
-        "edit",
-        null,
-        checkpointGate.required_actions?.find((action) => action.id === "repair_target")?.description || "Repair the target Store Profile to match the CampaignSpec.",
-        { required: true },
-      );
-      if (checkpointGate.waivable === true) {
+    const checkpointGates = (result.gates || []).filter(
+      (gate) => gate?.status === "blocked" && Object.hasOwn(CHECKPOINT_EVALUATORS, gate?.id || ""),
+    );
+    for (const gate of checkpointGates) {
+      for (const action of gate.required_actions || []) {
+        const suffix = action.id === "waive_checkpoint" ? "waive" : action.id;
+        const command = typeof action.command === "string"
+          ? action.command.replace("--packet <packet>", `--packet ${shellToken(packetPath)}`)
+          : null;
         push(
-          `checkpoint.${PAGE_KIT_STORE_PROFILE_SCOPE}.waive`,
-          "command",
-          `campaigns-os checkpoint waive --packet ${shellToken(packetPath)} --gate ${PAGE_KIT_STORE_PROFILE_SCOPE} --reason \"<reason>\" --waived-by \"<named human>\" --review-condition \"<re-evaluation trigger>\"`,
-          "Record an explicit bounded named-human I-16 exception for this exact checkpoint state.",
+          `checkpoint.${gate.id}.${suffix}`,
+          action.kind,
+          command,
+          action.description,
+          action.id === "waive_checkpoint" ? {} : { required: true },
         );
       }
     }
