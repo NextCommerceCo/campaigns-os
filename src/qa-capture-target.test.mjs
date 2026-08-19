@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { __qaNodeTestHooks } from "./qa-node.mjs";
-import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
+import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
 import { diffAnalyticsParity, normalizeCapture } from "./qa-analytics-parity.mjs";
 import { STATUS } from "./qa-verdict.mjs";
 
@@ -70,8 +70,8 @@ test("capture-target fixture: root-served campaign discards the operator's wrong
 test("capture-target fixture: the captured URL appears verbatim on every analytics-correctness:* assertion, pass and fail alike", () => {
   const url = resolveAnalyticsCaptureTarget({ inputBaseUrl: "https://host.example/wrong-path", publicRouteSlug: "x", routeRoot: "/" }).url;
   for (const capture of [emptyCapture(), firingCapture()]) {
-    const assertions = assessAnalyticsCorrectness(capture, CONTRACT, { url });
-    assert.ok(assertions.length >= 4);
+    const assertions = assessAnalyticsInventory(capture, CONTRACT, { url });
+    assert.ok(assertions.length >= 3);
     for (const a of assertions) {
       assert.ok(a.id.startsWith("analytics-correctness:"), a.id);
       assert.equal(a.url, url, `${a.id} (${a.status}) must carry the captured URL top-level`);
@@ -80,7 +80,7 @@ test("capture-target fixture: the captured URL appears verbatim on every analyti
     // Both pass and fail statuses are represented across the two captures.
   }
   // The no-contract inventory path carries it too.
-  const noContract = assessAnalyticsCorrectness(emptyCapture(), {}, { url });
+  const noContract = assessAnalyticsInventory(emptyCapture(), {}, { url });
   assert.equal(noContract[0].id, "analytics-correctness:no-contract");
   assert.equal(noContract[0].url, url);
   assert.equal(noContract[0].evidence.url, url);

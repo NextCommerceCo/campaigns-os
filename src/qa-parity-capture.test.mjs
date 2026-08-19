@@ -156,6 +156,46 @@ test("scenario topology carries distinct checkout and first-offer URLs", () => {
   assert.notDeepEqual(root[0].pages, v1[0].pages);
 });
 
+test("parity selects the aligned whole-journey capture even when receipt topology is unrecognized", () => {
+  const { parityJourneyAttempt } = __qaParityCaptureTestHooks;
+  const journey = capture();
+  const selected = parityJourneyAttempt({
+    journeyAnalytics: {
+      plannedPlanIds: ["accept"],
+      attempts: [{ planId: "accept", capture: journey }],
+    },
+    receiptAnalytics: {
+      plannedPlanIds: ["accept"],
+      attempts: [{ planId: "accept", receiptRecognized: false }],
+    },
+  }, "accept");
+
+  assert.equal(selected.capture, journey);
+  assert.equal(selected.planId, "accept");
+});
+
+test("parity capture failures expose only a stable code and message", () => {
+  const { parityCaptureFailureAssertion } = __qaParityCaptureTestHooks;
+  const assertion = parityCaptureFailureAssertion(
+    { scenario_id: "fixture-offer", funnel_path: "accept" },
+    {
+      planId: "accept",
+      captureError: {
+        code: "analytics_capture_unreadable",
+        message: "analytics capture could not be read from the settled page",
+        raw: "page.evaluate failed at https://shop.example/receipt/?ref_id=secret",
+      },
+    },
+  );
+
+  assert.equal(assertion.actual, "analytics capture could not be read from the settled page");
+  assert.deepEqual(assertion.evidence, {
+    plan_id: "accept",
+    error_code: "analytics_capture_unreadable",
+  });
+  assert.doesNotMatch(JSON.stringify(assertion), /page\.evaluate|shop\.example|ref_id|secret/);
+});
+
 test("missing dl_purchase blocks the analytics leg", () => {
   const assertions = assessParityCapture({ fixture, scenario, order: order(), capture: capture({ purchase: false }) });
   const purchase = byId(assertions)["parity-capture:fixture-offer:purchase-value"];

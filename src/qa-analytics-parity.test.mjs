@@ -2,14 +2,134 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  attachAnalyticsCapture,
   classifyTagFire,
   diffAnalyticsParity,
+  effectivePurchase,
   extractPurchase,
   normalizeCapture,
 } from "./qa-analytics-parity.mjs";
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 
 const byId = (assertions) => Object.fromEntries(assertions.map((a) => [a.id, a]));
+
+function attributedPage() {
+  let binding = null;
+  let requestListener = null;
+  let current = { document: null, events: [] };
+  const mainFrame = {
+    url: () => current.document?.url || "about:blank",
+    parentFrame: () => null,
+  };
+  const page = {
+    async exposeBinding(_name, callback) { binding = callback; },
+    async addInitScript() {},
+    on(name, callback) { if (name === "request") requestListener = callback; },
+    off() {},
+    mainFrame() { return mainFrame; },
+    url() { return current.document?.url || "about:blank"; },
+    async evaluate() { return current; },
+    async navigate(url, token) {
+      current = { document: { url, token }, events: [] };
+      await binding?.({ frame: mainFrame }, { type: "document", document: current.document });
+      return current.document;
+    },
+    async push(data, layer = "dataLayer") {
+      const entry = { layer, data, document: current.document };
+      current.events.push(entry);
+      await binding?.({ frame: mainFrame }, { type: "event", entry });
+    },
+    async pushFrom(document, data, { frame = mainFrame, layer = "dataLayer" } = {}) {
+      await binding?.({ frame }, { type: "event", entry: { layer, data, document } });
+    },
+    async childDocument(url, token) {
+      const frame = { url: () => url, parentFrame: () => mainFrame };
+      const document = { url, token };
+      await binding?.({ frame }, { type: "document", document });
+      return { frame, document };
+    },
+    request(url, frame = mainFrame) {
+      requestListener?.({
+        url: () => url,
+        frame: () => frame,
+      });
+    },
+  };
+  return page;
+}
+
+test("late checkout events cannot roll back the active receipt document or steal receipt tag fires", async () => {
+  const page = attributedPage();
+  const handle = await attachAnalyticsCapture(page);
+
+  const checkout = await page.navigate("https://shop.example/checkout/?ref_id=checkout-secret", "checkout-doc");
+  await page.push({ event: "dl_begin_checkout" });
+
+  await page.navigate("https://shop.example/receipt/?ref_id=receipt-secret", "receipt-doc");
+  await page.push({ event: "dl_view_item" });
+  await page.pushFrom(checkout, {
+    event: "dl_purchase",
+    ecommerce: { transaction_id: "late-checkout-secret" },
+  });
+  page.request("https://www.facebook.com/tr?id=998877&ev=Purchase&eid=receipt-secret");
+
+  const captures = await handle.collectScopes({ strict: true });
+  assert.deepEqual(captures.currentDocument.document, {
+    route: "https://shop.example/receipt/",
+    generation: 2,
+  });
+  assert.equal(effectivePurchase(captures.currentDocument).via, "meta", "receipt request remains scoped to receipt gen2");
+  assert.ok(!captures.currentDocument.eventNames.includes("dl_purchase"), "late checkout event stays out of receipt correctness");
+  assert.equal(captures.journey.purchaseSignals.dataLayer, true, "journey retains the delayed checkout Purchase");
+  assert.equal(captures.journey.purchaseSignals.meta, true, "journey also retains the receipt Meta fire");
+  assert.doesNotMatch(JSON.stringify(captures.currentDocument.document), /ref_id|secret/);
+  handle.detach();
+});
+
+test("child-frame document and event interleaving cannot activate or satisfy the main receipt document", async () => {
+  const page = attributedPage();
+  const handle = await attachAnalyticsCapture(page);
+
+  await page.navigate("https://shop.example/checkout/", "checkout-doc");
+  await page.navigate("https://shop.example/receipt/?ref_id=receipt-secret", "receipt-doc");
+  const child = await page.childDocument("https://payments.example/frame/?token=secret", "child-doc");
+  await page.pushFrom(child.document, {
+    event: "dl_purchase",
+    ecommerce: { transaction_id: "iframe-secret" },
+  }, { frame: child.frame });
+  page.request("https://www.google-analytics.com/g/collect?tid=G-TEST&en=purchase");
+
+  const captures = await handle.collectScopes({ strict: true });
+  assert.deepEqual(captures.currentDocument.document, {
+    route: "https://shop.example/receipt/",
+    generation: 2,
+  });
+  assert.equal(effectivePurchase(captures.currentDocument).via, "ga4", "main receipt request remains current after iframe traffic");
+  assert.equal(captures.currentDocument.purchaseSignals.dataLayer, false, "iframe dataLayer Purchase cannot satisfy receipt correctness");
+  assert.equal(captures.journey.purchaseSignals.dataLayer, true, "iframe event remains available to whole-journey parity");
+  handle.detach();
+});
+
+test("strict analytics collection propagates an unreadable page instead of fabricating an empty capture", async () => {
+  const page = {
+    async exposeBinding() {},
+    async addInitScript() {},
+    on() {},
+    off() {},
+    async evaluate() { throw new Error("settled receipt page is unreadable"); },
+  };
+  const handle = await attachAnalyticsCapture(page);
+  await assert.rejects(
+    () => handle.collect({ strict: true }),
+    /settled receipt page is unreadable/,
+  );
+
+  // Non-receipt inventory/parity callers retain the established best-effort
+  // behavior; strictness is intentionally selected by typed-order receipt proof.
+  const bestEffort = await handle.collect();
+  assert.equal(bestEffort.purchase.present, false);
+  handle.detach();
+});
 
 test("classifyTagFire identifies provider + id from runtime tag URLs", () => {
   assert.equal(classifyTagFire("https://www.googletagmanager.com/gtm.js?id=GTM-ABC123").kind, "gtm");

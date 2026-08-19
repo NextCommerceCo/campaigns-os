@@ -26,6 +26,7 @@
 // Playwright page the host harness already owns.
 
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { redactUrlQuery } from "./qa-url-privacy.mjs";
 
 // Data layers the SDK and legacy funnels push through. The SDK's GTMAdapter
 // mirrors every `dl_*` event to window.dataLayer AND window.ElevarDataLayer;
@@ -67,7 +68,17 @@ const VALUE_EPSILON = 0.005;
 export function analyticsInitScript(layers = HOOKED_DATA_LAYERS) {
   return `(() => {
     const LAYERS = ${JSON.stringify(layers)};
-    const store = (window.__nextQaAnalytics = window.__nextQaAnalytics || { events: [] });
+    const documentState = {
+      token: (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function")
+        ? globalThis.crypto.randomUUID()
+        : String(Date.now()) + ":" + String(Math.random()),
+      url: String(location.href || ""),
+    };
+    const store = (window.__nextQaAnalytics = { events: [], document: documentState });
+    const emit = (payload) => {
+      try { window.__nextQaAnalyticsEmit && window.__nextQaAnalyticsEmit(payload); } catch (_) {}
+    };
+    emit({ type: "document", document: documentState });
     const clone = (value) => {
       try { return JSON.parse(JSON.stringify(value)); }
       catch (_) {
@@ -82,11 +93,11 @@ export function analyticsInitScript(layers = HOOKED_DATA_LAYERS) {
     const record = (layer, args) => {
       for (const arg of args) {
         if (arg && typeof arg === "object") {
-          const entry = { layer, data: clone(arg) };
+          const entry = { layer, data: clone(arg), document: documentState };
           store.events.push(entry);
           // Mirror to the Node side immediately (exposeBinding survives
           // navigations; this in-page store does not). Fire-and-forget.
-          try { window.__nextQaAnalyticsEmit && window.__nextQaAnalyticsEmit(entry); } catch (_) {}
+          emit({ type: "event", entry });
         }
       }
     };
@@ -122,11 +133,90 @@ export async function attachAnalyticsCapture(page, options = {}) {
   // binding. Best-effort — pages without binding support fall back to the
   // per-document store in collect().
   const accumulatedEvents = [];
+  const documentsByToken = new Map();
+  let mainDocumentGeneration = 0;
+  let auxiliaryDocumentGeneration = 0;
+  let activeMainDocument = null;
+  const safePageUrl = () => {
+    try { return typeof page.url === "function" ? page.url() : null; }
+    catch { return null; }
+  };
+  const isMainFrame = (frame) => {
+    if (!frame) return true;
+    try {
+      const mainFrame = typeof page.mainFrame === "function" ? page.mainFrame() : null;
+      if (mainFrame) return frame === mainFrame;
+      return typeof frame.parentFrame !== "function" || !frame.parentFrame();
+    } catch {
+      return false;
+    }
+  };
+  // Descriptor lookup/creation is deliberately side-effect-free with respect
+  // to the active main document. Late events often arrive from an earlier
+  // execution context; observing their known token must never roll the receipt
+  // pointer backward.
+  const lookupDocument = (raw = {}, { fallbackUrl = null, mainFrame = true, provisional = false } = {}) => {
+    const route = redactUrlQuery(raw?.url ?? fallbackUrl);
+    const token = typeof raw?.token === "string" && raw.token ? raw.token : null;
+    if (token && documentsByToken.has(token)) return documentsByToken.get(token);
+    // A request can arrive just before the init-script binding callback. Fold
+    // the subsequent token into that provisional generation when its route is
+    // identical, rather than inventing two documents for one navigation.
+    if (token && mainFrame && activeMainDocument?.provisional === true && activeMainDocument.route === route) {
+      activeMainDocument.provisional = false;
+      documentsByToken.set(token, activeMainDocument);
+      return activeMainDocument;
+    }
+    const descriptor = {
+      route,
+      generation: mainFrame ? ++mainDocumentGeneration : ++auxiliaryDocumentGeneration,
+      mainFrame,
+      provisional: mainFrame && provisional && !token,
+    };
+    if (token) documentsByToken.set(token, descriptor);
+    return descriptor;
+  };
+  const activateMainDocument = (document) => {
+    if (!document?.mainFrame) return activeMainDocument;
+    if (!activeMainDocument || document.generation > activeMainDocument.generation) {
+      activeMainDocument = document;
+    }
+    return activeMainDocument;
+  };
+  const publicDocument = (document) => document
+    ? { route: document.route || null, generation: document.generation }
+    : null;
+  const attributeEvent = (entry, { fallbackDocument = null, mainFrame = true, fallbackUrl = null } = {}) => {
+    if (!entry || typeof entry !== "object") return null;
+    const document = entry.document
+      ? lookupDocument(entry.document, { mainFrame, fallbackUrl })
+      : fallbackDocument || lookupDocument({}, { mainFrame, fallbackUrl });
+    return { ...entry, document };
+  };
   let bindingAttached = false;
   if (typeof page.exposeBinding === "function") {
     try {
-      await page.exposeBinding("__nextQaAnalyticsEmit", (_source, event) => {
-        if (event && typeof event === "object") accumulatedEvents.push(event);
+      await page.exposeBinding("__nextQaAnalyticsEmit", (source, payload) => {
+        const sourceFrame = source?.frame || null;
+        const mainFrame = isMainFrame(sourceFrame);
+        let sourceUrl = safePageUrl();
+        try {
+          if (sourceFrame && typeof sourceFrame.url === "function") sourceUrl = sourceFrame.url();
+        } catch { /* use page URL */ }
+        if (payload?.type === "document" && payload.document) {
+          const document = lookupDocument(payload.document, { fallbackUrl: sourceUrl, mainFrame });
+          const sourceRoute = redactUrlQuery(sourceUrl);
+          // Only a committed top-level document may advance receipt scope. A
+          // stale callback whose payload route no longer matches the main frame
+          // is registered for journey attribution but is not activated.
+          if (mainFrame && (!sourceRoute || !document.route || sourceRoute === document.route)) {
+            activateMainDocument(document);
+          }
+          return;
+        }
+        const entry = payload?.type === "event" ? payload.entry : payload;
+        const attributed = attributeEvent(entry, { mainFrame, fallbackUrl: sourceUrl });
+        if (attributed) accumulatedEvents.push(attributed);
       });
       bindingAttached = true;
     } catch (_) { /* binding may already exist on a reused page */ }
@@ -135,24 +225,80 @@ export async function attachAnalyticsCapture(page, options = {}) {
   const onRequest = (request) => {
     const url = typeof request.url === "function" ? request.url() : request.url;
     const fire = classifyTagFire(url, extraHosts);
-    if (fire) tagFires.push(fire);
+    if (!fire) return;
+    let documentUrl = safePageUrl();
+    try {
+      let frame = typeof request.frame === "function" ? request.frame() : null;
+      while (frame && typeof frame.parentFrame === "function" && frame.parentFrame()) frame = frame.parentFrame();
+      if (frame && typeof frame.url === "function") documentUrl = frame.url();
+    } catch { /* use the page URL fallback */ }
+    const route = redactUrlQuery(documentUrl);
+    const document = activeMainDocument?.route === route
+      ? activeMainDocument
+      : lookupDocument({}, { fallbackUrl: documentUrl, mainFrame: true, provisional: true });
+    // A tag request can beat the binding notification immediately after a
+    // committed navigation. Reconcile that provisional document only when the
+    // top-frame route agrees with the page's current route.
+    if (route && route === redactUrlQuery(safePageUrl())) activateMainDocument(document);
+    tagFires.push({ ...fire, document });
   };
   page.on("request", onRequest);
+  const readScopes = async ({ strict = false } = {}) => {
+    let snapshot = { events: [], document: null };
+    try {
+      const raw = await page.evaluate(() => ({
+        events: window.__nextQaAnalytics?.events || [],
+        document: window.__nextQaAnalytics?.document || { url: String(location.href || "") },
+      }));
+      snapshot = Array.isArray(raw) ? { events: raw, document: null } : (raw || snapshot);
+    } catch (error) {
+      // Most inventory/parity callers retain the historical best-effort
+      // behavior. Receipt Purchase proof is different: an unreadable settled
+      // terminal must be an explicit capture error, never a fabricated
+      // zero-signal capture that could consume the no-Purchase waiver.
+      if (strict) throw error;
+    }
+    const snapshotDocument = lookupDocument(snapshot.document || {}, {
+      fallbackUrl: safePageUrl(),
+      mainFrame: true,
+    });
+    activateMainDocument(snapshotDocument);
+    const currentDocument = activeMainDocument || snapshotDocument;
+    const snapshotEvents = Array.isArray(snapshot.events)
+      ? snapshot.events.map((entry) => attributeEvent(entry, {
+          fallbackDocument: snapshotDocument,
+          mainFrame: true,
+          fallbackUrl: safePageUrl(),
+        })).filter(Boolean)
+      : [];
+    // Binding events preserve the whole traversal. The current in-page store
+    // is appended as a lossless backfill if a binding callback is still queued;
+    // normalizeCapture is intentionally duplicate-insensitive.
+    const journeyEvents = bindingAttached
+      ? [...accumulatedEvents, ...snapshotEvents]
+      : snapshotEvents;
+    const currentEvents = journeyEvents.filter(
+      (entry) => entry.document?.mainFrame === true
+        && entry.document.generation === currentDocument.generation,
+    );
+    const currentTagFires = tagFires.filter(
+      (fire) => fire.document?.mainFrame === true
+        && fire.document.generation === currentDocument.generation,
+    );
+    return {
+      journey: normalizeCapture({ events: journeyEvents, tagFires }),
+      currentDocument: {
+        ...normalizeCapture({ events: currentEvents, tagFires: currentTagFires }),
+        document: publicDocument(currentDocument),
+      },
+    };
+  };
   return {
     tagFires,
-    async collect() {
-      let events = [];
-      try {
-        events = await page.evaluate(() => (window.__nextQaAnalytics?.events) || []);
-      } catch (_) {
-        events = [];
-      }
-      // The binding stream is authoritative when attached (it saw every
-      // document); the current-document read only backfills non-binding pages.
-      if (bindingAttached && accumulatedEvents.length >= events.length) {
-        events = accumulatedEvents;
-      }
-      return normalizeCapture({ events, tagFires });
+    collectScopes: readScopes,
+    async collect({ strict = false, scope = "journey" } = {}) {
+      const captures = await readScopes({ strict });
+      return scope === "current-document" ? captures.currentDocument : captures.journey;
     },
     detach() {
       try { page.off("request", onRequest); } catch (_) { /* page may be closed */ }

@@ -1,6 +1,11 @@
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
-import { attachAnalyticsCapture, diffAnalyticsParity, normalizeCapture } from "./qa-analytics-parity.mjs";
-import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
+import {
+  analyticsCaptureError,
+  projectAnalyticsCaptureError,
+} from "./qa-analytics-errors.mjs";
+import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-parity.mjs";
+import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
+import { redactUrlQuery } from "./qa-url-privacy.mjs";
 import {
   commonTestOrderPaths,
   fullTestOrderPaths,
@@ -86,6 +91,8 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   if (!checkoutPage?.url) {
     return {
       orders: [],
+      receiptAnalytics: { plannedPlanIds: [], attempts: [] },
+      journeyAnalytics: { plannedPlanIds: [], attempts: [] },
       assertions: [assertion({
         id: "browser-test-order:checkout",
         family: "browser-test-order",
@@ -103,6 +110,14 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   // discover that the operator needs to raise --max-test-orders.
   const plans = testOrderPlans(args["test-order"], topologies, args);
   enforceTestOrderLimit(plans, args);
+  const receiptAnalytics = {
+    plannedPlanIds: plans.map((plan) => planId(plan)),
+    attempts: [],
+  };
+  const journeyAnalytics = {
+    plannedPlanIds: options.captureAnalytics ? plans.map((plan) => planId(plan)) : [],
+    attempts: [],
+  };
 
   const browser = await launchChromium(args);
   const context = await browser.newContext({
@@ -112,7 +127,6 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
 
   const assertions = [];
   const orders = [];
-  const captures = [];
   try {
     for (const plan of plans) {
       // Spec-driven plans name the checkout page that declares their tier or
@@ -120,7 +134,8 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       const pageForPlan = (typeof plan === "object" && plan?.checkout_page?.url) ? plan.checkout_page : checkoutPage;
       const result = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
       orders.push(result.order);
-      if (result.analytics_capture) captures.push(result.analytics_capture);
+      receiptAnalytics.attempts.push(receiptAnalyticsAttempt(plan, result));
+      if (options.captureAnalytics) journeyAnalytics.attempts.push(journeyAnalyticsAttempt(plan, result));
       assertions.push(testOrderAssertion(pageForPlan, plan, result));
       const renderedReceiptAssertion = receiptRenderingAssertion(pageForPlan, planId(plan), result.order);
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
@@ -143,7 +158,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
     await browser.close().catch(() => {});
   }
 
-  return { orders, assertions, ...(options.captureAnalytics ? { captures } : {}) };
+  return { orders, assertions, receiptAnalytics, journeyAnalytics };
 }
 
 // Analytics-parity leg: capture the live dataLayer event stream + GTM/pixel
@@ -223,17 +238,14 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
   }
 }
 
-// Analytics CORRECTNESS leg: capture ONE funnel page and assess it against the
-// declared CampaignSpec `analytics` contract — declared tags/pixels fire,
-// Purchase fires (source-aware). This is the foundation the parity differ sits
-// on; runs whenever a spec carries an `analytics` block (or --analytics-correctness).
+// Analytics CORRECTNESS inventory leg: capture ONE campaign-root page and
+// assess only declared tags/pixels. Purchase is finalized later from the
+// canonical typed-card order's recognized receipt; this root visit is never
+// treated as Purchase authority.
 // `options.target` is the capture target resolved from the campaign's
 // identity (public_route_slug + route_root) in qa-node — packet 01 / INV-2:
 // this leg no longer reads --analytics-candidate or --base-url; the URL it
 // visits is a function of resolved identity, recorded on every assertion.
-// `options.waivers` carries the Assembly Report's recorded `qa waive`
-// decisions (packet 01) so the purchase-fires blocker can downgrade with
-// attribution when a named human accepted it.
 export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, options = {}) {
   const url = trim(options.target?.url) || null;
   const correctnessPage = { page_id: "analytics", url: url || undefined };
@@ -263,7 +275,7 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
   });
   try {
     const capture = await captureAnalyticsForUrl(context, url, args, extraHosts);
-    const assertions = assessAnalyticsCorrectness(capture, contract || {}, { url, waivers: options.waivers });
+    const assertions = assessAnalyticsInventory(capture, contract || {}, { url });
     assertions.unshift(assertion({
       id: "analytics-correctness:capture",
       family: "analytics-correctness",
@@ -271,13 +283,12 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
       status: STATUS.PASS,
       expected: "live dataLayer + tag-fire capture on the candidate page",
       actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`,
-      // Fingerprints only — never publish raw order fields (value/transaction_id)
-      // to the QA portal. Mirrors the parity capture evidence sanitization.
+      // Counts only. Root capture is provider/tag inventory, never Purchase
+      // authority, even if a stray Purchase happens to appear there.
       evidence: {
         url,
         event_count: capture.eventNames.length,
         inventory: Object.fromEntries(Object.entries(capture.inventory).map(([k, v]) => [k, v.length])),
-        purchase_signals: capture.purchaseSignals || {},
       },
     }));
     return assertions;
@@ -1690,6 +1701,86 @@ function withStepTimeout(promise, timeoutMs, label) {
   ]).finally(() => clearTimeout(timer));
 }
 
+async function runWithinAnalyticsDeadline(operation, { deadline, now }) {
+  const remainingMs = deadline - now();
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return { timedOut: true };
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      ),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), remainingMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function collectOrderAnalytics({
+  captureHandle,
+  receiptRecognized,
+  settleMs,
+  deadline,
+  now = () => Date.now(),
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+}) {
+  const result = {};
+  if (!captureHandle) return result;
+
+  let settleError = null;
+  let deadlineConsumed = false;
+  const requestedSettleMs = Math.max(0, Number.isFinite(settleMs) ? settleMs : DEFAULT_SETTLE_TIMEOUT_MS);
+  if (receiptRecognized) {
+    const remainingMs = deadline - now();
+    if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
+      settleError = analyticsCaptureError("settleDeadline");
+      deadlineConsumed = true;
+    } else if (requestedSettleMs > remainingMs) {
+      settleError = analyticsCaptureError("settleDeadline");
+    } else {
+      const settling = await runWithinAnalyticsDeadline(
+        () => wait(requestedSettleMs),
+        { deadline, now },
+      );
+      if (settling.timedOut || now() > deadline) {
+        settleError = analyticsCaptureError("settleDeadline");
+        deadlineConsumed = true;
+      } else if (settling.error) {
+        settleError = analyticsCaptureError("settle");
+      }
+    }
+  }
+
+  const collection = deadlineConsumed
+    ? { timedOut: true }
+    : await runWithinAnalyticsDeadline(async () => (
+      typeof captureHandle.collectScopes === "function"
+        ? captureHandle.collectScopes({ strict: true })
+        : {
+            journey: await captureHandle.collect({ strict: true }),
+            currentDocument: await captureHandle.collect({ strict: true, scope: "current-document" }),
+          }
+    ), { deadline, now });
+  if (collection.timedOut || now() > deadline) {
+    result.journeyCaptureError = analyticsCaptureError("collectionDeadline");
+    if (receiptRecognized && !settleError) {
+      result.receiptCaptureError = analyticsCaptureError("collectionDeadline");
+    }
+  } else if (collection.error) {
+    result.journeyCaptureError = analyticsCaptureError("unreadable");
+    if (receiptRecognized && !settleError) result.receiptCaptureError = analyticsCaptureError("unreadable");
+  } else {
+    result.journeyCapture = collection.value.journey;
+    if (receiptRecognized && !settleError) result.receiptCapture = collection.value.currentDocument;
+  }
+  if (receiptRecognized && settleError) result.receiptCaptureError = settleError;
+  return result;
+}
+
 // Hosted checkout handoff: the platform redirects to <store>/accounts/complete-order/
 // on a different origin. The old page object must not be filled past this point.
 function hostedRedirectInfo(currentUrl, checkoutUrl) {
@@ -1738,25 +1829,48 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
   const ladder = createStepLadder();
   let page = null;
   let analyticsCapture = null;
+  let analyticsAttachError = null;
+  let orderDeadline = null;
   let events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
   const email = testEmail(planArgs);
-  const annotate = (result) => {
-    if (result?.order && normalizedPlan.source) {
-      result.order.plan_id = planId(normalizedPlan);
-      result.order.plan = summarizeTestOrderPlan(normalizedPlan);
+  const finalizeResult = async (result) => {
+    const finalUrl = result?.order?.final_url || null;
+    const receiptRecognized = terminalAtUrl(normalizedPlan.topology_plan, finalUrl)?.kind === "receipt";
+    if (analyticsCapture) {
+      const captures = await collectOrderAnalytics({
+        captureHandle: analyticsCapture,
+        receiptRecognized,
+        settleMs: numberArg(planArgs["analytics-settle"], DEFAULT_SETTLE_TIMEOUT_MS),
+        deadline: orderDeadline ?? Date.now(),
+      });
+      if (captures.journeyCapture) result.analytics_journey_capture = captures.journeyCapture;
+      if (captures.journeyCaptureError) result.analytics_journey_capture_error = captures.journeyCaptureError;
+      if (captures.receiptCapture) result.receipt_analytics_capture = captures.receiptCapture;
+      if (captures.receiptCaptureError) result.receipt_analytics_capture_error = captures.receiptCaptureError;
+    } else if (analyticsAttachError) {
+      result.analytics_journey_capture_error = analyticsAttachError;
+      if (receiptRecognized) result.receipt_analytics_capture_error = analyticsAttachError;
     }
-    return result;
+    return stampTestOrderPlan(result, normalizedPlan);
   };
 
   try {
     page = await context.newPage();
     if (options.captureAnalytics) {
-      analyticsCapture = await attachAnalyticsCapture(page, { extraHosts: analyticsExtraHosts(planArgs) });
+      try {
+        analyticsCapture = await attachAnalyticsCapture(page, { extraHosts: analyticsExtraHosts(planArgs) });
+      } catch {
+        // Analytics instrumentation must never consume the one canonical order
+        // attempt. Continue the order and surface this as an explicit receipt
+        // capture blocker instead of manufacturing a zero-signal capture.
+        analyticsAttachError = analyticsCaptureError("attach");
+      }
     }
     page.setDefaultTimeout(numberArg(planArgs["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
     events = captureCheckoutEvents(page);
     // The outer race is the hard guarantee: whatever hangs inside the path,
     // this returns and the run writes a verdict instead of dying with nothing.
+    orderDeadline = Date.now() + orderTimeoutMs;
     const result = await withStepTimeout(
       executeTestOrderPath({
         page,
@@ -1767,21 +1881,63 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         topologyPlan: normalizedPlan.topology_plan,
         path,
         args: planArgs,
-        deadline: Date.now() + orderTimeoutMs,
+        deadline: orderDeadline,
       }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${planId(normalizedPlan)}`,
     );
-    if (analyticsCapture) result.analytics_capture = await analyticsCapture.collect().catch(() => normalizeCapture());
-    return annotate(result);
+    return await finalizeResult(result);
   } catch (error) {
     const result = failedTestOrderResult({ path, email, error, events, ladder, page });
-    if (analyticsCapture) result.analytics_capture = await analyticsCapture.collect().catch(() => normalizeCapture());
-    return annotate(result);
+    return await finalizeResult(result);
   } finally {
     analyticsCapture?.detach();
     await page?.close().catch(() => {});
   }
+}
+
+function stampTestOrderPlan(result, plan) {
+  if (result?.order) {
+    result.order.plan_id = planId(plan);
+    if (plan?.source) result.order.plan = summarizeTestOrderPlan(plan);
+  }
+  return result;
+}
+
+// Convert the browser runner's private result into the private receipt capture
+// envelope. Receipt recognition delegates exclusively to the topology module's
+// canonical terminal classifier; this layer never guesses from URL text.
+function receiptAnalyticsAttempt(plan, result) {
+  const id = planId(plan);
+  const finalUrl = result?.order?.final_url || null;
+  const topologyPlan = typeof plan === "object" ? plan?.topology_plan : null;
+  const terminal = terminalAtUrl(topologyPlan, finalUrl);
+  const receiptRecognized = terminal?.kind === "receipt";
+  return {
+    planId: id,
+    receiptRecognized,
+    receiptUrl: redactUrlQuery(finalUrl),
+    ...(receiptRecognized && result?.receipt_analytics_capture
+      ? { capture: result.receipt_analytics_capture }
+      : {}),
+    ...(receiptRecognized && result?.receipt_analytics_capture_error
+      ? { captureError: stablePrivateCaptureError(result.receipt_analytics_capture_error) }
+      : {}),
+  };
+}
+
+function journeyAnalyticsAttempt(plan, result) {
+  return {
+    planId: planId(plan),
+    ...(result?.analytics_journey_capture ? { capture: result.analytics_journey_capture } : {}),
+    ...(result?.analytics_journey_capture_error
+      ? { captureError: stablePrivateCaptureError(result.analytics_journey_capture_error) }
+      : {}),
+  };
+}
+
+function stablePrivateCaptureError(value) {
+  return projectAnalyticsCaptureError(value, { fallbackKind: "unreadable" });
 }
 
 async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, topologyPlan, path, args, deadline }) {
@@ -2017,15 +2173,6 @@ function failedTestOrderResult({ path, email, error, events, ladder, page }) {
     },
     events: sanitizedEvents(events),
   };
-}
-
-function redactUrlQuery(value) {
-  try {
-    const url = new URL(String(value));
-    return `${url.origin}${url.pathname}`;
-  } catch {
-    return String(value || "").split("?")[0] || null;
-  }
 }
 
 // Persisted order lines prove that the platform created the order. They do not
@@ -3780,6 +3927,10 @@ export const __qaBrowserTestHooks = Object.freeze({
   TEST_ORDER_STEP_LADDER,
   createStepLadder,
   recordTestOrderTerminalEvidence,
+  collectOrderAnalytics,
+  journeyAnalyticsAttempt,
+  receiptAnalyticsAttempt,
+  stampTestOrderPlan,
   formatStepEvent,
   hostedRedirectInfo,
   redactUrlQuery,

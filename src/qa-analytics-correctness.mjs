@@ -1,8 +1,9 @@
 // Analytics CORRECTNESS assessment (single funnel) — the foundation layer the
 // migration parity differ sits on top of. Where parity asks "does candidate
-// match baseline?", correctness asks "does this funnel fire what its declared
-// analytics contract says it should?" — so a funnel can be validated on its own,
-// before any migration, and a differ isn't passing two identically-broken funnels.
+// match baseline?", correctness has two deliberately separate authorities:
+// campaign-root inventory proves declared providers/tags are present, while
+// receipt evidence from the canonical typed-card order proves Purchase. A
+// campaign-root visit cannot prove (or disprove) a receipt-only event.
 //
 // Driven by the CampaignSpec `analytics` block (campaign-spec AnalyticsContract).
 // When no block is declared the assessment can't know the expected container/
@@ -11,12 +12,13 @@
 // emits the block, real specs won't carry one — so the no-contract path is the
 // common case today and must stay non-blocking.)
 //
-// Source-aware by construction: it keys on OUTBOUND pixel fires (the network
-// truth), via effectivePurchase + the capture inventory, so a campaign that
-// blocks the SDK dl_* event and fires the pixel manually still passes.
+// Receipt proof is source-aware by construction: it keys on OUTBOUND pixel
+// fires (the network truth), via effectivePurchase, so a campaign that blocks
+// the SDK dl_* event and fires the pixel manually still passes.
 
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { effectivePurchase } from "./qa-analytics-parity.mjs";
+import { redactUrlQuery } from "./qa-url-privacy.mjs";
 
 // Inventory kinds classifyTagFire can recognize directly. Other declared
 // out-of-band vendors (TriplePixel→triplewhale, etc.) can't be auto-detected
@@ -43,11 +45,12 @@ function correctnessAssertion({ id, status, severity, expected, actual, evidence
 }
 
 // The ONLY assertion the QA waiver lane covers today (packet 01, ratified
-// I-9/I-16): a recorded `qa waive` decision for purchase-fires. Returns the
-// waiver record only for a FAILING assertion — a stale waiver on a passing
-// check is inert data, never surfaced.
-function purchaseFiresWaiver(options, fired) {
-  if (fired) return null;
+// I-9/I-16): a recorded `qa waive` decision for purchase-fires. The caller
+// decides eligibility: only a genuine, recognized receipt with no effective
+// Purchase may consume the waiver. Missing/unrecognized paths and capture
+// errors cannot.
+function purchaseFiresWaiver(options, eligible) {
+  if (!eligible) return null;
   const waiver = options?.waivers?.["analytics-correctness:purchase-fires"];
   if (!waiver || typeof waiver !== "object" || Array.isArray(waiver)) return null;
   if (typeof waiver.reason !== "string" || !waiver.reason.trim()) return null;
@@ -63,13 +66,11 @@ function inventoryHas(inventory, kind, id) {
   return id ? ids.includes(String(id)) : ids.length > 0;
 }
 
-// Assess one funnel's capture against its declared analytics contract.
+// Assess the campaign-root capture against its declared analytics inventory.
 // `contract` is the spec's `analytics` block (may be undefined/empty).
-// `options.waivers` is the Assembly Report's recorded `qa waive` decisions
-// (packet 01) — consulted ONLY by the purchase-fires blocker below.
 // `options.url` is the URL the capture actually visited (the resolved capture
 // target) — stamped on every emitted assertion, pass and fail alike.
-export function assessAnalyticsCorrectness(capture = {}, contract = {}, options = {}) {
+export function assessAnalyticsInventory(capture = {}, contract = {}, options = {}) {
   const assertions = [];
   const auditedUrl = (typeof options.url === "string" && options.url.trim()) ? options.url.trim() : null;
   const emit = (fields) => correctnessAssertion({ url: auditedUrl, ...fields });
@@ -86,12 +87,10 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}, options 
       severity: SEVERITY.INFO,
       expected: "a declared CampaignSpec analytics block to validate against",
       actual: "no analytics contract declared — recorded the observed fires, gated nothing",
-      // Fingerprints only — never publish raw container/pixel ids or order
-      // fields (value/transaction_id) to the QA portal.
+      // Counts only — never publish raw container/pixel ids or any Purchase
+      // fields to the QA portal. Root inventory is not Purchase authority.
       evidence: {
         inventory: Object.fromEntries(Object.entries(inventory).map(([k, v]) => [k, v.length])),
-        purchase_signals: capture.purchaseSignals || {},
-        purchase_fired: effectivePurchase(capture).fired,
       },
     }));
     return assertions;
@@ -153,25 +152,111 @@ export function assessAnalyticsCorrectness(capture = {}, contract = {}, options 
     }
   }
 
-  // 4. Purchase fires — source-aware (dataLayer event OR Meta/GA4 pixel).
-  // Packet 01 / ratified I-9: this stays a BLOCKER, with exactly one
-  // named-human waiver lane — a recorded `qa waive` decision downgrades the
-  // failing blocker to WARN and carries the attribution (reason / waived_by /
-  // waived_at) on the assertion, so the verdict shows who accepted it and why.
-  // An unwaived failure still blocks (I-16 negative control).
-  const eff = effectivePurchase(capture);
-  const waiver = purchaseFiresWaiver(options, eff.fired);
-  assertions.push(emit({
-    id: "analytics-correctness:purchase-fires",
-    status: eff.fired ? STATUS.PASS : STATUS.FAIL,
-    severity: waiver ? SEVERITY.WARN : SEVERITY.BLOCKER,
-    ...(waiver ? { waiver } : {}),
-    expected: "a Purchase fires on this page (dl_purchase, or Meta/GA4 pixel if the SDK event is blocked)",
-    actual: eff.fired
-      ? `fired via ${eff.via}`
-      : `no Purchase fire captured (dataLayer, Meta, or GA4)${waiver ? ` — blocker waived by ${waiver.waived_by}${waiver.waived_at ? ` at ${waiver.waived_at}` : ""}: ${waiver.reason}` : ""}`,
-    evidence: { via: eff.via, signals: capture.purchaseSignals || {}, ...(waiver ? { waiver } : {}) },
-  }));
-
   return assertions;
+}
+
+// Finalize the one stable Purchase assertion from the private capture envelope
+// returned by the canonical typed-card browser-order run. This function is
+// intentionally pure and emits only a fixed, sanitized evidence projection;
+// raw captures, event payloads, order identifiers, values, currencies, and URL
+// query strings never cross into the verdict.
+export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
+  const plannedPlanIds = Array.isArray(receiptAnalytics?.plannedPlanIds)
+    ? receiptAnalytics.plannedPlanIds.map(normalizePlanId).filter(Boolean)
+    : [];
+  const attempts = Array.isArray(receiptAnalytics?.attempts) ? receiptAnalytics.attempts : [];
+  const attemptedPlanIds = attempts.map((attempt) => normalizePlanId(attempt?.planId)).filter(Boolean);
+  const receipts = [];
+  const unqualifiedPlanIds = [];
+  const captureErrorPlanIds = [];
+  const noSignalPlanIds = [];
+
+  for (const planId of plannedPlanIds) {
+    const attempt = attempts.find((candidate) => normalizePlanId(candidate?.planId) === planId);
+    if (!attempt) {
+      unqualifiedPlanIds.push(planId);
+      continue;
+    }
+    if (attempt.receiptRecognized !== true) {
+      unqualifiedPlanIds.push(planId);
+      continue;
+    }
+
+    const captureAvailable = !!attempt.capture && typeof attempt.capture === "object";
+    const captureError = !!attempt.captureError || !captureAvailable;
+    if (captureError) captureErrorPlanIds.push(planId);
+    const effective = captureAvailable ? effectivePurchase(attempt.capture) : { fired: false, via: null };
+    const signals = receiptSignals(attempt.capture);
+    if (!captureError && !effective.fired) noSignalPlanIds.push(planId);
+    receipts.push({
+      plan_id: planId,
+      receipt_url: redactUrlQuery(attempt.receiptUrl),
+      purchase_fired: !!effective.fired,
+      via: effective.via || null,
+      signals,
+    });
+  }
+
+  const hasBlockingCaptureError = captureErrorPlanIds.length > 0;
+  const hasNoSignalReceipt = noSignalPlanIds.length > 0;
+  const failed = hasBlockingCaptureError || hasNoSignalReceipt;
+  const needsReview = !plannedPlanIds.length || unqualifiedPlanIds.length > 0;
+  const waiver = purchaseFiresWaiver(options, hasNoSignalReceipt && !hasBlockingCaptureError);
+  const status = failed ? STATUS.FAIL : needsReview ? STATUS.MANUAL_REVIEW : STATUS.PASS;
+  const severity = status === STATUS.FAIL
+    ? (waiver ? SEVERITY.WARN : SEVERITY.BLOCKER)
+    : status === STATUS.MANUAL_REVIEW ? SEVERITY.WARN : undefined;
+  const evidence = {
+    attempted_plan_ids: attemptedPlanIds,
+    receipts,
+    unqualified_plan_ids: unique(unqualifiedPlanIds),
+    capture_error_plan_ids: unique(captureErrorPlanIds),
+  };
+
+  return correctnessAssertion({
+    id: "analytics-correctness:purchase-fires",
+    status,
+    severity,
+    ...(waiver ? { waiver } : {}),
+    expected: "every deterministic receipt-qualified typed-card order emits Purchase via dataLayer, Meta, or GA4.",
+    actual: receiptPurchaseActual({
+      plannedCount: plannedPlanIds.length,
+      receiptCount: receipts.length,
+      firedCount: receipts.filter((receipt) => receipt.purchase_fired).length,
+      unqualifiedCount: unique(unqualifiedPlanIds).length,
+      captureErrorCount: unique(captureErrorPlanIds).length,
+      waiver,
+    }),
+    evidence,
+  });
+}
+
+function normalizePlanId(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function unique(values) {
+  return [...new Set(values)];
+}
+
+function receiptSignals(capture) {
+  const signals = capture?.purchaseSignals || {};
+  return {
+    dataLayer: !!(capture?.purchase?.present || signals.dataLayer),
+    meta: !!signals.meta,
+    ga4: !!signals.ga4,
+  };
+}
+
+function receiptPurchaseActual({ plannedCount, receiptCount, firedCount, unqualifiedCount, captureErrorCount, waiver }) {
+  if (!plannedCount) return "no canonical typed-card browser order was planned; Purchase requires receipt-qualified order evidence";
+  if (captureErrorCount) return `${captureErrorCount} planned order capture(s) failed; Purchase could not be verified`;
+  if (firedCount < receiptCount) {
+    const suffix = waiver
+      ? ` — blocker waived by ${waiver.waived_by}${waiver.waived_at ? ` at ${waiver.waived_at}` : ""}: ${waiver.reason}`
+      : "";
+    return `${receiptCount - firedCount} receipt-qualified order(s) emitted no Purchase via dataLayer, Meta, or GA4${suffix}`;
+  }
+  if (unqualifiedCount) return `${unqualifiedCount} of ${plannedCount} planned order(s) did not reach a recognized receipt`;
+  return `${firedCount} of ${plannedCount} receipt-qualified order(s) emitted Purchase`;
 }

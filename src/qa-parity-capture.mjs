@@ -2,7 +2,8 @@
 // browser dependency: saved order/capture evidence can be replayed for
 // regression tests and negative controls without touching a live campaign.
 
-import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
+import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
+import { projectAnalyticsCaptureError } from "./qa-analytics-errors.mjs";
 import {
   diffAnalyticsParity,
   effectivePurchase,
@@ -272,7 +273,7 @@ export function assessParityCapture({ fixture, scenario, order, capture, baselin
     }));
   }
 
-  const correctness = assessAnalyticsCorrectness(
+  const correctness = assessAnalyticsInventory(
     candidate,
     fixture.analytics_contract || {},
   ).map((assertion) => ({ ...assertion, family: "parity-capture" }));
@@ -347,6 +348,31 @@ export function resolveParityScenario(fixture, scenarioId) {
   return matches[0];
 }
 
+function parityJourneyAttempt(orderResult, expectedPlanId = null) {
+  const attempts = Array.isArray(orderResult?.journeyAnalytics?.attempts)
+    ? orderResult.journeyAnalytics.attempts
+    : [];
+  const normalized = expectedPlanId == null ? null : String(expectedPlanId);
+  return attempts.find((attempt) => String(attempt?.planId || "") === normalized)
+    || attempts[0]
+    || null;
+}
+
+function parityCaptureFailureAssertion(scenario, attempt) {
+  const error = projectAnalyticsCaptureError(attempt?.captureError);
+  return parityAssertion({
+    id: `parity-capture:${scenario.scenario_id}:analytics-capture`,
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    expected: "analytics capture from the canonical typed-card traversal",
+    actual: error?.message || "capture evidence missing",
+    evidence: {
+      plan_id: attempt?.planId || scenario.funnel_path || null,
+      ...(error ? { error_code: error.code } : {}),
+    },
+  });
+}
+
 // Thin live driver: use the existing typed-card traversal/readback while the
 // shared analytics hooks observe the candidate funnel; capture an optional
 // baseline URL through the same browser helper.
@@ -370,21 +396,34 @@ export async function runParityCapture({ fixture, scenarioId, args = {} }) {
   const operatorBaseline = args.baseline || args["analytics-baseline"] || null;
   const baselineUrl = operatorBaseline || fixture.baseline_url || null;
   const baselineArgs = baselineCaptureArgs(driverArgs, { baselineUrl, operatorBaseline, candidateBaseUrl: baseUrl });
+  const candidateAttempt = parityJourneyAttempt(
+    orderResult,
+    order?.plan_id || scenario.funnel_path || orderResult.journeyAnalytics?.plannedPlanIds?.[0],
+  );
+  const candidateCapture = candidateAttempt?.capture || null;
   const captures = {
-    candidate: orderResult.captures?.[0] || normalizeCapture(),
+    ...(candidateCapture ? { candidate: candidateCapture } : {}),
     ...(baselineUrl ? await captureAnalyticsForUrls({ baseline: baselineUrl }, baselineArgs) : {}),
   };
-  const assertions = [
-    ...orderResult.assertions,
-    ...assessParityCapture({
+  const captureAssertions = candidateCapture
+    ? assessParityCapture({
       fixture,
       scenario,
       order,
-      capture: captures.candidate,
+      capture: candidateCapture,
       baselineCapture: captures.baseline || null,
-    }),
+    })
+    : [parityCaptureFailureAssertion(scenario, candidateAttempt)];
+  const assertions = [
+    ...orderResult.assertions,
+    ...captureAssertions,
   ];
   return { assertions, orders: orderResult.orders, captures };
 }
 
-export const __qaParityCaptureTestHooks = Object.freeze({ scenarioTopology, baselineCaptureArgs });
+export const __qaParityCaptureTestHooks = Object.freeze({
+  scenarioTopology,
+  baselineCaptureArgs,
+  parityJourneyAttempt,
+  parityCaptureFailureAssertion,
+});

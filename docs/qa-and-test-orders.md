@@ -207,6 +207,38 @@ This is enforced by `scripts/check-cart-readiness-contract.mjs` (part of
 `npm run check`), which fails if QA source reaches for `cartLines`. Relax or
 retire that guard once #36 ships and `cartLines` is populated.
 
+## Analytics correctness (inventory, then receipt Purchase)
+
+Analytics correctness has two deliberately separate evidence phases in one QA
+run:
+
+1. The campaign-root visit inventories declared providers, containers, pixels,
+   and other observable tags. It does not prove or disprove Purchase, even if a
+   stray Purchase-shaped event appears there.
+2. The existing canonical typed-card order run supplies Purchase evidence. For
+   each planned order, the topology classifier must recognize the final URL as
+   that plan's receipt, then the runner waits the full `--analytics-settle`
+   window (default `5000` ms) within the order deadline and assesses only events
+   and tag fires emitted by that final receipt document. It does not replay the
+   browser path or place a second order.
+
+A receipt qualifies when it emits Purchase through the dataLayer, outbound Meta
+Purchase, or outbound GA4 Purchase. Purchase on checkout or an upsell cannot
+satisfy a silent receipt; the whole checkout-to-receipt capture remains separate
+and is used only by migration parity. Every planned receipt-qualified order must
+emit an effective Purchase for a pass.
+
+- A missing attempt or topology-unrecognized final page is
+  `MANUAL_REVIEW`/`WARN`.
+- A recognized receipt with no effective Purchase is `FAIL`/`BLOCKER`.
+- A capture, unreadable-page, or settle-deadline error on a recognized receipt
+  is an explicit, non-waivable `FAIL`/`BLOCKER`; it is never normalized to a
+  zero-signal capture.
+- The `analytics-correctness:purchase-fires` waiver applies only to a genuine
+  recognized-receipt/no-signal failure. It is inert for passes, manual-review
+  paths, and capture/settle errors.
+- Analytics-off and legacy API-only order paths emit no receipt Purchase proof.
+
 ## Analytics parity (dataLayer / GTM)
 
 The analytics-parity leg proves the live **dataLayer event stream + GTM/pixel
@@ -221,15 +253,21 @@ It is opt-in. Supply a **baseline** (the legacy live funnel) and a **candidate**
 npm run campaigns-os -- qa run \
   --packet campaign-runtime.build.json \
   --base-url https://preview.example.com/campaign/thank-you/ \
+  --analytics-candidate https://preview.example.com/campaign/thank-you/ \
   --analytics-baseline https://legacy.example.com/campaign/thank-you/
 ```
+
+This receipt-to-receipt parity example names `--analytics-candidate`
+explicitly. When that flag is omitted, the candidate is the campaign identity's
+composed root (`public_route_slug` plus `route_root`), not the raw
+`--base-url` value.
 
 | Flag | Meaning |
 |---|---|
 | `--analytics-baseline <url>` | Legacy funnel URL to capture as the parity baseline (enables the leg) |
-| `--analytics-candidate <url>` | Migrated URL to capture; defaults to `--base-url` |
+| `--analytics-candidate <url>` | Migrated URL to capture; defaults to the identity-composed campaign root |
 | `--analytics-hosts a,b` | Extra host substrings to treat as analytics tag-fires (Everflow is built in) |
-| `--analytics-settle <ms>` | Wait after load for async tags to fire (default 5000) |
+| `--analytics-settle <ms>` | Wait after analytics page loads and after a recognized typed-order receipt for async tags to fire (default 5000); receipt settling must fit inside the order deadline |
 
 > The analytics legs drive a headless **Playwright** browser (like `--test-order`),
 > so they need the package-owned browser installed (`npm run qa:install-browser`)
