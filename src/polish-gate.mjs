@@ -1,3 +1,5 @@
+import { HIDDEN_EAGER_MEDIA_SCOPE } from "./polish-page-load.mjs";
+
 export const POLISH_GATE_REQUIRED_EVIDENCE = Object.freeze([
   "visual_review",
   "brand_review",
@@ -330,7 +332,7 @@ function commandMentionsBuild(stage, evidence) {
   return commands.some((entry) => /next-campaigns-build|campaigns-os\s+next\s+build/i.test(String(isObject(entry) ? entry.command || entry.name || "" : entry)));
 }
 
-export function evaluatePolishGate({ report, required = false, now = Date.now() } = {}) {
+function evaluateStructuredPolishGate({ report, required = false, now = Date.now() } = {}) {
   if (!isObject(report)) {
     return required
       ? {
@@ -586,5 +588,105 @@ export function evaluatePolishGate({ report, required = false, now = Date.now() 
     performed_by: producer,
     waiver: sourcePackageFreshnessWaiver,
     warnings,
+  };
+}
+
+const CAPTURE_PAGE_LOAD_ACTION = Object.freeze({
+  id: "polish.hidden_eager_media.capture",
+  kind: "command",
+  command: "campaigns-os polish capture --packet <packet> --base-url <url>",
+  description: "Capture package-owned page-load evidence for every mapped route and fixed viewport.",
+});
+
+function mergeRequiredActions(...groups) {
+  const actions = [];
+  const seen = new Set();
+  for (const action of groups.flat()) {
+    if (!isObject(action) || !nonEmptyString(action.id) || seen.has(action.id)) continue;
+    seen.add(action.id);
+    actions.push(action);
+  }
+  return actions;
+}
+
+function ownedCheckpointBlock(hiddenEagerMediaGate) {
+  if (isObject(hiddenEagerMediaGate)
+    && hiddenEagerMediaGate.id === HIDDEN_EAGER_MEDIA_SCOPE
+    && hiddenEagerMediaGate.status === "blocked"
+    && nonEmptyString(hiddenEagerMediaGate.code)
+    && nonEmptyString(hiddenEagerMediaGate.reason)) {
+    return {
+      code: hiddenEagerMediaGate.code,
+      reason: hiddenEagerMediaGate.reason,
+      required_actions: mergeRequiredActions(hiddenEagerMediaGate.required_actions || []),
+    };
+  }
+  return {
+    code: "polish.hidden_eager_media.capture_malformed",
+    reason: "Package-owned page-load evidence is missing or malformed; run polish capture before completing Polish.",
+    required_actions: [CAPTURE_PAGE_LOAD_ACTION],
+  };
+}
+
+// The hidden eager-media checkpoint is a package-owned category of Polish,
+// but its authority depends on the current packet route plan. Callers compute
+// that checkpoint from their one packet/report snapshot and inject it here;
+// this evaluator never self-reads a second, potentially inconsistent snapshot.
+export function evaluatePolishGate({
+  report,
+  required = false,
+  now = Date.now(),
+  hiddenEagerMediaGate = undefined,
+} = {}) {
+  const base = evaluateStructuredPolishGate({ report, required, now });
+  if (!terminalAssembly(report)) return base;
+  if (hiddenEagerMediaGate === undefined && !required) return base;
+
+  const ownedId = HIDDEN_EAGER_MEDIA_SCOPE;
+  const hiddenStatus = hiddenEagerMediaGate?.id === ownedId
+    ? hiddenEagerMediaGate.status
+    : null;
+  if (hiddenStatus !== "pass" && hiddenStatus !== "waived") {
+    const owned = ownedCheckpointBlock(hiddenEagerMediaGate);
+    if (base.status === "blocked") {
+      return {
+        ...base,
+        required_actions: mergeRequiredActions(base.required_actions || [], owned.required_actions),
+        owned_checkpoint_id: ownedId,
+        owned_checkpoint_status: "blocked",
+        owned_checkpoint_only: false,
+      };
+    }
+    return {
+      ...base,
+      status: "blocked",
+      code: owned.code,
+      reason: owned.reason,
+      required_actions: owned.required_actions,
+      owned_checkpoint_id: ownedId,
+      owned_checkpoint_status: "blocked",
+      owned_checkpoint_only: true,
+    };
+  }
+
+  if (hiddenStatus === "waived" && base.status !== "blocked") {
+    const hiddenOnly = base.status === "pass";
+    return {
+      ...base,
+      status: "waived",
+      code: hiddenOnly ? hiddenEagerMediaGate.code : base.code,
+      reason: `${base.reason} ${hiddenEagerMediaGate.reason}`,
+      ...(hiddenOnly && hiddenEagerMediaGate.waiver ? { waiver: hiddenEagerMediaGate.waiver } : {}),
+      owned_checkpoint_id: ownedId,
+      owned_checkpoint_status: "waived",
+      owned_checkpoint_only: hiddenOnly,
+    };
+  }
+
+  return {
+    ...base,
+    owned_checkpoint_id: ownedId,
+    owned_checkpoint_status: hiddenStatus,
+    owned_checkpoint_only: false,
   };
 }

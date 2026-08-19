@@ -139,11 +139,37 @@ const RECORDED_REPAIR_ACTION = Object.freeze({
   description: "Make each reported hidden media element visible, defer it with exact preload=none/metadata, or reduce its aggregate transferred bytes to at most 1,048,576; then recapture.",
 });
 
-function recordedCheckpointActions(gate) {
+const RECORDED_AUTHORITY_REPAIR_ACTION = Object.freeze({
+  id: "polish.hidden_eager_media.repair_authority",
+  kind: "manual",
+  command: null,
+  description: "Repair the packet or Assembly Report campaign identity, build fingerprint, and mapped route plan before capture.",
+});
+
+function recordedCheckpointActions(gate, { authorityMalformed = false } = {}) {
   if (gate?.status !== "blocked") return [];
+  if (authorityMalformed) return [RECORDED_AUTHORITY_REPAIR_ACTION, RECORDED_CAPTURE_ACTION];
   return gate.waivable
     ? [RECORDED_REPAIR_ACTION, RECORDED_CAPTURE_ACTION, RECORDED_WAIVER_ACTION]
     : [RECORDED_CAPTURE_ACTION];
+}
+
+function recordedAuthorityBlock({ packet, report, plan = null, now } = {}) {
+  const malformed = evaluateHiddenEagerMediaCheckpoint({
+    pageLoad: null,
+    buildFingerprint: report?.stages?.assembly?.build_fingerprint,
+    slug: packet?.campaign?.public_route_slug,
+    routeScope: plan?.route_scope || "all",
+    routes: plan?.routes?.map((route) => route.requested_route) || [],
+    viewports: POLISH_CAPTURE_VIEWPORTS.map((viewport) => viewport.key),
+    waivers: Array.isArray(report?.waivers) ? report.waivers : [],
+    ...(now === undefined ? {} : { now }),
+  });
+  return {
+    ...malformed,
+    reason: "The packet or Assembly Report authority is missing, malformed, or inconsistent; repair it before package capture.",
+    required_actions: recordedCheckpointActions(malformed, { authorityMalformed: true }),
+  };
 }
 
 function recordedCheckpointNotApplicable() {
@@ -177,23 +203,19 @@ export function evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report, now
   try {
     plan = planPolishCapture({ packet, baseUrl: "https://polish-capture.invalid" });
   } catch {
-    const malformed = evaluateHiddenEagerMediaCheckpoint({
-      pageLoad: null,
-      buildFingerprint: report?.stages?.assembly?.build_fingerprint,
-      slug: packet?.campaign?.public_route_slug,
-      routeScope: "all",
-      routes: [],
-      viewports: POLISH_CAPTURE_VIEWPORTS.map((viewport) => viewport.key),
-      waivers: Array.isArray(report?.waivers) ? report.waivers : [],
-      ...(now === undefined ? {} : { now }),
-    });
-    return { ...malformed, required_actions: recordedCheckpointActions(malformed) };
+    return recordedAuthorityBlock({ packet, report, now });
+  }
+
+  const packetSlug = nonemptyString(packet?.campaign?.public_route_slug);
+  const reportSlug = nonemptyString(report?.identity?.public_route_slug);
+  if (!packetSlug || packetSlug !== reportSlug || !currentBuildFingerprint(report)) {
+    return recordedAuthorityBlock({ packet, report, plan, now });
   }
 
   const gate = evaluateHiddenEagerMediaCheckpoint({
     pageLoad: report?.stages?.polish?.evidence?.visual_review?.page_load,
     buildFingerprint: report?.stages?.assembly?.build_fingerprint,
-    slug: packet?.campaign?.public_route_slug,
+    slug: packetSlug,
     routeScope: plan.route_scope,
     routes: plan.routes.map((route) => route.requested_route),
     viewports: plan.viewports.map((viewport) => viewport.key),

@@ -170,6 +170,74 @@ test("polish capture orchestrates every route and viewport through the injected 
   assert.equal(result.checkpoint.status, "pass");
 });
 
+test("injected producer-to-gate pass controls preserve the exact threshold and preload or visibility exemptions", async (t) => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const cases = [
+    { name: "hidden media exactly at 1,048,576 bytes", bytes: 1_048_576, preload: "auto", hidden: true },
+    { name: "hidden media with exact preload none", bytes: 2_000_000, preload: "none", hidden: true },
+    { name: "hidden media with exact preload metadata", bytes: 2_000_000, preload: "metadata", hidden: true },
+    { name: "visible autoplay media above threshold", bytes: 2_000_000, preload: "auto", hidden: false },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      const capture = await capturePolishPageLoad({
+        packet,
+        report: completedReport(),
+        baseUrl: "https://shop.example.test",
+        createBrowserAdapter: async () => ({
+          async captureRoute({ url, viewport }) {
+            const mediaUrl = `${url}hero-${viewport.key}.mp4?private=producer-control`;
+            return {
+              finalDocumentUrl: url,
+              responseCollectionStatus: "complete",
+              networkidle: { status: "settled", duration_ms: 12 },
+              mediaElements: [{
+                tag_name: "video",
+                current_src: mediaUrl,
+                src_attribute: null,
+                source_src_attributes: [],
+                preload_attribute: scenario.preload,
+                computed_style: {
+                  display: scenario.hidden ? "none" : "block",
+                  visibility: "visible",
+                },
+                ancestor_styles: [],
+                bounding_box: { width: 640, height: 360 },
+              }],
+              responses: [
+                {
+                  request_id: `document-${viewport.key}`,
+                  url,
+                  resource_type: "Document",
+                  status: 200,
+                  encoded_data_length: 1_024,
+                },
+                {
+                  request_id: `media-${viewport.key}`,
+                  url: mediaUrl,
+                  resource_type: "Media",
+                  status: 200,
+                  encoded_data_length: scenario.bytes,
+                },
+              ],
+            };
+          },
+          async close() {},
+        }),
+      });
+
+      assert.equal(capture.page_load.measurement.status, "complete");
+      assert.deepEqual(capture.page_load.findings, []);
+      assert.equal(capture.checkpoint.status, "pass");
+    });
+  }
+});
+
 test("capture binding permits unrelated report updates and page-load merge preserves the latest report", () => {
   const packet = packetWithPages([{
     page_id: "landing",
@@ -569,4 +637,74 @@ test("recorded hidden eager-media checkpoint is N/A before assembly and fail-clo
   assert.equal(stale.status, "blocked");
   assert.equal(stale.code, "polish.hidden_eager_media.capture_stale");
   assert.equal(stale.waivable, false);
+});
+
+test("recorded hidden eager-media checkpoint rejects a foreign report campaign identity", async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const report = completedReport();
+  const captured = await capturePolishPageLoad({
+    packet,
+    report,
+    baseUrl: "https://shop.example.test",
+    createBrowserAdapter: async () => ({
+      async captureRoute({ url, viewport }) {
+        return {
+          finalDocumentUrl: url,
+          responseCollectionStatus: "complete",
+          networkidle: { status: "settled", duration_ms: 12 },
+          mediaElements: [],
+          responses: [{
+            request_id: `document-${viewport.key}`,
+            url,
+            resource_type: "Document",
+            status: 200,
+            encoded_data_length: 1_024,
+          }],
+        };
+      },
+      async close() {},
+    }),
+  });
+  report.stages.polish.evidence.visual_review.page_load = captured.page_load;
+  report.identity.public_route_slug = "foreign-merchant";
+
+  const gate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
+
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_malformed");
+  assert.equal(gate.waivable, false);
+  assert.deepEqual(
+    gate.required_actions.map((action) => action.id),
+    [
+      "polish.hidden_eager_media.repair_authority",
+      "polish.hidden_eager_media.capture",
+    ],
+  );
+  assert.doesNotMatch(JSON.stringify(gate), /foreign-merchant/);
+});
+
+test("recorded hidden eager-media checkpoint gives packet repair actions for a malformed route plan", () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+  }]);
+  const gate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report: completedReport() });
+
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_malformed");
+  assert.equal(gate.waivable, false);
+  assert.deepEqual(
+    gate.required_actions.map((action) => action.id),
+    [
+      "polish.hidden_eager_media.repair_authority",
+      "polish.hidden_eager_media.capture",
+    ],
+  );
+  assert.match(gate.required_actions[0].description, /repair the packet or assembly report/i);
+  assert.equal(gate.required_actions.some((action) => action.id.endsWith(".waive")), false);
+  assert.equal(gate.required_actions.some((action) => action.id.endsWith(".repair")), false);
 });

@@ -432,6 +432,72 @@ test("polish gate passes current structured polish evidence", () => {
   assert.equal(gate.warnings[0].code, "polish.source_package_material_fingerprint_unavailable");
 });
 
+test("required polish gate fails closed when its owned page-load checkpoint is absent", () => {
+  const gate = evaluatePolishGate({ report: baseReport(validPolish()), required: true });
+
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_malformed");
+  assert.equal(gate.owned_checkpoint_id, "polish.hidden_eager_media");
+  assert.equal(gate.owned_checkpoint_only, true);
+  assert.deepEqual(gate.required_actions.map((action) => action.id), ["polish.hidden_eager_media.capture"]);
+});
+
+test("polish gate composes its authoritative hidden eager-media checkpoint", () => {
+  const report = baseReport(validPolish());
+  const captureAction = {
+    id: "polish.hidden_eager_media.capture",
+    kind: "command",
+    command: "campaigns-os polish capture --packet <packet> --base-url <url>",
+    description: "Capture page-load evidence.",
+  };
+  const blocked = evaluatePolishGate({
+    report,
+    required: true,
+    hiddenEagerMediaGate: {
+      id: "polish.hidden_eager_media",
+      status: "blocked",
+      code: "polish.hidden_eager_media.capture_incomplete",
+      reason: "Page-load capture is incomplete.",
+      required_actions: [captureAction],
+    },
+  });
+  assert.equal(blocked.status, "blocked");
+  assert.equal(blocked.code, "polish.hidden_eager_media.capture_incomplete");
+  assert.equal(blocked.owned_checkpoint_only, true);
+  assert.deepEqual(blocked.required_actions, [captureAction]);
+
+  const waived = evaluatePolishGate({
+    report,
+    required: true,
+    hiddenEagerMediaGate: {
+      id: "polish.hidden_eager_media",
+      status: "waived",
+      code: "polish.hidden_eager_media.waived",
+      reason: "One exact finding is waived.",
+      required_actions: [],
+    },
+  });
+  assert.equal(waived.status, "waived");
+  assert.equal(waived.code, "polish.hidden_eager_media.waived");
+  assert.equal(waived.owned_checkpoint_only, true);
+
+  const pass = evaluatePolishGate({
+    report,
+    required: true,
+    hiddenEagerMediaGate: {
+      id: "polish.hidden_eager_media",
+      status: "pass",
+      code: "polish.hidden_eager_media.pass",
+      reason: "No findings.",
+      required_actions: [],
+    },
+  });
+  assert.equal(pass.status, "pass");
+  assert.equal(pass.code, "polish.evidence_current");
+  assert.equal(pass.owned_checkpoint_id, "polish.hidden_eager_media");
+  assert.equal(pass.owned_checkpoint_only, false);
+});
+
 test("polish gate passes current build and source package fingerprints", () => {
   const report = sourceAwareReport(validPolish({
     source_package_material_fingerprint: SOURCE_PACKAGE_FINGERPRINT,

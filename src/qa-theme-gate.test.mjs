@@ -21,6 +21,8 @@ const {
   deriveTestedUrlsFromAssertions,
   resolvePayload,
   resolveQaInputsFromSite,
+  checkpointGateSummary,
+  hiddenEagerMediaGateAssertion,
   isRoutingMetaTag,
   unsupportedSdkMetaHint,
 } = __qaNodeTestHooks;
@@ -128,6 +130,7 @@ test("qa resolve payload reports resolved page URLs without claiming tested URLs
     checkpointGates: [
       { id: "page_kit.store_profile", status: "pass" },
       { id: "page_kit.sdk_version", status: "pass" },
+      { id: "polish.hidden_eager_media", status: "not_applicable" },
     ],
     themeGate: { status: "pass", code: "theme_gate.applied", reason: "ok" },
     polishGate: { status: "pass", code: "polish.evidence_current", reason: "ok" },
@@ -144,7 +147,78 @@ test("qa resolve payload reports resolved page URLs without claiming tested URLs
   assert.deepEqual(payload.checkpoint_gates.map((gate) => gate.id), [
     "page_kit.store_profile",
     "page_kit.sdk_version",
+    "polish.hidden_eager_media",
   ]);
+});
+
+test("hidden eager-media checkpoint summary and assertion expose only the safe finite projection", () => {
+  const gate = {
+    id: "polish.hidden_eager_media",
+    scope: "polish.hidden_eager_media",
+    status: "blocked",
+    code: "polish.hidden_eager_media",
+    reason: "One hidden media element exceeds the threshold.",
+    waivable: true,
+    subject: {
+      build_fingerprint: `sha256:${"a".repeat(64)}`,
+      campaign_slug: "merchant",
+      route_scope: "all",
+      routes: ["/merchant/landing/?private=route"],
+      viewports: ["desktop", "mobile", "private-viewport"],
+      private_subject: "private-subject-sentinel",
+    },
+    state_fingerprint: `sha256:${"b".repeat(64)}`,
+    state: {
+      findings: [{
+        code: "polish.hidden_eager_media",
+        route: "/merchant/landing/?private=finding",
+        viewport: "desktop",
+        tag_name: "video",
+        element_index: 0,
+        sources: ["https://cdn.example.test/hero.mp4?private=source#fragment"],
+        transferred_bytes: 2_000_000,
+        threshold_bytes: 1_048_576,
+        preload_attribute: "auto",
+        hidden_by: ["display_none"],
+        private_finding: "private-finding-sentinel",
+      }],
+      private_state: "private-state-sentinel",
+    },
+    findings: [],
+    waiver: {
+      scope: "polish.hidden_eager_media",
+      subject: { private: "private-waiver-subject" },
+      state_fingerprint: `sha256:${"b".repeat(64)}`,
+      reason: "Named-human exception",
+      waived_by: "Jordan Lee",
+      waived_at: "2026-08-20T00:00:00.000Z",
+      private_token: "private-waiver-sentinel",
+    },
+    waiver_assessment: { inert_counts: { stale: 1, foreign: 0, malformed: 0, expired: 0 } },
+    required_actions: [{
+      id: "polish.hidden_eager_media.capture",
+      kind: "command",
+      command: "campaigns-os polish capture --packet <packet> --base-url <url>",
+      description: "Capture package-owned page-load evidence for every mapped route and fixed viewport.",
+    }],
+    private_gate: "private-gate-sentinel",
+  };
+
+  const summary = checkpointGateSummary(gate);
+  const projected = JSON.stringify(summary);
+  assert.deepEqual(summary.subject.routes, ["/merchant/landing/"]);
+  assert.deepEqual(summary.subject.viewports, ["desktop", "mobile"]);
+  assert.deepEqual(summary.state.findings[0].sources, ["https://cdn.example.test/hero.mp4"]);
+  assert.deepEqual(summary.findings, summary.state.findings);
+  assert.deepEqual(summary.waiver.subject, summary.subject);
+  assert.doesNotMatch(projected, /private-/);
+
+  const assertion = hiddenEagerMediaGateAssertion(gate);
+  assert.equal(assertion.id, "polish.hidden_eager_media");
+  assert.equal(assertion.family, "polish_gate");
+  assert.equal(assertion.status, "fail");
+  assert.equal(assertion.severity, "blocker");
+  assert.doesNotMatch(JSON.stringify(assertion), /private-/);
 });
 
 test("blocked theme gate maps to a single blocker assertion with reason and required actions", () => {
@@ -360,6 +434,7 @@ test("resolveQaInputsFromSite builds topologies + brand contract from a built _s
     assert.deepEqual(resolved.checkpointGates.map((gate) => [gate.id, gate.status]), [
       ["page_kit.store_profile", "not_applicable"],
       ["page_kit.sdk_version", "not_applicable"],
+      ["polish.hidden_eager_media", "not_applicable"],
     ]);
     assert.equal(resolved.packetPath, null);
     assert.equal(resolved.builtSite.html_count, 3);

@@ -9,6 +9,13 @@ import { evaluateThemeGate } from "./theme-gate.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
+import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
+import { HIDDEN_EAGER_MEDIA_SCOPE } from "./polish-page-load.mjs";
+import {
+  normalizePageLoadRoute,
+  POLISH_PRELOAD_ATTRIBUTES,
+  redactCaptureUrl,
+} from "./polish-capture.mjs";
 import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
@@ -241,7 +248,13 @@ async function resolveQaInputs(args, {
     waive: stringArg(args["theme-waive"]),
     report: checkpointPreflight?.runtimeReport,
   });
-  const polishGate = resolvePolishGate({ packetPath, report: checkpointPreflight?.runtimeReport });
+  const hiddenEagerMediaGate = checkpointPreflight?.checkpointGates
+    ?.find((gate) => gate?.id === HIDDEN_EAGER_MEDIA_SCOPE);
+  const polishGate = resolvePolishGate({
+    packetPath,
+    report: checkpointPreflight?.runtimeReport,
+    hiddenEagerMediaGate,
+  });
   const qaWaivers = resolveQaWaivers({ packetPath, report: checkpointPreflight?.runtimeReport });
   const brandContract = loadBrandContract(templateFamily);
   return {
@@ -324,6 +337,7 @@ function resolvePacketCheckpointPreflight(args, {
       waivers: report?.waivers,
       required: true,
     }),
+    evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
   ];
   const runtimeReport = reportMatchesPacketIdentity(report, packet) ? report : null;
   return {
@@ -392,7 +406,15 @@ function nonPacketSdkVersionGate(slug = "") {
 }
 
 function nonPacketCheckpointGates(slug = "") {
-  return [nonPacketStoreProfileGate(slug), nonPacketSdkVersionGate(slug)];
+  const hiddenGate = evaluateRecordedHiddenEagerMediaCheckpoint();
+  return [
+    nonPacketStoreProfileGate(slug),
+    nonPacketSdkVersionGate(slug),
+    {
+      ...hiddenGate,
+      reason: "Non-packet QA has no Build Packet and Assembly Report pair; recorded page-load evidence is not applicable.",
+    },
+  ];
 }
 
 function resolvedFromBlockedCheckpointPreflight(preflight, args) {
@@ -410,7 +432,13 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
     waive: stringArg(args["theme-waive"]),
     report: preflight.runtimeReport,
   });
-  const polishGate = resolvePolishGate({ packetPath: preflight.packetPath, report: preflight.runtimeReport });
+  const hiddenEagerMediaGate = preflight.checkpointGates
+    .find((gate) => gate?.id === HIDDEN_EAGER_MEDIA_SCOPE);
+  const polishGate = resolvePolishGate({
+    packetPath: preflight.packetPath,
+    report: preflight.runtimeReport,
+    hiddenEagerMediaGate,
+  });
   return {
     themeGate,
     polishGate,
@@ -572,11 +600,15 @@ function loadRuntimeArtifact(packetPath, name) {
   }
 }
 
-function resolvePolishGate({ packetPath, report: reportOverride = undefined }) {
+function resolvePolishGate({
+  packetPath,
+  report: reportOverride = undefined,
+  hiddenEagerMediaGate = undefined,
+}) {
   const report = reportOverride === undefined
     ? loadRuntimeArtifact(packetPath, "assembly-report.json")
     : reportOverride;
-  const gate = evaluatePolishGate({ report, required: true });
+  const gate = evaluatePolishGate({ report, required: true, hiddenEagerMediaGate });
   gate.scope_source = report ? "assembly_report" : "missing_assembly_report";
   return gate;
 }
@@ -806,7 +838,7 @@ function polishBlockedAssertions(polishGate, themeGate) {
     evidence: { blocked_by: polishGate.code },
   });
   return [
-    polishGateAssertion(polishGate),
+    ...(polishGate?.owned_checkpoint_only ? [] : [polishGateAssertion(polishGate)]),
     themeGateAssertion(themeGate),
     ...GATE_SUPPRESSED_FAMILIES
       .filter((family) => family !== "polish_gate")
@@ -825,12 +857,99 @@ function themeBlockedAssertions(themeGate, polishGate) {
     evidence: { blocked_by: themeGate.code },
   });
   return [
-    polishGateAssertion(polishGate),
+    ...(polishGate?.owned_checkpoint_only ? [] : [polishGateAssertion(polishGate)]),
     themeGateAssertion(themeGate),
     ...GATE_SUPPRESSED_FAMILIES
       .filter((family) => family !== "polish_gate")
       .map((family) => skippedByGate(family, `${family}.blocked_by_gate`)),
   ];
+}
+
+const HIDDEN_EAGER_MEDIA_VIEWPORTS = new Set(["desktop", "mobile"]);
+const HIDDEN_EAGER_MEDIA_PRELOAD_ATTRIBUTES = new Set(POLISH_PRELOAD_ATTRIBUTES);
+const HIDDEN_EAGER_MEDIA_HIDDEN_BY = new Set(["display_none", "visibility_hidden"]);
+
+function safeNonnegativeInteger(value) {
+  return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function hiddenEagerMediaSubject(subject) {
+  const fingerprint = stringArg(subject?.build_fingerprint);
+  const slug = stringArg(subject?.campaign_slug);
+  const routeScope = stringArg(subject?.route_scope)?.toLowerCase();
+  const routes = [...new Set((Array.isArray(subject?.routes) ? subject.routes : [])
+    .map(normalizePageLoadRoute)
+    .filter(Boolean))].sort();
+  const viewports = [...new Set((Array.isArray(subject?.viewports) ? subject.viewports : [])
+    .map((viewport) => stringArg(viewport)?.toLowerCase())
+    .filter((viewport) => HIDDEN_EAGER_MEDIA_VIEWPORTS.has(viewport)))].sort();
+  return {
+    build_fingerprint: /^sha256:[a-f0-9]{64}$/.test(fingerprint || "") ? fingerprint : null,
+    campaign_slug: /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(slug || "") ? slug : null,
+    route_scope: routeScope === "all" || routeScope === "selected" ? routeScope : null,
+    routes,
+    viewports,
+  };
+}
+
+function hiddenEagerMediaFinding(finding) {
+  const route = normalizePageLoadRoute(finding?.route);
+  const viewport = stringArg(finding?.viewport)?.toLowerCase();
+  const tagName = stringArg(finding?.tag_name)?.toLowerCase();
+  const preload = stringArg(finding?.preload_attribute)?.toLowerCase();
+  const sources = [...new Set((Array.isArray(finding?.sources) ? finding.sources : [])
+    .map((source) => redactCaptureUrl(source))
+    .filter((source) => typeof source === "string" && /^https?:\/\//.test(source)))].sort();
+  return {
+    code: finding?.code === HIDDEN_EAGER_MEDIA_SCOPE ? HIDDEN_EAGER_MEDIA_SCOPE : null,
+    route,
+    viewport: HIDDEN_EAGER_MEDIA_VIEWPORTS.has(viewport) ? viewport : null,
+    tag_name: tagName === "video" || tagName === "audio" ? tagName : null,
+    element_index: safeNonnegativeInteger(finding?.element_index),
+    sources,
+    transferred_bytes: safeNonnegativeInteger(finding?.transferred_bytes),
+    threshold_bytes: safeNonnegativeInteger(finding?.threshold_bytes),
+    preload_attribute: HIDDEN_EAGER_MEDIA_PRELOAD_ATTRIBUTES.has(preload) ? preload : "other",
+    hidden_by: [...new Set((Array.isArray(finding?.hidden_by) ? finding.hidden_by : [])
+      .filter((kind) => HIDDEN_EAGER_MEDIA_HIDDEN_BY.has(kind)))].sort(),
+  };
+}
+
+function hiddenEagerMediaFindings(gate) {
+  const findings = Array.isArray(gate?.state?.findings)
+    ? gate.state.findings
+    : Array.isArray(gate?.findings)
+      ? gate.findings
+      : [];
+  return findings
+    .filter(isPlainObject)
+    .map(hiddenEagerMediaFinding)
+    .sort((left, right) => String(left.route).localeCompare(String(right.route))
+      || String(left.viewport).localeCompare(String(right.viewport))
+      || (left.element_index ?? -1) - (right.element_index ?? -1));
+}
+
+function hiddenEagerMediaGateAssertion(gate) {
+  const summary = checkpointGateSummary(gate);
+  const page = { page_id: "campaign" };
+  const common = {
+    id: HIDDEN_EAGER_MEDIA_SCOPE,
+    family: "polish_gate",
+    page,
+    expected: "complete package-owned page-load evidence with no hidden eager media above 1,048,576 bytes, or an exact named-human checkpoint waiver",
+    actual: `${summary.code}: ${summary.reason}`,
+    evidence: summary,
+  };
+  if (summary.status === "blocked") {
+    return assertion({ ...common, status: STATUS.FAIL, severity: SEVERITY.BLOCKER });
+  }
+  if (summary.status === "waived") {
+    return assertion({ ...common, status: STATUS.WARN, severity: SEVERITY.WARN, waiver: summary.waiver });
+  }
+  if (summary.status === "not_applicable") {
+    return assertion({ ...common, status: STATUS.SKIPPED });
+  }
+  return assertion({ ...common, status: STATUS.PASS });
 }
 
 function storeProfileGateAssertion(gate) {
@@ -972,6 +1091,7 @@ function sdkVersionGateAssertion(gate) {
 function checkpointGateAssertion(gate) {
   if (gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) return storeProfileGateAssertion(gate);
   if (gate?.id === PAGE_KIT_SDK_VERSION_SCOPE) return sdkVersionGateAssertion(gate);
+  if (gate?.id === HIDDEN_EAGER_MEDIA_SCOPE) return hiddenEagerMediaGateAssertion(gate);
   throw new Error(`QA cannot project unknown checkpoint gate ${JSON.stringify(gate?.id)}.`);
 }
 
@@ -990,7 +1110,7 @@ function checkpointBlockedAssertions(checkpointGates, polishGate, themeGate) {
     evidence: { blocked_by: blockedIds },
   });
   return [
-    polishGateAssertion(polishGate),
+    ...(polishGate?.owned_checkpoint_only ? [] : [polishGateAssertion(polishGate)]),
     themeGateAssertion(themeGate),
     ...checkpointGates.map(checkpointGateAssertion),
     ...GATE_SUPPRESSED_FAMILIES
@@ -1053,10 +1173,13 @@ function checkpointGateHasWarning(gate) {
 }
 
 function checkpointGateSummary(gate) {
-  const subject = {
-    public_route_slug: stringArg(gate?.subject?.public_route_slug) || "",
-    target_path: stringArg(gate?.subject?.target_path) || PAGE_KIT_CAMPAIGNS_REL_PATH,
-  };
+  const hiddenEagerMedia = gate?.id === HIDDEN_EAGER_MEDIA_SCOPE;
+  const subject = hiddenEagerMedia
+    ? hiddenEagerMediaSubject(gate?.subject)
+    : {
+        public_route_slug: stringArg(gate?.subject?.public_route_slug) || "",
+        target_path: stringArg(gate?.subject?.target_path) || PAGE_KIT_CAMPAIGNS_REL_PATH,
+      };
   const waiver = checkpointWaiverSummary(gate?.waiver, subject);
   const waiverAssessment = {
     active: checkpointWaiverSummary(gate?.waiver_assessment?.active, subject),
@@ -1092,6 +1215,14 @@ function checkpointGateSummary(gate) {
     waiver_assessment: waiverAssessment,
     required_actions: requiredActions,
   };
+  if (hiddenEagerMedia) {
+    const findings = hiddenEagerMediaFindings(gate);
+    return {
+      ...summary,
+      state: { findings },
+      findings,
+    };
+  }
   if (gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) {
     return {
       ...summary,
@@ -1447,7 +1578,11 @@ async function runQa(args) {
     });
   }
 
-  const assertions = [...checkpointAssertions, polishGateAssertion(polishGate), themeGateAssertion(gate)];
+  const assertions = [
+    ...checkpointAssertions,
+    ...(polishGate?.owned_checkpoint_only ? [] : [polishGateAssertion(polishGate)]),
+    themeGateAssertion(gate),
+  ];
   const contractAssertion = templateBrandContractAssertion(resolved);
   if (contractAssertion) assertions.push(contractAssertion);
   for (const topology of resolved.topologies) {
@@ -2771,6 +2906,9 @@ export const __qaNodeTestHooks = Object.freeze({
   derivePageUrls,
   deriveTestedUrlsFromAssertions,
   resolvePayload,
+  checkpointGateSummary,
+  hiddenEagerMediaGateAssertion,
+  checkpointBlockedAssertions,
   resolveQaInputsFromSite,
   resolveQaWaivers,
   resolveCampaignRouteRoot,
