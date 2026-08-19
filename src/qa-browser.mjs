@@ -2,6 +2,12 @@ import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { attachAnalyticsCapture, diffAnalyticsParity, normalizeCapture } from "./qa-analytics-parity.mjs";
 import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import {
+  fullTestOrderPaths,
+  remainingActionDisposition,
+  resolveTestOrderTopology,
+  terminalAtUrl,
+} from "./qa-test-order-topology.mjs";
+import {
   demoAssetConfig,
   forbiddenComputedColors,
   normalizeCssColor,
@@ -91,6 +97,12 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
     };
   }
 
+  // Resolve topology and enforce the accidental-flood cap before launching a
+  // browser. Choosing exhaustive proof must never spend browser work only to
+  // discover that the operator needs to raise --max-test-orders.
+  const plans = testOrderPlans(args["test-order"], topologies, args);
+  enforceTestOrderLimit(plans, args);
+
   const browser = await launchChromium(args);
   const context = await browser.newContext({
     viewport: viewportFromArgs(args),
@@ -100,8 +112,6 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   const assertions = [];
   const orders = [];
   const captures = [];
-  const plans = testOrderPlans(args["test-order"], topologies, args);
-  enforceTestOrderLimit(plans, args);
   try {
     for (const plan of plans) {
       // Spec-driven plans name the checkout page that declares their tier or
@@ -1733,7 +1743,17 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
     // The outer race is the hard guarantee: whatever hangs inside the path,
     // this returns and the run writes a verdict instead of dying with nothing.
     const result = await withStepTimeout(
-      executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args: planArgs, deadline: Date.now() + orderTimeoutMs }),
+      executeTestOrderPath({
+        page,
+        events,
+        email,
+        ladder,
+        checkoutPage,
+        topologyPlan: normalizedPlan.topology_plan,
+        path,
+        args: planArgs,
+        deadline: Date.now() + orderTimeoutMs,
+      }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${planId(normalizedPlan)}`,
     );
@@ -1749,7 +1769,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
   }
 }
 
-async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args, deadline }) {
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, topologyPlan, path, args, deadline }) {
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
@@ -1816,6 +1836,17 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   if (!upsellSteps.length) ladder.skip("upsell_action", "path has no upsell steps");
 
   for (let stepIndex = 0; order.ok && stepIndex < upsellSteps.length; stepIndex += 1) {
+    const disposition = remainingActionDisposition(topologyPlan, safePageUrl(page), upsellSteps.slice(stepIndex));
+    if (disposition.stop) {
+      const terminal = disposition.terminal;
+      order.final_url = safePageUrl(page);
+      order.terminal = terminal;
+      ladder.skip(
+        "upsell_action",
+        `recognized ${terminal.kind} terminal reached; skipped remaining planned action(s): ${disposition.remaining_actions.join("-")}`,
+      );
+      break;
+    }
     const step = upsellSteps[stepIndex];
     await ladder.run("upsell_action", async () => {
       const initialLineItems = order.receipt_line_items.slice();
@@ -1861,7 +1892,9 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   }
 
   const finalUrl = safePageUrl(page) || "";
-  if (/receipt|thank/i.test(finalUrl)) {
+  const finalTerminal = terminalAtUrl(topologyPlan, finalUrl);
+  if (finalTerminal?.kind === "receipt" || (!topologyPlan && /receipt|thank/i.test(finalUrl))) {
+    if (finalTerminal) order.terminal = finalTerminal;
     ladder.ok("receipt_reached", redactUrlQuery(finalUrl));
     const renderedReceipt = await receiptRenderingEvidence(page);
     const renderedReceiptAssessment = assessReceiptRendering(order.receipt_line_items.length, renderedReceipt);
@@ -1876,6 +1909,10 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       ladder.fail("receipt_rendered", renderedReceiptAssessment.reason);
       receiptFailures.push(`buyer-visible receipt line items: ${renderedReceiptAssessment.reason}`);
     }
+  } else if (finalTerminal?.kind === "external_handoff") {
+    order.terminal = finalTerminal;
+    ladder.skip("receipt_reached", `path ended at recognized external handoff ${redactUrlQuery(finalUrl)}`);
+    ladder.skip("receipt_rendered", "external handoff does not expose an in-funnel receipt page");
   } else {
     ladder.skip("receipt_reached", `path ended at ${redactUrlQuery(finalUrl) || "(unknown url)"}`);
     ladder.skip("receipt_rendered", "receipt page was not reached");
@@ -3100,11 +3137,17 @@ function testOrderPaths(mode, topologies = []) {
   // is the default sample: a sensible 3-5 shapes for everyday QA. `full` is the
   // explicit opt-in for every accept/decline permutation.
   if (normalized === "common" || normalized === "true") return testOrderCommonPaths(topologies);
-  if (normalized === "full") return ["checkout", ...testOrderPathMatrix(testOrderDepth(topologies))];
+  if (normalized === "full") return fullTestOrderPaths(resolvePrimaryTestOrderTopology(topologies));
   if (normalized === "both") return ["accept", "decline"];
   if (["checkout", "accept", "decline"].includes(normalized)) return [normalized];
   if (/^(accept|decline)(-(accept|decline))+$/.test(normalized)) return [normalized];
   throw new Error(`Unknown --test-order mode: ${mode}`);
+}
+
+function resolvePrimaryTestOrderTopology(topologies = []) {
+  const checkout = findPage(topologies, "checkout");
+  const topology = (topologies || []).find((candidate) => (candidate?.pages || []).includes(checkout)) || { pages: [] };
+  return resolveTestOrderTopology(topology, checkout);
 }
 
 // --- Spec-driven order planning (--test-order tiers) ---
@@ -3129,10 +3172,14 @@ function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
   if (tiersMatch) return specTierPlans(topologies, args, tiersMatch[1] || "checkout", options);
   const selectPackage = stringArg(args["select-package"]);
   const applyCoupon = stringArg(args["apply-coupon"]);
+  const checkoutPage = findPage(topologies, "checkout");
+  const topologyPlan = resolvePrimaryTestOrderTopology(topologies);
   return testOrderPaths(mode, topologies).map((path) => ({
     path,
     select_package: selectPackage,
     apply_coupon: applyCoupon,
+    checkout_page: checkoutPage,
+    topology_plan: topologyPlan,
   }));
 }
 
@@ -3170,10 +3217,11 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
     }
     // Path shapes come from this checkout's own funnel: crossing tier plans
     // with another funnel's upsell depth would plan unwalkable paths.
+    const resolvedTopology = resolveTestOrderTopology(topology, checkoutPage);
     const paths = variant === "common"
       ? testOrderCommonPaths([topology])
       : variant === "full"
-        ? ["checkout", ...testOrderPathMatrix(testOrderDepth([topology]))]
+        ? fullTestOrderPaths(resolvedTopology)
         : ["checkout"];
     // Plans on the primary checkout keep bare ids (single-funnel specs stay
     // byte-identical); other funnels' plans are qualified by page id so the
@@ -3186,6 +3234,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
           select_package: tier.ref,
           apply_coupon: null,
           checkout_page: checkoutPage,
+          topology_plan: resolvedTopology,
           id_qualifier: qualifier,
           source: {
             type: "selector_tier",
@@ -3202,6 +3251,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
         select_package: null,
         apply_coupon: coupon.code,
         checkout_page: checkoutPage,
+        topology_plan: resolvedTopology,
         id_qualifier: qualifier,
         source: {
           type: "declared_coupon",
@@ -3319,7 +3369,7 @@ function enforceTestOrderLimit(plans, args) {
   throw new Error([
     `--test-order ${args["test-order"]} expands to ${plans.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
     `Planned paths: ${preview}${suffix}.`,
-    "This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with a higher --max-test-orders for exhaustive proof.",
+    `This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with --max-test-orders ${plans.length} for this exhaustive proof.`,
   ].join(" "));
 }
 

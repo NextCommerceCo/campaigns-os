@@ -258,6 +258,55 @@ test("test-order 'common' preset = checkout + accept/decline sample, scaled to f
   assert.deepEqual(testOrderPaths(true, topo(1)), ["checkout", "accept", "decline"]);
 });
 
+test("test-order 'full' emits only actual terminal paths for shortcutting branches", () => {
+  const { testOrderPaths } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topology = [{ funnel_id: "shortcut", pages: [
+    { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell-1/") },
+    { page_id: "upsell-1", page_type: "upsell", url: route("upsell-1/"), expected_accept_url: route("upsell-2/"), expected_decline_url: route("upsell-2/") },
+    { page_id: "upsell-2", page_type: "upsell", url: route("upsell-2/"), expected_accept_url: route("receipt/"), expected_decline_url: route("downsell/") },
+    { page_id: "downsell", page_type: "downsell", url: route("downsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+
+  assert.deepEqual(testOrderPaths("full", topology), [
+    "checkout",
+    "decline-decline-decline",
+    "decline-decline-accept",
+    "decline-accept",
+    "accept-decline-decline",
+    "accept-decline-accept",
+    "accept-accept",
+  ]);
+});
+
+test("operator plans carry only the primary checkout's terminal graph for runtime safety", () => {
+  const { testOrderPlans } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const primary = {
+    funnel_id: "primary",
+    pages: [
+      { page_id: "checkout-a", page_type: "checkout", url: route("a/checkout/"), expected_next_url: route("a/upsell/") },
+      { page_id: "upsell-a", page_type: "upsell", url: route("a/upsell/"), expected_accept_url: route("a/receipt/"), expected_decline_url: route("a/receipt/") },
+      { page_id: "receipt-a", page_type: "thankyou", url: route("a/receipt/") },
+    ],
+  };
+  const unrelated = {
+    funnel_id: "unrelated",
+    pages: [
+      { page_id: "checkout-b", page_type: "checkout", url: route("b/checkout/"), expected_next_url: route("b/receipt/") },
+      { page_id: "receipt-b", page_type: "thankyou", url: route("b/receipt/") },
+    ],
+  };
+
+  const plans = testOrderPlans("full", [primary, unrelated], {});
+
+  assert.ok(plans.every((plan) => plan.topology_plan?.topology_id === "primary"));
+  assert.ok(plans.every((plan) => plan.topology_plan.recognized_terminals.every((terminal) => !terminal.url.includes("/b/"))));
+});
+
 test("operator test-order modes plan one order per path carrying the run-global selection/coupon flags", () => {
   const { testOrderPlans, planId } = __qaBrowserTestHooks;
   const topo = [{ pages: [{ page_type: "checkout" }, { page_type: "upsell" }] }];
@@ -306,13 +355,19 @@ test("test-order 'tiers' plans one strict-selection baseline per declared tier p
 
 test("tiers:common and tiers:full cross every declared tier with the path shapes; coupons stay single checkout orders", () => {
   const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
   const topo = [{ pages: [
     {
+      page_id: "checkout",
       page_type: "checkout",
+      url: route("checkout/"),
+      expected_next_url: route("upsell/"),
       packages: [{ ref_id: "1" }, { ref_id: "2" }],
       promo_code_input: { enabled: true, offer_code: "SAVE10" },
     },
-    { page_type: "upsell" },
+    { page_id: "upsell", page_type: "upsell", url: route("upsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
   ] }];
 
   assert.deepEqual(testOrderPlans("tiers:common", topo, {}).map((plan) => planId(plan)), [
@@ -411,6 +466,26 @@ test("tiers:common crosses each funnel's tiers with that funnel's own upsell dep
   ]);
 });
 
+test("tiers:full walks each tier's own funnel graph without over-running shortcut branches", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const checkout = { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell/"), packages: [{ ref_id: "1" }] };
+  const topology = [{ funnel_id: "shortcut-tier", pages: [
+    checkout,
+    { page_id: "upsell", page_type: "upsell", url: route("upsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("downsell/") },
+    { page_id: "downsell", page_type: "downsell", url: route("downsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+
+  assert.deepEqual(testOrderPlans("tiers:full", topology, {}).map((plan) => planId(plan)), [
+    "checkout@tier:1",
+    "decline-decline@tier:1",
+    "decline-accept@tier:1",
+    "accept@tier:1",
+  ]);
+});
+
 test("a non-primary checkout with declarations but no URL cannot be driven — warned, never silently dropped", () => {
   const { testOrderPlans, planId } = __qaBrowserTestHooks;
   const topo = [
@@ -430,10 +505,13 @@ test("a non-primary checkout with declarations but no URL cannot be driven — w
 
 test("the flood guard counts expanded tier plans and previews plan ids", () => {
   const { testOrderPlans, enforceTestOrderLimit } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
   const topo = [{ pages: [
-    { page_type: "checkout", packages: [{ ref_id: "1" }, { ref_id: "2" }, { ref_id: "3" }] },
-    { page_type: "upsell" },
-    { page_type: "upsell" },
+    { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell-1/"), packages: [{ ref_id: "1" }, { ref_id: "2" }, { ref_id: "3" }] },
+    { page_id: "upsell-1", page_type: "upsell", url: route("upsell-1/"), expected_accept_url: route("upsell-2/"), expected_decline_url: route("upsell-2/") },
+    { page_id: "upsell-2", page_type: "upsell", url: route("upsell-2/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
   ] }];
 
   const plans = testOrderPlans("tiers:full", topo, {});
@@ -444,6 +522,27 @@ test("the flood guard counts expanded tier plans and previews plan ids", () => {
   );
   // raising the cap clears the guard — it is a flood guard, not a permission gate
   enforceTestOrderLimit(plans, { "test-order": "tiers:full", "max-test-orders": "15" });
+});
+
+test("a depth-three full matrix keeps the default cap and names the exact explicit raise", () => {
+  const { testOrderPlans, enforceTestOrderLimit } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topology = [{ funnel_id: "depth-three", pages: [
+    { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell-1/") },
+    { page_id: "upsell-1", page_type: "upsell", url: route("upsell-1/"), expected_accept_url: route("upsell-2/"), expected_decline_url: route("upsell-2/") },
+    { page_id: "upsell-2", page_type: "upsell", url: route("upsell-2/"), expected_accept_url: route("upsell-3/"), expected_decline_url: route("upsell-3/") },
+    { page_id: "upsell-3", page_type: "upsell", url: route("upsell-3/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+  const plans = testOrderPlans("full", topology, {});
+
+  assert.equal(plans.length, 9);
+  assert.throws(
+    () => enforceTestOrderLimit(plans, { "test-order": "full" }),
+    /--max-test-orders 9/,
+  );
+  enforceTestOrderLimit(plans, { "test-order": "full", "max-test-orders": "9" });
 });
 
 test("argsForPlan overrides the run-global selection/coupon flags with the plan's per-order values", () => {
