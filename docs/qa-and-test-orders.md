@@ -17,25 +17,26 @@ Resolve reads the packet, loads the local CampaignSpec when available, derives d
 ### Packet-local checkpoint preflight
 
 Packet QA reads one local packet, CampaignSpec, target `_data/campaigns.json`
-entry, and Assembly Report snapshot. It evaluates both registered checkpoints
-from those objects: `page_kit.store_profile` and `page_kit.sdk_version`. The same
-packet/spec snapshot supplies runtime identity and topology, while the same
-Assembly Report supplies checkpoint decisions, theme/polish state, and QA
-waiver history. QA does not re-read those artifacts after the gates. A packet
-without a valid local spec cannot fetch around the missing evidence. Packet QA
-always uses `packet.spec.local_path`; combining `--packet` with `--spec` is
-rejected before either artifact is read.
+entry, and Assembly Report snapshot. It evaluates three registered checkpoints
+from those objects: `page_kit.store_profile`, `page_kit.sdk_version`, and
+`polish.hidden_eager_media`. The same packet/spec snapshot supplies runtime
+identity and topology, while the same Assembly Report supplies checkpoint
+decisions, theme/polish state, package-owned page-load evidence, and QA waiver
+history. QA does not re-read those artifacts after the gates. A packet without
+a valid local spec cannot fetch around the missing evidence. Packet QA always
+uses `packet.spec.local_path`; combining `--packet` with `--spec` is rejected
+before either artifact is read.
 
 Any non-waived checkpoint blocker finalizes a blocked local verdict before HTTP,
-Playwright, analytics capture, or typed-card orders run. Both assertions remain
-visible when the gates disagree, so waiving or correcting one never suppresses
-the other. They use the existing `api-metadata` family with IDs
-`page_kit.store_profile` and `page_kit.sdk_version`.
+Playwright, analytics capture, or typed-card orders run. All checkpoint
+assertions remain visible when gates disagree, so waiving or correcting one
+never suppresses another. Store Profile and SDK use the `api-metadata` family;
+the hidden eager-media assertion uses `polish_gate`.
 
 `qa resolve` remains a diagnostic command: it reports `ok: false` and
-`status: blocked`, prints both gates and their safe repair/waiver projections,
-and suppresses the runtime `qa run --browser --test-order common` suggestion
-until every checkpoint blocker is clear.
+`status: blocked`, prints all three gates and their safe repair/waiver
+projections, and suppresses the runtime `qa run --browser --test-order common`
+suggestion until every checkpoint blocker is clear.
 
 The SDK gate prefers `runtime.sdk_version` and accepts
 `global_config.sdk_version` only as a legacy fallback. Pins must be released,
@@ -43,6 +44,15 @@ canonical `MAJOR.MINOR.PATCH` versions. Equal dual declarations are valid;
 conflicting declarations, missing declarations, prereleases, empty values, and
 non-string values are non-waivable blockers. Once both sides are valid, only an
 exact expected/observed mismatch has a waiver lane.
+
+The hidden eager-media gate reads only the recorded package capture; QA never
+launches `campaigns-os polish capture` or another browser producer. Missing,
+malformed, stale, integrity-invalid, route-mismatched, or incomplete page-load
+evidence is nonwaivable and blocks before runtime. A complete finding for a
+computed-hidden media element strictly over `1,048,576` bytes is waivable only
+for its exact build, slug, route plan, fixed viewports, and finding state. A
+packetless QA run has no packet-owned authority and reports this checkpoint as
+not applicable.
 
 A current exact checkpoint waiver remains attached to that gate's warning and
 lets runtime QA proceed only when every other checkpoint is clear. The QA
@@ -53,7 +63,7 @@ before QA with the relevant gate ID:
 ```bash
 campaigns-os checkpoint waive \
   --packet campaign-runtime.build.json \
-  --gate <page_kit.store_profile|page_kit.sdk_version> \
+  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media> \
   --reason "<why>" \
   --waived-by "<named human>" \
   --review-condition "<specific re-evaluation trigger>"

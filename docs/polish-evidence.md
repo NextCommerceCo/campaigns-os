@@ -8,7 +8,7 @@ below documents existing behavior — if this document and the code disagree, th
 code wins and this file has drifted (a test in `src/polish-gate.test.mjs`
 pins the required-field list and blocker codes to this file).
 
-Two layers must both be satisfied:
+Three layers must all be satisfied:
 
 1. **The stage record** — `stages.polish` on the Assembly Report
    (`.campaign-runtime/assembly-report.json`) with the freshness/identity
@@ -16,6 +16,10 @@ Two layers must both be satisfied:
 2. **The evidence block** — `stages.polish.evidence` (legacy fallback:
    `report.polish.evidence`) with the seven required categories, three of which
    also get semantic content checks.
+3. **Package-owned page-load evidence** —
+   `stages.polish.evidence.visual_review.page_load`, produced only by
+   `campaigns-os polish capture` from the current packet, report, served build,
+   mapped routes, and fixed desktop/mobile viewports.
 
 ## 1. Stage-record requirements
 
@@ -45,7 +49,7 @@ per-field problem line.
 
 | Field | Accepted shape (presence check) |
 |---|---|
-| `visual_review` | **Object** with a `screenshots` array (accepted aliases for the array key: `screenshot_paths`, `paths`, `urls`) containing at least one non-empty string. A bare string, an object without a screenshot array, or an empty array all fail. The gate's shape check accepts a single entry; the `next-campaigns-polish` responsibility bar is desktop **and** mobile captures of the key commerce anchors — record both. |
+| `visual_review` | **Object** with a `screenshots` array (accepted aliases for the array key: `screenshot_paths`, `paths`, `urls`) containing at least one non-empty string, plus package-generated `page_load`. A bare string, an object without a screenshot array, or an empty array all fail. The gate's shape check accepts a single screenshot entry; the `next-campaigns-polish` responsibility bar is desktop **and** mobile captures of the key commerce anchors — record both. Never hand-author `page_load`. |
 | `brand_review` | Non-empty object (semantic checks in §3 apply: `favicon`, `brand_bleed`). |
 | `checkout_review` | Non-empty object (semantic checks in §3 apply: `field_labels`, `bump_compare_price_rule`). |
 | `template_residue_review` | Non-empty object/array/string (semantic check on `starter_favicon` in §3). |
@@ -55,6 +59,57 @@ per-field problem line.
 
 For fields without a stricter rule above, "non-empty" means: array with ≥1
 entry, object with ≥1 key, or non-empty string.
+
+### 2.1 Package-owned page-load evidence
+
+Serve the current build, then run this before marking `stages.polish` complete:
+
+```bash
+campaigns-os polish capture \
+  --packet campaign-runtime.build.json \
+  --base-url https://preview.example.test
+```
+
+The command derives every mapped, non-skipped Page Kit route from the packet
+and captures each at desktop `1440x1200` and mobile `390x844`. It re-reads the
+packet and Assembly Report after the browser pass, refuses attachment if the
+governing build, campaign, route plan, report identity, or existing `page_load`
+changed, and otherwise merges only
+`stages.polish.evidence.visual_review.page_load` onto the latest report. It
+preserves screenshots and every unrelated report field. Incomplete evidence is
+still persisted for diagnosis, returns a nonzero status, and never marks Polish
+complete.
+
+The owned checkpoint is `polish.hidden_eager_media`. A finding requires one
+computed-hidden `video` or `audio` element whose aggregate transferred bytes are
+strictly greater than `1,048,576`. `display:none` or `visibility:hidden` on the
+element or an ancestor counts as hidden. Zero-size geometry is evidence only.
+Exact ASCII-case-insensitive `preload="none"` and `preload="metadata"` defer the
+finding; surrounding whitespace does not. Visible media and media exactly at
+the threshold pass this checkpoint.
+
+Measurement completeness is nonwaivable. Missing/malformed evidence, a stale
+build/campaign/route/viewport binding, final-document route mismatch, integrity
+mismatch, unfinished or failed transfers, cache/service-worker observations,
+unjoinable media sources, and resource-ledger contradictions all block until a
+fresh capture succeeds. URLs in persisted resources and findings drop query,
+fragment, credentials, headers, cookies, bodies, and raw CDP/DOM records.
+
+Only a complete real finding is waivable. The decision binds the current build,
+slug, route scope, routes, fixed viewports, and stable finding state:
+
+```bash
+campaigns-os checkpoint waive \
+  --packet campaign-runtime.build.json \
+  --gate polish.hidden_eager_media \
+  --reason "<why this exact finding is accepted>" \
+  --waived-by "<named human>" \
+  --review-condition "<specific re-evaluation trigger>"
+```
+
+Changing the finding, build, slug, routes, or viewports makes the decision
+inert. An active decision stays visible as `waived` / `ready_with_waivers`; it
+never becomes a clean pass.
 
 ## 3. Semantic content checks
 
@@ -155,6 +210,10 @@ The gate returns the **first** failing code; fix in this order.
 | `polish.source_package_stale` | Source package changed after polish. Re-run polish. |
 | `polish.completed_at_missing` | No completion timestamp on stage or evidence. |
 | `polish.evidence_incomplete` | One or more §2/§3 problems; the `problems` array names each. |
+| `polish.hidden_eager_media.capture_malformed` | Package capture is missing/malformed, or packet/report authority is inconsistent. Repair authority when named, then capture again. |
+| `polish.hidden_eager_media.capture_stale` | Page-load evidence is bound to a different build, campaign, route scope, route set, or viewport set. Recapture. |
+| `polish.hidden_eager_media.capture_incomplete` | One or more required route/viewport measurements failed completeness. Repair the named capture problem and recapture; this is not waivable. |
+| `polish.hidden_eager_media` | Complete evidence contains hidden eager media strictly above the threshold. Repair and recapture, or record an exact named-human checkpoint waiver. |
 | `polish.evidence_current` (pass) / `polish.assembly_source_package_waived` (waived) | Gate satisfied. |
 
 ## 5. Source-package freshness waiver
@@ -178,6 +237,10 @@ were recorded
 deliberately). Waived runs pass with status `waived`, never silently.
 
 ## 6. Complete passing example
+
+The hand-authored portion below is completed first. Run `campaigns-os polish
+capture` to attach the versioned `visual_review.page_load` object; that package
+artifact is intentionally not reproduced as editable JSON here.
 
 ```jsonc
 "stages": {

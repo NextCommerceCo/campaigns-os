@@ -15,7 +15,7 @@
     {
       "id": "next-campaigns-os",
       "name": "Campaigns OS Lifecycle",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "path": "skills/next-campaigns-os/SKILL.md",
       "domain": "campaigns",
       "description": "Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth."
@@ -39,7 +39,7 @@
     {
       "id": "next-campaigns-polish",
       "name": "Campaign Polish",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "path": "skills/next-campaigns-polish/SKILL.md",
       "domain": "campaigns",
       "description": "Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign."

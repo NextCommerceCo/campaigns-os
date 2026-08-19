@@ -101,8 +101,48 @@ campaigns-os checkpoint waive \
 
 Changing either version makes the decision stale. The same named-human,
 bounded-decision, visibility, and privacy rules described for Store Profile
-apply. QA evaluates both registered gates from one packet/spec/target/report
-snapshot; a waiver for one never hides a blocker in the other. See
+apply.
+
+### Polish hidden eager-media checkpoint
+
+The third registered checkpoint is package-owned page-load evidence recorded at
+`stages.polish.evidence.visual_review.page_load`. Serve the current build and
+run this producer before marking Polish complete:
+
+```bash
+campaigns-os polish capture \
+  --packet campaign-runtime.build.json \
+  --base-url https://preview.example.test
+```
+
+The producer derives every mapped, non-skipped route from the packet and
+captures desktop `1440x1200` and mobile `390x844`. It blocks when a
+computed-hidden `video` or `audio` element transfers strictly more than
+`1,048,576` bytes, unless its content attribute is exactly
+ASCII-case-insensitive `none` or `metadata`. Evidence exactly at the byte
+threshold passes. The command owns the versioned capture format and its
+integrity binding; never hand-author or copy `page_load`.
+
+Missing, malformed, stale, incomplete, or contradictory measurement evidence
+is nonwaivable. A complete real finding may receive an exact named-human
+decision:
+
+```bash
+campaigns-os checkpoint waive \
+  --packet campaign-runtime.build.json \
+  --gate polish.hidden_eager_media \
+  --reason "<why this exact finding is accepted>" \
+  --waived-by "<named human>" \
+  --review-condition "<specific re-evaluation trigger>"
+```
+
+The decision binds the build fingerprint, campaign slug, route scope, routes,
+fixed viewports, and stable finding state. Any change makes it inert. Doctor and
+`next` report `ready_with_waivers`; QA reports `ready_with_exceptions` and keeps
+the warning visible.
+
+QA evaluates all three registered gates from one packet/spec/target/report
+snapshot; a waiver for one never hides a blocker in another. See
 [QA checkpoint preflight](./qa-and-test-orders.md#packet-local-checkpoint-preflight)
 for the downstream runtime boundary.
 
@@ -234,10 +274,10 @@ Design Source Package exists. The waiver must remain visible in Campaign
 Readiness Readback and downstream QA evidence; it is not a silent pass.
 In v0, write accepted Source Freshness Waivers directly into `waivers[]`.
 `campaigns-os checkpoint waive` is a staged generic registry and currently
-accepts the registered `page_kit.store_profile` and `page_kit.sdk_version`
-gates; it does not record Source Freshness, polish, theme, or QA decisions.
-Those existing waiver paths remain authoritative until each gate is explicitly
-registered.
+accepts `page_kit.store_profile`, `page_kit.sdk_version`, and
+`polish.hidden_eager_media`. Source Freshness, the broad Polish evidence gate,
+theme, and QA decisions retain their existing artifact or waiver paths until
+each is explicitly registered.
 
 In v0, material source fingerprint fields include contribution identity/kind,
 provenance, presentation intent, Surface Identity catalog and mappings,
@@ -538,7 +578,7 @@ updates assembly report's stages.<name>.status → calls `next` again →
 repeat until stage="done"
 ```
 
-Stage order: `setup → build → polish → deploy → qa`. The picker walks this list and returns the first stage whose recorded status isn't terminal (`completed`, `completed_with_warnings`, `skipped`).
+Stage order: `setup → build → polish → deploy → qa`. The picker walks this list and returns the first stage whose recorded status isn't terminal (`completed`, `completed_with_warnings`, `skipped`). During Polish, run `campaigns-os polish capture` against the served current build before recording a terminal `stages.polish.status`; the producer attaches package-owned `visual_review.page_load` evidence and never marks the stage complete itself.
 
 | Stage | Report key | Owner |
 |---|---|---|
