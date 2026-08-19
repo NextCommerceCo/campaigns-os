@@ -7,11 +7,26 @@ import {
   createPolishCaptureBinding,
   evaluateRecordedHiddenEagerMediaCheckpoint,
   mergePolishPageLoadEvidence,
+  MAX_POLISH_CAPTURE_ROUTES,
   planPolishCapture,
   POLISH_CAPTURE_VIEWPORTS,
 } from "./polish-node.mjs";
 
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
+
+function mainDocumentResponse(url, overrides = {}) {
+  return {
+    request_id: "main-document",
+    url,
+    resource_type: "Document",
+    status: 200,
+    mime_type: "text/html",
+    encoded_data_length: 1_024,
+    is_final_main_document: true,
+    document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+    ...overrides,
+  };
+}
 
 function packetWithPages(pages) {
   return {
@@ -98,6 +113,30 @@ test("polish capture rejects a non-skipped page that is not actually mapped to s
   );
 });
 
+test("polish capture route planning has an exact fixed matrix cap", () => {
+  const pages = Array.from({ length: MAX_POLISH_CAPTURE_ROUTES }, (_, index) => ({
+    page_id: `page-${index}`,
+    path: `page-${index}.html`,
+    page_kit: { public_route: `/merchant/page-${index}/`, spec_route: `page-${index}/` },
+  }));
+  const exact = planPolishCapture({
+    packet: packetWithPages(pages),
+    baseUrl: "https://shop.example.test",
+  });
+  assert.equal(exact.routes.length, MAX_POLISH_CAPTURE_ROUTES);
+  assert.throws(
+    () => planPolishCapture({
+      packet: packetWithPages([...pages, {
+        page_id: "overflow",
+        path: "overflow.html",
+        page_kit: { public_route: "/merchant/overflow/", spec_route: "overflow/" },
+      }]),
+      baseUrl: "https://shop.example.test",
+    }),
+    new RegExp(`at most ${MAX_POLISH_CAPTURE_ROUTES}`),
+  );
+});
+
 test("polish capture orchestrates every route and viewport through the injected browser adapter", async () => {
   const packet = packetWithPages([
     {
@@ -123,13 +162,10 @@ test("polish capture orchestrates every route and viewport through the injected 
           responseCollectionStatus: "complete",
           networkidle: { status: "settled", duration_ms: 250 },
           mediaElements: [],
-          responses: [{
+          responses: [mainDocumentResponse(url, {
             request_id: `${viewport.key}-${calls.length}`,
-            url,
-            resource_type: "Document",
-            status: 200,
             encoded_data_length: 1_000,
-          }],
+          })],
         };
       },
       async close() { closed += 1; },
@@ -210,13 +246,7 @@ test("injected producer-to-gate pass controls preserve the exact threshold and p
                 bounding_box: { width: 640, height: 360 },
               }],
               responses: [
-                {
-                  request_id: `document-${viewport.key}`,
-                  url,
-                  resource_type: "Document",
-                  status: 200,
-                  encoded_data_length: 1_024,
-                },
+                mainDocumentResponse(url, { request_id: `document-${viewport.key}` }),
                 {
                   request_id: `media-${viewport.key}`,
                   url: mediaUrl,
@@ -236,6 +266,105 @@ test("injected producer-to-gate pass controls preserve the exact threshold and p
       assert.equal(capture.checkpoint.status, "pass");
     });
   }
+});
+
+test("producer-to-gate routing accepts HTML 200 and nonwaivably blocks HTTP 404 or 500", async (t) => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  for (const status of [200, 404, 500]) {
+    await t.test(String(status), async () => {
+      const capture = await capturePolishPageLoad({
+        packet,
+        report: completedReport(),
+        baseUrl: "https://shop.example.test",
+        createBrowserAdapter: async () => ({
+          async captureRoute({ url, viewport }) {
+            return {
+              finalDocumentUrl: url,
+              responseCollectionStatus: "complete",
+              networkidle: { status: "settled", duration_ms: 12 },
+              mediaElements: [],
+              responses: [mainDocumentResponse(url, {
+                request_id: `document-${viewport.key}`,
+                status,
+              })],
+            };
+          },
+          async close() {},
+        }),
+      });
+      assert.equal(capture.page_load.measurement.status, status === 200 ? "complete" : "incomplete");
+      assert.equal(capture.checkpoint.status, status === 200 ? "pass" : "blocked");
+      if (status !== 200) {
+        assert.equal(capture.checkpoint.code, "polish.hidden_eager_media.capture_incomplete");
+        assert.equal(capture.page_load.captures.every((cell) => cell.problems.some(
+          (problem) => problem.code === "document_response_error",
+        )), true);
+      }
+    });
+  }
+});
+
+test("producer-to-gate source history retains a hidden at-load transfer after dynamic source replacement", async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const captureFor = (hiddenAtLoad) => capturePolishPageLoad({
+    packet,
+    report: completedReport(),
+    baseUrl: "https://shop.example.test",
+    createBrowserAdapter: async () => ({
+      async captureRoute({ url, viewport }) {
+        const initialSource = `${url}initial-${viewport.key}.mp4?private=initial`;
+        const finalSource = `${url}replacement-${viewport.key}.mp4?private=final`;
+        return {
+          finalDocumentUrl: url,
+          responseCollectionStatus: "complete",
+          networkidle: { status: "settled", duration_ms: 12 },
+          mediaElements: [{
+            tag_name: "video",
+            current_src: finalSource,
+            src_attribute: null,
+            source_src_attributes: [],
+            observed_source_urls: [initialSource, finalSource],
+            preload_attribute: null,
+            computed_style: {
+              display: hiddenAtLoad ? "none" : "block",
+              visibility: "visible",
+            },
+            ancestor_styles: [],
+            bounding_box: hiddenAtLoad ? { width: 0, height: 0 } : { width: 640, height: 360 },
+          }],
+          responses: [
+            mainDocumentResponse(url, { request_id: `document-${viewport.key}` }),
+            {
+              request_id: `initial-media-${viewport.key}`,
+              url: initialSource,
+              resource_type: "Media",
+              status: 200,
+              encoded_data_length: 2_000_000,
+            },
+          ],
+        };
+      },
+      async close() {},
+    }),
+  });
+
+  const hidden = await captureFor(true);
+  assert.equal(hidden.page_load.measurement.status, "complete");
+  assert.equal(hidden.checkpoint.status, "blocked");
+  assert.equal(hidden.page_load.findings.length, 2);
+  assert.equal(hidden.page_load.findings.every((finding) => finding.sources[0].includes("initial-")), true);
+
+  const initiallyVisible = await captureFor(false);
+  assert.equal(initiallyVisible.page_load.measurement.status, "complete");
+  assert.equal(initiallyVisible.checkpoint.status, "pass");
 });
 
 test("capture binding permits unrelated report updates and page-load merge preserves the latest report", () => {
@@ -614,13 +743,7 @@ test("recorded hidden eager-media checkpoint is N/A before assembly and fail-clo
           responseCollectionStatus: "complete",
           networkidle: { status: "settled", duration_ms: 12 },
           mediaElements: [],
-          responses: [{
-            request_id: `document-${viewport.key}`,
-            url,
-            resource_type: "Document",
-            status: 200,
-            encoded_data_length: 1_024,
-          }],
+          responses: [mainDocumentResponse(url, { request_id: `document-${viewport.key}` })],
         };
       },
       async close() {},
@@ -657,13 +780,7 @@ test("recorded hidden eager-media checkpoint rejects a foreign report campaign i
           responseCollectionStatus: "complete",
           networkidle: { status: "settled", duration_ms: 12 },
           mediaElements: [],
-          responses: [{
-            request_id: `document-${viewport.key}`,
-            url,
-            resource_type: "Document",
-            status: 200,
-            encoded_data_length: 1_024,
-          }],
+          responses: [mainDocumentResponse(url, { request_id: `document-${viewport.key}` })],
         };
       },
       async close() {},

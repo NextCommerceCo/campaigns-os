@@ -16,6 +16,20 @@ import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
 const EXAMPLES = new URL("../examples/", import.meta.url);
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 
+function mainDocumentResponse(url, viewport, overrides = {}) {
+  return {
+    request_id: `document-${viewport.key}`,
+    url,
+    resource_type: "Document",
+    status: 200,
+    mime_type: "text/html",
+    encoded_data_length: 2_048,
+    is_final_main_document: true,
+    document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+    ...overrides,
+  };
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -68,13 +82,7 @@ function successfulAdapter() {
         responseCollectionStatus: "complete",
         networkidle: { status: "settled", duration_ms: 25 },
         mediaElements: [],
-        responses: [{
-          request_id: `document-${viewport.key}`,
-          url,
-          resource_type: "Document",
-          status: 200,
-          encoded_data_length: 2_048,
-        }],
+        responses: [mainDocumentResponse(url, viewport)],
       };
     },
     async close() {},
@@ -100,13 +108,7 @@ function blockingAdapter() {
           bounding_box: { width: 0, height: 0 },
         }],
         responses: [
-          {
-            request_id: `document-${viewport.key}`,
-            url,
-            resource_type: "Document",
-            status: 200,
-            encoded_data_length: 2_048,
-          },
+          mainDocumentResponse(url, viewport),
           {
             request_id: `media-${viewport.key}`,
             url: mediaUrl,
@@ -182,6 +184,82 @@ test("polish capture supports an explicit report path and persists blocked incom
     const serialized = JSON.stringify(result);
     assert.equal(serialized.includes("PRIVATE_BROWSER_SECRET"), false);
     assert.equal(serialized.includes("/private/tmp/profile"), false);
+    const output = formatPolishCaptureText(result);
+    assert.match(output, /Capture problems:/);
+    assert.match(output, /Route: \/runtime-packet-demo\/landing\//);
+    assert.match(output, /Problem codes: .*producer_failed/);
+    assert.match(output, /Checkpoint: Package-owned page-load capture is incomplete/);
+    assert.match(output, /campaigns-os polish capture --packet <packet> --base-url <url>/);
+  } finally {
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test("polish capture text bounds incomplete cells, problem codes, reasons, and action commands", () => {
+  const incomplete = Array.from({ length: 80 }, (_, index) => ({
+    route: `/route-${index}/?private=route-secret-${index}`,
+    viewport: index % 2 ? "mobile" : "desktop",
+    problem_codes: [
+      "document_response_error",
+      "request_failed",
+      `PRIVATE_PROBLEM_${index}`,
+    ],
+  }));
+  const output = formatPolishCaptureText({
+    status: "blocked",
+    measurement: { status: "incomplete", incomplete },
+    checkpoint: {
+      code: "polish.hidden_eager_media.capture_incomplete",
+      reason: "PRIVATE_REASON /private/tmp/profile",
+      findings: [],
+      required_actions: [
+        {
+          id: "polish.hidden_eager_media.capture",
+          command: "curl https://private.invalid/?token=secret",
+        },
+        {
+          id: "PRIVATE_ACTION",
+          command: "PRIVATE_COMMAND",
+        },
+      ],
+    },
+    observed_findings: [],
+  });
+
+  assert.match(output, /Capture problems:/);
+  assert.match(output, /Problem codes: document_response_error, request_failed/);
+  assert.match(output, /Additional incomplete capture cells omitted: 16/);
+  assert.match(output, /Checkpoint: Package-owned page-load capture is incomplete/);
+  assert.match(output, /campaigns-os polish capture --packet <packet> --base-url <url>/);
+  assert.doesNotMatch(output, /PRIVATE|private=|token=secret|curl/);
+});
+
+test("missing Chromium persists browser_unavailable and prints the install-browser action", async () => {
+  const f = fixture();
+  try {
+    const result = await polishCaptureCommand(commandArgs(f), {
+      createBrowserAdapter: async () => {
+        const error = new Error("PRIVATE_BROWSER_PATH /private/tmp/chromium");
+        error.code = "POLISH_BROWSER_UNAVAILABLE";
+        throw error;
+      },
+    });
+    const persisted = readJson(f.reportPath);
+    const captures = persisted.stages.polish.evidence.visual_review.page_load.captures;
+    const output = formatPolishCaptureText(result);
+
+    assert.equal(result.ok, false);
+    assert.equal(captures.every((capture) => capture.problems.some(
+      (problem) => problem.code === "browser_unavailable",
+    )), true);
+    assert.equal(captures.some((capture) => capture.problems.some(
+      (problem) => problem.code === "producer_failed",
+    )), false);
+    assert.ok(result.checkpoint.required_actions.some(
+      (action) => action.id === "polish.hidden_eager_media.install_browser",
+    ));
+    assert.match(output, /Required action: npm run qa:install-browser/);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_BROWSER_PATH|private\/tmp/);
   } finally {
     rmSync(f.dir, { recursive: true, force: true });
   }
@@ -202,6 +280,57 @@ test("non-JSON polish capture text names redacted offending media and transferre
     assert.match(output, /Transferred bytes: 1048577/);
     assert.match(output, /Threshold bytes: 1048576/);
     assert.doesNotMatch(output, /private=token|\?private/);
+  } finally {
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test("slow unfinished hidden media persists an observed lower-bound finding and text without hanging", async () => {
+  const f = fixture();
+  try {
+    const slowAdapter = async () => ({
+      async captureRoute({ url, viewport }) {
+        const mediaUrl = new URL(`/media/slow-${viewport.key}.mp4?private=slow-token`, url).href;
+        return {
+          finalDocumentUrl: url,
+          responseCollectionStatus: "failed",
+          networkidle: { status: "timeout", duration_ms: 5_000 },
+          mediaElements: [{
+            tag_name: "video",
+            current_src: mediaUrl,
+            src_attribute: null,
+            source_src_attributes: [],
+            preload_attribute: null,
+            computed_style: { display: "none", visibility: "visible" },
+            ancestor_styles: [],
+            bounding_box: { width: 0, height: 0 },
+          }],
+          responses: [
+            mainDocumentResponse(url, viewport),
+            {
+              request_id: `slow-${viewport.key}`,
+              url: mediaUrl,
+              resource_type: "Media",
+              status: 206,
+              encoded_data_length: 80 * 1_024 * 1_024,
+              failed: true,
+            },
+          ],
+        };
+      },
+      async close() {},
+    });
+    const result = await polishCaptureCommand(commandArgs(f), { createBrowserAdapter: slowAdapter });
+    const output = formatPolishCaptureText(result);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.measurement.status, "incomplete");
+    assert.deepEqual(result.checkpoint.findings, []);
+    assert.equal(result.observed_findings.length, 8);
+    assert.match(output, /Observed hidden eager-media findings \(measurement incomplete\)/);
+    assert.match(output, /Transferred bytes: 83886080/);
+    assert.match(output, /slow-desktop\.mp4/);
+    assert.doesNotMatch(output, /private=slow-token|slow-token/);
   } finally {
     rmSync(f.dir, { recursive: true, force: true });
   }

@@ -153,6 +153,7 @@ import {
 import {
   evaluateHiddenEagerMediaCheckpoint,
   HIDDEN_EAGER_MEDIA_SCOPE,
+  POLISH_CAPTURE_PROBLEM_CODES,
 } from "./polish-page-load.mjs";
 import { redactCaptureUrl } from "./polish-capture.mjs";
 import {
@@ -2117,17 +2118,11 @@ export async function polishCaptureCommand(args, options = {}) {
   });
   assertPolishCaptureBindingUnchanged(initialBinding, currentBinding);
 
-  const checkpoint = evaluateHiddenEagerMediaCheckpoint({
-    pageLoad: capture.page_load,
-    buildFingerprint: currentReport.stages.assembly.build_fingerprint,
-    slug: currentPacket.campaign.public_route_slug,
-    routeScope: currentPlan.route_scope,
-    routes: currentPlan.routes.map((route) => route.requested_route),
-    viewports: currentPlan.viewports.map((viewport) => viewport.key),
-    waivers: Array.isArray(currentReport.waivers) ? currentReport.waivers : [],
-  });
-
   const merged = mergePolishPageLoadEvidence(currentReport, capture.page_load);
+  const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({
+    packet: currentPacket,
+    report: merged,
+  });
   writeJsonAtomic(reportPath, merged);
   markDoctorSidecarStale(targetRepo, {
     command: "polish capture",
@@ -2142,6 +2137,7 @@ export async function polishCaptureCommand(args, options = {}) {
     report_path: reportPath,
     measurement: capture.page_load.measurement,
     checkpoint,
+    observed_findings: capture.page_load.findings,
     capture: {
       route_scope: capture.plan.route_scope,
       routes: capture.plan.routes.map((route) => route.requested_route),
@@ -6252,7 +6248,8 @@ Read first:
 
 Compare source and Campaign Build Brief decisions against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, and capture desktop/mobile screenshots.
 
-Before marking Polish complete, run the package-owned page-load producer against the served build:
+Before marking Polish complete, install the package-owned browser once and run the page-load producer against the served build:
+- npm run qa:install-browser
 - campaigns-os polish capture --packet ${packetPath} --base-url <served-build-url>
 
 The producer covers every mapped route at fixed desktop/mobile viewports and attaches stages.polish.evidence.visual_review.page_load to the current Assembly Report. Never hand-author or copy page_load. A missing, stale, malformed, incomplete, cache/service-worker-observed, or over-threshold result keeps Polish/deploy/QA blocked; repair and recapture, or use the exact named-human checkpoint waiver only for a complete hidden eager-media finding.
@@ -7155,6 +7152,27 @@ function writeResult(result, args, failureCode) {
 
 const POLISH_CAPTURE_TEXT_FINDING_LIMIT = 100;
 const POLISH_CAPTURE_TEXT_SOURCE_LIMIT = 16;
+const POLISH_CAPTURE_TEXT_INCOMPLETE_LIMIT = 64;
+const POLISH_CAPTURE_TEXT_PROBLEM_LIMIT = 16;
+const POLISH_CAPTURE_TEXT_RAW_PROBLEM_LIMIT = 64;
+const POLISH_CAPTURE_TEXT_ACTION_LIMIT = 8;
+const SAFE_POLISH_CAPTURE_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
+const SAFE_POLISH_CHECKPOINT_REASONS = new Map([
+  ["polish.hidden_eager_media.capture_malformed", "Package-owned page-load evidence or its governing authority is missing, malformed, or inconsistent."],
+  ["polish.hidden_eager_media.capture_stale", "Package-owned page-load evidence is stale for the current build, campaign, routes, or viewports."],
+  ["polish.hidden_eager_media.capture_incomplete", "Package-owned page-load capture is incomplete; repair the listed capture problems and recapture."],
+  ["polish.hidden_eager_media", "Hidden eager media exceeds 1,048,576 bytes; repair and recapture, or record an exact waiver."],
+  ["polish.hidden_eager_media.waived", "Hidden eager-media findings are covered by an exact named-human waiver."],
+  ["polish.hidden_eager_media.pass", "Package-owned page-load evidence has no blocking hidden eager media."],
+  ["polish.hidden_eager_media.not_applicable", "Package-owned page-load evidence is not applicable before completed assembly."],
+]);
+const SAFE_POLISH_CHECKPOINT_ACTIONS = new Map([
+  ["polish.hidden_eager_media.capture", "campaigns-os polish capture --packet <packet> --base-url <url>"],
+  ["polish.hidden_eager_media.install_browser", "npm run qa:install-browser"],
+  ["polish.hidden_eager_media.waive", "campaigns-os checkpoint waive --packet <packet> --gate polish.hidden_eager_media --reason \"<why>\" --waived-by \"<named human>\" --review-condition \"<trigger>\""],
+  ["polish.hidden_eager_media.repair", "Repair the reported media, then recapture."],
+  ["polish.hidden_eager_media.repair_authority", "Repair packet/report authority and the mapped route plan, then recapture."],
+]);
 
 function safePolishFindingRoute(value) {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
@@ -7189,16 +7207,50 @@ export function formatPolishCaptureText(result) {
   const measurementStatus = ["complete", "incomplete"].includes(result?.measurement?.status)
     ? result.measurement.status
     : "unknown";
-  const findings = Array.isArray(result?.checkpoint?.findings)
-    ? result.checkpoint.findings.slice(0, POLISH_CAPTURE_TEXT_FINDING_LIMIT)
-    : [];
+  const checkpointFindings = Array.isArray(result?.checkpoint?.findings) ? result.checkpoint.findings : [];
+  const observedFindings = Array.isArray(result?.observed_findings) ? result.observed_findings : [];
+  const findingSource = checkpointFindings.length ? checkpointFindings : observedFindings;
+  const findings = findingSource.slice(0, POLISH_CAPTURE_TEXT_FINDING_LIMIT);
   const lines = [
     `Status: ${status.toUpperCase()}`,
     `Measurement: ${measurementStatus.toUpperCase()}`,
   ];
+  const incomplete = Array.isArray(result?.measurement?.incomplete)
+    ? result.measurement.incomplete
+    : [];
+  const incompleteCells = incomplete.slice(0, POLISH_CAPTURE_TEXT_INCOMPLETE_LIMIT);
+  if (incompleteCells.length) {
+    lines.push("Capture problems:");
+    for (const cell of incompleteCells) {
+      const viewport = cell?.viewport === "desktop" || cell?.viewport === "mobile"
+        ? cell.viewport
+        : "unknown";
+      const problemCodes = [...new Set((Array.isArray(cell?.problem_codes)
+        ? cell.problem_codes.slice(0, POLISH_CAPTURE_TEXT_RAW_PROBLEM_LIMIT)
+        : []).filter((code) => SAFE_POLISH_CAPTURE_PROBLEM_CODES.has(code)))]
+        .sort()
+        .slice(0, POLISH_CAPTURE_TEXT_PROBLEM_LIMIT);
+      lines.push(`- Route: ${safePolishFindingRoute(cell?.route)}`);
+      lines.push(`  Viewport: ${viewport}`);
+      lines.push(`  Problem codes: ${problemCodes.length ? problemCodes.join(", ") : "unavailable"}`);
+    }
+    if (incomplete.length > incompleteCells.length) {
+      lines.push(`Additional incomplete capture cells omitted: ${incomplete.length - incompleteCells.length}`);
+    }
+  }
+  const safeCheckpointReason = SAFE_POLISH_CHECKPOINT_REASONS.get(result?.checkpoint?.code);
+  if (safeCheckpointReason) lines.push(`Checkpoint: ${safeCheckpointReason}`);
+  const safeActions = [...new Set((Array.isArray(result?.checkpoint?.required_actions)
+    ? result.checkpoint.required_actions.slice(0, POLISH_CAPTURE_TEXT_ACTION_LIMIT)
+    : []).map((action) => SAFE_POLISH_CHECKPOINT_ACTIONS.get(action?.id)).filter(Boolean))];
+  for (const action of safeActions) {
+    lines.push(`Required action: ${action}`);
+  }
   if (!findings.length) return lines.join("\n");
 
-  lines.push("Hidden eager-media findings:");
+  lines.push(checkpointFindings.length
+    ? "Hidden eager-media findings:"
+    : "Observed hidden eager-media findings (measurement incomplete):");
   for (const finding of findings) {
     const viewport = finding?.viewport === "desktop" || finding?.viewport === "mobile"
       ? finding.viewport
@@ -7222,9 +7274,8 @@ export function formatPolishCaptureText(result) {
     lines.push(`  Transferred bytes: ${safePolishByteCount(finding?.transferred_bytes)}`);
     lines.push(`  Threshold bytes: ${safePolishByteCount(finding?.threshold_bytes)}`);
   }
-  if (Array.isArray(result?.checkpoint?.findings)
-    && result.checkpoint.findings.length > findings.length) {
-    lines.push(`Additional findings omitted: ${result.checkpoint.findings.length - findings.length}`);
+  if (findingSource.length > findings.length) {
+    lines.push(`Additional findings omitted: ${findingSource.length - findings.length}`);
   }
   return lines.join("\n");
 }

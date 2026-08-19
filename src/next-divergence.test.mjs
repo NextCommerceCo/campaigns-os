@@ -74,6 +74,7 @@ function cleanPageLoad(packet) {
       slug: packet.campaign.public_route_slug,
       requestedRoute: route,
       viewport,
+      requestedDocumentUrl: url,
       finalDocumentUrl: url,
       responseCollectionStatus: "complete",
       networkidle: { status: "settled", duration_ms: 10 },
@@ -83,6 +84,9 @@ function cleanPageLoad(packet) {
         url,
         resource_type: "Document",
         status: 200,
+        mime_type: "text/html",
+        is_final_main_document: true,
+        document_context_fingerprint: `sha256:${"d".repeat(64)}`,
         encoded_data_length: 1_024,
       }],
     });

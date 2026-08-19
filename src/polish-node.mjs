@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import {
   buildPageLoadCapture,
+  MAX_POLISH_CAPTURE_URL_LENGTH,
   normalizePageLoadRoute,
 } from "./polish-capture.mjs";
 import {
@@ -20,6 +21,7 @@ export const POLISH_CAPTURE_VIEWPORTS = Object.freeze([
   Object.freeze({ key: "desktop", width: 1_440, height: 1_200 }),
   Object.freeze({ key: "mobile", width: 390, height: 844 }),
 ]);
+export const MAX_POLISH_CAPTURE_ROUTES = 128;
 
 function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -32,6 +34,9 @@ function nonemptyString(value) {
 }
 
 function captureBaseUrl(value) {
+  if (typeof value !== "string" || value.length > MAX_POLISH_CAPTURE_URL_LENGTH) {
+    throw new Error("polish capture requires a bounded resolvable HTTP(S) --base-url.");
+  }
   let url;
   try {
     url = new URL(String(value));
@@ -45,6 +50,9 @@ function captureBaseUrl(value) {
 }
 
 function mappedPublicRoute(value, pageId) {
+  if (typeof value !== "string" || value.length > MAX_POLISH_CAPTURE_URL_LENGTH) {
+    throw new Error(`Polish capture page "${pageId}" has an unresolvable page_kit.public_route.`);
+  }
   const raw = nonemptyString(value);
   if (!raw || !raw.startsWith("/") || raw.startsWith("//") || /[?#\\]/.test(raw)) {
     throw new Error(`Polish capture page "${pageId}" has an unresolvable page_kit.public_route.`);
@@ -56,7 +64,7 @@ function mappedPublicRoute(value, pageId) {
 }
 
 function mappedSpecRoute(value, pageId) {
-  if (typeof value !== "string") {
+  if (typeof value !== "string" || value.length > MAX_POLISH_CAPTURE_URL_LENGTH) {
     throw new Error(`Polish capture page "${pageId}" is missing page_kit.spec_route.`);
   }
   const raw = value.trim();
@@ -73,12 +81,17 @@ export function planPolishCapture({ packet, baseUrl } = {}) {
   if (!isPlainObject(packet) || !Array.isArray(packet?.source_html?.pages) || packet.source_html.pages.length === 0) {
     throw new Error("polish capture requires packet.source_html.pages mappings.");
   }
+  if (packet.source_html.pages.length > MAX_POLISH_CAPTURE_ROUTES) {
+    throw new Error(`polish capture supports at most ${MAX_POLISH_CAPTURE_ROUTES} packet route mappings per run.`);
+  }
   const base = captureBaseUrl(baseUrl);
   const routes = [];
   let skipped = false;
 
   for (const mapping of packet.source_html.pages) {
-    const pageId = nonemptyString(mapping?.page_id);
+    const pageId = typeof mapping?.page_id === "string" && mapping.page_id.length <= 128
+      ? nonemptyString(mapping.page_id)
+      : null;
     if (!pageId) throw new Error("Every polish capture page mapping needs page_id.");
     if (nonemptyString(mapping?.skip_reason)) {
       skipped = true;
@@ -125,6 +138,13 @@ const RECORDED_CAPTURE_ACTION = Object.freeze({
   description: "Capture package-owned page-load evidence for every mapped route and fixed viewport.",
 });
 
+const RECORDED_BROWSER_INSTALL_ACTION = Object.freeze({
+  id: "polish.hidden_eager_media.install_browser",
+  kind: "command",
+  command: "npm run qa:install-browser",
+  description: "Install the package-owned Playwright Chromium runtime before rerunning polish capture.",
+});
+
 const RECORDED_WAIVER_ACTION = Object.freeze({
   id: "polish.hidden_eager_media.waive",
   kind: "command",
@@ -146,12 +166,18 @@ const RECORDED_AUTHORITY_REPAIR_ACTION = Object.freeze({
   description: "Repair the packet or Assembly Report campaign identity, build fingerprint, and mapped route plan before capture.",
 });
 
-function recordedCheckpointActions(gate, { authorityMalformed = false } = {}) {
+function recordedCheckpointActions(gate, { authorityMalformed = false, browserUnavailable = false } = {}) {
   if (gate?.status !== "blocked") return [];
   if (authorityMalformed) return [RECORDED_AUTHORITY_REPAIR_ACTION, RECORDED_CAPTURE_ACTION];
+  if (browserUnavailable) return [RECORDED_BROWSER_INSTALL_ACTION, RECORDED_CAPTURE_ACTION];
   return gate.waivable
     ? [RECORDED_REPAIR_ACTION, RECORDED_CAPTURE_ACTION, RECORDED_WAIVER_ACTION]
     : [RECORDED_CAPTURE_ACTION];
+}
+
+function recordedCaptureHasProblem(pageLoad, code) {
+  return Array.isArray(pageLoad?.captures) && pageLoad.captures.some((capture) => Array.isArray(capture?.problems)
+    && capture.problems.some((problem) => problem?.code === code));
 }
 
 function recordedAuthorityBlock({ packet, report, plan = null, now } = {}) {
@@ -222,7 +248,15 @@ export function evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report, now
     waivers: Array.isArray(report?.waivers) ? report.waivers : [],
     ...(now === undefined ? {} : { now }),
   });
-  return { ...gate, required_actions: recordedCheckpointActions(gate) };
+  return {
+    ...gate,
+    required_actions: recordedCheckpointActions(gate, {
+      browserUnavailable: recordedCaptureHasProblem(
+        report?.stages?.polish?.evidence?.visual_review?.page_load,
+        "browser_unavailable",
+      ),
+    }),
+  };
 }
 
 function canonicalize(value) {
@@ -447,11 +481,12 @@ export async function capturePolishPageLoad({
           observation = await adapter.captureRoute({ url: route.url, viewport });
           if (!isPlainObject(observation)) throw new Error("Browser adapter returned no route observation.");
         } catch (error) {
+          const browserUnavailable = error?.code === "POLISH_BROWSER_UNAVAILABLE";
           observation = {
             finalDocumentUrl: route.url,
             responseCollectionStatus: "failed",
             networkidle: { status: "timeout", duration_ms: 0 },
-            producerError: error,
+            producerProblem: browserUnavailable ? "browser_unavailable" : "producer_failed",
           };
         }
         captures.push(buildPageLoadCapture({
@@ -459,12 +494,14 @@ export async function capturePolishPageLoad({
           slug,
           requestedRoute: route.requested_route,
           viewport: viewport.key,
+          requestedDocumentUrl: route.url,
           finalDocumentUrl: observation.finalDocumentUrl,
           responseCollectionStatus: observation.responseCollectionStatus,
           networkidle: observation.networkidle,
           mediaElements: observation.mediaElements,
           responses: observation.responses,
           producerError: observation.producerError,
+          producerProblem: observation.producerProblem,
         }));
       }
     }
@@ -487,6 +524,7 @@ export async function capturePolishPageLoad({
           slug,
           requestedRoute: route.requested_route,
           viewport: viewport.key,
+          requestedDocumentUrl: route.url,
           finalDocumentUrl: route.url,
           responseCollectionStatus: "failed",
           networkidle: { status: "timeout", duration_ms: 0 },

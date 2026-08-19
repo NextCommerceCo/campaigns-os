@@ -11,6 +11,24 @@ import {
 
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 
+function pageLoadCapture(options) {
+  const finalDocumentUrl = options.finalDocumentUrl;
+  return buildPageLoadCapture({
+    requestedDocumentUrl: options.requestedDocumentUrl || finalDocumentUrl,
+    ...options,
+    responses: [{
+      request_id: "main-document",
+      url: finalDocumentUrl,
+      resource_type: "Document",
+      status: 200,
+      mime_type: "text/html",
+      encoded_data_length: 0,
+      is_final_main_document: true,
+      document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+    }, ...(Array.isArray(options.responses) ? options.responses : [])],
+  });
+}
+
 function mediaResponse(id, path, bytes) {
   return {
     request_id: id,
@@ -55,7 +73,7 @@ function evidenceForCapture(capture, {
 }
 
 test("page-load evidence blocks only hidden eager media strictly above 1,048,576 bytes", () => {
-  const capture = buildPageLoadCapture({
+  const capture = pageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
     slug: "merchant",
     requestedRoute: "/landing/?campaign=private",
@@ -103,6 +121,10 @@ test("page-load evidence blocks only hidden eager media strictly above 1,048,576
     tag_name: "video",
     element_index: 0,
     sources: ["https://cdn.example.test/hidden-too-large.mp4"],
+    source_count: 1,
+    resource_ids: ["sha256:c5111468b21f458079a7b46cc808ba721e1f1c65e2e1704595eb77488d144fdb"],
+    resource_id_count: 1,
+    resource_identity_fingerprint: "sha256:8fe0a19a002099ded939f96496afbc65934bdae32e34cc879580e24657b40ab7",
     transferred_bytes: 1_048_577,
     threshold_bytes: 1_048_576,
     preload_attribute: "missing",
@@ -114,7 +136,7 @@ test("page-load evidence blocks only hidden eager media strictly above 1,048,576
 
 test("preload exemptions accept only exact ASCII-case-insensitive none and metadata tokens", () => {
   const preloadAttributes = ["NoNe", "MeTaDaTa", " none ", " metadata "];
-  const capture = buildPageLoadCapture({
+  const capture = pageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
     slug: "merchant",
     requestedRoute: "/landing/",
@@ -139,7 +161,7 @@ test("preload exemptions accept only exact ASCII-case-insensitive none and metad
 });
 
 test("the threshold applies to aggregate fetched bytes per media element, including split resources", () => {
-  const captureFor = (bytesPerResource) => buildPageLoadCapture({
+  const captureFor = (bytesPerResource) => pageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
     slug: "merchant",
     requestedRoute: "/landing/",
@@ -185,6 +207,13 @@ test("the threshold applies to aggregate fetched bytes per media element, includ
       "https://cdn.example.test/part-a.mp4",
       "https://cdn.example.test/part-b.mp4",
     ],
+    source_count: 2,
+    resource_ids: [
+      "sha256:03fba42f92b0606a61a4016000600023b707108cbff2031b7b0e10f603f8f853",
+      "sha256:75f221e9a4bc42f1bb46dbe00f1cd431b6331f7ea5ae6fccbc945be0538abb30",
+    ],
+    resource_id_count: 2,
+    resource_identity_fingerprint: "sha256:d004056fc7098c6e67daa9155a38d2777f0796d206d237ecdfb861ab2a101463",
     transferred_bytes: 1_228_800,
     threshold_bytes: 1_048_576,
     preload_attribute: "missing",
@@ -202,7 +231,7 @@ test("query-distinct same-path media stay separately attributed and only the ove
   const urls = ["one", "two", "three"].map(
     (variant) => `https://cdn.example.test/same.mp4?variant=${variant}&token=private-${variant}`,
   );
-  const capture = buildPageLoadCapture({
+  const capture = pageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
     slug: "merchant",
     requestedRoute: "/landing/",
@@ -238,7 +267,7 @@ test("query-distinct same-path media stay separately attributed and only the ove
 
 test("resource-type ambiguity remains a structurally valid but nonwaivably incomplete capture", () => {
   const url = "https://cdn.example.test/ambiguous.mp4?token=private";
-  const capture = buildPageLoadCapture({
+  const capture = pageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
     slug: "merchant",
     requestedRoute: "/landing/",
@@ -270,7 +299,7 @@ function blockingEvidence({
   buildFingerprint = BUILD_FINGERPRINT,
   networkidle = { status: "settled", duration_ms: 1_200 },
 } = {}) {
-  const capture = buildPageLoadCapture({
+  const capture = pageLoadCapture({
     buildFingerprint,
     slug: "merchant",
     requestedRoute: "/landing/",
@@ -401,6 +430,52 @@ test("changed findings and changed builds leave an earlier exact waiver inert", 
     malformed: 0,
     expired: 0,
   });
+});
+
+test("query-only media identity changes stale an exact waiver without exposing the query", () => {
+  const evidenceForVariant = (variant) => {
+    const mediaUrl = `https://cdn.example.test/same-path.mp4?variant=${variant}&credential=private`;
+    const capture = pageLoadCapture({
+      buildFingerprint: BUILD_FINGERPRINT,
+      slug: "merchant",
+      requestedRoute: "/landing/",
+      viewport: "desktop",
+      finalDocumentUrl: "https://shop.example.test/landing/",
+      responseCollectionStatus: "complete",
+      networkidle: { status: "settled", duration_ms: 1_000 },
+      mediaElements: [{
+        ...mediaElement("same-path.mp4"),
+        current_src: mediaUrl,
+      }],
+      responses: [{
+        ...mediaResponse(`variant-${variant}`, "same-path.mp4", 2_000_000),
+        url: mediaUrl,
+      }],
+    });
+    return evidenceForCapture(capture);
+  };
+  const firstEvidence = evidenceForVariant("one");
+  const first = evaluate(firstEvidence);
+  const waiver = createCheckpointWaiver(first, {
+    reason: "Approved for one exact asset identity",
+    waivedBy: "Jordan Lee",
+    now: "2026-08-19T00:00:00.000Z",
+    reviewCondition: "Re-evaluate on asset changes",
+  });
+  const secondEvidence = evidenceForVariant("two");
+  const second = evaluate(secondEvidence, { waivers: [waiver] });
+
+  assert.equal(firstEvidence.findings[0].sources[0], secondEvidence.findings[0].sources[0]);
+  assert.equal(firstEvidence.findings[0].transferred_bytes, secondEvidence.findings[0].transferred_bytes);
+  assert.notDeepEqual(firstEvidence.findings[0].resource_ids, secondEvidence.findings[0].resource_ids);
+  assert.notEqual(first.state_fingerprint, second.state_fingerprint);
+  assert.equal(second.status, "blocked");
+  assert.equal(second.waiver_assessment.inert_counts.stale, 1);
+  for (const evidence of [firstEvidence, secondEvidence]) {
+    const serialized = JSON.stringify(evidence);
+    assert.equal(serialized.includes("variant="), false);
+    assert.equal(serialized.includes("credential="), false);
+  }
 });
 
 test("missing, malformed, stale, and incomplete capture evidence are nonwaivable blockers", () => {
@@ -591,7 +666,7 @@ test("single public-field, resource, and subject mutations invalidate the produc
 
 test("a grouped URL cannot self-declare only some same-origin-status requests as cross-origin", () => {
   const url = "https://cdn.example.test/ranged.mp4?token=private";
-  const capture = buildPageLoadCapture({
+  const capture = pageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
     slug: "merchant",
     requestedRoute: "/landing/",
@@ -667,7 +742,7 @@ test("page-load evidence projects a fixed privacy-safe capture shape", () => {
 });
 
 test("finding order and checkpoint fingerprint are stable across route, viewport, and capture input order", () => {
-  const captureFor = (route, viewport, path, bytes) => buildPageLoadCapture({
+  const captureFor = (route, viewport, path, bytes) => pageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
     slug: "merchant",
     requestedRoute: route,

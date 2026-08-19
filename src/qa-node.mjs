@@ -868,6 +868,7 @@ function themeBlockedAssertions(themeGate, polishGate) {
 const HIDDEN_EAGER_MEDIA_VIEWPORTS = new Set(["desktop", "mobile"]);
 const HIDDEN_EAGER_MEDIA_PRELOAD_ATTRIBUTES = new Set(POLISH_PRELOAD_ATTRIBUTES);
 const HIDDEN_EAGER_MEDIA_HIDDEN_BY = new Set(["display_none", "visibility_hidden"]);
+const MAX_HIDDEN_EAGER_MEDIA_SUMMARY_RESOURCES = 64;
 
 function safeNonnegativeInteger(value) {
   return Number.isInteger(value) && value >= 0 ? value : null;
@@ -897,16 +898,24 @@ function hiddenEagerMediaFinding(finding) {
   const viewport = stringArg(finding?.viewport)?.toLowerCase();
   const tagName = stringArg(finding?.tag_name)?.toLowerCase();
   const preload = stringArg(finding?.preload_attribute)?.toLowerCase();
-  const sources = [...new Set((Array.isArray(finding?.sources) ? finding.sources : [])
+  const allSources = [...new Set((Array.isArray(finding?.sources) ? finding.sources : [])
     .map((source) => redactCaptureUrl(source))
     .filter((source) => typeof source === "string" && /^https?:\/\//.test(source)))].sort();
+  const allResourceIds = [...new Set((Array.isArray(finding?.resource_ids) ? finding.resource_ids : [])
+    .filter((resourceId) => /^sha256:[a-f0-9]{64}$/.test(resourceId)))].sort();
   return {
     code: finding?.code === HIDDEN_EAGER_MEDIA_SCOPE ? HIDDEN_EAGER_MEDIA_SCOPE : null,
     route,
     viewport: HIDDEN_EAGER_MEDIA_VIEWPORTS.has(viewport) ? viewport : null,
     tag_name: tagName === "video" || tagName === "audio" ? tagName : null,
     element_index: safeNonnegativeInteger(finding?.element_index),
-    sources,
+    sources: allSources.slice(0, MAX_HIDDEN_EAGER_MEDIA_SUMMARY_RESOURCES),
+    source_count: Math.max(allSources.length, safeNonnegativeInteger(finding?.source_count) || 0),
+    resource_ids: allResourceIds.slice(0, MAX_HIDDEN_EAGER_MEDIA_SUMMARY_RESOURCES),
+    resource_id_count: Math.max(allResourceIds.length, safeNonnegativeInteger(finding?.resource_id_count) || 0),
+    resource_identity_fingerprint: /^sha256:[a-f0-9]{64}$/.test(finding?.resource_identity_fingerprint || "")
+      ? finding.resource_identity_fingerprint
+      : null,
     transferred_bytes: safeNonnegativeInteger(finding?.transferred_bytes),
     threshold_bytes: safeNonnegativeInteger(finding?.threshold_bytes),
     preload_attribute: HIDDEN_EAGER_MEDIA_PRELOAD_ATTRIBUTES.has(preload) ? preload : "other",

@@ -4,24 +4,40 @@ import test from "node:test";
 import {
   aggregateCdpResponses,
   buildPageLoadCapture,
+  MAX_PAGE_LOAD_MEDIA_ANCESTORS,
+  MAX_PAGE_LOAD_MEDIA_ELEMENTS,
+  MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
   MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
+  MAX_PAGE_LOAD_RESPONSE_RECORDS,
+  MAX_POLISH_CAPTURE_URL_LENGTH,
   normalizeMediaElement,
 } from "./polish-capture.mjs";
 
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 
 function boundCapture(overrides = {}) {
+  const {
+    omitDocumentResponse = false,
+    responses: responseOverrides = [],
+    ...captureOverrides
+  } = overrides;
+  const hasDocumentResponse = Array.isArray(responseOverrides)
+    && responseOverrides.some((record) => String(record?.resource_type || "").toLowerCase() === "document");
+  const responses = Array.isArray(responseOverrides) && !omitDocumentResponse && !hasDocumentResponse
+    ? [documentResponse(), ...responseOverrides]
+    : responseOverrides;
   return buildPageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
     slug: "merchant",
     requestedRoute: "/landing/",
     viewport: "desktop",
     finalDocumentUrl: "https://shop.example.test/landing/",
+    requestedDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_000 },
     mediaElements: [],
-    responses: [],
-    ...overrides,
+    responses,
+    ...captureOverrides,
   });
 }
 
@@ -38,6 +54,82 @@ function explicitMediaSource(url, overrides = {}) {
     ...overrides,
   };
 }
+
+function documentResponse(status = 200, overrides = {}) {
+  return {
+    request_id: `document-${status}`,
+    url: "https://shop.example.test/landing/",
+    resource_type: "Document",
+    status,
+    mime_type: "text/html",
+    encoded_data_length: 0,
+    is_final_main_document: true,
+    document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+    ...overrides,
+  };
+}
+
+test("final document evidence requires exactly one matching root-frame HTML 200 response", () => {
+  const success = boundCapture({ responses: [documentResponse(200)] });
+  assert.equal(success.measurement_status, "complete");
+
+  for (const status of [204, 205, 206, 404, 500]) {
+    const capture = boundCapture({ responses: [documentResponse(status)] });
+    assert.equal(capture.measurement_status, "incomplete");
+    assert.deepEqual(capture.problems, [{ code: "document_response_error", count: 1 }]);
+  }
+
+  for (const mime_type of ["application/json", "image/png"]) {
+    const capture = boundCapture({ responses: [documentResponse(200, { mime_type })] });
+    assert.equal(capture.measurement_status, "incomplete");
+    assert.deepEqual(capture.problems, [{ code: "document_response_error", count: 1 }]);
+    assert.equal(capture.document_response.mime_type, "other");
+  }
+  assert.equal(boundCapture({
+    responses: [documentResponse(200, { mime_type: "application/xhtml+xml" })],
+  }).measurement_status, "complete");
+
+  const crossOriginFinal = boundCapture({
+    finalDocumentUrl: "https://other.example.test/landing/",
+    responses: [documentResponse(200, { url: "https://other.example.test/landing/" })],
+  });
+  assert.equal(crossOriginFinal.measurement_status, "incomplete");
+  assert.deepEqual(crossOriginFinal.problems, [{ code: "document_response_error", count: 1 }]);
+  assert.equal(crossOriginFinal.document_response.origin_matches_capture, false);
+
+  const missing = boundCapture({ responses: [documentResponse(200, {
+    url: "https://shop.example.test/not-the-final-document/",
+  })] });
+  assert.equal(missing.measurement_status, "incomplete");
+  assert.equal(missing.problems.some((problem) => problem.code === "document_response_missing"), true);
+
+  const ambiguous = boundCapture({ responses: [
+    documentResponse(200, { request_id: "document-one" }),
+    documentResponse(200, { request_id: "document-two" }),
+  ] });
+  assert.equal(ambiguous.measurement_status, "incomplete");
+  assert.equal(ambiguous.problems.some((problem) => problem.code === "document_response_ambiguous"), true);
+
+  const sameUrlIframeOnly = boundCapture({ responses: [documentResponse(200, {
+    request_id: "same-url-iframe",
+    is_final_main_document: false,
+    document_context_fingerprint: undefined,
+  })] });
+  assert.equal(sameUrlIframeOnly.measurement_status, "incomplete");
+  assert.equal(sameUrlIframeOnly.problems.some((problem) => problem.code === "document_response_missing"), true);
+
+  const mainWithSameUrlIframe = boundCapture({ responses: [
+    documentResponse(200, {
+      request_id: "same-url-iframe",
+      is_final_main_document: false,
+      document_context_fingerprint: undefined,
+    }),
+    documentResponse(200, { request_id: "main-document" }),
+  ] });
+  assert.equal(mainWithSameUrlIframe.measurement_status, "complete");
+  assert.equal(mainWithSameUrlIframe.document_response.status, "complete");
+  assert.equal(mainWithSameUrlIframe.document_response.context_fingerprint, `sha256:${"d".repeat(64)}`);
+});
 
 test("query-sensitive resource identities keep same-path media transfers attributed to the right element", () => {
   const capture = boundCapture({
@@ -65,11 +157,12 @@ test("query-sensitive resource identities keep same-path media transfers attribu
 
   assert.equal(capture.measurement_status, "complete");
   assert.deepEqual(capture.media.map((media) => media.fetched_bytes), [600 * 1_024, 1_048_577]);
-  assert.equal(capture.resource_ledger.entries.length, 2);
+  assert.equal(capture.resource_ledger.entries.length, 3);
   assert.notEqual(capture.resource_ledger.entries[0].resource_id, capture.resource_ledger.entries[1].resource_id);
   assert.deepEqual(capture.resource_ledger.entries.map((resource) => resource.url), [
     "https://cdn.example.test/hero.mp4",
     "https://cdn.example.test/hero.mp4",
+    "https://shop.example.test/landing/",
   ]);
   const serialized = JSON.stringify(capture);
   for (const secret of ["variant=", "token=", "private-one", "private-two"]) {
@@ -140,10 +233,10 @@ test("same-request-id redirect hops are counted once and associate an authored s
 
   assert.equal(capture.measurement_status, "complete");
   assert.deepEqual(flatCapture, capture);
-  assert.equal(capture.response_collection.observed_response_count, 2);
-  assert.equal(capture.metrics.request_count, 2);
+  assert.equal(capture.response_collection.observed_response_count, 3);
+  assert.equal(capture.metrics.request_count, 3);
   assert.equal(capture.metrics.total_transferred_bytes, 2_000_200);
-  assert.equal(capture.resource_ledger.entries.length, 2);
+  assert.equal(capture.resource_ledger.entries.length, 3);
   assert.equal(capture.media[0].fetched_bytes, 2_000_200);
   assert.equal(capture.media[0].fetched_request_count, 2);
   assert.equal(capture.media[0].fetched_resources.length, 2);
@@ -347,7 +440,7 @@ test("generic memory-cache evidence is counted and uses the same fixed incomplet
 });
 
 test("the persisted resource ledger is bounded and overflow is explicit", () => {
-  const responses = Array.from({ length: MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES + 1 }, (_, index) => ({
+  const responses = Array.from({ length: MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES }, (_, index) => ({
     request_id: `request-${index}`,
     url: `https://shop.example.test/assets/${index}.js?token=private-${index}`,
     resource_type: "Script",
@@ -365,18 +458,115 @@ test("the persisted resource ledger is bounded and overflow is explicit", () => 
   assert.equal(JSON.stringify(capture).includes("token="), false);
 });
 
+test("raw CDP response normalization stops at its fixed record cap", () => {
+  const responses = Array.from({ length: MAX_PAGE_LOAD_RESPONSE_RECORDS + 1 }, (_, index) => ({
+    request_id: `bounded-${index}`,
+    url: `https://shop.example.test/assets/${index}.js`,
+    resource_type: "Script",
+    status: 200,
+    encoded_data_length: 1,
+  }));
+  const exact = aggregateCdpResponses(responses.slice(0, MAX_PAGE_LOAD_RESPONSE_RECORDS), {
+    documentUrl: "https://shop.example.test/landing/",
+  });
+  assert.equal(exact.problems.some((problem) => problem.code === "response_record_overflow"), false);
+
+  const over = aggregateCdpResponses(responses, { documentUrl: "https://shop.example.test/landing/" });
+  assert.equal(over.observed_response_count, MAX_PAGE_LOAD_RESPONSE_RECORDS);
+  assert.deepEqual(
+    over.problems.find((problem) => problem.code === "response_record_overflow"),
+    { code: "response_record_overflow", count: 1 },
+  );
+});
+
+test("media element, source, and ancestor projections are capped with explicit incomplete evidence", () => {
+  const visibleSourceLess = () => ({
+    tag_name: "video",
+    current_src: "",
+    src_attribute: null,
+    source_src_attributes: [],
+    preload_attribute: null,
+    computed_style: { display: "block", visibility: "visible" },
+    ancestor_styles: [],
+    bounding_box: { width: 640, height: 360 },
+  });
+  const exact = boundCapture({
+    mediaElements: Array.from({ length: MAX_PAGE_LOAD_MEDIA_ELEMENTS }, visibleSourceLess),
+  });
+  assert.equal(exact.measurement_status, "complete");
+  assert.equal(exact.media.length, MAX_PAGE_LOAD_MEDIA_ELEMENTS);
+  assert.equal(exact.media_collection.omitted_element_count, 0);
+
+  const over = boundCapture({
+    mediaElements: Array.from({ length: MAX_PAGE_LOAD_MEDIA_ELEMENTS + 1 }, visibleSourceLess),
+  });
+  assert.equal(over.measurement_status, "incomplete");
+  assert.equal(over.media.length, MAX_PAGE_LOAD_MEDIA_ELEMENTS);
+  assert.equal(over.media_collection.observed_element_count, MAX_PAGE_LOAD_MEDIA_ELEMENTS + 1);
+  assert.equal(over.media_collection.omitted_element_count, 1);
+  assert.deepEqual(over.problems, [{ code: "media_element_overflow", count: 1 }]);
+
+  const variableOverflow = boundCapture({
+    mediaElements: [{
+      ...visibleSourceLess(),
+      source_src_attributes: Array.from(
+        { length: MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT + 1 },
+        (_, index) => `/media/${index}.mp4`,
+      ),
+      ancestor_styles: Array.from(
+        { length: MAX_PAGE_LOAD_MEDIA_ANCESTORS + 1 },
+        () => ({ display: "block", visibility: "visible" }),
+      ),
+    }],
+  });
+  assert.equal(variableOverflow.measurement_status, "incomplete");
+  assert.equal(variableOverflow.media[0].source_src_attributes.length, MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT);
+  assert.deepEqual(variableOverflow.problems, [
+    { code: "media_ancestor_overflow", count: 1 },
+    { code: "media_source_overflow", count: 1 },
+  ]);
+});
+
+test("author-controlled URL inputs have a fixed length cap and never persist oversized values", () => {
+  const prefix = "https://cdn.example.test/";
+  const exactUrl = `${prefix}${"a".repeat(MAX_POLISH_CAPTURE_URL_LENGTH - prefix.length)}`;
+  const overUrl = `${exactUrl}private-overflow`;
+  const elementFor = (url) => explicitMediaSource(url, {
+    computed_style: { display: "block", visibility: "visible" },
+    bounding_box: { width: 640, height: 360 },
+  });
+
+  const exact = boundCapture({ mediaElements: [elementFor(exactUrl)] });
+  assert.equal(exact.measurement_status, "complete");
+  assert.equal(exact.media[0].current_src.length, MAX_POLISH_CAPTURE_URL_LENGTH);
+
+  const over = boundCapture({ mediaElements: [elementFor(overUrl)] });
+  assert.equal(over.measurement_status, "incomplete");
+  assert.equal(over.media[0].current_src, "[url-too-long]");
+  assert.deepEqual(over.problems, [{ code: "url_length_overflow", count: 1 }]);
+  assert.equal(JSON.stringify(over).includes("private-overflow"), false);
+
+  const resource = boundCapture({ responses: [{
+    request_id: "oversized-resource",
+    url: overUrl,
+    resource_type: "Script",
+    status: 200,
+    encoded_data_length: 10,
+  }] });
+  assert.equal(resource.measurement_status, "incomplete");
+  assert.equal(resource.problems.some((problem) => problem.code === "url_length_overflow"), true);
+  assert.equal(JSON.stringify(resource).includes("private-overflow"), false);
+});
+
 test("capture subject binds build, campaign, requested route, final document route, and viewport", () => {
   const capture = boundCapture({
     requestedRoute: "/landing/?campaign=private",
     finalDocumentUrl: "https://shop.example.test/redirected/?token=private",
     viewport: "MOBILE",
-    responses: [{
-      request_id: "document",
+    responses: [documentResponse(200, {
       url: "https://shop.example.test/redirected/?token=private",
-      resource_type: "Document",
-      status: 200,
       encoded_data_length: 100,
-    }],
+    })],
   });
 
   assert.deepEqual(capture.subject, {
@@ -396,13 +586,7 @@ test("malformed capture bindings fail closed without persisting arbitrary identi
     buildFingerprint: "private-build-fingerprint-secret",
     slug: "private/merchant/secret",
     viewport: "desktop private session secret",
-    responses: [{
-      request_id: "document",
-      url: "https://shop.example.test/landing/",
-      resource_type: "Document",
-      status: 200,
-      encoded_data_length: 100,
-    }],
+    responses: [documentResponse(200, { encoded_data_length: 100 })],
   });
 
   assert.equal(capture.measurement_status, "incomplete");
@@ -562,6 +746,7 @@ test("page-load capture joins fetched bytes to video/audio sources while network
     requestedRoute: "/landing/?campaign=private#hero",
     viewport: "desktop",
     finalDocumentUrl: "https://shop.example.test/landing/?campaign=private",
+    requestedDocumentUrl: "https://shop.example.test/landing/?campaign=private",
     responseCollectionStatus: "complete",
     networkidle: { status: "timeout", duration_ms: 5_000 },
     mediaElements: [
@@ -597,6 +782,7 @@ test("page-load capture joins fetched bytes to video/audio sources while network
       },
     ],
     responses: [
+      documentResponse(200, { url: "https://shop.example.test/landing/?campaign=private" }),
       { request_id: "heavy", url: "https://cdn.example.test/heavy.mp4?signature=private", resource_type: "Media", status: 200, encoded_data_length: 1_048_577 },
       { request_id: "hero", url: "https://shop.example.test/visible-hero.mp4?token=private", resource_type: "Media", status: 200, encoded_data_length: 5_000_000 },
       { request_id: "audio", url: "https://shop.example.test/hidden-audio.mp3?token=private", resource_type: "Media", status: 206, encoded_data_length: 2_000_000 },
@@ -645,6 +831,7 @@ test("producer failure or missing media/network collections is explicit and neve
     requestedRoute: "/landing/",
     viewport: "desktop",
     finalDocumentUrl: "https://shop.example.test/landing/",
+    requestedDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "failed",
     networkidle: { status: "timeout", duration_ms: 5_000 },
     producerError: new Error("private cookie=SECRET at /private/tmp/sensitive-capture"),
@@ -652,6 +839,7 @@ test("producer failure or missing media/network collections is explicit and neve
 
   assert.equal(capture.measurement_status, "incomplete");
   assert.deepEqual(capture.problems, [
+    { code: "document_response_missing", count: 1 },
     { code: "media_collection_unavailable", count: 1 },
     { code: "producer_failed", count: 1 },
     { code: "response_collection_failed", count: 1 },
@@ -668,6 +856,7 @@ test("missing computed-style or source enumeration makes media measurement incom
     requestedRoute: "/landing/",
     viewport: "desktop",
     finalDocumentUrl: "https://shop.example.test/landing/",
+    requestedDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_000 },
     mediaElements: [{
@@ -681,6 +870,8 @@ test("missing computed-style or source enumeration makes media measurement incom
       bounding_box: { width: 0, height: 0 },
     }],
     responses: [{
+      ...documentResponse(),
+    }, {
       request_id: "unknown",
       url: "https://cdn.example.test/unknown.mp4",
       resource_type: "Media",
@@ -691,7 +882,10 @@ test("missing computed-style or source enumeration makes media measurement incom
 
   assert.equal(capture.measurement_status, "incomplete");
   assert.deepEqual(capture.media, []);
-  assert.deepEqual(capture.problems, [{ code: "media_measurement_failed", count: 1 }]);
+  assert.deepEqual(capture.problems, [
+    { code: "media_measurement_failed", count: 1 },
+    { code: "media_transfer_unattributed", count: 1 },
+  ]);
 });
 
 test("cross-origin redirect aliases join the final CDP transfer back to the authored media source", () => {
@@ -701,6 +895,7 @@ test("cross-origin redirect aliases join the final CDP transfer back to the auth
     requestedRoute: "/landing/",
     viewport: "desktop",
     finalDocumentUrl: "https://shop.example.test/landing/",
+    requestedDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_000 },
     mediaElements: [{
@@ -714,6 +909,8 @@ test("cross-origin redirect aliases join the final CDP transfer back to the auth
       bounding_box: { width: 0, height: 0 },
     }],
     responses: [{
+      ...documentResponse(),
+    }, {
       request_id: "redirected-media",
       url: "https://cdn.example.test/final/hero.mp4?signature=private",
       source_urls: ["https://shop.example.test/media/hero?token=private"],
@@ -745,6 +942,7 @@ test("hidden eager non-network media sources fail closed while visible and defer
     requestedRoute: "/landing/",
     viewport: "desktop",
     finalDocumentUrl: "https://shop.example.test/landing/",
+    requestedDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_000 },
     mediaElements: [{
@@ -758,6 +956,8 @@ test("hidden eager non-network media sources fail closed while visible and defer
       bounding_box: hidden ? { width: 0, height: 0 } : { width: 1200, height: 600 },
     }],
     responses: [{
+      ...documentResponse(),
+    }, {
       request_id: "blob-payload",
       url: "https://cdn.example.test/private-payload.mp4?token=secret",
       resource_type: "XHR",
@@ -781,6 +981,7 @@ test("an affirmatively empty CDP collection cannot pass a route with hidden eage
     requestedRoute: "/landing/",
     viewport: "desktop",
     finalDocumentUrl: "https://shop.example.test/landing/",
+    requestedDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_000 },
     mediaElements: [{
@@ -797,5 +998,50 @@ test("an affirmatively empty CDP collection cannot pass a route with hidden eage
   });
 
   assert.equal(capture.measurement_status, "incomplete");
-  assert.deepEqual(capture.problems, [{ code: "response_collection_empty", count: 1 }]);
+  assert.deepEqual(capture.problems, [
+    { code: "document_response_missing", count: 1 },
+    { code: "response_collection_empty", count: 1 },
+  ]);
+});
+
+test("source-less or transient media fails closed when a positive Media transfer cannot be attributed", () => {
+  const mediaElements = [{
+    tag_name: "video",
+    current_src: "",
+    src_attribute: null,
+    source_src_attributes: [],
+    preload_attribute: null,
+    computed_style: { display: "none", visibility: "visible" },
+    ancestor_styles: [],
+    bounding_box: { width: 0, height: 0 },
+  }];
+  const hiddenWithoutTransfer = boundCapture({ mediaElements });
+  assert.equal(hiddenWithoutTransfer.measurement_status, "complete");
+
+  const hiddenWithTransfer = boundCapture({
+    mediaElements,
+    responses: [{
+      request_id: "dynamic-media",
+      url: "https://cdn.example.test/dynamic.mp4?token=private",
+      resource_type: "Media",
+      status: 200,
+      encoded_data_length: 2_000_000,
+    }],
+  });
+  assert.equal(hiddenWithTransfer.measurement_status, "incomplete");
+  assert.deepEqual(hiddenWithTransfer.problems, [{ code: "media_transfer_unattributed", count: 1 }]);
+  assert.equal(JSON.stringify(hiddenWithTransfer).includes("token="), false);
+
+  const removedBeforeFinalSnapshot = boundCapture({
+    mediaElements: [],
+    responses: [{
+      request_id: "transient-media",
+      url: "https://cdn.example.test/transient.mp4?token=private",
+      resource_type: "Media",
+      status: 200,
+      encoded_data_length: 2_000_000,
+    }],
+  });
+  assert.equal(removedBeforeFinalSnapshot.measurement_status, "incomplete");
+  assert.deepEqual(removedBeforeFinalSnapshot.problems, [{ code: "media_transfer_unattributed", count: 1 }]);
 });

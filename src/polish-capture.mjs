@@ -17,6 +17,11 @@ export const POLISH_CAPTURE_PRODUCER = "campaigns-os polish capture";
 export const POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION = "campaigns-os-polish-route-capture-integrity/v0";
 export const POLISH_CAPTURE_INTEGRITY_ALGORITHM = "sha256";
 export const MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES = 2_048;
+export const MAX_PAGE_LOAD_RESPONSE_RECORDS = 4_096;
+export const MAX_PAGE_LOAD_MEDIA_ELEMENTS = 512;
+export const MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT = 32;
+export const MAX_PAGE_LOAD_MEDIA_ANCESTORS = 64;
+export const MAX_POLISH_CAPTURE_URL_LENGTH = 8_192;
 export const POLISH_RESOURCE_TYPES = Object.freeze([
   "cspviolationreport",
   "document",
@@ -50,6 +55,13 @@ export const POLISH_PRELOAD_ATTRIBUTES = Object.freeze([
 const KNOWN_RESOURCE_TYPES = new Set(POLISH_RESOURCE_TYPES.filter((value) => value !== "unknown"));
 
 function resolvedCaptureUrl(value, { baseUrl } = {}) {
+  if (value === "[url-too-long]" || baseUrl === "[url-too-long]") {
+    return { status: "too_long", canonical: null, projected: "[url-too-long]", origin: null };
+  }
+  if ((typeof value === "string" && value.length > MAX_POLISH_CAPTURE_URL_LENGTH)
+    || (typeof baseUrl === "string" && baseUrl.length > MAX_POLISH_CAPTURE_URL_LENGTH)) {
+    return { status: "too_long", canonical: null, projected: "[url-too-long]", origin: null };
+  }
   const text = normalizeString(value);
   if (!text) return { status: "empty", canonical: null, projected: null, origin: null };
   try {
@@ -195,7 +207,23 @@ function privateRecordSortKey(record, documentUrl) {
 
 function flattenResponseRecords(responses, problemCounts) {
   const flattened = [];
+  let omittedRecordCount = 0;
+  const retain = (record) => {
+    if (flattened.length >= MAX_PAGE_LOAD_RESPONSE_RECORDS) {
+      omittedRecordCount += 1;
+      return;
+    }
+    flattened.push(record);
+  };
   for (const record of (Array.isArray(responses) ? responses : [])) {
+    if (isPlainObject(record) && record.capture_problem === "response_record_overflow") {
+      addProblemCount(problemCounts, "response_record_overflow");
+      continue;
+    }
+    if (isPlainObject(record) && record.capture_problem === "document_context_changed") {
+      addProblemCount(problemCounts, "document_context_changed");
+      continue;
+    }
     const hasRedirectChain = isPlainObject(record) && Object.hasOwn(record, "redirect_chain");
     if (hasRedirectChain) {
       if (!Array.isArray(record.redirect_chain)
@@ -208,17 +236,25 @@ function flattenResponseRecords(responses, problemCounts) {
         addProblemCount(problemCounts, "redirect_chain_invalid");
         continue;
       }
-      record.redirect_chain.forEach((hop, redirectHop) => {
+      for (let redirectHop = 0; redirectHop < record.redirect_chain.length; redirectHop += 1) {
+        if (flattened.length >= MAX_PAGE_LOAD_RESPONSE_RECORDS) {
+          omittedRecordCount += record.redirect_chain.length - redirectHop;
+          break;
+        }
+        const hop = record.redirect_chain[redirectHop];
         flattened.push({
           ...record,
           ...hop,
           redirect_chain: undefined,
           redirect_hop: Number.isInteger(hop?.redirect_hop) ? hop.redirect_hop : redirectHop,
         });
-      });
+      }
     } else {
-      flattened.push(record);
+      retain(record);
     }
+  }
+  if (omittedRecordCount > 0) {
+    addProblemCount(problemCounts, "response_record_overflow", omittedRecordCount);
   }
   return flattened;
 }
@@ -291,16 +327,106 @@ function largestResourceProjection(resources) {
   } : null;
 }
 
-export function aggregateCdpResponses(responses, { documentUrl } = {}) {
+function documentResponseIdentity(value, { baseUrl } = {}) {
+  const resolved = resolvedCaptureUrl(value, { baseUrl });
+  if (resolved.status !== "http" || !resolved.canonical) return null;
+  try {
+    const url = new URL(resolved.canonical);
+    url.hash = "";
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function normalizedDocumentMimeType(value) {
+  const token = typeof value === "string" ? value.split(";", 1)[0].trim().toLowerCase() : "";
+  if (token === "text/html") return "html";
+  if (token === "application/xhtml+xml") return "xhtml";
+  return token ? "other" : "unknown";
+}
+
+function assessFinalDocumentResponse(prepared, {
+  documentUrl,
+  requestedDocumentUrl,
+  problemCounts,
+}) {
+  const finalIdentity = documentResponseIdentity(documentUrl);
+  const projectedUrl = redactCaptureUrl(documentUrl);
+  const captureOrigin = resolvedCaptureUrl(requestedDocumentUrl).origin;
+  const finalOrigin = resolvedCaptureUrl(documentUrl).origin;
+  const empty = (status) => ({
+    status,
+    url: projectedUrl,
+    resource_id: null,
+    http_status: null,
+    mime_type: "unknown",
+    context_fingerprint: null,
+    capture_origin: captureOrigin,
+    final_origin: finalOrigin,
+    origin_matches_capture: Boolean(captureOrigin && finalOrigin && captureOrigin === finalOrigin),
+  });
+  if (!finalIdentity) {
+    addProblemCount(problemCounts, "document_response_missing");
+    return empty("missing");
+  }
+  const matches = prepared.filter(({ record }) => {
+    const resourceType = normalizeResourceType(record?.resource_type);
+    return record?.is_final_main_document === true
+      && /^sha256:[a-f0-9]{64}$/.test(record?.document_context_fingerprint || "")
+      && resourceType.value === "document"
+      && resourceType.status === "known"
+      && documentResponseIdentity(record?.url, { baseUrl: documentUrl }) === finalIdentity;
+  });
+  if (matches.length === 0) {
+    addProblemCount(problemCounts, "document_response_missing");
+    return empty("missing");
+  }
+  if (matches.length > 1) {
+    addProblemCount(problemCounts, "document_response_ambiguous");
+    return empty("ambiguous");
+  }
+  const record = matches[0].record;
+  const resolved = resolvedResource(record.url, { baseUrl: documentUrl });
+  const projection = {
+    status: "complete",
+    url: resolved.projected,
+    resource_id: resolved.resource_id,
+    http_status: Number.isInteger(record?.status) ? record.status : null,
+    mime_type: normalizedDocumentMimeType(record?.mime_type),
+    context_fingerprint: record.document_context_fingerprint,
+    capture_origin: captureOrigin,
+    final_origin: finalOrigin,
+    origin_matches_capture: Boolean(captureOrigin && finalOrigin && captureOrigin === finalOrigin),
+  };
+  if (record?.failed === true
+    || record?.status !== 200
+    || (projection.mime_type !== "html" && projection.mime_type !== "xhtml")
+    || !projection.origin_matches_capture) {
+    addProblemCount(problemCounts, "document_response_error");
+    projection.status = "error";
+  }
+  return projection;
+}
+
+export function aggregateCdpResponses(responses, {
+  documentUrl,
+  requestedDocumentUrl,
+  requireFinalDocumentResponse = false,
+} = {}) {
   const problemCounts = new Map();
   const documentOrigin = resolvedCaptureUrl(documentUrl).origin;
   const groups = new Map();
   let unattributedRequestCount = 0;
   const prepared = prepareResponseRecords(responses, { documentUrl, problemCounts });
+  const documentResponse = requireFinalDocumentResponse
+    ? assessFinalDocumentResponse(prepared, { documentUrl, requestedDocumentUrl, problemCounts })
+    : null;
 
   for (const { record, chain } of prepared) {
     const resolved = resolvedResource(record?.url, { baseUrl: documentUrl });
     if (resolved.status !== "http") {
+      if (resolved.status === "too_long") addProblemCount(problemCounts, "url_length_overflow");
       addProblemCount(problemCounts, "resource_url_unresolvable");
       unattributedRequestCount += 1;
       continue;
@@ -317,7 +443,10 @@ export function aggregateCdpResponses(responses, { documentUrl } = {}) {
     const matchResources = [resolved];
     for (const alias of (Array.isArray(sourceUrls) ? sourceUrls : [])) {
       const aliasResource = resolvedResource(alias, { baseUrl: documentUrl });
-      if (aliasResource.status !== "http") addProblemCount(problemCounts, "resource_aliases_invalid");
+      if (aliasResource.status !== "http") {
+        if (aliasResource.status === "too_long") addProblemCount(problemCounts, "url_length_overflow");
+        addProblemCount(problemCounts, "resource_aliases_invalid");
+      }
       else matchResources.push(aliasResource);
     }
     for (const hop of chain) {
@@ -406,6 +535,7 @@ export function aggregateCdpResponses(responses, { documentUrl } = {}) {
       omitted_request_count: omittedResources.reduce((sum, resource) => sum + resource.request_count, 0),
     },
     largest_resource: largestResourceProjection(resources),
+    document_response: documentResponse,
     problems,
   };
 }
@@ -429,7 +559,7 @@ function sourceReference(value, sourceKind, sourceIndex, documentUrl) {
 }
 
 function sourceReferenceSort(a, b) {
-  const ranks = { current_src: 0, src_attribute: 1, source_src_attribute: 2 };
+  const ranks = { current_src: 0, src_attribute: 1, source_src_attribute: 2, observed_source: 3 };
   return ranks[a.source_kind] - ranks[b.source_kind]
     || a.source_index - b.source_index
     || String(a.resource_id).localeCompare(String(b.resource_id));
@@ -447,6 +577,9 @@ export function normalizeMediaElement(element, { documentUrl, elementIndex = 0 }
     || (element.src_attribute !== null && typeof element.src_attribute !== "string")
     || !Array.isArray(element.source_src_attributes)
     || element.source_src_attributes.some((source) => typeof source !== "string")
+    || (Object.hasOwn(element, "observed_source_urls")
+      && (!Array.isArray(element.observed_source_urls)
+        || element.observed_source_urls.some((source) => typeof source !== "string")))
     || !Object.hasOwn(element, "preload_attribute")
     || (element.preload_attribute !== null && typeof element.preload_attribute !== "string")
     || !validComputedStyle(element.computed_style)
@@ -465,7 +598,9 @@ export function normalizeMediaElement(element, { documentUrl, elementIndex = 0 }
   const srcAttribute = sourceReference(element.src_attribute, "src_attribute", 0, documentUrl);
   const sourceSrcAttributes = element.source_src_attributes
     .map((source, index) => sourceReference(source, "source_src_attribute", index, documentUrl));
-  const sourceReferences = [currentSrc, srcAttribute, ...sourceSrcAttributes]
+  const observedSourceUrls = (Array.isArray(element.observed_source_urls) ? element.observed_source_urls : [])
+    .map((source, index) => sourceReference(source, "observed_source", index, documentUrl));
+  const sourceReferences = [currentSrc, srcAttribute, ...sourceSrcAttributes, ...observedSourceUrls]
     .filter(Boolean)
     .sort(sourceReferenceSort);
   const preloadAttribute = normalizedPreloadAttribute(element.preload_attribute);
@@ -478,6 +613,7 @@ export function normalizeMediaElement(element, { documentUrl, elementIndex = 0 }
     current_src: currentSrc?.url || null,
     src_attribute: srcAttribute?.url || null,
     source_src_attributes: sourceSrcAttributes.map((source) => source?.url || null),
+    observed_source_urls: observedSourceUrls.map((source) => source?.url || null),
     source_references: sourceReferences,
     preload_attribute: preloadAttribute,
     preload_defers_fetch: preloadAttribute === "none" || preloadAttribute === "metadata",
@@ -558,16 +694,27 @@ export function buildPageLoadCapture({
   requestedRoute,
   viewport,
   finalDocumentUrl,
+  requestedDocumentUrl,
   responseCollectionStatus,
   networkidle,
   mediaElements,
   responses,
   producerError,
+  producerProblem,
 } = {}) {
-  const network = aggregateCdpResponses(responses, { documentUrl: finalDocumentUrl });
+  const network = aggregateCdpResponses(responses, {
+    documentUrl: finalDocumentUrl,
+    requestedDocumentUrl,
+    requireFinalDocumentResponse: true,
+  });
   const problemCounts = new Map(network.problems.map(({ code, count }) => [code, count]));
   const addCaptureProblem = (code, count = 1) => addProblemCount(problemCounts, code, count);
   const subject = captureSubject({ buildFingerprint, slug, requestedRoute, finalDocumentUrl, viewport });
+  for (const value of [requestedDocumentUrl, finalDocumentUrl, requestedRoute]) {
+    if (typeof value === "string" && value.length > MAX_POLISH_CAPTURE_URL_LENGTH) {
+      addCaptureProblem("url_length_overflow");
+    }
+  }
   if (Object.values(subject).some((value) => value === null)) addCaptureProblem("capture_subject_invalid");
   if (subject.requested_route && subject.final_document_route
     && subject.requested_route !== subject.final_document_route) {
@@ -581,13 +728,58 @@ export function buildPageLoadCapture({
   if (collectionStatus === "complete" && Array.isArray(responses) && network.observed_response_count === 0) {
     addCaptureProblem("response_collection_empty");
   }
-  if (producerError) addCaptureProblem("producer_failed");
+  const normalizedProducerProblem = producerProblem === "browser_unavailable"
+    ? "browser_unavailable"
+    : producerProblem === "producer_failed" || producerError ? "producer_failed" : null;
+  if (normalizedProducerProblem) addCaptureProblem(normalizedProducerProblem);
 
   const media = [];
   let failedMediaElementCount = 0;
-  for (const [elementIndex, element] of (Array.isArray(mediaElements) ? mediaElements : []).entries()) {
+  const rawMediaElements = Array.isArray(mediaElements) ? mediaElements : [];
+  const declaredObservedElementCount = Number.isInteger(rawMediaElements.observed_element_count)
+    && rawMediaElements.observed_element_count >= rawMediaElements.length
+    ? rawMediaElements.observed_element_count
+    : rawMediaElements.length;
+  const boundedMediaElements = rawMediaElements.slice(0, MAX_PAGE_LOAD_MEDIA_ELEMENTS);
+  const omittedMediaElementCount = Math.max(0, declaredObservedElementCount - boundedMediaElements.length);
+  if (omittedMediaElementCount > 0) addCaptureProblem("media_element_overflow", omittedMediaElementCount);
+  let sourceOverflowElementCount = 0;
+  let ancestorOverflowElementCount = 0;
+  for (const [elementIndex, element] of boundedMediaElements.entries()) {
     try {
-      const normalized = normalizeMediaElement(element, { documentUrl: finalDocumentUrl, elementIndex });
+      const sourceOverflow = (Array.isArray(element?.source_src_attributes)
+        && element.source_src_attributes.length > MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT)
+        || (Array.isArray(element?.observed_source_urls)
+          && element.observed_source_urls.length > MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT)
+        || (Number.isInteger(element?.source_overflow_count) && element.source_overflow_count > 0);
+      const ancestorOverflow = (Array.isArray(element?.ancestor_styles)
+        && element.ancestor_styles.length > MAX_PAGE_LOAD_MEDIA_ANCESTORS)
+        || (Number.isInteger(element?.ancestor_overflow_count) && element.ancestor_overflow_count > 0);
+      if (sourceOverflow) sourceOverflowElementCount += 1;
+      if (ancestorOverflow) ancestorOverflowElementCount += 1;
+      const mediaSourceValues = [element?.current_src, element?.src_attribute,
+        ...(Array.isArray(element?.source_src_attributes)
+          ? element.source_src_attributes.slice(0, MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT) : []),
+        ...(Array.isArray(element?.observed_source_urls)
+          ? element.observed_source_urls.slice(0, MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT) : [])];
+      const overlongSourceCount = mediaSourceValues.filter((value) => typeof value === "string"
+        && value.length > MAX_POLISH_CAPTURE_URL_LENGTH).length
+        + (Number.isInteger(element?.url_overflow_count) && element.url_overflow_count > 0
+          ? element.url_overflow_count : 0);
+      if (overlongSourceCount > 0) addCaptureProblem("url_length_overflow", overlongSourceCount);
+      const boundedElement = isPlainObject(element) ? {
+        ...element,
+        source_src_attributes: Array.isArray(element.source_src_attributes)
+          ? element.source_src_attributes.slice(0, MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT)
+          : element.source_src_attributes,
+        ...(Array.isArray(element.observed_source_urls) ? {
+          observed_source_urls: element.observed_source_urls.slice(0, MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT),
+        } : {}),
+        ancestor_styles: Array.isArray(element.ancestor_styles)
+          ? element.ancestor_styles.slice(0, MAX_PAGE_LOAD_MEDIA_ANCESTORS)
+          : element.ancestor_styles,
+      } : element;
+      const normalized = normalizeMediaElement(boundedElement, { documentUrl: finalDocumentUrl, elementIndex });
       if (normalized.hidden_at_load
         && !normalized.preload_defers_fetch
         && normalized.source_references.some((reference) => reference.resource_id === null)) {
@@ -605,6 +797,20 @@ export function buildPageLoadCapture({
       addCaptureProblem("media_measurement_failed");
     }
   }
+  if (sourceOverflowElementCount > 0) {
+    addCaptureProblem("media_source_overflow", sourceOverflowElementCount);
+  }
+  if (ancestorOverflowElementCount > 0) {
+    addCaptureProblem("media_ancestor_overflow", ancestorOverflowElementCount);
+  }
+  const attributedResourceIds = new Set(media.flatMap((item) => item.fetched_resources)
+    .map((resource) => resource.resource_id));
+  const unattributedMediaTransfers = network.resources.filter((resource) => resource.resource_type === "media"
+    && resource.transferred_bytes > 0
+    && !attributedResourceIds.has(resource.resource_id));
+  if (unattributedMediaTransfers.length) {
+    addCaptureProblem("media_transfer_unattributed", unattributedMediaTransfers.length);
+  }
   const settled = normalizedNetworkidle(networkidle);
   if (settled.status === "invalid") addCaptureProblem("networkidle_measurement_invalid");
   const problems = projectedProblems(problemCounts);
@@ -614,18 +820,25 @@ export function buildPageLoadCapture({
     performed_by: POLISH_CAPTURE_PRODUCER,
     subject,
     measurement_status: problems.length ? "incomplete" : "complete",
-    producer_status: producerError ? "failed" : "complete",
+    producer_status: normalizedProducerProblem ? "failed" : "complete",
     response_collection: {
       status: collectionStatus === "complete" || collectionStatus === "failed" ? collectionStatus : "invalid",
       observed_response_count: network.observed_response_count,
       unattributed_response_count: network.unattributed_request_count,
     },
     media_collection: {
-      status: !Array.isArray(mediaElements) ? "failed" : failedMediaElementCount ? "partial" : "complete",
-      observed_element_count: Array.isArray(mediaElements) ? mediaElements.length : 0,
+      status: !Array.isArray(mediaElements)
+        ? "failed"
+        : failedMediaElementCount || omittedMediaElementCount
+          || sourceOverflowElementCount || ancestorOverflowElementCount ? "partial" : "complete",
+      observed_element_count: Array.isArray(mediaElements) ? declaredObservedElementCount : 0,
       failed_element_count: failedMediaElementCount,
+      omitted_element_count: omittedMediaElementCount,
+      source_overflow_element_count: sourceOverflowElementCount,
+      ancestor_overflow_element_count: ancestorOverflowElementCount,
     },
     networkidle: settled,
+    document_response: network.document_response,
     resource_ledger: {
       ...network.resource_ledger,
       entries: network.resources,

@@ -54,6 +54,7 @@ function pageLoadEvidence(packet, { hiddenBytes = 0 } = {}) {
       slug: packet.campaign.public_route_slug,
       requestedRoute: route,
       viewport,
+      requestedDocumentUrl: pageUrl,
       finalDocumentUrl: pageUrl,
       responseCollectionStatus: "complete",
       networkidle: { status: "settled", duration_ms: 10 },
@@ -75,6 +76,9 @@ function pageLoadEvidence(packet, { hiddenBytes = 0 } = {}) {
           url: pageUrl,
           resource_type: "Document",
           status: 200,
+          mime_type: "text/html",
+          is_final_main_document: true,
+          document_context_fingerprint: `sha256:${"d".repeat(64)}`,
           encoded_data_length: 1_024,
         },
         ...(hiddenBytes > 0 && index === 0 && route === routes[0]

@@ -1,5 +1,10 @@
+import { createHash } from "node:crypto";
+
 import {
   buildPolishCaptureIntegrity,
+  MAX_PAGE_LOAD_MEDIA_ANCESTORS,
+  MAX_PAGE_LOAD_MEDIA_ELEMENTS,
+  MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
   MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
   normalizePageLoadRoute,
   POLISH_CAPTURE_PRODUCER,
@@ -20,23 +25,33 @@ export const HIDDEN_EAGER_MEDIA_SCOPE = "polish.hidden_eager_media";
 export const HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES = 1_048_576;
 export const POLISH_PAGE_LOAD_SCHEMA_VERSION = "campaigns-os-polish-page-load/v0";
 export const POLISH_PAGE_LOAD_PRODUCER = POLISH_CAPTURE_PRODUCER;
+export const MAX_HIDDEN_EAGER_MEDIA_FINDING_RESOURCES = 64;
 
 const RESOURCE_TYPES = new Set(POLISH_RESOURCE_TYPES);
 const PRELOAD_ATTRIBUTES = new Set(POLISH_PRELOAD_ATTRIBUTES);
 const RESOURCE_TYPE_STATUSES = new Set(["ambiguous", "known", "unknown"]);
-const SOURCE_KINDS = new Set(["current_src", "source_src_attribute", "src_attribute"]);
-const SOURCE_SENTINELS = new Set(["[malformed-url]", "[non-http-url]"]);
-const CAPTURE_PROBLEM_CODES = new Set([
+const SOURCE_KINDS = new Set(["current_src", "observed_source", "source_src_attribute", "src_attribute"]);
+const SOURCE_SENTINELS = new Set(["[malformed-url]", "[non-http-url]", "[url-too-long]"]);
+export const POLISH_CAPTURE_PROBLEM_CODES = Object.freeze([
+  "browser_unavailable",
   "cache_observed",
   "capture_binding_mismatch",
   "capture_integrity_invalid",
   "capture_shape_invalid",
   "capture_subject_invalid",
   "duplicate_request_identity",
+  "document_response_ambiguous",
+  "document_response_error",
+  "document_response_missing",
+  "document_context_changed",
   "final_document_route_mismatch",
   "media_collection_unavailable",
+  "media_element_overflow",
   "media_measurement_failed",
+  "media_ancestor_overflow",
   "media_source_unresolvable",
+  "media_source_overflow",
+  "media_transfer_unattributed",
   "networkidle_measurement_invalid",
   "producer_failed",
   "redirect_chain_invalid",
@@ -51,9 +66,12 @@ const CAPTURE_PROBLEM_CODES = new Set([
   "response_collection_failed",
   "response_collection_status_invalid",
   "response_collection_unavailable",
+  "response_record_overflow",
   "service_worker_observed",
   "transfer_size_unavailable",
+  "url_length_overflow",
 ]);
+const CAPTURE_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
 
 function normalizeString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -318,7 +336,8 @@ function projectMetrics(metrics) {
 function validSourceReference(reference) {
   if (!reference || typeof reference !== "object" || Array.isArray(reference)) return false;
   if (!SOURCE_KINDS.has(reference.source_kind) || !isNonnegativeInteger(reference.source_index)) return false;
-  if (reference.source_kind !== "source_src_attribute" && reference.source_index !== 0) return false;
+  if ((reference.source_kind === "current_src" || reference.source_kind === "src_attribute")
+    && reference.source_index !== 0) return false;
   const safeUrl = safeSourceUrl(reference.url);
   if (safeUrl !== reference.url) return false;
   return safeHttpUrl(reference.url)
@@ -327,7 +346,7 @@ function validSourceReference(reference) {
 }
 
 function sourceReferenceSort(a, b) {
-  const ranks = { current_src: 0, src_attribute: 1, source_src_attribute: 2 };
+  const ranks = { current_src: 0, src_attribute: 1, source_src_attribute: 2, observed_source: 3 };
   return (ranks[a.source_kind] ?? 99) - (ranks[b.source_kind] ?? 99)
     || a.source_index - b.source_index
     || String(a.resource_id).localeCompare(String(b.resource_id));
@@ -348,6 +367,9 @@ function explicitSourceDescriptors(media) {
   if (media.src_attribute !== null) descriptors.push({ source_kind: "src_attribute", source_index: 0, url: media.src_attribute });
   media.source_src_attributes.forEach((url, sourceIndex) => {
     if (url !== null) descriptors.push({ source_kind: "source_src_attribute", source_index: sourceIndex, url });
+  });
+  media.observed_source_urls.forEach((url, sourceIndex) => {
+    if (url !== null) descriptors.push({ source_kind: "observed_source", source_index: sourceIndex, url });
   });
   return descriptors.sort(sourceReferenceSort);
 }
@@ -403,7 +425,11 @@ function validMediaProjection(media, ledgerEntries) {
   if (safeSourceUrl(media.current_src) !== media.current_src
     || safeSourceUrl(media.src_attribute) !== media.src_attribute
     || !Array.isArray(media.source_src_attributes)
-    || media.source_src_attributes.some((value) => safeSourceUrl(value) !== value)) return false;
+    || media.source_src_attributes.some((value) => safeSourceUrl(value) !== value)
+    || !Array.isArray(media.observed_source_urls)
+    || media.observed_source_urls.some((value) => safeSourceUrl(value) !== value)
+    || media.source_src_attributes.length > MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT
+    || media.observed_source_urls.length > MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT) return false;
   if (!Array.isArray(media.source_references)
     || media.source_references.some((reference) => !validSourceReference(reference))
     || !isSortedUnique(media.source_references, sourceReferenceSort)) return false;
@@ -440,6 +466,8 @@ function projectMedia(media) {
     current_src: safeSourceUrl(media?.current_src),
     src_attribute: safeSourceUrl(media?.src_attribute),
     source_src_attributes: (Array.isArray(media?.source_src_attributes) ? media.source_src_attributes : [])
+      .map(safeSourceUrl),
+    observed_source_urls: (Array.isArray(media?.observed_source_urls) ? media.observed_source_urls : [])
       .map(safeSourceUrl),
     source_references: (Array.isArray(media?.source_references) ? media.source_references : [])
       .map(projectSourceReference)
@@ -501,6 +529,66 @@ function validCaptureIntegrity(capture) {
   return canonicalJson(integrity) === canonicalJson(expected);
 }
 
+function safeOrigin(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function projectDocumentResponse(value) {
+  const statuses = new Set(["ambiguous", "complete", "error", "missing"]);
+  const mimeTypes = new Set(["html", "other", "unknown", "xhtml"]);
+  return {
+    status: statuses.has(value?.status) ? value.status : "missing",
+    url: safeHttpUrl(value?.url),
+    resource_id: isSha256(value?.resource_id) ? value.resource_id : null,
+    http_status: Number.isInteger(value?.http_status) && value.http_status >= 100 && value.http_status <= 599
+      ? value.http_status
+      : null,
+    mime_type: mimeTypes.has(value?.mime_type) ? value.mime_type : "unknown",
+    context_fingerprint: isSha256(value?.context_fingerprint) ? value.context_fingerprint : null,
+    capture_origin: safeOrigin(value?.capture_origin),
+    final_origin: safeOrigin(value?.final_origin),
+    origin_matches_capture: projectedBoolean(value?.origin_matches_capture),
+  };
+}
+
+function validDocumentResponse(capture, entries) {
+  if (!capture.document_response || typeof capture.document_response !== "object"
+    || Array.isArray(capture.document_response)) return false;
+  const projected = projectDocumentResponse(capture.document_response);
+  if (canonicalJson(projected) !== canonicalJson(capture.document_response)) return false;
+  if (projected.origin_matches_capture
+    !== Boolean(projected.capture_origin && projected.final_origin
+      && projected.capture_origin === projected.final_origin)) return false;
+  const problemStatus = problemCount(capture, "document_response_ambiguous") > 0
+    ? "ambiguous"
+    : problemCount(capture, "document_response_missing") > 0
+      ? "missing"
+      : problemCount(capture, "document_response_error") > 0 ? "error" : "complete";
+  if (projected.status !== problemStatus) return false;
+  if (projected.status === "missing" || projected.status === "ambiguous") {
+    return projected.resource_id === null
+      && projected.http_status === null
+      && projected.mime_type === "unknown"
+      && projected.context_fingerprint === null;
+  }
+  if (!projected.resource_id || !projected.context_fingerprint) return false;
+  const resource = entries.find((entry) => entry.resource_id === projected.resource_id);
+  if (!resource || resource.resource_type !== "document" || resource.url !== projected.url) return false;
+  if (projected.http_status !== null && !resource.statuses.includes(projected.http_status)) return false;
+  const acceptable = projected.http_status === 200
+    && (projected.mime_type === "html" || projected.mime_type === "xhtml")
+    && projected.origin_matches_capture;
+  return (projected.status === "complete") === acceptable;
+}
+
 function validCaptureShape(capture) {
   if (!capture || typeof capture !== "object" || Array.isArray(capture)) return false;
   if (capture.schema_version !== POLISH_ROUTE_CAPTURE_SCHEMA_VERSION
@@ -510,7 +598,8 @@ function validCaptureShape(capture) {
     || !validProblems(capture)
     || !validCaptureIntegrity(capture)) return false;
   if (capture.producer_status !== "complete" && capture.producer_status !== "failed") return false;
-  if ((capture.producer_status === "failed") !== (problemCount(capture, "producer_failed") > 0)) return false;
+  if ((capture.producer_status === "failed") !== (problemCount(capture, "producer_failed") > 0
+    || problemCount(capture, "browser_unavailable") > 0)) return false;
   if (!capture.response_collection
     || !["complete", "failed", "invalid"].includes(capture.response_collection.status)
     || !isNonnegativeInteger(capture.response_collection.observed_response_count)
@@ -523,10 +612,20 @@ function validCaptureShape(capture) {
   if (!capture.media_collection
     || !["complete", "failed", "partial"].includes(capture.media_collection.status)
     || !isNonnegativeInteger(capture.media_collection.observed_element_count)
-    || !isNonnegativeInteger(capture.media_collection.failed_element_count)) return false;
-  if ((capture.media_collection.status === "partial") !== (capture.media_collection.failed_element_count > 0)) return false;
+    || !isNonnegativeInteger(capture.media_collection.failed_element_count)
+    || !isNonnegativeInteger(capture.media_collection.omitted_element_count)
+    || !isNonnegativeInteger(capture.media_collection.source_overflow_element_count)
+    || !isNonnegativeInteger(capture.media_collection.ancestor_overflow_element_count)) return false;
+  const partialMediaCollection = capture.media_collection.failed_element_count > 0
+    || capture.media_collection.omitted_element_count > 0
+    || capture.media_collection.source_overflow_element_count > 0
+    || capture.media_collection.ancestor_overflow_element_count > 0;
+  if ((capture.media_collection.status === "partial") !== partialMediaCollection) return false;
   if ((capture.media_collection.status === "failed") !== (problemCount(capture, "media_collection_unavailable") > 0)) return false;
   if (capture.media_collection.failed_element_count !== problemCount(capture, "media_measurement_failed")) return false;
+  if (capture.media_collection.omitted_element_count !== problemCount(capture, "media_element_overflow")) return false;
+  if (capture.media_collection.source_overflow_element_count !== problemCount(capture, "media_source_overflow")) return false;
+  if (capture.media_collection.ancestor_overflow_element_count !== problemCount(capture, "media_ancestor_overflow")) return false;
   if (!capture.networkidle
     || !["invalid", "settled", "timeout"].includes(capture.networkidle.status)
     || (capture.networkidle.status === "invalid"
@@ -535,6 +634,7 @@ function validCaptureShape(capture) {
   if ((capture.networkidle.status === "invalid") !== (problemCount(capture, "networkidle_measurement_invalid") > 0)) return false;
   if (!validResourceLedger(capture.resource_ledger)) return false;
   const entries = capture.resource_ledger.entries;
+  if (!validDocumentResponse(capture, entries)) return false;
   if (!capture.metrics || typeof capture.metrics !== "object" || Array.isArray(capture.metrics)) return false;
   if (canonicalJson(projectMetrics(capture.metrics)) !== canonicalJson(recomputedMetrics(entries))) return false;
   if (capture.response_collection.observed_response_count !== capture.metrics.request_count
@@ -545,18 +645,25 @@ function validCaptureShape(capture) {
   if (capture.resource_ledger.omitted_resource_count > 0
     && problemCount(capture, "resource_ledger_overflow") !== capture.resource_ledger.omitted_resource_count) return false;
   if (!Array.isArray(capture.media)
+    || capture.media.length > MAX_PAGE_LOAD_MEDIA_ELEMENTS
     || capture.media.some((media) => !validMediaProjection(media, entries))) return false;
   const indices = capture.media.map((media) => media.element_index);
   if (!isSortedUnique(indices, (a, b) => a - b)) return false;
-  if (capture.media_collection.status === "complete"
+  if (capture.media_collection.status !== "failed"
     && (!capture.media.every((media, index) => media.element_index === index)
-      || capture.media_collection.observed_element_count !== capture.media.length)) return false;
-  if (capture.media_collection.status === "partial"
-    && capture.media_collection.observed_element_count !== capture.media.length + capture.media_collection.failed_element_count) return false;
+      || capture.media_collection.observed_element_count !== capture.media.length
+        + capture.media_collection.failed_element_count
+        + capture.media_collection.omitted_element_count)) return false;
   const unresolvedHiddenEager = capture.media.filter((media) => media.hidden_at_load
     && !media.preload_defers_fetch
     && media.source_references.some((reference) => reference.resource_id === null)).length;
   if (problemCount(capture, "media_source_unresolvable") !== unresolvedHiddenEager) return false;
+  const attributedResourceIds = new Set(capture.media.flatMap((media) => media.fetched_resources)
+    .map((resource) => resource.resource_id));
+  const unattributedMediaTransfers = entries.filter((resource) => resource.resource_type === "media"
+    && resource.transferred_bytes > 0
+    && !attributedResourceIds.has(resource.resource_id)).length;
+  if (problemCount(capture, "media_transfer_unattributed") !== unattributedMediaTransfers) return false;
   if ((capture.subject.final_document_route !== capture.subject.requested_route)
     !== (problemCount(capture, "final_document_route_mismatch") > 0)) return false;
   const noOverflow = capture.resource_ledger.omitted_resource_count === 0;
@@ -597,12 +704,16 @@ function projectCapturePayload(capture) {
       observed_response_count: projectedInteger(capture.response_collection.observed_response_count),
       unattributed_response_count: projectedInteger(capture.response_collection.unattributed_response_count),
     } : null,
+    document_response: projectDocumentResponse(capture?.document_response),
     media_collection: capture?.media_collection && typeof capture.media_collection === "object" ? {
       status: ["complete", "failed", "partial"].includes(capture.media_collection.status)
         ? capture.media_collection.status
         : "failed",
       observed_element_count: projectedInteger(capture.media_collection.observed_element_count),
       failed_element_count: projectedInteger(capture.media_collection.failed_element_count),
+      omitted_element_count: projectedInteger(capture.media_collection.omitted_element_count),
+      source_overflow_element_count: projectedInteger(capture.media_collection.source_overflow_element_count),
+      ancestor_overflow_element_count: projectedInteger(capture.media_collection.ancestor_overflow_element_count),
     } : null,
     networkidle: capture?.networkidle && typeof capture.networkidle === "object" ? {
       status: ["invalid", "settled", "timeout"].includes(capture.networkidle.status)
@@ -643,7 +754,8 @@ function stableFindingSort(a, b) {
   return String(a.route).localeCompare(String(b.route))
     || String(a.viewport).localeCompare(String(b.viewport))
     || a.element_index - b.element_index
-    || a.sources.join("\u0000").localeCompare(b.sources.join("\u0000"));
+    || a.sources.join("\u0000").localeCompare(b.sources.join("\u0000"))
+    || String(a.resource_identity_fingerprint).localeCompare(String(b.resource_identity_fingerprint));
 }
 
 function hiddenEagerMediaFindings(captures) {
@@ -653,15 +765,25 @@ function hiddenEagerMediaFindings(captures) {
       if (!media?.hidden_at_load || media?.preload_defers_fetch) continue;
       if (!Number.isInteger(media.fetched_bytes)
         || media.fetched_bytes <= HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES) continue;
+      const allSources = [...new Set((Array.isArray(media.fetched_resources) ? media.fetched_resources : [])
+        .map((resource) => resource?.url)
+        .filter(Boolean))].sort();
+      const allResourceIds = [...new Set((Array.isArray(media.fetched_resources) ? media.fetched_resources : [])
+        .map((resource) => resource?.resource_id)
+        .filter(isSha256))].sort();
       findings.push({
         code: HIDDEN_EAGER_MEDIA_SCOPE,
         route: capture.subject.requested_route,
         viewport: capture.subject.viewport,
         tag_name: media.tag_name,
         element_index: media.element_index,
-        sources: [...new Set((Array.isArray(media.fetched_resources) ? media.fetched_resources : [])
-          .map((resource) => resource?.url)
-          .filter(Boolean))].sort(),
+        sources: allSources.slice(0, MAX_HIDDEN_EAGER_MEDIA_FINDING_RESOURCES),
+        source_count: allSources.length,
+        resource_ids: allResourceIds.slice(0, MAX_HIDDEN_EAGER_MEDIA_FINDING_RESOURCES),
+        resource_id_count: allResourceIds.length,
+        resource_identity_fingerprint: `sha256:${createHash("sha256")
+          .update(JSON.stringify(allResourceIds))
+          .digest("hex")}`,
         transferred_bytes: media.fetched_bytes,
         threshold_bytes: HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES,
         preload_attribute: media.preload_attribute,
