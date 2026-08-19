@@ -1658,6 +1658,20 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
   };
 }
 
+function recordTestOrderTerminalEvidence({ ladder, topologyPlan, finalUrl }) {
+  const terminal = terminalAtUrl(topologyPlan, finalUrl);
+  if (terminal?.kind === "receipt" || (!topologyPlan && /receipt|thank/i.test(finalUrl))) {
+    ladder.ok("receipt_reached", redactUrlQuery(finalUrl));
+    return { kind: "receipt", terminal };
+  }
+  if (terminal?.kind === "external_handoff") {
+    ladder.skip("receipt_reached", `path ended at recognized external handoff ${redactUrlQuery(finalUrl)}`);
+    return { kind: "external_handoff", terminal };
+  }
+  ladder.skip("receipt_reached", `path ended at ${redactUrlQuery(finalUrl) || "(unknown url)"}`);
+  return { kind: "unrecognized", terminal: null };
+}
+
 function withStepTimeout(promise, timeoutMs, label) {
   const stepTimeoutError = (message) => {
     const error = new Error(message);
@@ -1878,7 +1892,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
           upsell_api_response_seen: upsell.api_response_seen,
           upsell_api_response_status: upsell.api_response_status,
         };
-        stepFailures.push(...upsellAcceptStepFailures(stepIndex, proof, upsell.api_response_seen));
+        stepFailures.push(...upsellActionStepFailures(stepIndex, step, upsell, proof));
         if (proof.ok && !upsell.api_response_seen) {
           upsell.verification.upsell_api_response_observation =
             "live order-upsell request not observed; confirmed via order read-back (upsell line present in persisted order)";
@@ -1886,17 +1900,16 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       } else {
         const proof = declinedUpsellProof(order.receipt_line_items, initialLineItems, events, initialUpsellMutationCount);
         upsell.verification = proof;
-        if (!proof.ok) stepFailures.push(`step ${stepIndex + 1}: ${proof.reason}`);
+        stepFailures.push(...upsellActionStepFailures(stepIndex, step, upsell, proof));
       }
       return `step ${stepIndex + 1}: ${step}`;
     }, { timeoutMs: budget() });
   }
 
   const finalUrl = safePageUrl(page) || "";
-  const finalTerminal = terminalAtUrl(topologyPlan, finalUrl);
-  if (finalTerminal?.kind === "receipt" || (!topologyPlan && /receipt|thank/i.test(finalUrl))) {
-    if (finalTerminal) order.terminal = finalTerminal;
-    ladder.ok("receipt_reached", redactUrlQuery(finalUrl));
+  const terminalEvidence = recordTestOrderTerminalEvidence({ ladder, topologyPlan, finalUrl });
+  if (terminalEvidence.kind === "receipt") {
+    if (terminalEvidence.terminal) order.terminal = terminalEvidence.terminal;
     const renderedReceipt = await receiptRenderingEvidence(page);
     const renderedReceiptAssessment = assessReceiptRendering(order.receipt_line_items.length, renderedReceipt);
     order.receipt_rendering = renderedReceipt;
@@ -1910,12 +1923,10 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       ladder.fail("receipt_rendered", renderedReceiptAssessment.reason);
       receiptFailures.push(`buyer-visible receipt line items: ${renderedReceiptAssessment.reason}`);
     }
-  } else if (finalTerminal?.kind === "external_handoff") {
-    order.terminal = finalTerminal;
-    ladder.skip("receipt_reached", `path ended at recognized external handoff ${redactUrlQuery(finalUrl)}`);
+  } else if (terminalEvidence.kind === "external_handoff") {
+    order.terminal = terminalEvidence.terminal;
     ladder.skip("receipt_rendered", "external handoff does not expose an in-funnel receipt page");
   } else {
-    ladder.skip("receipt_reached", `path ended at ${redactUrlQuery(finalUrl) || "(unknown url)"}`);
     ladder.skip("receipt_rendered", "receipt page was not reached");
   }
 
@@ -3491,6 +3502,19 @@ function upsellAcceptStepFailures(stepIndex, proof, apiResponseSeen) {
   return failures;
 }
 
+function upsellActionStepFailures(stepIndex, action, upsell, proof) {
+  const failures = [];
+  if (upsell?.clicked === false) {
+    failures.push(`step ${stepIndex + 1}: ${upsell.error || `upsell ${action} control was not clicked`}`);
+  }
+  if (action === "accept") {
+    failures.push(...upsellAcceptStepFailures(stepIndex, proof, upsell?.api_response_seen));
+  } else if (!proof?.ok) {
+    failures.push(`step ${stepIndex + 1}: ${proof?.reason || "upsell decline could not be verified"}`);
+  }
+  return failures;
+}
+
 function acceptedUpsellProof(lines, initialLines, expectedItems, events) {
   if (!Array.isArray(lines) || lines.length === 0) {
     return { ok: false, reason: "final order lines were empty", expected_items: expectedItems || [], matched_lines: [] };
@@ -3732,6 +3756,7 @@ function isMissingPlaywrightBrowser(error) {
 export const __qaBrowserTestHooks = Object.freeze({
   acceptedUpsellProof,
   upsellAcceptStepFailures,
+  upsellActionStepFailures,
   commerceStructureAssertionFromEvidence,
   primaryCtaAssertionFromEvidence,
   isOrderUpsellsUrl,
@@ -3754,6 +3779,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   assessOrderCreation,
   TEST_ORDER_STEP_LADDER,
   createStepLadder,
+  recordTestOrderTerminalEvidence,
   formatStepEvent,
   hostedRedirectInfo,
   redactUrlQuery,

@@ -208,6 +208,29 @@ test("upsell accept step: order read-back is authoritative over the live API obs
   ]);
 });
 
+test("a missing nonterminal upsell control blocks both accept and a proof-clean decline", () => {
+  const { upsellActionStepFailures } = __qaBrowserTestHooks;
+  const missingControl = (path) => ({
+    path,
+    clicked: false,
+    error: `Missing upsell control for ${path}`,
+    api_response_seen: false,
+  });
+
+  assert.deepEqual(
+    upsellActionStepFailures(0, "accept", missingControl("accept"), { ok: true, reason: null }),
+    ["step 1: Missing upsell control for accept"],
+  );
+  assert.deepEqual(
+    upsellActionStepFailures(1, "decline", missingControl("decline"), { ok: true, reason: null }),
+    ["step 2: Missing upsell control for decline"],
+  );
+  assert.deepEqual(
+    upsellActionStepFailures(1, "decline", { path: "decline", clicked: true }, { ok: true, reason: null }),
+    [],
+  );
+});
+
 test("test order email resolves to ONE stable address (reused customer, not per-run)", () => {
   const { testEmail } = __qaBrowserTestHooks;
   const previous = process.env.CAMPAIGNS_OS_QA_TEST_EMAIL;
@@ -271,7 +294,7 @@ test("test-order 'common' preset = checkout + accept/decline sample plus a short
   assert.deepEqual(testOrderPaths("common", topo(0)), ["checkout"]);
   // one upsell → checkout + first-upsell accept + decline (3 shapes)
   assert.deepEqual(testOrderPaths("common", topo(1)), ["checkout", "accept", "decline"]);
-  // two+ upsells → adds one deeper mixed path (4 shapes, still under the flood cap)
+  // A deeper topology adds the deduped shortest real receipt path (still under the flood cap).
   assert.deepEqual(testOrderPaths("common", topo(2)), ["checkout", "accept", "decline", "accept-decline"]);
   // bare `--test-order` parses to boolean true → same default preset
   assert.deepEqual(testOrderPaths(true, topo(1)), ["checkout", "accept", "decline"]);

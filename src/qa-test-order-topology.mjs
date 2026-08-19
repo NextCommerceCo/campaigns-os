@@ -17,7 +17,7 @@ export function resolveTestOrderTopology(topology = {}, checkoutPage = null) {
 
   const terminalPaths = [];
   const invalidPaths = [];
-  const entry = checkout?.expected_next_url ? targetNode(checkout.expected_next_url, pagesByUrl, topologyOrigin) : null;
+  const entry = checkout ? targetNode(checkout.expected_next_url, pagesByUrl, topologyOrigin) : null;
   if (entry?.kind === "offer") {
     walkOffer(entry.page, [], new Set(), pagesByUrl, topologyOrigin, terminalPaths, invalidPaths);
   } else if (entry?.kind === "invalid") {

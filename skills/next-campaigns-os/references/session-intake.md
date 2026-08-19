@@ -143,14 +143,18 @@ hand-edit deployed routing config as the primary promotion path.
 
 Treat test orders as cheap, repeatable proof: global test cards bypass the
 gateway and create no transactions, so they need no permission or approval. The
-only real choice is depth. Record:
+only real choice is coverage. Record:
 
-- Depth: `common` (default 3-5 shape sample), `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
+- Coverage: `common` (checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed; at most four orders), `off`, `checkout`, `decline`, `accept`, `both`, `full`, or explicit paths such as `decline-decline-accept`.
 - Cart matrix: base cart, base plus bump, specific package refs/quantities.
 - SDK origin state (so the SDK loads): localhost Development domain, non-localhost allowlisted, or unknown — separate from test-order permission.
 - Max order cap: the accidental-flood guard; raise `--max-test-orders` for exhaustive proof.
 - Market coverage: default market only or at least one non-default country/currency path.
 - Customer email: reuse one inbox via `--test-email`/`CAMPAIGNS_OS_QA_TEST_EMAIL` (the customer record is not deletable).
 
-`--test-order common` covers the typical checkout-plus-accept/decline sample
-automatically. Use `full` when you want every generated permutation.
+`--test-order common` covers checkout, the first-offer actions, and a shortest
+real receipt path when that adds coverage. Use `full` for every actual terminal
+path in the selected checkout topology. Cycles, missing routes, and reachable
+nonterminals block exhaustive proof before browser launch. The default
+`--max-test-orders 6` cap remains in place; an overflow names the exact explicit
+raise.

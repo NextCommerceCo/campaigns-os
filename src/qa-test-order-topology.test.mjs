@@ -159,8 +159,10 @@ test("full mode refuses to claim exhaustive coverage when a reachable branch is 
   );
 });
 
-test("full mode keeps checkout-only funnels at one order without inferring stray offer pages", () => {
-  const checkout = page("checkout", "checkout", "checkout/");
+test("full mode keeps a real zero-offer checkout-to-receipt funnel at one order without inferring stray offers", () => {
+  const checkout = page("checkout", "checkout", "checkout/", {
+    expected_next_url: url("receipt/"),
+  });
   const resolved = resolveTestOrderTopology({
     funnel_id: "checkout-only",
     pages: [
@@ -174,6 +176,19 @@ test("full mode keeps checkout-only funnels at one order without inferring stray
   }, checkout);
 
   assert.deepEqual(fullTestOrderPaths(resolved), ["checkout"]);
+});
+
+test("full mode reports a checkout with no expected successor as a missing route", () => {
+  const checkout = page("checkout", "checkout", "checkout/");
+  const resolved = resolveTestOrderTopology({
+    funnel_id: "missing-checkout-route",
+    pages: [checkout, page("receipt", "thankyou", "receipt/")],
+  }, checkout);
+
+  assert.throws(
+    () => fullTestOrderPaths(resolved),
+    /cannot enumerate actual terminal paths.*checkout: missing_route/i,
+  );
 });
 
 test("common mode dedupes its samples and adds only the shortest real receipt path", () => {
