@@ -6301,6 +6301,30 @@ function installSkills(targetArg = null, dryRun = false, platformArg = null) {
   };
 }
 
+const TOOLING_ACTIONABLE_SKILL_ACTIONS = new Set(["created", "updated", "retired"]);
+const TOOLING_CLEAN_SKILL_ACTIONS = new Set(["unchanged"]);
+
+export function classifyToolingSkillActions(skills = []) {
+  const actionable = [];
+  const warnings = [];
+  for (const skill of skills) {
+    if (TOOLING_ACTIONABLE_SKILL_ACTIONS.has(skill?.action)) {
+      actionable.push(skill);
+    } else if (!TOOLING_CLEAN_SKILL_ACTIONS.has(skill?.action)) {
+      // occupied_by_other is a known terminal state. Unknown future states are
+      // also warning-only until their remediation semantics are explicit, so a
+      // new action cannot create another permanently unclearable preflight.
+      warnings.push(skill);
+    }
+  }
+  return { actionable, warnings };
+}
+
+function toolingSkillIdentity(skill) {
+  const prefix = skill?.platform && skill.platform !== "custom" ? `${skill.platform}/` : "";
+  return `${prefix}${skill?.name || "unknown skill"}`;
+}
+
 function toolingCommand(args) {
   const action = args._[1] || "status";
   if (action !== "status") throw new Error(`Unknown tooling command: ${action}`);
@@ -6309,7 +6333,8 @@ function toolingCommand(args) {
 
   const pkg = readJson(join(ROOT, "package.json"));
   const skillStatus = installSkills(args.target, true, args.platform || "all");
-  const staleSkills = (skillStatus.skills || []).filter((skill) => skill.action !== "unchanged");
+  const skillActions = classifyToolingSkillActions(skillStatus.skills || []);
+  const staleSkills = skillActions.actionable;
   const git = localGitStatus(ROOT);
   const cli = localCliStatus(pkg);
   const packageStatus = {
@@ -6330,6 +6355,15 @@ function toolingCommand(args) {
   };
   const actions = [];
   const warnings = [];
+
+  for (const skill of skillActions.warnings) {
+    const identity = toolingSkillIdentity(skill);
+    if (skill?.action === "occupied_by_other") {
+      warnings.push(`Skill slot ${identity} is occupied by another skill and was left in place. No Campaigns OS refresh is required.`);
+    } else {
+      warnings.push(`Skill ${identity} reported unrecognized sync action ${JSON.stringify(skill?.action ?? null)}. It does not block readiness; review the action before assigning remediation.`);
+    }
+  }
 
   if (git.status === "ok" && git.behind > 0) {
     actions.push("Update this checkout before running a dogfood build: git pull --ff-only (or wt sync in a worktree).");
