@@ -6359,7 +6359,7 @@ function toolingCommand(args) {
   for (const skill of skillActions.warnings) {
     const identity = toolingSkillIdentity(skill);
     if (skill?.action === "occupied_by_other") {
-      warnings.push(`Skill slot ${identity} is occupied by another skill and was left in place. No Campaigns OS refresh is required.`);
+      warnings.push(`Skill slot ${identity} is occupied by another skill and was left in place. No Campaigns OS refresh is required for this slot.`);
     } else {
       warnings.push(`Skill ${identity} reported unrecognized sync action ${JSON.stringify(skill?.action ?? null)}. It does not block readiness; review the action before assigning remediation.`);
     }

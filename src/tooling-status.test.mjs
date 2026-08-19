@@ -155,6 +155,29 @@ test("a stale bundled skill remains actionable without tooling status mutating i
   }
 });
 
+test("an occupied slot warning stays scoped when another skill needs refresh", () => {
+  const target = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-mixed-"));
+  try {
+    installCurrentSkills(target);
+    seedSkill(target, RETIRED_ID, FOREIGN_SKILL);
+    writeFileSync(join(target, "next-campaigns-build", "SKILL.md"), "stale bundled skill\n");
+    const before = snapshotTree(target);
+
+    const run = toolingStatus(target);
+    assert.equal(run.status, 2);
+    assert.equal(run.json.status, "attention_required");
+    assert.equal(run.json.skills.stale_count, 1);
+    assert.ok(run.json.actions.some((action) => action.includes("install-skills --target")));
+    assert.ok(
+      run.json.warnings.some((warning) =>
+        warning.includes(RETIRED_ID) && warning.includes("No Campaigns OS refresh is required for this slot")),
+    );
+    assert.deepEqual(snapshotTree(target), before, "mixed-state tooling status must remain read-only");
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
 test("a removable retired Campaigns OS skill remains actionable", () => {
   const target = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-retired-"));
   try {
