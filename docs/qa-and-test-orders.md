@@ -14,37 +14,51 @@ npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 
 Resolve reads the packet, loads the local CampaignSpec when available, derives deployed page URLs from the packet deploy URL or `--base-url`, and prints the funnel topology. It does not create a verdict.
 
-### Packet-local Store Profile preflight
+### Packet-local checkpoint preflight
 
-Packet QA first reads one local packet/spec snapshot and evaluates
-`page_kit.store_profile` against the target `_data/campaigns.json` entry. The
-same snapshot supplies runtime identity and topology; QA does not re-read the
-packet or spec after the gate. A packet without a valid local spec cannot fetch
-around the missing evidence. A missing/malformed target, invalid governed value,
-or unwaived mismatch finalizes a blocked local verdict before HTTP, Playwright,
-analytics capture, or typed-card orders run.
+Packet QA reads one local packet, CampaignSpec, target `_data/campaigns.json`
+entry, and Assembly Report snapshot. It evaluates both registered checkpoints
+from those objects: `page_kit.store_profile` and `page_kit.sdk_version`. The same
+packet/spec snapshot supplies runtime identity and topology, while the same
+Assembly Report supplies checkpoint decisions, theme/polish state, and QA
+waiver history. QA does not re-read those artifacts after the gates. A packet
+without a valid local spec cannot fetch around the missing evidence.
 
-The assertion uses the existing `api-metadata` family and ID
-`page_kit.store_profile`. A current exact checkpoint waiver remains attached to
-that warning and lets runtime QA proceed with disposition
-`ready_with_exceptions`; waived is never clean. Doctor/`next` use the checkpoint
-readiness term `ready_with_waivers`. Record the bounded decision before QA with:
+Any non-waived checkpoint blocker finalizes a blocked local verdict before HTTP,
+Playwright, analytics capture, or typed-card orders run. Both assertions remain
+visible when the gates disagree, so waiving or correcting one never suppresses
+the other. They use the existing `api-metadata` family with IDs
+`page_kit.store_profile` and `page_kit.sdk_version`.
+
+The SDK gate prefers `runtime.sdk_version` and accepts
+`global_config.sdk_version` only as a legacy fallback. Pins must be released,
+canonical `MAJOR.MINOR.PATCH` versions. Equal dual declarations are valid;
+conflicting declarations, missing declarations, prereleases, empty values, and
+non-string values are non-waivable blockers. Once both sides are valid, only an
+exact expected/observed mismatch has a waiver lane.
+
+A current exact checkpoint waiver remains attached to that gate's warning and
+lets runtime QA proceed only when every other checkpoint is clear. The QA
+disposition is `ready_with_exceptions`; waived is never clean. Doctor/`next` use
+the checkpoint readiness term `ready_with_waivers`. Record a bounded decision
+before QA with the relevant gate ID:
 
 ```bash
 campaigns-os checkpoint waive \
   --packet campaign-runtime.build.json \
-  --gate page_kit.store_profile \
+  --gate <page_kit.store_profile|page_kit.sdk_version> \
   --reason "<why>" \
   --waived-by "<named human>" \
   --review-condition "<specific re-evaluation trigger>"
 ```
 
-Store Profile is currently the first and only entry in the staged checkpoint
-registry. Legacy source/theme/QA waiver commands and artifact lanes remain in
-place until those gates are registered. QA evidence includes only the governed
+Legacy source/theme/QA waiver commands and artifact lanes remain in place until
+those gates are registered. Store Profile evidence includes only the governed
 nine-field matrix plus status, normalized slug, relative target path,
-fingerprint, and attribution; arbitrary target campaign configuration must not
-be serialized into the verdict. Active waiver evidence is a fixed whitelist of
+fingerprint, and attribution. SDK evidence includes only strict expected and
+observed versions, declaration source, status, subject, fingerprint, and the
+same bounded attribution. Arbitrary target campaign configuration must not be
+serialized into the verdict. Active waiver evidence is a fixed whitelist of
 attribution/bound fields, and inactive waiver history is count-only; raw report
 records and their unknown fields never enter resolve output or the verdict.
 

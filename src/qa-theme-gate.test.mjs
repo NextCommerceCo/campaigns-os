@@ -125,6 +125,10 @@ test("qa resolve payload reports resolved page URLs without claiming tested URLs
     specHash: "sha256:abc",
     baseUrl: "https://preview.test/shield/",
     spec: { campaign: { name: "Shield", slug: "shield", ref_id: 1638 } },
+    checkpointGates: [
+      { id: "page_kit.store_profile", status: "pass" },
+      { id: "page_kit.sdk_version", status: "pass" },
+    ],
     themeGate: { status: "pass", code: "theme_gate.applied", reason: "ok" },
     polishGate: { status: "pass", code: "polish.evidence_current", reason: "ok" },
     topologies: [{
@@ -137,6 +141,10 @@ test("qa resolve payload reports resolved page URLs without claiming tested URLs
 
   assert.deepEqual(payload.page_urls.map((entry) => entry.page_id), ["presell"]);
   assert.deepEqual(payload.tested_urls, []);
+  assert.deepEqual(payload.checkpoint_gates.map((gate) => gate.id), [
+    "page_kit.store_profile",
+    "page_kit.sdk_version",
+  ]);
 });
 
 test("blocked theme gate maps to a single blocker assertion with reason and required actions", () => {
@@ -349,6 +357,10 @@ test("resolveQaInputsFromSite builds topologies + brand contract from a built _s
     // No theme artifacts exist for a built-site run -> the gate is non-blocking
     // (not_applicable), so browser QA still runs the residue/placeholder gates.
     assert.notEqual(resolved.themeGate.status, "blocked");
+    assert.deepEqual(resolved.checkpointGates.map((gate) => [gate.id, gate.status]), [
+      ["page_kit.store_profile", "not_applicable"],
+      ["page_kit.sdk_version", "not_applicable"],
+    ]);
     assert.equal(resolved.packetPath, null);
     assert.equal(resolved.builtSite.html_count, 3);
   });

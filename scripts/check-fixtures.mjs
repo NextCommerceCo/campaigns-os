@@ -366,9 +366,9 @@ try {
   const mismatchPacketPath = resolve(sdkMismatchTmp, "campaign-runtime.build.json");
   writeJson(mismatchPacketPath, mismatchPacket);
 
-  const mismatchDoctor = runCliJson(["doctor", "--packet", mismatchPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
-  if (!mismatchDoctor.warnings?.some((issue) => issue.code === "page_kit.sdk_version")) {
-    throw new Error("Doctor should warn when target campaigns.json sdk_version differs from CampaignSpec.");
+  const mismatchDoctor = runCliJsonAllowFailure(["doctor", "--packet", mismatchPacketPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (!mismatchDoctor.errors?.some((issue) => issue.code === "page_kit.sdk_version")) {
+    throw new Error("Doctor should block when target campaigns.json sdk_version differs from CampaignSpec.");
   }
 } finally {
   rmSync(sdkMismatchTmp, { recursive: true, force: true });
