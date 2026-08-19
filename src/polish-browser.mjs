@@ -8,6 +8,17 @@ import {
   MAX_PAGE_LOAD_RESPONSE_RECORDS,
   MAX_POLISH_CAPTURE_URL_LENGTH,
 } from "./polish-capture.mjs";
+import {
+  boundedPolishDeadline,
+  POLISH_BROWSER_CELL_DEADLINE_MS,
+  POLISH_BROWSER_CLEANUP_DEADLINE_MS,
+  POLISH_BROWSER_STARTUP_DEADLINE_MS,
+  POLISH_PRODUCER_CLEANUP_ERROR_CODE,
+  POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
+  polishProducerCleanupError,
+  polishProducerTimeoutError,
+  runWithPolishProducerDeadline,
+} from "./polish-deadline.mjs";
 
 const NAVIGATION_TIMEOUT_MS = 30_000;
 const NETWORKIDLE_TIMEOUT_MS = 5_000;
@@ -523,13 +534,50 @@ export async function createPolishBrowserAdapter({
   headed = false,
   authCookie = null,
   chromium: injectedChromium,
+  cellDeadlineMs,
+  cleanupDeadlineMs,
+  startupDeadlineMs,
 } = {}) {
   const authCookies = parseAuthCookie(authCookie);
-  const chromium = await chromiumLauncher(injectedChromium);
+  const boundedCellDeadlineMs = boundedPolishDeadline(cellDeadlineMs, POLISH_BROWSER_CELL_DEADLINE_MS);
+  const boundedCleanupDeadlineMs = boundedPolishDeadline(
+    cleanupDeadlineMs,
+    POLISH_BROWSER_CLEANUP_DEADLINE_MS,
+  );
+  const boundedStartupDeadlineMs = boundedPolishDeadline(
+    startupDeadlineMs,
+    POLISH_BROWSER_STARTUP_DEADLINE_MS,
+  );
   let browser;
+  let startupTimedOut = false;
+  const startupPromise = Promise.resolve().then(async () => {
+    const chromium = await chromiumLauncher(injectedChromium);
+    if (startupTimedOut) throw polishProducerTimeoutError();
+    let launchedBrowser;
+    try {
+      launchedBrowser = await chromium.launch({ headless: headed !== true });
+    } catch (error) {
+      if (startupTimedOut) throw polishProducerTimeoutError();
+      throw error;
+    }
+    if (startupTimedOut) {
+      if (typeof launchedBrowser?.close === "function") {
+        void runWithPolishProducerDeadline(() => launchedBrowser.close(), {
+          timeoutMs: boundedCleanupDeadlineMs,
+          unrefTimer: true,
+        }).catch(() => {});
+      }
+      throw polishProducerTimeoutError();
+    }
+    return launchedBrowser;
+  });
   try {
-    browser = await chromium.launch({ headless: headed !== true });
+    browser = await runWithPolishProducerDeadline(() => startupPromise, {
+      timeoutMs: boundedStartupDeadlineMs,
+      onTimeout() { startupTimedOut = true; },
+    });
   } catch (error) {
+    if (error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw error;
     if (missingBrowserError(error)) {
       throw browserUnavailableError([
         "Playwright Chromium is not installed for Campaigns OS polish capture.",
@@ -540,9 +588,13 @@ export async function createPolishBrowserAdapter({
   }
 
   let closed = false;
+  let poisonCode = null;
+  let closePromise = null;
   return {
-    async captureRoute({ url, viewport } = {}) {
+    async captureRoute({ url, viewport, signal } = {}) {
       if (closed) throw new Error("Campaigns OS polish capture browser adapter is already closed.");
+      if (poisonCode === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw polishProducerTimeoutError();
+      if (poisonCode === POLISH_PRODUCER_CLEANUP_ERROR_CODE) throw polishProducerCleanupError();
       if (typeof url !== "string" || url.length > MAX_POLISH_CAPTURE_URL_LENGTH) {
         throw new Error("Campaigns OS polish capture requires a bounded HTTP(S) capture URL.");
       }
@@ -550,80 +602,164 @@ export async function createPolishBrowserAdapter({
         || !Number.isInteger(viewport?.height) || viewport.height <= 0) {
         throw new Error("Campaigns OS polish capture requires a positive integer viewport.");
       }
-      const context = await browser.newContext({
-        viewport: { width: viewport.width, height: viewport.height },
-        serviceWorkers: "block",
-      });
+      let context;
       let session;
-      try {
-        if (authCookies.length > 0) {
-          const origin = captureOrigin(url);
-          await context.addCookies(authCookies.map((cookie) => ({ ...cookie, url: origin })));
+      let timedOut = false;
+      let detachPromise = null;
+      let contextClosePromise = null;
+      const cleanupResources = () => {
+        if (typeof session?.detach === "function" && !detachPromise) {
+          detachPromise = Promise.resolve().then(() => session.detach());
         }
-        const page = await context.newPage();
-        session = await context.newCDPSession(page);
-        const collector = createNetworkCollector();
-        await session.send("Network.enable");
-        await session.send("Network.setCacheDisabled", { cacheDisabled: true });
-        await session.send("Network.setBypassServiceWorker", { bypass: true });
-        collector.listen(session);
-
-        const navigationStartedAt = performance.now();
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
-        const initialFrameTree = await session.send("Page.getFrameTree");
-        const initialMainFrame = initialFrameTree?.frameTree?.frame;
-        const initialMediaElements = await collectMediaElements(page);
-        let networkidle;
-        try {
-          await page.waitForLoadState("networkidle", { timeout: NETWORKIDLE_TIMEOUT_MS });
-          networkidle = { status: "settled", duration_ms: durationSince(navigationStartedAt) };
-        } catch (error) {
-          if (!timeoutError(error)) throw error;
-          networkidle = { status: "timeout", duration_ms: durationSince(navigationStartedAt) };
+        if (typeof context?.close === "function" && !contextClosePromise) {
+          contextClosePromise = Promise.resolve().then(() => context.close());
         }
-        const finalMediaElements = await collectMediaElements(page);
-        await drainProtocolEvents();
-        const frameTree = await session.send("Page.getFrameTree");
-        const mainFrame = frameTree?.frameTree?.frame;
-        const finalDocumentUrl = page.url();
-        const documentContextChanged = typeof initialMainFrame?.id !== "string"
-          || typeof initialMainFrame?.loaderId !== "string"
-          || initialMainFrame.id !== mainFrame?.id
-          || initialMainFrame.loaderId !== mainFrame?.loaderId;
-        const mediaElements = mergeMediaElementSnapshots(
-          documentContextChanged ? { observed_element_count: 0, elements: [] } : initialMediaElements,
-          finalMediaElements,
-        );
-        const network = collector.finish({
-          mainFrameId: mainFrame?.id,
-          mainLoaderId: mainFrame?.loaderId,
-          finalDocumentUrl,
+        return Promise.allSettled([detachPromise, contextClosePromise].filter(Boolean)).then((results) => {
+          if (results.some((result) => result.status === "rejected")) throw polishProducerCleanupError();
         });
-        if (documentContextChanged) {
-          network.responseCollectionStatus = "failed";
-          network.responses.push({ capture_problem: "document_context_changed" });
+      };
+      const assertActive = () => {
+        if (!timedOut) return;
+        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+        void cleanupResources().catch(() => {});
+        throw polishProducerTimeoutError();
+      };
+      const awaitActive = async (promise) => {
+        try {
+          const value = await promise;
+          assertActive();
+          return value;
+        } catch (error) {
+          assertActive();
+          throw error;
         }
-        return {
-          finalDocumentUrl,
-          responseCollectionStatus: network.responseCollectionStatus,
-          networkidle,
-          mediaElements,
-          responses: network.responses,
-        };
-      } finally {
-        if (typeof session?.detach === "function") await session.detach().catch(() => {});
-        await context.close().catch(() => {});
+      };
+      const triggerTimeout = () => {
+        timedOut = true;
+        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+        void cleanupResources().catch(() => {});
+      };
+      if (signal?.aborted) triggerTimeout();
+      else if (typeof signal?.addEventListener === "function") {
+        signal.addEventListener("abort", triggerTimeout, { once: true });
       }
+      let observation;
+      let operationError = null;
+      try {
+        observation = await runWithPolishProducerDeadline(async () => {
+          assertActive();
+          context = await browser.newContext({
+            viewport: { width: viewport.width, height: viewport.height },
+            serviceWorkers: "block",
+          });
+          assertActive();
+          if (authCookies.length > 0) {
+            const origin = captureOrigin(url);
+            await awaitActive(context.addCookies(authCookies.map((cookie) => ({ ...cookie, url: origin }))));
+          }
+          const page = await awaitActive(context.newPage());
+          session = await context.newCDPSession(page);
+          assertActive();
+          const collector = createNetworkCollector();
+          await awaitActive(session.send("Network.enable"));
+          await awaitActive(session.send("Network.setCacheDisabled", { cacheDisabled: true }));
+          await awaitActive(session.send("Network.setBypassServiceWorker", { bypass: true }));
+          collector.listen(session);
+
+          const navigationStartedAt = performance.now();
+          await awaitActive(page.goto(url, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS }));
+          const initialFrameTree = await awaitActive(session.send("Page.getFrameTree"));
+          const initialMainFrame = initialFrameTree?.frameTree?.frame;
+          const initialMediaElements = await awaitActive(collectMediaElements(page));
+          let networkidle;
+          try {
+            await awaitActive(page.waitForLoadState("networkidle", { timeout: NETWORKIDLE_TIMEOUT_MS }));
+            networkidle = { status: "settled", duration_ms: durationSince(navigationStartedAt) };
+          } catch (error) {
+            if (!timeoutError(error)) throw error;
+            networkidle = { status: "timeout", duration_ms: durationSince(navigationStartedAt) };
+          }
+          const finalMediaElements = await awaitActive(collectMediaElements(page));
+          await awaitActive(drainProtocolEvents());
+          const frameTree = await awaitActive(session.send("Page.getFrameTree"));
+          const mainFrame = frameTree?.frameTree?.frame;
+          const finalDocumentUrl = page.url();
+          const documentContextChanged = typeof initialMainFrame?.id !== "string"
+            || typeof initialMainFrame?.loaderId !== "string"
+            || initialMainFrame.id !== mainFrame?.id
+            || initialMainFrame.loaderId !== mainFrame?.loaderId;
+          const mediaElements = mergeMediaElementSnapshots(
+            documentContextChanged ? { observed_element_count: 0, elements: [] } : initialMediaElements,
+            finalMediaElements,
+          );
+          const network = collector.finish({
+            mainFrameId: mainFrame?.id,
+            mainLoaderId: mainFrame?.loaderId,
+            finalDocumentUrl,
+          });
+          if (documentContextChanged) {
+            network.responseCollectionStatus = "failed";
+            network.responses.push({ capture_problem: "document_context_changed" });
+          }
+          return {
+            finalDocumentUrl,
+            responseCollectionStatus: network.responseCollectionStatus,
+            networkidle,
+            mediaElements,
+            responses: network.responses,
+          };
+        }, {
+          timeoutMs: boundedCellDeadlineMs,
+          onTimeout: triggerTimeout,
+          signal,
+        });
+      } catch (error) {
+        operationError = error;
+        if (error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
+          poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+        }
+      } finally {
+        if (typeof signal?.removeEventListener === "function") {
+          signal.removeEventListener("abort", triggerTimeout);
+        }
+      }
+      let cleanupError = null;
+      try {
+        await runWithPolishProducerDeadline(cleanupResources, { timeoutMs: boundedCleanupDeadlineMs });
+      } catch (error) {
+        cleanupError = error;
+      }
+      if (cleanupError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
+        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+        throw cleanupError;
+      }
+      if (operationError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) {
+        poisonCode = POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+        throw operationError;
+      }
+      if (cleanupError) {
+        poisonCode = POLISH_PRODUCER_CLEANUP_ERROR_CODE;
+        throw polishProducerCleanupError();
+      }
+      if (operationError) throw operationError;
+      return observation;
     },
 
     async close() {
-      if (closed) return;
-      closed = true;
-      try {
-        await browser.close();
-      } catch {
-        throw new Error("Campaigns OS polish capture could not close its browser cleanly.");
+      if (!closePromise) {
+        closed = true;
+        closePromise = (async () => {
+          try {
+            await runWithPolishProducerDeadline(() => browser.close(), {
+              timeoutMs: boundedCleanupDeadlineMs,
+            });
+          } catch (error) {
+            if (error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw error;
+            throw new Error("Campaigns OS polish capture could not close its browser cleanly.");
+          }
+        })();
       }
+      return closePromise;
     },
   };
 }

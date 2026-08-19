@@ -2096,6 +2096,9 @@ export async function polishCaptureCommand(args, options = {}) {
     headed: args.headed === true,
     authCookie: optionalString(args["auth-cookie"]),
     createBrowserAdapter,
+    adapterStartupDeadlineMs: options.adapterStartupDeadlineMs,
+    captureCellDeadlineMs: options.captureCellDeadlineMs,
+    adapterCloseDeadlineMs: options.adapterCloseDeadlineMs,
   });
 
   if (typeof options.afterCapture === "function") {

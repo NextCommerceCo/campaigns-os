@@ -201,6 +201,7 @@ test("polish capture text bounds incomplete cells, problem codes, reasons, and a
     viewport: index % 2 ? "mobile" : "desktop",
     problem_codes: [
       "document_response_error",
+      "producer_timeout",
       "request_failed",
       `PRIVATE_PROBLEM_${index}`,
     ],
@@ -227,7 +228,7 @@ test("polish capture text bounds incomplete cells, problem codes, reasons, and a
   });
 
   assert.match(output, /Capture problems:/);
-  assert.match(output, /Problem codes: document_response_error, request_failed/);
+  assert.match(output, /Problem codes: document_response_error, producer_timeout, request_failed/);
   assert.match(output, /Additional incomplete capture cells omitted: 16/);
   assert.match(output, /Checkpoint: Package-owned page-load capture is incomplete/);
   assert.match(output, /campaigns-os polish capture --packet <packet> --base-url <url>/);
@@ -260,6 +261,39 @@ test("missing Chromium persists browser_unavailable and prints the install-brows
     ));
     assert.match(output, /Required action: npm run qa:install-browser/);
     assert.doesNotMatch(JSON.stringify(result), /PRIVATE_BROWSER_PATH|private\/tmp/);
+  } finally {
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test("producer timeout persists a fixed nonwaivable problem and safe recapture action", {
+  timeout: 750,
+}, async () => {
+  const f = fixture();
+  try {
+    let calls = 0;
+    const result = await polishCaptureCommand(commandArgs(f), {
+      adapterStartupDeadlineMs: 20,
+      captureCellDeadlineMs: 20,
+      adapterCloseDeadlineMs: 20,
+      createBrowserAdapter: async () => ({
+        async captureRoute() {
+          calls += 1;
+          return new Promise(() => {});
+        },
+        async close() {},
+      }),
+    });
+    const output = formatPolishCaptureText(result);
+    const persisted = readJson(f.reportPath).stages.polish.evidence.visual_review.page_load;
+
+    assert.equal(calls, 1);
+    assert.equal(result.status, "blocked");
+    assert.equal(result.checkpoint.waivable, false);
+    assert.equal(persisted.measurement.status, "incomplete");
+    assert.match(output, /Problem codes: .*producer_timeout/);
+    assert.match(output, /campaigns-os polish capture --packet <packet> --base-url <url>/);
+    assert.doesNotMatch(output, /POLISH_PRODUCER_TIMEOUT|PRIVATE|\/private\/tmp/);
   } finally {
     rmSync(f.dir, { recursive: true, force: true });
   }

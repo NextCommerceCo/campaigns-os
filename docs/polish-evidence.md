@@ -132,7 +132,7 @@ Each `captures[]` entry has this shape:
 | `document_response.context_fingerprint`, `document_response.capture_origin`, `document_response.final_origin`, `document_response.origin_matches_capture` | Hashed browser document context and same-origin redirect binding. Raw frame/loader IDs are never persisted. |
 | `metrics.total_transferred_bytes`, `metrics.request_count`, `metrics.largest_resource` | Totals over retained ledger entries; `largest_resource` carries only resource ID, redacted URL, type, bytes, and request count. |
 | `metrics.cross_origin_request_count`, `metrics.cache_request_count`, `metrics.service_worker_request_count` | Counts used to expose cross-origin traffic and completeness-invalidating cache/service-worker observations. |
-| `networkidle.status`, `networkidle.duration_ms` | `settled`, `timeout`, or `invalid`. Duration starts immediately before navigation and ends when network-idle settles or times out; it is evidence timing, not a performance SLA. |
+| `networkidle.status`, `networkidle.duration_ms` | `settled`, `timeout`, or `invalid`. Measured duration starts immediately before navigation and ends when network-idle settles or times out; synthetic producer failures use `invalid` / `null`, not a fabricated duration. It is evidence timing, not a performance SLA. |
 | `media_collection.status` and count fields | `observed_element_count`, `failed_element_count`, `omitted_element_count`, `source_overflow_element_count`, and `ancestor_overflow_element_count` explain complete, partial, or failed DOM measurement. |
 | `media[]` source fields | `tag_name`, `element_index`, `current_src`, `src_attribute`, `source_src_attributes[]`, `observed_source_urls[]`, and normalized `source_references[]` retain the initial and post-network-idle source history needed for resource attribution. |
 | `media[]` state and transfer fields | `preload_attribute`, `preload_defers_fetch`, `hidden_at_load`, `hidden_by[]`, `zero_size_at_load`, `fetched_bytes`, `fetched_request_count`, and bounded `fetched_resources[]`. Zero-size geometry is evidence only, not hidden-state proof. |
@@ -148,6 +148,14 @@ the terminal measurement is unavailable. The associated collection/failure
 problem still makes the capture incomplete; findings may remain visible for
 diagnosis, but incomplete measurement cannot pass or be waived.
 
+Producer waits are owned and bounded. The built-in browser bounds launch and
+per-cell work at 45 seconds and cleanup at 5 seconds, beneath the orchestration
+startup/cell bound of 55 seconds and final-close bound of 10 seconds. A stuck
+launch, DOM/CDP wait, teardown, or close records the fixed `producer_timeout`
+problem, retires that adapter generation, records remaining matrix cells as
+incomplete without overlapping the late operation, and requires a fresh
+`polish capture`. Raw browser errors and operation details are not persisted.
+
 Bounds are part of the evidence semantics: at most 128 packet route mappings,
 4,096 response records, 2,048 resource-ledger entries, 512 media elements, 32
 child-source attributes and 32 observed source-history URLs per element, 64
@@ -158,8 +166,9 @@ silently truncating into a pass.
 
 The owned checkpoint is `polish.hidden_eager_media`. A finding requires one
 computed-hidden `video` or `audio` element whose aggregate transferred bytes are
-strictly greater than `1,048,576`. `display:none` or `visibility:hidden` on the
-element or an ancestor counts as hidden. Zero-size geometry is evidence only.
+strictly greater than `1,048,576`. `display:none`, `visibility:hidden`, or
+`visibility:collapse` on the element or an ancestor counts as hidden. Zero-size
+geometry is evidence only.
 Exact ASCII-case-insensitive `preload="none"` and `preload="metadata"` defer the
 finding; surrounding whitespace does not. Visible media and media exactly at
 the threshold pass this checkpoint.

@@ -593,6 +593,7 @@ export function normalizeMediaElement(element, { documentUrl, elementIndex = 0 }
   for (const style of styles) {
     if (normalizedToken(style.display) === "none") hiddenBy.add("display_none");
     if (normalizedToken(style.visibility) === "hidden") hiddenBy.add("visibility_hidden");
+    if (normalizedToken(style.visibility) === "collapse") hiddenBy.add("visibility_collapse");
   }
   const currentSrc = sourceReference(element.current_src, "current_src", 0, documentUrl);
   const srcAttribute = sourceReference(element.src_attribute, "src_attribute", 0, documentUrl);
@@ -730,7 +731,9 @@ export function buildPageLoadCapture({
   }
   const normalizedProducerProblem = producerProblem === "browser_unavailable"
     ? "browser_unavailable"
-    : producerProblem === "producer_failed" || producerError ? "producer_failed" : null;
+    : producerProblem === "producer_timeout"
+      ? "producer_timeout"
+      : producerProblem === "producer_failed" || producerError ? "producer_failed" : null;
   if (normalizedProducerProblem) addCaptureProblem(normalizedProducerProblem);
 
   const media = [];

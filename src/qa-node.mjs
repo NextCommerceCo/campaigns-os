@@ -867,7 +867,11 @@ function themeBlockedAssertions(themeGate, polishGate) {
 
 const HIDDEN_EAGER_MEDIA_VIEWPORTS = new Set(["desktop", "mobile"]);
 const HIDDEN_EAGER_MEDIA_PRELOAD_ATTRIBUTES = new Set(POLISH_PRELOAD_ATTRIBUTES);
-const HIDDEN_EAGER_MEDIA_HIDDEN_BY = new Set(["display_none", "visibility_hidden"]);
+const HIDDEN_EAGER_MEDIA_HIDDEN_BY = new Set([
+  "display_none",
+  "visibility_collapse",
+  "visibility_hidden",
+]);
 const MAX_HIDDEN_EAGER_MEDIA_SUMMARY_RESOURCES = 64;
 
 function safeNonnegativeInteger(value) {

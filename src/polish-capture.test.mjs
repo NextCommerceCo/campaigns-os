@@ -650,6 +650,27 @@ test("media normalization treats computed hidden ancestors as hidden but keeps z
   assert.equal(visibleZeroSize.hidden_at_load, false);
   assert.equal(visibleZeroSize.zero_size_at_load, true);
   assert.equal(visibleZeroSize.preload_defers_fetch, true);
+
+  for (const [computed_style, ancestor_styles] of [
+    [{ display: "block", visibility: "collapse" }, []],
+    [{ display: "block", visibility: "visible" }, [{ display: "grid", visibility: "collapse" }]],
+  ]) {
+    const collapsed = normalizeMediaElement({
+      tag_name: "video",
+      current_src: "/collapsed.mp4",
+      src_attribute: null,
+      source_src_attributes: [],
+      preload_attribute: "auto",
+      computed_style,
+      ancestor_styles,
+      bounding_box: { width: 640, height: 360 },
+    }, {
+      documentUrl: "https://shop.example.test/landing/",
+      elementIndex: 0,
+    });
+    assert.equal(collapsed.hidden_at_load, true);
+    assert.deepEqual(collapsed.hidden_by, ["visibility_collapse"]);
+  }
 });
 
 test("CDP response aggregation sums range transfers once and keeps cross-origin URLs redacted", () => {
@@ -847,6 +868,21 @@ test("producer failure or missing media/network collections is explicit and neve
   ]);
   const serialized = JSON.stringify(capture);
   for (const secret of ["SECRET", "cookie", "/private/tmp/sensitive-capture"]) assert.equal(serialized.includes(secret), false, secret);
+
+  const timedOut = buildPageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    requestedDocumentUrl: "https://shop.example.test/landing/",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "failed",
+    networkidle: { status: "invalid", duration_ms: null },
+    producerProblem: "producer_timeout",
+  });
+  assert.equal(timedOut.producer_status, "failed");
+  assert.equal(timedOut.problems.some((problem) => problem.code === "producer_timeout"), true);
+  assert.equal(timedOut.problems.some((problem) => problem.code === "producer_failed"), false);
 });
 
 test("missing computed-style or source enumeration makes media measurement incomplete instead of assuming visible", () => {

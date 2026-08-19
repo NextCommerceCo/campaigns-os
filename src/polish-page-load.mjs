@@ -54,6 +54,7 @@ export const POLISH_CAPTURE_PROBLEM_CODES = Object.freeze([
   "media_transfer_unattributed",
   "networkidle_measurement_invalid",
   "producer_failed",
+  "producer_timeout",
   "redirect_chain_invalid",
   "request_failed",
   "request_identity_invalid",
@@ -446,7 +447,9 @@ function validMediaProjection(media, ledgerEntries) {
   if (typeof media.hidden_at_load !== "boolean"
     || (media.zero_size_at_load !== null && typeof media.zero_size_at_load !== "boolean")) return false;
   if (!isSortedUnique(media.hidden_by)
-    || media.hidden_by.some((kind) => kind !== "display_none" && kind !== "visibility_hidden")
+    || media.hidden_by.some((kind) => kind !== "display_none"
+      && kind !== "visibility_hidden"
+      && kind !== "visibility_collapse")
     || media.hidden_at_load !== (media.hidden_by.length > 0)) return false;
   if (!isNonnegativeInteger(media.fetched_bytes)
     || !isNonnegativeInteger(media.fetched_request_count)
@@ -476,7 +479,9 @@ function projectMedia(media) {
     preload_defers_fetch: projectedBoolean(media?.preload_defers_fetch),
     hidden_at_load: projectedBoolean(media?.hidden_at_load),
     hidden_by: (Array.isArray(media?.hidden_by) ? media.hidden_by : [])
-      .filter((kind) => kind === "display_none" || kind === "visibility_hidden")
+      .filter((kind) => kind === "display_none"
+        || kind === "visibility_hidden"
+        || kind === "visibility_collapse")
       .sort(),
     zero_size_at_load: media?.zero_size_at_load === null ? null : projectedBoolean(media?.zero_size_at_load),
     fetched_bytes: projectedInteger(media?.fetched_bytes),
@@ -599,7 +604,8 @@ function validCaptureShape(capture) {
     || !validCaptureIntegrity(capture)) return false;
   if (capture.producer_status !== "complete" && capture.producer_status !== "failed") return false;
   if ((capture.producer_status === "failed") !== (problemCount(capture, "producer_failed") > 0
-    || problemCount(capture, "browser_unavailable") > 0)) return false;
+    || problemCount(capture, "browser_unavailable") > 0
+    || problemCount(capture, "producer_timeout") > 0)) return false;
   if (!capture.response_collection
     || !["complete", "failed", "invalid"].includes(capture.response_collection.status)
     || !isNonnegativeInteger(capture.response_collection.observed_response_count)

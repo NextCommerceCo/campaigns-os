@@ -13,6 +13,15 @@ import {
   POLISH_PAGE_LOAD_SCHEMA_VERSION,
 } from "./polish-page-load.mjs";
 import {
+  boundedPolishDeadline,
+  POLISH_CAPTURE_CELL_DEADLINE_MS,
+  POLISH_CAPTURE_CLOSE_DEADLINE_MS,
+  POLISH_CAPTURE_STARTUP_DEADLINE_MS,
+  POLISH_PRODUCER_CLEANUP_ERROR_CODE,
+  POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
+  runWithPolishProducerDeadline,
+} from "./polish-deadline.mjs";
+import {
   assemblySourcePackageMaterialFingerprint,
   currentSourcePackageMaterialFingerprint,
 } from "./polish-gate.mjs";
@@ -447,6 +456,9 @@ export async function capturePolishPageLoad({
   headed = false,
   authCookie = null,
   createBrowserAdapter,
+  adapterStartupDeadlineMs,
+  captureCellDeadlineMs,
+  adapterCloseDeadlineMs,
 } = {}) {
   const plan = planPolishCapture({ packet, baseUrl });
   const slug = captureCampaignSlug(packet, report);
@@ -455,13 +467,34 @@ export async function capturePolishPageLoad({
   if (typeof createBrowserAdapter !== "function") {
     throw new Error("polish capture requires a browser adapter factory.");
   }
+  const startupDeadlineMs = boundedPolishDeadline(
+    adapterStartupDeadlineMs,
+    POLISH_CAPTURE_STARTUP_DEADLINE_MS,
+  );
+  const cellDeadlineMs = boundedPolishDeadline(captureCellDeadlineMs, POLISH_CAPTURE_CELL_DEADLINE_MS);
+  const closeDeadlineMs = boundedPolishDeadline(
+    adapterCloseDeadlineMs,
+    POLISH_CAPTURE_CLOSE_DEADLINE_MS,
+  );
 
   let adapter = null;
   let adapterStartupError = null;
+  let startupTimedOut = false;
+  const adapterPromise = Promise.resolve().then(() => createBrowserAdapter({
+    headed: headed === true,
+    authCookie: nonemptyString(authCookie),
+  }));
+  void adapterPromise.then((lateAdapter) => {
+    if (!startupTimedOut || typeof lateAdapter?.close !== "function") return;
+    void runWithPolishProducerDeadline(() => lateAdapter.close(), {
+      timeoutMs: closeDeadlineMs,
+      unrefTimer: true,
+    }).catch(() => {});
+  }, () => {});
   try {
-    adapter = await createBrowserAdapter({
-      headed: headed === true,
-      authCookie: nonemptyString(authCookie),
+    adapter = await runWithPolishProducerDeadline(() => adapterPromise, {
+      timeoutMs: startupDeadlineMs,
+      onTimeout() { startupTimedOut = true; },
     });
     if (!adapter || typeof adapter.captureRoute !== "function" || typeof adapter.close !== "function") {
       throw new Error("polish capture browser adapter must provide captureRoute() and close().");
@@ -472,21 +505,60 @@ export async function capturePolishPageLoad({
 
   const captures = [];
   let adapterCloseError = null;
+  let adapterPoisonProblem = null;
+  let observedProducerTimeout = false;
+  let adapterClosePromise = null;
+  const closeAdapter = async () => {
+    if (!adapter || typeof adapter.close !== "function") return;
+    if (!adapterClosePromise) {
+      adapterClosePromise = runWithPolishProducerDeadline(() => adapter.close(), {
+        timeoutMs: closeDeadlineMs,
+      });
+    }
+    return adapterClosePromise;
+  };
   try {
     for (const route of plan.routes) {
       for (const viewport of plan.viewports) {
         let observation;
         try {
           if (adapterStartupError) throw adapterStartupError;
-          observation = await adapter.captureRoute({ url: route.url, viewport });
+          if (adapterPoisonProblem) {
+            const error = new Error("Campaigns OS polish capture producer exceeded its bounded deadline.");
+            error.code = adapterPoisonProblem === "producer_timeout"
+              ? POLISH_PRODUCER_TIMEOUT_ERROR_CODE
+              : POLISH_PRODUCER_CLEANUP_ERROR_CODE;
+            throw error;
+          }
+          const abortController = new AbortController();
+          observation = await runWithPolishProducerDeadline(
+            () => adapter.captureRoute({ url: route.url, viewport, signal: abortController.signal }),
+            {
+              timeoutMs: cellDeadlineMs,
+              onTimeout() { abortController.abort(); },
+            },
+          );
           if (!isPlainObject(observation)) throw new Error("Browser adapter returned no route observation.");
         } catch (error) {
           const browserUnavailable = error?.code === "POLISH_BROWSER_UNAVAILABLE";
+          const producerTimedOut = error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
+          const producerCleanupFailed = error?.code === POLISH_PRODUCER_CLEANUP_ERROR_CODE;
+          if (producerTimedOut) observedProducerTimeout = true;
+          if ((producerTimedOut || producerCleanupFailed) && adapter && !adapterPoisonProblem) {
+            adapterPoisonProblem = producerTimedOut ? "producer_timeout" : "producer_failed";
+            try {
+              await closeAdapter();
+            } catch (closeError) {
+              adapterCloseError = closeError;
+            }
+          }
           observation = {
             finalDocumentUrl: route.url,
             responseCollectionStatus: "failed",
-            networkidle: { status: "timeout", duration_ms: 0 },
-            producerProblem: browserUnavailable ? "browser_unavailable" : "producer_failed",
+            networkidle: { status: "invalid", duration_ms: null },
+            producerProblem: browserUnavailable
+              ? "browser_unavailable"
+              : producerTimedOut ? "producer_timeout" : "producer_failed",
           };
         }
         captures.push(buildPageLoadCapture({
@@ -506,9 +578,9 @@ export async function capturePolishPageLoad({
       }
     }
   } finally {
-    if (adapter) {
+    if (adapter && !adapterCloseError) {
       try {
-        await adapter.close();
+        await closeAdapter();
       } catch (error) {
         adapterCloseError = error;
       }
@@ -516,6 +588,10 @@ export async function capturePolishPageLoad({
   }
 
   if (adapterCloseError) {
+    const producerProblem = observedProducerTimeout
+      || adapterCloseError?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE
+      ? "producer_timeout"
+      : "producer_failed";
     captures.length = 0;
     for (const route of plan.routes) {
       for (const viewport of plan.viewports) {
@@ -527,8 +603,8 @@ export async function capturePolishPageLoad({
           requestedDocumentUrl: route.url,
           finalDocumentUrl: route.url,
           responseCollectionStatus: "failed",
-          networkidle: { status: "timeout", duration_ms: 0 },
-          producerError: adapterCloseError,
+          networkidle: { status: "invalid", duration_ms: null },
+          producerProblem,
         }));
       }
     }

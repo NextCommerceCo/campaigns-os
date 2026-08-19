@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { createPolishBrowserAdapter } from "./polish-browser.mjs";
+import { POLISH_PRODUCER_TIMEOUT_ERROR_CODE } from "./polish-deadline.mjs";
 import {
   buildPageLoadCapture,
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
@@ -24,6 +25,7 @@ function fakeChromium(scenarios = [{}], browserOptions = {}) {
   const chromium = {
     async launch(options) {
       calls.push(["launch", options]);
+      if (browserOptions.launchNever) return new Promise(() => {});
       return {
         async newContext(options) {
           const scenario = scenarios[nextScenario] || {};
@@ -67,6 +69,7 @@ function fakeChromium(scenarios = [{}], browserOptions = {}) {
             },
             async detach() {
               calls.push(["detach", contextIndex]);
+              if (scenario.detachNever) return new Promise(() => {});
             },
           };
           const page = {
@@ -113,6 +116,8 @@ function fakeChromium(scenarios = [{}], browserOptions = {}) {
             },
             async close() {
               calls.push(["context.close", contextIndex]);
+              if (scenario.contextCloseNever) return new Promise(() => {});
+              if (scenario.contextCloseError) throw scenario.contextCloseError;
             },
           };
           contexts.push(context);
@@ -120,6 +125,7 @@ function fakeChromium(scenarios = [{}], browserOptions = {}) {
         },
         async close() {
           calls.push(["browser.close"]);
+          if (browserOptions.closeNever) return new Promise(() => {});
           if (browserOptions.closeError) throw browserOptions.closeError;
         },
       };
@@ -1150,6 +1156,128 @@ test("navigation, DOM, and CDP setup failures throw while still detaching and cl
 
   assert.equal(fake.calls.filter(([name]) => name === "detach").length, 3);
   assert.equal(fake.calls.filter(([name]) => name === "context.close").length, 3);
+});
+
+test("a never-resolving first DOM snapshot times out, poisons the adapter, and cleans up once", {
+  timeout: 500,
+}, async () => {
+  const fake = fakeChromium([{
+    evaluate: async () => new Promise(() => {}),
+    contextCloseError: new Error("PRIVATE_CLOSE_AFTER_TIMEOUT /private/tmp/browser-profile"),
+  }]);
+  const adapter = await createPolishBrowserAdapter({
+    chromium: fake.chromium,
+    cellDeadlineMs: 20,
+    cleanupDeadlineMs: 20,
+    startupDeadlineMs: 20,
+  });
+  const capture = adapter.captureRoute({
+    url: "https://shop.example.test/landing/?private=secret",
+    viewport: { key: "desktop", width: 1_440, height: 1_200 },
+  });
+
+  await assert.rejects(capture, (error) => {
+    assert.equal(error.code, POLISH_PRODUCER_TIMEOUT_ERROR_CODE);
+    assert.equal(error.message, "Campaigns OS polish capture producer exceeded its bounded deadline.");
+    assert.equal(error.message.includes("private=secret"), false);
+    assert.equal(error.message.includes("PRIVATE_CLOSE_AFTER_TIMEOUT"), false);
+    return true;
+  });
+  await assert.rejects(
+    adapter.captureRoute({
+      url: "https://shop.example.test/second/",
+      viewport: { key: "mobile", width: 390, height: 844 },
+    }),
+    (error) => error.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
+  );
+  await adapter.close();
+
+  assert.equal(fake.calls.filter(([name]) => name === "detach").length, 1);
+  assert.equal(fake.calls.filter(([name]) => name === "context.close").length, 1);
+  assert.equal(fake.calls.filter(([name]) => name === "browser.close").length, 1);
+});
+
+test("hung detach and context teardown are concurrent, bounded, and never double-close", {
+  timeout: 500,
+}, async () => {
+  for (const scenario of [{ detachNever: true }, { contextCloseNever: true }]) {
+    const fake = fakeChromium([scenario]);
+    const adapter = await createPolishBrowserAdapter({
+      chromium: fake.chromium,
+      cellDeadlineMs: 100,
+      cleanupDeadlineMs: 20,
+      startupDeadlineMs: 20,
+    });
+
+    await assert.rejects(
+      adapter.captureRoute({
+        url: "https://shop.example.test/landing/",
+        viewport: { key: "desktop", width: 1_440, height: 1_200 },
+      }),
+      (error) => error.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
+    );
+    await adapter.close();
+
+    assert.equal(fake.calls.filter(([name]) => name === "detach").length, 1);
+    assert.equal(fake.calls.filter(([name]) => name === "context.close").length, 1);
+  }
+});
+
+test("a rejecting context cleanup fails closed with one fixed error and poisons the adapter", async () => {
+  const fake = fakeChromium([{
+    contextCloseError: new Error("PRIVATE_CLOSE_FAILURE /private/tmp/browser-profile"),
+  }]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  await assert.rejects(
+    adapter.captureRoute({
+      url: "https://shop.example.test/landing/?private=secret",
+      viewport: { key: "desktop", width: 1_440, height: 1_200 },
+    }),
+    (error) => {
+      assert.equal(error.code, "POLISH_PRODUCER_CLEANUP_FAILED");
+      assert.equal(error.message, "Campaigns OS polish capture could not clean up its producer resources.");
+      assert.doesNotMatch(error.message, /PRIVATE|private=|\/private\/tmp/);
+      return true;
+    },
+  );
+  await assert.rejects(
+    adapter.captureRoute({
+      url: "https://shop.example.test/second/",
+      viewport: { key: "mobile", width: 390, height: 844 },
+    }),
+    (error) => error.code === "POLISH_PRODUCER_CLEANUP_FAILED",
+  );
+  await adapter.close();
+
+  assert.equal(fake.calls.filter(([name]) => name === "newContext").length, 1);
+  assert.equal(fake.calls.filter(([name]) => name === "context.close").length, 1);
+});
+
+test("browser startup and final close are independently bounded with a fixed timeout", {
+  timeout: 500,
+}, async () => {
+  const stuckLaunch = fakeChromium([], { launchNever: true });
+  await assert.rejects(
+    createPolishBrowserAdapter({
+      chromium: stuckLaunch.chromium,
+      startupDeadlineMs: 20,
+      cleanupDeadlineMs: 20,
+    }),
+    (error) => error.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
+  );
+
+  const stuckClose = fakeChromium([], { closeNever: true });
+  const adapter = await createPolishBrowserAdapter({
+    chromium: stuckClose.chromium,
+    startupDeadlineMs: 20,
+    cleanupDeadlineMs: 20,
+  });
+  const firstClose = adapter.close();
+  const secondClose = adapter.close();
+  await assert.rejects(firstClose, (error) => error.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE);
+  await assert.rejects(secondClose, (error) => error.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE);
+  assert.equal(stuckClose.calls.filter(([name]) => name === "browser.close").length, 1);
 });
 
 test("a missing Chromium executable produces an actionable polish-capture error without the raw path", async () => {

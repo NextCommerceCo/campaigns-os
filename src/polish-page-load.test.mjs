@@ -160,6 +160,35 @@ test("preload exemptions accept only exact ASCII-case-insensitive none and metad
   assert.equal(evaluate(evidence).status, "blocked");
 });
 
+test("computed visibility collapse on a media element or ancestor blocks eager media above the threshold", () => {
+  for (const [computed_style, ancestor_styles] of [
+    [{ display: "block", visibility: "collapse" }, []],
+    [{ display: "block", visibility: "visible" }, [{ display: "grid", visibility: "collapse" }]],
+  ]) {
+    const capture = pageLoadCapture({
+      buildFingerprint: BUILD_FINGERPRINT,
+      slug: "merchant",
+      requestedRoute: "/landing/",
+      viewport: "desktop",
+      finalDocumentUrl: "https://shop.example.test/landing/",
+      responseCollectionStatus: "complete",
+      networkidle: { status: "settled", duration_ms: 1_000 },
+      mediaElements: [{
+        ...mediaElement("collapsed.mp4"),
+        computed_style,
+        ancestor_styles,
+      }],
+      responses: [mediaResponse("collapsed", "collapsed.mp4", 1_048_577)],
+    });
+    const evidence = evidenceForCapture(capture);
+
+    assert.equal(capture.measurement_status, "complete");
+    assert.deepEqual(capture.media[0].hidden_by, ["visibility_collapse"]);
+    assert.deepEqual(evidence.findings.map((finding) => finding.hidden_by), [["visibility_collapse"]]);
+    assert.equal(evaluate(evidence).status, "blocked");
+  }
+});
+
 test("the threshold applies to aggregate fetched bytes per media element, including split resources", () => {
   const captureFor = (bytesPerResource) => pageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,

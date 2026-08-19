@@ -602,6 +602,209 @@ test("browser adapter close failure fails the matrix closed without leaking its 
   assert.equal(serialized.includes("/private/tmp/playwright-profile"), false);
 });
 
+test("a bounded per-cell producer timeout retires the adapter and safely completes the matrix", {
+  timeout: 500,
+}, async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  let calls = 0;
+  let closed = 0;
+  const result = await capturePolishPageLoad({
+    packet,
+    report: completedReport(),
+    baseUrl: "http://127.0.0.1:4173",
+    captureCellDeadlineMs: 20,
+    adapterCloseDeadlineMs: 20,
+    createBrowserAdapter: async () => ({
+      async captureRoute({ url, viewport }) {
+        calls += 1;
+        if (calls === 1) return new Promise(() => {});
+        throw new Error(`PRIVATE_OVERLAP_${viewport.key}`);
+      },
+      async close() { closed += 1; },
+    }),
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(closed, 1);
+  assert.equal(result.page_load.measurement.status, "incomplete");
+  assert.deepEqual(result.page_load.measurement.incomplete, ["desktop", "mobile"].map((viewport) => ({
+    route: "/merchant/landing/",
+    viewport,
+    problem_codes: [
+      "document_response_missing",
+      "media_collection_unavailable",
+      "networkidle_measurement_invalid",
+      "producer_timeout",
+      "response_collection_failed",
+      "response_collection_unavailable",
+    ],
+  })));
+  assert.equal(result.checkpoint.status, "blocked");
+  assert.equal(result.checkpoint.waivable, false);
+  assert.equal(JSON.stringify(result).includes("POLISH_PRODUCER_TIMEOUT"), false);
+  assert.equal(JSON.stringify(result).includes("PRIVATE_OVERLAP"), false);
+});
+
+test("a signal-honoring timed-out adapter still projects the fixed timeout instead of its raw abort error", {
+  timeout: 500,
+}, async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  let calls = 0;
+  const result = await capturePolishPageLoad({
+    packet,
+    report: completedReport(),
+    baseUrl: "http://127.0.0.1:4173",
+    captureCellDeadlineMs: 20,
+    adapterCloseDeadlineMs: 20,
+    createBrowserAdapter: async () => ({
+      async captureRoute({ signal }) {
+        calls += 1;
+        return new Promise((unusedResolve, reject) => {
+          signal.addEventListener("abort", () => {
+            reject(new Error("PRIVATE_ABORT_ERROR /private/tmp/browser-profile"));
+          }, { once: true });
+        });
+      },
+      async close() {
+        throw new Error("PRIVATE_CLOSE_AFTER_TIMEOUT /private/tmp/browser-profile");
+      },
+    }),
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(result.page_load.captures.every((capture) => capture.problems.some(
+    (problem) => problem.code === "producer_timeout",
+  )), true);
+  assert.equal(result.page_load.captures.some((capture) => capture.problems.some(
+    (problem) => problem.code === "producer_failed",
+  )), false);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_ABORT_ERROR|PRIVATE_CLOSE_AFTER_TIMEOUT|private\/tmp/);
+});
+
+test("a fixed producer cleanup failure retires the adapter and synthesizes remaining cells", async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  let calls = 0;
+  let closes = 0;
+  const result = await capturePolishPageLoad({
+    packet,
+    report: completedReport(),
+    baseUrl: "http://127.0.0.1:4173",
+    createBrowserAdapter: async () => ({
+      async captureRoute() {
+        calls += 1;
+        if (calls > 1) throw new Error("PRIVATE_OVERLAPPING_CONTEXT");
+        const error = new Error("Campaigns OS polish capture could not clean up its producer resources.");
+        error.code = "POLISH_PRODUCER_CLEANUP_FAILED";
+        throw error;
+      },
+      async close() { closes += 1; },
+    }),
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(closes, 1);
+  assert.equal(result.page_load.captures.every((capture) => capture.problems.some(
+    (problem) => problem.code === "producer_failed",
+  )), true);
+  assert.equal(result.page_load.captures.some((capture) => capture.problems.some(
+    (problem) => problem.code === "producer_timeout",
+  )), false);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_OVERLAPPING_CONTEXT/);
+});
+
+test("a never-resolving adapter close is bounded and projects producer_timeout without raw data", {
+  timeout: 500,
+}, async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const result = await capturePolishPageLoad({
+    packet,
+    report: completedReport(),
+    baseUrl: "http://127.0.0.1:4173",
+    captureCellDeadlineMs: 20,
+    adapterCloseDeadlineMs: 20,
+    createBrowserAdapter: async () => ({
+      async captureRoute({ url, viewport }) {
+        return {
+          finalDocumentUrl: url,
+          responseCollectionStatus: "complete",
+          networkidle: { status: "settled", duration_ms: 1 },
+          mediaElements: [],
+          responses: [mainDocumentResponse(url, { request_id: `document-${viewport.key}` })],
+        };
+      },
+      async close() { return new Promise(() => {}); },
+    }),
+  });
+
+  assert.equal(result.page_load.measurement.status, "incomplete");
+  assert.equal(result.page_load.captures.every((capture) => capture.problems.some(
+    (problem) => problem.code === "producer_timeout",
+  )), true);
+  assert.equal(result.page_load.captures.some((capture) => capture.problems.some(
+    (problem) => problem.code === "producer_failed",
+  )), false);
+  assert.equal(result.checkpoint.status, "blocked");
+  assert.equal(result.checkpoint.waivable, false);
+  assert.equal(JSON.stringify(result).includes("POLISH_PRODUCER_TIMEOUT"), false);
+});
+
+test("a never-resolving adapter startup yields full-matrix timeout evidence and closes a late adapter", {
+  timeout: 500,
+}, async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  let resolveFactory;
+  let captures = 0;
+  let closes = 0;
+  const factoryPromise = new Promise((resolve) => { resolveFactory = resolve; });
+  const result = await capturePolishPageLoad({
+    packet,
+    report: completedReport(),
+    baseUrl: "http://127.0.0.1:4173",
+    adapterStartupDeadlineMs: 20,
+    adapterCloseDeadlineMs: 20,
+    createBrowserAdapter: async () => factoryPromise,
+  });
+
+  assert.equal(result.page_load.captures.length, 2);
+  assert.equal(result.page_load.captures.every((capture) => capture.problems.some(
+    (problem) => problem.code === "producer_timeout",
+  )), true);
+  assert.equal(result.checkpoint.status, "blocked");
+  assert.equal(result.checkpoint.waivable, false);
+  resolveFactory({
+    async captureRoute() {
+      captures += 1;
+      throw new Error("PRIVATE_LATE_CAPTURE");
+    },
+    async close() { closes += 1; },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(captures, 0);
+  assert.equal(closes, 1);
+  assert.equal(JSON.stringify(result).includes("PRIVATE_LATE_CAPTURE"), false);
+});
+
 test("capture binding accepts missing polish evidence ancestors and preserves a completed polish status on recapture", () => {
   const packet = packetWithPages([{
     page_id: "landing",

@@ -179,7 +179,7 @@ test("hidden eager-media checkpoint summary and assertion expose only the safe f
         transferred_bytes: 2_000_000,
         threshold_bytes: 1_048_576,
         preload_attribute: "auto",
-        hidden_by: ["display_none"],
+        hidden_by: ["display_none", "visibility_collapse", "private-hidden-token"],
         private_finding: "private-finding-sentinel",
       }],
       private_state: "private-state-sentinel",
@@ -209,6 +209,7 @@ test("hidden eager-media checkpoint summary and assertion expose only the safe f
   assert.deepEqual(summary.subject.routes, ["/merchant/landing/"]);
   assert.deepEqual(summary.subject.viewports, ["desktop", "mobile"]);
   assert.deepEqual(summary.state.findings[0].sources, ["https://cdn.example.test/hero.mp4"]);
+  assert.deepEqual(summary.state.findings[0].hidden_by, ["display_none", "visibility_collapse"]);
   assert.deepEqual(summary.findings, summary.state.findings);
   assert.deepEqual(summary.waiver.subject, summary.subject);
   assert.doesNotMatch(projected, /private-/);
