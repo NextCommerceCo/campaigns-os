@@ -106,13 +106,15 @@ apply.
 ### Polish hidden eager-media checkpoint
 
 The third registered checkpoint is package-owned page-load evidence recorded at
-`stages.polish.evidence.visual_review.page_load`. Serve the current build and
-run this producer before marking Polish complete:
+`stages.polish.evidence.visual_review.page_load`. Install the package-owned
+browser, serve the current build, and run this producer before marking Polish
+complete, deploying, or starting QA:
 
 ```bash
+npm run qa:install-browser
 campaigns-os polish capture \
   --packet campaign-runtime.build.json \
-  --base-url https://preview.example.test
+  --base-url <served-current-build-url>
 ```
 
 The producer derives every mapped, non-skipped route from the packet and
@@ -122,6 +124,12 @@ computed-hidden `video` or `audio` element transfers strictly more than
 ASCII-case-insensitive `none` or `metadata`. Evidence exactly at the byte
 threshold passes. The command owns the versioned capture format and its
 integrity binding; never hand-author or copy `page_load`.
+
+The operator supplies the URL of the current served output. The evidence binds
+to packet/report authority, but the URL itself is not cryptographic proof that
+the server is hosting those exact build bytes. The durable field map, bounded
+measurement semantics, and attachment race boundary are documented in
+[Polish evidence](./polish-evidence.md#durable-page_load-field-map).
 
 Missing, malformed, stale, incomplete, or contradictory measurement evidence
 is nonwaivable. A complete real finding may receive an exact named-human
@@ -275,9 +283,9 @@ Readiness Readback and downstream QA evidence; it is not a silent pass.
 In v0, write accepted Source Freshness Waivers directly into `waivers[]`.
 `campaigns-os checkpoint waive` is a staged generic registry and currently
 accepts `page_kit.store_profile`, `page_kit.sdk_version`, and
-`polish.hidden_eager_media`. Source Freshness, the broad Polish evidence gate,
-theme, and QA decisions retain their existing artifact or waiver paths until
-each is explicitly registered.
+`polish.hidden_eager_media`. Within Polish, only the broader Source Freshness
+waiver retains its existing report path; theme and QA decisions retain their
+existing artifact or waiver paths until each is explicitly registered.
 
 In v0, material source fingerprint fields include contribution identity/kind,
 provenance, presentation intent, Surface Identity catalog and mappings,
@@ -578,7 +586,7 @@ updates assembly report's stages.<name>.status → calls `next` again →
 repeat until stage="done"
 ```
 
-Stage order: `setup → build → polish → deploy → qa`. The picker walks this list and returns the first stage whose recorded status isn't terminal (`completed`, `completed_with_warnings`, `skipped`). During Polish, run `campaigns-os polish capture` against the served current build before recording a terminal `stages.polish.status`; the producer attaches package-owned `visual_review.page_load` evidence and never marks the stage complete itself.
+Stage order: `setup → build → polish → deploy → qa`. The picker walks this list and returns the first stage whose recorded status isn't terminal (`completed`, `completed_with_warnings`, `skipped`). During Polish, install the package-owned browser first, then run `campaigns-os polish capture` against the served current build before recording a terminal `stages.polish.status` or proceeding to deploy/QA; the producer attaches package-owned `visual_review.page_load` evidence and never marks the stage complete itself.
 
 | Stage | Report key | Owner |
 |---|---|---|

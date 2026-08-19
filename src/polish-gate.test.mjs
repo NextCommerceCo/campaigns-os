@@ -626,6 +626,37 @@ const GATE_BLOCKER_CODES = [
   "polish.evidence_current",
   "polish.assembly_source_package_waived",
 ];
+const PAGE_LOAD_DOC_PATHS = [
+  "stages.polish.evidence.visual_review.page_load",
+  "subject.build_fingerprint",
+  "subject.campaign_slug",
+  "subject.route_scope",
+  "subject.routes[]",
+  "subject.viewports[]",
+  "measurement.status",
+  "measurement.expected_capture_count",
+  "measurement.captured_count",
+  "measurement.missing[]",
+  "measurement.duplicate[]",
+  "measurement.unexpected[]",
+  "measurement.incomplete[]",
+  "captures[]",
+  "findings[]",
+  "document_response.status",
+  "document_response.context_fingerprint",
+  "metrics.total_transferred_bytes",
+  "metrics.largest_resource",
+  "metrics.request_count",
+  "metrics.cache_request_count",
+  "metrics.service_worker_request_count",
+  "metrics.cross_origin_request_count",
+  "networkidle.status",
+  "networkidle.duration_ms",
+  "media[]",
+  "resource_ledger.entries[]",
+  "problems[]",
+  "integrity.schema_version",
+];
 
 test("docs/polish-evidence.md documents every required evidence field and gate code", () => {
   const doc = readFileSync(join(REPO_ROOT, "docs", "polish-evidence.md"), "utf8");
@@ -634,6 +665,9 @@ test("docs/polish-evidence.md documents every required evidence field and gate c
   }
   for (const code of GATE_BLOCKER_CODES) {
     assert.ok(doc.includes(code), `docs/polish-evidence.md must document gate code "${code}"`);
+  }
+  for (const path of PAGE_LOAD_DOC_PATHS) {
+    assert.ok(doc.includes(`\`${path}\``), `docs/polish-evidence.md must document page_load path "${path}"`);
   }
   assert.ok(doc.includes(POLISH_PRODUCER), "docs must name the required producer");
 });

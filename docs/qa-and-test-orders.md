@@ -4,6 +4,24 @@ The public v0 QA runner is Node/npm-based and does not require access to a priva
 
 > **Commerce QA requires network; it cannot run in a no-outbound sandbox.** The SDK, product images, fonts, the Netlify preview, and the Playwright typed-card test order all need outbound network. A build environment without it can only validate markup/build/CSS — the commerce runtime and the typed-card test order (the Campaigns OS control) must be deferred to a deployed preview. Always run the QA runner against a `--base-url` preview/production origin (e.g. `npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url https://deploy-preview-7--your-site.netlify.app/ --browser --test-order common`); never report commerce-runtime QA as passed from an offline build.
 
+## Polish capture prerequisite
+
+Packet QA consumes package-owned page-load evidence; it never creates that
+evidence. Install the package browser, serve the current built output, and run
+the producer before marking Polish complete, deploying, or starting QA:
+
+```bash
+npm run qa:install-browser
+npm run campaigns-os -- polish capture \
+  --packet campaign-runtime.build.json \
+  --base-url <served-current-build-url>
+```
+
+The operator-provided URL must serve the current build. Its value is not a
+cryptographic attestation of the served bytes. See
+[Polish evidence](./polish-evidence.md#durable-page_load-field-map) for the
+generated field map, completeness rules, and attachment race boundary.
+
 ## Resolve
 
 Use resolve before a full run:
@@ -97,16 +115,21 @@ npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json --base-u
 
 ## Run
 
-Install the package-owned Playwright browser once before rendered QA or
-test-order proof:
+Install the package-owned Playwright browser once before Polish capture,
+rendered QA, or test-order proof:
 
 ```bash
 npm run qa:install-browser
 ```
 
-This installs the Chromium binary used by `--browser` and `--test-order`. It is
-part of the normal Campaigns OS QA path after `npm install` or package updates.
-The QA flow must not depend on external browser skills or local agent tooling.
+This installs the Chromium binary used by `polish capture`, `--browser`, and
+`--test-order`. It is part of the normal Campaigns OS proof path after `npm
+install` or package updates. The QA flow must not depend on external browser
+skills or local agent tooling.
+
+`npm run smoke:polish-capture` is an optional real-browser package smoke after
+that installation. It requires permission to bind a loopback HTTP listener and
+is deliberately excluded from `npm run check` and CI.
 
 ```bash
 npm run campaigns-os -- qa run \

@@ -11,10 +11,11 @@ This toolkit gives campaign developers and AI coding tools a clear path for asse
 5. Provide or generate a [Campaign Build Brief](./docs/campaign-build-brief.md) for merchandising/design presentation decisions.
 6. Create and doctor a Build Packet.
 7. Hand off to `next-campaigns-build`.
-8. Run build/lint, then `next-campaigns-polish`.
-9. Deploy a preview.
-10. Install the Campaigns OS Playwright browser once with `npm run qa:install-browser`, then run `next-campaigns-qa`.
-11. Record launch blockers and follow-up work.
+8. Run build/lint, then install the Campaigns OS Playwright browser once with `npm run qa:install-browser`.
+9. Run `next-campaigns-polish`, serve the current build, and run the mandatory `campaigns-os polish capture` producer before marking Polish complete.
+10. Deploy a preview.
+11. Run `next-campaigns-qa` against the tested URL.
+12. Record launch blockers and follow-up work.
 
 The toolkit is contract-backed: starter templates describe which parts are reusable page structure, which parts are live commerce wiring, and which demo values must be replaced for a real campaign. That helps AI tools avoid common mistakes like carrying over sample package IDs, copying shipping options from the wrong template shape, or editing SDK-owned checkout surfaces as plain HTML.
 
@@ -70,11 +71,13 @@ npm run campaigns-os -- theme inspect --packet <page-kit-repo>/campaign-runtime.
 npm run campaigns-os -- theme generate --packet <page-kit-repo>/campaign-runtime.build.json --json
 npm run campaigns-os -- next setup --packet <page-kit-repo>/campaign-runtime.build.json
 npm run campaigns-os -- next build --packet <page-kit-repo>/campaign-runtime.build.json
-npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-report.json>
-npm run campaigns-os -- next qa --packet <packet.json> --report <assembly-report.json>
 npm run qa:install-browser
+npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-report.json>
+npm run campaigns-os -- polish capture --packet <packet.json> --base-url <served-current-build-url>
+npm run campaigns-os -- next qa --packet <packet.json> --report <assembly-report.json>
 npm run campaigns-os -- qa resolve --packet <packet.json>
 npm run campaigns-os -- qa run --packet <packet.json> --base-url <preview-url> --browser --test-order common
+npm run smoke:polish-capture
 npm run campaigns-os -- findings add --stage overall --kind positive_signal --summary "..."
 npm run campaigns-os -- findings harvest --packet <packet.json>
 npm run campaigns-os -- findings export --summary
@@ -87,10 +90,16 @@ automatically make agent skills current; when skills are stale, run
 `npm run campaigns-os -- install-skills --platform all` and restart local agent
 sessions.
 
-Run `npm run qa:install-browser` once after install/update and before any QA
-command that uses `--browser` or `--test-order`. It installs the Chromium binary
-used by the package-owned Playwright flow; Campaigns OS QA should not depend on
-external browser skills.
+Run `npm run qa:install-browser` once after install/update and before mandatory
+`polish capture` or any QA command that uses `--browser` or `--test-order`. It
+installs the Chromium binary used by the package-owned Playwright flow;
+Campaigns OS proof should not depend on external browser skills. `polish
+capture` must run against the served current build before Polish becomes
+terminal, deploy begins, or QA starts.
+
+`npm run smoke:polish-capture` is an optional real-Chromium package smoke. It
+requires the installed browser and permission to open a loopback HTTP listener;
+it is intentionally excluded from `npm run check` and CI.
 
 ## Template Contracts
 
@@ -151,7 +160,7 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 
 ## Status
 
-Developer preview. Build output still needs the normal proof gates: build/lint evidence, polish, preview deploy or local dev URL, Playwright browser QA, and typed-card test-order proof via `--test-order common` (global test cards bypass the gateway and create no transactions; no approval needed — depth is the only control). Localhost on any port is a Campaigns App Development domain, so SDK calls are allowed and analytics are suppressed there; non-localhost preview/production origins still need SDK origin allowlist confirmation.
+Developer preview. Build output still needs the normal proof gates: build/lint evidence, polish plus package-owned page-load capture against the served current build, preview deploy or local dev URL, Playwright browser QA, and typed-card test-order proof via `--test-order common` (global test cards bypass the gateway and create no transactions; no approval needed — depth is the only control). Localhost on any port is a Campaigns App Development domain, so SDK calls are allowed and analytics are suppressed there; non-localhost preview/production origins still need SDK origin allowlist confirmation.
 
 Launch readiness is separate from Campaigns OS proof. Before real shoppers see a campaign, confirm the production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration.
 
