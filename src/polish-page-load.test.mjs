@@ -29,20 +29,38 @@ function mediaElement(path, {
   return {
     tag_name: tagName,
     current_src: `https://cdn.example.test/${path}?credential=private`,
-    src: null,
-    source_srcs: [],
-    preload,
+    src_attribute: null,
+    source_src_attributes: [],
+    preload_attribute: preload,
     computed_style: { display: hidden ? "none" : "block", visibility: "visible" },
     ancestor_styles: [],
     bounding_box: hidden ? { width: 0, height: 0 } : { width: 1200, height: 600 },
   };
 }
 
+function evidenceForCapture(capture, {
+  buildFingerprint = BUILD_FINGERPRINT,
+  slug = "merchant",
+  routes = ["/landing/"],
+  viewports = ["desktop"],
+} = {}) {
+  return buildPolishPageLoadEvidence({
+    buildFingerprint,
+    slug,
+    routeScope: "all",
+    routes,
+    viewports,
+    captures: [capture],
+  });
+}
+
 test("page-load evidence blocks only hidden eager media strictly above 1,048,576 bytes", () => {
   const capture = buildPageLoadCapture({
-    route: "/landing/?campaign=private",
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/?campaign=private",
     viewport: "desktop",
-    documentUrl: "https://shop.example.test/landing/?campaign=private",
+    finalDocumentUrl: "https://shop.example.test/landing/?campaign=private",
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_200 },
     mediaElements: [
@@ -87,7 +105,7 @@ test("page-load evidence blocks only hidden eager media strictly above 1,048,576
     sources: ["https://cdn.example.test/hidden-too-large.mp4"],
     transferred_bytes: 1_048_577,
     threshold_bytes: 1_048_576,
-    preload: null,
+    preload_attribute: "missing",
     hidden_by: ["display_none"],
   }]);
   const serialized = JSON.stringify(evidence);
@@ -96,20 +114,22 @@ test("page-load evidence blocks only hidden eager media strictly above 1,048,576
 
 test("the threshold applies to aggregate fetched bytes per media element, including split resources", () => {
   const captureFor = (bytesPerResource) => buildPageLoadCapture({
-    route: "/landing/",
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
     viewport: "desktop",
-    documentUrl: "https://shop.example.test/landing/",
+    finalDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_000 },
     mediaElements: [{
       tag_name: "video",
       current_src: "",
-      src: null,
-      source_srcs: [
+      src_attribute: null,
+      source_src_attributes: [
         "https://cdn.example.test/part-a.mp4?credential=private",
         "https://cdn.example.test/part-b.mp4?credential=private",
       ],
-      preload: null,
+      preload_attribute: null,
       computed_style: { display: "none", visibility: "visible" },
       ancestor_styles: [],
       bounding_box: { width: 0, height: 0 },
@@ -141,7 +161,7 @@ test("the threshold applies to aggregate fetched bytes per media element, includ
     ],
     transferred_bytes: 1_228_800,
     threshold_bytes: 1_048_576,
-    preload: null,
+    preload_attribute: "missing",
     hidden_by: ["display_none"],
   }]);
   assert.equal(evaluate(over).status, "blocked");
@@ -152,11 +172,80 @@ test("the threshold applies to aggregate fetched bytes per media element, includ
   assert.equal(evaluate(atBoundary).status, "pass");
 });
 
-function blockingEvidence({ bytes = 1_048_577, buildFingerprint = BUILD_FINGERPRINT } = {}) {
+test("query-distinct same-path media stay separately attributed and only the over-threshold element becomes a finding", () => {
+  const urls = ["one", "two", "three"].map(
+    (variant) => `https://cdn.example.test/same.mp4?variant=${variant}&token=private-${variant}`,
+  );
   const capture = buildPageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_000 },
+    mediaElements: urls.map((url) => ({
+      ...mediaElement("unused.mp4"),
+      current_src: url,
+    })),
+    responses: urls.map((url, index) => ({
+      request_id: `variant-${index}`,
+      url,
+      resource_type: "Media",
+      status: 200,
+      encoded_data_length: index === 2 ? 1_048_577 : 600 * 1_024,
+    })),
+  });
+  const evidence = evidenceForCapture(capture);
+
+  assert.equal(evidence.measurement.status, "complete");
+  assert.deepEqual(evidence.captures[0].media.map((media) => media.fetched_bytes), [
+    600 * 1_024,
+    600 * 1_024,
+    1_048_577,
+  ]);
+  assert.equal(evidence.findings.length, 1);
+  assert.equal(evidence.findings[0].element_index, 2);
+  assert.deepEqual(evidence.findings[0].sources, ["https://cdn.example.test/same.mp4"]);
+  assert.equal(JSON.stringify(evidence).includes("variant="), false);
+});
+
+test("resource-type ambiguity remains a structurally valid but nonwaivably incomplete capture", () => {
+  const url = "https://cdn.example.test/ambiguous.mp4?token=private";
+  const capture = buildPageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_000 },
+    mediaElements: [{ ...mediaElement("unused.mp4"), current_src: url }],
+    responses: [
+      { request_id: "media", url, resource_type: "Media", status: 206, encoded_data_length: 600_000 },
+      { request_id: "fetch", url, resource_type: "Fetch", status: 206, encoded_data_length: 600_000 },
+    ],
+  });
+  const evidence = evidenceForCapture(capture);
+
+  assert.equal(evidence.measurement.status, "incomplete");
+  assert.deepEqual(evidence.measurement.incomplete, [{
     route: "/landing/",
     viewport: "desktop",
-    documentUrl: "https://shop.example.test/landing/",
+    problem_codes: ["resource_type_ambiguous"],
+  }]);
+  const gate = evaluate(evidence);
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
+  assert.equal(gate.waivable, false);
+});
+
+function blockingEvidence({ bytes = 1_048_577, buildFingerprint = BUILD_FINGERPRINT } = {}) {
+  const capture = buildPageLoadCapture({
+    buildFingerprint,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_200 },
     mediaElements: [mediaElement("hidden-too-large.mp4")],
@@ -363,6 +452,85 @@ test("a malformed route capture cannot self-declare complete and false-pass miss
   assert.equal(gate.waivable, false);
 });
 
+test("ledger-derived totals, largest-resource facts, cache/SW/cross-origin counts, and media attribution reject contradictions", () => {
+  const base = structuredClone(blockingEvidence().captures[0]);
+  const mutations = [
+    (capture) => { capture.metrics.total_transferred_bytes += 1; },
+    (capture) => { capture.metrics.request_count += 1; },
+    (capture) => { capture.metrics.largest_resource.transferred_bytes += 1; },
+    (capture) => { capture.metrics.cross_origin_request_count += 1; },
+    (capture) => { capture.metrics.cache_request_count += 1; },
+    (capture) => { capture.metrics.service_worker_request_count += 1; },
+    (capture) => { capture.media[0].fetched_bytes -= 1; },
+    (capture) => { capture.media[0].fetched_request_count += 1; },
+    (capture) => { capture.media[0].fetched_resources[0].transferred_bytes -= 1; },
+    (capture) => { capture.resource_ledger.entries[0].transferred_bytes -= 1; },
+  ];
+
+  for (const mutate of mutations) {
+    const capture = structuredClone(base);
+    mutate(capture);
+    const evidence = evidenceForCapture(capture);
+    assert.equal(evidence.measurement.status, "incomplete");
+    assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+    const gate = evaluate(evidence);
+    assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
+    assert.equal(gate.waivable, false);
+  }
+});
+
+test("a grouped URL cannot self-declare only some same-origin-status requests as cross-origin", () => {
+  const url = "https://cdn.example.test/ranged.mp4?token=private";
+  const capture = buildPageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_000 },
+    mediaElements: [],
+    responses: [
+      { request_id: "range-1", url, resource_type: "Media", status: 206, encoded_data_length: 100 },
+      { request_id: "range-2", url, resource_type: "Media", status: 206, encoded_data_length: 200 },
+    ],
+  });
+  assert.equal(capture.resource_ledger.entries[0].request_count, 2);
+  assert.equal(capture.resource_ledger.entries[0].cross_origin_request_count, 2);
+
+  capture.resource_ledger.entries[0].cross_origin_request_count = 1;
+  capture.metrics.cross_origin_request_count = 1;
+  const evidence = evidenceForCapture(capture);
+  assert.equal(evidence.measurement.status, "incomplete");
+  assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+});
+
+test("capture reuse across build, campaign, route, or viewport bindings is rejected", () => {
+  const capture = structuredClone(blockingEvidence().captures[0]);
+  const cases = [
+    { buildFingerprint: `sha256:${"b".repeat(64)}` },
+    { slug: "different-merchant" },
+    { routes: ["/upsell/"] },
+    { viewports: ["mobile"] },
+  ];
+
+  for (const options of cases) {
+    const evidence = evidenceForCapture(capture, options);
+    assert.equal(evidence.measurement.status, "incomplete");
+    assert.equal(evidence.captures[0].problems.some(({ code }) => code === "capture_binding_mismatch"), true);
+    const gate = evaluateHiddenEagerMediaCheckpoint({
+      pageLoad: evidence,
+      buildFingerprint: options.buildFingerprint || BUILD_FINGERPRINT,
+      slug: options.slug || "merchant",
+      routeScope: "all",
+      routes: options.routes || ["/landing/"],
+      viewports: options.viewports || ["desktop"],
+    });
+    assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
+    assert.equal(gate.waivable, false);
+  }
+});
+
 test("page-load evidence projects a fixed privacy-safe capture shape", () => {
   const capture = structuredClone(blockingEvidence().captures[0]);
   capture.private_token = "top-level-secret";
@@ -390,9 +558,11 @@ test("page-load evidence projects a fixed privacy-safe capture shape", () => {
 
 test("finding order and checkpoint fingerprint are stable across route, viewport, and capture input order", () => {
   const captureFor = (route, viewport, path, bytes) => buildPageLoadCapture({
-    route,
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: route,
     viewport,
-    documentUrl: `https://shop.example.test${route}`,
+    finalDocumentUrl: `https://shop.example.test${route}`,
     responseCollectionStatus: "complete",
     networkidle: { status: "settled", duration_ms: 1_000 },
     mediaElements: [mediaElement(path)],
@@ -447,6 +617,25 @@ test("malformed capture identities and problem codes are reduced to fixed safe d
   for (const secret of ["private-schema", "private-producer", "cookie_private"]) {
     assert.equal(serialized.includes(secret), false, secret);
   }
+});
+
+test("malformed typed capture fields cannot flow arbitrary strings into the evidence projection", () => {
+  const capture = structuredClone(blockingEvidence().captures[0]);
+  capture.measurement_status = "private-measurement-secret";
+  capture.response_collection.observed_response_count = "private-observed-secret";
+  capture.resource_ledger.limit = "private-ledger-secret";
+  capture.metrics.total_transferred_bytes = "private-total-secret";
+  capture.media[0].element_index = "private-index-secret";
+  capture.media[0].fetched_bytes = "private-media-secret";
+  capture.problems = [{ code: "cache_observed", count: "private-count-secret" }];
+  const evidence = evidenceForCapture(capture);
+
+  assert.equal(evidence.measurement.status, "incomplete");
+  assert.equal(evidence.captures[0].problems.some(({ code }) => code === "capture_shape_invalid"), true);
+  const serialized = JSON.stringify(evidence);
+  for (const secret of [
+    "private-measurement", "private-observed", "private-ledger", "private-total", "private-index", "private-media", "private-count",
+  ]) assert.equal(serialized.includes(secret), false, secret);
 });
 
 test("contradictory hidden and preload projections cannot erase a captured blocker", () => {

@@ -1,7 +1,11 @@
 import {
+  MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
   normalizePageLoadRoute,
   POLISH_CAPTURE_PRODUCER,
+  POLISH_PRELOAD_ATTRIBUTES,
+  POLISH_RESOURCE_TYPES,
   POLISH_ROUTE_CAPTURE_SCHEMA_VERSION,
+  redactCaptureUrl,
 } from "./polish-capture.mjs";
 import {
   assessCheckpointWaivers,
@@ -13,10 +17,19 @@ export const HIDDEN_EAGER_MEDIA_SCOPE = "polish.hidden_eager_media";
 export const HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES = 1_048_576;
 export const POLISH_PAGE_LOAD_SCHEMA_VERSION = "campaigns-os-polish-page-load/v0";
 export const POLISH_PAGE_LOAD_PRODUCER = POLISH_CAPTURE_PRODUCER;
+
+const RESOURCE_TYPES = new Set(POLISH_RESOURCE_TYPES);
+const PRELOAD_ATTRIBUTES = new Set(POLISH_PRELOAD_ATTRIBUTES);
+const RESOURCE_TYPE_STATUSES = new Set(["ambiguous", "known", "unknown"]);
+const SOURCE_KINDS = new Set(["current_src", "source_src_attribute", "src_attribute"]);
+const SOURCE_SENTINELS = new Set(["[malformed-url]", "[non-http-url]"]);
 const CAPTURE_PROBLEM_CODES = new Set([
   "cache_observed",
+  "capture_binding_mismatch",
   "capture_shape_invalid",
+  "capture_subject_invalid",
   "duplicate_request_identity",
+  "final_document_route_mismatch",
   "media_collection_unavailable",
   "media_measurement_failed",
   "media_source_unresolvable",
@@ -25,6 +38,9 @@ const CAPTURE_PROBLEM_CODES = new Set([
   "request_failed",
   "request_identity_invalid",
   "resource_aliases_invalid",
+  "resource_ledger_overflow",
+  "resource_type_ambiguous",
+  "resource_type_unknown",
   "resource_url_unresolvable",
   "response_collection_empty",
   "response_collection_failed",
@@ -41,6 +57,7 @@ function normalizeString(value) {
 function normalizedStrings(values) {
   return [...new Set((Array.isArray(values) ? values : [])
     .map((value) => normalizeString(value)?.toLocaleLowerCase("en-US"))
+    .filter((value) => value && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value))
     .filter(Boolean))].sort();
 }
 
@@ -70,9 +87,10 @@ function emptyWaiverAssessment() {
 }
 
 export function pageLoadCheckpointSubject({ buildFingerprint, slug, routeScope, routes, viewports } = {}) {
+  const campaignSlug = normalizeString(slug);
   return {
-    build_fingerprint: normalizeString(buildFingerprint),
-    campaign_slug: normalizeString(slug),
+    build_fingerprint: isSha256(buildFingerprint) ? buildFingerprint : null,
+    campaign_slug: campaignSlug && /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(campaignSlug) ? campaignSlug : null,
     route_scope: normalizeString(routeScope)?.toLocaleLowerCase("en-US") || null,
     routes: normalizedRoutes(routes),
     viewports: normalizedStrings(viewports),
@@ -87,170 +105,506 @@ function isNonnegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
-function validResourceProjection(resource) {
-  return Boolean(resource)
-    && typeof resource === "object"
-    && !Array.isArray(resource)
-    && typeof resource.url === "string"
-    && resource.url.trim() !== ""
-    && !/[?#]/.test(resource.url)
-    && (resource.matched_source == null
-      || (typeof resource.matched_source === "string"
-        && resource.matched_source.trim() !== ""
-        && !/[?#]/.test(resource.matched_source)))
-    && isNonnegativeInteger(resource.transferred_bytes)
-    && isNonnegativeInteger(resource.request_count);
+function projectedInteger(value) {
+  return isNonnegativeInteger(value) ? value : null;
 }
 
-function isSortedUniqueStrings(values) {
-  if (!Array.isArray(values) || values.some((value) => typeof value !== "string")) return false;
-  const canonical = [...new Set(values)].sort();
+function projectedBoolean(value) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function isSha256(value) {
+  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
+}
+
+function isSortedUnique(values, compare = (a, b) => a.localeCompare(b)) {
+  if (!Array.isArray(values)) return false;
+  const canonical = [...new Set(values)].sort(compare);
   return canonical.length === values.length && canonical.every((value, index) => value === values[index]);
 }
 
-function validMediaProjection(media) {
+function safeHttpUrl(value) {
+  if (typeof value !== "string" || !/^https?:\/\//.test(value) || /[?#]/.test(value)) return null;
+  const projected = redactCaptureUrl(value);
+  return projected && /^https?:\/\//.test(projected) ? projected : null;
+}
+
+function safeSourceUrl(value) {
+  if (value === null) return null;
+  if (SOURCE_SENTINELS.has(value)) return value;
+  return safeHttpUrl(value) || "[malformed-url]";
+}
+
+function validCaptureSubject(subject) {
+  if (!subject || typeof subject !== "object" || Array.isArray(subject)) return false;
+  const requestedRoute = normalizePageLoadRoute(subject.requested_route);
+  const finalRoute = normalizePageLoadRoute(subject.final_document_route);
+  const viewport = normalizeString(subject.viewport)?.toLocaleLowerCase("en-US") || null;
+  const slug = normalizeString(subject.campaign_slug);
+  return isSha256(subject.build_fingerprint)
+    && Boolean(slug && /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(slug))
+    && Boolean(requestedRoute)
+    && requestedRoute === subject.requested_route
+    && Boolean(finalRoute)
+    && finalRoute === subject.final_document_route
+    && Boolean(viewport)
+    && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(viewport)
+    && viewport === subject.viewport;
+}
+
+function projectCaptureSubject(subject) {
+  const fingerprint = isSha256(subject?.build_fingerprint) ? subject.build_fingerprint : null;
+  const slug = normalizeString(subject?.campaign_slug);
+  const safeSlug = slug && /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(slug) ? slug : null;
+  const viewport = normalizeString(subject?.viewport)?.toLocaleLowerCase("en-US") || null;
+  return {
+    build_fingerprint: fingerprint,
+    campaign_slug: safeSlug,
+    requested_route: normalizePageLoadRoute(subject?.requested_route),
+    final_document_route: normalizePageLoadRoute(subject?.final_document_route),
+    viewport: viewport && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(viewport) ? viewport : null,
+  };
+}
+
+function resourceLedgerSort(a, b) {
+  return String(a.url).localeCompare(String(b.url)) || String(a.resource_id).localeCompare(String(b.resource_id));
+}
+
+function validResourceLedgerEntry(resource) {
+  if (!resource || typeof resource !== "object" || Array.isArray(resource)) return false;
+  if (!isSha256(resource.resource_id) || safeHttpUrl(resource.url) !== resource.url) return false;
+  if (!RESOURCE_TYPES.has(resource.resource_type)
+    || !RESOURCE_TYPE_STATUSES.has(resource.resource_type_status)) return false;
+  if ((resource.resource_type_status === "known") !== (resource.resource_type !== "unknown")) return false;
+  if ((resource.resource_type_status !== "known") !== (resource.resource_type === "unknown")) return false;
+  for (const field of [
+    "transferred_bytes",
+    "request_count",
+    "unmeasured_request_count",
+    "failed_request_count",
+    "partial_request_count",
+    "cross_origin_request_count",
+    "cache_request_count",
+    "service_worker_request_count",
+  ]) {
+    if (!isNonnegativeInteger(resource[field])) return false;
+  }
+  for (const field of [
+    "unmeasured_request_count",
+    "failed_request_count",
+    "partial_request_count",
+    "cross_origin_request_count",
+    "cache_request_count",
+    "service_worker_request_count",
+  ]) {
+    if (resource[field] > resource.request_count) return false;
+  }
+  if (resource.cross_origin_request_count !== 0
+    && resource.cross_origin_request_count !== resource.request_count) return false;
+  if (!isSortedUnique(resource.statuses, (a, b) => a - b)
+    || resource.statuses.some((status) => !Number.isInteger(status))) return false;
+  if ((resource.partial_request_count > 0) !== resource.statuses.includes(206)) return false;
+  if (!isSortedUnique(resource.match_resource_ids)
+    || resource.match_resource_ids.some((id) => !isSha256(id))
+    || !resource.match_resource_ids.includes(resource.resource_id)) return false;
+  return true;
+}
+
+function projectResourceLedgerEntry(resource) {
+  return {
+    resource_id: isSha256(resource?.resource_id) ? resource.resource_id : null,
+    url: safeHttpUrl(resource?.url),
+    resource_type: RESOURCE_TYPES.has(resource?.resource_type) ? resource.resource_type : "unknown",
+    resource_type_status: RESOURCE_TYPE_STATUSES.has(resource?.resource_type_status)
+      ? resource.resource_type_status
+      : "unknown",
+    transferred_bytes: projectedInteger(resource?.transferred_bytes),
+    request_count: projectedInteger(resource?.request_count),
+    unmeasured_request_count: projectedInteger(resource?.unmeasured_request_count),
+    failed_request_count: projectedInteger(resource?.failed_request_count),
+    statuses: (Array.isArray(resource?.statuses) ? resource.statuses : [])
+      .filter(Number.isInteger)
+      .sort((a, b) => a - b),
+    partial_request_count: projectedInteger(resource?.partial_request_count),
+    cross_origin_request_count: projectedInteger(resource?.cross_origin_request_count),
+    cache_request_count: projectedInteger(resource?.cache_request_count),
+    service_worker_request_count: projectedInteger(resource?.service_worker_request_count),
+    match_resource_ids: (Array.isArray(resource?.match_resource_ids) ? resource.match_resource_ids : [])
+      .filter(isSha256)
+      .sort(),
+  };
+}
+
+function validResourceLedger(ledger) {
+  if (!ledger || typeof ledger !== "object" || Array.isArray(ledger)) return false;
+  if (ledger.limit !== MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES
+    || !isNonnegativeInteger(ledger.total_resource_count)
+    || !isNonnegativeInteger(ledger.omitted_resource_count)
+    || !isNonnegativeInteger(ledger.omitted_request_count)
+    || !Array.isArray(ledger.entries)
+    || ledger.entries.length > ledger.limit
+    || ledger.entries.some((resource) => !validResourceLedgerEntry(resource))) return false;
+  if (ledger.total_resource_count !== ledger.entries.length + ledger.omitted_resource_count) return false;
+  if (!isSortedUnique(ledger.entries, resourceLedgerSort)) return false;
+  return new Set(ledger.entries.map((resource) => resource.resource_id)).size === ledger.entries.length;
+}
+
+function projectResourceLedger(ledger) {
+  return {
+    limit: projectedInteger(ledger?.limit),
+    total_resource_count: projectedInteger(ledger?.total_resource_count),
+    omitted_resource_count: projectedInteger(ledger?.omitted_resource_count),
+    omitted_request_count: projectedInteger(ledger?.omitted_request_count),
+    entries: (Array.isArray(ledger?.entries) ? ledger.entries : [])
+      .slice(0, MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES)
+      .map(projectResourceLedgerEntry)
+      .sort(resourceLedgerSort),
+  };
+}
+
+function largestResourceProjection(resources) {
+  const largest = [...resources].sort((a, b) => b.transferred_bytes - a.transferred_bytes
+    || a.url.localeCompare(b.url)
+    || a.resource_id.localeCompare(b.resource_id))[0];
+  return largest ? {
+    resource_id: largest.resource_id,
+    url: largest.url,
+    resource_type: largest.resource_type,
+    transferred_bytes: largest.transferred_bytes,
+    request_count: largest.request_count,
+  } : null;
+}
+
+function recomputedMetrics(resources) {
+  const sum = (field) => resources.reduce((total, resource) => total + resource[field], 0);
+  return {
+    total_transferred_bytes: sum("transferred_bytes"),
+    request_count: sum("request_count"),
+    largest_resource: largestResourceProjection(resources),
+    cross_origin_request_count: sum("cross_origin_request_count"),
+    cache_request_count: sum("cache_request_count"),
+    service_worker_request_count: sum("service_worker_request_count"),
+  };
+}
+
+function projectLargestResource(resource) {
+  if (!resource || typeof resource !== "object" || Array.isArray(resource)) return null;
+  return {
+    resource_id: isSha256(resource.resource_id) ? resource.resource_id : null,
+    url: safeHttpUrl(resource.url),
+    resource_type: RESOURCE_TYPES.has(resource.resource_type) ? resource.resource_type : "unknown",
+    transferred_bytes: projectedInteger(resource.transferred_bytes),
+    request_count: projectedInteger(resource.request_count),
+  };
+}
+
+function projectMetrics(metrics) {
+  if (!metrics || typeof metrics !== "object" || Array.isArray(metrics)) return null;
+  return {
+    total_transferred_bytes: projectedInteger(metrics.total_transferred_bytes),
+    request_count: projectedInteger(metrics.request_count),
+    largest_resource: projectLargestResource(metrics.largest_resource),
+    cross_origin_request_count: projectedInteger(metrics.cross_origin_request_count),
+    cache_request_count: projectedInteger(metrics.cache_request_count),
+    service_worker_request_count: projectedInteger(metrics.service_worker_request_count),
+  };
+}
+
+function validSourceReference(reference) {
+  if (!reference || typeof reference !== "object" || Array.isArray(reference)) return false;
+  if (!SOURCE_KINDS.has(reference.source_kind) || !isNonnegativeInteger(reference.source_index)) return false;
+  if (reference.source_kind !== "source_src_attribute" && reference.source_index !== 0) return false;
+  const safeUrl = safeSourceUrl(reference.url);
+  if (safeUrl !== reference.url) return false;
+  return safeHttpUrl(reference.url)
+    ? isSha256(reference.resource_id)
+    : reference.resource_id === null && SOURCE_SENTINELS.has(reference.url);
+}
+
+function sourceReferenceSort(a, b) {
+  const ranks = { current_src: 0, src_attribute: 1, source_src_attribute: 2 };
+  return (ranks[a.source_kind] ?? 99) - (ranks[b.source_kind] ?? 99)
+    || a.source_index - b.source_index
+    || String(a.resource_id).localeCompare(String(b.resource_id));
+}
+
+function projectSourceReference(reference) {
+  return {
+    source_kind: SOURCE_KINDS.has(reference?.source_kind) ? reference.source_kind : null,
+    source_index: projectedInteger(reference?.source_index),
+    url: safeSourceUrl(reference?.url),
+    resource_id: isSha256(reference?.resource_id) ? reference.resource_id : null,
+  };
+}
+
+function explicitSourceDescriptors(media) {
+  const descriptors = [];
+  if (media.current_src !== null) descriptors.push({ source_kind: "current_src", source_index: 0, url: media.current_src });
+  if (media.src_attribute !== null) descriptors.push({ source_kind: "src_attribute", source_index: 0, url: media.src_attribute });
+  media.source_src_attributes.forEach((url, sourceIndex) => {
+    if (url !== null) descriptors.push({ source_kind: "source_src_attribute", source_index: sourceIndex, url });
+  });
+  return descriptors.sort(sourceReferenceSort);
+}
+
+function expectedFetchedResources(media, ledgerEntries) {
+  const sourceIds = new Set(media.source_references
+    .map((reference) => reference.resource_id)
+    .filter(Boolean));
+  return ledgerEntries.flatMap((resource) => {
+    const matchedSourceIds = resource.match_resource_ids.filter((id) => sourceIds.has(id));
+    if (!matchedSourceIds.length) return [];
+    return [{
+      resource_id: resource.resource_id,
+      url: resource.url,
+      resource_type: resource.resource_type,
+      transferred_bytes: resource.transferred_bytes,
+      request_count: resource.request_count,
+      matched_source_resource_ids: matchedSourceIds.sort(),
+    }];
+  }).sort(resourceLedgerSort);
+}
+
+function validFetchedResource(resource) {
+  return Boolean(resource)
+    && typeof resource === "object"
+    && !Array.isArray(resource)
+    && isSha256(resource.resource_id)
+    && safeHttpUrl(resource.url) === resource.url
+    && RESOURCE_TYPES.has(resource.resource_type)
+    && isNonnegativeInteger(resource.transferred_bytes)
+    && isNonnegativeInteger(resource.request_count)
+    && isSortedUnique(resource.matched_source_resource_ids)
+    && resource.matched_source_resource_ids.every(isSha256);
+}
+
+function projectFetchedResource(resource) {
+  return {
+    resource_id: isSha256(resource?.resource_id) ? resource.resource_id : null,
+    url: safeHttpUrl(resource?.url),
+    resource_type: RESOURCE_TYPES.has(resource?.resource_type) ? resource.resource_type : "unknown",
+    transferred_bytes: projectedInteger(resource?.transferred_bytes),
+    request_count: projectedInteger(resource?.request_count),
+    matched_source_resource_ids: (Array.isArray(resource?.matched_source_resource_ids)
+      ? resource.matched_source_resource_ids
+      : []).filter(isSha256).sort(),
+  };
+}
+
+function validMediaProjection(media, ledgerEntries) {
   if (!media || typeof media !== "object" || Array.isArray(media)) return false;
   if (media.tag_name !== "video" && media.tag_name !== "audio") return false;
   if (!isNonnegativeInteger(media.element_index)) return false;
-  if (!isSortedUniqueStrings(media.sources) || media.sources.some((source) => /[?#]/.test(source))) return false;
-  if (media.preload !== null && typeof media.preload !== "string") return false;
-  if (typeof media.preload_defers_fetch !== "boolean"
-    || typeof media.hidden_at_load !== "boolean"
+  if (safeSourceUrl(media.current_src) !== media.current_src
+    || safeSourceUrl(media.src_attribute) !== media.src_attribute
+    || !Array.isArray(media.source_src_attributes)
+    || media.source_src_attributes.some((value) => safeSourceUrl(value) !== value)) return false;
+  if (!Array.isArray(media.source_references)
+    || media.source_references.some((reference) => !validSourceReference(reference))
+    || !isSortedUnique(media.source_references, sourceReferenceSort)) return false;
+  const descriptors = explicitSourceDescriptors(media);
+  const referenceDescriptors = media.source_references.map(({ source_kind, source_index, url }) => ({
+    source_kind,
+    source_index,
+    url,
+  }));
+  if (canonicalJson(descriptors) !== canonicalJson(referenceDescriptors)) return false;
+  if (!PRELOAD_ATTRIBUTES.has(media.preload_attribute)
+    || typeof media.preload_defers_fetch !== "boolean"
+    || media.preload_defers_fetch !== (media.preload_attribute === "none" || media.preload_attribute === "metadata")) return false;
+  if (typeof media.hidden_at_load !== "boolean"
     || (media.zero_size_at_load !== null && typeof media.zero_size_at_load !== "boolean")) return false;
-  if (!isSortedUniqueStrings(media.hidden_by)
-    || media.hidden_by.some((kind) => kind !== "display_none" && kind !== "visibility_hidden")) return false;
-  if (media.hidden_at_load !== (media.hidden_by.length > 0)) return false;
-  if (media.preload_defers_fetch !== (media.preload === "none" || media.preload === "metadata")) return false;
+  if (!isSortedUnique(media.hidden_by)
+    || media.hidden_by.some((kind) => kind !== "display_none" && kind !== "visibility_hidden")
+    || media.hidden_at_load !== (media.hidden_by.length > 0)) return false;
   if (!isNonnegativeInteger(media.fetched_bytes)
     || !isNonnegativeInteger(media.fetched_request_count)
     || !Array.isArray(media.fetched_resources)
-    || media.fetched_resources.some((resource) => !validResourceProjection(resource))) return false;
-  if (media.fetched_resources.some((resource) => !media.sources.includes(resource.matched_source || resource.url))) return false;
-  const resourceUrls = media.fetched_resources.map((resource) => resource.url);
-  if (!isSortedUniqueStrings(resourceUrls)) return false;
-  const bytes = media.fetched_resources.reduce((sum, resource) => sum + resource.transferred_bytes, 0);
-  const requests = media.fetched_resources.reduce((sum, resource) => sum + resource.request_count, 0);
-  return bytes === media.fetched_bytes && requests === media.fetched_request_count;
+    || media.fetched_resources.some((resource) => !validFetchedResource(resource))) return false;
+  const expected = expectedFetchedResources(media, ledgerEntries);
+  const projectedFetched = media.fetched_resources.map(projectFetchedResource).sort(resourceLedgerSort);
+  if (canonicalJson(projectedFetched) !== canonicalJson(expected)) return false;
+  return media.fetched_bytes === expected.reduce((sum, resource) => sum + resource.transferred_bytes, 0)
+    && media.fetched_request_count === expected.reduce((sum, resource) => sum + resource.request_count, 0);
+}
+
+function projectMedia(media) {
+  return {
+    tag_name: media?.tag_name === "video" || media?.tag_name === "audio" ? media.tag_name : null,
+    element_index: projectedInteger(media?.element_index),
+    current_src: safeSourceUrl(media?.current_src),
+    src_attribute: safeSourceUrl(media?.src_attribute),
+    source_src_attributes: (Array.isArray(media?.source_src_attributes) ? media.source_src_attributes : [])
+      .map(safeSourceUrl),
+    source_references: (Array.isArray(media?.source_references) ? media.source_references : [])
+      .map(projectSourceReference)
+      .sort(sourceReferenceSort),
+    preload_attribute: PRELOAD_ATTRIBUTES.has(media?.preload_attribute) ? media.preload_attribute : "other",
+    preload_defers_fetch: projectedBoolean(media?.preload_defers_fetch),
+    hidden_at_load: projectedBoolean(media?.hidden_at_load),
+    hidden_by: (Array.isArray(media?.hidden_by) ? media.hidden_by : [])
+      .filter((kind) => kind === "display_none" || kind === "visibility_hidden")
+      .sort(),
+    zero_size_at_load: media?.zero_size_at_load === null ? null : projectedBoolean(media?.zero_size_at_load),
+    fetched_bytes: projectedInteger(media?.fetched_bytes),
+    fetched_request_count: projectedInteger(media?.fetched_request_count),
+    fetched_resources: (Array.isArray(media?.fetched_resources) ? media.fetched_resources : [])
+      .map(projectFetchedResource)
+      .sort(resourceLedgerSort),
+  };
+}
+
+function problemCount(capture, code) {
+  return capture.problems
+    .filter((problem) => problem.code === code)
+    .reduce((sum, problem) => sum + problem.count, 0);
+}
+
+function validProblems(capture) {
+  if (!Array.isArray(capture.problems)
+    || capture.problems.some((problem) => !problem
+      || typeof problem !== "object"
+      || Array.isArray(problem)
+      || !CAPTURE_PROBLEM_CODES.has(problem.code)
+      || !Number.isInteger(problem.count)
+      || problem.count <= 0)) return false;
+  if (!isSortedUnique(capture.problems.map(({ code }) => code))) return false;
+  return (capture.measurement_status === "complete") === (capture.problems.length === 0);
 }
 
 function validCaptureShape(capture) {
   if (!capture || typeof capture !== "object" || Array.isArray(capture)) return false;
   if (capture.schema_version !== POLISH_ROUTE_CAPTURE_SCHEMA_VERSION
-    || capture.performed_by !== POLISH_CAPTURE_PRODUCER) return false;
-  if (capture.measurement_status !== "complete" && capture.measurement_status !== "incomplete") return false;
+    || capture.performed_by !== POLISH_CAPTURE_PRODUCER
+    || (capture.measurement_status !== "complete" && capture.measurement_status !== "incomplete")
+    || !validCaptureSubject(capture.subject)
+    || !validProblems(capture)) return false;
+  if (capture.producer_status !== "complete" && capture.producer_status !== "failed") return false;
+  if ((capture.producer_status === "failed") !== (problemCount(capture, "producer_failed") > 0)) return false;
   if (!capture.response_collection
-    || (capture.response_collection.status !== "complete" && capture.response_collection.status !== "failed")
-    || !isNonnegativeInteger(capture.response_collection.observed_response_count)) return false;
+    || !["complete", "failed", "invalid"].includes(capture.response_collection.status)
+    || !isNonnegativeInteger(capture.response_collection.observed_response_count)
+    || !isNonnegativeInteger(capture.response_collection.unattributed_response_count)) return false;
+  if ((capture.response_collection.status === "failed") !== (problemCount(capture, "response_collection_failed") > 0)) return false;
+  if ((capture.response_collection.status === "invalid") !== (problemCount(capture, "response_collection_status_invalid") > 0)) return false;
+  if ((capture.response_collection.status === "complete"
+    && capture.response_collection.observed_response_count === 0)
+    !== (problemCount(capture, "response_collection_empty") > 0)) return false;
+  if (!capture.media_collection
+    || !["complete", "failed", "partial"].includes(capture.media_collection.status)
+    || !isNonnegativeInteger(capture.media_collection.observed_element_count)
+    || !isNonnegativeInteger(capture.media_collection.failed_element_count)) return false;
+  if ((capture.media_collection.status === "partial") !== (capture.media_collection.failed_element_count > 0)) return false;
+  if ((capture.media_collection.status === "failed") !== (problemCount(capture, "media_collection_unavailable") > 0)) return false;
+  if (capture.media_collection.failed_element_count !== problemCount(capture, "media_measurement_failed")) return false;
   if (!capture.networkidle
-    || (capture.networkidle.status !== "settled" && capture.networkidle.status !== "timeout")
-    || !isNonnegativeInteger(capture.networkidle.duration_ms)) return false;
+    || !["invalid", "settled", "timeout"].includes(capture.networkidle.status)
+    || (capture.networkidle.status === "invalid"
+      ? capture.networkidle.duration_ms !== null
+      : !isNonnegativeInteger(capture.networkidle.duration_ms))) return false;
+  if ((capture.networkidle.status === "invalid") !== (problemCount(capture, "networkidle_measurement_invalid") > 0)) return false;
+  if (!validResourceLedger(capture.resource_ledger)) return false;
+  const entries = capture.resource_ledger.entries;
   if (!capture.metrics || typeof capture.metrics !== "object" || Array.isArray(capture.metrics)) return false;
-  for (const field of [
-    "total_transferred_bytes",
-    "request_count",
-    "cross_origin_request_count",
-    "cache_request_count",
-    "service_worker_request_count",
-  ]) {
-    if (!isNonnegativeInteger(capture.metrics[field])) return false;
-  }
-  if (capture.metrics.largest_resource !== null && !validResourceProjection(capture.metrics.largest_resource)) return false;
-  if (capture.response_collection.observed_response_count !== capture.metrics.request_count) return false;
-  if (!Array.isArray(capture.media) || capture.media.some((media) => !validMediaProjection(media))) return false;
-  if (!capture.media.every((media, index) => media.element_index === index)) return false;
-  if (!Array.isArray(capture.problems)
-    || capture.problems.some((problem) => !problem
-      || typeof problem.code !== "string"
-      || !problem.code.trim()
-      || !CAPTURE_PROBLEM_CODES.has(problem.code)
-      || !Number.isInteger(problem.count)
-      || problem.count <= 0)) return false;
-  const problemCount = (code) => capture.problems
-    .filter((problem) => problem.code === code)
-    .reduce((sum, problem) => sum + problem.count, 0);
-  if ((capture.response_collection.status === "failed") !== (problemCount("response_collection_failed") > 0)) return false;
-  if (capture.response_collection.status === "complete") {
-    if ((capture.response_collection.observed_response_count === 0)
-      !== (problemCount("response_collection_empty") > 0)) return false;
-  }
-  const unresolvedHiddenEagerMedia = capture.media.filter((media) => media.hidden_at_load
+  if (canonicalJson(projectMetrics(capture.metrics)) !== canonicalJson(recomputedMetrics(entries))) return false;
+  if (capture.response_collection.observed_response_count !== capture.metrics.request_count
+    + capture.resource_ledger.omitted_request_count
+    + capture.response_collection.unattributed_response_count) return false;
+  if ((capture.resource_ledger.omitted_resource_count > 0)
+    !== (problemCount(capture, "resource_ledger_overflow") > 0)) return false;
+  if (capture.resource_ledger.omitted_resource_count > 0
+    && problemCount(capture, "resource_ledger_overflow") !== capture.resource_ledger.omitted_resource_count) return false;
+  if (!Array.isArray(capture.media)
+    || capture.media.some((media) => !validMediaProjection(media, entries))) return false;
+  const indices = capture.media.map((media) => media.element_index);
+  if (!isSortedUnique(indices, (a, b) => a - b)) return false;
+  if (capture.media_collection.status === "complete"
+    && (!capture.media.every((media, index) => media.element_index === index)
+      || capture.media_collection.observed_element_count !== capture.media.length)) return false;
+  if (capture.media_collection.status === "partial"
+    && capture.media_collection.observed_element_count !== capture.media.length + capture.media_collection.failed_element_count) return false;
+  const unresolvedHiddenEager = capture.media.filter((media) => media.hidden_at_load
     && !media.preload_defers_fetch
-    && media.sources.some((source) => !/^https?:\/\//.test(source))).length;
-  if (problemCount("media_source_unresolvable") !== unresolvedHiddenEagerMedia) return false;
-  return (capture.measurement_status === "complete") === (capture.problems.length === 0);
-}
-
-function projectResource(resource) {
-  if (!resource || typeof resource !== "object" || Array.isArray(resource)) return null;
-  return {
-    url: typeof resource.url === "string" ? resource.url : null,
-    ...(typeof resource.matched_source === "string" ? { matched_source: resource.matched_source } : {}),
-    ...(typeof resource.resource_type === "string" ? { resource_type: resource.resource_type } : {}),
-    transferred_bytes: resource.transferred_bytes,
-    request_count: resource.request_count,
-  };
-}
-
-function projectMedia(media) {
-  const fetchedResources = (Array.isArray(media?.fetched_resources) ? media.fetched_resources : [])
-    .map(projectResource)
-    .filter(Boolean)
-    .sort((a, b) => String(a.url).localeCompare(String(b.url)));
-  return {
-    tag_name: media?.tag_name,
-    element_index: media?.element_index,
-    sources: [...(Array.isArray(media?.sources) ? media.sources : [])].sort(),
-    preload: media?.preload ?? null,
-    preload_defers_fetch: media?.preload_defers_fetch,
-    hidden_at_load: media?.hidden_at_load,
-    hidden_by: [...(Array.isArray(media?.hidden_by) ? media.hidden_by : [])].sort(),
-    zero_size_at_load: media?.zero_size_at_load,
-    fetched_bytes: media?.fetched_bytes,
-    fetched_request_count: media?.fetched_request_count,
-    fetched_resources: fetchedResources,
-  };
+    && media.source_references.some((reference) => reference.resource_id === null)).length;
+  if (problemCount(capture, "media_source_unresolvable") !== unresolvedHiddenEager) return false;
+  if ((capture.subject.final_document_route !== capture.subject.requested_route)
+    !== (problemCount(capture, "final_document_route_mismatch") > 0)) return false;
+  const noOverflow = capture.resource_ledger.omitted_resource_count === 0;
+  if (noOverflow) {
+    if (problemCount(capture, "cache_observed") !== capture.metrics.cache_request_count
+      || problemCount(capture, "service_worker_observed") !== capture.metrics.service_worker_request_count
+      || problemCount(capture, "request_failed") !== entries.reduce((sum, resource) => sum + resource.failed_request_count, 0)
+      || problemCount(capture, "transfer_size_unavailable") !== entries.reduce((sum, resource) => sum + resource.unmeasured_request_count, 0)
+      || problemCount(capture, "resource_type_ambiguous") !== entries.filter((resource) => resource.resource_type_status === "ambiguous").length
+      || problemCount(capture, "resource_type_unknown") !== entries.filter((resource) => resource.resource_type_status === "unknown").length) return false;
+  }
+  return true;
 }
 
 function projectCapture(capture) {
+  const problemCounts = new Map();
+  for (const problem of (Array.isArray(capture?.problems) ? capture.problems : [])) {
+    if (!CAPTURE_PROBLEM_CODES.has(problem?.code)) continue;
+    const count = Number.isInteger(problem.count) && problem.count > 0 ? problem.count : 1;
+    problemCounts.set(problem.code, (problemCounts.get(problem.code) || 0) + count);
+  }
   return {
     schema_version: capture?.schema_version === POLISH_ROUTE_CAPTURE_SCHEMA_VERSION
       ? POLISH_ROUTE_CAPTURE_SCHEMA_VERSION
       : null,
-    performed_by: capture?.performed_by === POLISH_CAPTURE_PRODUCER
-      ? POLISH_CAPTURE_PRODUCER
-      : null,
-    route: normalizePageLoadRoute(capture?.route),
-    viewport: normalizeString(capture?.viewport)?.toLocaleLowerCase("en-US") || null,
-    measurement_status: capture?.measurement_status,
+    performed_by: capture?.performed_by === POLISH_CAPTURE_PRODUCER ? POLISH_CAPTURE_PRODUCER : null,
+    subject: projectCaptureSubject(capture?.subject),
+    measurement_status: capture?.measurement_status === "complete" || capture?.measurement_status === "incomplete"
+      ? capture.measurement_status
+      : "incomplete",
+    producer_status: capture?.producer_status === "complete" || capture?.producer_status === "failed"
+      ? capture.producer_status
+      : "invalid",
     response_collection: capture?.response_collection && typeof capture.response_collection === "object" ? {
-      status: capture.response_collection.status === "complete" || capture.response_collection.status === "failed"
+      status: ["complete", "failed", "invalid"].includes(capture.response_collection.status)
         ? capture.response_collection.status
         : "invalid",
-      observed_response_count: capture.response_collection.observed_response_count,
+      observed_response_count: projectedInteger(capture.response_collection.observed_response_count),
+      unattributed_response_count: projectedInteger(capture.response_collection.unattributed_response_count),
+    } : null,
+    media_collection: capture?.media_collection && typeof capture.media_collection === "object" ? {
+      status: ["complete", "failed", "partial"].includes(capture.media_collection.status)
+        ? capture.media_collection.status
+        : "failed",
+      observed_element_count: projectedInteger(capture.media_collection.observed_element_count),
+      failed_element_count: projectedInteger(capture.media_collection.failed_element_count),
     } : null,
     networkidle: capture?.networkidle && typeof capture.networkidle === "object" ? {
-      status: capture.networkidle.status,
-      duration_ms: capture.networkidle.duration_ms,
+      status: ["invalid", "settled", "timeout"].includes(capture.networkidle.status)
+        ? capture.networkidle.status
+        : "invalid",
+      duration_ms: capture.networkidle.duration_ms === null ? null : projectedInteger(capture.networkidle.duration_ms),
     } : null,
-    metrics: capture?.metrics && typeof capture.metrics === "object" ? {
-      total_transferred_bytes: capture.metrics.total_transferred_bytes,
-      request_count: capture.metrics.request_count,
-      largest_resource: projectResource(capture.metrics.largest_resource),
-      cross_origin_request_count: capture.metrics.cross_origin_request_count,
-      cache_request_count: capture.metrics.cache_request_count,
-      service_worker_request_count: capture.metrics.service_worker_request_count,
-    } : null,
+    resource_ledger: projectResourceLedger(capture?.resource_ledger),
+    metrics: projectMetrics(capture?.metrics),
     media: (Array.isArray(capture?.media) ? capture.media : []).map(projectMedia),
-    problems: (Array.isArray(capture?.problems) ? capture.problems : [])
-      .filter((problem) => CAPTURE_PROBLEM_CODES.has(problem?.code))
-      .map((problem) => ({ code: problem.code, count: problem.count }))
-      .sort((a, b) => String(a.code).localeCompare(String(b.code))),
+    problems: [...problemCounts]
+      .map(([code, count]) => ({ code, count }))
+      .sort((a, b) => a.code.localeCompare(b.code)),
   };
 }
 
+function addProjectedProblem(problems, code) {
+  if (!problems.some((problem) => problem.code === code)) problems.push({ code, count: 1 });
+}
+
+function captureBindingMatches(capture, pageSubject) {
+  const subject = capture?.subject;
+  return subject?.build_fingerprint === pageSubject.build_fingerprint
+    && subject?.campaign_slug === pageSubject.campaign_slug
+    && subject?.requested_route === subject?.final_document_route
+    && pageSubject.routes.includes(subject?.requested_route)
+    && pageSubject.viewports.includes(subject?.viewport);
+}
+
 function stableFindingSort(a, b) {
-  return a.route.localeCompare(b.route)
-    || a.viewport.localeCompare(b.viewport)
+  return String(a.route).localeCompare(String(b.route))
+    || String(a.viewport).localeCompare(String(b.viewport))
     || a.element_index - b.element_index
     || a.sources.join("\u0000").localeCompare(b.sources.join("\u0000"));
 }
@@ -264,8 +618,8 @@ function hiddenEagerMediaFindings(captures) {
         || media.fetched_bytes <= HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES) continue;
       findings.push({
         code: HIDDEN_EAGER_MEDIA_SCOPE,
-        route: capture.route,
-        viewport: capture.viewport,
+        route: capture.subject.requested_route,
+        viewport: capture.subject.viewport,
         tag_name: media.tag_name,
         element_index: media.element_index,
         sources: [...new Set((Array.isArray(media.fetched_resources) ? media.fetched_resources : [])
@@ -273,7 +627,7 @@ function hiddenEagerMediaFindings(captures) {
           .filter(Boolean))].sort(),
         transferred_bytes: media.fetched_bytes,
         threshold_bytes: HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES,
-        preload: media.preload,
+        preload_attribute: media.preload_attribute,
         hidden_by: [...(Array.isArray(media.hidden_by) ? media.hidden_by : [])].sort(),
       });
     }
@@ -293,39 +647,41 @@ export function buildPolishPageLoadEvidence({
   const records = (Array.isArray(captures) ? captures : [])
     .map((capture) => {
       const shapeValid = validCaptureShape(capture);
+      const bindingValid = captureBindingMatches(capture, subject);
       const projected = projectCapture(capture);
-      const problems = projected.problems;
-      if (!shapeValid && !problems.some((problem) => problem.code === "capture_shape_invalid")) {
-        problems.push({ code: "capture_shape_invalid", count: 1 });
-      }
+      if (!shapeValid) addProjectedProblem(projected.problems, "capture_shape_invalid");
+      if (!bindingValid) addProjectedProblem(projected.problems, "capture_binding_mismatch");
+      projected.problems.sort((a, b) => a.code.localeCompare(b.code));
       return {
         ...projected,
-        measurement_status: shapeValid ? projected.measurement_status : "incomplete",
-        problems: problems.sort((a, b) => String(a.code).localeCompare(String(b.code))),
+        measurement_status: shapeValid && bindingValid ? projected.measurement_status : "incomplete",
       };
     })
-    .sort((a, b) => String(a.route).localeCompare(String(b.route))
-      || String(a.viewport).localeCompare(String(b.viewport)));
+    .sort((a, b) => String(a.subject.requested_route).localeCompare(String(b.subject.requested_route))
+      || String(a.subject.viewport).localeCompare(String(b.subject.viewport)));
   const expected = subject.routes.flatMap((route) => subject.viewports.map((viewport) => ({ route, viewport })));
   const counts = new Map();
   for (const capture of records) {
-    const key = captureKey(capture.route, capture.viewport);
+    const key = captureKey(capture.subject.requested_route, capture.subject.viewport);
     counts.set(key, (counts.get(key) || 0) + 1);
   }
   const expectedKeys = new Set(expected.map(({ route, viewport }) => captureKey(route, viewport)));
   const missing = expected.filter(({ route, viewport }) => !counts.has(captureKey(route, viewport)));
   const duplicate = expected.filter(({ route, viewport }) => (counts.get(captureKey(route, viewport)) || 0) > 1);
   const unexpected = records
-    .filter((capture) => !expectedKeys.has(captureKey(capture.route, capture.viewport)))
-    .map(({ route, viewport }) => ({ route, viewport }));
+    .filter((capture) => !expectedKeys.has(captureKey(capture.subject.requested_route, capture.subject.viewport)))
+    .map((capture) => ({
+      route: capture.subject.requested_route,
+      viewport: capture.subject.viewport,
+    }));
   const incomplete = records
     .filter((capture) => capture.measurement_status !== "complete")
-    .map(({ route, viewport, problems }) => ({
-      route,
-      viewport,
-      problem_codes: (Array.isArray(problems) ? problems : []).map((problem) => problem?.code).filter(Boolean).sort(),
+    .map((capture) => ({
+      route: capture.subject.requested_route,
+      viewport: capture.subject.viewport,
+      problem_codes: capture.problems.map((problem) => problem.code).sort(),
     }));
-  const subjectComplete = Boolean(subject.build_fingerprint
+  const subjectComplete = Boolean(isSha256(subject.build_fingerprint)
     && subject.campaign_slug
     && subject.route_scope
     && subject.routes.length
