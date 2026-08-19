@@ -15,7 +15,7 @@ export const DEVIATION_JOURNAL_REL_PATH = ".campaign-runtime/agent-deviations.js
 
 // Commands that advance the pipeline. Read-only / bookkeeping commands
 // (doctor, next, findings, telemetry, run, validate-*) never deviate.
-export const TRACKED_STAGE_COMMANDS = Object.freeze(new Set(["start", "prepare-build", "theme", "qa", "run-record"]));
+export const TRACKED_STAGE_COMMANDS = Object.freeze(new Set(["start", "prepare-build", "theme", "polish", "qa", "run-record"]));
 
 // Commands every recommendation implicitly allows for its stage. Stage work is
 // agent/skill work, so the expected command set is small and explicit.
@@ -23,7 +23,7 @@ const EXPECTED_COMMANDS_BY_STAGE = Object.freeze({
   "prepare-build": ["prepare-build", "start"],
   setup: ["theme"],
   build: ["theme"],
-  polish: ["theme"],
+  polish: ["polish", "theme"],
   deploy: [],
   qa: ["qa", "theme"],
   done: ["run-record"],

@@ -834,7 +834,7 @@ test("CLI: lifecycle persistence honors the CAMPAIGNS_OS_LIFECYCLE_LOG env var",
   });
 });
 
-test("CLI: a --flag=value token never leaks its value into argv_shape", () => {
+test("CLI: private --auth-cookie=value is omitted entirely from argv_shape", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
     cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
@@ -847,7 +847,7 @@ test("CLI: a --flag=value token never leaks its value into argv_shape", () => {
     } catch { /* exit 2 */ }
     const { entries } = readLifecycleJournal(lcJournal);
     const shape = entries[0].argv_shape;
-    assert.ok(shape.includes("--auth-cookie"), "flag name should appear");
+    assert.ok(!shape.includes("--auth-cookie"), "private auth flag name should be omitted");
     assert.ok(!shape.some((flag) => flag.includes("=")), "no = in any shape token");
     assert.ok(!shape.some((flag) => flag.includes("SECRET")), "value must never leak");
   });

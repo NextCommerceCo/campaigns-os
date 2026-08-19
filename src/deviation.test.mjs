@@ -21,7 +21,13 @@ test("expectedCommandsForStage merges stage defaults with gate action commands",
     { command: "npm run qa:install-browser" },
     { command: null },
   ]);
-  assert.deepEqual(withActions, ["theme"]);
+  assert.deepEqual(withActions, ["polish", "theme"]);
+});
+
+test("polish capture is a registered stage command for recommendation and deviation tracking", () => {
+  assert.deepEqual(expectedCommandsForStage("polish"), ["polish", "theme"]);
+  const rec = buildRecommendation({ stage: "qa", status: "ready", expectedCommands: ["qa", "theme"] });
+  assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish" })?.actual_command, "polish");
 });
 
 test("detectDeviation flags a tracked command outside the recommendation", () => {

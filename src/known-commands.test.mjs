@@ -42,6 +42,7 @@ test("knownCommands covers the real dispatch branches", () => {
     "standardization-report",
     "theme",
     "checkpoint",
+    "polish",
     "tooling",
     "next",
     "qa",

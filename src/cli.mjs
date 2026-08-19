@@ -143,6 +143,18 @@ import {
 } from "./orchestration-stage-contract.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import {
+  assertPolishCaptureBindingUnchanged,
+  capturePolishPageLoad,
+  createPolishCaptureBinding,
+  evaluateRecordedHiddenEagerMediaCheckpoint,
+  mergePolishPageLoadEvidence,
+  planPolishCapture,
+} from "./polish-node.mjs";
+import {
+  evaluateHiddenEagerMediaCheckpoint,
+  HIDDEN_EAGER_MEDIA_SCOPE,
+} from "./polish-page-load.mjs";
+import {
   appendCheckpointWaiver,
   createCheckpointRegistry,
   createCheckpointWaiver,
@@ -292,6 +304,7 @@ Usage:
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version
+  campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # repo/package/skill freshness preflight
@@ -666,6 +679,12 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "checkpoint") {
     const result = checkpointCommand(args);
+    writeResult(result, args, result.ok ? 0 : 2);
+    return;
+  }
+
+  if (command === "polish") {
+    const result = await polishCaptureCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
@@ -2018,6 +2037,115 @@ function inferredBuildSidecarPaths(packet, packetPath) {
   return {
     contextPath: join(targetRepo, ".campaign-runtime/build-context.json"),
     reportPath: join(targetRepo, ".campaign-runtime/assembly-report.json"),
+  };
+}
+
+function requireValidPolishCaptureReport(report, reportPath) {
+  const validation = validateAssemblyReport(report);
+  if (validation.ok) return report;
+  const codes = validation.errors.map((issue) => issue?.code).filter(Boolean).slice(0, 8);
+  throw new Error(
+    `polish capture requires a valid existing Assembly Report at ${reportPath}`
+    + `${codes.length ? ` (${codes.join(", ")})` : ""}.`,
+  );
+}
+
+export async function polishCaptureCommand(args, options = {}) {
+  const subcommand = args?._?.[1] || "help";
+  if (subcommand !== "capture") {
+    throw new Error(
+      "Unknown polish subcommand. Use: campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json].",
+    );
+  }
+  const packetPath = resolve(requireArg(args, "packet"));
+  const baseUrl = requireArg(args, "base-url");
+  if (args.report === true) throw new Error("Missing value for --report");
+  if (args["auth-cookie"] === true) throw new Error("Missing value for --auth-cookie");
+
+  const packet = readJson(packetPath);
+  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
+  const targetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+  if (!isLocalAbsolutePath(targetRepo)) {
+    throw new Error("polish capture requires packet.assembly.target_repo to resolve to a local target repo.");
+  }
+  const reportPath = args.report ? resolve(args.report) : sidecars.reportPath;
+  const report = readJsonIfExists(reportPath);
+  if (!report) {
+    throw new Error(`polish capture needs an existing Assembly Report at ${reportPath}; run prepare-build/start first.`);
+  }
+  requireValidPolishCaptureReport(report, reportPath);
+  const plan = planPolishCapture({ packet, baseUrl });
+  const initialBinding = createPolishCaptureBinding({
+    packet,
+    report,
+    plan,
+    packetPath,
+    targetRepo,
+  });
+
+  let createBrowserAdapter = options.createBrowserAdapter;
+  if (typeof createBrowserAdapter !== "function") {
+    ({ createPolishBrowserAdapter: createBrowserAdapter } = await import("./polish-browser.mjs"));
+  }
+  const capture = await capturePolishPageLoad({
+    packet,
+    report,
+    baseUrl,
+    headed: args.headed === true,
+    authCookie: optionalString(args["auth-cookie"]),
+    createBrowserAdapter,
+  });
+
+  if (typeof options.afterCapture === "function") {
+    await options.afterCapture({ packetPath, reportPath, targetRepo, capture });
+  }
+
+  // The browser pass is deliberately long-running. Re-read both governing
+  // artifacts once it finishes, then merge only onto the current report when
+  // the bound state and prior page_load token still match.
+  const currentPacket = readJson(packetPath);
+  const currentReport = readJson(reportPath);
+  requireValidPolishCaptureReport(currentReport, reportPath);
+  const currentPlan = planPolishCapture({ packet: currentPacket, baseUrl });
+  const currentBinding = createPolishCaptureBinding({
+    packet: currentPacket,
+    report: currentReport,
+    plan: currentPlan,
+    packetPath,
+    targetRepo,
+  });
+  assertPolishCaptureBindingUnchanged(initialBinding, currentBinding);
+
+  const checkpoint = evaluateHiddenEagerMediaCheckpoint({
+    pageLoad: capture.page_load,
+    buildFingerprint: currentReport.stages.assembly.build_fingerprint,
+    slug: currentPacket.campaign.public_route_slug,
+    routeScope: currentPlan.route_scope,
+    routes: currentPlan.routes.map((route) => route.requested_route),
+    viewports: currentPlan.viewports.map((viewport) => viewport.key),
+    waivers: Array.isArray(currentReport.waivers) ? currentReport.waivers : [],
+  });
+
+  const merged = mergePolishPageLoadEvidence(currentReport, capture.page_load);
+  writeJsonAtomic(reportPath, merged);
+  markDoctorSidecarStale(targetRepo, {
+    command: "polish capture",
+    reason: "Package-owned polish page-load evidence changed after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+  });
+
+  const ok = checkpoint.status === "pass" || checkpoint.status === "waived";
+  return {
+    ok,
+    status: ok ? (checkpoint.status === "waived" ? "ready_with_waivers" : "ready") : "blocked",
+    action: "polish-capture",
+    report_path: reportPath,
+    measurement: capture.page_load.measurement,
+    checkpoint,
+    capture: {
+      route_scope: capture.plan.route_scope,
+      routes: capture.plan.routes.map((route) => route.requested_route),
+      viewports: capture.plan.viewports.map((viewport) => viewport.key),
+    },
   };
 }
 
@@ -7653,7 +7781,7 @@ function qaVerdictCandidateTime(candidate) {
   return Number(candidate?.mtimeMs || 0);
 }
 
-const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["no-remit", "no-write", "proxy-base"]);
+const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["auth-cookie", "no-remit", "no-write", "proxy-base"]);
 
 // argv SHAPE = selected flag NAMES present, never their values (minimization).
 // Sorted + de-duplicated for deterministic records; opt-out and endpoint flags
