@@ -267,6 +267,57 @@ test("qa resolve reports ready only when both packet checkpoints pass", async ()
   }
 });
 
+test("qa resolve and run agree that target-only Store Profile values are ready with exceptions", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath, specPath } = fixture(sentinel.baseUrl, { storeMismatch: false });
+  const spec = readJson(specPath);
+  delete spec.campaign.store_phone;
+  writeJson(specPath, spec);
+  const originalLog = console.log;
+  const lines = [];
+  const priorExitCode = process.exitCode;
+  console.log = (...parts) => lines.push(parts.join(" "));
+  try {
+    const resolved = await runQaCli({
+      _: ["qa", "resolve"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+    });
+    const readback = lines.join("\n");
+    const resolvedStore = resolved.checkpoint_gates.find((gate) => gate.id === "page_kit.store_profile");
+    assert.equal(resolved.ok, true);
+    assert.equal(resolved.status, "ready_with_exceptions");
+    assert.equal(resolvedStore.status, "pass");
+    assert.equal(resolvedStore.code, "page_kit.store_profile.target_only");
+    assert.deepEqual(resolvedStore.warning_fields, ["store_phone"]);
+    assert.match(readback, /Status: ready_with_exceptions/);
+    assert.match(readback, /Target Store Profile has target-only value\(s\): store_phone/);
+    assert.match(readback, /Next expected proof: campaigns-os qa run/);
+    assert.equal(sentinel.hits(), 0, "resolve must remain artifact-only");
+
+    const result = await runQaCli({
+      _: ["qa", "run"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+      "no-post-verdict": true,
+      "no-remit": true,
+      "output-dir": join(dir, "qa-output-target-only"),
+      "analytics-correctness": "false",
+    });
+    const storeAssertion = result.verdict.assertions.find((assertion) => assertion.id === "page_kit.store_profile");
+    assert.equal(storeAssertion.status, "warn");
+    assert.equal(result.verdict.assertions.find((assertion) => assertion.id === "page_kit.sdk_version").status, "pass");
+    assert.equal(result.verdict.disposition, "ready_with_exceptions");
+    assert.equal(process.exitCode, 0);
+    assert.ok(sentinel.hits() > 0, "target-only warning state must still allow runtime proof");
+  } finally {
+    process.exitCode = priorExitCode;
+    console.log = originalLog;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("packet checkpoint blockers coexist and finalize a verdict before HTTP, browser, analytics, or typed orders", async () => {
   const sentinel = armFetchSentinel();
   const { dir, packetPath, targetRepo } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });

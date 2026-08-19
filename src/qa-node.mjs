@@ -1003,12 +1003,12 @@ function resolvePayload(resolved) {
     ? resolved.checkpointGates.map(checkpointGateSummary)
     : [];
   const hasBlockedCheckpoint = checkpointGates.some((gate) => gate.status === "blocked");
-  const hasWaivedCheckpoint = checkpointGates.some((gate) => gate.status === "waived");
+  const hasCheckpointWarning = checkpointGates.some(checkpointGateHasWarning);
   return {
     ok: !hasBlockedCheckpoint,
     status: hasBlockedCheckpoint
       ? "blocked"
-      : hasWaivedCheckpoint
+      : hasCheckpointWarning
         ? "ready_with_exceptions"
         : "ready",
     map_id: resolved.mapId,
@@ -1031,6 +1031,11 @@ function resolvePayload(resolved) {
     polish_gate: polishGateSummary(resolved.polishGate),
     funnels: resolved.topologies,
   };
+}
+
+function checkpointGateHasWarning(gate) {
+  return gate?.status === "waived"
+    || (Array.isArray(gate?.warning_fields) && gate.warning_fields.length > 0);
 }
 
 function checkpointGateSummary(gate) {
