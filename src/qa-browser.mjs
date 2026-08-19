@@ -175,10 +175,58 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
 // with --analytics-baseline's legacy receipt, and identity resolution cannot
 // derive a receipt page yet (receipt-aware capture is out of packet 01's
 // scope). Absent that override, the candidate IS the resolved target.
+function analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, candidateUrl }) {
+  const baselinePublicUrl = redactUrlQuery(baselineUrl);
+  const candidatePublicUrl = redactUrlQuery(candidateUrl);
+  const analyticsPage = { page_id: "analytics", url: candidatePublicUrl || baselinePublicUrl || undefined };
+  const assertions = diffAnalyticsParity(baseline, candidate, { url: candidatePublicUrl });
+  assertions.unshift(assertion({
+    id: "analytics-parity:capture",
+    family: "analytics-parity",
+    page: analyticsPage,
+    status: STATUS.PASS,
+    expected: "live dataLayer + tag-fire capture on baseline and candidate",
+    actual: `baseline events=${baseline.eventNames.length}, candidate events=${candidate.eventNames.length}`,
+    evidence: {
+      url: candidatePublicUrl,
+      baseline_url: baselinePublicUrl,
+      candidate_url: candidatePublicUrl,
+      baseline_event_count: baseline.eventNames.length,
+      candidate_event_count: candidate.eventNames.length,
+      baseline_inventory: Object.fromEntries(Object.entries(baseline.inventory).map(([k, v]) => [k, v.length])),
+      candidate_inventory: Object.fromEntries(Object.entries(candidate.inventory).map(([k, v]) => [k, v.length])),
+    },
+  }));
+  return assertions;
+}
+
+function analyticsParityRunnerFailureAssertion({ baselineUrl, candidateUrl, error }) {
+  const baselinePublicUrl = redactUrlQuery(baselineUrl);
+  const candidatePublicUrl = redactUrlQuery(candidateUrl);
+  const captureError = projectAnalyticsCaptureError(error, { fallbackKind: "unreadable" });
+  return assertion({
+    id: "analytics-parity:runner",
+    family: "analytics-parity",
+    page: { page_id: "analytics", url: candidatePublicUrl || baselinePublicUrl || undefined },
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    expected: "analytics-parity capture completes on both URLs",
+    actual: captureError.message,
+    evidence: {
+      url: candidatePublicUrl,
+      baseline_url: baselinePublicUrl,
+      candidate_url: candidatePublicUrl,
+      error_code: captureError.code,
+    },
+  });
+}
+
 export async function runAnalyticsParityChecks(args = {}, options = {}) {
   const baselineUrl = trim(args["analytics-baseline"]) || null;
   const candidateUrl = trim(args["analytics-candidate"]) || trim(options.target?.url) || null;
-  const analyticsPage = { page_id: "analytics", url: candidateUrl || baselineUrl || undefined };
+  const baselinePublicUrl = redactUrlQuery(baselineUrl);
+  const candidatePublicUrl = redactUrlQuery(candidateUrl);
+  const analyticsPage = { page_id: "analytics", url: candidatePublicUrl || baselinePublicUrl || undefined };
 
   if (!baselineUrl || !candidateUrl) {
     return [assertion({
@@ -188,8 +236,8 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
       status: STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
       expected: "both --analytics-baseline <legacy-url> and a candidate URL (the campaign's resolved capture target, or an explicit --analytics-candidate receipt override)",
-      actual: `baseline=${baselineUrl || "missing"}, candidate=${candidateUrl || "missing"}`,
-      ...(candidateUrl ? { evidence: { url: candidateUrl } } : {}),
+      actual: `baseline=${baselinePublicUrl || "missing"}, candidate=${candidatePublicUrl || "missing"}`,
+      ...(candidatePublicUrl ? { evidence: { url: candidatePublicUrl } } : {}),
     })];
   }
 
@@ -202,36 +250,9 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
   try {
     const baseline = await captureAnalyticsForUrl(context, baselineUrl, args, extraHosts);
     const candidate = await captureAnalyticsForUrl(context, candidateUrl, args, extraHosts);
-    const assertions = diffAnalyticsParity(baseline, candidate, { url: candidateUrl });
-    assertions.unshift(assertion({
-      id: "analytics-parity:capture",
-      family: "analytics-parity",
-      page: analyticsPage,
-      status: STATUS.PASS,
-      expected: "live dataLayer + tag-fire capture on baseline and candidate",
-      actual: `baseline events=${baseline.eventNames.length}, candidate events=${candidate.eventNames.length}`,
-      evidence: {
-        url: candidateUrl,
-        baseline_url: baselineUrl,
-        candidate_url: candidateUrl,
-        baseline_event_count: baseline.eventNames.length,
-        candidate_event_count: candidate.eventNames.length,
-        baseline_inventory: Object.fromEntries(Object.entries(baseline.inventory).map(([k, v]) => [k, v.length])),
-        candidate_inventory: Object.fromEntries(Object.entries(candidate.inventory).map(([k, v]) => [k, v.length])),
-      },
-    }));
-    return assertions;
+    return analyticsParityCaptureAssertions({ baseline, candidate, baselineUrl, candidateUrl });
   } catch (error) {
-    return [assertion({
-      id: "analytics-parity:runner",
-      family: "analytics-parity",
-      page: analyticsPage,
-      status: STATUS.FAIL,
-      severity: SEVERITY.BLOCKER,
-      expected: "analytics-parity capture completes on both URLs",
-      actual: error instanceof Error ? error.message : String(error),
-      evidence: { url: candidateUrl, baseline_url: baselineUrl, candidate_url: candidateUrl },
-    })];
+    return [analyticsParityRunnerFailureAssertion({ baselineUrl, candidateUrl, error })];
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
@@ -246,9 +267,46 @@ export async function runAnalyticsParityChecks(args = {}, options = {}) {
 // identity (public_route_slug + route_root) in qa-node — packet 01 / INV-2:
 // this leg no longer reads --analytics-candidate or --base-url; the URL it
 // visits is a function of resolved identity, recorded on every assertion.
+function analyticsCorrectnessCaptureAssertions({ capture, contract, url }) {
+  const publicUrl = redactUrlQuery(url);
+  const analyticsPage = { page_id: "analytics", url: publicUrl || undefined };
+  const assertions = assessAnalyticsInventory(capture, contract || {}, { url: publicUrl });
+  assertions.unshift(assertion({
+    id: "analytics-correctness:capture",
+    family: "analytics-correctness",
+    page: analyticsPage,
+    status: STATUS.PASS,
+    expected: "live dataLayer + tag-fire capture on the candidate page",
+    actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`,
+    // Counts only. Root capture is provider/tag inventory, never Purchase
+    // authority, even if a stray Purchase happens to appear there.
+    evidence: {
+      url: publicUrl,
+      event_count: capture.eventNames.length,
+      inventory: Object.fromEntries(Object.entries(capture.inventory).map(([k, v]) => [k, v.length])),
+    },
+  }));
+  return assertions;
+}
+
+function analyticsCorrectnessRunnerFailureAssertion({ url, error }) {
+  const publicUrl = redactUrlQuery(url);
+  const captureError = projectAnalyticsCaptureError(error, { fallbackKind: "unreadable" });
+  return assertion({
+    id: "analytics-correctness:runner",
+    family: "analytics-correctness",
+    page: { page_id: "analytics", url: publicUrl || undefined },
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    expected: "analytics-correctness capture completes",
+    actual: captureError.message,
+    evidence: { url: publicUrl, error_code: captureError.code },
+  });
+}
+
 export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, options = {}) {
   const url = trim(options.target?.url) || null;
-  const correctnessPage = { page_id: "analytics", url: url || undefined };
+  const correctnessPage = { page_id: "analytics", url: redactUrlQuery(url) || undefined };
   if (!url) {
     return [assertion({
       id: "analytics-correctness:inputs",
@@ -275,34 +333,9 @@ export async function runAnalyticsCorrectnessChecks(args = {}, contract = {}, op
   });
   try {
     const capture = await captureAnalyticsForUrl(context, url, args, extraHosts);
-    const assertions = assessAnalyticsInventory(capture, contract || {}, { url });
-    assertions.unshift(assertion({
-      id: "analytics-correctness:capture",
-      family: "analytics-correctness",
-      page: correctnessPage,
-      status: STATUS.PASS,
-      expected: "live dataLayer + tag-fire capture on the candidate page",
-      actual: `events=${capture.eventNames.length}, tags=${Object.values(capture.inventory).flat().length}`,
-      // Counts only. Root capture is provider/tag inventory, never Purchase
-      // authority, even if a stray Purchase happens to appear there.
-      evidence: {
-        url,
-        event_count: capture.eventNames.length,
-        inventory: Object.fromEntries(Object.entries(capture.inventory).map(([k, v]) => [k, v.length])),
-      },
-    }));
-    return assertions;
+    return analyticsCorrectnessCaptureAssertions({ capture, contract, url });
   } catch (error) {
-    return [assertion({
-      id: "analytics-correctness:runner",
-      family: "analytics-correctness",
-      page: correctnessPage,
-      status: STATUS.FAIL,
-      severity: SEVERITY.BLOCKER,
-      expected: "analytics-correctness capture completes",
-      actual: error instanceof Error ? error.message : String(error),
-      evidence: { url },
-    })];
+    return [analyticsCorrectnessRunnerFailureAssertion({ url, error })];
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
@@ -3901,6 +3934,10 @@ function isMissingPlaywrightBrowser(error) {
 }
 
 export const __qaBrowserTestHooks = Object.freeze({
+  analyticsCorrectnessCaptureAssertions,
+  analyticsCorrectnessRunnerFailureAssertion,
+  analyticsParityCaptureAssertions,
+  analyticsParityRunnerFailureAssertion,
   acceptedUpsellProof,
   upsellAcceptStepFailures,
   upsellActionStepFailures,
