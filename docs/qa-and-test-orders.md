@@ -22,13 +22,20 @@ from those objects: `page_kit.store_profile` and `page_kit.sdk_version`. The sam
 packet/spec snapshot supplies runtime identity and topology, while the same
 Assembly Report supplies checkpoint decisions, theme/polish state, and QA
 waiver history. QA does not re-read those artifacts after the gates. A packet
-without a valid local spec cannot fetch around the missing evidence.
+without a valid local spec cannot fetch around the missing evidence. Packet QA
+always uses `packet.spec.local_path`; combining `--packet` with `--spec` is
+rejected before either artifact is read.
 
 Any non-waived checkpoint blocker finalizes a blocked local verdict before HTTP,
 Playwright, analytics capture, or typed-card orders run. Both assertions remain
 visible when the gates disagree, so waiving or correcting one never suppresses
 the other. They use the existing `api-metadata` family with IDs
 `page_kit.store_profile` and `page_kit.sdk_version`.
+
+`qa resolve` remains a diagnostic command: it reports `ok: false` and
+`status: blocked`, prints both gates and their safe repair/waiver projections,
+and suppresses the runtime `qa run --browser --test-order common` suggestion
+until every checkpoint blocker is clear.
 
 The SDK gate prefers `runtime.sdk_version` and accepts
 `global_config.sdk_version` only as a legacy fallback. Pins must be released,

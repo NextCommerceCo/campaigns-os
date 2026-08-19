@@ -105,6 +105,168 @@ function armFetchSentinel() {
   };
 }
 
+test("packet QA rejects an alternate --spec before reading artifacts or starting runtime work", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath, specPath } = fixture(sentinel.baseUrl, {
+    specVersion: "0.4.18",
+    targetVersion: "0.4.19",
+    storeMismatch: false,
+  });
+  const alternateSpecPath = join(dir, "alternate-matching-target-spec.json");
+  const alternateSpec = readJson(specPath);
+  alternateSpec.runtime.sdk_version = "0.4.19";
+  writeJson(alternateSpecPath, alternateSpec);
+  const expected = "Packet QA does not accept --spec; it always uses packet.spec.local_path.";
+  try {
+    for (const subcommand of ["resolve", "run"]) {
+      await assert.rejects(
+        () => runQaCli({
+          _: ["qa", subcommand],
+          packet: packetPath,
+          spec: alternateSpecPath,
+          "base-url": sentinel.baseUrl,
+          "no-post-verdict": true,
+          "output-dir": join(dir, `qa-output-${subcommand}`),
+        }),
+        (error) => error?.message === expected,
+        `${subcommand} must not let an alternate matching-target spec bypass the packet-local mismatch`,
+      );
+    }
+    assert.equal(sentinel.hits(), 0);
+
+    rmSync(packetPath);
+    await assert.rejects(
+      () => runQaCli({ _: ["qa", "resolve"], packet: packetPath, spec: alternateSpecPath }),
+      (error) => error?.message === expected,
+      "the fixed conflict must be rejected before the packet is read",
+    );
+  } finally {
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("qa resolve reports both blocked checkpoints and repair paths without suggesting runtime proof", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });
+  const originalLog = console.log;
+  const lines = [];
+  const priorExitCode = process.exitCode;
+  console.log = (...parts) => lines.push(parts.join(" "));
+  try {
+    const resolved = await runQaCli({
+      _: ["qa", "resolve"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+    });
+    const readback = lines.join("\n");
+    assert.equal(resolved.ok, false);
+    assert.equal(resolved.status, "blocked");
+    assert.equal(process.exitCode, priorExitCode, "qa resolve remains diagnostic and must not change exit semantics");
+    assert.match(readback, /Checkpoint page_kit\.store_profile: blocked .*Target Store Profile differs/);
+    assert.match(readback, /Checkpoint page_kit\.sdk_version: blocked .*Target SDK version 0\.4\.19 does not match/);
+    assert.match(readback, /--gate page_kit\.store_profile/);
+    assert.match(readback, /--gate page_kit\.sdk_version/);
+    assert.doesNotMatch(readback, /Next expected proof: campaigns-os qa run/);
+    assert.equal(sentinel.hits(), 0);
+    for (const value of Object.values(PRIVATE_SENTINELS)) assert.doesNotMatch(readback, new RegExp(value));
+  } finally {
+    process.exitCode = priorExitCode;
+    console.log = originalLog;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("qa resolve reports an exact SDK waiver with attribution, bounds, and inert counts", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath, reportPath } = fixture(sentinel.baseUrl, {
+    targetVersion: "0.4.19",
+    storeMismatch: false,
+  });
+  checkpointWaive({
+    _: ["checkpoint", "waive"],
+    packet: packetPath,
+    gate: "page_kit.sdk_version",
+    reason: "Intentional SDK pin for this compatibility window",
+    "waived-by": "Jordan Lee",
+    "review-condition": "Re-evaluate before production launch",
+  });
+  const report = readJson(reportPath);
+  const active = report.waivers[0];
+  report.waivers = [
+    {
+      ...active,
+      state_fingerprint: `sha256:${"0".repeat(64)}`,
+      private_token: "stale-sdk-waiver-private-sentinel",
+    },
+    {
+      ...active,
+      private_token: "active-sdk-waiver-private-sentinel",
+    },
+  ];
+  writeJson(reportPath, report);
+  const originalLog = console.log;
+  const lines = [];
+  console.log = (...parts) => lines.push(parts.join(" "));
+  try {
+    const resolved = await runQaCli({
+      _: ["qa", "resolve"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+    });
+    const readback = lines.join("\n");
+    assert.equal(resolved.ok, true);
+    assert.equal(resolved.status, "ready_with_exceptions");
+    assert.match(readback, /Checkpoint page_kit\.store_profile: pass/);
+    assert.match(readback, /Checkpoint page_kit\.sdk_version: waived/);
+    assert.match(readback, /Waiver: Jordan Lee at .*Intentional SDK pin for this compatibility window/);
+    assert.match(readback, /Review condition: Re-evaluate before production launch/);
+    assert.match(readback, /Inert waiver decisions: stale=1, foreign=0, malformed=0, expired=0/);
+    assert.match(readback, /Next expected proof: campaigns-os qa run/);
+    assert.doesNotMatch(readback, /sdk-waiver-private-sentinel/);
+    assert.doesNotMatch(JSON.stringify(resolved), /sdk-waiver-private-sentinel/);
+    assert.equal(sentinel.hits(), 0);
+  } finally {
+    console.log = originalLog;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("qa resolve reports ready only when both packet checkpoints pass", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath } = fixture(sentinel.baseUrl, { storeMismatch: false });
+  const originalLog = console.log;
+  const lines = [];
+  console.log = (...parts) => lines.push(parts.join(" "));
+  try {
+    const resolved = await runQaCli({
+      _: ["qa", "resolve"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+    });
+    const readback = lines.join("\n");
+    assert.equal(resolved.ok, true);
+    assert.equal(resolved.status, "ready");
+    assert.deepEqual(
+      resolved.checkpoint_gates.map(({ id, status }) => ({ id, status })),
+      [
+        { id: "page_kit.store_profile", status: "pass" },
+        { id: "page_kit.sdk_version", status: "pass" },
+      ],
+    );
+    assert.match(readback, /Checkpoint page_kit\.store_profile: pass/);
+    assert.match(readback, /Checkpoint page_kit\.sdk_version: pass/);
+    assert.match(readback, /Next expected proof: campaigns-os qa run/);
+    assert.equal(sentinel.hits(), 0, "qa resolve remains artifact-only even when runtime proof is ready");
+  } finally {
+    console.log = originalLog;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("packet checkpoint blockers coexist and finalize a verdict before HTTP, browser, analytics, or typed orders", async () => {
   const sentinel = armFetchSentinel();
   const { dir, packetPath, targetRepo } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });

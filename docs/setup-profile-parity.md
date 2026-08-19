@@ -57,10 +57,12 @@ report `ready_with_waivers`, not clean readiness; QA keeps the attributed
 warning and reports `ready_with_exceptions`.
 
 `checkpoint waive` is deliberately a staged registry. Store Profile is the
-only registered gate in this release; future SDK/polish gates may extend it.
-Source, theme, and QA waiver lanes keep their existing artifact/commands until
-registered. Do not route an unregistered gate through Store Profile or claim the
-generic command already owns every waiver.
+first registered gate, and `page_kit.sdk_version` is the second. The SDK gate's
+strict released-semver and mismatch-only waiver boundary is documented in the
+[Build Packet contract](./build-packet.md#page-kit-sdk-version-checkpoint).
+Source Freshness, polish, theme, and QA waiver lanes keep their existing
+artifacts or commands until registered. Do not route an unregistered gate
+through Store Profile or claim the generic command already owns every waiver.
 
 The campaigns loader may inspect the raw entry for these checks, but public
 doctor/next/sidecar/QA artifacts expose only loader status, normalized route

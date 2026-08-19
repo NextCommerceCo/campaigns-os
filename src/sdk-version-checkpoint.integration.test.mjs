@@ -232,6 +232,114 @@ test("doctor enforces SDK declaration integrity and the Store Profile target-req
   }
 });
 
+test("doctor and next keep both checkpoints visible when the packet-local spec is unavailable", () => {
+  const cases = [
+    {
+      label: "missing file",
+      expectedStatus: "missing",
+      mutate: ({ specPath }) => rmSync(specPath),
+    },
+    {
+      label: "invalid JSON",
+      expectedStatus: "invalid_json",
+      mutate: ({ specPath }) => writeFileSync(specPath, '{"private":"BAD_SPEC_PRIVATE_SENTINEL"'),
+    },
+    {
+      label: "array root",
+      expectedStatus: "root_not_object",
+      mutate: ({ specPath }) => writeFileSync(specPath, '["BAD_SPEC_ARRAY_SENTINEL"]\n'),
+    },
+    {
+      label: "null root",
+      expectedStatus: "root_not_object",
+      mutate: ({ specPath }) => writeFileSync(specPath, 'null\n'),
+    },
+    {
+      label: "non-string local path",
+      expectedStatus: "missing",
+      mutate: ({ packetPath }) => {
+        const packet = readJson(packetPath);
+        packet.spec.local_path = { private: "BAD_SPEC_PATH_SENTINEL" };
+        writeJson(packetPath, packet);
+      },
+    },
+  ];
+
+  for (const scenario of cases) {
+    const state = fixture();
+    const originalFetch = globalThis.fetch;
+    let fetchHits = 0;
+    globalThis.fetch = async () => {
+      fetchHits += 1;
+      throw new Error("doctor must not fetch around unavailable packet-local spec evidence");
+    };
+    try {
+      scenario.mutate(state);
+      const doctor = doctorPacket(state.packetPath);
+      assert.equal(doctor.ok, false, scenario.label);
+      assert.equal(doctor.errors.some((issue) => issue.code === "spec.local_path"), true, scenario.label);
+      assert.deepEqual(
+        doctor.derived.checkpoint_gates.map((gate) => gate.id),
+        ["page_kit.sdk_version", "page_kit.store_profile"],
+        scenario.label,
+      );
+      for (const gate of doctor.derived.checkpoint_gates) {
+        assert.equal(gate.status, "blocked", scenario.label);
+        assert.equal(gate.code, `${gate.id}.spec_unavailable`, scenario.label);
+        assert.equal(gate.waivable, false, scenario.label);
+        assert.equal(gate.state.spec_status, scenario.expectedStatus, scenario.label);
+        assert.equal(gate.state_fingerprint, null, scenario.label);
+        assert.deepEqual(gate.required_actions.map((action) => action.id), ["repair_spec"], scenario.label);
+      }
+      assert.equal(doctor.derived.doctor_checks.includes("campaign-spec.rule-registry"), false, scenario.label);
+      assert.equal(doctor.derived.doctor_checks.filter((id) => id === "page_kit.sdk_version").length, 1, scenario.label);
+      assert.equal(doctor.derived.doctor_checks.filter((id) => id === "page_kit.store_profile").length, 1, scenario.label);
+
+      const next = nextStage(null, { _: ["next"], packet: state.packetPath, "no-write": true });
+      assert.equal(next.stage, "doctor-blocked", scenario.label);
+      for (const id of ["page_kit.sdk_version", "page_kit.store_profile"]) {
+        assert.equal(next.gates.find((gate) => gate.id === id).status, "blocked", scenario.label);
+        assert.ok(next.next_actions.some((action) => action.id === `checkpoint.${id}.repair_spec`), scenario.label);
+      }
+      assert.ok(next.next_actions.some((action) => action.id === "doctor_recheck"), scenario.label);
+      for (const result of [doctor, next]) {
+        assert.doesNotMatch(JSON.stringify(result), /BAD_SPEC_(PRIVATE|ARRAY|PATH)_SENTINEL/, scenario.label);
+      }
+      assert.equal(fetchHits, 0, scenario.label);
+
+      if (scenario.expectedStatus === "invalid_json") {
+        assert.throws(() => checkpointWaive({
+          _: ["checkpoint", "waive"],
+          packet: state.packetPath,
+          gate: "page_kit.sdk_version",
+          reason: "Invalid evidence cannot be accepted",
+          "waived-by": "Jordan Lee",
+          "review-condition": "Repair the local spec",
+        }), /not waivable.*spec_unavailable/);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(state.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a valid packet-local spec runs the full doctor registry and each checkpoint exactly once", () => {
+  const { dir, packetPath } = fixture();
+  try {
+    const doctor = doctorPacket(packetPath);
+    assert.ok(doctor.derived.doctor_checks.includes("campaign-spec.rule-registry"));
+    assert.equal(doctor.derived.doctor_checks.filter((id) => id === "page_kit.sdk_version").length, 1);
+    assert.equal(doctor.derived.doctor_checks.filter((id) => id === "page_kit.store_profile").length, 1);
+    assert.deepEqual(doctor.derived.checkpoint_gates.map(({ id, status }) => ({ id, status })), [
+      { id: "page_kit.sdk_version", status: "pass" },
+      { id: "page_kit.store_profile", status: "pass" },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("doctor keeps malformed, expired, foreign-slug, and wrong-pair SDK decisions visible but inert", () => {
   const { dir, packetPath, reportPath } = fixture({ specVersion: "0.4.36", targetVersion: "0.4.37" });
   try {

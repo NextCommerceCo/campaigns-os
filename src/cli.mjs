@@ -2526,20 +2526,43 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     derived.spec_path = null;
     ready.push("Synthesized built-site packet skips CampaignSpec/source checks; built-output gates should run through doctor --built or qa --site.");
   } else {
-    const specPath = resolveFromFile(packetPath, packet.spec?.local_path);
+    const localSpecPath = packet.spec?.local_path;
+    const specPath = isNonEmptyString(localSpecPath) ? resolveFromFile(packetPath, localSpecPath) : null;
     derived.spec_path = specPath;
-    if (!packet.spec?.local_path) {
+    let specStatus = "missing";
+    if (!isNonEmptyString(localSpecPath)) {
       addIssue(errors, "spec.local_path", "No local CampaignSpec path is present. Assembly must use a local exported CampaignSpec JSON so page coverage, routing, meta tags, and commerce refs are not guessed.");
     } else if (!existsSync(specPath)) {
-      addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${packet.spec.local_path}`);
+      addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${localSpecPath}`);
     } else {
-      spec = readJson(specPath);
+      try {
+        const loaded = readJson(specPath);
+        if (isObject(loaded)) {
+          spec = loaded;
+          specStatus = "ok";
+        } else {
+          specStatus = "root_not_object";
+          addIssue(errors, "spec.local_path", "CampaignSpec local_path must contain a JSON object. Restore a valid packet-local CampaignSpec export before build or QA.");
+        }
+      } catch {
+        specStatus = "invalid_json";
+        addIssue(errors, "spec.local_path", "CampaignSpec local_path is not valid JSON. Restore a valid packet-local CampaignSpec export before build or QA.");
+      }
+    }
+    buildState.specStatus = specStatus;
+    if (specStatus === "ok") {
       const specMapId = spec.spec_identity?.map_id || spec.map_id;
       if (specMapId && specMapId !== packet.spec.map_id) {
         addIssue(errors, "spec.map_id", `Packet map_id "${packet.spec.map_id}" does not match CampaignSpec map_id "${specMapId}".`);
       }
       ready.push("Local CampaignSpec parsed");
       runDoctorChecks(SPEC_DOCTOR_CHECKS, { packet, packetPath, spec, targetRepo, errors, warnings, ready, derived, buildState });
+    } else {
+      runDoctorChecks(
+        SPEC_DOCTOR_CHECKS,
+        { packet, packetPath, spec: null, targetRepo, errors, warnings, ready, derived, buildState },
+        { phase: "target" },
+      );
     }
   }
 
@@ -2800,6 +2823,7 @@ function validateTargetSdkVersion(spec, errors, warnings, ready, derived, buildS
     || derived.scaffold_required !== true;
   const gate = evaluatePageKitSdkVersion({
     spec,
+    specStatus: buildState?.specStatus || "ok",
     targetLoad: buildState?.pageKitCampaignConfig,
     waivers: report?.waivers,
     required,
@@ -2842,6 +2866,7 @@ function validateTargetStoreProfile(spec, errors, warnings, ready, derived, buil
     || derived.scaffold_required !== true;
   const gate = evaluatePageKitStoreProfile({
     specCampaign: spec?.campaign || {},
+    specStatus: buildState?.specStatus || "ok",
     targetLoad: buildState?.pageKitCampaignConfig,
     waivers: report?.waivers,
     required,

@@ -47,7 +47,8 @@ Options:
   --packet <path>                 Read Map ID, local CampaignSpec, deploy URL, and QA metadata from a Build Packet.
   --site <path>                   L7 non-packet QA: resolve scope (pages + funnel types) from a built page-kit _site/.
                                   Requires --base-url and --family. No Map ID / CampaignSpec needed.
-  --spec <path>                   Local exported CampaignSpec JSON. Preferred for the prepared-HTML flow.
+  --spec <path>                   Local exported CampaignSpec JSON for the non-packet Map ID flow.
+                                  Packet QA always uses packet.spec.local_path and rejects this override.
   --proxy-base <url>              Campaign Map proxy base for fetching /api/spec/<map-id>.
   --base-url <url>                Deployed campaign root. Packet deploy URL is used when omitted.
   --output-dir <path>             Local verdict directory. Default: qa-output.
@@ -163,6 +164,9 @@ async function resolveQaInputs(args, {
   readJsonFile = readJson,
   loadCampaignEntry = loadPageKitCampaignEntry,
 } = {}) {
+  if (args.packet && args.spec) {
+    throw new Error("Packet QA does not accept --spec; it always uses packet.spec.local_path.");
+  }
   // Non-packet mode (learnings L7): QA a `campaign-build`'d page-kit campaign
   // that has only a built _site/ and a served URL — no Build Packet, no Map ID,
   // no CampaignSpec. Scope (pages + funnel types) is resolved from the built
@@ -995,8 +999,18 @@ function serializeThrownValue(error) {
 function resolvePayload(resolved) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
+  const checkpointGates = Array.isArray(resolved.checkpointGates)
+    ? resolved.checkpointGates.map(checkpointGateSummary)
+    : [];
+  const hasBlockedCheckpoint = checkpointGates.some((gate) => gate.status === "blocked");
+  const hasWaivedCheckpoint = checkpointGates.some((gate) => gate.status === "waived");
   return {
-    ok: true,
+    ok: !hasBlockedCheckpoint,
+    status: hasBlockedCheckpoint
+      ? "blocked"
+      : hasWaivedCheckpoint
+        ? "ready_with_exceptions"
+        : "ready",
     map_id: resolved.mapId,
     ...(resolved.packetPath ? { packet_path: resolved.packetPath } : {}),
     ...(resolved.proxyBase && resolved.proxyBase !== DEFAULT_PROXY_BASE ? { proxy_base: resolved.proxyBase } : {}),
@@ -1012,10 +1026,112 @@ function resolvePayload(resolved) {
       slug: resolved.spec.campaign?.slug || null,
       ref_id: resolved.spec.campaign?.ref_id || null,
     },
-    checkpoint_gates: Array.isArray(resolved.checkpointGates) ? resolved.checkpointGates : [],
+    checkpoint_gates: checkpointGates,
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
     funnels: resolved.topologies,
+  };
+}
+
+function checkpointGateSummary(gate) {
+  const subject = {
+    public_route_slug: stringArg(gate?.subject?.public_route_slug) || "",
+    target_path: stringArg(gate?.subject?.target_path) || PAGE_KIT_CAMPAIGNS_REL_PATH,
+  };
+  const waiver = checkpointWaiverSummary(gate?.waiver, subject);
+  const waiverAssessment = {
+    active: checkpointWaiverSummary(gate?.waiver_assessment?.active, subject),
+    inert_counts: Object.fromEntries(
+      ["stale", "foreign", "malformed", "expired"].map((kind) => [
+        kind,
+        Number.isInteger(gate?.waiver_assessment?.inert_counts?.[kind])
+          ? gate.waiver_assessment.inert_counts[kind]
+          : 0,
+      ]),
+    ),
+  };
+  const requiredActions = Array.isArray(gate?.required_actions)
+    ? gate.required_actions
+      .filter(isPlainObject)
+      .map((action) => ({
+        id: stringArg(action.id),
+        kind: stringArg(action.kind),
+        command: stringArg(action.command),
+        description: stringArg(action.description),
+      }))
+    : [];
+  const summary = {
+    id: stringArg(gate?.id),
+    scope: stringArg(gate?.scope),
+    status: stringArg(gate?.status),
+    code: stringArg(gate?.code),
+    reason: stringArg(gate?.reason),
+    waivable: gate?.waivable === true,
+    subject,
+    state_fingerprint: stringArg(gate?.state_fingerprint),
+    waiver,
+    waiver_assessment: waiverAssessment,
+    required_actions: requiredActions,
+  };
+  if (gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) {
+    return {
+      ...summary,
+      state: {
+        ...(stringArg(gate?.state?.spec_status) ? { spec_status: stringArg(gate.state.spec_status) } : {}),
+        ...(stringArg(gate?.state?.target_status) ? { target_status: stringArg(gate.state.target_status) } : {}),
+        discrepancies: Array.isArray(gate?.state?.discrepancies)
+          ? gate.state.discrepancies.map((row) => ({
+            field: stringArg(row?.field),
+            kind: stringArg(row?.kind),
+            spec: typeof row?.spec === "string" ? row.spec : null,
+            target: typeof row?.target === "string" ? row.target : null,
+          }))
+          : [],
+      },
+      matrix: Array.isArray(gate?.matrix)
+        ? gate.matrix.map((row) => ({
+          field: stringArg(row?.field),
+          kind: stringArg(row?.kind),
+          spec: typeof row?.spec === "string" ? row.spec : null,
+          target: typeof row?.target === "string" ? row.target : null,
+          severity: stringArg(row?.severity),
+        }))
+        : [],
+      blocker_fields: Array.isArray(gate?.blocker_fields) ? gate.blocker_fields.filter((field) => typeof field === "string") : [],
+      warning_fields: Array.isArray(gate?.warning_fields) ? gate.warning_fields.filter((field) => typeof field === "string") : [],
+    };
+  }
+  if (gate?.id === PAGE_KIT_SDK_VERSION_SCOPE) {
+    return {
+      ...summary,
+      state: {
+        ...(stringArg(gate?.state?.spec_status) ? { spec_status: stringArg(gate.state.spec_status) } : {}),
+        ...(stringArg(gate?.state?.target_status) ? { target_status: stringArg(gate.state.target_status) } : {}),
+        ...(Array.isArray(gate?.state?.invalid_declarations)
+          ? { invalid_declarations: gate.state.invalid_declarations.filter((field) => typeof field === "string") }
+          : {}),
+        ...(typeof gate?.state?.expected === "string" ? { expected: gate.state.expected } : {}),
+        ...(typeof gate?.state?.observed === "string" ? { observed: gate.state.observed } : {}),
+      },
+      expected_sdk_version: typeof gate?.expected_sdk_version === "string" ? gate.expected_sdk_version : null,
+      observed_sdk_version: typeof gate?.observed_sdk_version === "string" ? gate.observed_sdk_version : null,
+      expected_source: typeof gate?.expected_source === "string" ? gate.expected_source : null,
+    };
+  }
+  throw new Error(`QA cannot project unknown checkpoint gate ${JSON.stringify(gate?.id)}.`);
+}
+
+function checkpointWaiverSummary(waiver, subject) {
+  if (!isPlainObject(waiver)) return null;
+  return {
+    scope: stringArg(waiver.scope),
+    subject,
+    state_fingerprint: stringArg(waiver.state_fingerprint),
+    reason: stringArg(waiver.reason),
+    waived_by: stringArg(waiver.waived_by),
+    waived_at: stringArg(waiver.waived_at),
+    ...(stringArg(waiver.expires_at) ? { expires_at: stringArg(waiver.expires_at) } : {}),
+    ...(stringArg(waiver.review_condition) ? { review_condition: stringArg(waiver.review_condition) } : {}),
   };
 }
 
@@ -2062,6 +2178,7 @@ function output(value, args) {
     return;
   }
   console.log(`QA resolve complete.`);
+  console.log(`Status: ${value.status}`);
   console.log(`Map ID: ${value.map_id}`);
   console.log(`Spec: ${value.spec_source}`);
   console.log(`Base URL: ${value.base_url || "(missing)"}`);
@@ -2071,11 +2188,34 @@ function output(value, args) {
     for (const page of funnel.pages) console.log(`- [${page.page_type}] ${page.label}: ${page.url || "(missing)"}`);
   }
   console.log("");
+  printCheckpointGateLines(value.checkpoint_gates, value.packet_path);
   printThemeGateLines(value.theme_gate);
   const nextProofLines = qaResolveNextProofLines(value);
   if (nextProofLines.length) {
     console.log("");
     for (const line of nextProofLines) console.log(line);
+  }
+}
+
+function printCheckpointGateLines(checkpointGates, packetPath) {
+  for (const gate of checkpointGates || []) {
+    console.log(`Checkpoint ${gate.id}: ${gate.status} (${gate.code}) — ${gate.reason}`);
+    if (gate.waiver) {
+      console.log(`  Waiver: ${gate.waiver.waived_by} at ${gate.waiver.waived_at} — ${gate.waiver.reason}`);
+      if (gate.waiver.expires_at) console.log(`  Expires: ${gate.waiver.expires_at}`);
+      if (gate.waiver.review_condition) console.log(`  Review condition: ${gate.waiver.review_condition}`);
+    }
+    const counts = gate.waiver_assessment?.inert_counts || {};
+    console.log(`  Inert waiver decisions: stale=${counts.stale || 0}, foreign=${counts.foreign || 0}, malformed=${counts.malformed || 0}, expired=${counts.expired || 0}`);
+    if (gate.required_actions?.length) {
+      console.log("  Required actions:");
+      for (const action of gate.required_actions) {
+        const command = packetPath && action.command
+          ? action.command.replace("--packet <packet>", `--packet ${shellToken(packetPath)}`)
+          : action.command;
+        console.log(`    - ${command || action.description}`);
+      }
+    }
   }
 }
 
@@ -2102,6 +2242,7 @@ function printThemeGateLines(themeGate) {
 }
 
 export function qaResolveNextProofLines(value) {
+  if (value?.status === "blocked") return [];
   if (!value?.base_url) {
     return [
       "Next expected proof: provide --base-url with the preview/local campaign URL, then run browser QA + typed-card proof with --browser --test-order common.",
