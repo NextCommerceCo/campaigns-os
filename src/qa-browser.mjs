@@ -2,6 +2,7 @@ import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { attachAnalyticsCapture, diffAnalyticsParity, normalizeCapture } from "./qa-analytics-parity.mjs";
 import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import {
+  commonTestOrderPaths,
   fullTestOrderPaths,
   remainingActionDisposition,
   resolveTestOrderTopology,
@@ -3134,8 +3135,8 @@ async function closeAddressAutocomplete(page) {
 function testOrderPaths(mode, topologies = []) {
   const normalized = String(mode || "off").toLowerCase();
   // `common` (also the bare `--test-order` flag, which parses to boolean true)
-  // is the default sample: a sensible 3-5 shapes for everyday QA. `full` is the
-  // explicit opt-in for every accept/decline permutation.
+  // is the default sample: at most four graph-derived shapes for everyday QA.
+  // `full` is the explicit opt-in for every actual terminal path.
   if (normalized === "common" || normalized === "true") return testOrderCommonPaths(topologies);
   if (normalized === "full") return fullTestOrderPaths(resolvePrimaryTestOrderTopology(topologies));
   if (normalized === "both") return ["accept", "decline"];
@@ -3160,8 +3161,8 @@ function resolvePrimaryTestOrderTopology(topologies = []) {
 //   tiers          one strict-selection checkout baseline per declared selector
 //                  tier, plus one checkout order per declared coupon code
 //   tiers:common   every declared tier crossed with the common path shapes
-//   tiers:full     every declared tier crossed with the full accept/decline
-//                  matrix — single-run tier×path coverage
+//   tiers:full     every declared tier crossed with the full set of actual
+//                  terminal paths — single-run tier×path coverage
 //
 // Coupon plans stay single checkout orders on the default selection: coupon
 // proof is persisted-order read-back and does not need upsell traversal.
@@ -3216,7 +3217,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       continue;
     }
     // Path shapes come from this checkout's own funnel: crossing tier plans
-    // with another funnel's upsell depth would plan unwalkable paths.
+    // with another funnel's topology would plan unwalkable paths.
     const resolvedTopology = resolveTestOrderTopology(topology, checkoutPage);
     const paths = variant === "common"
       ? testOrderCommonPaths([topology])
@@ -3348,17 +3349,13 @@ function summarizeTestOrderPlan(plan) {
   };
 }
 
-// The default "common shapes" sample: checkout baseline, plus first-upsell
-// accept and decline when the funnel has post-checkout offers, plus one deeper
-// mixed path when there are two or more offers. Stays within 1-4 orders so it
-// never trips the flood cap. Bundle/quantity and bump coverage come from
-// `--cart`; exhaustive permutations come from `full`.
+// The default "common shapes" sample: checkout baseline, plus first-offer
+// accept and decline when the checkout enters an offer graph, plus the shortest
+// real receipt path when that adds coverage. Stays within 1-4 orders so it never
+// trips the flood cap. Bundle/quantity and bump coverage come from `--cart`;
+// every actual terminal path comes from `full`.
 function testOrderCommonPaths(topologies = []) {
-  const depth = testOrderDepth(topologies);
-  const paths = ["checkout"];
-  if (depth >= 1) paths.push("accept", "decline");
-  if (depth >= 2) paths.push("accept-decline");
-  return paths;
+  return commonTestOrderPaths(resolvePrimaryTestOrderTopology(topologies));
 }
 
 function enforceTestOrderLimit(plans, args) {
@@ -3371,27 +3368,6 @@ function enforceTestOrderLimit(plans, args) {
     `Planned paths: ${preview}${suffix}.`,
     `This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with --max-test-orders ${plans.length} for this exhaustive proof.`,
   ].join(" "));
-}
-
-function testOrderDepth(topologies = []) {
-  const pages = topologies.flatMap((topology) => Array.isArray(topology?.pages) ? topology.pages : []);
-  return pages.filter((page) => ["upsell", "downsell"].includes(String(page?.page_type || "").toLowerCase())).length;
-}
-
-function testOrderPathMatrix(depth) {
-  const count = Math.max(0, Number(depth || 0));
-  if (count === 0) return [];
-  const paths = [];
-  const walk = (prefix, remaining) => {
-    if (remaining === 0) {
-      paths.push(prefix.join("-"));
-      return;
-    }
-    walk([...prefix, "decline"], remaining - 1);
-    walk([...prefix, "accept"], remaining - 1);
-  };
-  walk([], count);
-  return paths;
 }
 
 function testOrderSteps(path) {

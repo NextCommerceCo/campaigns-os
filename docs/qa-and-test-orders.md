@@ -358,19 +358,33 @@ npm run campaigns-os -- qa run \
   --test-order common
 ```
 
-The default mode is **`common`** (also what bare `--test-order` runs): a sensible
-3-5 shape sample — the checkout baseline, plus first-upsell `accept` and `decline`
-when the funnel has post-checkout offers, plus one deeper mixed path when there
-are two or more offers. This is the everyday QA depth.
+The default mode is **`common`** (also what bare `--test-order` runs): at most
+four shapes from the selected checkout's declared topology — the checkout
+baseline, first-offer `accept` and `decline` when `expected_next_url` reaches an
+upsell/downsell, and the shortest declared path that actually reaches a
+receipt/thank-you page. The receipt path is deduplicated when it is already
+`accept` or `decline`; Campaigns OS never invents a receipt path from offer
+count alone. This is the everyday QA sample.
 
 Other modes: `checkout` (base order redirect only), `accept`/`decline` (click the
 rendered control on the first upsell page), `both` (two fresh orders for those
 first-page paths), explicit accept/decline paths such as `accept-decline-accept`
-for a targeted matrix, and **`full`** — every accept/decline permutation derived
-from the funnel's sequential upsell/downsell depth (a two-offer funnel = 4 paths,
-a five-offer funnel = 32 paths plus the checkout baseline). Use `full` when you
-explicitly want exhaustive proof. Bundle/quantity and bump coverage come from
-`--cart` and `--select-package`, or spec-driven from **`tiers`** (below).
+for a targeted matrix, and **`full`** — every actual terminal path found by
+walking the selected checkout's `expected_next_url` and each reachable offer's
+`expected_accept_url` / `expected_decline_url`. A branch stops at a receipt,
+thank-you page, or genuine cross-origin handoff, so shortcut and uneven branches
+keep their real lengths. The walk is deterministic and cycle-safe. `full`
+refuses to start the browser if a reachable branch cycles, omits a route, points
+at an undeclared same-origin page, or otherwise has no recognized terminal.
+Use `full` when you explicitly want exhaustive topology proof. Bundle/quantity
+and bump coverage come from `--cart` and `--select-package`, or spec-driven from
+**`tiers`** (below).
+
+At runtime, a planned path may stop early only after the browser reaches a
+terminal URL recognized in that selected topology. Missing accept/decline
+controls on an ordinary or unknown page remain blockers; they are not treated
+as evidence that a receipt was reached. Cross-origin handoffs count as terminal
+navigation, but not as Campaigns OS receipt rendering or persisted-receipt proof.
 
 ### Package/bundle card selection and coupons
 
@@ -429,11 +443,11 @@ the CampaignSpec instead:
 
 Two variants cross tiers with path shapes in a single run:
 
-- `tiers:common` — every declared tier × the common path shapes
-  (checkout/accept/decline, plus the deeper mixed path on 2+ offer funnels);
-- `tiers:full` — every declared tier × the full accept/decline permutation
-  matrix. This is single-run tier×path coverage; expect the expanded count to
-  exceed the default `--max-test-orders` and raise the cap deliberately.
+- `tiers:common` — every declared tier × that checkout's common path shapes
+  (checkout/accept/decline plus a deduplicated shortest real receipt path);
+- `tiers:full` — every declared tier × that checkout's full set of actual
+  terminal paths. This is single-run tier×path coverage; expect the expanded
+  count to exceed the default `--max-test-orders` and raise the cap deliberately.
 
 Coupon plans stay single checkout orders in every variant: coupon proof is
 persisted-order read-back and does not need upsell traversal. Each planned
@@ -455,7 +469,7 @@ not render it would fail for the wrong reason). Plans from the primary (first)
 checkout keep bare ids; other funnels' plans are qualified by page id —
 `checkout@tier:8#checkout-b` — so the same ref or code declared on two
 checkouts cannot collide, and `tiers:common`/`tiers:full` cross each funnel's
-tiers with **that funnel's own** upsell depth. A non-primary checkout that
+tiers with **that funnel's own isolated topology graph and terminals**. A non-primary checkout that
 declares tiers/coupons but has no resolvable URL cannot be driven; the runner
 prints a `[qa:test-order]` warning naming it instead of silently dropping the
 declarations.
@@ -476,9 +490,12 @@ npm run campaigns-os -- qa run \
 ```
 
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
-gate**. `common` always stays under it; if `full` expands past it, the command
-stops and prints the planned count so you can choose a smaller matrix or raise the
-cap. No approval step is involved.
+gate**. A single checkout's `common` sample always stays under it, though tier
+expansion can exceed it. If `full` expands past the cap, the command stops before
+browser launch, prints the planned count, and names the exact
+`--max-test-orders <count>` raise. For example, a linear three-offer graph has
+eight terminal paths plus the checkout baseline, so it requires
+`--max-test-orders 9`. No approval step is involved.
 
 The default card is the Discover test card `6011 1111 1111 1117`, CVV `123`,
 expiration `12/2030` (success path; `6011 0009 9013 9424` exercises 3DS). Override
@@ -559,17 +576,17 @@ accept/add control, observes the order upsell API mutation, and the final order
 evidence contains the selected upsell package. A pre-purchase bump line marked
 `is_upsell` is not enough to satisfy accepted-upsell proof.
 
-For launch-grade proof on funnels with a checkout bump and sequential upsells,
-use a topology-depth matrix instead of a single happy path:
+For launch-grade proof on funnels with a checkout bump and post-checkout offers,
+use the declared topology instead of a single happy path:
 
 1. Checkout-only with the base cart.
 2. Checkout-only with the base cart plus bump when the bump is in scope.
-3. Base cart through a sample matrix, for example all-decline, all-accept, and
-   one or two mixed accept/decline paths (`--test-order common` covers the
-   typical 3-5 of these automatically).
+3. Base cart through the checkout/first-action sample plus the shortest real
+   receipt path (`--test-order common` covers up to four deduplicated shapes).
 4. Base plus bump cart through the same sample matrix when bump behavior is
    launch-relevant.
-5. Use `full` when you want exhaustive proof for the full generated order count.
+5. Use `full` when you want every actual terminal path, raising the flood cap to
+   the exact planned count when necessary.
 
 Record order numbers, `ref_id` values, and expected line-item shapes in the
 handoff. If the browser console shows an SDK module-load error but the SDK

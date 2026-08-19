@@ -69,6 +69,35 @@ export function fullTestOrderPaths(resolvedTopology) {
   return ["checkout", ...(resolvedTopology?.full_paths || [])];
 }
 
+export function commonTestOrderPaths(resolvedTopology) {
+  if (resolvedTopology?.has_offer_entry !== true) return ["checkout"];
+  const paths = ["checkout", "accept", "decline"];
+  const receiptPaths = (resolvedTopology?.terminal_paths || [])
+    .filter((candidate) => candidate?.terminal?.kind === "receipt")
+    .slice()
+    .sort(compareCommonReceiptPaths);
+  const shortest = receiptPaths[0]?.path;
+  if (shortest && !paths.includes(shortest)) paths.push(shortest);
+  return paths;
+}
+
+function compareCommonReceiptPaths(left, right) {
+  const lengthDelta = (left?.steps?.length || 0) - (right?.steps?.length || 0);
+  if (lengthDelta) return lengthDelta;
+  if (left?.path === "accept-decline" && right?.path !== "accept-decline") return -1;
+  if (right?.path === "accept-decline" && left?.path !== "accept-decline") return 1;
+  return compareActionSteps(left?.steps || [], right?.steps || []);
+}
+
+function compareActionSteps(left, right) {
+  const rank = { accept: 0, decline: 1 };
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    if (left[index] === right[index]) continue;
+    return (rank[left[index]] ?? 2) - (rank[right[index]] ?? 2);
+  }
+  return left.length - right.length;
+}
+
 function walkOffer(page, steps, visited, pagesByUrl, topologyOrigin, terminalPaths, invalidPaths) {
   const pageKey = canonicalHttpUrl(page?.url) || `page:${page?.page_id || "unknown"}`;
   if (visited.has(pageKey)) {

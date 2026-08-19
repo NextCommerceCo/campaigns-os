@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  commonTestOrderPaths,
   fullTestOrderPaths,
   remainingActionDisposition,
   resolveTestOrderTopology,
@@ -173,6 +174,39 @@ test("full mode keeps checkout-only funnels at one order without inferring stray
   }, checkout);
 
   assert.deepEqual(fullTestOrderPaths(resolved), ["checkout"]);
+});
+
+test("common mode dedupes its samples and adds only the shortest real receipt path", () => {
+  const zeroCheckout = page("checkout-0", "checkout", "zero/checkout/");
+  const zero = resolveTestOrderTopology({ funnel_id: "zero", pages: [zeroCheckout] }, zeroCheckout);
+  assert.deepEqual(commonTestOrderPaths(zero), ["checkout"]);
+
+  const oneCheckout = page("checkout-1", "checkout", "one/checkout/", { expected_next_url: url("one/upsell/") });
+  const one = resolveTestOrderTopology({ funnel_id: "one", pages: [
+    oneCheckout,
+    page("upsell-1", "upsell", "one/upsell/", { expected_accept_url: url("one/receipt/"), expected_decline_url: url("one/receipt/") }),
+    page("receipt-1", "receipt", "one/receipt/"),
+  ] }, oneCheckout);
+  assert.deepEqual(commonTestOrderPaths(one), ["checkout", "accept", "decline"]);
+
+  const twoCheckout = page("checkout-2", "checkout", "two/checkout/", { expected_next_url: url("two/upsell-1/") });
+  const two = resolveTestOrderTopology({ funnel_id: "two", pages: [
+    twoCheckout,
+    page("upsell-2a", "upsell", "two/upsell-1/", { expected_accept_url: url("two/upsell-2/"), expected_decline_url: url("two/upsell-2/") }),
+    page("upsell-2b", "upsell", "two/upsell-2/", { expected_accept_url: url("two/receipt/"), expected_decline_url: url("two/receipt/") }),
+    page("receipt-2", "thankyou", "two/receipt/"),
+  ] }, twoCheckout);
+  assert.deepEqual(commonTestOrderPaths(two), ["checkout", "accept", "decline", "accept-decline"]);
+
+  const externalCheckout = page("checkout-external", "checkout", "external/checkout/", { expected_next_url: url("external/upsell/") });
+  const external = resolveTestOrderTopology({ funnel_id: "external-only", pages: [
+    externalCheckout,
+    page("upsell-external", "upsell", "external/upsell/", {
+      expected_accept_url: "https://hosted.example/accepted/",
+      expected_decline_url: "https://hosted.example/declined/",
+    }),
+  ] }, externalCheckout);
+  assert.deepEqual(commonTestOrderPaths(external), ["checkout", "accept", "decline"]);
 });
 
 test("an absent same-origin route is unresolved, not an external handoff", () => {

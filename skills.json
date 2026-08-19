@@ -47,7 +47,7 @@
     {
       "id": "next-campaigns-qa",
       "name": "Campaign QA",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "path": "skills/next-campaigns-qa/SKILL.md",
       "domain": "campaigns",
       "description": "Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof."

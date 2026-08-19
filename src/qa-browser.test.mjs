@@ -241,12 +241,31 @@ test("test order email resolves to ONE stable address (reused customer, not per-
   }
 });
 
-test("test-order 'common' preset = checkout + accept/decline sample, scaled to funnel depth", () => {
+test("test-order 'common' preset = checkout + accept/decline sample plus a shortest real receipt path", () => {
   const { testOrderPaths } = __qaBrowserTestHooks;
-  const topo = (upsells) => [{ pages: [
-    { page_type: "checkout" },
-    ...Array.from({ length: upsells }, () => ({ page_type: "upsell" })),
-  ] }];
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topo = (upsells) => {
+    const receipt = { page_id: "receipt", page_type: "thankyou", url: route("receipt/") };
+    const pages = [{
+      page_id: "checkout",
+      page_type: "checkout",
+      url: route("checkout/"),
+      ...(upsells ? { expected_next_url: route("upsell-1/") } : {}),
+    }];
+    for (let index = 1; index <= upsells; index += 1) {
+      const nextUrl = index === upsells ? receipt.url : route(`upsell-${index + 1}/`);
+      pages.push({
+        page_id: `upsell-${index}`,
+        page_type: "upsell",
+        url: route(`upsell-${index}/`),
+        expected_accept_url: nextUrl,
+        expected_decline_url: nextUrl,
+      });
+    }
+    pages.push(receipt);
+    return [{ funnel_id: `depth-${upsells}`, pages }];
+  };
 
   // no upsells → checkout baseline only
   assert.deepEqual(testOrderPaths("common", topo(0)), ["checkout"]);
@@ -281,6 +300,26 @@ test("test-order 'full' emits only actual terminal paths for shortcutting branch
   ]);
 });
 
+test("test-order 'common' adds the shortest real receipt path for a shortcutting funnel", () => {
+  const { testOrderPaths } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topology = [{ funnel_id: "shortcut", pages: [
+    { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell-1/") },
+    { page_id: "upsell-1", page_type: "upsell", url: route("upsell-1/"), expected_accept_url: route("upsell-2/"), expected_decline_url: route("upsell-2/") },
+    { page_id: "upsell-2", page_type: "upsell", url: route("upsell-2/"), expected_accept_url: route("receipt/"), expected_decline_url: route("downsell/") },
+    { page_id: "downsell", page_type: "downsell", url: route("downsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+
+  assert.deepEqual(testOrderPaths("common", topology), [
+    "checkout",
+    "accept",
+    "decline",
+    "accept-accept",
+  ]);
+});
+
 test("operator plans carry only the primary checkout's terminal graph for runtime safety", () => {
   const { testOrderPlans } = __qaBrowserTestHooks;
   const base = "https://campaign.example/";
@@ -309,7 +348,13 @@ test("operator plans carry only the primary checkout's terminal graph for runtim
 
 test("operator test-order modes plan one order per path carrying the run-global selection/coupon flags", () => {
   const { testOrderPlans, planId } = __qaBrowserTestHooks;
-  const topo = [{ pages: [{ page_type: "checkout" }, { page_type: "upsell" }] }];
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topo = [{ pages: [
+    { page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell/") },
+    { page_type: "upsell", url: route("upsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_type: "thankyou", url: route("receipt/") },
+  ] }];
 
   const plans = testOrderPlans("common", topo, { "select-package": "7:2", "apply-coupon": "SAVE10" });
   assert.deepEqual(plans.map((plan) => plan.path), ["checkout", "accept", "decline"]);
@@ -446,15 +491,28 @@ test("multi-funnel specs plan every funnel's checkout declarations, each against
   assert.equal(warnings.length, 0);
 });
 
-test("tiers:common crosses each funnel's tiers with that funnel's own upsell depth", () => {
+test("tiers:common crosses each funnel's tiers with that funnel's own reachable graph", () => {
   const { testOrderPlans, planId } = __qaBrowserTestHooks;
   const topo = [
     // funnel A: no upsells → checkout baseline only
-    { pages: [{ page_type: "checkout", page_id: "checkout-a", url: "https://x.test/a/", packages: [{ ref_id: "1" }] }] },
+    { funnel_id: "a", pages: [{ page_type: "checkout", page_id: "checkout-a", url: "https://x.test/a/", packages: [{ ref_id: "1" }] }] },
     // funnel B: one upsell → checkout + accept + decline
-    { pages: [
-      { page_type: "checkout", page_id: "checkout-b", url: "https://x.test/b/", packages: [{ ref_id: "8" }] },
-      { page_type: "upsell" },
+    { funnel_id: "b", pages: [
+      {
+        page_type: "checkout",
+        page_id: "checkout-b",
+        url: "https://x.test/b/",
+        expected_next_url: "https://x.test/b/upsell/",
+        packages: [{ ref_id: "8" }],
+      },
+      {
+        page_type: "upsell",
+        page_id: "upsell-b",
+        url: "https://x.test/b/upsell/",
+        expected_accept_url: "https://x.test/b/receipt/",
+        expected_decline_url: "https://x.test/b/receipt/",
+      },
+      { page_type: "thankyou", page_id: "receipt-b", url: "https://x.test/b/receipt/" },
     ] },
   ];
 
