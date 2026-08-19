@@ -14,6 +14,8 @@ function isPlainObject(value) {
 
 export const POLISH_ROUTE_CAPTURE_SCHEMA_VERSION = "campaigns-os-polish-route-capture/v0";
 export const POLISH_CAPTURE_PRODUCER = "campaigns-os polish capture";
+export const POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION = "campaigns-os-polish-route-capture-integrity/v0";
+export const POLISH_CAPTURE_INTEGRITY_ALGORITHM = "sha256";
 export const MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES = 2_048;
 export const POLISH_RESOURCE_TYPES = Object.freeze([
   "cspviolationreport",
@@ -75,6 +77,59 @@ export function redactCaptureUrl(value, { baseUrl } = {}) {
 
 function resourceId(canonicalUrl) {
   return `sha256:${createHash("sha256").update(canonicalUrl).digest("hex")}`;
+}
+
+function canonicalizeForIntegrity(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeForIntegrity);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeForIntegrity(value[key])]));
+  }
+  return value;
+}
+
+function integrityFingerprint(value) {
+  return `sha256:${createHash("sha256").update(JSON.stringify(canonicalizeForIntegrity(value))).digest("hex")}`;
+}
+
+function captureAssociationProjection(capture) {
+  return {
+    resources: (Array.isArray(capture?.resource_ledger?.entries) ? capture.resource_ledger.entries : []).map((resource) => ({
+      resource_id: resource?.resource_id,
+      match_resource_ids: Array.isArray(resource?.match_resource_ids) ? resource.match_resource_ids : [],
+    })),
+    media: (Array.isArray(capture?.media) ? capture.media : []).map((media) => ({
+      element_index: media?.element_index,
+      source_references: (Array.isArray(media?.source_references) ? media.source_references : []).map((reference) => ({
+        source_kind: reference?.source_kind,
+        source_index: reference?.source_index,
+        resource_id: reference?.resource_id,
+      })),
+      fetched_resources: (Array.isArray(media?.fetched_resources) ? media.fetched_resources : []).map((resource) => ({
+        resource_id: resource?.resource_id,
+        matched_source_resource_ids: Array.isArray(resource?.matched_source_resource_ids)
+          ? resource.matched_source_resource_ids
+          : [],
+      })),
+    })),
+  };
+}
+
+export function buildPolishCaptureIntegrity(captureProjection) {
+  const { integrity: ignoredIntegrity, ...projection } = captureProjection || {};
+  const associationFingerprint = integrityFingerprint(captureAssociationProjection(projection));
+  // This is a versioned tamper-evidence checksum for package-produced artifacts, not a keyed
+  // signature. A malicious local editor who rewrites the artifact and recalculates both hashes can
+  // forge it; its job is to expose accidental or partial mutation between capture and evaluation.
+  return {
+    schema_version: POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION,
+    algorithm: POLISH_CAPTURE_INTEGRITY_ALGORITHM,
+    association_fingerprint: associationFingerprint,
+    projection_fingerprint: integrityFingerprint({
+      schema_version: POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION,
+      association_fingerprint: associationFingerprint,
+      capture: projection,
+    }),
+  };
 }
 
 function resolvedResource(value, { baseUrl } = {}) {
@@ -141,15 +196,22 @@ function privateRecordSortKey(record, documentUrl) {
 function flattenResponseRecords(responses, problemCounts) {
   const flattened = [];
   for (const record of (Array.isArray(responses) ? responses : [])) {
-    if (Array.isArray(record?.redirect_chain)) {
-      if (record.redirect_chain.length === 0) {
-        addProblemCount(problemCounts, "request_identity_invalid");
+    const hasRedirectChain = isPlainObject(record) && Object.hasOwn(record, "redirect_chain");
+    if (hasRedirectChain) {
+      if (!Array.isArray(record.redirect_chain)
+        || record.redirect_chain.length === 0
+        || Object.hasOwn(record, "redirect_hop")
+        || record.redirect_chain.some((hop, redirectHop) => !isPlainObject(hop)
+          || Object.hasOwn(hop, "request_id")
+          || Object.hasOwn(hop, "redirect_chain")
+          || (Object.hasOwn(hop, "redirect_hop") && hop.redirect_hop !== redirectHop))) {
+        addProblemCount(problemCounts, "redirect_chain_invalid");
         continue;
       }
       record.redirect_chain.forEach((hop, redirectHop) => {
         flattened.push({
           ...record,
-          ...(isPlainObject(hop) ? hop : {}),
+          ...hop,
           redirect_chain: undefined,
           redirect_hop: Number.isInteger(hop?.redirect_hop) ? hop.redirect_hop : redirectHop,
         });
@@ -179,23 +241,35 @@ function prepareResponseRecords(responses, { documentUrl, problemCounts }) {
 
   const prepared = [...invalidIdentity];
   for (const group of byRequestId.values()) {
-    if (group.length === 1) {
-      prepared.push({ record: group[0], chain: group });
+    const hops = group.map((record) => record?.redirect_hop);
+    const hasRedirectHops = group.some((record) => Object.hasOwn(record, "redirect_hop"));
+    if (!hasRedirectHops) {
+      if (group.length === 1) {
+        prepared.push({ record: group[0], chain: group });
+        continue;
+      }
+      addProblemCount(problemCounts, "duplicate_request_identity", group.length - 1);
+      const selected = [...group]
+        .sort((a, b) => privateRecordSortKey(a, documentUrl).localeCompare(privateRecordSortKey(b, documentUrl)))[0];
+      prepared.push({ record: selected, chain: [selected] });
       continue;
     }
-    const hops = group.map((record) => record?.redirect_hop);
+    const orderedHops = [...hops].sort((a, b) => a - b);
     const validRedirectChain = hops.every((hop) => Number.isInteger(hop) && hop >= 0)
-      && new Set(hops).size === hops.length;
+      && orderedHops.every((hop, index) => hop === index);
     if (validRedirectChain) {
       const chain = [...group].sort((a, b) => a.redirect_hop - b.redirect_hop
         || privateRecordSortKey(a, documentUrl).localeCompare(privateRecordSortKey(b, documentUrl)));
       for (const record of chain) prepared.push({ record, chain });
       continue;
     }
-    addProblemCount(problemCounts, "duplicate_request_identity", group.length - 1);
-    const selected = [...group]
-      .sort((a, b) => privateRecordSortKey(a, documentUrl).localeCompare(privateRecordSortKey(b, documentUrl)))[0];
-    prepared.push({ record: selected, chain: [selected] });
+    addProblemCount(problemCounts, "redirect_chain_invalid");
+    const chain = [...group].sort((a, b) => {
+      const aHop = Number.isInteger(a?.redirect_hop) ? a.redirect_hop : Number.POSITIVE_INFINITY;
+      const bHop = Number.isInteger(b?.redirect_hop) ? b.redirect_hop : Number.POSITIVE_INFINITY;
+      return aHop - bHop || privateRecordSortKey(a, documentUrl).localeCompare(privateRecordSortKey(b, documentUrl));
+    });
+    for (const record of chain) prepared.push({ record, chain });
   }
   return prepared;
 }
@@ -338,8 +412,8 @@ export function aggregateCdpResponses(responses, { documentUrl } = {}) {
 
 function normalizedPreloadAttribute(value) {
   if (value === null) return "missing";
-  const token = normalizedToken(value);
-  if (!token) return "empty";
+  if (value === "") return "empty";
+  const token = value.toLowerCase();
   return token === "auto" || token === "metadata" || token === "none" ? token : "other";
 }
 
@@ -535,7 +609,7 @@ export function buildPageLoadCapture({
   if (settled.status === "invalid") addCaptureProblem("networkidle_measurement_invalid");
   const problems = projectedProblems(problemCounts);
 
-  return {
+  const capture = {
     schema_version: POLISH_ROUTE_CAPTURE_SCHEMA_VERSION,
     performed_by: POLISH_CAPTURE_PRODUCER,
     subject,
@@ -566,5 +640,9 @@ export function buildPageLoadCapture({
     },
     media,
     problems,
+  };
+  return {
+    ...capture,
+    integrity: buildPolishCaptureIntegrity(capture),
   };
 }

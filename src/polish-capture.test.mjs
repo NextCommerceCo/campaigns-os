@@ -150,6 +150,116 @@ test("same-request-id redirect hops are counted once and associate an authored s
   assert.deepEqual(capture.problems, []);
 });
 
+test("same-request-id redirect hops must be contiguous from zero", () => {
+  const result = aggregateCdpResponses([
+    {
+      request_id: "gapped-redirect",
+      redirect_hop: 0,
+      url: "https://shop.example.test/media/hero?token=private",
+      resource_type: "Media",
+      status: 302,
+      encoded_data_length: 200,
+    },
+    {
+      request_id: "gapped-redirect",
+      redirect_hop: 2,
+      url: "https://cdn.example.test/final/hero.mp4?signature=private",
+      resource_type: "Media",
+      status: 200,
+      encoded_data_length: 2_000_000,
+    },
+  ], { documentUrl: "https://shop.example.test/landing/" });
+
+  assert.equal(result.measurement_status, "incomplete");
+  assert.equal(result.observed_response_count, 2);
+  assert.deepEqual(result.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
+});
+
+test("a lone indexed response is a valid redirect hop only at integer index zero", () => {
+  const response = {
+    request_id: "lone-hop",
+    url: "https://cdn.example.test/final/hero.mp4?signature=private",
+    resource_type: "Media",
+    status: 200,
+    encoded_data_length: 2_000_000,
+  };
+  const valid = aggregateCdpResponses([{ ...response, redirect_hop: 0 }], {
+    documentUrl: "https://shop.example.test/landing/",
+  });
+  assert.equal(valid.measurement_status, "complete");
+
+  for (const redirectHop of [1, -1, "0"]) {
+    const invalid = aggregateCdpResponses([{ ...response, redirect_hop: redirectHop }], {
+      documentUrl: "https://shop.example.test/landing/",
+    });
+    assert.equal(invalid.measurement_status, "incomplete");
+    assert.deepEqual(invalid.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
+  }
+});
+
+test("a redirect_chain with a nonobject hop fails closed with a fixed diagnostic", () => {
+  const result = aggregateCdpResponses([{
+    request_id: "malformed-chain",
+    redirect_chain: [
+      {
+        url: "https://shop.example.test/media/hero?token=private",
+        resource_type: "Media",
+        status: 302,
+        encoded_data_length: 200,
+      },
+      "private malformed hop payload",
+    ],
+  }], { documentUrl: "https://shop.example.test/landing/" });
+
+  assert.equal(result.measurement_status, "incomplete");
+  assert.deepEqual(result.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
+  assert.equal(JSON.stringify(result).includes("private malformed"), false);
+});
+
+test("redirect_chain hops cannot redeclare or override the top-level request identity", () => {
+  for (const hopRequestId of ["redirected-media", "different-request"]) {
+    const result = aggregateCdpResponses([{
+      request_id: "redirected-media",
+      redirect_chain: [{
+        request_id: hopRequestId,
+        url: "https://cdn.example.test/final/hero.mp4?signature=private",
+        resource_type: "Media",
+        status: 200,
+        encoded_data_length: 2_000_000,
+      }],
+    }], { documentUrl: "https://shop.example.test/landing/" });
+
+    assert.equal(result.measurement_status, "incomplete");
+    assert.deepEqual(result.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
+  }
+});
+
+test("redirect_chain ownership cannot be nested or combined with a top-level redirect hop", () => {
+  const finalHop = {
+    url: "https://cdn.example.test/final/hero.mp4?signature=private",
+    resource_type: "Media",
+    status: 200,
+    encoded_data_length: 2_000_000,
+  };
+  const ambiguousRecords = [
+    {
+      request_id: "top-level-hop-and-chain",
+      redirect_hop: 0,
+      redirect_chain: [finalHop],
+    },
+    {
+      request_id: "nested-chain",
+      redirect_chain: [{ ...finalHop, redirect_chain: [] }],
+    },
+  ];
+
+  for (const record of ambiguousRecords) {
+    const result = aggregateCdpResponses([record], { documentUrl: "https://shop.example.test/landing/" });
+    assert.equal(result.measurement_status, "incomplete");
+    assert.deepEqual(result.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
+  }
+});
+
 test("contradictory duplicate-hop records remain deterministic across event order", () => {
   const records = [
     {
@@ -333,7 +443,7 @@ test("media normalization treats computed hidden ancestors as hidden but keeps z
   assert.equal(hidden.current_src, "https://cdn.example.test/hero.mp4");
   assert.equal(hidden.src_attribute, "https://shop.example.test/hero.mp4");
   assert.deepEqual(hidden.source_src_attributes, ["https://cdn.example.test/fallback.webm"]);
-  assert.equal(hidden.preload_attribute, "auto");
+  assert.equal(hidden.preload_attribute, "other");
   assert.equal(hidden.preload_defers_fetch, false);
   assert.equal(hidden.hidden_at_load, true);
   assert.deepEqual(hidden.hidden_by, ["display_none"]);

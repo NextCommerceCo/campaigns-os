@@ -112,6 +112,32 @@ test("page-load evidence blocks only hidden eager media strictly above 1,048,576
   for (const secret of ["credential=", "campaign=private"]) assert.equal(serialized.includes(secret), false, secret);
 });
 
+test("preload exemptions accept only exact ASCII-case-insensitive none and metadata tokens", () => {
+  const preloadAttributes = ["NoNe", "MeTaDaTa", " none ", " metadata "];
+  const capture = buildPageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_000 },
+    mediaElements: preloadAttributes.map((preload, index) => mediaElement(`preload-${index}.mp4`, { preload })),
+    responses: preloadAttributes.map((unused, index) => mediaResponse(`preload-${index}`, `preload-${index}.mp4`, 2_000_000)),
+  });
+  const evidence = evidenceForCapture(capture);
+
+  assert.deepEqual(capture.media.map((media) => media.preload_attribute), [
+    "none",
+    "metadata",
+    "other",
+    "other",
+  ]);
+  assert.deepEqual(capture.media.map((media) => media.preload_defers_fetch), [true, true, false, false]);
+  assert.deepEqual(evidence.findings.map((finding) => finding.element_index), [2, 3]);
+  assert.equal(evaluate(evidence).status, "blocked");
+});
+
 test("the threshold applies to aggregate fetched bytes per media element, including split resources", () => {
   const captureFor = (bytesPerResource) => buildPageLoadCapture({
     buildFingerprint: BUILD_FINGERPRINT,
@@ -239,7 +265,11 @@ test("resource-type ambiguity remains a structurally valid but nonwaivably incom
   assert.equal(gate.waivable, false);
 });
 
-function blockingEvidence({ bytes = 1_048_577, buildFingerprint = BUILD_FINGERPRINT } = {}) {
+function blockingEvidence({
+  bytes = 1_048_577,
+  buildFingerprint = BUILD_FINGERPRINT,
+  networkidle = { status: "settled", duration_ms: 1_200 },
+} = {}) {
   const capture = buildPageLoadCapture({
     buildFingerprint,
     slug: "merchant",
@@ -247,7 +277,7 @@ function blockingEvidence({ bytes = 1_048_577, buildFingerprint = BUILD_FINGERPR
     viewport: "desktop",
     finalDocumentUrl: "https://shop.example.test/landing/",
     responseCollectionStatus: "complete",
-    networkidle: { status: "settled", duration_ms: 1_200 },
+    networkidle,
     mediaElements: [mediaElement("hidden-too-large.mp4")],
     responses: [mediaResponse("too-large", "hidden-too-large.mp4", bytes)],
   });
@@ -321,8 +351,10 @@ test("a complete hidden eager-media finding blocks until an exact named-human wa
 });
 
 test("passing capture ignores historical waivers and networkidle timeout does not create a blocker", () => {
-  const evidence = blockingEvidence({ bytes: HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES });
-  evidence.captures[0].networkidle = { status: "timeout", duration_ms: 5_000 };
+  const evidence = blockingEvidence({
+    bytes: HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES,
+    networkidle: { status: "timeout", duration_ms: 5_000 },
+  });
   const pass = evaluate(evidence, {
     waivers: [{ scope: "polish.hidden_eager_media", private_token: "ignored-history" }],
   });
@@ -444,7 +476,7 @@ test("a malformed route capture cannot self-declare complete and false-pass miss
   assert.deepEqual(evidence.measurement.incomplete, [{
     route: "/landing/",
     viewport: "desktop",
-    problem_codes: ["capture_shape_invalid"],
+    problem_codes: ["capture_integrity_invalid", "capture_shape_invalid"],
   }]);
   const gate = evaluate(evidence);
   assert.equal(gate.status, "blocked");
@@ -473,6 +505,84 @@ test("ledger-derived totals, largest-resource facts, cache/SW/cross-origin count
     const evidence = evidenceForCapture(capture);
     assert.equal(evidence.measurement.status, "incomplete");
     assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+    const gate = evaluate(evidence);
+    assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
+    assert.equal(gate.waivable, false);
+  }
+});
+
+test("coordinated resource-ID rewriting cannot detach a hidden transfer from its original media source", () => {
+  const capture = structuredClone(blockingEvidence({ bytes: 2_000_000 }).captures[0]);
+  const rewrittenResourceId = `sha256:${"f".repeat(64)}`;
+  capture.resource_ledger.entries[0].resource_id = rewrittenResourceId;
+  capture.resource_ledger.entries[0].match_resource_ids = [rewrittenResourceId];
+  capture.metrics.largest_resource.resource_id = rewrittenResourceId;
+  capture.media[0].fetched_bytes = 0;
+  capture.media[0].fetched_request_count = 0;
+  capture.media[0].fetched_resources = [];
+
+  const evidence = evidenceForCapture(capture);
+  assert.equal(evidence.measurement.status, "incomplete");
+  assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_integrity_invalid"), true);
+  assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+  const gate = evaluate(evidence);
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
+  assert.equal(gate.waivable, false);
+});
+
+test("a clean builder artifact round-trips with versioned integrity and no private URL material", () => {
+  const evidence = blockingEvidence({ bytes: HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES });
+  const capture = evidence.captures[0];
+
+  assert.equal(evidence.measurement.status, "complete");
+  assert.deepEqual(Object.keys(capture.integrity).sort(), [
+    "algorithm",
+    "association_fingerprint",
+    "projection_fingerprint",
+    "schema_version",
+  ]);
+  assert.equal(capture.integrity.schema_version, "campaigns-os-polish-route-capture-integrity/v0");
+  assert.equal(capture.integrity.algorithm, "sha256");
+  assert.match(capture.integrity.association_fingerprint, /^sha256:[a-f0-9]{64}$/);
+  assert.match(capture.integrity.projection_fingerprint, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(evaluate(evidence).status, "pass");
+  assert.equal(JSON.stringify(capture.integrity).includes("credential="), false);
+});
+
+test("missing or mismatched capture integrity is an explicit nonwaivable incomplete result", () => {
+  const mutations = [
+    (capture) => { delete capture.integrity; },
+    (capture) => { capture.integrity.association_fingerprint = `sha256:${"e".repeat(64)}`; },
+    (capture) => { capture.integrity.projection_fingerprint = `sha256:${"d".repeat(64)}`; },
+  ];
+
+  for (const mutate of mutations) {
+    const capture = structuredClone(blockingEvidence().captures[0]);
+    mutate(capture);
+    const evidence = evidenceForCapture(capture);
+    assert.equal(evidence.measurement.status, "incomplete");
+    assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_integrity_invalid"), true);
+    assert.equal(evaluate(evidence).waivable, false);
+  }
+});
+
+test("single public-field, resource, and subject mutations invalidate the producer artifact binding", () => {
+  const mutations = [
+    (capture) => { capture.networkidle.duration_ms += 1; },
+    (capture) => { capture.resource_ledger.entries[0].url = "https://cdn.example.test/rewritten.mp4"; },
+    (capture) => { capture.subject.build_fingerprint = `sha256:${"b".repeat(64)}`; },
+    (capture) => { capture.subject.campaign_slug = "rewritten-merchant"; },
+    (capture) => { capture.subject.requested_route = "/rewritten/"; },
+    (capture) => { capture.subject.final_document_route = "/rewritten/"; },
+    (capture) => { capture.subject.viewport = "mobile"; },
+  ];
+
+  for (const mutate of mutations) {
+    const capture = structuredClone(blockingEvidence().captures[0]);
+    mutate(capture);
+    const evidence = evidenceForCapture(capture);
+    assert.equal(evidence.measurement.status, "incomplete");
+    assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_integrity_invalid"), true);
     const gate = evaluate(evidence);
     assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
     assert.equal(gate.waivable, false);
@@ -612,7 +722,10 @@ test("malformed capture identities and problem codes are reduced to fixed safe d
   });
 
   assert.equal(evidence.measurement.status, "incomplete");
-  assert.deepEqual(evidence.measurement.incomplete[0].problem_codes, ["capture_shape_invalid"]);
+  assert.deepEqual(evidence.measurement.incomplete[0].problem_codes, [
+    "capture_integrity_invalid",
+    "capture_shape_invalid",
+  ]);
   const serialized = JSON.stringify(evidence);
   for (const secret of ["private-schema", "private-producer", "cookie_private"]) {
     assert.equal(serialized.includes(secret), false, secret);
@@ -652,7 +765,10 @@ test("contradictory hidden and preload projections cannot erase a captured block
   });
 
   assert.equal(evidence.measurement.status, "incomplete");
-  assert.deepEqual(evidence.measurement.incomplete[0].problem_codes, ["capture_shape_invalid"]);
+  assert.deepEqual(evidence.measurement.incomplete[0].problem_codes, [
+    "capture_integrity_invalid",
+    "capture_shape_invalid",
+  ]);
   assert.equal(evaluate(evidence).waivable, false);
 
   const missingCollectionFailure = structuredClone(blockingEvidence().captures[0]);

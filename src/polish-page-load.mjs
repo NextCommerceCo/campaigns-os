@@ -1,7 +1,10 @@
 import {
+  buildPolishCaptureIntegrity,
   MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
   normalizePageLoadRoute,
   POLISH_CAPTURE_PRODUCER,
+  POLISH_CAPTURE_INTEGRITY_ALGORITHM,
+  POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION,
   POLISH_PRELOAD_ATTRIBUTES,
   POLISH_RESOURCE_TYPES,
   POLISH_ROUTE_CAPTURE_SCHEMA_VERSION,
@@ -26,6 +29,7 @@ const SOURCE_SENTINELS = new Set(["[malformed-url]", "[non-http-url]"]);
 const CAPTURE_PROBLEM_CODES = new Set([
   "cache_observed",
   "capture_binding_mismatch",
+  "capture_integrity_invalid",
   "capture_shape_invalid",
   "capture_subject_invalid",
   "duplicate_request_identity",
@@ -35,6 +39,7 @@ const CAPTURE_PROBLEM_CODES = new Set([
   "media_source_unresolvable",
   "networkidle_measurement_invalid",
   "producer_failed",
+  "redirect_chain_invalid",
   "request_failed",
   "request_identity_invalid",
   "resource_aliases_invalid",
@@ -472,13 +477,38 @@ function validProblems(capture) {
   return (capture.measurement_status === "complete") === (capture.problems.length === 0);
 }
 
+function projectCaptureIntegrity(integrity) {
+  return {
+    schema_version: integrity?.schema_version === POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION
+      ? POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION
+      : null,
+    algorithm: integrity?.algorithm === POLISH_CAPTURE_INTEGRITY_ALGORITHM
+      ? POLISH_CAPTURE_INTEGRITY_ALGORITHM
+      : null,
+    association_fingerprint: isSha256(integrity?.association_fingerprint)
+      ? integrity.association_fingerprint
+      : null,
+    projection_fingerprint: isSha256(integrity?.projection_fingerprint)
+      ? integrity.projection_fingerprint
+      : null,
+  };
+}
+
+function validCaptureIntegrity(capture) {
+  const integrity = projectCaptureIntegrity(capture?.integrity);
+  if (Object.values(integrity).some((value) => value === null)) return false;
+  const expected = buildPolishCaptureIntegrity(projectCapturePayload(capture));
+  return canonicalJson(integrity) === canonicalJson(expected);
+}
+
 function validCaptureShape(capture) {
   if (!capture || typeof capture !== "object" || Array.isArray(capture)) return false;
   if (capture.schema_version !== POLISH_ROUTE_CAPTURE_SCHEMA_VERSION
     || capture.performed_by !== POLISH_CAPTURE_PRODUCER
     || (capture.measurement_status !== "complete" && capture.measurement_status !== "incomplete")
     || !validCaptureSubject(capture.subject)
-    || !validProblems(capture)) return false;
+    || !validProblems(capture)
+    || !validCaptureIntegrity(capture)) return false;
   if (capture.producer_status !== "complete" && capture.producer_status !== "failed") return false;
   if ((capture.producer_status === "failed") !== (problemCount(capture, "producer_failed") > 0)) return false;
   if (!capture.response_collection
@@ -541,7 +571,7 @@ function validCaptureShape(capture) {
   return true;
 }
 
-function projectCapture(capture) {
+function projectCapturePayload(capture) {
   const problemCounts = new Map();
   for (const problem of (Array.isArray(capture?.problems) ? capture.problems : [])) {
     if (!CAPTURE_PROBLEM_CODES.has(problem?.code)) continue;
@@ -586,6 +616,13 @@ function projectCapture(capture) {
     problems: [...problemCounts]
       .map(([code, count]) => ({ code, count }))
       .sort((a, b) => a.code.localeCompare(b.code)),
+  };
+}
+
+function projectCapture(capture) {
+  return {
+    ...projectCapturePayload(capture),
+    integrity: projectCaptureIntegrity(capture?.integrity),
   };
 }
 
@@ -646,9 +683,11 @@ export function buildPolishPageLoadEvidence({
   const subject = pageLoadCheckpointSubject({ buildFingerprint, slug, routeScope, routes, viewports });
   const records = (Array.isArray(captures) ? captures : [])
     .map((capture) => {
+      const integrityValid = validCaptureIntegrity(capture);
       const shapeValid = validCaptureShape(capture);
       const bindingValid = captureBindingMatches(capture, subject);
       const projected = projectCapture(capture);
+      if (!integrityValid) addProjectedProblem(projected.problems, "capture_integrity_invalid");
       if (!shapeValid) addProjectedProblem(projected.problems, "capture_shape_invalid");
       if (!bindingValid) addProjectedProblem(projected.problems, "capture_binding_mismatch");
       projected.problems.sort((a, b) => a.code.localeCompare(b.code));
