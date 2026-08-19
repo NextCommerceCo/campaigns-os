@@ -154,6 +154,7 @@ import {
   evaluateHiddenEagerMediaCheckpoint,
   HIDDEN_EAGER_MEDIA_SCOPE,
 } from "./polish-page-load.mjs";
+import { redactCaptureUrl } from "./polish-capture.mjs";
 import {
   appendCheckpointWaiver,
   createCheckpointRegistry,
@@ -685,7 +686,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "polish") {
     const result = await polishCaptureCommand(args);
-    writeResult(result, args, result.ok ? 0 : 2);
+    writePolishCaptureResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
@@ -7149,6 +7150,88 @@ function writeResult(result, args, failureCode) {
   } else {
     printResult(result);
   }
+  if (failureCode) process.exitCode = failureCode;
+}
+
+const POLISH_CAPTURE_TEXT_FINDING_LIMIT = 100;
+const POLISH_CAPTURE_TEXT_SOURCE_LIMIT = 16;
+
+function safePolishFindingRoute(value) {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
+    return "[route unavailable]";
+  }
+  try {
+    const route = new URL(value, "https://polish-capture.invalid").pathname;
+    return route.length <= 2_048 && !/[\u0000-\u001f\u007f]/.test(route)
+      ? route
+      : "[route unavailable]";
+  } catch {
+    return "[route unavailable]";
+  }
+}
+
+function safePolishFindingSource(value) {
+  if (typeof value !== "string") return "[source unavailable]";
+  const redacted = redactCaptureUrl(value);
+  return typeof redacted === "string" && redacted.length <= 4_096
+    ? redacted
+    : "[source unavailable]";
+}
+
+function safePolishByteCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? String(value) : "unavailable";
+}
+
+export function formatPolishCaptureText(result) {
+  const status = ["ready", "ready_with_waivers", "blocked"].includes(result?.status)
+    ? result.status
+    : "unknown";
+  const measurementStatus = ["complete", "incomplete"].includes(result?.measurement?.status)
+    ? result.measurement.status
+    : "unknown";
+  const findings = Array.isArray(result?.checkpoint?.findings)
+    ? result.checkpoint.findings.slice(0, POLISH_CAPTURE_TEXT_FINDING_LIMIT)
+    : [];
+  const lines = [
+    `Status: ${status.toUpperCase()}`,
+    `Measurement: ${measurementStatus.toUpperCase()}`,
+  ];
+  if (!findings.length) return lines.join("\n");
+
+  lines.push("Hidden eager-media findings:");
+  for (const finding of findings) {
+    const viewport = finding?.viewport === "desktop" || finding?.viewport === "mobile"
+      ? finding.viewport
+      : "unknown";
+    const tag = finding?.tag_name === "video" || finding?.tag_name === "audio"
+      ? finding.tag_name
+      : "media";
+    const elementIndex = Number.isSafeInteger(finding?.element_index) && finding.element_index >= 0
+      ? String(finding.element_index)
+      : "unknown";
+    const sources = Array.isArray(finding?.sources)
+      ? finding.sources.slice(0, POLISH_CAPTURE_TEXT_SOURCE_LIMIT).map(safePolishFindingSource)
+      : [];
+    lines.push(`- Route: ${safePolishFindingRoute(finding?.route)}`);
+    lines.push(`  Viewport: ${viewport}`);
+    lines.push(`  Media: ${tag} element ${elementIndex}`);
+    lines.push(`  Source: ${sources.length ? sources.join(", ") : "[source unavailable]"}`);
+    if (Array.isArray(finding?.sources) && finding.sources.length > sources.length) {
+      lines.push(`  Additional sources omitted: ${finding.sources.length - sources.length}`);
+    }
+    lines.push(`  Transferred bytes: ${safePolishByteCount(finding?.transferred_bytes)}`);
+    lines.push(`  Threshold bytes: ${safePolishByteCount(finding?.threshold_bytes)}`);
+  }
+  if (Array.isArray(result?.checkpoint?.findings)
+    && result.checkpoint.findings.length > findings.length) {
+    lines.push(`Additional findings omitted: ${result.checkpoint.findings.length - findings.length}`);
+  }
+  return lines.join("\n");
+}
+
+function writePolishCaptureResult(result, args, failureCode) {
+  if (args.json) console.log(JSON.stringify(result, null, 2));
+  else console.log(formatPolishCaptureText(result));
   if (failureCode) process.exitCode = failureCode;
 }
 

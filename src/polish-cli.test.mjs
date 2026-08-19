@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { main, polishCaptureCommand } from "./cli.mjs";
+import { formatPolishCaptureText, main, polishCaptureCommand } from "./cli.mjs";
 import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
 
 const EXAMPLES = new URL("../examples/", import.meta.url);
@@ -182,6 +182,26 @@ test("polish capture supports an explicit report path and persists blocked incom
     const serialized = JSON.stringify(result);
     assert.equal(serialized.includes("PRIVATE_BROWSER_SECRET"), false);
     assert.equal(serialized.includes("/private/tmp/profile"), false);
+  } finally {
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
+test("non-JSON polish capture text names redacted offending media and transferred bytes", async () => {
+  const f = fixture();
+  try {
+    const result = await polishCaptureCommand(commandArgs(f), {
+      createBrowserAdapter: blockingAdapter(),
+    });
+    const output = formatPolishCaptureText(result);
+
+    assert.match(output, /Status: BLOCKED/);
+    assert.match(output, /Route: \/runtime-packet-demo\/landing\//);
+    assert.match(output, /Viewport: desktop/);
+    assert.match(output, /http:\/\/127\.0\.0\.1:4173\/media\/hero-desktop\.mp4/);
+    assert.match(output, /Transferred bytes: 1048577/);
+    assert.match(output, /Threshold bytes: 1048576/);
+    assert.doesNotMatch(output, /private=token|\?private/);
   } finally {
     rmSync(f.dir, { recursive: true, force: true });
   }
