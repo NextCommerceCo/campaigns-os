@@ -6,6 +6,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 
+import { PAGE_KIT_STORE_PROFILE_FIELDS } from "../src/page-kit-store-profile.mjs";
+
 const root = resolve(new URL("..", import.meta.url).pathname);
 const cli = resolve(root, "bin/campaigns-os.mjs");
 const packet = resolve(root, "examples/build-packet.basic.json");
@@ -25,6 +27,13 @@ function readJson(path) {
 
 function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2));
+}
+
+function storeProfileEntry(spec, extras = {}) {
+  return {
+    ...Object.fromEntries(PAGE_KIT_STORE_PROFILE_FIELDS.map((field) => [field, spec.campaign?.[field] ?? ""])),
+    ...extras,
+  };
 }
 
 function hasPath(obj, dotted) {
@@ -341,11 +350,12 @@ if (!doctor.warnings?.some((issue) => issue.code === "routing_meta.runtime_root"
 const sdkMismatchTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-sdk-mismatch-"));
 try {
   const targetRepo = resolve(sdkMismatchTmp, "target-page-kit");
+  const mismatchSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
   mkdirSync(resolve(targetRepo, "_data"), { recursive: true });
   mkdirSync(resolve(targetRepo, "src", "runtime-packet-demo"), { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   writeJson(resolve(targetRepo, "_data", "campaigns.json"), {
-    "runtime-packet-demo": { sdk_version: "0.4.17" },
+    "runtime-packet-demo": storeProfileEntry(mismatchSpec, { sdk_version: "0.4.17" }),
   });
 
   const mismatchPacket = readJson(packet);
@@ -399,6 +409,10 @@ try {
   upsell.packages.push({ ref_id: "PKG_A", name: "String-ref upsell", product_purchase_availability: "available" });
   spec.shipping_methods.push({ ref_id: "SHIP_A", name: "String-ref shipping" });
   writeJson(specPath, spec);
+  mkdirSync(resolve(targetRepo, "_data"), { recursive: true });
+  writeJson(resolve(targetRepo, "_data", "campaigns.json"), {
+    "runtime-packet-demo": storeProfileEntry(spec, { sdk_version: "0.4.18" }),
+  });
 
   writeFileSync(
     resolve(targetRepo, "_site", "runtime-packet-demo", "landing", "index.html"),
@@ -673,6 +687,10 @@ try {
   marketSpec.campaign.available_shipping_countries = ["US", "CA"];
   const marketSpecPath = resolve(marketCopyTmp, "campaignspec.json");
   writeJson(marketSpecPath, marketSpec);
+  mkdirSync(resolve(targetRepo, "_data"), { recursive: true });
+  writeJson(resolve(targetRepo, "_data", "campaigns.json"), {
+    "runtime-packet-demo": storeProfileEntry(marketSpec, { sdk_version: "0.4.18" }),
+  });
 
   const marketPacket = readJson(packet);
   marketPacket.spec.local_path = marketSpecPath;
@@ -1666,6 +1684,10 @@ try {
 
   // Mark setup completed → picker should advance to build (assembly).
   markStageStatus("setup", "completed");
+  mkdirSync(resolve(targetRepo, "_data"), { recursive: true });
+  writeJson(resolve(targetRepo, "_data", "campaigns.json"), {
+    "runtime-packet-demo": storeProfileEntry(readJson(specPath), { sdk_version: "0.4.18" }),
+  });
   step = nextNoStage();
   if (step.stage !== "build") {
     throw new Error(`next-orchestration fixture: after setup completed, expected "build" (assembly), got ${step.stage}. picked_reason=${step.picked_reason}`);

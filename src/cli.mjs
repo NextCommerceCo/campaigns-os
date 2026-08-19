@@ -142,6 +142,20 @@ import {
   reportKeyForCliStage,
 } from "./orchestration-stage-contract.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
+import {
+  appendCheckpointWaiver,
+  createCheckpointRegistry,
+  createCheckpointWaiver,
+  evaluateCheckpointRegistry,
+} from "./checkpoint-waiver.mjs";
+import {
+  loadPageKitCampaignEntry,
+  projectPageKitCampaignLoad,
+} from "./page-kit-campaign-config.mjs";
+import {
+  evaluatePageKitStoreProfile,
+  PAGE_KIT_STORE_PROFILE_SCOPE,
+} from "./page-kit-store-profile.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -273,6 +287,7 @@ Usage:
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
+  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; staged registry currently accepts Store Profile only
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # repo/package/skill freshness preflight
@@ -641,6 +656,12 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "theme") {
     const result = themeCommand(args);
+    writeResult(result, args, result.ok ? 0 : 2);
+    return;
+  }
+
+  if (command === "checkpoint") {
+    const result = checkpointCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
@@ -1996,6 +2017,67 @@ function inferredBuildSidecarPaths(packet, packetPath) {
   };
 }
 
+const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
+  {
+    id: PAGE_KIT_STORE_PROFILE_SCOPE,
+    evaluate: ({ doctor }) => (Array.isArray(doctor?.derived?.checkpoint_gates)
+      ? doctor.derived.checkpoint_gates.find((gate) => gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) || null
+      : null),
+  },
+]);
+
+function checkpointCommand(args) {
+  const subcommand = args._[1] || "help";
+  if (subcommand !== "waive") {
+    throw new Error('Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. The staged registry currently accepts registered checkpoint gates only.');
+  }
+  return checkpointWaive(args);
+}
+
+export function checkpointWaive(args) {
+  const packetPath = resolve(requireArg(args, "packet"));
+  const gateId = requireArg(args, "gate").trim();
+  const reason = requireArg(args, "reason");
+  const waivedBy = requireArg(args, "waived-by");
+  const expiresAt = args["expires-at"] == null ? null : String(args["expires-at"]);
+  const reviewCondition = args["review-condition"] == null ? null : String(args["review-condition"]);
+  const packet = readJson(packetPath);
+  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
+  const reportPath = args.report ? resolve(String(args.report)) : sidecars.reportPath;
+  const report = readJsonIfExists(reportPath);
+  if (!report) throw new Error(`checkpoint waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
+
+  const doctor = doctorPacket(packetPath, { reportPath });
+  const gate = evaluateCheckpointRegistry(CHECKPOINT_EVALUATORS, gateId, { doctor });
+  if (!gate) throw new Error(`Checkpoint gate "${gateId}" has no current evidence; repair the packet/spec/target and re-run doctor.`);
+  if (gate.status !== "blocked") {
+    throw new Error(`Checkpoint gate "${gateId}" is not blocked (status=${gate.status}); no waiver was recorded.`);
+  }
+  if (gate.waivable !== true) {
+    throw new Error(`Checkpoint gate "${gateId}" is not waivable in its current state (${gate.code}); missing, malformed, and invalid-type evidence must be repaired.`);
+  }
+
+  const waiver = createCheckpointWaiver(gate, { reason, waivedBy, expiresAt, reviewCondition });
+  const updated = appendCheckpointWaiver(report, waiver);
+  updated.evidence = [
+    ...(Array.isArray(report.evidence) ? report.evidence : []),
+    `Checkpoint waiver: ${gateId} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${waiver.reason}`,
+  ];
+  writeJsonAtomic(reportPath, updated);
+  markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
+    command: "checkpoint waive",
+    reason: "A checkpoint waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+  });
+  return {
+    ok: true,
+    action: "checkpoint-waive",
+    gate: gateId,
+    waiver,
+    report_path: reportPath,
+    note: "The exact checkpoint state is accepted under a bounded named-human exception and will report ready_with_waivers, never clean. Any state change makes this waiver stale and inert.",
+  };
+}
+
 export function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
   const packet = readJson(packetPath);
   const sidecars = inferredBuildSidecarPaths(packet, packetPath);
@@ -2016,6 +2098,8 @@ export function doctorPacket(packetPath, { contextPath = undefined, reportPath =
     target_output_dir: null,
     spec_path: null,
     doctor_checks: [],
+    checkpoint_gates: [],
+    page_kit_campaign_config: null,
     scaffold_required: false,
     scaffold_reason: null,
     scope: {
@@ -2066,7 +2150,13 @@ export function doctorPacket(packetPath, { contextPath = undefined, reportPath =
   }
 
   const next = buildNextStep(errors, warnings, derived, report);
-  const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
+  const status = errors.length
+    ? "blocked"
+    : checkpointExceptionPresent(derived)
+      ? "ready_with_waivers"
+      : warnings.length
+        ? "ready_with_warnings"
+        : "ready";
   const result = { ok: errors.length === 0, status, errors, warnings, ready, derived, next };
   return outputBaseDir ? relativizeDoctorOutput(result, outputBaseDir) : result;
 }
@@ -2185,7 +2275,12 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "page_kit.sdk_version",
     phase: "target",
-    run: ({ spec, packet, targetRepo, warnings, ready }) => validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready),
+    run: ({ spec, packet, targetRepo, warnings, ready, buildState }) => validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready, buildState.pageKitCampaignConfig),
+  },
+  {
+    id: PAGE_KIT_STORE_PROFILE_SCOPE,
+    phase: "target",
+    run: ({ spec, errors, warnings, ready, derived, buildState }) => validateTargetStoreProfile(spec, errors, warnings, ready, derived, buildState),
   },
   {
     id: "spec.shipping_countries",
@@ -2382,6 +2477,12 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
 
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
   derived.target_repo = targetRepo;
+  const pageKitCampaignConfig = loadPageKitCampaignEntry({
+    targetRepo,
+    publicRouteSlug: packet?.campaign?.public_route_slug,
+  });
+  buildState.pageKitCampaignConfig = pageKitCampaignConfig;
+  derived.page_kit_campaign_config = projectPageKitCampaignLoad(pageKitCampaignConfig);
   if (!targetRepo || !existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) {
     addIssue(errors, "assembly.target_repo", `Target repo does not exist: ${packet.assembly?.target_repo}`);
   } else {
@@ -2682,23 +2783,18 @@ export function isLocalhostDevelopmentOrigin(value) {
   return url.hostname.toLowerCase() === "localhost";
 }
 
-function validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready) {
+function validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, ready, campaignConfig = null) {
   const specSdkVersion = firstNonEmptyString(spec?.global_config?.sdk_version, spec?.runtime?.sdk_version);
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!targetRepo || !specSdkVersion || !publicRouteSlug) return;
-
-  const campaignsPath = join(targetRepo, "_data", "campaigns.json");
-  if (!existsSync(campaignsPath)) return;
-
-  let campaigns;
-  try {
-    campaigns = readJson(campaignsPath);
-  } catch (error) {
-    addIssue(warnings, "page_kit.campaigns_json", `Could not parse target _data/campaigns.json to compare SDK version: ${error.message}`);
+  const loaded = campaignConfig || loadPageKitCampaignEntry({ targetRepo, publicRouteSlug });
+  if (loaded.status === "invalid_json" || loaded.status === "root_not_object") {
+    addIssue(warnings, "page_kit.campaigns_json", `Could not parse target _data/campaigns.json to compare SDK version (${loaded.status}).`);
     return;
   }
+  if (loaded.status !== "ok") return;
 
-  const entry = campaigns?.[publicRouteSlug];
+  const entry = loaded.entry;
   const targetSdkVersion = entry?.sdk_version;
   if (!isNonEmptyString(targetSdkVersion)) return;
 
@@ -2712,6 +2808,52 @@ function validateTargetCampaignSdkVersion(spec, packet, targetRepo, warnings, re
   }
 
   ready.push(`Target campaigns.json SDK version matches CampaignSpec (${specSdkVersion})`);
+}
+
+function validateTargetStoreProfile(spec, errors, warnings, ready, derived, buildState) {
+  const report = buildState?.report || null;
+  const required = stageIsTerminal(report?.stages?.setup?.status)
+    || stageIsTerminal(report?.stages?.assembly?.status)
+    || derived.scaffold_required !== true;
+  const gate = evaluatePageKitStoreProfile({
+    specCampaign: spec?.campaign || {},
+    targetLoad: buildState?.pageKitCampaignConfig,
+    waivers: report?.waivers,
+    required,
+  });
+  derived.checkpoint_gates.push(gate);
+
+  const inertCounts = Object.fromEntries(
+    ["stale", "foreign", "malformed", "expired"].map((kind) => [kind, gate.waiver_assessment?.inert_counts?.[kind] || 0]),
+  );
+  const inertTotal = Object.values(inertCounts).reduce((sum, count) => sum + count, 0);
+  if (inertTotal > 0) {
+    addIssue(
+      warnings,
+      "page_kit.store_profile.waiver_inert",
+      `Store Profile waiver history contains ${inertTotal} inert record(s); stale, foreign, malformed, and expired decisions never satisfy the current checkpoint.`,
+      { counts: inertCounts },
+    );
+  }
+
+  if (gate.status === "blocked") {
+    addIssue(errors, gate.code, gate.reason, { checkpoint_gate: gate });
+    return;
+  }
+  if (gate.status === "waived") {
+    addIssue(warnings, gate.code, `${gate.reason} Waived by ${gate.waiver.waived_by}: ${gate.waiver.reason}`, { checkpoint_gate: gate });
+    ready.push(`Store Profile checkpoint accepted under named-human exception (${gate.waiver.waived_by}).`);
+    return;
+  }
+  if (gate.status === "not_applicable") {
+    ready.push("Store Profile checkpoint not applicable before Page Kit scaffold; it becomes mandatory once the target entry exists or setup completes.");
+    return;
+  }
+  if (gate.warning_fields.length) {
+    addIssue(warnings, gate.code, gate.reason, { checkpoint_gate: gate });
+    return;
+  }
+  ready.push("Target campaigns.json Store Profile matches the CampaignSpec across all nine governed fields.");
 }
 
 function validateSpecShippingCountries(spec, warnings, ready) {
@@ -5504,7 +5646,7 @@ export function nextStage(stage, args, ambient = null) {
     if (picked.stage === "done") {
       return finalize({
         ok: true,
-        status: "ready",
+        status: checkpointExceptionPresent(doctor.derived) ? "ready_with_waivers" : (warnings.length ? "ready_with_warnings" : "ready"),
         stage: "done",
         reason: picked.reason,
         errors,
@@ -5554,7 +5696,13 @@ export function nextStage(stage, args, ambient = null) {
   } else {
     throw new Error(`Unknown next stage: ${stage}`);
   }
-  const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
+  const status = errors.length
+    ? "blocked"
+    : checkpointExceptionPresent(doctor.derived)
+      ? "ready_with_waivers"
+      : warnings.length
+        ? "ready_with_warnings"
+        : "ready";
   const result = {
     ok: errors.length === 0,
     status,
@@ -5607,6 +5755,9 @@ function buildNextGates({ doctor, report, themeGate, polishGate }) {
       status: prepareBuildGate ? "blocked" : "pass",
       reason: prepareBuildGate ? prepareBuildGate.reason : "prepare_build stage is terminal.",
     },
+    ...(Array.isArray(doctor?.derived?.checkpoint_gates)
+      ? doctor.derived.checkpoint_gates.map((gate) => ({ ...gate }))
+      : []),
     {
       id: "theme_gate",
       status: themeGate?.status || "not_applicable",
@@ -5671,6 +5822,24 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     return actions;
   }
   if (result.stage === "doctor-blocked") {
+    const checkpointGate = (result.gates || []).find((gate) => gate.id === PAGE_KIT_STORE_PROFILE_SCOPE && gate.status === "blocked");
+    if (checkpointGate) {
+      push(
+        `checkpoint.${PAGE_KIT_STORE_PROFILE_SCOPE}.repair_target`,
+        "edit",
+        null,
+        checkpointGate.required_actions?.find((action) => action.id === "repair_target")?.description || "Repair the target Store Profile to match the CampaignSpec.",
+        { required: true },
+      );
+      if (checkpointGate.waivable === true) {
+        push(
+          `checkpoint.${PAGE_KIT_STORE_PROFILE_SCOPE}.waive`,
+          "command",
+          `campaigns-os checkpoint waive --packet ${shellToken(packetPath)} --gate ${PAGE_KIT_STORE_PROFILE_SCOPE} --reason \"<reason>\" --waived-by \"<named human>\" --review-condition \"<re-evaluation trigger>\"`,
+          "Record an explicit bounded named-human I-16 exception for this exact checkpoint state.",
+        );
+      }
+    }
     push("doctor_recheck", "command", `campaigns-os doctor --packet ${packetPath} --json`, "Re-run the doctor after resolving the listed errors.");
     return actions;
   }
@@ -6035,6 +6204,16 @@ export function detectLedgerDivergence(report, packet, targetRepo) {
   return divergences;
 }
 
+function checkpointExceptionPresent(derived) {
+  return Array.isArray(derived?.checkpoint_gates)
+    && derived.checkpoint_gates.some((gate) => gate?.status === "waived");
+}
+
+function readinessStatus(warnings, derived) {
+  if (checkpointExceptionPresent(derived)) return "ready_with_waivers";
+  return warnings.length ? "ready_with_warnings" : "ready";
+}
+
 function buildNextStep(errors, warnings, derived, report = null) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const assemblyStatus = report?.stages?.assembly?.status || "";
@@ -6131,7 +6310,7 @@ function buildNextStep(errors, warnings, derived, report = null) {
     if (!needsDeploy && qaRecorded) {
       return {
         stage: blockedStages.includes("test-orders") ? "test-orders" : "complete",
-        status: blockedStages.includes("test-orders") ? "blocked" : (warnings.length ? "ready_with_warnings" : "ready"),
+        status: blockedStages.includes("test-orders") ? "blocked" : readinessStatus(warnings, derived),
         owner: blockedStages.includes("test-orders") ? "operator" : "qa",
         default_skill: blockedStages.includes("test-orders") ? "next-campaigns-qa" : "next-campaigns-os",
         command: blockedStages.includes("test-orders")
@@ -6147,7 +6326,7 @@ function buildNextStep(errors, warnings, derived, report = null) {
     }
     return {
       stage: needsDeploy ? "deploy" : "qa",
-      status: warnings.length ? "ready_with_warnings" : "ready",
+      status: readinessStatus(warnings, derived),
       owner: needsDeploy ? "operator" : "qa",
       default_skill: needsDeploy ? "next-campaigns-os" : "next-campaigns-qa",
       command: needsDeploy
@@ -6163,7 +6342,7 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
   return {
     stage: derived.scaffold_required ? "setup" : "assembly",
-    status: warnings.length ? "ready_with_warnings" : "ready",
+    status: readinessStatus(warnings, derived),
     owner: derived.scaffold_required ? "setup" : "build",
     default_skill: derived.scaffold_required ? "next-campaigns-os-setup" : "next-campaigns-build",
     command: `campaigns-os next ${derived.scaffold_required ? "setup" : "build"} --packet ${derived.packet_path}`,

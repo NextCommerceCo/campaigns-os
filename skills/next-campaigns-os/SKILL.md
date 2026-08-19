@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-os
-version: 1.0.0
+version: 1.0.1
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
@@ -27,12 +27,13 @@ Workflow:
 2. Run `campaigns-os start` or `campaigns-os prepare-build` with a local CampaignSpec, prepared HTML/assets source, target page-kit repo, and explicit template family. The family must be certified (commerce catalog + brand contract; the CLI lists them on rejection) — an uncertified/custom family requires `--allow-uncertified-template "<reason>"` and forfeits deterministic assembly, residue QA, and pricing contracts. The entry point auto-opens the run session in the target repo; do not skip `campaigns-os run end` at the finish.
 3. Brand-theme discovery runs in inspect-only mode by default and records `context.theme`. When it proves a brand theme is generatable and the campaign ships commerce pages, the theme gate BLOCKS polish/deploy/QA until the brand layer is applied after `next-core.css` or explicitly waived (`campaigns-os theme waive --packet <p> --reason "<why>"`). Run `campaigns-os theme generate` and apply it during build; do not defer the decision.
 4. Run `campaigns-os doctor --packet <packet>`.
-5. If doctor returns `collect-inputs`, stop and resolve the named blockers.
-6. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
-7. After build, require polish and a preview deploy before QA.
-8. Run the package-owned proof path in sequence: `npm run qa:install-browser`, `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common`.
-9. Treat typed-card proof depth as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed (`common` by default, `full` for every permutation). Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
-10. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
+5. Resolve `page_kit.store_profile` blockers by correcting the governed target values. If an exact valid mismatch is intentionally accepted, use the staged registered command with named-human attribution and a bound: `campaigns-os checkpoint waive --packet <p> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <future ISO timestamp>`). Missing/malformed evidence and invalid types are not waivable. Doctor/next report `ready_with_waivers`; QA retains the attributed exception as `ready_with_exceptions`.
+6. If doctor returns `collect-inputs`, stop and resolve the named blockers.
+7. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
+8. After build, require polish and a preview deploy before QA.
+9. Run the package-owned proof path in sequence: `npm run qa:install-browser`, `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common`.
+10. Treat typed-card proof depth as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed (`common` by default, `full` for every permutation). Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
+11. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
 
 ## Session Intake
 
@@ -83,6 +84,7 @@ Rules:
 - Build Packet, Build Context, and Assembly Report paths should be repo-relative when possible so handoff artifacts can be committed without machine-local absolute paths.
 - Preserve Build Context `theme` inspection state and Assembly Report `theme` application state when present; they are public v0 contract fields and should not be dropped by wrappers, setup reruns, or repair passes.
 - Store Profile fields are operator-entered storefront/legal metadata for page-kit `campaigns.json`; they do not come from the Campaigns API and should be collected in the CampaignSpec before build.
+- Treat `campaigns-os checkpoint waive` as a staged generic registry, not a universal waiver command. This release registers Store Profile first; SDK and polish checkpoints may follow. Keep using existing Source Freshness artifact handling and `theme waive` / `qa waive` until those gates are explicitly registered. A checkpoint waiver needs a named human, non-empty reason, and at least one future expiry or non-empty review condition; a waiver remains visible and never turns the checkpoint into a clean pass.
 - Keep the lifecycle in a tight sequence. Pause only for missing inputs, doctor blockers, deploy blockers, out-of-scope runtime pages, or merchant-specific uncertainty.
 - `campaigns-os standardize` audits the campaign ecosystem read-only: it recognizes Page Kit roots and non-Page-Kit Campaign Cart applications (Vite/React/Express apps, static HTML funnels) via portable evidence, classifies each root (`implementation.kind`), validates checkout field bindings against the Campaign Cart field contract, and evaluates loader versions against the SDK support policy contract. Findings carry `confidence` (`static_contract`, `static_inference`, `runtime_proof_required`); treat `runtime_proof_required` findings as missing proof, never as confirmed defects, and route them to browser QA rather than static repair.
 - Launch readiness is separate from Campaigns OS proof. Surface production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration as real-shopper readiness items, not Campaigns OS build blockers.

@@ -1,0 +1,14 @@
+{
+  "runtime-packet-demo": {
+    "store_name": "Example Store",
+    "store_url": "https://store.example.com",
+    "store_terms": "https://store.example.com/terms",
+    "store_privacy": "https://store.example.com/privacy",
+    "store_contact": "https://store.example.com/contact",
+    "store_returns": "https://store.example.com/returns",
+    "store_shipping": "https://store.example.com/shipping",
+    "store_phone": "1-800-555-0100",
+    "store_phone_tel": "tel:+18005550100",
+    "sdk_version": "0.4.18"
+  }
+}

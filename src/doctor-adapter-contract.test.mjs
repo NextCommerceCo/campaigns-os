@@ -48,7 +48,8 @@ function withPreparedBuild(run) {
     writeFileSync(resolve(sourceRoot, "receipt.html"), '<section data-commerce-zone="receipt-summary"></section>');
 
     const specPath = resolve(dir, "campaignspec.json");
-    writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
+    const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+    writeJson(specPath, spec);
 
     runCliJson([
       "prepare-build",
@@ -59,6 +60,13 @@ function withPreparedBuild(run) {
       "--no-run-session",
       "--json",
     ]);
+    mkdirSync(resolve(targetRepo, "_data"), { recursive: true });
+    writeJson(resolve(targetRepo, "_data/campaigns.json"), {
+      "runtime-packet-demo": Object.fromEntries([
+        "store_name", "store_url", "store_terms", "store_privacy", "store_contact",
+        "store_returns", "store_shipping", "store_phone", "store_phone_tel",
+      ].map((field) => [field, spec.campaign[field]])),
+    });
 
     return run({
       dir,

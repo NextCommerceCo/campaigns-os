@@ -12,6 +12,12 @@ import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
+import { loadPageKitCampaignEntry, PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import {
+  evaluatePageKitStoreProfile,
+  PAGE_KIT_STORE_PROFILE_FIELDS,
+  PAGE_KIT_STORE_PROFILE_SCOPE,
+} from "./page-kit-store-profile.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
@@ -144,7 +150,7 @@ export async function runQaCli(args) {
   throw new Error(`Unknown qa command: ${subcommand}`);
 }
 
-async function resolveQaInputs(args) {
+async function resolveQaInputs(args, { readJsonFile = readJson } = {}) {
   // Non-packet mode (learnings L7): QA a `campaign-build`'d page-kit campaign
   // that has only a built _site/ and a served URL — no Build Packet, no Map ID,
   // no CampaignSpec. Scope (pages + funnel types) is resolved from the built
@@ -152,8 +158,19 @@ async function resolveQaInputs(args) {
   if ((args.site || args.built) && !args.packet) {
     return resolveQaInputsFromSite(args);
   }
-  const packetPath = args.packet ? resolve(args.packet) : null;
-  const packet = packetPath ? readJson(packetPath) : null;
+  const storeProfilePreflight = args.packet
+    ? resolvePacketStoreProfilePreflight(args, { readJsonFile })
+    : null;
+  if (storeProfilePreflight && storeProfilePreflight.specStatus !== "ok") {
+    return resolvedFromBlockedStoreProfilePreflight(storeProfilePreflight, args);
+  }
+  // Packet mode owns one immutable local snapshot: the Store Profile gate and
+  // every downstream identity/topology decision consume the exact packet and
+  // spec objects read by preflight. Re-reading either file here would allow a
+  // clean/waived first state to authorize runtime work planned from a changed
+  // second state.
+  const packetPath = storeProfilePreflight?.packetPath || (args.packet ? resolve(args.packet) : null);
+  const packet = storeProfilePreflight?.packet || (packetPath ? readJsonFile(packetPath) : null);
   const mapId = stringArg(args["map-id"])
     || stringArg(args._[2])
     || stringArg(packet?.spec?.map_id);
@@ -161,16 +178,21 @@ async function resolveQaInputs(args) {
 
   const proxyBase = stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE;
   const inputBaseUrl = normalizeBaseUrl(stringArg(args["base-url"]) || packet?.deploy?.preview_url || packet?.deploy?.production_url || null);
-  const specPath = args.spec
-    ? resolve(args.spec)
-    : packetPath && packet?.spec?.local_path
-      ? resolveFromFile(packetPath, packet.spec.local_path)
-      : null;
+  const specPath = storeProfilePreflight
+    ? storeProfilePreflight.specPath
+    : args.spec
+      ? resolve(args.spec)
+      : packetPath && packet?.spec?.local_path
+        ? resolveFromFile(packetPath, packet.spec.local_path)
+        : null;
 
   let rawSpec;
   let specSource;
-  if (specPath) {
-    rawSpec = readJson(specPath);
+  if (storeProfilePreflight) {
+    rawSpec = storeProfilePreflight.rawSpec;
+    specSource = specPath;
+  } else if (specPath) {
+    rawSpec = readJsonFile(specPath);
     specSource = specPath;
   } else {
     rawSpec = await fetchSpec(mapId, proxyBase);
@@ -226,6 +248,102 @@ async function resolveQaInputs(args) {
     templateFamily,
     commerceStructureContract,
     topologies,
+    storeProfileGate: storeProfilePreflight?.gate || nonPacketStoreProfileGate(),
+  };
+}
+
+function resolvePacketStoreProfilePreflight(args, { readJsonFile = readJson } = {}) {
+  const packetPath = resolve(String(args.packet));
+  const packet = readJsonFile(packetPath);
+  const specPath = stringArg(args.spec)
+    ? resolve(String(args.spec))
+    : stringArg(packet?.spec?.local_path)
+      ? resolveFromFile(packetPath, packet.spec.local_path)
+      : null;
+  let rawSpec = null;
+  let specStatus = "missing";
+  if (specPath && existsSync(specPath)) {
+    try {
+      rawSpec = readJsonFile(specPath);
+      specStatus = isPlainObject(rawSpec) ? "ok" : "root_not_object";
+    } catch {
+      specStatus = "invalid_json";
+    }
+  }
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const targetRepo = resolveTargetBaseDir(packet, packetPath);
+  const targetLoad = loadPageKitCampaignEntry({ targetRepo, publicRouteSlug });
+  const reportPath = stringArg(args.report)
+    ? resolve(String(args.report))
+    : join(targetRepo, ".campaign-runtime", "assembly-report.json");
+  let report = null;
+  if (existsSync(reportPath)) {
+    try {
+      report = readJsonFile(reportPath);
+    } catch {
+      report = null;
+    }
+  }
+  const gate = evaluatePageKitStoreProfile({
+    specCampaign: rawSpec?.campaign || null,
+    specStatus,
+    targetLoad,
+    waivers: report?.waivers,
+    required: true,
+  });
+  return { packetPath, packet, specPath, rawSpec, specStatus, gate };
+}
+
+function nonPacketStoreProfileGate(slug = "") {
+  const gate = evaluatePageKitStoreProfile({
+    specCampaign: {},
+    targetLoad: {
+      status: "file_missing",
+      public_route_slug: normalizePublicRouteSlug(slug),
+      target_path: PAGE_KIT_CAMPAIGNS_REL_PATH,
+      entry: null,
+    },
+    required: false,
+  });
+  return {
+    ...gate,
+    code: "page_kit.store_profile.not_applicable",
+    reason: "Non-packet QA has no Build Packet target/config pair; Store Profile parity is not applicable.",
+  };
+}
+
+function resolvedFromBlockedStoreProfilePreflight(preflight, args) {
+  const rawSpec = isPlainObject(preflight.rawSpec) ? preflight.rawSpec : {};
+  const spec = normalizeSpec(rawSpec);
+  const publicRouteSlug = normalizePublicRouteSlug(preflight.packet?.campaign?.public_route_slug) || null;
+  const inputBaseUrl = normalizeBaseUrl(stringArg(args["base-url"])
+    || preflight.packet?.deploy?.preview_url
+    || preflight.packet?.deploy?.production_url
+    || null);
+  return {
+    themeGate: { status: "not_applicable", code: "theme_gate.not_applicable", reason: "Store Profile preflight blocked before theme/runtime QA." },
+    polishGate: { status: "not_applicable", code: "polish.not_applicable", reason: "Store Profile preflight blocked before polish/runtime QA." },
+    qaWaivers: {},
+    analyticsCaptureTarget: { url: null, source: "unresolved" },
+    brandContract: null,
+    brandContractStatus: "not_evaluated",
+    packetPath: preflight.packetPath,
+    packet: preflight.packet,
+    mapId: stringArg(preflight.packet?.spec?.map_id) || "unknown-map",
+    publicRouteSlug,
+    proxyBase: stringArg(args["proxy-base"]) || DEFAULT_PROXY_BASE,
+    baseUrl: inputBaseUrl,
+    specPath: preflight.specPath,
+    specSource: `packet_local_${preflight.specStatus}`,
+    portalManaged: false,
+    rawSpec,
+    spec,
+    specVersion: String(rawSpec.schema_version || rawSpec.schemaVersion || "unavailable"),
+    specHash: computeSpecHash(rawSpec),
+    templateFamily: stringArg(preflight.packet?.assembly?.template_family) || null,
+    commerceStructureContract: null,
+    topologies: [],
+    storeProfileGate: preflight.gate,
   };
 }
 
@@ -294,6 +412,7 @@ export function resolveQaInputsFromSite(args) {
     templateFamily,
     commerceStructureContract: null,
     topologies,
+    storeProfileGate: nonPacketStoreProfileGate(scope.slug),
     builtSite: { slug: scope.slug, campaign_dir: scope.campaign_dir, html_count: scope.html_count },
   };
 }
@@ -618,6 +737,99 @@ function themeBlockedAssertions(themeGate, polishGate) {
   ];
 }
 
+function storeProfileGateAssertion(gate) {
+  const page = { page_id: "campaign" };
+  const evidence = {
+    code: gate.code,
+    subject: gate.subject,
+    state_fingerprint: gate.state_fingerprint,
+    matrix: gate.matrix,
+    blocker_fields: gate.blocker_fields,
+    warning_fields: gate.warning_fields,
+    waivable: gate.waivable,
+    waiver: gate.waiver,
+    waiver_assessment: gate.waiver_assessment,
+    required_actions: gate.required_actions,
+  };
+  if (gate.status === "blocked") {
+    return assertion({
+      id: PAGE_KIT_STORE_PROFILE_SCOPE,
+      family: "api-metadata",
+      page,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: `CampaignSpec and target ${PAGE_KIT_CAMPAIGNS_REL_PATH} match across all ${PAGE_KIT_STORE_PROFILE_FIELDS.length} governed Store Profile fields`,
+      actual: `${gate.code}: ${gate.reason}`,
+      evidence,
+    });
+  }
+  if (gate.status === "waived") {
+    return assertion({
+      id: PAGE_KIT_STORE_PROFILE_SCOPE,
+      family: "api-metadata",
+      page,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: "Store Profile parity passes, or an explicit named-human I-16 exception accepts the exact blocked state",
+      actual: gate.reason,
+      evidence,
+      waiver: gate.waiver,
+    });
+  }
+  if (gate.status === "not_applicable") {
+    return assertion({
+      id: PAGE_KIT_STORE_PROFILE_SCOPE,
+      family: "api-metadata",
+      page,
+      status: STATUS.SKIPPED,
+      expected: "Packet QA evaluates Store Profile parity before runtime work",
+      actual: gate.reason,
+      evidence,
+    });
+  }
+  if (gate.warning_fields?.length) {
+    return assertion({
+      id: PAGE_KIT_STORE_PROFILE_SCOPE,
+      family: "api-metadata",
+      page,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: "Target-only Store Profile values remain visible for operator review",
+      actual: gate.reason,
+      evidence,
+    });
+  }
+  return assertion({
+    id: PAGE_KIT_STORE_PROFILE_SCOPE,
+    family: "api-metadata",
+    page,
+    status: STATUS.PASS,
+    expected: `CampaignSpec and target ${PAGE_KIT_CAMPAIGNS_REL_PATH} match across all ${PAGE_KIT_STORE_PROFILE_FIELDS.length} governed Store Profile fields`,
+    actual: gate.reason,
+    evidence,
+  });
+}
+
+function storeProfileBlockedAssertions(storeProfileGate, polishGate, themeGate) {
+  const skippedByProfile = (family) => assertion({
+    id: `${family}.blocked_by_store_profile`,
+    family,
+    page: { page_id: "campaign" },
+    status: STATUS.SKIPPED,
+    expected: `${family} checks executed`,
+    actual: "Skipped: Store Profile checkpoint is blocked; no HTTP, browser, analytics, or test-order work ran.",
+    evidence: { blocked_by: PAGE_KIT_STORE_PROFILE_SCOPE },
+  });
+  return [
+    polishGateAssertion(polishGate),
+    themeGateAssertion(themeGate),
+    storeProfileGateAssertion(storeProfileGate),
+    ...GATE_SUPPRESSED_FAMILIES
+      .filter((family) => family !== "polish_gate" && family !== "api-metadata")
+      .map(skippedByProfile),
+  ];
+}
+
 function serializeThrownValue(error) {
   const diagnostic = { message: String(error) };
   if (error && typeof error === "object") {
@@ -649,6 +861,7 @@ function resolvePayload(resolved) {
       slug: resolved.spec.campaign?.slug || null,
       ref_id: resolved.spec.campaign?.ref_id || null,
     },
+    checkpoint_gates: resolved.storeProfileGate ? [resolved.storeProfileGate] : [],
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
     funnels: resolved.topologies,
@@ -908,13 +1121,25 @@ async function runQa(args) {
   const runId = generateRunId();
   const gate = resolved.themeGate;
   const polishGate = resolved.polishGate;
+  const storeProfileGate = resolved.storeProfileGate || nonPacketStoreProfileGate(resolved.publicRouteSlug);
+  if (storeProfileGate.status === "blocked") {
+    return finalizeQaRun({
+      args,
+      resolved,
+      runId,
+      startedAt,
+      assertions: storeProfileBlockedAssertions(storeProfileGate, polishGate, gate),
+      testOrders: [],
+    });
+  }
+  const storeProfileAssertion = storeProfileGateAssertion(storeProfileGate);
   if (polishGate.status === "blocked") {
     return finalizeQaRun({
       args,
       resolved,
       runId,
       startedAt,
-      assertions: polishBlockedAssertions(polishGate, gate),
+      assertions: [storeProfileAssertion, ...polishBlockedAssertions(polishGate, gate).filter((item) => item.family !== "api-metadata")],
       testOrders: [],
     });
   }
@@ -927,12 +1152,12 @@ async function runQa(args) {
       resolved,
       runId,
       startedAt,
-      assertions: themeBlockedAssertions(gate, polishGate),
+      assertions: [storeProfileAssertion, ...themeBlockedAssertions(gate, polishGate).filter((item) => item.family !== "api-metadata")],
       testOrders: [],
     });
   }
 
-  const assertions = [polishGateAssertion(polishGate), themeGateAssertion(gate)];
+  const assertions = [storeProfileAssertion, polishGateAssertion(polishGate), themeGateAssertion(gate)];
   const contractAssertion = templateBrandContractAssertion(resolved);
   if (contractAssertion) assertions.push(contractAssertion);
   for (const topology of resolved.topologies) {
@@ -1578,7 +1803,7 @@ function analyticsCorrectnessDisabledAssertion(analyticsContract) {
   });
 }
 
-function assertion({ id, family, page, status, severity, expected, actual, evidence }) {
+function assertion({ id, family, page, status, severity, expected, actual, evidence, waiver }) {
   return {
     id,
     family,
@@ -1589,6 +1814,7 @@ function assertion({ id, family, page, status, severity, expected, actual, evide
     ...(expected !== undefined ? { expected } : {}),
     ...(actual !== undefined ? { actual } : {}),
     ...(evidence ? { evidence } : {}),
+    ...(waiver ? { waiver } : {}),
   };
 }
 
@@ -2184,6 +2410,7 @@ function extractApiError(raw) {
 }
 
 export const __qaNodeTestHooks = Object.freeze({
+  resolveQaInputs,
   analyticsCorrectnessLegDecision,
   analyticsCorrectnessDisabledAssertion,
   campaignOutputDir,

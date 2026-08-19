@@ -11,6 +11,7 @@
     "start",
     "prepare-build",
     "build",
+    "checkpoint",
     "doctor",
     "standardize",
     "standardization-report",
