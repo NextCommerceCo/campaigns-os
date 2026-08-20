@@ -10,6 +10,7 @@ import {
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
   MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
+  MAX_PAGE_LOAD_RESPONSE_RECORDS,
   MAX_POLISH_CAPTURE_URL_LENGTH,
 } from "./polish-capture.mjs";
 
@@ -570,7 +571,7 @@ test("same-request-id redirects become one parent-owned contiguous chain without
   assert.equal("redirect_chain" in result.responses[0].redirect_chain[0], false);
 });
 
-test("failed and unfinished tracked transfers fail the collection without persisting raw protocol errors", async () => {
+test("genuine network failures fail the collection; in-flight transfers at capture end are canceled, not failed", async () => {
   const pageUrl = "https://shop.example.test/landing/";
   const failedUrl = "https://cdn.example.test/failed.mp4?token=private";
   const unfinishedUrl = "https://cdn.example.test/unfinished.mp4?token=private";
@@ -637,6 +638,318 @@ test("failed and unfinished tracked transfers fail the collection without persis
   // the capture itself: it is dropped as browser-canceled, not failed.
   assert.equal(unfinished.responseCollectionStatus, "complete");
   assert.deepEqual(unfinished.responses, []);
+});
+
+test("canceled loads keep complete records and drop incomplete ones without failing the collection", async () => {
+  const pageUrl = "https://shop.example.test/landing/";
+  const abortedUrl = "https://cdn.example.test/aborted.mp4?token=private";
+  const emptyUrl = "https://cdn.example.test/empty.mp4?token=private";
+  const fake = fakeChromium([
+    {
+      finalUrl: pageUrl,
+      async navigate({ emit }) {
+        emit("Network.requestWillBeSent", {
+          requestId: "aborted-media",
+          type: "Media",
+          request: { url: abortedUrl },
+        });
+        emit("Network.responseReceived", {
+          requestId: "aborted-media",
+          type: "Media",
+          response: { url: abortedUrl, status: 206, mimeType: "video/mp4" },
+        });
+        emit("Network.dataReceived", {
+          requestId: "aborted-media",
+          encodedDataLength: 900 * 1_024,
+        });
+        emit("Network.loadingFailed", {
+          requestId: "aborted-media",
+          errorText: "net::ERR_ABORTED",
+          canceled: true,
+        });
+      },
+    },
+    {
+      finalUrl: pageUrl,
+      async navigate({ emit }) {
+        emit("Network.requestWillBeSent", {
+          requestId: "empty-canceled",
+          type: "Media",
+          request: { url: emptyUrl },
+        });
+        emit("Network.loadingFailed", {
+          requestId: "empty-canceled",
+          errorText: "net::ERR_ABORTED",
+          canceled: true,
+        });
+      },
+    },
+  ]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  const aborted = await adapter.captureRoute({
+    url: pageUrl,
+    viewport: { key: "desktop", width: 1_440, height: 1_200 },
+  });
+  const empty = await adapter.captureRoute({
+    url: pageUrl,
+    viewport: { key: "mobile", width: 390, height: 844 },
+  });
+  await adapter.close();
+
+  // An aborted media range request is normal page behavior: the observed
+  // lower-bound byte count is retained as a non-failed response.
+  assert.equal(aborted.responseCollectionStatus, "complete");
+  const record = aborted.responses.find((response) => response.request_id === "aborted-media");
+  assert.equal(record.failed, false);
+  assert.equal(record.status, 206);
+  assert.equal(record.encoded_data_length, 900 * 1_024);
+
+  // A canceled request that never produced a response leaves nothing behind.
+  assert.equal(empty.responseCollectionStatus, "complete");
+  assert.deepEqual(empty.responses, []);
+});
+
+test("the cancellation classification covers both CDP signals independently", async () => {
+  const pageUrl = "https://shop.example.test/landing/";
+  const mediaUrl = "https://cdn.example.test/signal.mp4?token=private";
+  const scenario = (requestId, loadingFailedEvent) => ({
+    finalUrl: pageUrl,
+    async navigate({ emit }) {
+      emit("Network.requestWillBeSent", { requestId, type: "Media", request: { url: mediaUrl } });
+      emit("Network.responseReceived", {
+        requestId,
+        type: "Media",
+        response: { url: mediaUrl, status: 206 },
+      });
+      emit("Network.dataReceived", { requestId, encodedDataLength: 128 });
+      emit("Network.loadingFailed", { requestId, ...loadingFailedEvent });
+    },
+  });
+  const fake = fakeChromium([
+    // Older CDP reports media range aborts as ERR_ABORTED without the flag.
+    scenario("errtext-only", { errorText: "net::ERR_ABORTED", canceled: false }),
+    // The flag alone is a cancellation whatever error string accompanies it.
+    scenario("flag-only", { errorText: "net::ERR_FAILED", canceled: true }),
+  ]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  for (const key of ["desktop", "mobile"]) {
+    const result = await adapter.captureRoute({
+      url: pageUrl,
+      viewport: key === "desktop"
+        ? { key, width: 1_440, height: 1_200 }
+        : { key, width: 390, height: 844 },
+    });
+    assert.equal(result.responseCollectionStatus, "complete", key);
+    assert.equal(result.responses[0].failed, false, key);
+    assert.equal(result.responses[0].encoded_data_length, 128, key);
+  }
+  await adapter.close();
+});
+
+test("a cache-layer error is a genuine failure, not a cancellation", async () => {
+  const pageUrl = "https://shop.example.test/landing/";
+  const mediaUrl = "https://cdn.example.test/range.mp4?token=private";
+  const fake = fakeChromium([{
+    finalUrl: pageUrl,
+    async navigate({ emit }) {
+      emit("Network.requestWillBeSent", {
+        requestId: "cache-error-media",
+        type: "Media",
+        request: { url: mediaUrl },
+      });
+      emit("Network.responseReceived", {
+        requestId: "cache-error-media",
+        type: "Media",
+        response: { url: mediaUrl, status: 206 },
+      });
+      emit("Network.loadingFailed", {
+        requestId: "cache-error-media",
+        errorText: "net::ERR_CACHE_OPERATION_NOT_SUPPORTED",
+        canceled: false,
+      });
+    },
+  }]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  const result = await adapter.captureRoute({
+    url: pageUrl,
+    viewport: { key: "desktop", width: 1_440, height: 1_200 },
+  });
+  await adapter.close();
+
+  assert.equal(result.responseCollectionStatus, "failed");
+  assert.equal(result.responses[0].failed, true);
+});
+
+test("duplicate canceled terminal events and unseen-request cancellations are swallowed", async () => {
+  const pageUrl = "https://shop.example.test/landing/";
+  const scriptUrl = "https://cdn.example.test/app.js";
+  const fake = fakeChromium([{
+    finalUrl: pageUrl,
+    async navigate({ emit }) {
+      emit("Network.requestWillBeSent", {
+        requestId: "script",
+        type: "Script",
+        request: { url: scriptUrl },
+      });
+      emit("Network.responseReceived", {
+        requestId: "script",
+        type: "Script",
+        response: { url: scriptUrl, status: 200 },
+      });
+      emit("Network.loadingFinished", { requestId: "script", encodedDataLength: 2_048 });
+      // Duplicate terminal event after the load already finished.
+      emit("Network.loadingFailed", {
+        requestId: "script",
+        errorText: "net::ERR_ABORTED",
+        canceled: true,
+      });
+      // Cancellation for a request the collector never saw begin.
+      emit("Network.loadingFailed", {
+        requestId: "never-seen",
+        errorText: "net::ERR_ABORTED",
+        canceled: true,
+      });
+    },
+  }]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  const result = await adapter.captureRoute({
+    url: pageUrl,
+    viewport: { key: "desktop", width: 1_440, height: 1_200 },
+  });
+  await adapter.close();
+
+  assert.equal(result.responseCollectionStatus, "complete");
+  const script = result.responses.find((response) => response.request_id === "script");
+  assert.equal(script.failed, false);
+  assert.equal(script.encoded_data_length, 2_048);
+  assert.equal(result.responses.some((response) => response.request_id === "never-seen"), false);
+});
+
+test("a canceled record dropped at the response-record cap surfaces overflow", async () => {
+  const pageUrl = "https://shop.example.test/landing/";
+  const fake = fakeChromium([{
+    finalUrl: pageUrl,
+    async navigate({ emit }) {
+      // The response-record cap (4096) sits above the per-request ledger cap
+      // (2048), so it is only reachable through redirect hops: two records per
+      // filler request keep the request count inside the ledger budget.
+      const redirect = (requestId, fromUrl, toUrl, type) => {
+        emit("Network.requestWillBeSent", {
+          requestId,
+          type,
+          request: { url: toUrl },
+          redirectResponse: {
+            url: fromUrl,
+            status: 302,
+            encodedDataLength: 10,
+            fromDiskCache: false,
+            fromPrefetchCache: false,
+            fromServiceWorker: false,
+          },
+        });
+      };
+      const fillerCount = (MAX_PAGE_LOAD_RESPONSE_RECORDS - 2) / 2;
+      for (let index = 0; index < fillerCount; index += 1) {
+        const requestId = `filler-${index}`;
+        const fromUrl = `https://cdn.example.test/filler-${index}-from.js`;
+        const toUrl = `https://cdn.example.test/filler-${index}-to.js`;
+        emit("Network.requestWillBeSent", { requestId, type: "Script", request: { url: fromUrl } });
+        redirect(requestId, fromUrl, toUrl, "Script");
+        emit("Network.responseReceived", { requestId, type: "Script", response: { url: toUrl, status: 200 } });
+        emit("Network.loadingFinished", { requestId, encodedDataLength: 8 });
+      }
+      const hopOne = "https://cdn.example.test/capped-one.mp4";
+      const hopTwo = "https://cdn.example.test/capped-two.mp4";
+      const hopThree = "https://cdn.example.test/capped-three.mp4";
+      emit("Network.requestWillBeSent", {
+        requestId: "capped-canceled",
+        type: "Media",
+        request: { url: hopOne },
+      });
+      redirect("capped-canceled", hopOne, hopTwo, "Media");
+      redirect("capped-canceled", hopTwo, hopThree, "Media");
+      emit("Network.responseReceived", {
+        requestId: "capped-canceled",
+        type: "Media",
+        response: { url: hopThree, status: 206 },
+      });
+      emit("Network.dataReceived", { requestId: "capped-canceled", encodedDataLength: 64 });
+      emit("Network.loadingFailed", {
+        requestId: "capped-canceled",
+        errorText: "net::ERR_ABORTED",
+        canceled: true,
+      });
+    },
+  }]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  const result = await adapter.captureRoute({
+    url: pageUrl,
+    viewport: { key: "desktop", width: 1_440, height: 1_200 },
+  });
+  await adapter.close();
+
+  // The collection itself stays complete, but the dropped record is not
+  // silent: the overflow sentinel projects the response_record_overflow
+  // problem downstream, so measurement reports incomplete.
+  assert.equal(result.responseCollectionStatus, "complete");
+  assert.equal(result.responses.some(
+    (response) => response.capture_problem === "response_record_overflow",
+  ), true);
+  // The canceled destination leg is dropped past the cap; the redirect hops
+  // that fit before it remain attributed.
+  const capped = result.responses.find((response) => response.request_id === "capped-canceled");
+  assert.equal(capped.redirect_chain.length, 2);
+  assert.equal(capped.redirect_chain.every((hop) => hop.status === 302), true);
+});
+
+test("an OPTIONS request reported as Other is classified as a preflight leg", async () => {
+  const pageUrl = "https://shop.example.test/landing/";
+  const apiUrl = "https://campaigns.example.test/api/v1/campaigns";
+  const fake = fakeChromium([{
+    finalUrl: pageUrl,
+    async navigate({ emit }) {
+      emit("Network.requestWillBeSent", {
+        requestId: "old-cdp-preflight",
+        type: "Other",
+        request: { url: apiUrl, method: "OPTIONS" },
+      });
+      emit("Network.responseReceived", {
+        requestId: "old-cdp-preflight",
+        type: "Other",
+        response: { url: apiUrl, status: 204 },
+      });
+      emit("Network.loadingFinished", { requestId: "old-cdp-preflight", encodedDataLength: 0 });
+      emit("Network.requestWillBeSent", {
+        requestId: "beacon",
+        type: "Other",
+        request: { url: apiUrl, method: "POST" },
+      });
+      emit("Network.responseReceived", {
+        requestId: "beacon",
+        type: "Other",
+        response: { url: apiUrl, status: 200 },
+      });
+      emit("Network.loadingFinished", { requestId: "beacon", encodedDataLength: 16 });
+    },
+  }]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  const result = await adapter.captureRoute({
+    url: pageUrl,
+    viewport: { key: "desktop", width: 1_440, height: 1_200 },
+  });
+  await adapter.close();
+
+  assert.equal(result.responseCollectionStatus, "complete");
+  const preflight = result.responses.find((response) => response.request_id === "old-cdp-preflight");
+  assert.equal(preflight.resource_type, "Preflight");
+  const beacon = result.responses.find((response) => response.request_id === "beacon");
+  assert.equal(beacon.resource_type, "Other");
 });
 
 test("adapter close projects browser failures without exposing raw paths or secrets", async () => {

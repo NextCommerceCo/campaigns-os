@@ -102,10 +102,20 @@ function captureOrigin(value) {
   throw new Error("Campaigns OS polish capture requires an HTTP(S) capture URL before applying --auth-cookie.");
 }
 
+function observedResourceType(event = {}) {
+  const type = typeof event?.type === "string" ? event.type : null;
+  // Newer CDP protocol versions report the CORS preflight leg as "Preflight";
+  // older ones report it as "Other". The request method identifies it either
+  // way, so classify at the source — aggregation cannot tell an older-protocol
+  // preflight apart from a genuine "Other" request sharing the URL.
+  if (type === "Other" && event?.request?.method === "OPTIONS") return "Preflight";
+  return type;
+}
+
 function currentRequest(event = {}) {
   return {
     requestUrl: boundedCaptureUrl(event?.request?.url),
-    resourceType: typeof event?.type === "string" ? event.type : null,
+    resourceType: observedResourceType(event),
     response: null,
     requestServedFromCache: false,
     frameId: typeof event?.frameId === "string" ? event.frameId : null,
@@ -187,7 +197,15 @@ function createNetworkCollector() {
 
   function finishCurrent(state, options = {}) {
     if (!state?.current) {
-      if (!options.canceled) collectionFailed = true;
+      // A canceled terminal event with nothing in flight is either a
+      // duplicate after the load already finished (dropped is only consulted
+      // for zero-hop states, so the emitted record is unaffected) or an abort
+      // that raced listener attachment; neither is a measurement failure.
+      if (options.canceled) {
+        if (state) state.dropped = true;
+      } else {
+        collectionFailed = true;
+      }
       return;
     }
     const record = responseRecord(state.current, options);
@@ -196,11 +214,17 @@ function createNetworkCollector() {
       // by navigation) are normal page behavior, not measurement failures.
       // Keep complete records as observed responses; drop incomplete ones
       // without failing the collection.
-      if (completeResponseRecord(record) && responseRecordCount < MAX_PAGE_LOAD_RESPONSE_RECORDS) {
+      if (!completeResponseRecord(record)) {
+        state.dropped = true;
+      } else if (responseRecordCount >= MAX_PAGE_LOAD_RESPONSE_RECORDS) {
+        // Unlike the non-canceled cap path this does not fail the collection:
+        // the drop is normal page behavior, but the overflow sentinel still
+        // projects a problem downstream so the loss is never silent.
+        responseOverflow = true;
+        state.dropped = true;
+      } else {
         state.hops.push(record);
         responseRecordCount += 1;
-      } else {
-        state.dropped = true;
       }
       state.current = null;
       return;
@@ -226,7 +250,7 @@ function createNetworkCollector() {
           collectionFailed = true;
           state.current = {
             requestUrl: boundedCaptureUrl(event.redirectResponse.url),
-            resourceType: typeof event.type === "string" ? event.type : null,
+            resourceType: observedResourceType(event),
             response: null,
             requestServedFromCache: false,
             frameId: typeof event?.frameId === "string" ? event.frameId : null,
@@ -281,8 +305,7 @@ function createNetworkCollector() {
       const state = stateFor(event.requestId);
       if (!state) return;
       const canceled = event.canceled === true
-        || event.errorText === "net::ERR_ABORTED"
-        || event.errorText === "net::ERR_CACHE_OPERATION_NOT_SUPPORTED";
+        || event.errorText === "net::ERR_ABORTED";
       if (canceled) {
         finishCurrent(state, { failed: false, canceled: true });
         return;

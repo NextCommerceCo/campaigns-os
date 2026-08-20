@@ -421,6 +421,94 @@ test("resource-type ambiguity and unknown types use a finite sentinel and fail c
   assert.equal(JSON.stringify(unknown).includes("private-arbitrary"), false);
 });
 
+test("preflight legs and transport-API variance do not create resource-type ambiguity", () => {
+  const url = "https://campaigns.example.test/api/v1/campaigns";
+  const record = (requestId, resourceType, status = 200, bytes = 500) => ({
+    request_id: requestId,
+    url,
+    resource_type: resourceType,
+    status,
+    encoded_data_length: bytes,
+  });
+  const entryFor = (capture) => capture.resource_ledger.entries
+    .find((entry) => entry.url === url);
+
+  // A CORS preflight shares the URL of the fetch it authorizes.
+  const preflighted = boundCapture({
+    responses: [record("preflight", "Preflight", 204, 0), record("call", "Fetch")],
+  });
+  assert.equal(preflighted.measurement_status, "complete");
+  assert.equal(entryFor(preflighted).resource_type, "fetch");
+  assert.equal(entryFor(preflighted).resource_type_status, "known");
+
+  // fetch and xhr are one programmatic-call class.
+  const transports = boundCapture({
+    responses: [record("xhr-call", "Xhr"), record("fetch-call", "Fetch")],
+  });
+  assert.equal(transports.measurement_status, "complete");
+  assert.equal(entryFor(transports).resource_type, "fetch");
+
+  // A resource observed under a single transport keeps that transport's type.
+  const xhrOnly = boundCapture({
+    responses: [record("preflight", "Preflight", 204, 0), record("xhr-call", "Xhr")],
+  });
+  assert.equal(xhrOnly.measurement_status, "complete");
+  assert.equal(entryFor(xhrOnly).resource_type, "xhr");
+  assert.equal(entryFor(xhrOnly).resource_type_status, "known");
+
+  // Mixed transports behind a preflight resolve to the merged fetch class.
+  const mixed = boundCapture({
+    responses: [
+      record("preflight", "Preflight", 204, 0),
+      record("xhr-call", "Xhr"),
+      record("fetch-call", "Fetch"),
+    ],
+  });
+  assert.equal(mixed.measurement_status, "complete");
+  assert.equal(entryFor(mixed).resource_type, "fetch");
+
+  // A URL only ever observed as a preflight keeps that identity.
+  const preflightOnly = boundCapture({
+    responses: [record("preflight-only", "Preflight", 204, 0)],
+  });
+  assert.equal(preflightOnly.measurement_status, "complete");
+  assert.equal(entryFor(preflightOnly).resource_type, "preflight");
+  assert.equal(entryFor(preflightOnly).resource_type_status, "known");
+
+  // "Other" is not a preflight marker at this layer (the collector classifies
+  // OPTIONS legs as Preflight at the source): a second identity stays visible.
+  for (const conflicting of ["Fetch", "Media"]) {
+    const conflict = boundCapture({
+      responses: [record("other-leg", "Other"), record("typed-leg", conflicting)],
+    });
+    assert.equal(conflict.measurement_status, "incomplete", conflicting);
+    assert.deepEqual(conflict.problems, [{ code: "resource_type_ambiguous", count: 1 }], conflicting);
+    assert.equal(entryFor(conflict).resource_type, "unknown", conflicting);
+    assert.equal(entryFor(conflict).resource_type_status, "ambiguous", conflicting);
+  }
+
+  // Canonicalization is independent of record order.
+  const records = [record("preflight", "Preflight", 204, 0), record("call", "Fetch")];
+  assert.deepEqual(
+    aggregateCdpResponses(records, { documentUrl: "https://shop.example.test/landing/" }),
+    aggregateCdpResponses([...records].reverse(), { documentUrl: "https://shop.example.test/landing/" }),
+  );
+});
+
+test("the overflow sentinel makes measurement incomplete even when the collection completed", () => {
+  const capture = boundCapture({
+    responseCollectionStatus: "complete",
+    responses: [{ capture_problem: "response_record_overflow" }],
+  });
+
+  assert.equal(capture.response_collection.status, "complete");
+  assert.equal(capture.measurement_status, "incomplete");
+  assert.deepEqual(
+    capture.problems.find((problem) => problem.code === "response_record_overflow"),
+    { code: "response_record_overflow", count: 1 },
+  );
+});
+
 test("generic memory-cache evidence is counted and uses the same fixed incomplete diagnostic", () => {
   const capture = boundCapture({
     responses: [{
