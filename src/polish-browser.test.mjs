@@ -633,18 +633,10 @@ test("failed and unfinished tracked transfers fail the collection without persis
   }]);
   assert.equal(JSON.stringify(failed).includes("ERR_PRIVATE_SECRET"), false);
 
-  assert.equal(unfinished.responseCollectionStatus, "failed");
-  assert.deepEqual(unfinished.responses, [{
-    request_id: "unfinished-media",
-    url: unfinishedUrl,
-    resource_type: "Media",
-    source_urls: [unfinishedUrl],
-    from_disk_cache: false,
-    from_prefetch_cache: false,
-    from_service_worker: false,
-    request_served_from_cache: false,
-    failed: true,
-  }]);
+  // A transfer still in flight when the capture window closes is cut off by
+  // the capture itself: it is dropped as browser-canceled, not failed.
+  assert.equal(unfinished.responseCollectionStatus, "complete");
+  assert.deepEqual(unfinished.responses, []);
 });
 
 test("adapter close projects browser failures without exposing raw paths or secrets", async () => {
@@ -1037,9 +1029,11 @@ test("dataReceived preserves a bounded lower byte count for a slow unfinished me
   await adapter.close();
   const slow = result.responses.find((response) => response.request_id === "slow-media");
   assert.equal(result.networkidle.status, "timeout");
-  assert.equal(result.responseCollectionStatus, "failed");
+  // The stream was cut off by the capture window, not by a network failure:
+  // the observed lower-bound byte count is kept as a non-failed response.
+  assert.equal(result.responseCollectionStatus, "complete");
   assert.equal(slow.encoded_data_length, 80 * 1_024 * 1_024);
-  assert.equal(slow.failed, true);
+  assert.equal(slow.failed, false);
   assert.equal(JSON.stringify(result).includes("token="), true, "raw browser observation remains in-memory only");
 });
 

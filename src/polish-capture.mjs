@@ -493,7 +493,29 @@ export function aggregateCdpResponses(responses, {
   }
 
   const allResources = [...groups.values()].map((group) => {
-    const observedTypes = [...group.observed_resource_types];
+    // CORS preflights share the URL of the request they authorize; observing
+    // preflight alongside the real type is expected, not ambiguity. fetch and
+    // xhr are likewise one programmatic-call class — which transport API a
+    // page used is not a resource-identity conflict.
+    const substantiveTypes = [...group.observed_resource_types].filter((value) => value !== "preflight");
+    const knownSubstantiveTypes = substantiveTypes.filter((value) => value !== "unknown");
+    let canonicalTypes = [...new Set((knownSubstantiveTypes.length ? knownSubstantiveTypes : substantiveTypes)
+      .map((value) => (value === "xhr" ? "fetch" : value)))];
+    // CDP reports CORS preflights as "Preflight" on new protocol versions and
+    // "Other" on older ones; either way the OPTIONS leg shares the URL of the
+    // request it authorizes. When a specific type was observed alongside
+    // "other", the specific type is the resource's identity.
+    if (canonicalTypes.length > 1 && canonicalTypes.includes("other")) {
+      canonicalTypes = canonicalTypes.filter((value) => value !== "other");
+    }
+    const observedTypes = canonicalTypes.length ? canonicalTypes : [...group.observed_resource_types];
+    if (observedTypes.length === 1) {
+      const preferred = observedTypes.includes(group.resource_type) ? group.resource_type : observedTypes[0];
+      if (group.resource_type !== preferred) {
+        group.resource_type = preferred;
+        group.resource_type_status = KNOWN_RESOURCE_TYPES.has(preferred) ? "known" : "unknown";
+      }
+    }
     if (observedTypes.length > 1) {
       group.resource_type = "unknown";
       group.resource_type_status = "ambiguous";

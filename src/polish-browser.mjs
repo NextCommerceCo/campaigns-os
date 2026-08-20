@@ -187,10 +187,24 @@ function createNetworkCollector() {
 
   function finishCurrent(state, options = {}) {
     if (!state?.current) {
-      collectionFailed = true;
+      if (!options.canceled) collectionFailed = true;
       return;
     }
     const record = responseRecord(state.current, options);
+    if (options.canceled) {
+      // Browser-canceled loads (aborted media range requests, fetches cut off
+      // by navigation) are normal page behavior, not measurement failures.
+      // Keep complete records as observed responses; drop incomplete ones
+      // without failing the collection.
+      if (completeResponseRecord(record) && responseRecordCount < MAX_PAGE_LOAD_RESPONSE_RECORDS) {
+        state.hops.push(record);
+        responseRecordCount += 1;
+      } else {
+        state.dropped = true;
+      }
+      state.current = null;
+      return;
+    }
     if (record.failed || !completeResponseRecord(record)) collectionFailed = true;
     if (responseRecordCount >= MAX_PAGE_LOAD_RESPONSE_RECORDS) {
       responseOverflow = true;
@@ -266,6 +280,13 @@ function createNetworkCollector() {
     "Network.loadingFailed"(event = {}) {
       const state = stateFor(event.requestId);
       if (!state) return;
+      const canceled = event.canceled === true
+        || event.errorText === "net::ERR_ABORTED"
+        || event.errorText === "net::ERR_CACHE_OPERATION_NOT_SUPPORTED";
+      if (canceled) {
+        finishCurrent(state, { failed: false, canceled: true });
+        return;
+      }
       finishCurrent(state, { failed: true });
       collectionFailed = true;
     },
@@ -331,7 +352,10 @@ function createNetworkCollector() {
           : projection;
       };
       for (const state of requests.values()) {
-        if (state.current) finishCurrent(state, { failed: true });
+        // A request still in flight when the capture window closes (an
+        // autoplaying video stream, a long-poll) is cut off by the capture
+        // itself — account for it like a browser-canceled load, not a failure.
+        if (state.current) finishCurrent(state, { failed: false, canceled: true });
         if (state.redirected || state.hops.length > 1) {
           responses.push({
             request_id: state.requestId,
@@ -342,7 +366,7 @@ function createNetworkCollector() {
           });
         } else if (state.hops.length === 1) {
           responses.push({ request_id: state.requestId, ...projectRecord(state.hops[0]) });
-        } else {
+        } else if (!state.dropped) {
           collectionFailed = true;
         }
       }
