@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-qa
-version: 1.0.0
+version: 1.0.1
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
@@ -29,7 +29,7 @@ Inputs:
 - Campaign Map ID from the Build Packet
 - tested base URL (localhost dev URL, preview URL, or production URL)
 - assembly report
-- Test-order depth choice (`common` default vs explicit paths vs `full`) and SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation so the SDK loads)
+- Test-order coverage choice (`common` default vs explicit paths vs topology-complete `full`) and SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation so the SDK loads)
 
 Rules:
 
@@ -59,8 +59,12 @@ Rules:
 - Do not use `next.getCartData().cartLines` as cart-populated proof. That field currently stays empty; use typed-card order read-back for committed cart truth, the `cart:updated` payload `items` / `summary.lines` for in-page cart state, and rendered bundle DOM evidence for pre-commit selection.
 - After the base checkout test order redirects to upsell, click the rendered SDK upsell accept/decline controls to prove the live upsell path. Do not fabricate upsell lines with a direct API call.
 - Valid test-order modes are `common`, `checkout`, `accept`, `decline`, `both`, `full`, `off`, and explicit accept/decline paths such as `accept-decline-accept`.
-- Browser test orders default to a max-order cap (an accidental-flood guard, not a permission gate). If `full` expands past it, choose explicit sample paths or rerun with a larger `--max-test-orders`.
-- For multi-offer funnels, `--test-order common` covers the typical checkout-plus-accept/decline sample automatically. Use exhaustive `full` when you want every generated permutation.
+- Browser test orders default to `--max-test-orders 6` (an accidental-flood guard, not a permission gate). Planning happens before browser launch; when `full` exceeds the cap, use explicit sample paths or rerun with the exact larger cap printed by the command (a linear three-offer graph plans nine orders, so use `--max-test-orders 9`).
+- Resolve paths from the selected checkout's `expected_next_url`, then follow reachable offer `expected_accept_url` / `expected_decline_url` edges. Treat only declared receipt/thank-you pages and genuine cross-origin handoffs as terminals; an absent same-origin route is unresolved, not an external handoff.
+- `--test-order common` runs checkout plus first-offer accept/decline and adds the shortest real receipt path, deduplicated to at most four orders. It must not synthesize a receipt path from offer count.
+- Use `full` for every actual terminal path. The graph walk is deterministic and cycle-safe; cycles, missing routes, unresolved same-origin targets, and reachable nonterminals block `full` before browser launch instead of producing phantom coverage.
+- A path with remaining actions may stop cleanly only at a terminal recognized in that selected topology. Missing accept/decline controls on any other page are blockers. A cross-origin handoff is a valid terminal navigation but is not receipt-rendering or persisted-receipt proof.
+- Keep multi-funnel and `tiers:common` / `tiers:full` plans isolated to each selected checkout's own funnel graph, tiers, and recognized terminals; never borrow an unrelated funnel's receipt page.
 - Accepted-upsell proof is valid only when the browser observes the order upsell API mutation and the final order evidence contains the selected upsell package. A checkout bump line marked `is_upsell` is not accepted-upsell proof.
 - Test orders are safe to fire any time: global test cards bypass the gateway, create no transactions, and need no merchant-specific sandbox routing confirmation. Localhost on any port is globally available as a Campaigns App Development domain and suppresses Campaigns analytics; non-localhost preview/production origins must be allowlisted for the campaign API key so the SDK loads — that is about SDK initialization, not test-order permission.
 - Launch readiness is separate from Campaigns OS proof. If QA passes on local/preview, still surface production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration as real-shopper readiness items before launch.

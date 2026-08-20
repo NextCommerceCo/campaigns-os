@@ -62,7 +62,10 @@ Options:
                                   Create Playwright typed-card test orders through the tested checkout page.
                                   Test cards bypass the gateway and create no transactions, so no permission
                                   flags or packet policy are needed — just pick a mode. Default mode (bare
-                                  --test-order, or "common") runs a 3-5 shape sample; "full" is every permutation.
+                                  --test-order, or "common") runs checkout, first-offer accept/decline, and a
+                                  deduplicated shortest real receipt path when needed (at most 4 orders). "full" walks
+                                  every actual terminal path; cycles, missing routes, and reachable nonterminals
+                                  block before browser launch. The default cap is 6; overflow names the exact raise.
                                   "tiers" is spec-driven: one strict-selection order per selector tier the
                                   CampaignSpec declares on the checkout page, plus one coupon order per declared
                                   offer code (checkout exit_intent / promo_code_input); "tiers:common" and

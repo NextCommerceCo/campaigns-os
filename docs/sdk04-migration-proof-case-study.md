@@ -117,9 +117,10 @@ catalog coverage, runtime-derived route links, and third-party beacon behavior.
 
 This case suggests four concrete harness improvements:
 
-1. When a funnel has three or more post-purchase steps, supplement
-   `--test-order common` with an explicit path that reaches receipt. A sampled partial
-   path proves its actions but not the complete chain.
+1. **Implemented:** `--test-order common` now adds the shortest real path that
+   reaches receipt, deduplicated against its first-offer accept/decline sample.
+   Use an explicit path for a targeted branch or `full` for every actual terminal
+   path when exhaustive topology proof is required.
 2. Feed the created test-order receipt URL into analytics correctness automatically,
    instead of defaulting Purchase checks to a campaign root without order context.
 3. Add a migration assertion that compares displayed coupon pricing with the

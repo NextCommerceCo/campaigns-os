@@ -2,6 +2,13 @@ import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { attachAnalyticsCapture, diffAnalyticsParity, normalizeCapture } from "./qa-analytics-parity.mjs";
 import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
 import {
+  commonTestOrderPaths,
+  fullTestOrderPaths,
+  remainingActionDisposition,
+  resolveTestOrderTopology,
+  terminalAtUrl,
+} from "./qa-test-order-topology.mjs";
+import {
   demoAssetConfig,
   forbiddenComputedColors,
   normalizeCssColor,
@@ -91,6 +98,12 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
     };
   }
 
+  // Resolve topology and enforce the accidental-flood cap before launching a
+  // browser. Choosing exhaustive proof must never spend browser work only to
+  // discover that the operator needs to raise --max-test-orders.
+  const plans = testOrderPlans(args["test-order"], topologies, args);
+  enforceTestOrderLimit(plans, args);
+
   const browser = await launchChromium(args);
   const context = await browser.newContext({
     viewport: viewportFromArgs(args),
@@ -100,8 +113,6 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
   const assertions = [];
   const orders = [];
   const captures = [];
-  const plans = testOrderPlans(args["test-order"], topologies, args);
-  enforceTestOrderLimit(plans, args);
   try {
     for (const plan of plans) {
       // Spec-driven plans name the checkout page that declares their tier or
@@ -1647,6 +1658,20 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
   };
 }
 
+function recordTestOrderTerminalEvidence({ ladder, topologyPlan, finalUrl }) {
+  const terminal = terminalAtUrl(topologyPlan, finalUrl);
+  if (terminal?.kind === "receipt" || (!topologyPlan && /receipt|thank/i.test(finalUrl))) {
+    ladder.ok("receipt_reached", redactUrlQuery(finalUrl));
+    return { kind: "receipt", terminal };
+  }
+  if (terminal?.kind === "external_handoff") {
+    ladder.skip("receipt_reached", `path ended at recognized external handoff ${redactUrlQuery(finalUrl)}`);
+    return { kind: "external_handoff", terminal };
+  }
+  ladder.skip("receipt_reached", `path ended at ${redactUrlQuery(finalUrl) || "(unknown url)"}`);
+  return { kind: "unrecognized", terminal: null };
+}
+
 function withStepTimeout(promise, timeoutMs, label) {
   const stepTimeoutError = (message) => {
     const error = new Error(message);
@@ -1733,7 +1758,17 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
     // The outer race is the hard guarantee: whatever hangs inside the path,
     // this returns and the run writes a verdict instead of dying with nothing.
     const result = await withStepTimeout(
-      executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args: planArgs, deadline: Date.now() + orderTimeoutMs }),
+      executeTestOrderPath({
+        page,
+        events,
+        email,
+        ladder,
+        checkoutPage,
+        topologyPlan: normalizedPlan.topology_plan,
+        path,
+        args: planArgs,
+        deadline: Date.now() + orderTimeoutMs,
+      }),
       orderTimeoutMs + ORDER_TIMEOUT_GRACE_MS,
       `order-path:${planId(normalizedPlan)}`,
     );
@@ -1749,7 +1784,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
   }
 }
 
-async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, path, args, deadline }) {
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, topologyPlan, path, args, deadline }) {
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
@@ -1816,6 +1851,17 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   if (!upsellSteps.length) ladder.skip("upsell_action", "path has no upsell steps");
 
   for (let stepIndex = 0; order.ok && stepIndex < upsellSteps.length; stepIndex += 1) {
+    const disposition = remainingActionDisposition(topologyPlan, safePageUrl(page), upsellSteps.slice(stepIndex));
+    if (disposition.stop) {
+      const terminal = disposition.terminal;
+      order.final_url = safePageUrl(page);
+      order.terminal = terminal;
+      ladder.skip(
+        "upsell_action",
+        `recognized ${terminal.kind} terminal reached; skipped remaining planned action(s): ${disposition.remaining_actions.join("-")}`,
+      );
+      break;
+    }
     const step = upsellSteps[stepIndex];
     await ladder.run("upsell_action", async () => {
       const initialLineItems = order.receipt_line_items.slice();
@@ -1846,7 +1892,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
           upsell_api_response_seen: upsell.api_response_seen,
           upsell_api_response_status: upsell.api_response_status,
         };
-        stepFailures.push(...upsellAcceptStepFailures(stepIndex, proof, upsell.api_response_seen));
+        stepFailures.push(...upsellActionStepFailures(stepIndex, step, upsell, proof));
         if (proof.ok && !upsell.api_response_seen) {
           upsell.verification.upsell_api_response_observation =
             "live order-upsell request not observed; confirmed via order read-back (upsell line present in persisted order)";
@@ -1854,15 +1900,16 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       } else {
         const proof = declinedUpsellProof(order.receipt_line_items, initialLineItems, events, initialUpsellMutationCount);
         upsell.verification = proof;
-        if (!proof.ok) stepFailures.push(`step ${stepIndex + 1}: ${proof.reason}`);
+        stepFailures.push(...upsellActionStepFailures(stepIndex, step, upsell, proof));
       }
       return `step ${stepIndex + 1}: ${step}`;
     }, { timeoutMs: budget() });
   }
 
   const finalUrl = safePageUrl(page) || "";
-  if (/receipt|thank/i.test(finalUrl)) {
-    ladder.ok("receipt_reached", redactUrlQuery(finalUrl));
+  const terminalEvidence = recordTestOrderTerminalEvidence({ ladder, topologyPlan, finalUrl });
+  if (terminalEvidence.kind === "receipt") {
+    if (terminalEvidence.terminal) order.terminal = terminalEvidence.terminal;
     const renderedReceipt = await receiptRenderingEvidence(page);
     const renderedReceiptAssessment = assessReceiptRendering(order.receipt_line_items.length, renderedReceipt);
     order.receipt_rendering = renderedReceipt;
@@ -1876,8 +1923,10 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       ladder.fail("receipt_rendered", renderedReceiptAssessment.reason);
       receiptFailures.push(`buyer-visible receipt line items: ${renderedReceiptAssessment.reason}`);
     }
+  } else if (terminalEvidence.kind === "external_handoff") {
+    order.terminal = terminalEvidence.terminal;
+    ladder.skip("receipt_rendered", "external handoff does not expose an in-funnel receipt page");
   } else {
-    ladder.skip("receipt_reached", `path ended at ${redactUrlQuery(finalUrl) || "(unknown url)"}`);
     ladder.skip("receipt_rendered", "receipt page was not reached");
   }
 
@@ -3097,14 +3146,20 @@ async function closeAddressAutocomplete(page) {
 function testOrderPaths(mode, topologies = []) {
   const normalized = String(mode || "off").toLowerCase();
   // `common` (also the bare `--test-order` flag, which parses to boolean true)
-  // is the default sample: a sensible 3-5 shapes for everyday QA. `full` is the
-  // explicit opt-in for every accept/decline permutation.
+  // is the default sample: at most four graph-derived shapes for everyday QA.
+  // `full` is the explicit opt-in for every actual terminal path.
   if (normalized === "common" || normalized === "true") return testOrderCommonPaths(topologies);
-  if (normalized === "full") return ["checkout", ...testOrderPathMatrix(testOrderDepth(topologies))];
+  if (normalized === "full") return fullTestOrderPaths(resolvePrimaryTestOrderTopology(topologies));
   if (normalized === "both") return ["accept", "decline"];
   if (["checkout", "accept", "decline"].includes(normalized)) return [normalized];
   if (/^(accept|decline)(-(accept|decline))+$/.test(normalized)) return [normalized];
   throw new Error(`Unknown --test-order mode: ${mode}`);
+}
+
+function resolvePrimaryTestOrderTopology(topologies = []) {
+  const checkout = findPage(topologies, "checkout");
+  const topology = (topologies || []).find((candidate) => (candidate?.pages || []).includes(checkout)) || { pages: [] };
+  return resolveTestOrderTopology(topology, checkout);
 }
 
 // --- Spec-driven order planning (--test-order tiers) ---
@@ -3117,8 +3172,8 @@ function testOrderPaths(mode, topologies = []) {
 //   tiers          one strict-selection checkout baseline per declared selector
 //                  tier, plus one checkout order per declared coupon code
 //   tiers:common   every declared tier crossed with the common path shapes
-//   tiers:full     every declared tier crossed with the full accept/decline
-//                  matrix — single-run tier×path coverage
+//   tiers:full     every declared tier crossed with the full set of actual
+//                  terminal paths — single-run tier×path coverage
 //
 // Coupon plans stay single checkout orders on the default selection: coupon
 // proof is persisted-order read-back and does not need upsell traversal.
@@ -3129,10 +3184,14 @@ function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
   if (tiersMatch) return specTierPlans(topologies, args, tiersMatch[1] || "checkout", options);
   const selectPackage = stringArg(args["select-package"]);
   const applyCoupon = stringArg(args["apply-coupon"]);
+  const checkoutPage = findPage(topologies, "checkout");
+  const topologyPlan = resolvePrimaryTestOrderTopology(topologies);
   return testOrderPaths(mode, topologies).map((path) => ({
     path,
     select_package: selectPackage,
     apply_coupon: applyCoupon,
+    checkout_page: checkoutPage,
+    topology_plan: topologyPlan,
   }));
 }
 
@@ -3169,11 +3228,12 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       continue;
     }
     // Path shapes come from this checkout's own funnel: crossing tier plans
-    // with another funnel's upsell depth would plan unwalkable paths.
+    // with another funnel's topology would plan unwalkable paths.
+    const resolvedTopology = resolveTestOrderTopology(topology, checkoutPage);
     const paths = variant === "common"
       ? testOrderCommonPaths([topology])
       : variant === "full"
-        ? ["checkout", ...testOrderPathMatrix(testOrderDepth([topology]))]
+        ? fullTestOrderPaths(resolvedTopology)
         : ["checkout"];
     // Plans on the primary checkout keep bare ids (single-funnel specs stay
     // byte-identical); other funnels' plans are qualified by page id so the
@@ -3186,6 +3246,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
           select_package: tier.ref,
           apply_coupon: null,
           checkout_page: checkoutPage,
+          topology_plan: resolvedTopology,
           id_qualifier: qualifier,
           source: {
             type: "selector_tier",
@@ -3202,6 +3263,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
         select_package: null,
         apply_coupon: coupon.code,
         checkout_page: checkoutPage,
+        topology_plan: resolvedTopology,
         id_qualifier: qualifier,
         source: {
           type: "declared_coupon",
@@ -3298,17 +3360,13 @@ function summarizeTestOrderPlan(plan) {
   };
 }
 
-// The default "common shapes" sample: checkout baseline, plus first-upsell
-// accept and decline when the funnel has post-checkout offers, plus one deeper
-// mixed path when there are two or more offers. Stays within 1-4 orders so it
-// never trips the flood cap. Bundle/quantity and bump coverage come from
-// `--cart`; exhaustive permutations come from `full`.
+// The default "common shapes" sample: checkout baseline, plus first-offer
+// accept and decline when the checkout enters an offer graph, plus the shortest
+// real receipt path when that adds coverage. Stays within 1-4 orders so it never
+// trips the flood cap. Bundle/quantity and bump coverage come from `--cart`;
+// every actual terminal path comes from `full`.
 function testOrderCommonPaths(topologies = []) {
-  const depth = testOrderDepth(topologies);
-  const paths = ["checkout"];
-  if (depth >= 1) paths.push("accept", "decline");
-  if (depth >= 2) paths.push("accept-decline");
-  return paths;
+  return commonTestOrderPaths(resolvePrimaryTestOrderTopology(topologies));
 }
 
 function enforceTestOrderLimit(plans, args) {
@@ -3319,29 +3377,8 @@ function enforceTestOrderLimit(plans, args) {
   throw new Error([
     `--test-order ${args["test-order"]} expands to ${plans.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
     `Planned paths: ${preview}${suffix}.`,
-    "This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with a higher --max-test-orders for exhaustive proof.",
+    `This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with --max-test-orders ${plans.length} for this exhaustive proof.`,
   ].join(" "));
-}
-
-function testOrderDepth(topologies = []) {
-  const pages = topologies.flatMap((topology) => Array.isArray(topology?.pages) ? topology.pages : []);
-  return pages.filter((page) => ["upsell", "downsell"].includes(String(page?.page_type || "").toLowerCase())).length;
-}
-
-function testOrderPathMatrix(depth) {
-  const count = Math.max(0, Number(depth || 0));
-  if (count === 0) return [];
-  const paths = [];
-  const walk = (prefix, remaining) => {
-    if (remaining === 0) {
-      paths.push(prefix.join("-"));
-      return;
-    }
-    walk([...prefix, "decline"], remaining - 1);
-    walk([...prefix, "accept"], remaining - 1);
-  };
-  walk([], count);
-  return paths;
 }
 
 function testOrderSteps(path) {
@@ -3461,6 +3498,19 @@ function upsellAcceptStepFailures(stepIndex, proof, apiResponseSeen) {
     if (!apiResponseSeen) {
       failures.push(`step ${stepIndex + 1}: upsell accept did not call order upsell API`);
     }
+  }
+  return failures;
+}
+
+function upsellActionStepFailures(stepIndex, action, upsell, proof) {
+  const failures = [];
+  if (upsell?.clicked === false) {
+    failures.push(`step ${stepIndex + 1}: ${upsell.error || `upsell ${action} control was not clicked`}`);
+  }
+  if (action === "accept") {
+    failures.push(...upsellAcceptStepFailures(stepIndex, proof, upsell?.api_response_seen));
+  } else if (!proof?.ok) {
+    failures.push(`step ${stepIndex + 1}: ${proof?.reason || "upsell decline could not be verified"}`);
   }
   return failures;
 }
@@ -3706,6 +3756,7 @@ function isMissingPlaywrightBrowser(error) {
 export const __qaBrowserTestHooks = Object.freeze({
   acceptedUpsellProof,
   upsellAcceptStepFailures,
+  upsellActionStepFailures,
   commerceStructureAssertionFromEvidence,
   primaryCtaAssertionFromEvidence,
   isOrderUpsellsUrl,
@@ -3728,6 +3779,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   assessOrderCreation,
   TEST_ORDER_STEP_LADDER,
   createStepLadder,
+  recordTestOrderTerminalEvidence,
   formatStepEvent,
   hostedRedirectInfo,
   redactUrlQuery,

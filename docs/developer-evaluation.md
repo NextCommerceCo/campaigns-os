@@ -8,7 +8,7 @@ Recommended shared scenario:
 - Source adapter: `html_funnel`
 - Local exported CampaignSpec
 - Prepared HTML/assets
-- Test orders run any time via `--test-order` — global test cards bypass the gateway and create no transactions; depth (count/permutations) is the only control. Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need allowlist confirmation so the SDK loads.
+- Test orders run any time via `--test-order` — global test cards bypass the gateway and create no transactions, so coverage is the only control. `common` runs checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when that adds coverage; explicit paths target a chosen branch, and `full` walks every actual terminal path in the selected checkout topology. Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need allowlist confirmation so the SDK loads.
 
 For AI-generated or synthetic source exercises, explicitly tell evaluators that
 the generated HTML is a source artifact, not final page-kit markup. They should

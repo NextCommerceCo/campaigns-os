@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-os
-version: 1.0.1
+version: 1.0.2
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
@@ -32,7 +32,7 @@ Workflow:
 7. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
 8. After build, require polish and a preview deploy before QA.
 9. Run the package-owned proof path in sequence: `npm run qa:install-browser`, `campaigns-os qa resolve --packet <packet>`, then `campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common`.
-10. Treat typed-card proof depth as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed (`common` by default, `full` for every permutation). Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
+10. Treat typed-card proof coverage as the control. Global test cards bypass the gateway and create no transactions, so no permission/approval is needed. `common` runs checkout, first-offer accept and decline, and a deduplicated shortest real receipt path when that adds coverage (at most four orders). `full` walks every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The accidental-flood cap remains `6`, and an overflow names the exact explicit `--max-test-orders` raise. Localhost on any port is a Campaigns App Development domain for SDK QA with analytics suppressed; non-localhost preview/production origins still need SDK origin allowlist confirmation.
 11. Discuss launch only from recorded build, polish, deploy, browser QA, and test-order evidence, or from explicit blockers.
 
 ## Session Intake

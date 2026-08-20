@@ -128,6 +128,9 @@ test("prepare-build emits adapter decisions and proof policy in public artifacts
     assert.equal(context.adapter_decisions.commerce_shell_adoption, "template_clone_first_required");
     assert.equal(report.adapter_decisions.template_files_copied.status, "pending");
     assert.equal(packet.qa.proof_policy.browser_qa_required, true);
+    assert.match(packet.qa.test_order_policy_notes, /common.*deduplicated shortest real receipt path/s);
+    assert.match(packet.qa.test_order_policy_notes, /full.*every actual terminal path/s);
+    assert.match(packet.qa.test_order_policy_notes, /default accidental-flood cap is 6.*exact explicit `--max-test-orders` raise/s);
     assert.equal(report.proof_policy.typed_card_depth, "common");
     assert.equal(context.source.asset_crawl.schema_version, "source-asset-crawl/v0");
     assert.equal(context.source.asset_crawl.summary.root_assets_path_count, 1);

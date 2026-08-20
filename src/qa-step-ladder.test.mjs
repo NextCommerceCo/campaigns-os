@@ -2,7 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
-const { TEST_ORDER_STEP_LADDER, createStepLadder, formatStepEvent, hostedRedirectInfo, redactUrlQuery, testOrderAssertion } = __qaBrowserTestHooks;
+const {
+  TEST_ORDER_STEP_LADDER,
+  createStepLadder,
+  formatStepEvent,
+  hostedRedirectInfo,
+  recordTestOrderTerminalEvidence,
+  redactUrlQuery,
+  testOrderAssertion,
+  testOrderPlans,
+} = __qaBrowserTestHooks;
 
 test("step ladder declares the canonical ordered step names", () => {
   assert.deepEqual([...TEST_ORDER_STEP_LADDER], [
@@ -107,6 +116,34 @@ test("hosted redirect detection: different origin + /accounts/complete-order/ pa
 test("redactUrlQuery strips query strings and tolerates non-URLs", () => {
   assert.equal(redactUrlQuery("https://a.test/receipt/?ref_id=01ABC"), "https://a.test/receipt/");
   assert.equal(redactUrlQuery("not a url?x=1"), "not a url");
+});
+
+test("a common-selected shortcut receipt records receipt_reached as ok through runtime terminal evidence", () => {
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topologies = [{ funnel_id: "shortcut", pages: [
+    { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell-1/") },
+    { page_id: "upsell-1", page_type: "upsell", url: route("upsell-1/"), expected_accept_url: route("upsell-2/"), expected_decline_url: route("upsell-2/") },
+    { page_id: "upsell-2", page_type: "upsell", url: route("upsell-2/"), expected_accept_url: route("receipt/"), expected_decline_url: route("downsell/") },
+    { page_id: "downsell", page_type: "downsell", url: route("downsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+  const plan = testOrderPlans("common", topologies, {}).find((candidate) => candidate.path === "accept-accept");
+  const ladder = createStepLadder({ emit: () => {} });
+
+  const evidence = recordTestOrderTerminalEvidence({
+    ladder,
+    topologyPlan: plan.topology_plan,
+    finalUrl: `${route("receipt/")}?ref_id=qa-secret`,
+  });
+
+  assert.equal(plan.path, "accept-accept");
+  assert.equal(evidence.kind, "receipt");
+  assert.equal(evidence.terminal.kind, "receipt");
+  assert.deepEqual(
+    ladder.steps.map(({ step, status, detail }) => ({ step, status, detail })),
+    [{ step: "receipt_reached", status: "ok", detail: route("receipt/") }],
+  );
 });
 
 test("hosted-checkout path maps to a manual_review assertion with the step ladder, not a blocker", () => {
