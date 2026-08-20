@@ -239,10 +239,10 @@ async function resolveQaInputs(args, {
     packetPath,
     topologies,
     waive: stringArg(args["theme-waive"]),
-    report: checkpointPreflight?.report,
+    report: checkpointPreflight?.runtimeReport,
   });
-  const polishGate = resolvePolishGate({ packetPath, report: checkpointPreflight?.report });
-  const qaWaivers = resolveQaWaivers({ packetPath, report: checkpointPreflight?.report });
+  const polishGate = resolvePolishGate({ packetPath, report: checkpointPreflight?.runtimeReport });
+  const qaWaivers = resolveQaWaivers({ packetPath, report: checkpointPreflight?.runtimeReport });
   const brandContract = loadBrandContract(templateFamily);
   return {
     themeGate,
@@ -325,6 +325,7 @@ function resolvePacketCheckpointPreflight(args, {
       required: true,
     }),
   ];
+  const runtimeReport = reportMatchesPacketIdentity(report, packet) ? report : null;
   return {
     packetPath,
     packet,
@@ -334,8 +335,21 @@ function resolvePacketCheckpointPreflight(args, {
     targetLoad,
     reportPath,
     report,
+    runtimeReport,
     checkpointGates,
   };
+}
+
+function reportMatchesPacketIdentity(report, packet) {
+  if (!isPlainObject(report) || !isPlainObject(report.identity)) return false;
+  const packetMapId = stringArg(packet?.spec?.map_id);
+  const reportMapId = stringArg(report.identity.map_id);
+  const packetSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const reportSlug = normalizePublicRouteSlug(report.identity.public_route_slug);
+  return !!packetMapId
+    && packetMapId === reportMapId
+    && !!packetSlug
+    && packetSlug === reportSlug;
 }
 
 function nonPacketStoreProfileGate(slug = "") {
@@ -394,13 +408,13 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
     packetPath: preflight.packetPath,
     topologies,
     waive: stringArg(args["theme-waive"]),
-    report: preflight.report,
+    report: preflight.runtimeReport,
   });
-  const polishGate = resolvePolishGate({ packetPath: preflight.packetPath, report: preflight.report });
+  const polishGate = resolvePolishGate({ packetPath: preflight.packetPath, report: preflight.runtimeReport });
   return {
     themeGate,
     polishGate,
-    qaWaivers: resolveQaWaivers({ packetPath: preflight.packetPath, report: preflight.report }),
+    qaWaivers: resolveQaWaivers({ packetPath: preflight.packetPath, report: preflight.runtimeReport }),
     analyticsCaptureTarget: { url: null, source: "unresolved" },
     brandContract: null,
     brandContractStatus: "not_evaluated",

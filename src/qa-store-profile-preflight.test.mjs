@@ -636,6 +636,68 @@ test("packet QA never falls back to a remote spec before local Store Profile evi
   }
 });
 
+test("blocked packet QA keeps foreign Assembly Report decisions inert", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath, specPath, reportPath } = fixture(sentinel.baseUrl, { storeMismatch: false });
+  const priorExitCode = process.exitCode;
+  try {
+    const report = readJson(reportPath);
+    report.identity.map_id = "foreign-map-private-sentinel";
+    report.identity.public_route_slug = "foreign-route-private-sentinel";
+    report.theme = {
+      status: "skipped",
+      load_order: "not-applied",
+      waiver: {
+        reason: "foreign theme waiver private sentinel",
+        waived_by: "Foreign Operator",
+        waived_at: "2026-08-19T00:00:00.000Z",
+      },
+    };
+    report.stages.qa.waivers = {
+      "analytics-correctness:purchase-fires": {
+        reason: "foreign QA waiver private sentinel",
+        waived_by: "Foreign Operator",
+        waived_at: "2026-08-19T00:00:00.000Z",
+      },
+    };
+    writeJson(reportPath, report);
+    writeFileSync(specPath, "{ private malformed spec sentinel\n");
+
+    const resolved = await __qaNodeTestHooks.resolveQaInputs({
+      _: ["qa", "resolve"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+    });
+    assert.notEqual(resolved.themeGate.status, "waived");
+    assert.equal(resolved.polishGate.scope_source, "missing_assembly_report");
+    assert.deepEqual(resolved.qaWaivers, {});
+
+    const result = await runQaCli({
+      _: ["qa", "run"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+      "no-post-verdict": true,
+      "no-remit": true,
+      "output-dir": join(dir, "qa-output-foreign-report"),
+    });
+    assert.equal(result.verdict.disposition, "blocked");
+    const serialized = JSON.stringify(result.verdict);
+    for (const secret of [
+      "foreign-map-private-sentinel",
+      "foreign-route-private-sentinel",
+      "foreign theme waiver private sentinel",
+      "foreign QA waiver private sentinel",
+    ]) {
+      assert.equal(serialized.includes(secret), false);
+    }
+    assert.equal(sentinel.hits(), 0);
+  } finally {
+    process.exitCode = priorExitCode;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("invalid SDK declarations and target values stay non-waivable and private", async () => {
   const sentinel = armFetchSentinel();
   const declaration = fixture(sentinel.baseUrl, { storeMismatch: false });
