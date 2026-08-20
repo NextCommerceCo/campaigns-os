@@ -6122,7 +6122,13 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   }
   if ((polishGate?.status === "blocked" || polishCheckpointGate?.status === "blocked")
     && ["deploy", "qa"].includes(result.stage)) {
+    const checkpointActionIds = new Set(
+      (polishCheckpointGate?.required_actions || [])
+        .map((action) => action?.id)
+        .filter(Boolean),
+    );
     for (const action of polishGate?.required_actions || []) {
+      if (checkpointActionIds.has(action?.id)) continue;
       push(`polish_gate.${action.id}`, action.kind, action.command, action.description);
     }
     pushPolishCheckpointActions();
