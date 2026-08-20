@@ -50,6 +50,18 @@ function isDemoResidue(field, value) {
   return PHONE_FIELDS.has(field) && value.replace(/\D/g, "") === "18888316810";
 }
 
+// A waiver records a named human accepting a KNOWN divergence. A non-string
+// governed value is not a known divergence — nobody can attest to a shape they
+// cannot read — so those kinds are never waivable. Enumerated explicitly rather
+// than matched on an "invalid_type" suffix: a suffix test silently decides
+// waivability for every kind added later, in whichever direction the name
+// happens to fall.
+const NON_WAIVABLE_DISCREPANCY_KINDS = new Set([
+  "both_invalid_type",
+  "spec_invalid_type",
+  "target_invalid_type",
+]);
+
 function matrixRow(field, rawSpec, rawTarget) {
   const spec = normalizeFieldValue(rawSpec);
   const target = normalizeFieldValue(rawTarget);
@@ -154,7 +166,7 @@ export function evaluatePageKitStoreProfile({
       code: optionalMissing ? "page_kit.store_profile.not_applicable" : "page_kit.store_profile.target_unavailable",
       reason: optionalMissing
         ? `Target ${subject.target_path} entry is not present before scaffold; Store Profile parity will become required once the target exists.`
-        : `Target ${subject.target_path} entry is unavailable or malformed (${loadStatus}); packet build/QA requires an exact Store Profile target.` ,
+        : `Target ${subject.target_path} entry is unavailable or malformed (${loadStatus}); packet build/QA requires an exact Store Profile target.`,
       waivable: false,
       subject,
       state: { target_status: loadStatus, discrepancies: [] },
@@ -185,7 +197,8 @@ export function evaluatePageKitStoreProfile({
   });
   const blocker_fields = matrix.filter((row) => row.severity === "blocker").map((row) => row.field);
   const warning_fields = matrix.filter((row) => row.severity === "warning").map((row) => row.field);
-  const waivable = blocker_fields.length > 0 && !matrix.some((row) => row.kind.endsWith("invalid_type"));
+  const waivable = blocker_fields.length > 0
+    && !matrix.some((row) => NON_WAIVABLE_DISCREPANCY_KINDS.has(row.kind));
   // Waiver history matters only while this exact checkpoint is blocked. Once
   // correction removes every blocker (including a target-only warning state),
   // historical decisions stay in the report but must not become stale-warning

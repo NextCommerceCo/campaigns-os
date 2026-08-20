@@ -272,3 +272,48 @@ test("packet QA cannot fetch around a missing or malformed local spec", () => {
     assert.equal(gate.state_fingerprint, null);
   }
 });
+
+test("waivability is decided by an enumerated kind set, not by how a kind is named", () => {
+  // Every blocker kind, pinned to the waivability it is supposed to carry. The
+  // set was previously derived from an "invalid_type" suffix, which quietly
+  // decided this for any kind added later; this test is what makes a change to
+  // the set deliberate.
+  const waivableCases = [
+    ["demo_residue", () => { const t = profile(); t.store_url = "https://demo.29next.com/"; return [profile(), t]; }],
+    ["target_missing", () => { const t = profile(); t.store_returns = ""; return [profile(), t]; }],
+    ["mismatch", () => { const t = profile(); t.store_name = "Other Merchant"; return [profile(), t]; }],
+  ];
+  for (const [kind, build] of waivableCases) {
+    const [spec, target] = build();
+    const gate = evaluate(spec, target);
+    assert.equal(gate.status, "blocked", kind);
+    assert.ok(gate.matrix.some((row) => row.kind === kind), `expected a ${kind} row`);
+    assert.equal(gate.waivable, true, `${kind} must stay waivable by a named human`);
+  }
+
+  const nonWaivableCases = [
+    ["spec_invalid_type", () => { const s = profile(); s.store_name = 123; return [s, profile()]; }],
+    ["target_invalid_type", () => { const t = profile(); t.store_name = 123; return [profile(), t]; }],
+    ["both_invalid_type", () => { const s = profile(); const t = profile(); s.store_name = 123; t.store_name = {}; return [s, t]; }],
+  ];
+  for (const [kind, build] of nonWaivableCases) {
+    const [spec, target] = build();
+    const gate = evaluate(spec, target);
+    assert.equal(gate.status, "blocked", kind);
+    assert.ok(gate.matrix.some((row) => row.kind === kind), `expected a ${kind} row`);
+    assert.equal(gate.waivable, false, `${kind} must never be waivable`);
+    assert.equal(gate.required_actions.some((action) => action.id === "waive_checkpoint"), false, kind);
+  }
+
+  // A single non-waivable row poisons an otherwise waivable set: a named human
+  // cannot accept a divergence when part of the comparison is unreadable.
+  const mixedSpec = profile();
+  const mixedTarget = profile();
+  mixedTarget.store_url = "https://demo.29next.com/";
+  mixedTarget.store_name = 123;
+  const mixed = evaluate(mixedSpec, mixedTarget);
+  assert.equal(mixed.status, "blocked");
+  assert.ok(mixed.matrix.some((row) => row.kind === "demo_residue"));
+  assert.ok(mixed.matrix.some((row) => row.kind === "target_invalid_type"));
+  assert.equal(mixed.waivable, false);
+});
