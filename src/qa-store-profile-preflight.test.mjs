@@ -14,6 +14,8 @@ import test from "node:test";
 
 import { checkpointWaive } from "./cli.mjs";
 import { loadPageKitCampaignEntry } from "./page-kit-campaign-config.mjs";
+import { buildPageLoadCapture } from "./polish-capture.mjs";
+import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 import { __qaNodeTestHooks, runQaCli } from "./qa-node.mjs";
 
 const EXAMPLES = new URL("../examples/", import.meta.url);
@@ -27,6 +29,7 @@ const PRIVATE_SENTINELS = Object.freeze({
   fb_pixel_id: "private-pixel-sentinel",
   arbitrary_secret: "private-arbitrary-sentinel",
 });
+const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -35,6 +38,96 @@ function readJson(path) {
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function pageLoadEvidence(packet, { hiddenBytes = 0 } = {}) {
+  const routes = packet.source_html.pages
+    .filter((page) => !page.skip_reason)
+    .map((page) => page.page_kit.public_route)
+    .sort();
+  const viewports = ["desktop", "mobile"];
+  const captures = routes.flatMap((route) => viewports.map((viewport, index) => {
+    const pageUrl = `https://runtime-sentinel.invalid${route}`;
+    const mediaUrl = `${pageUrl}hero-${viewport}.mp4?private=capture`;
+    return buildPageLoadCapture({
+      buildFingerprint: BUILD_FINGERPRINT,
+      slug: packet.campaign.public_route_slug,
+      requestedRoute: route,
+      viewport,
+      requestedDocumentUrl: pageUrl,
+      finalDocumentUrl: pageUrl,
+      responseCollectionStatus: "complete",
+      networkidle: { status: "settled", duration_ms: 10 },
+      mediaElements: hiddenBytes > 0 && index === 0 && route === routes[0]
+        ? [{
+            tag_name: "video",
+            current_src: mediaUrl,
+            src_attribute: null,
+            source_src_attributes: [],
+            preload_attribute: "auto",
+            computed_style: { display: "none", visibility: "visible" },
+            ancestor_styles: [],
+            bounding_box: { width: 640, height: 360 },
+          }]
+        : [],
+      responses: [
+        {
+          request_id: `document-${route}-${viewport}`,
+          url: pageUrl,
+          resource_type: "Document",
+          status: 200,
+          mime_type: "text/html",
+          is_final_main_document: true,
+          document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+          encoded_data_length: 1_024,
+        },
+        ...(hiddenBytes > 0 && index === 0 && route === routes[0]
+          ? [{
+              request_id: `media-${route}-${viewport}`,
+              url: mediaUrl,
+              resource_type: "Media",
+              status: 200,
+              encoded_data_length: hiddenBytes,
+            }]
+          : []),
+      ],
+    });
+  }));
+  return buildPolishPageLoadEvidence({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: packet.campaign.public_route_slug,
+    routeScope: "all",
+    routes,
+    viewports,
+    captures,
+  });
+}
+
+function completedPolishStage(packet, options = {}) {
+  return {
+    stage: "polish",
+    status: "completed_with_warnings",
+    performed_by: "next-campaigns-polish",
+    source_build_fingerprint: BUILD_FINGERPRINT,
+    completed_at: "2026-08-20T00:00:00.000Z",
+    inputs: [],
+    outputs: [],
+    commands: ["next-campaigns-polish"],
+    blockers: [],
+    warnings: [],
+    evidence: {
+      visual_review: {
+        screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"],
+        page_load: pageLoadEvidence(packet, options),
+      },
+      brand_review: { logo_checked: true, favicon: "confirmed non-template favicon", colors: ["#123456"], brand_bleed: { cleared: true } },
+      checkout_review: { field_labels: "checked", phone_alignment: "checked", payment_display: "checked", bump_compare_price_rule: "checked" },
+      template_residue_review: { next_blue: "not found", starter_favicon: "not found", lorem: "not found", product_placeholders: "not found" },
+      commerce_flow_review: { shop_single_step: "direct-entry force-package/product-selector limitation reviewed" },
+      issues: [],
+      commands: ["next-campaigns-polish"],
+    },
+  };
 }
 
 function fixture(baseUrl, { specVersion = "0.4.18", targetVersion = specVersion, storeMismatch = true } = {}) {
@@ -64,7 +157,9 @@ function fixture(baseUrl, { specVersion = "0.4.18", targetVersion = specVersion,
   const report = readJson(new URL("assembly-report.example.json", EXAMPLES));
   report.identity.map_id = rawPacket.spec.map_id;
   report.identity.public_route_slug = rawPacket.campaign.public_route_slug;
-  report.stages.assembly.status = "pending";
+  report.stages.assembly.status = "completed";
+  report.stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
+  report.stages.polish = completedPolishStage(rawPacket);
   report.evidence = [];
   // QA's legacy theme/polish artifact reader is packet-adjacent; the new
   // checkpoint reader intentionally uses the target report below.
@@ -234,7 +329,7 @@ test("qa resolve reports an exact SDK waiver with attribution, bounds, and inert
   }
 });
 
-test("qa resolve reports ready only when both packet checkpoints pass", async () => {
+test("qa resolve reports ready only when all packet checkpoints pass", async () => {
   const sentinel = armFetchSentinel();
   const { dir, packetPath } = fixture(sentinel.baseUrl, { storeMismatch: false });
   const originalLog = console.log;
@@ -254,6 +349,7 @@ test("qa resolve reports ready only when both packet checkpoints pass", async ()
       [
         { id: "page_kit.store_profile", status: "pass" },
         { id: "page_kit.sdk_version", status: "pass" },
+        { id: "polish.hidden_eager_media", status: "pass" },
       ],
     );
     assert.match(readback, /Checkpoint page_kit\.store_profile: pass/);
@@ -385,6 +481,103 @@ test("packet checkpoint blockers coexist and finalize a verdict before HTTP, bro
     assert.notEqual(control.verdict.assertions.find((assertion) => assertion.id === "page_kit.store_profile").status, "fail");
     assert.equal(control.verdict.assertions.find((assertion) => assertion.id === "page_kit.sdk_version").status, "pass");
     assert.ok(sentinel.hits() > 0, "corrected control should arm and hit the HTTP server");
+  } finally {
+    process.exitCode = priorExitCode;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("missing recorded page-load evidence blocks QA before every runtime surface without a duplicate polish assertion", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath, reportPath } = fixture(sentinel.baseUrl, { storeMismatch: false });
+  const priorExitCode = process.exitCode;
+  try {
+    const report = readJson(reportPath);
+    delete report.stages.polish.evidence.visual_review.page_load;
+    report.stages.polish.evidence.visual_review.private_capture = "private-page-load-sentinel";
+    writeJson(reportPath, report);
+
+    const blocked = await runQaCli({
+      _: ["qa", "run"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+      browser: true,
+      "test-order": "common",
+      "analytics-correctness": "true",
+      "no-post-verdict": true,
+      "no-remit": true,
+      "output-dir": join(dir, "qa-output-hidden-missing"),
+    });
+
+    const polishAssertions = blocked.verdict.assertions.filter((item) => item.family === "polish_gate");
+    assert.deepEqual(polishAssertions.map((item) => item.id), ["polish.hidden_eager_media"]);
+    assert.equal(polishAssertions[0].status, "fail");
+    assert.equal(polishAssertions[0].severity, "blocker");
+    assert.equal(blocked.verdict.disposition, "blocked");
+    assert.equal(process.exitCode, 4);
+    assert.equal(sentinel.hits(), 0);
+    assert.deepEqual(blocked.verdict.test_orders, []);
+    assert.deepEqual(blocked.verdict.tested_urls, []);
+    assert.equal(existsSync(blocked.local_path), true);
+    assert.doesNotMatch(JSON.stringify(blocked.verdict), /private-page-load-sentinel/);
+  } finally {
+    process.exitCode = priorExitCode;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an exact hidden eager-media waiver becomes one warning and allows QA runtime proof", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath, reportPath } = fixture(sentinel.baseUrl, { storeMismatch: false });
+  const priorExitCode = process.exitCode;
+  try {
+    const packet = readJson(packetPath);
+    const report = readJson(reportPath);
+    report.stages.polish.evidence.visual_review.page_load = pageLoadEvidence(packet, {
+      hiddenBytes: 1_048_577,
+    });
+    writeJson(reportPath, report);
+
+    const blocked = await runQaCli({
+      _: ["qa", "run"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+      "no-post-verdict": true,
+      "no-remit": true,
+      "output-dir": join(dir, "qa-output-hidden-blocked"),
+      "analytics-correctness": "false",
+    });
+    assert.equal(blocked.verdict.disposition, "blocked");
+    assert.equal(blocked.verdict.assertions.find((item) => item.id === "polish.hidden_eager_media").status, "fail");
+    assert.equal(sentinel.hits(), 0);
+
+    checkpointWaive({
+      _: ["checkpoint", "waive"],
+      packet: packetPath,
+      gate: "polish.hidden_eager_media",
+      reason: "Named review accepted this exact hidden media transfer for the preview",
+      "waived-by": "Jordan Lee",
+      "review-condition": "Remove before production launch",
+    });
+
+    const waived = await runQaCli({
+      _: ["qa", "run"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+      "no-post-verdict": true,
+      "no-remit": true,
+      "output-dir": join(dir, "qa-output-hidden-waived"),
+      "analytics-correctness": "false",
+    });
+    const polishAssertions = waived.verdict.assertions.filter((item) => item.family === "polish_gate");
+    assert.deepEqual(polishAssertions.map((item) => item.id), ["polish.hidden_eager_media"]);
+    assert.equal(polishAssertions[0].status, "warn");
+    assert.equal(polishAssertions[0].waiver.waived_by, "Jordan Lee");
+    assert.equal(waived.verdict.disposition, "ready_with_exceptions");
+    assert.equal(process.exitCode, 0);
+    assert.ok(sentinel.hits() > 0, "an exact active waiver must allow static runtime proof");
   } finally {
     process.exitCode = priorExitCode;
     sentinel.restore();
@@ -828,6 +1021,7 @@ test("packet QA consumes packet, spec, campaign entry, and Assembly Report once 
     contradictoryReport.waivers = [];
     contradictoryReport.theme.waiver.reason = "mutated theme waiver";
     contradictoryReport.stages.assembly.status = "completed";
+    contradictoryReport.stages.polish.evidence.visual_review.page_load = null;
     contradictoryReport.stages.qa.waivers["analytics-correctness:purchase-fires"].reason = "mutated QA waiver";
     writeJson(packetAdjacentReportPath, contradictoryReport);
 
@@ -888,9 +1082,10 @@ test("packet QA consumes packet, spec, campaign entry, and Assembly Report once 
     assert.notEqual(resolved.spec.campaign.name, "Mutated campaign after gate");
     assert.equal(resolved.checkpointGates.find((gate) => gate.id === "page_kit.store_profile").status, "pass");
     assert.equal(resolved.checkpointGates.find((gate) => gate.id === "page_kit.sdk_version").status, "waived");
+    assert.equal(resolved.checkpointGates.find((gate) => gate.id === "polish.hidden_eager_media").status, "pass");
     assert.equal(resolved.themeGate.status, "waived");
     assert.equal(resolved.themeGate.waiver.reason, "snapshot theme waiver");
-    assert.equal(resolved.polishGate.status, "not_applicable");
+    assert.equal(resolved.polishGate.status, "pass");
     assert.equal(resolved.qaWaivers["analytics-correctness:purchase-fires"].reason, "snapshot QA waiver");
     assert.ok(resolved.topologies.every((topology) => topology.pages.every((page) => page.url.includes("/runtime-packet-demo/"))));
   } finally {

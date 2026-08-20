@@ -7,11 +7,14 @@ import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 
 import { PAGE_KIT_STORE_PROFILE_FIELDS } from "../src/page-kit-store-profile.mjs";
+import { buildPageLoadCapture } from "../src/polish-capture.mjs";
+import { buildPolishPageLoadEvidence } from "../src/polish-page-load.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const cli = resolve(root, "bin/campaigns-os.mjs");
 const packet = resolve(root, "examples/build-packet.basic.json");
 const catalogPath = resolve(root, "contracts/commerce-surface-catalog.json");
+const FIXTURE_BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 
 if (!existsSync(packet)) {
   throw new Error(`Missing fixture packet: ${packet}`);
@@ -34,6 +37,46 @@ function storeProfileEntry(spec, extras = {}) {
     ...Object.fromEntries(PAGE_KIT_STORE_PROFILE_FIELDS.map((field) => [field, spec.campaign?.[field] ?? ""])),
     ...extras,
   };
+}
+
+function cleanPageLoadEvidence(buildPacket) {
+  const routes = buildPacket.source_html.pages
+    .filter((page) => !page.skip_reason)
+    .map((page) => page.page_kit.public_route)
+    .sort();
+  const viewports = ["desktop", "mobile"];
+  const captures = routes.flatMap((route) => viewports.map((viewport) => {
+    const url = `https://preview.example.test${route}`;
+    return buildPageLoadCapture({
+      buildFingerprint: FIXTURE_BUILD_FINGERPRINT,
+      slug: buildPacket.campaign.public_route_slug,
+      requestedRoute: route,
+      viewport,
+      requestedDocumentUrl: url,
+      finalDocumentUrl: url,
+      responseCollectionStatus: "complete",
+      networkidle: { status: "settled", duration_ms: 10 },
+      mediaElements: [],
+      responses: [{
+        request_id: `document-${route}-${viewport}`,
+        url,
+        resource_type: "Document",
+        status: 200,
+        mime_type: "text/html",
+        is_final_main_document: true,
+        document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+        encoded_data_length: 1_024,
+      }],
+    });
+  }));
+  return buildPolishPageLoadEvidence({
+    buildFingerprint: FIXTURE_BUILD_FINGERPRINT,
+    slug: buildPacket.campaign.public_route_slug,
+    routeScope: "all",
+    routes,
+    viewports,
+    captures,
+  });
 }
 
 function hasPath(obj, dotted) {
@@ -1700,7 +1743,7 @@ try {
   }
 
   // Mark assembly completed → picker should advance to polish.
-  markStageStatus("assembly", "completed", { build_fingerprint: "sha256:fixture-build" });
+  markStageStatus("assembly", "completed", { build_fingerprint: FIXTURE_BUILD_FINGERPRINT });
   step = nextNoStage();
   if (step.stage !== "polish") {
     throw new Error(`next-orchestration fixture: after assembly completed, expected "polish", got ${step.stage}. picked_reason=${step.picked_reason}`);
@@ -1709,10 +1752,13 @@ try {
   // Mark polish completed with structured evidence → picker should advance to deploy.
   markStageStatus("polish", "completed", {
     performed_by: "next-campaigns-polish",
-    source_build_fingerprint: "sha256:fixture-build",
+    source_build_fingerprint: FIXTURE_BUILD_FINGERPRINT,
     completed_at: "2026-06-22T00:00:00.000Z",
     evidence: {
-      visual_review: { screenshots: ["qa-output/checkout-desktop.png"] },
+      visual_review: {
+        screenshots: ["qa-output/checkout-desktop.png"],
+        page_load: cleanPageLoadEvidence(readJson(packetPath)),
+      },
       brand_review: { favicon: "confirmed non-template favicon", colors: ["#123456"], brand_bleed: { cleared: true } },
       checkout_review: { field_labels: "checked", phone_alignment: "checked", payment_display: "checked", bump_compare_price_rule: "checked" },
       template_residue_review: { next_blue: "not found", starter_favicon: "not found", placeholders: "not found" },

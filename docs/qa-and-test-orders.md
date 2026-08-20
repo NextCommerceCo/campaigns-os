@@ -4,6 +4,24 @@ The public v0 QA runner is Node/npm-based and does not require access to a priva
 
 > **Commerce QA requires network; it cannot run in a no-outbound sandbox.** The SDK, product images, fonts, the Netlify preview, and the Playwright typed-card test order all need outbound network. A build environment without it can only validate markup/build/CSS — the commerce runtime and the typed-card test order (the Campaigns OS control) must be deferred to a deployed preview. Always run the QA runner against a `--base-url` preview/production origin (e.g. `npm run campaigns-os -- qa run --packet campaign-runtime.build.json --base-url https://deploy-preview-7--your-site.netlify.app/ --browser --test-order common`); never report commerce-runtime QA as passed from an offline build.
 
+## Polish capture prerequisite
+
+Packet QA consumes package-owned page-load evidence; it never creates that
+evidence. Install the package browser, serve the current built output, and run
+the producer before marking Polish complete, deploying, or starting QA:
+
+```bash
+npm run qa:install-browser
+npm run campaigns-os -- polish capture \
+  --packet campaign-runtime.build.json \
+  --base-url <served-current-build-url>
+```
+
+The operator-provided URL must serve the current build. Its value is not a
+cryptographic attestation of the served bytes. See
+[Polish evidence](./polish-evidence.md#durable-page_load-field-map) for the
+generated field map, completeness rules, and attachment race boundary.
+
 ## Resolve
 
 Use resolve before a full run:
@@ -17,25 +35,26 @@ Resolve reads the packet, loads the local CampaignSpec when available, derives d
 ### Packet-local checkpoint preflight
 
 Packet QA reads one local packet, CampaignSpec, target `_data/campaigns.json`
-entry, and Assembly Report snapshot. It evaluates both registered checkpoints
-from those objects: `page_kit.store_profile` and `page_kit.sdk_version`. The same
-packet/spec snapshot supplies runtime identity and topology, while the same
-Assembly Report supplies checkpoint decisions, theme/polish state, and QA
-waiver history. QA does not re-read those artifacts after the gates. A packet
-without a valid local spec cannot fetch around the missing evidence. Packet QA
-always uses `packet.spec.local_path`; combining `--packet` with `--spec` is
-rejected before either artifact is read.
+entry, and Assembly Report snapshot. It evaluates three registered checkpoints
+from those objects: `page_kit.store_profile`, `page_kit.sdk_version`, and
+`polish.hidden_eager_media`. The same packet/spec snapshot supplies runtime
+identity and topology, while the same Assembly Report supplies checkpoint
+decisions, theme/polish state, package-owned page-load evidence, and QA waiver
+history. QA does not re-read those artifacts after the gates. A packet without
+a valid local spec cannot fetch around the missing evidence. Packet QA always
+uses `packet.spec.local_path`; combining `--packet` with `--spec` is rejected
+before either artifact is read.
 
 Any non-waived checkpoint blocker finalizes a blocked local verdict before HTTP,
-Playwright, analytics capture, or typed-card orders run. Both assertions remain
-visible when the gates disagree, so waiving or correcting one never suppresses
-the other. They use the existing `api-metadata` family with IDs
-`page_kit.store_profile` and `page_kit.sdk_version`.
+Playwright, analytics capture, or typed-card orders run. All checkpoint
+assertions remain visible when gates disagree, so waiving or correcting one
+never suppresses another. Store Profile and SDK use the `api-metadata` family;
+the hidden eager-media assertion uses `polish_gate`.
 
 `qa resolve` remains a diagnostic command: it reports `ok: false` and
-`status: blocked`, prints both gates and their safe repair/waiver projections,
-and suppresses the runtime `qa run --browser --test-order common` suggestion
-until every checkpoint blocker is clear.
+`status: blocked`, prints all three gates and their safe repair/waiver
+projections, and suppresses the runtime `qa run --browser --test-order common`
+suggestion until every checkpoint blocker is clear.
 
 The SDK gate prefers `runtime.sdk_version` and accepts
 `global_config.sdk_version` only as a legacy fallback. Pins must be released,
@@ -43,6 +62,15 @@ canonical `MAJOR.MINOR.PATCH` versions. Equal dual declarations are valid;
 conflicting declarations, missing declarations, prereleases, empty values, and
 non-string values are non-waivable blockers. Once both sides are valid, only an
 exact expected/observed mismatch has a waiver lane.
+
+The hidden eager-media gate reads only the recorded package capture; QA never
+launches `campaigns-os polish capture` or another browser producer. Missing,
+malformed, stale, integrity-invalid, route-mismatched, or incomplete page-load
+evidence is nonwaivable and blocks before runtime. A complete finding for a
+computed-hidden media element strictly over `1,048,576` bytes is waivable only
+for its exact build, slug, route plan, fixed viewports, and finding state. A
+packetless QA run has no packet-owned authority and reports this checkpoint as
+not applicable.
 
 A current exact checkpoint waiver remains attached to that gate's warning and
 lets runtime QA proceed only when every other checkpoint is clear. The QA
@@ -53,7 +81,7 @@ before QA with the relevant gate ID:
 ```bash
 campaigns-os checkpoint waive \
   --packet campaign-runtime.build.json \
-  --gate <page_kit.store_profile|page_kit.sdk_version> \
+  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media> \
   --reason "<why>" \
   --waived-by "<named human>" \
   --review-condition "<specific re-evaluation trigger>"
@@ -87,16 +115,21 @@ npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json --base-u
 
 ## Run
 
-Install the package-owned Playwright browser once before rendered QA or
-test-order proof:
+Install the package-owned Playwright browser once before Polish capture,
+rendered QA, or test-order proof:
 
 ```bash
 npm run qa:install-browser
 ```
 
-This installs the Chromium binary used by `--browser` and `--test-order`. It is
-part of the normal Campaigns OS QA path after `npm install` or package updates.
-The QA flow must not depend on external browser skills or local agent tooling.
+This installs the Chromium binary used by `polish capture`, `--browser`, and
+`--test-order`. It is part of the normal Campaigns OS proof path after `npm
+install` or package updates. The QA flow must not depend on external browser
+skills or local agent tooling.
+
+`npm run smoke:polish-capture` is an optional real-browser package smoke after
+that installation. It requires permission to bind a loopback HTTP listener and
+is deliberately excluded from `npm run check` and CI.
 
 ```bash
 npm run campaigns-os -- qa run \

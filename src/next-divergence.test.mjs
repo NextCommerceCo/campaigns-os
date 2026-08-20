@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { detectLedgerDivergence, nextStage } from "./cli.mjs";
+import { buildPageLoadCapture } from "./polish-capture.mjs";
+import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 
 // Packet 03 (INV-5 first slice, EN-1): `next` must report ledger-artifact
 // divergence instead of answering `doctor-blocked` + "go back to the
@@ -19,6 +21,7 @@ const OS_ROOT = new URL("..", import.meta.url).pathname;
 const FIXTURE_DEPLOY_URL = "https://preview-fixture.netlify.app";
 const MAP_ID = "runtime-packet-demo-k9x2";
 const SLUG = "runtime-packet-demo";
+const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 
 function reportStage(name, status = "pending") {
   return { stage: name, status, inputs: [], outputs: [], commands: [], blockers: [], warnings: [] };
@@ -56,6 +59,46 @@ function writeVerdict(dir, name = "RUN1.json") {
 function writeBuiltOutput(dir) {
   mkdirSync(join(dir, "_site", SLUG), { recursive: true });
   writeFileSync(join(dir, "_site", SLUG, "index.html"), "<html></html>");
+}
+
+function cleanPageLoad(packet) {
+  const routes = packet.source_html.pages
+    .filter((page) => !page.skip_reason)
+    .map((page) => page.page_kit.public_route)
+    .sort();
+  const viewports = ["desktop", "mobile"];
+  const captures = routes.flatMap((route) => viewports.map((viewport) => {
+    const url = `https://preview.example.test${route}`;
+    return buildPageLoadCapture({
+      buildFingerprint: BUILD_FINGERPRINT,
+      slug: packet.campaign.public_route_slug,
+      requestedRoute: route,
+      viewport,
+      requestedDocumentUrl: url,
+      finalDocumentUrl: url,
+      responseCollectionStatus: "complete",
+      networkidle: { status: "settled", duration_ms: 10 },
+      mediaElements: [],
+      responses: [{
+        request_id: `document-${route}-${viewport}`,
+        url,
+        resource_type: "Document",
+        status: 200,
+        mime_type: "text/html",
+        is_final_main_document: true,
+        document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+        encoded_data_length: 1_024,
+      }],
+    });
+  }));
+  return buildPolishPageLoadEvidence({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: packet.campaign.public_route_slug,
+    routeScope: "all",
+    routes,
+    viewports,
+    captures,
+  });
 }
 
 // Self-target fixture built from the basic example packet. Without source
@@ -108,13 +151,16 @@ function doctorGreenFixture() {
   stages.doctor.status = "completed";
   stages.setup.status = "completed";
   stages.assembly.status = "completed";
-  stages.assembly.build_fingerprint = "fixture-fingerprint";
+  stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
   stages.polish.status = "completed";
   stages.polish.performed_by = "next-campaigns-polish";
-  stages.polish.source_build_fingerprint = "fixture-fingerprint";
+  stages.polish.source_build_fingerprint = BUILD_FINGERPRINT;
   stages.polish.completed_at = "2026-08-01T00:00:00.000Z";
   stages.polish.evidence = {
-    visual_review: { screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"] },
+    visual_review: {
+      screenshots: ["qa-output/checkout-desktop.png", "qa-output/checkout-mobile.png"],
+      page_load: cleanPageLoad(packet),
+    },
     brand_review: { logo_checked: true, favicon: "not-template", colors: ["#123456"], brand_bleed: { cleared: true, promo_codes: "none", fonts: "design fonts only", colors: "tokenized" } },
     checkout_review: { field_labels: "checked", phone_alignment: "checked", payment_display: "checked", bump_compare_price_rule: "checked" },
     template_residue_review: { next_blue: "not found", starter_favicon: "not found", lorem: "not found" },

@@ -432,6 +432,72 @@ test("polish gate passes current structured polish evidence", () => {
   assert.equal(gate.warnings[0].code, "polish.source_package_material_fingerprint_unavailable");
 });
 
+test("required polish gate fails closed when its owned page-load checkpoint is absent", () => {
+  const gate = evaluatePolishGate({ report: baseReport(validPolish()), required: true });
+
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_malformed");
+  assert.equal(gate.owned_checkpoint_id, "polish.hidden_eager_media");
+  assert.equal(gate.owned_checkpoint_only, true);
+  assert.deepEqual(gate.required_actions.map((action) => action.id), ["polish.hidden_eager_media.capture"]);
+});
+
+test("polish gate composes its authoritative hidden eager-media checkpoint", () => {
+  const report = baseReport(validPolish());
+  const captureAction = {
+    id: "polish.hidden_eager_media.capture",
+    kind: "command",
+    command: "campaigns-os polish capture --packet <packet> --base-url <url>",
+    description: "Capture page-load evidence.",
+  };
+  const blocked = evaluatePolishGate({
+    report,
+    required: true,
+    hiddenEagerMediaGate: {
+      id: "polish.hidden_eager_media",
+      status: "blocked",
+      code: "polish.hidden_eager_media.capture_incomplete",
+      reason: "Page-load capture is incomplete.",
+      required_actions: [captureAction],
+    },
+  });
+  assert.equal(blocked.status, "blocked");
+  assert.equal(blocked.code, "polish.hidden_eager_media.capture_incomplete");
+  assert.equal(blocked.owned_checkpoint_only, true);
+  assert.deepEqual(blocked.required_actions, [captureAction]);
+
+  const waived = evaluatePolishGate({
+    report,
+    required: true,
+    hiddenEagerMediaGate: {
+      id: "polish.hidden_eager_media",
+      status: "waived",
+      code: "polish.hidden_eager_media.waived",
+      reason: "One exact finding is waived.",
+      required_actions: [],
+    },
+  });
+  assert.equal(waived.status, "waived");
+  assert.equal(waived.code, "polish.hidden_eager_media.waived");
+  assert.equal(waived.owned_checkpoint_only, true);
+
+  const pass = evaluatePolishGate({
+    report,
+    required: true,
+    hiddenEagerMediaGate: {
+      id: "polish.hidden_eager_media",
+      status: "pass",
+      code: "polish.hidden_eager_media.pass",
+      reason: "No findings.",
+      required_actions: [],
+    },
+  });
+  assert.equal(pass.status, "pass");
+  assert.equal(pass.code, "polish.evidence_current");
+  assert.equal(pass.owned_checkpoint_id, "polish.hidden_eager_media");
+  assert.equal(pass.owned_checkpoint_only, false);
+});
+
 test("polish gate passes current build and source package fingerprints", () => {
   const report = sourceAwareReport(validPolish({
     source_package_material_fingerprint: SOURCE_PACKAGE_FINGERPRINT,
@@ -560,6 +626,37 @@ const GATE_BLOCKER_CODES = [
   "polish.evidence_current",
   "polish.assembly_source_package_waived",
 ];
+const PAGE_LOAD_DOC_PATHS = [
+  "stages.polish.evidence.visual_review.page_load",
+  "subject.build_fingerprint",
+  "subject.campaign_slug",
+  "subject.route_scope",
+  "subject.routes[]",
+  "subject.viewports[]",
+  "measurement.status",
+  "measurement.expected_capture_count",
+  "measurement.captured_count",
+  "measurement.missing[]",
+  "measurement.duplicate[]",
+  "measurement.unexpected[]",
+  "measurement.incomplete[]",
+  "captures[]",
+  "findings[]",
+  "document_response.status",
+  "document_response.context_fingerprint",
+  "metrics.total_transferred_bytes",
+  "metrics.largest_resource",
+  "metrics.request_count",
+  "metrics.cache_request_count",
+  "metrics.service_worker_request_count",
+  "metrics.cross_origin_request_count",
+  "networkidle.status",
+  "networkidle.duration_ms",
+  "media[]",
+  "resource_ledger.entries[]",
+  "problems[]",
+  "integrity.schema_version",
+];
 
 test("docs/polish-evidence.md documents every required evidence field and gate code", () => {
   const doc = readFileSync(join(REPO_ROOT, "docs", "polish-evidence.md"), "utf8");
@@ -568,6 +665,9 @@ test("docs/polish-evidence.md documents every required evidence field and gate c
   }
   for (const code of GATE_BLOCKER_CODES) {
     assert.ok(doc.includes(code), `docs/polish-evidence.md must document gate code "${code}"`);
+  }
+  for (const path of PAGE_LOAD_DOC_PATHS) {
+    assert.ok(doc.includes(`\`${path}\``), `docs/polish-evidence.md must document page_load path "${path}"`);
   }
   assert.ok(doc.includes(POLISH_PRODUCER), "docs must name the required producer");
 });

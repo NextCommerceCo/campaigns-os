@@ -53,3 +53,39 @@ test("next picker done closeout shell-quotes a packet path that needs it", () =>
   const closeout = actions.find((action) => action.id === "run_record_closeout");
   assert.match(closeout.command, /--packet '\/camp aigns\/demo\/campaign-runtime\.build\.json'/);
 });
+
+test("explicit post-polish next stages emit one resolved owned-checkpoint action", () => {
+  const capture = {
+    id: "polish.hidden_eager_media.capture",
+    kind: "command",
+    command: "campaigns-os polish capture --packet <packet> --base-url <url>",
+    description: "Capture current page-load evidence.",
+  };
+  const input = {
+    packetPath: "/campaigns/demo/campaign-runtime.build.json",
+    packet: { deploy: { preview_url: "https://preview.example/demo/" } },
+    themeGate: { status: "pass" },
+    polishGate: {
+      status: "blocked",
+      owned_checkpoint_id: "polish.hidden_eager_media",
+      required_actions: [capture],
+    },
+    polishCheckpointGate: {
+      status: "blocked",
+      id: "polish.hidden_eager_media",
+      required_actions: [capture],
+    },
+    ambient: null,
+  };
+
+  for (const stage of ["deploy", "qa"]) {
+    const actions = buildNextActions({ ...input, result: { stage, divergences: [] } });
+    const captureActions = actions.filter((action) => action.command?.startsWith("campaigns-os polish capture"));
+    assert.equal(captureActions.length, 1, `${stage} must not duplicate an owned checkpoint action`);
+    assert.equal(captureActions[0].id, "checkpoint.polish.hidden_eager_media.capture");
+    assert.equal(
+      captureActions[0].command,
+      "campaigns-os polish capture --packet /campaigns/demo/campaign-runtime.build.json --base-url https://preview.example/demo/",
+    );
+  }
+});

@@ -5,9 +5,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { buildPageLoadCapture } from "./polish-capture.mjs";
+import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
+const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -84,17 +87,82 @@ function withPreparedBuild(run) {
 function markAssemblyCompleted(reportPath, mutate = (report) => report) {
   const report = readJson(reportPath);
   report.stages.assembly.status = "completed";
-  report.stages.assembly.build_fingerprint = "sha256:test-build";
+  report.stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
   mutate(report);
   writeJson(reportPath, report);
 }
 
+function cleanPageLoad(packetPath, { hiddenBytes = 0 } = {}) {
+  const packet = readJson(packetPath);
+  const routes = packet.source_html.pages
+    .filter((page) => !page.skip_reason)
+    .map((page) => page.page_kit.public_route)
+    .sort();
+  const viewports = ["desktop", "mobile"];
+  const captures = routes.flatMap((route) => viewports.map((viewport, index) => {
+    const url = `https://preview.example.test${route}`;
+    const mediaUrl = `${url}hero-${viewport}.mp4?private=doctor-fixture`;
+    const heavyHiddenMedia = hiddenBytes > 0 && route === routes[0] && index === 0;
+    return buildPageLoadCapture({
+      buildFingerprint: BUILD_FINGERPRINT,
+      slug: packet.campaign.public_route_slug,
+      requestedRoute: route,
+      viewport,
+      requestedDocumentUrl: url,
+      finalDocumentUrl: url,
+      responseCollectionStatus: "complete",
+      networkidle: { status: "settled", duration_ms: 10 },
+      mediaElements: heavyHiddenMedia
+        ? [{
+            tag_name: "video",
+            current_src: mediaUrl,
+            src_attribute: null,
+            source_src_attributes: [],
+            preload_attribute: "auto",
+            computed_style: { display: "none", visibility: "visible" },
+            ancestor_styles: [],
+            bounding_box: { width: 640, height: 360 },
+          }]
+        : [],
+      responses: [
+        {
+          request_id: `document-${route}-${viewport}`,
+          url,
+          resource_type: "Document",
+          status: 200,
+          mime_type: "text/html",
+          is_final_main_document: true,
+          document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+          encoded_data_length: 1_024,
+        },
+        ...(heavyHiddenMedia
+          ? [{
+              request_id: `media-${route}-${viewport}`,
+              url: mediaUrl,
+              resource_type: "Media",
+              status: 200,
+              encoded_data_length: hiddenBytes,
+            }]
+          : []),
+      ],
+    });
+  }));
+  return buildPolishPageLoadEvidence({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: packet.campaign.public_route_slug,
+    routeScope: "all",
+    routes,
+    viewports,
+    captures,
+  });
+}
+
 function validPolishStage(overrides = {}) {
-  return {
+  const stage = {
     stage: "polish",
     status: "completed_with_warnings",
     performed_by: "next-campaigns-polish",
-    source_build_fingerprint: "sha256:test-build",
+    source_build_fingerprint: BUILD_FINGERPRINT,
     completed_at: "2026-06-22T00:00:00.000Z",
     inputs: [],
     outputs: [],
@@ -110,7 +178,18 @@ function validPolishStage(overrides = {}) {
       issues: [],
       commands: ["next-campaigns-polish"],
     },
+  };
+  return {
+    ...stage,
     ...overrides,
+    evidence: {
+      ...stage.evidence,
+      ...(overrides.evidence || {}),
+      visual_review: {
+        ...stage.evidence.visual_review,
+        ...(overrides.evidence?.visual_review || {}),
+      },
+    },
   };
 }
 
@@ -392,12 +471,85 @@ test("source package freshness waiver lets next proceed to polish but not past m
 test("valid polish evidence lets next advance beyond polish", () => {
   withPreparedBuild(({ packetPath, reportPath }) => {
     markAssemblyCompleted(reportPath, (report) => {
-      report.stages.polish = validPolishStage();
+      report.stages.polish = validPolishStage({
+        evidence: { visual_review: { page_load: cleanPageLoad(packetPath) } },
+      });
     });
 
     const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
     assert.notEqual(next.stage, "polish");
     assert.equal((next.gates || []).find((gate) => gate.id === "polish_gate")?.status, "pass");
+  });
+});
+
+test("completed base Polish with missing page-load evidence routes next to capture without a duplicate broad gate", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.stages.polish = validPolishStage();
+    });
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    assert.equal(doctor.derived.polish_checkpoint_gate.status, "blocked");
+    assert.equal(doctor.derived.polish_checkpoint_gate.code, "polish.hidden_eager_media.capture_malformed");
+    assert.equal(doctor.derived.polish_gate.owned_checkpoint_only, true);
+    assert.deepEqual(
+      doctor.errors.filter((issue) => issue.code === "polish.hidden_eager_media.capture_malformed").length,
+      1,
+    );
+
+    const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.equal(next.stage, "polish");
+    assert.equal(next.stage_blocked, true);
+    assert.equal(next.gates.filter((gate) => gate.id === "polish.hidden_eager_media").length, 1);
+    assert.equal(next.gates.some((gate) => gate.id === "polish_gate"), false);
+    assert.equal(next.next_actions.some((action) => action.id === "checkpoint.polish.hidden_eager_media.capture"), true);
+    assert.equal(next.next_actions.some((action) => action.id.endsWith(".waive")), false);
+    assert.equal(next.next_actions.some((action) => action.id.endsWith(".repair")), false);
+  });
+});
+
+test("a real hidden-media finding exposes repair/capture/waive, and its exact waiver advances visibly", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    markAssemblyCompleted(reportPath, (report) => {
+      report.stages.polish = validPolishStage({
+        evidence: {
+          visual_review: {
+            page_load: cleanPageLoad(packetPath, { hiddenBytes: 1_048_577 }),
+          },
+        },
+      });
+    });
+
+    const blocked = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.equal(blocked.stage, "polish");
+    assert.equal(blocked.gates.find((gate) => gate.id === "polish.hidden_eager_media").status, "blocked");
+    assert.equal(blocked.gates.some((gate) => gate.id === "polish_gate"), false);
+    assert.equal(blocked.next_actions.some((action) => action.id === "checkpoint.polish.hidden_eager_media.repair"), true);
+    assert.equal(blocked.next_actions.some((action) => action.id === "checkpoint.polish.hidden_eager_media.capture"), true);
+    assert.equal(blocked.next_actions.some((action) => action.id === "checkpoint.polish.hidden_eager_media.waive"), true);
+
+    const decision = runCliJson([
+      "checkpoint", "waive",
+      "--packet", packetPath,
+      "--gate", "polish.hidden_eager_media",
+      "--reason", "Named review accepts this exact preview finding",
+      "--waived-by", "Jordan Lee",
+      "--review-condition", "Remove before production launch",
+      "--json",
+    ]);
+    assert.equal(decision.ok, true);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    assert.equal(doctor.status, "ready_with_waivers");
+    assert.equal(doctor.derived.polish_checkpoint_gate.status, "waived");
+    assert.equal(doctor.derived.polish_checkpoint_gate.waiver.waived_by, "Jordan Lee");
+    assert.equal(doctor.errors.some((issue) => issue.code === "polish.hidden_eager_media"), false);
+
+    const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
+    assert.notEqual(next.stage, "polish");
+    assert.equal(next.status, "ready_with_waivers");
+    assert.equal(next.gates.find((gate) => gate.id === "polish.hidden_eager_media").status, "waived");
+    assert.equal(next.gates.some((gate) => gate.id === "polish_gate"), false);
   });
 });
 
@@ -423,6 +575,7 @@ test("valid polish evidence under source freshness waiver lets doctor and next a
       report.stages.assembly.source_package_material_fingerprint = "sha256:source-old";
       report.stages.polish = validPolishStage({
         source_package_material_fingerprint: "sha256:source-current",
+        evidence: { visual_review: { page_load: cleanPageLoad(packetPath) } },
       });
     });
 

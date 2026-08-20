@@ -21,6 +21,7 @@
     "skills": "bash ./skills.sh",
     "qa": "node ./bin/campaigns-os.mjs qa",
     "qa:install-browser": "npx playwright install chromium",
+    "smoke:polish-capture": "node ./scripts/smoke-polish-capture.mjs --run",
     "refresh:starter-catalog": "node ./scripts/refresh-starter-template-catalog.mjs",
     "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
     "prepare": "npm run build:spec",

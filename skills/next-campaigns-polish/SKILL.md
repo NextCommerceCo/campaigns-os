@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-polish
-version: 1.0.0
+version: 1.0.1
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
@@ -31,7 +31,19 @@ Responsibilities:
 - For bundle selectors and order bumps, verify active/inactive visual state after interaction, mobile label wrapping, badge placement, and selected/unchecked state. A native hidden input state that disagrees with the SDK class state is a polish blocker. So is a selected/active visual driven by a *non-SDK static attribute the SDK never clears* — e.g. a hardcoded `data-selected="true"` left on the initial card. (The native `selected` attribute on `<option>`/custom selects *is* SDK/browser-managed, so do not flag that.) The selected style must follow the SDK-managed class (e.g. `.next-selected` — see the family's bundle-selector selectors in `contracts/template-brand-contract.<family>.v0.json`) so a single-select swap clears the previous selection. Verify by interaction that the previously-selected item deselects after another is picked — a selector that only ever paints "selected" on click is a blocker.
 - For exit-intent pops and promo-code inputs, polish the wrapper/copy states without breaking SDK coupon/voucher apply hooks or `cart.hasCoupon("CODE")` conditional labels.
 - If `report.theme` or `context.theme` exists, verify brand-theme load order after `next-core.css`, source-token parity for primary color/CTA/surface/text/font/radius when present, and SDK safety. When the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.
+- Before recording a terminal Polish status, install the package-owned browser
+  once with `npm run qa:install-browser`, serve the current build, and run
+  `campaigns-os polish capture --packet <packet> --base-url <served-build-url>`.
+  The package captures every mapped route at fixed desktop/mobile viewports and
+  attaches `stages.polish.evidence.visual_review.page_load`. Never hand-author,
+  copy, or repair that object directly.
 - Record polish as `completed`, `skipped`, or `blocked` in the assembly report.
+  A nonzero capture result keeps Polish blocked until repair and recapture. The
+  producer persists bounded incomplete evidence for diagnosis and does not mark
+  the stage complete.
+- Use `npm run smoke:polish-capture` only as an optional local producer smoke
+  after browser installation. It opens a loopback fixture server and is not
+  part of `npm run check` or the CI browser lane.
 
 ## Recording polish evidence
 
@@ -47,8 +59,9 @@ schema reference; this section is the recording guidance.
 
 - `visual_review` — an **object with a `screenshots` array** (aliases:
   `screenshot_paths`, `paths`, `urls`) holding at least one non-empty
-  path/URL string for the captured desktop+mobile evidence. A bare string or
-  a screenshot-less object does NOT pass, no matter how real the review was.
+  path/URL string for the captured desktop+mobile evidence, plus the
+  package-generated `page_load` object. A bare string or a screenshot-less
+  object does NOT pass, no matter how real the review was.
 - `brand_review` — object; must include the `favicon` attestation and the
   `brand_bleed` attestation (below).
 - `checkout_review` — object; must include `field_labels` (aliases
@@ -66,6 +79,26 @@ The stage record itself must carry `performed_by: "next-campaigns-polish"`,
 `source_build_fingerprint` equal to the current
 `stages.assembly.build_fingerprint`, `completed_at`, and — when the report
 fingerprints a Design Source Package — `source_package_material_fingerprint`.
+
+The `polish.hidden_eager_media` checkpoint blocks on nonwaivable missing,
+malformed, stale, integrity-invalid, route-mismatched, or incomplete package
+capture evidence. A complete finding means one computed-hidden `video` or
+`audio` element transferred strictly more than `1,048,576` bytes without an
+exact ASCII-case-insensitive `preload="none"` or `preload="metadata"` content
+attribute. Repair and recapture first. Only a complete real finding has an exact
+named-human waiver lane:
+
+```bash
+campaigns-os checkpoint waive \
+  --packet <packet> \
+  --gate polish.hidden_eager_media \
+  --reason "<why this exact finding is accepted>" \
+  --waived-by "<named human>" \
+  --review-condition "<specific re-evaluation trigger>"
+```
+
+The waiver remains visible and becomes inert when the build, slug, route plan,
+fixed viewports, or finding state changes.
 
 The favicon certification shape is authoritative (it skips the free-text leak
 scan): `{ "byte_match": true }` or `status`/`result` one of `matched_source`,

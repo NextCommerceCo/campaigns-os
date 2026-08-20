@@ -171,19 +171,27 @@ Build is not launch readiness. A complete run still needs:
 - starter-template/SDK lint from the target repo, for example `npm run lint:sdk`,
   `npm run lint:sdk:promoted`, or `npm run lint:sdk:ci` when those scripts are
   available. There is no separate `campaign-lint` package in the current flow.
-- formal polish pass
-- preview deploy
 - Campaigns OS Playwright browser install
+- formal polish pass against the served current build
+- mandatory package-owned `polish capture` evidence before Polish becomes
+  terminal or deploy/QA begins
+- preview deploy
 - Node/npm QA with Map ID and preview URL
 - typed-card test-order proof via `--test-order common` (global test cards bypass the gateway; no permission/approval needed — depth is the only control)
 
 ```bash
 npm run qa:install-browser
+npm run campaigns-os -- polish capture --packet path/to/page-kit-repo/campaign-runtime.build.json --base-url <served-current-build-url>
 npm run campaigns-os -- qa resolve --packet path/to/page-kit-repo/campaign-runtime.build.json
 npm run campaigns-os -- qa run --packet path/to/page-kit-repo/campaign-runtime.build.json --base-url https://preview.example.com/campaign/ --browser --test-order common
 ```
 
 `npm run qa:install-browser` is a one-time local setup step after install/update.
-It installs the Chromium binary used by the package-owned Playwright QA flow.
-Run it before `--browser` or `--test-order`; the CLI will tell you to run it if
-the browser binary is missing.
+It installs the Chromium binary used by package-owned polish capture and QA.
+Run it before `polish capture`, `--browser`, or `--test-order`; the CLI will tell
+you to run it if the browser binary is missing. The capture producer must point
+at the served current build and complete before Polish hands off to deploy/QA.
+
+After the browser is installed, `npm run smoke:polish-capture` is an optional
+real-Chromium package smoke. It needs permission to open a loopback HTTP
+listener and is deliberately excluded from `npm run check` and CI.

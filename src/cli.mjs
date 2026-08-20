@@ -143,6 +143,20 @@ import {
 } from "./orchestration-stage-contract.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import {
+  assertPolishCaptureBindingUnchanged,
+  capturePolishPageLoad,
+  createPolishCaptureBinding,
+  evaluateRecordedHiddenEagerMediaCheckpoint,
+  mergePolishPageLoadEvidence,
+  planPolishCapture,
+} from "./polish-node.mjs";
+import {
+  evaluateHiddenEagerMediaCheckpoint,
+  HIDDEN_EAGER_MEDIA_SCOPE,
+  POLISH_CAPTURE_PROBLEM_CODES,
+} from "./polish-page-load.mjs";
+import { redactCaptureUrl } from "./polish-capture.mjs";
+import {
   appendCheckpointWaiver,
   createCheckpointRegistry,
   createCheckpointWaiver,
@@ -291,7 +305,8 @@ Usage:
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
-  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version
+  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media
+  campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--json]   # repo/package/skill freshness preflight
@@ -667,6 +682,12 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   if (command === "checkpoint") {
     const result = checkpointCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
+    return;
+  }
+
+  if (command === "polish") {
+    const result = await polishCaptureCommand(args);
+    writePolishCaptureResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
@@ -2021,6 +2042,113 @@ function inferredBuildSidecarPaths(packet, packetPath) {
   };
 }
 
+function requireValidPolishCaptureReport(report, reportPath) {
+  const validation = validateAssemblyReport(report);
+  if (validation.ok) return report;
+  const codes = validation.errors.map((issue) => issue?.code).filter(Boolean).slice(0, 8);
+  throw new Error(
+    `polish capture requires a valid existing Assembly Report at ${reportPath}`
+    + `${codes.length ? ` (${codes.join(", ")})` : ""}.`,
+  );
+}
+
+export async function polishCaptureCommand(args, options = {}) {
+  const subcommand = args?._?.[1] || "help";
+  if (subcommand !== "capture") {
+    throw new Error(
+      "Unknown polish subcommand. Use: campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json].",
+    );
+  }
+  const packetPath = resolve(requireArg(args, "packet"));
+  const baseUrl = requireArg(args, "base-url");
+  if (args.report === true) throw new Error("Missing value for --report");
+  if (args["auth-cookie"] === true) throw new Error("Missing value for --auth-cookie");
+
+  const packet = readJson(packetPath);
+  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
+  const targetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+  if (!isLocalAbsolutePath(targetRepo)) {
+    throw new Error("polish capture requires packet.assembly.target_repo to resolve to a local target repo.");
+  }
+  const reportPath = args.report ? resolve(args.report) : sidecars.reportPath;
+  const report = readJsonIfExists(reportPath);
+  if (!report) {
+    throw new Error(`polish capture needs an existing Assembly Report at ${reportPath}; run prepare-build/start first.`);
+  }
+  requireValidPolishCaptureReport(report, reportPath);
+  const plan = planPolishCapture({ packet, baseUrl });
+  const initialBinding = createPolishCaptureBinding({
+    packet,
+    report,
+    plan,
+    packetPath,
+    targetRepo,
+  });
+
+  let createBrowserAdapter = options.createBrowserAdapter;
+  if (typeof createBrowserAdapter !== "function") {
+    ({ createPolishBrowserAdapter: createBrowserAdapter } = await import("./polish-browser.mjs"));
+  }
+  const capture = await capturePolishPageLoad({
+    packet,
+    report,
+    baseUrl,
+    headed: args.headed === true,
+    authCookie: optionalString(args["auth-cookie"]),
+    createBrowserAdapter,
+    adapterStartupDeadlineMs: options.adapterStartupDeadlineMs,
+    captureCellDeadlineMs: options.captureCellDeadlineMs,
+    adapterCloseDeadlineMs: options.adapterCloseDeadlineMs,
+  });
+
+  if (typeof options.afterCapture === "function") {
+    await options.afterCapture({ packetPath, reportPath, targetRepo, capture });
+  }
+
+  // The browser pass is deliberately long-running. Re-read both governing
+  // artifacts once it finishes, then merge only onto the current report when
+  // the bound state and prior page_load token still match.
+  const currentPacket = readJson(packetPath);
+  const currentReport = readJson(reportPath);
+  requireValidPolishCaptureReport(currentReport, reportPath);
+  const currentPlan = planPolishCapture({ packet: currentPacket, baseUrl });
+  const currentBinding = createPolishCaptureBinding({
+    packet: currentPacket,
+    report: currentReport,
+    plan: currentPlan,
+    packetPath,
+    targetRepo,
+  });
+  assertPolishCaptureBindingUnchanged(initialBinding, currentBinding);
+
+  const merged = mergePolishPageLoadEvidence(currentReport, capture.page_load);
+  const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({
+    packet: currentPacket,
+    report: merged,
+  });
+  writeJsonAtomic(reportPath, merged);
+  markDoctorSidecarStale(targetRepo, {
+    command: "polish capture",
+    reason: "Package-owned polish page-load evidence changed after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+  });
+
+  const ok = checkpoint.status === "pass" || checkpoint.status === "waived";
+  return {
+    ok,
+    status: ok ? (checkpoint.status === "waived" ? "ready_with_waivers" : "ready") : "blocked",
+    action: "polish-capture",
+    report_path: reportPath,
+    measurement: capture.page_load.measurement,
+    checkpoint,
+    observed_findings: capture.page_load.findings,
+    capture: {
+      route_scope: capture.plan.route_scope,
+      routes: capture.plan.routes.map((route) => route.requested_route),
+      viewports: capture.plan.viewports.map((viewport) => viewport.key),
+    },
+  };
+}
+
 const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
   {
     id: PAGE_KIT_SDK_VERSION_SCOPE,
@@ -2034,12 +2162,16 @@ const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
       ? doctor.derived.checkpoint_gates.find((gate) => gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) || null
       : null),
   },
+  {
+    id: HIDDEN_EAGER_MEDIA_SCOPE,
+    evaluate: ({ packet, report }) => evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
+  },
 ]);
 
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
-    throw new Error('Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: page_kit.store_profile, page_kit.sdk_version.');
+    throw new Error('Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media.');
   }
   return checkpointWaive(args);
 }
@@ -2058,7 +2190,7 @@ export function checkpointWaive(args) {
   if (!report) throw new Error(`checkpoint waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
 
   const doctor = doctorPacket(packetPath, { reportPath });
-  const gate = evaluateCheckpointRegistry(CHECKPOINT_EVALUATORS, gateId, { doctor });
+  const gate = evaluateCheckpointRegistry(CHECKPOINT_EVALUATORS, gateId, { doctor, packet, report });
   if (!gate) throw new Error(`Checkpoint gate "${gateId}" has no current evidence; repair the packet/spec/target and re-run doctor.`);
   if (gate.status !== "blocked") {
     throw new Error(`Checkpoint gate "${gateId}" is not blocked (status=${gate.status}); no waiver was recorded.`);
@@ -2109,6 +2241,7 @@ export function doctorPacket(packetPath, { contextPath = undefined, reportPath =
     spec_path: null,
     doctor_checks: [],
     checkpoint_gates: [],
+    polish_checkpoint_gate: null,
     page_kit_campaign_config: null,
     scaffold_required: false,
     scaffold_reason: null,
@@ -2146,17 +2279,43 @@ export function doctorPacket(packetPath, { contextPath = undefined, reportPath =
   }
   runPricingCssHideCheck({ packet, derived, warnings, ready, report });
 
-  const polishGate = evaluatePolishGate({ report });
+  const polishCheckpointGate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
+  derived.polish_checkpoint_gate = polishCheckpointGate;
+  const polishGate = evaluatePolishGate({ report, hiddenEagerMediaGate: polishCheckpointGate });
   derived.polish_gate = polishGate;
-  if (polishGate.status === "blocked") {
+  if (polishGate.status === "blocked" && !polishGate.owned_checkpoint_only) {
     const commands = (polishGate.required_actions || [])
       .map((action) => action?.command)
       .filter(Boolean);
     addIssue(errors, polishGate.code, `${polishGate.reason}${commands.length ? ` Required action: ${commands.join(" | ")}.` : " Run next-campaigns-polish before QA."}`, { polish_gate: polishGate });
-  } else if (polishGate.status === "waived") {
+  } else if (polishGate.status === "waived" && !polishGate.owned_checkpoint_only) {
     ready.push(`Polish gate passed under waiver: ${polishGate.waiver?.reason || "(no reason recorded)"}`);
   } else if (polishGate.status === "pass") {
     ready.push("Polish gate passed: structured evidence is current for this build.");
+  }
+
+  if (polishCheckpointGate.status === "blocked") {
+    const commands = polishCheckpointGate.required_actions
+      .map((action) => action?.command)
+      .filter(Boolean);
+    addIssue(
+      errors,
+      polishCheckpointGate.code,
+      `${polishCheckpointGate.reason}${commands.length ? ` Required action: ${commands.join(" | ")}.` : ""}`,
+      { polish_checkpoint_gate: polishCheckpointGate },
+    );
+  } else if (polishCheckpointGate.status === "waived") {
+    addIssue(
+      warnings,
+      polishCheckpointGate.code,
+      `${polishCheckpointGate.reason} Waived by ${polishCheckpointGate.waiver.waived_by}: ${polishCheckpointGate.waiver.reason}`,
+      { polish_checkpoint_gate: polishCheckpointGate },
+    );
+    ready.push(`Hidden eager-media checkpoint accepted under named-human exception (${polishCheckpointGate.waiver.waived_by}).`);
+  } else if (polishCheckpointGate.status === "pass") {
+    ready.push("Hidden eager-media checkpoint passed: package-owned page-load evidence is complete and current.");
+  } else {
+    ready.push("Hidden eager-media checkpoint not applicable before completed assembly.");
   }
 
   const next = buildNextStep(errors, warnings, derived, report);
@@ -5445,6 +5604,16 @@ function addPolishGateErrors(errors, polishGate, stage) {
   );
 }
 
+function addPolishCheckpointGateErrors(errors, gate, stage) {
+  if (!gate || gate.status !== "blocked") return;
+  addIssue(
+    errors,
+    `next.${stage}.${gate.code}`,
+    gate.reason,
+    { polish_checkpoint_gate: gate },
+  );
+}
+
 function doctorErrorsAreOnlyPolishGate(errors = []) {
   return errors.length > 0 && errors.every((issue) => String(issue?.code || "").startsWith("polish."));
 }
@@ -5536,6 +5705,7 @@ function pickNextStage(report, doctor) {
   // signal logic needs to run (e.g. consulting doctor.derived for
   // specific stages), add it AFTER this gate, not before.
   const polishGate = doctor?.derived?.polish_gate || evaluatePolishGate({ report });
+  const polishCheckpointGate = doctor?.derived?.polish_checkpoint_gate || null;
   if (doctor && !doctor.ok && !doctorErrorsAreOnlyPolishGate(doctor.errors)) {
     return {
       stage: "doctor-blocked",
@@ -5569,6 +5739,14 @@ function pickNextStage(report, doctor) {
     return {
       stage: "polish",
       reason: polishGate.reason,
+      blocked: true,
+    };
+  }
+
+  if (polishCheckpointGate?.status === "blocked") {
+    return {
+      stage: "polish",
+      reason: polishCheckpointGate.reason,
       blocked: true,
     };
   }
@@ -5635,6 +5813,7 @@ export function nextStage(stage, args, ambient = null) {
   }
   const themeGate = doctor.derived?.theme_gate || null;
   const polishGate = doctor.derived?.polish_gate || evaluatePolishGate({ report });
+  const polishCheckpointGate = doctor.derived?.polish_checkpoint_gate || null;
   // Packet 03 (INV-5 first slice): compare the ledger's self-report against
   // the repo's artifacts before any recommendation goes out. Additive:
   // `divergences[]` appears on the result only when at least one divergence
@@ -5648,7 +5827,7 @@ export function nextStage(stage, args, ambient = null) {
   const finalize = (result) => {
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate });
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, ambient });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, ambient });
     recordNextRecommendation(ambient, result);
     return result;
   };
@@ -5738,6 +5917,7 @@ export function nextStage(stage, args, ambient = null) {
     // agent needs to know when to fire it and what to record afterwards.
     if (!report) addIssue(errors, "next.deploy.report", "Assembly report is required before deploy.");
     addPolishGateErrors(errors, polishGate, "deploy");
+    addPolishCheckpointGateErrors(errors, polishCheckpointGate, "deploy");
     addThemeGateErrors(errors, themeGate, "deploy");
     prompt = deployPrompt(packetPath, reportPath, packet);
   } else if (stage === "qa") {
@@ -5746,6 +5926,7 @@ export function nextStage(stage, args, ambient = null) {
     const deployUrl = packet.deploy?.preview_url || packet.deploy?.production_url;
     if (!deployUrl) addIssue(errors, "next.qa.deploy_url", "QA requires deploy.preview_url or deploy.production_url.");
     addPolishGateErrors(errors, polishGate, "qa");
+    addPolishCheckpointGateErrors(errors, polishCheckpointGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
     prompt = qaPrompt(packetPath, reportPath, packet);
   } else {
@@ -5813,6 +5994,9 @@ function buildNextGates({ doctor, report, themeGate, polishGate }) {
     ...(Array.isArray(doctor?.derived?.checkpoint_gates)
       ? doctor.derived.checkpoint_gates.map((gate) => ({ ...gate }))
       : []),
+    ...(doctor?.derived?.polish_checkpoint_gate
+      ? [{ ...doctor.derived.polish_checkpoint_gate }]
+      : []),
     {
       id: "theme_gate",
       status: themeGate?.status || "not_applicable",
@@ -5821,14 +6005,16 @@ function buildNextGates({ doctor, report, themeGate, polishGate }) {
       waiver: themeGate?.waiver || null,
       required_actions: themeGate?.required_actions || [],
     },
-    {
-      id: "polish_gate",
-      status: polishGate?.status || "not_applicable",
-      reason: polishGate?.reason || "No polish gate evaluation available.",
-      code: polishGate?.code || null,
-      waiver: polishGate?.waiver || null,
-      required_actions: polishGate?.required_actions || [],
-    },
+    ...(polishGate?.owned_checkpoint_only
+      ? []
+      : [{
+          id: "polish_gate",
+          status: polishGate?.status || "not_applicable",
+          reason: polishGate?.reason || "No polish gate evaluation available.",
+          code: polishGate?.code || null,
+          waiver: polishGate?.waiver || null,
+          required_actions: polishGate?.required_actions || [],
+        }]),
   ];
 }
 
@@ -5858,9 +6044,21 @@ function divergenceInspectAction(divergences, packetPath) {
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, ambient }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, ambient }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
+  const pushPolishCheckpointActions = () => {
+    const baseUrl = packet.deploy?.preview_url || packet.deploy?.production_url || "<base-url>";
+    for (const action of polishCheckpointGate?.required_actions || []) {
+      let command = action.command;
+      if (typeof command === "string") {
+        command = command
+          .replace("--packet <packet>", `--packet ${shellToken(packetPath)}`)
+          .replace("--base-url <url>", `--base-url ${shellToken(baseUrl)}`);
+      }
+      push(`checkpoint.${action.id}`, action.kind, command, action.description, { required: action.id !== "polish.hidden_eager_media.waive" });
+    }
+  };
   const divergences = Array.isArray(result.divergences) ? result.divergences : [];
   if (divergences.length) {
     // Packet 03 / Kilo review: when the ledger and the artifacts disagree,
@@ -5916,16 +6114,24 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     return actions;
   }
   if (polishGateRequiresBuild(polishGate) && ["build", "polish", "deploy", "qa"].includes(result.stage)) {
-    for (const action of polishGate.required_actions || []) {
+    for (const action of polishGate?.required_actions || []) {
       push(`polish_gate.${action.id}`, action.kind, action.command, action.description);
     }
     push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after rebuilding against the current Design Source Package.");
     return actions;
   }
-  if (polishGate?.status === "blocked" && ["deploy", "qa"].includes(result.stage)) {
-    for (const action of polishGate.required_actions || []) {
+  if ((polishGate?.status === "blocked" || polishCheckpointGate?.status === "blocked")
+    && ["deploy", "qa"].includes(result.stage)) {
+    const checkpointActionIds = new Set(
+      (polishCheckpointGate?.required_actions || [])
+        .map((action) => action?.id)
+        .filter(Boolean),
+    );
+    for (const action of polishGate?.required_actions || []) {
+      if (checkpointActionIds.has(action?.id)) continue;
       push(`polish_gate.${action.id}`, action.kind, action.command, action.description);
     }
+    pushPolishCheckpointActions();
     push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after recording valid Polish evidence.");
     return actions;
   }
@@ -5940,6 +6146,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     }
   } else if (result.stage === "polish") {
     push("polish_skill", "skill", "next-campaigns-polish", "Run the visual polish pass, capture desktop/mobile evidence, then record stages.polish in the assembly report.");
+    if (polishCheckpointGate?.status === "blocked") pushPolishCheckpointActions();
   } else if (result.stage === "deploy") {
     push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"}, then record deploy.preview_url (or production_url) on the packet and stages.deploy in the assembly report.`);
     push("advance", "command", `campaigns-os next --packet ${packetPath} --json`, "Advance to QA once the deploy URL is recorded.");
@@ -6048,7 +6255,13 @@ Read first:
 - Campaign Build Brief: ${briefPath}
 - Template family: ${packet.assembly.template_family}
 
-Compare source and Campaign Build Brief decisions against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, and capture desktop/mobile evidence.
+Compare source and Campaign Build Brief decisions against built page-kit output, patch only SDK-safe visual surfaces, scan source assets for logo/brand marks before leaving starter-template logos, respect spec-driven removals recorded during build, and capture desktop/mobile screenshots.
+
+Before marking Polish complete, install the package-owned browser once and run the page-load producer against the served build:
+- npm run qa:install-browser
+- campaigns-os polish capture --packet ${packetPath} --base-url <served-build-url>
+
+The producer covers every mapped route at fixed desktop/mobile viewports and attaches stages.polish.evidence.visual_review.page_load to the current Assembly Report. Never hand-author or copy page_load. A missing, stale, malformed, incomplete, cache/service-worker-observed, or over-threshold result keeps Polish/deploy/QA blocked; repair and recapture, or use the exact named-human checkpoint waiver only for a complete hidden eager-media finding.
 
 Record Polish on stages.polish before QA:
 - status: completed or completed_with_warnings (or blocked with blockers)
@@ -6056,7 +6269,7 @@ Record Polish on stages.polish before QA:
 - source_build_fingerprint: the current stages.assembly.build_fingerprint
 - source_package_material_fingerprint: the current report.design_source_package.material_fingerprint when present
 - completed_at: ISO timestamp
-- evidence.visual_review: representative screenshot paths/URLs
+- evidence.visual_review: representative screenshot paths/URLs plus package-generated page_load
 - evidence.brand_review: logo/favicon/brand color checks, including non-template favicon confirmation
 - evidence.checkout_review: labels/placeholders, phone alignment, payment display, bump compare-price rule
 - evidence.template_residue_review: NEXT Blue/template placeholder/starter favicon/lorem/product residue checks
@@ -6260,8 +6473,9 @@ export function detectLedgerDivergence(report, packet, targetRepo) {
 }
 
 function checkpointExceptionPresent(derived) {
-  return Array.isArray(derived?.checkpoint_gates)
-    && derived.checkpoint_gates.some((gate) => gate?.status === "waived");
+  return (Array.isArray(derived?.checkpoint_gates)
+      && derived.checkpoint_gates.some((gate) => gate?.status === "waived"))
+    || derived?.polish_checkpoint_gate?.status === "waived";
 }
 
 function readinessStatus(warnings, derived) {
@@ -6276,14 +6490,19 @@ function buildNextStep(errors, warnings, derived, report = null) {
   const qaStatus = report?.stages?.qa?.status || "";
   const assemblyComplete = assemblyStatus.startsWith("completed");
   const polishGate = derived.polish_gate || evaluatePolishGate({ report });
-  const polishBlocked = assemblyComplete && polishGate.status === "blocked";
-  const polishSatisfied = assemblyComplete && ["pass", "waived"].includes(polishGate.status);
+  const polishCheckpointGate = derived.polish_checkpoint_gate || null;
+  const polishBlocked = assemblyComplete
+    && (polishGate.status === "blocked" || polishCheckpointGate?.status === "blocked");
+  const polishSatisfied = assemblyComplete
+    && ["pass", "waived"].includes(polishGate.status)
+    && ["pass", "waived"].includes(polishCheckpointGate?.status);
+  const onlyPolishErrors = doctorErrorsAreOnlyPolishGate(errors);
   const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
     || Boolean(deployUrlFromReportOutputs(report));
   const qaRecorded = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => qaStatus.startsWith(prefix));
   const blockedStages = [];
   const actions = [];
-  if (errors.length) {
+  if (errors.length && !onlyPolishErrors) {
     actions.push("Resolve packet blockers before assembly.");
   }
   if (codes.has("deploy.preview_url") && !deploySatisfied) blockedStages.push("qa");
@@ -6334,12 +6553,18 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
 
   if (polishBlocked) {
+    blockedStages.push("polish");
     blockedStages.push("deploy");
     blockedStages.push("qa");
-    actions.push(`${polishGate.reason} Run next-campaigns-polish and record structured evidence before deploy/QA handoff.`);
+    if (polishGate.status === "blocked") {
+      actions.push(`${polishGate.reason} Run next-campaigns-polish and record structured evidence before deploy/QA handoff.`);
+    }
+    if (polishCheckpointGate?.status === "blocked") {
+      actions.push(`${polishCheckpointGate.reason} Run campaigns-os polish capture before marking Polish complete.`);
+    }
   }
 
-  if (errors.length) {
+  if (errors.length && !onlyPolishErrors) {
     return {
       stage: "collect-inputs",
       status: "blocked",
@@ -6931,6 +7156,142 @@ function writeResult(result, args, failureCode) {
   } else {
     printResult(result);
   }
+  if (failureCode) process.exitCode = failureCode;
+}
+
+const POLISH_CAPTURE_TEXT_FINDING_LIMIT = 100;
+const POLISH_CAPTURE_TEXT_SOURCE_LIMIT = 16;
+const POLISH_CAPTURE_TEXT_INCOMPLETE_LIMIT = 64;
+const POLISH_CAPTURE_TEXT_PROBLEM_LIMIT = 16;
+const POLISH_CAPTURE_TEXT_RAW_PROBLEM_LIMIT = 64;
+const POLISH_CAPTURE_TEXT_ACTION_LIMIT = 8;
+const SAFE_POLISH_CAPTURE_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
+const SAFE_POLISH_CHECKPOINT_REASONS = new Map([
+  ["polish.hidden_eager_media.capture_malformed", "Package-owned page-load evidence or its governing authority is missing, malformed, or inconsistent."],
+  ["polish.hidden_eager_media.capture_stale", "Package-owned page-load evidence is stale for the current build, campaign, routes, or viewports."],
+  ["polish.hidden_eager_media.capture_incomplete", "Package-owned page-load capture is incomplete; repair the listed capture problems and recapture."],
+  ["polish.hidden_eager_media", "Hidden eager media exceeds 1,048,576 bytes; repair and recapture, or record an exact waiver."],
+  ["polish.hidden_eager_media.waived", "Hidden eager-media findings are covered by an exact named-human waiver."],
+  ["polish.hidden_eager_media.pass", "Package-owned page-load evidence has no blocking hidden eager media."],
+  ["polish.hidden_eager_media.not_applicable", "Package-owned page-load evidence is not applicable before completed assembly."],
+]);
+const SAFE_POLISH_CHECKPOINT_ACTIONS = new Map([
+  ["polish.hidden_eager_media.capture", "campaigns-os polish capture --packet <packet> --base-url <url>"],
+  ["polish.hidden_eager_media.install_browser", "npm run qa:install-browser"],
+  ["polish.hidden_eager_media.waive", "campaigns-os checkpoint waive --packet <packet> --gate polish.hidden_eager_media --reason \"<why>\" --waived-by \"<named human>\" --review-condition \"<trigger>\""],
+  ["polish.hidden_eager_media.repair", "Repair the reported media, then recapture."],
+  ["polish.hidden_eager_media.repair_authority", "Repair packet/report authority and the mapped route plan, then recapture."],
+]);
+
+function safePolishFindingRoute(value) {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
+    return "[route unavailable]";
+  }
+  try {
+    const route = new URL(value, "https://polish-capture.invalid").pathname;
+    return route.length <= 2_048 && !/[\u0000-\u001f\u007f]/.test(route)
+      ? route
+      : "[route unavailable]";
+  } catch {
+    return "[route unavailable]";
+  }
+}
+
+function safePolishFindingSource(value) {
+  if (typeof value !== "string") return "[source unavailable]";
+  const redacted = redactCaptureUrl(value);
+  return typeof redacted === "string" && redacted.length <= 4_096
+    ? redacted
+    : "[source unavailable]";
+}
+
+function safePolishByteCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? String(value) : "unavailable";
+}
+
+export function formatPolishCaptureText(result) {
+  const status = ["ready", "ready_with_waivers", "blocked"].includes(result?.status)
+    ? result.status
+    : "unknown";
+  const measurementStatus = ["complete", "incomplete"].includes(result?.measurement?.status)
+    ? result.measurement.status
+    : "unknown";
+  const checkpointFindings = Array.isArray(result?.checkpoint?.findings) ? result.checkpoint.findings : [];
+  const observedFindings = Array.isArray(result?.observed_findings) ? result.observed_findings : [];
+  const findingSource = checkpointFindings.length ? checkpointFindings : observedFindings;
+  const findings = findingSource.slice(0, POLISH_CAPTURE_TEXT_FINDING_LIMIT);
+  const lines = [
+    `Status: ${status.toUpperCase()}`,
+    `Measurement: ${measurementStatus.toUpperCase()}`,
+  ];
+  const incomplete = Array.isArray(result?.measurement?.incomplete)
+    ? result.measurement.incomplete
+    : [];
+  const incompleteCells = incomplete.slice(0, POLISH_CAPTURE_TEXT_INCOMPLETE_LIMIT);
+  if (incompleteCells.length) {
+    lines.push("Capture problems:");
+    for (const cell of incompleteCells) {
+      const viewport = cell?.viewport === "desktop" || cell?.viewport === "mobile"
+        ? cell.viewport
+        : "unknown";
+      const problemCodes = [...new Set((Array.isArray(cell?.problem_codes)
+        ? cell.problem_codes.slice(0, POLISH_CAPTURE_TEXT_RAW_PROBLEM_LIMIT)
+        : []).filter((code) => SAFE_POLISH_CAPTURE_PROBLEM_CODES.has(code)))]
+        .sort()
+        .slice(0, POLISH_CAPTURE_TEXT_PROBLEM_LIMIT);
+      lines.push(`- Route: ${safePolishFindingRoute(cell?.route)}`);
+      lines.push(`  Viewport: ${viewport}`);
+      lines.push(`  Problem codes: ${problemCodes.length ? problemCodes.join(", ") : "unavailable"}`);
+    }
+    if (incomplete.length > incompleteCells.length) {
+      lines.push(`Additional incomplete capture cells omitted: ${incomplete.length - incompleteCells.length}`);
+    }
+  }
+  const safeCheckpointReason = SAFE_POLISH_CHECKPOINT_REASONS.get(result?.checkpoint?.code);
+  if (safeCheckpointReason) lines.push(`Checkpoint: ${safeCheckpointReason}`);
+  const safeActions = [...new Set((Array.isArray(result?.checkpoint?.required_actions)
+    ? result.checkpoint.required_actions.slice(0, POLISH_CAPTURE_TEXT_ACTION_LIMIT)
+    : []).map((action) => SAFE_POLISH_CHECKPOINT_ACTIONS.get(action?.id)).filter(Boolean))];
+  for (const action of safeActions) {
+    lines.push(`Required action: ${action}`);
+  }
+  if (!findings.length) return lines.join("\n");
+
+  lines.push(checkpointFindings.length
+    ? "Hidden eager-media findings:"
+    : "Observed hidden eager-media findings (measurement incomplete):");
+  for (const finding of findings) {
+    const viewport = finding?.viewport === "desktop" || finding?.viewport === "mobile"
+      ? finding.viewport
+      : "unknown";
+    const tag = finding?.tag_name === "video" || finding?.tag_name === "audio"
+      ? finding.tag_name
+      : "media";
+    const elementIndex = Number.isSafeInteger(finding?.element_index) && finding.element_index >= 0
+      ? String(finding.element_index)
+      : "unknown";
+    const sources = Array.isArray(finding?.sources)
+      ? finding.sources.slice(0, POLISH_CAPTURE_TEXT_SOURCE_LIMIT).map(safePolishFindingSource)
+      : [];
+    lines.push(`- Route: ${safePolishFindingRoute(finding?.route)}`);
+    lines.push(`  Viewport: ${viewport}`);
+    lines.push(`  Media: ${tag} element ${elementIndex}`);
+    lines.push(`  Source: ${sources.length ? sources.join(", ") : "[source unavailable]"}`);
+    if (Array.isArray(finding?.sources) && finding.sources.length > sources.length) {
+      lines.push(`  Additional sources omitted: ${finding.sources.length - sources.length}`);
+    }
+    lines.push(`  Transferred bytes: ${safePolishByteCount(finding?.transferred_bytes)}`);
+    lines.push(`  Threshold bytes: ${safePolishByteCount(finding?.threshold_bytes)}`);
+  }
+  if (findingSource.length > findings.length) {
+    lines.push(`Additional findings omitted: ${findingSource.length - findings.length}`);
+  }
+  return lines.join("\n");
+}
+
+function writePolishCaptureResult(result, args, failureCode) {
+  if (args.json) console.log(JSON.stringify(result, null, 2));
+  else console.log(formatPolishCaptureText(result));
   if (failureCode) process.exitCode = failureCode;
 }
 
@@ -7653,7 +8014,7 @@ function qaVerdictCandidateTime(candidate) {
   return Number(candidate?.mtimeMs || 0);
 }
 
-const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["no-remit", "no-write", "proxy-base"]);
+const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["auth-cookie", "no-remit", "no-write", "proxy-base"]);
 
 // argv SHAPE = selected flag NAMES present, never their values (minimization).
 // Sorted + de-duplicated for deterministic records; opt-out and endpoint flags
