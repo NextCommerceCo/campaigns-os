@@ -14,7 +14,7 @@ implementation detail, however stable it looks.
 | Surface | Contract | Change discipline |
 |---|---|---|
 | `schemas/*.schema.json` (all 7) | The portable runtime contract: Build Packet, Build Context, Assembly Report, Run Record, Workflow Finding, Build Brief, Source-HTML Manifest. | Hashed. Any content change requires updating the recorded hash **and** bumping `surface_version` in the same PR. A shape change that alters meaning gets a new schema-version const — one version identifier must never cover two shapes (the 2026-08 assembly-report drift is the incident this rule encodes). Additions to a `v0` schema are expected; consumers must tolerate unknown fields. |
-| CLI commands: `start`, `prepare-build`, `build`, `checkpoint`, `doctor`, `standardize`, `standardization-report`, `qa`, `findings`, `run-record`, `run` | Scriptable entry points (this is the argv surface Campaigns Agent's remit fixture pins). `checkpoint` is a staged registry: `checkpoint waive` currently accepts only `page_kit.store_profile`; SDK/polish gates may register later, while legacy source/theme/QA waiver lanes remain separate. | May gain subcommands, registered gates, and flags freely. Renaming or removing one fails the gate. Do not infer support for an unregistered checkpoint from the top-level command. |
+| CLI commands: `start`, `prepare-build`, `build`, `checkpoint`, `doctor`, `standardize`, `standardization-report`, `qa`, `findings`, `run-record`, `run` | Scriptable entry points (this is the argv surface Campaigns Agent's remit fixture pins). `checkpoint` is a staged registry: `checkpoint waive` currently accepts only `page_kit.store_profile`; SDK/polish gates may register later, while legacy source/theme/QA waiver lanes remain separate. | Additive commands bump `surface_version` in the same PR. Subcommands, registered gates, and flags may grow freely beneath a listed command. Renaming or removing one fails the gate. Do not infer support for an unregistered checkpoint from the top-level command. |
 | `bin/campaigns-os.mjs` (`campaigns-os`) | The CLI entry itself. | Declared in `package.json` `bin`; the gate fails if it disappears. |
 | Package export `./campaign-spec` | The versioned campaign-spec rule registry, consumed as `@nextcommerce/campaigns-os` (pinned by consumers' lockfiles; lockstep policy — ADR-003 in the ops repo). | Behavior-guarded from the consumer side by their contract tests; the export path itself is gated here. |
 | Contract docs: `CONTEXT.md`, `docs/campaigns-os-build-flow.md`, `docs/build-packet.md`, `docs/campaign-build-brief.md`, `docs/campaign-standardization-report.md`, `docs/brand-theme-bridge.md`, `docs/qa-and-test-orders.md`, `docs/versioning.md`, `docs/workflow-findings-sidecar.md`, this file | Named entry points consumers pin for context. | Content evolves freely; the path must keep existing. |
@@ -44,7 +44,10 @@ the package a consumer installs."
 1. Make the change and update `contracts/supported-surface.json` (hash and/or
    entries) in the same PR.
 2. Bump `surface_version` when any hashed file changed (the `--base` gate in CI
-   enforces this; parity runs in every `npm run check`).
+   enforces this; parity runs in every `npm run check`). Also bump it when the
+   manifest adds a `cli_commands`, `package_exports`, or `bin` entry: those are
+   additive public-surface expansions even though the gate cannot yet derive
+   the owed bump automatically.
 3. Breaking a consumer-visible shape? New schema-version const, and say so in
    the PR body — downstream pins (Campaigns Agent context spine, ops-repo
    `public-contracts.manifest.json`) update on their own cadence against a

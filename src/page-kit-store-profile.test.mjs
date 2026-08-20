@@ -4,6 +4,7 @@ import test from "node:test";
 import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
 import {
   evaluatePageKitStoreProfile,
+  isStoreProfileDiscrepancyWaivable,
   PAGE_KIT_STORE_PROFILE_FIELDS,
 } from "./page-kit-store-profile.mjs";
 
@@ -274,6 +275,20 @@ test("packet QA cannot fetch around a missing or malformed local spec", () => {
 });
 
 test("waivability is decided by an enumerated kind set, not by how a kind is named", () => {
+  for (const kind of ["demo_residue", "target_missing", "mismatch"]) {
+    assert.equal(isStoreProfileDiscrepancyWaivable(kind), true, kind);
+  }
+  for (const kind of [
+    "both_invalid_type",
+    "spec_invalid_type",
+    "target_invalid_type",
+    "future_blocker_kind",
+    "",
+    null,
+  ]) {
+    assert.equal(isStoreProfileDiscrepancyWaivable(kind), false, String(kind));
+  }
+
   // Every blocker kind, pinned to the waivability it is supposed to carry. The
   // set was previously derived from an "invalid_type" suffix, which quietly
   // decided this for any kind added later; this test is what makes a change to

@@ -50,17 +50,18 @@ function isDemoResidue(field, value) {
   return PHONE_FIELDS.has(field) && value.replace(/\D/g, "") === "18888316810";
 }
 
-// A waiver records a named human accepting a KNOWN divergence. A non-string
-// governed value is not a known divergence — nobody can attest to a shape they
-// cannot read — so those kinds are never waivable. Enumerated explicitly rather
-// than matched on an "invalid_type" suffix: a suffix test silently decides
-// waivability for every kind added later, in whichever direction the name
-// happens to fall.
-const NON_WAIVABLE_DISCREPANCY_KINDS = new Set([
-  "both_invalid_type",
-  "spec_invalid_type",
-  "target_invalid_type",
+// A waiver records a named human accepting one of the three ratified known
+// divergences. Keep this as a positive allowlist: any future blocker kind is
+// non-waivable until its policy and reachability proof are explicitly added.
+const WAIVABLE_DISCREPANCY_KINDS = new Set([
+  "demo_residue",
+  "target_missing",
+  "mismatch",
 ]);
+
+export function isStoreProfileDiscrepancyWaivable(kind) {
+  return typeof kind === "string" && WAIVABLE_DISCREPANCY_KINDS.has(kind);
+}
 
 function matrixRow(field, rawSpec, rawTarget) {
   const spec = normalizeFieldValue(rawSpec);
@@ -197,8 +198,9 @@ export function evaluatePageKitStoreProfile({
   });
   const blocker_fields = matrix.filter((row) => row.severity === "blocker").map((row) => row.field);
   const warning_fields = matrix.filter((row) => row.severity === "warning").map((row) => row.field);
-  const waivable = blocker_fields.length > 0
-    && !matrix.some((row) => NON_WAIVABLE_DISCREPANCY_KINDS.has(row.kind));
+  const blockerRows = matrix.filter((row) => row.severity === "blocker");
+  const waivable = blockerRows.length > 0
+    && blockerRows.every((row) => isStoreProfileDiscrepancyWaivable(row.kind));
   // Waiver history matters only while this exact checkpoint is blocked. Once
   // correction removes every blocker (including a target-only warning state),
   // historical decisions stay in the report but must not become stale-warning
