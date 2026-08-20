@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { qaWaive, __qaNodeTestHooks } from "./qa-node.mjs";
-import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
+import { assessAnalyticsInventory, assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { normalizeCapture } from "./qa-analytics-parity.mjs";
 import { computeDisposition, SEVERITY, STATUS } from "./qa-verdict.mjs";
 
@@ -31,6 +31,18 @@ function noPurchaseCapture() {
 
 // A contract that makes purchase-fires (and only it) the failing blocker.
 const PURCHASE_ONLY_CONTRACT = { manual_events: [{ event: "dl_purchase", page: "receipt", trigger: "page-load" }] };
+
+function assessPurchase(capture, waivers = {}) {
+  return [assessReceiptPurchase({
+    plannedPlanIds: ["accept-decline"],
+    attempts: [{
+      planId: "accept-decline",
+      receiptRecognized: true,
+      receiptUrl: "https://shop.example/receipt/?ref_id=redacted",
+      capture,
+    }],
+  }, { waivers })];
+}
 
 // Minimal packet + Assembly Report pair on disk, mirroring the shapes
 // prepare-build writes (target_repo "." keeps the report packet-adjacent, the
@@ -62,7 +74,7 @@ test("waiver round-trip: qa waive records attribution, the failing blocker downg
     _: ["qa", "waive"],
     packet: packetPath,
     assertion: WAIVABLE,
-    reason: "Purchase fires on the receipt page; the audited landing page cannot fire it (interim capture limitation).",
+    reason: "The named operator accepts this receipt's missing Purchase signal for the current run.",
     "waived-by": "devin@local",
   });
   assert.equal(result.ok, true);
@@ -73,7 +85,7 @@ test("waiver round-trip: qa waive records attribution, the failing blocker downg
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
   const stored = report.stages.qa.waivers[WAIVABLE];
   assert.equal(stored.waived_by, "devin@local");
-  assert.match(stored.reason, /receipt page/);
+  assert.match(stored.reason, /missing Purchase signal/);
   assert.match(stored.waived_at, /^\d{4}-\d{2}-\d{2}T/);
   // Human-readable trace on the report evidence ledger, like theme waive.
   assert.ok(report.evidence.some((line) => line.includes(WAIVABLE) && line.includes("devin@local")));
@@ -83,14 +95,13 @@ test("waiver round-trip: qa waive records attribution, the failing blocker downg
   assert.deepEqual(Object.keys(waivers), [WAIVABLE]);
 
   // ...and the correctness leg downgrades the failing blocker WITH attribution.
-  const assertions = assessAnalyticsCorrectness(noPurchaseCapture(), PURCHASE_ONLY_CONTRACT, { waivers });
+  const assertions = assessPurchase(noPurchaseCapture(), waivers);
   const purchase = byId(assertions)[WAIVABLE];
   assert.equal(purchase.status, STATUS.FAIL);
   assert.equal(purchase.severity, SEVERITY.WARN);
   assert.equal(purchase.waiver.waived_by, "devin@local");
   assert.equal(purchase.waiver.reason, stored.reason);
   assert.equal(purchase.waiver.waived_at, stored.waived_at);
-  assert.equal(purchase.evidence.waiver.waived_by, "devin@local");
   assert.match(purchase.actual, /waived by devin@local/);
 
   // Waived blocker => ready_with_exceptions, never blocked, never plain ready.
@@ -142,7 +153,7 @@ test("negative control: failing purchase-fires with no waiver still blocks", () 
   const { packetPath } = writeFixture();
   const waivers = resolveQaWaivers({ packetPath }); // report exists, nothing waived
   assert.deepEqual(waivers, {});
-  const assertions = assessAnalyticsCorrectness(noPurchaseCapture(), PURCHASE_ONLY_CONTRACT, { waivers });
+  const assertions = assessPurchase(noPurchaseCapture(), waivers);
   const purchase = byId(assertions)[WAIVABLE];
   assert.equal(purchase.status, STATUS.FAIL);
   assert.equal(purchase.severity, SEVERITY.BLOCKER);
@@ -163,7 +174,7 @@ test("negative control: the lane never becomes a default — foreign or malforme
   writeFileSync(reportPath, JSON.stringify(report, null, 2));
   const waivers = resolveQaWaivers({ packetPath });
   assert.deepEqual(waivers, {}, "foreign ids and reason-less records are inert data");
-  const assertions = assessAnalyticsCorrectness(noPurchaseCapture(), PURCHASE_ONLY_CONTRACT, { waivers });
+  const assertions = assessPurchase(noPurchaseCapture(), waivers);
   const purchase = byId(assertions)[WAIVABLE];
   assert.equal(purchase.severity, SEVERITY.BLOCKER);
   assert.equal(computeDisposition(assertions), "blocked");
@@ -172,7 +183,10 @@ test("negative control: the lane never becomes a default — foreign or malforme
 test("a purchase-fires waiver downgrades ONLY purchase-fires — other blockers still block", () => {
   const waivers = { [WAIVABLE]: { reason: "accepted", waived_by: "devin@local", waived_at: "2026-08-17T00:00:00.000Z" } };
   const contract = { ...PURCHASE_ONLY_CONTRACT, providers: { gtm: { enabled: true, containerId: "GTM-MISSING" } } };
-  const assertions = assessAnalyticsCorrectness(noPurchaseCapture(), contract, { waivers });
+  const assertions = [
+    ...assessAnalyticsInventory(noPurchaseCapture(), contract),
+    ...assessPurchase(noPurchaseCapture(), waivers),
+  ];
   const a = byId(assertions);
   assert.equal(a[WAIVABLE].severity, SEVERITY.WARN, "waived blocker downgrades");
   assert.equal(a["analytics-correctness:tag:gtm"].severity, SEVERITY.BLOCKER, "unwaived blocker keeps blocking");
@@ -185,10 +199,10 @@ test("a stale waiver on a PASSING purchase-fires is inert: no attribution, dispo
     events: [{ layer: "dataLayer", data: { event: "dl_purchase", ecommerce: { value: 1, currency: "USD", transaction_id: "t1" } } }],
     tagFires: [],
   });
-  const assertions = assessAnalyticsCorrectness(capture, PURCHASE_ONLY_CONTRACT, { waivers });
+  const assertions = assessPurchase(capture, waivers);
   const purchase = byId(assertions)[WAIVABLE];
   assert.equal(purchase.status, STATUS.PASS);
-  assert.equal(purchase.severity, SEVERITY.BLOCKER, "severity vocabulary unchanged on the passing path");
+  assert.equal(purchase.severity, undefined, "passing receipt proof does not carry a failure severity");
   assert.equal(purchase.waiver, undefined);
   assert.equal(computeDisposition(assertions), "ready");
 });

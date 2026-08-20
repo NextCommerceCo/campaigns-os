@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
+import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
@@ -100,9 +101,9 @@ Options:
                                   Requires one-time setup: npm run qa:install-browser.
   --analytics-candidate <url>     Analytics-PARITY leg only: explicit candidate receipt URL paired with the
                                   --analytics-baseline legacy receipt (receipt-capture pairing). When omitted,
-                                  the parity candidate — and ALWAYS the correctness leg — captures the URL
-                                  resolved from the campaign's identity (public_route_slug + route_root),
-                                  never a raw --base-url.
+                                  the parity candidate and correctness root-inventory phase capture the URL
+                                  resolved from campaign identity, never a raw --base-url. Correctness Purchase
+                                  proof reuses the canonical typed-card order's settled receipt capture.
   --assertion <id>                qa waive: the blocking assertion to waive. The waiver lane is scoped to
                                   analytics-correctness:purchase-fires — other assertions are refused.
   --reason <text>                 qa waive: REQUIRED — why this blocker is acceptable for this campaign.
@@ -111,7 +112,8 @@ Options:
                                   (or "operator" when $USER is unset), matching themeWaive's default lane.
   --report <path>                 qa waive: explicit Assembly Report path. Default: the packet target repo's
                                   .campaign-runtime/assembly-report.json.
-  --analytics-settle <ms>         Extra settle time after page load for async analytics pushes. Default: 5000.
+  --analytics-settle <ms>         Settle time after analytics page loads and recognized typed-order receipts.
+                                  Receipt settling must fit inside the order deadline. Default: 5000.
   --analytics-hosts <h1,h2,...>   Extra third-party host patterns to intercept for tag-fire capture (comma-separated).
 `;
 
@@ -1176,39 +1178,53 @@ async function runQa(args) {
     }));
   }
 
-  // Analytics CORRECTNESS leg: runs when the spec declares an `analytics` block
-  // (or --analytics-correctness is forced). Validates the candidate funnel fires
-  // its declared tags/pixels + a Purchase (source-aware re blockedEvents). The
-  // foundation the parity differ sits on — correctness before parity.
-  // Packet 01 / INV-2: both analytics legs consume ONE capture target derived
-  // from the campaign's resolved identity (public_route_slug + route_root),
-  // never a raw operator argument.
-  // Packet 04 Stage A / IC-2: the flag is TRI-STATE. Explicit `false` disables
-  // the leg even when the spec declares an analytics block (the documented
-  // opt-out the ops loop-driver force-appends); explicit `true` forces it
-  // without a block; absent defers to the spec — leg runs iff the spec
-  // declares analytics (the negative control: the fix must not become a
-  // global disable). An explicit disable is visibly skipped, never silent.
+  const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions });
+  return finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders });
+}
+
+// Keep the correctness/order chronology in one testable seam. Root inventory
+// happens first, parity remains between the two correctness phases, then the
+// one canonical typed-card run captures its settled terminal and only then do
+// we finalize the stable purchase-fires assertion. There is no receipt replay
+// and no second order.
+async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, overrides = {}) {
+  const operations = {
+    runInventory: runAnalyticsCorrectnessChecks,
+    runParity: runAnalyticsParityChecks,
+    runOrders: maybeRunTestOrders,
+    assessReceipt: assessReceiptPurchase,
+    ...overrides,
+  };
   const analyticsContract = resolved.spec?.analytics;
   const analyticsLeg = analyticsCorrectnessLegDecision(forcedAnalyticsCorrectness(args), analyticsContract);
+
+  // Packet 04 Stage A / IC-2: the flag remains tri-state. Explicit false is a
+  // visible skip; true forces both phases; absent defers to the spec.
   if (analyticsLeg === "disabled") {
     assertions.push(analyticsCorrectnessDisabledAssertion(analyticsContract));
   } else if (analyticsLeg === "run") {
-    assertions.push(...await runAnalyticsCorrectnessChecks(args, analyticsContract || {}, {
+    assertions.push(...await operations.runInventory(args, analyticsContract || {}, {
       target: resolved.analyticsCaptureTarget,
-      waivers: resolved.qaWaivers,
     }));
   }
 
-  // Analytics-parity leg (opt-in): when a legacy baseline URL is supplied, capture
-  // the live dataLayer + GTM/pixel fires on baseline vs candidate and diff them.
-  // No cutover on a non-zero analytics diff — blockers feed computeDisposition.
+  // Analytics parity is unchanged and remains opt-in between root inventory
+  // and typed-card receipt capture.
   if (stringArg(args["analytics-baseline"])) {
-    assertions.push(...await runAnalyticsParityChecks(args, { target: resolved.analyticsCaptureTarget }));
+    assertions.push(...await operations.runParity(args, { target: resolved.analyticsCaptureTarget }));
   }
 
-  const testOrders = await maybeRunTestOrders({ args, resolved, runId, assertions });
-  return finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders });
+  const result = await operations.runOrders({
+    args,
+    resolved,
+    runId,
+    assertions,
+    captureAnalytics: analyticsLeg === "run",
+  });
+  if (analyticsLeg === "run") {
+    assertions.push(operations.assessReceipt(result.receiptAnalytics, { waivers: resolved.qaWaivers }));
+  }
+  return result.orders;
 }
 
 async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders }) {
@@ -1491,20 +1507,33 @@ async function runPageChecks(page, args) {
   return assertions;
 }
 
-async function maybeRunTestOrders({ args, resolved, runId, assertions }) {
+async function maybeRunTestOrders(
+  { args, resolved, runId, assertions, captureAnalytics = false },
+  overrides = {},
+) {
+  const operations = {
+    runBrowser: runBrowserTestOrders,
+    runLegacy: maybeRunLegacyApiTestOrders,
+    ...overrides,
+  };
   const mode = String(args["test-order"] || "off").toLowerCase();
   const legacyMode = String(args["legacy-api-test-order"] || "off").toLowerCase();
-  if ((!mode || mode === "off") && (!legacyMode || legacyMode === "off")) return [];
+  const emptyReceiptAnalytics = () => ({ plannedPlanIds: [], attempts: [] });
+  if ((!mode || mode === "off") && (!legacyMode || legacyMode === "off")) {
+    return { orders: [], receiptAnalytics: emptyReceiptAnalytics() };
+  }
   if (mode && mode !== "off") {
     // Test Orders use global test cards: they bypass the payment gateway, create
     // no transactions, and need no merchant setup or approval. `--test-order
     // <mode>` is sufficient intent — no permission flags or packet policy gate.
-    const result = await runBrowserTestOrders(resolved.topologies, args, runId);
+    const result = await operations.runBrowser(resolved.topologies, args, runId, { captureAnalytics });
     assertions.push(...result.assertions);
-    return result.orders;
+    return { orders: result.orders, receiptAnalytics: result.receiptAnalytics || emptyReceiptAnalytics() };
   }
 
-  return maybeRunLegacyApiTestOrders({ args: { ...args, "test-order": legacyMode }, resolved, runId, assertions });
+  const orders = await operations.runLegacy({ args: { ...args, "test-order": legacyMode }, resolved, runId, assertions });
+  // Direct API diagnostics never qualify as canonical receipt proof.
+  return { orders, receiptAnalytics: emptyReceiptAnalytics() };
 }
 
 async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }) {
@@ -2416,6 +2445,8 @@ export const __qaNodeTestHooks = Object.freeze({
   resolveQaInputs,
   analyticsCorrectnessLegDecision,
   analyticsCorrectnessDisabledAssertion,
+  runAnalyticsOrderSequence,
+  maybeRunTestOrders,
   campaignOutputDir,
   polishBlockedAssertions,
   polishGateAssertion,

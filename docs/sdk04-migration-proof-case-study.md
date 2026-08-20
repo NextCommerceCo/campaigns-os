@@ -101,10 +101,12 @@ accessibility interaction, and shopper presentation.
 
 ### Receipt analytics needed real order context
 
-An analytics capture against the campaign root could not fire Purchase. Capturing
-the receipt URL with a real test-order reference and an adequate settle window
-allowed the SDK order store to hydrate and produced the expected Purchase signals.
-Migration analytics proof must use the event's actual runtime context.
+The campaign-root analytics visit was inventory evidence, not Purchase
+authority. Scoping the canonical typed-card traversal's capture to its final
+receipt document, with the real order reference already present and an adequate
+settle window, allowed the SDK order store to hydrate and produced the expected
+Purchase signals. Migration analytics proof must use the event's actual runtime
+context.
 
 ### Legacy residue and contract gaps were visible
 
@@ -121,8 +123,10 @@ This case suggests four concrete harness improvements:
    reaches receipt, deduplicated against its first-offer accept/decline sample.
    Use an explicit path for a targeted branch or `full` for every actual terminal
    path when exhaustive topology proof is required.
-2. Feed the created test-order receipt URL into analytics correctness automatically,
-   instead of defaulting Purchase checks to a campaign root without order context.
+2. **Implemented:** analytics correctness keeps campaign-root capture scoped to
+   provider/tag inventory and reuses the canonical typed-card traversal's settled
+   receipt capture for Purchase proof. No receipt replay or second order is created;
+   a missing/unrecognized receipt remains visible as manual review.
 3. Add a migration assertion that compares displayed coupon pricing with the
    persisted post-purchase line price. Payload-shape tests alone are insufficient.
 4. Keep synthetic CampaignSpec and local-verdict workflows schema-compatible with

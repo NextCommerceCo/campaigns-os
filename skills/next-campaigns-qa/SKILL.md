@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-qa
-version: 1.0.1
+version: 1.0.2
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
@@ -43,6 +43,8 @@ Rules:
 - Pricing visibility is a blocker: an upsell/downsell offer with zero visible price rows fails QA. Pricing surfaces render via template pricing modes (`full_price`, `compare_at_current`, `unit_price_plus_total`, `savings_badge_amount`, `code_discounted_post_checkout`), never via campaign CSS `display:none` on price wrappers.
 - Exit-pop widgets are governed offer surfaces. If the selected family ships or copies a default exit-pop and CampaignSpec has no checkout `exit_intent` or `promo_code_input`, QA/doctor must report it as residue; strip it or wire the mapped offer/code through the SDK coupon path.
 - Typed-card runs emit a per-step ladder (`[qa:test-order] step=... status=...`) with bounded per-step and per-path timeouts, and always produce a verdict — a hung or crashed path is a blocked verdict with the step ladder as evidence, not a silent exit. Read the last completed step before re-running.
+- Analytics correctness is two-phase in the same run: the campaign-root visit inventories declared providers/tags only, then the one canonical typed-card run proves Purchase from signals emitted by each topology-recognized final receipt document after the full `--analytics-settle` window. It never places a second analytics order, and checkout/upsell Purchase signals cannot satisfy a silent receipt.
+- A missing or topology-unrecognized receipt is `MANUAL_REVIEW`/`WARN`; a recognized receipt with no dataLayer, outbound Meta, or outbound GA4 Purchase is `FAIL`/`BLOCKER`. Capture, unreadable-page, and settle-deadline errors on a recognized receipt are explicit non-waivable blockers. The `analytics-correctness:purchase-fires` waiver applies only to a genuine recognized-receipt/no-signal failure.
 - Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA plus typed-card proof with `--test-order common` by default. Test orders need no permission step. Pause only for missing inputs, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty.
 - Use `--browser` for rendered browser evidence. Browser QA must use the package-owned Playwright flow, not external agent/browser skills.
 - QA runs publish to the QA portal by default, so the QA tab/dashboard carries the full audit log and the run prints its portal link — report that link as the run reference. Pass `--no-post-verdict` (or `--local-only`) only for offline / dev / CI runs; those stay local-only under `qa-output/` and must not be reported as dashboard-visible.

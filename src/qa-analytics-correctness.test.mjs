@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { assessAnalyticsCorrectness } from "./qa-analytics-correctness.mjs";
+import { assessAnalyticsInventory, assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { normalizeCapture } from "./qa-analytics-parity.mjs";
 import { computeDisposition, SEVERITY, STATUS } from "./qa-verdict.mjs";
 
@@ -22,8 +22,20 @@ function fullCapture() {
   });
 }
 
+function receiptAssessment(capture, options = {}) {
+  return assessReceiptPurchase({
+    plannedPlanIds: ["accept-decline"],
+    attempts: [{
+      planId: "accept-decline",
+      receiptRecognized: true,
+      receiptUrl: "https://shop.example/receipt/?ref_id=redacted",
+      capture,
+    }],
+  }, options);
+}
+
 test("no declared contract → non-gating manual_review only (nothing blocks)", () => {
-  const a = assessAnalyticsCorrectness(fullCapture(), {});
+  const a = assessAnalyticsInventory(fullCapture(), {});
   assert.equal(a.length, 1);
   assert.equal(a[0].id, "analytics-correctness:no-contract");
   assert.equal(a[0].severity, SEVERITY.INFO);
@@ -31,7 +43,7 @@ test("no declared contract → non-gating manual_review only (nothing blocks)", 
   assert.ok(!a.some((x) => x.severity === SEVERITY.BLOCKER));
 });
 
-test("declared analytics contract lifts missing GTM and purchase from INFO to blockers", () => {
+test("declared analytics contract lifts missing GTM from INFO to a blocker; root inventory emits no Purchase assertion", () => {
   const sameCapture = normalizeCapture({ events: [], tagFires: [] });
   const declaredContract = {
     mode: "auto",
@@ -43,7 +55,7 @@ test("declared analytics contract lifts missing GTM and purchase from INFO to bl
     ],
   };
 
-  const withoutContract = assessAnalyticsCorrectness(sameCapture, {});
+  const withoutContract = assessAnalyticsInventory(sameCapture, {});
   assert.deepEqual(withoutContract.map(({ id, status, severity }) => ({ id, status, severity })), [{
     id: "analytics-correctness:no-contract",
     status: STATUS.MANUAL_REVIEW,
@@ -51,29 +63,28 @@ test("declared analytics contract lifts missing GTM and purchase from INFO to bl
   }]);
   assert.equal(computeDisposition(withoutContract), "ready_with_exceptions");
 
-  const withContract = assessAnalyticsCorrectness(sameCapture, declaredContract);
+  const withContract = assessAnalyticsInventory(sameCapture, declaredContract);
   assert.deepEqual(withContract.map(({ id, status, severity }) => ({ id, status, severity })), [
     { id: "analytics-correctness:tag:gtm", status: STATUS.FAIL, severity: SEVERITY.BLOCKER },
-    { id: "analytics-correctness:purchase-fires", status: STATUS.FAIL, severity: SEVERITY.BLOCKER },
   ]);
   assert.equal(computeDisposition(withContract), "blocked");
 });
 
-test("declared tags + purchase all present → all pass", () => {
+test("declared root tags all present → inventory passes without claiming Purchase", () => {
   const contract = {
     providers: { gtm: { enabled: true, containerId: "GTM-ABC123" }, facebook: { enabled: true, pixelId: "998877" } },
     out_of_band_pixels: [{ vendor: "everflow", id: "ef-1" }],
   };
-  const a = byId(assessAnalyticsCorrectness(fullCapture(), contract));
+  const a = byId(assessAnalyticsInventory(fullCapture(), contract));
   assert.equal(a["analytics-correctness:tag:gtm"].status, STATUS.PASS);
   assert.equal(a["analytics-correctness:tag:meta"].status, STATUS.PASS);
   assert.equal(a["analytics-correctness:oob:everflow"].status, STATUS.PASS);
-  assert.equal(a["analytics-correctness:purchase-fires"].status, STATUS.PASS);
+  assert.equal(a["analytics-correctness:purchase-fires"], undefined);
 });
 
 test("declared GTM container absent → blocker fail", () => {
   const contract = { providers: { gtm: { enabled: true, containerId: "GTM-MISSING" } } };
-  const a = byId(assessAnalyticsCorrectness(fullCapture(), contract));
+  const a = byId(assessAnalyticsInventory(fullCapture(), contract));
   assert.equal(a["analytics-correctness:tag:gtm"].status, STATUS.FAIL);
   assert.equal(a["analytics-correctness:tag:gtm"].severity, SEVERITY.BLOCKER);
 });
@@ -88,10 +99,9 @@ test("source-aware: dl_purchase blocked but Meta Purchase fires → purchase pas
       { kind: "meta", id: "998877", host: "facebook.com", params: { ev: "Purchase", eid: "1043" } },
     ],
   });
-  const contract = { providers: { facebook: { enabled: true, pixelId: "998877", blockedEvents: ["dl_purchase"] } } };
-  const a = byId(assessAnalyticsCorrectness(capture, contract));
-  assert.equal(a["analytics-correctness:purchase-fires"].status, STATUS.PASS, "Meta Purchase counts as a purchase fire");
-  assert.equal(a["analytics-correctness:purchase-fires"].evidence.via, "meta");
+  const purchase = receiptAssessment(capture);
+  assert.equal(purchase.status, STATUS.PASS, "Meta Purchase counts as a purchase fire");
+  assert.equal(purchase.evidence.receipts[0].via, "meta");
 });
 
 test("no purchase fire from any source → blocker fail", () => {
@@ -99,14 +109,14 @@ test("no purchase fire from any source → blocker fail", () => {
     events: [{ layer: "dataLayer", data: { event: "dl_add_to_cart" } }],
     tagFires: [{ kind: "gtm", id: "GTM-ABC123", host: "googletagmanager.com", params: {} }],
   });
-  const a = byId(assessAnalyticsCorrectness(capture, { providers: { gtm: { enabled: true, containerId: "GTM-ABC123" } } }));
-  assert.equal(a["analytics-correctness:purchase-fires"].status, STATUS.FAIL);
-  assert.equal(a["analytics-correctness:purchase-fires"].severity, SEVERITY.BLOCKER);
+  const purchase = receiptAssessment(capture);
+  assert.equal(purchase.status, STATUS.FAIL);
+  assert.equal(purchase.severity, SEVERITY.BLOCKER);
 });
 
 test("unknown out-of-band vendor → manual review, not a false fail", () => {
   const contract = { out_of_band_pixels: [{ vendor: "triplepixel" }] };
-  const a = byId(assessAnalyticsCorrectness(fullCapture(), contract));
+  const a = byId(assessAnalyticsInventory(fullCapture(), contract));
   assert.equal(a["analytics-correctness:oob:triplepixel"].status, STATUS.MANUAL_REVIEW);
   assert.equal(a["analytics-correctness:oob:triplepixel"].severity, SEVERITY.WARN);
 });
