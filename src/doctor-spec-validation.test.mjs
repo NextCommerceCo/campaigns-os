@@ -55,3 +55,34 @@ test("doctor spec.validation findings carry detail {ruleId, path}", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a malformed spec.local_path is reported as malformed, not as an absent path", () => {
+  const dir = mkdtempSync(join(tmpdir(), "specpath-shape-"));
+  try {
+    const base = JSON.parse(readFileSync(join(ROOT, "examples/build-packet.basic.json"), "utf8"));
+
+    // Present but unusable: the packet declares the field with the wrong shape.
+    const malformed = JSON.parse(JSON.stringify(base));
+    malformed.spec.local_path = 42;
+    writeFileSync(join(dir, "malformed.json"), JSON.stringify(malformed, null, 2));
+    const malformedIssue = (runDoctorJson(join(dir, "malformed.json")).errors || [])
+      .find((issue) => issue.code === "spec.local_path");
+    assert.ok(malformedIssue, "a malformed local_path must still block");
+    assert.match(malformedIssue.message, /must be a non-empty string/);
+    assert.match(malformedIssue.message, /number/);
+
+    // Absent: the field is not declared at all.
+    const missing = JSON.parse(JSON.stringify(base));
+    delete missing.spec.local_path;
+    writeFileSync(join(dir, "missing.json"), JSON.stringify(missing, null, 2));
+    const missingIssue = (runDoctorJson(join(dir, "missing.json")).errors || [])
+      .find((issue) => issue.code === "spec.local_path");
+    assert.ok(missingIssue, "an absent local_path must still block");
+    assert.match(missingIssue.message, /No local CampaignSpec path is present/);
+
+    // Same blocking code, different repair — that is the whole point.
+    assert.notEqual(malformedIssue.message, missingIssue.message);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

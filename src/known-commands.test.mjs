@@ -56,10 +56,12 @@ test("knownCommands covers the real dispatch branches", () => {
 
 test("help documents the bounded staged checkpoint registry", () => {
   const out = runCliSuccess(["help"]);
-  assert.match(out, /checkpoint waive .*--gate page_kit\.store_profile/);
+  assert.match(out, /checkpoint waive .*--gate <checkpoint-id>/);
+  assert.match(out, /page_kit\.store_profile/);
+  assert.match(out, /page_kit\.sdk_version/);
   assert.match(out, /--expires-at <ISO>/);
   assert.match(out, /--review-condition/);
-  assert.match(out, /one bound is required; staged registry currently accepts Store Profile only/);
+  assert.match(out, /registered gates: page_kit\.store_profile, page_kit\.sdk_version/);
 });
 
 test("did-you-mean suggests the nearest command on a close typo", () => {

@@ -209,12 +209,12 @@ test("prepare-build start-over action is suppressed when artifacts diverge", () 
 
 // ---------------------------------------------------------------------------
 // Proof 2 — clean-repo negative control: a genuinely fresh repo (no built
-// output, no deploy URL, no verdict) must keep today's exact answer,
-// including the same issue codes — no divergences key, no new actions, no
-// suppressed blockers. Asserted against the pre-change shape captured at
-// main@002fdfe.
+// output, no deploy URL, no verdict) must stay on the ordinary doctor-blocked
+// path, with no divergences key and no suppressed blockers. Missing packet-local
+// spec evidence now adds the two registered checkpoint repair actions before
+// the generic doctor recheck.
 // ---------------------------------------------------------------------------
-test("clean repo output is byte-identical to the pre-change shape", () => {
+test("clean repo keeps the divergence shape while surfacing missing-spec checkpoint repairs", () => {
   const { dir, packetPath } = selfTargetFixture();
   const result = runNext(packetPath);
 
@@ -231,6 +231,8 @@ test("clean repo output is byte-identical to the pre-change shape", () => {
   assert.deepEqual(result.errors.map((issue) => issue.code), [
     "source_html.root",
     "spec.local_path",
+    "page_kit.sdk_version.spec_unavailable",
+    "page_kit.store_profile.spec_unavailable",
     "assembly.commerce_catalog.path",
     "identity.map_id",
     "identity.public_route_slug",
@@ -241,7 +243,11 @@ test("clean repo output is byte-identical to the pre-change shape", () => {
     "blockers",
     "warnings",
   ]);
-  assert.deepEqual((result.next_actions || []).map((action) => action.id), ["doctor_recheck"]);
+  assert.deepEqual((result.next_actions || []).map((action) => action.id), [
+    "checkpoint.page_kit.sdk_version.repair_spec",
+    "checkpoint.page_kit.store_profile.repair_spec",
+    "doctor_recheck",
+  ]);
   assert.equal(result.prompt, "Resolve the doctor errors above before continuing. Re-run `campaigns-os doctor --packet <path>` to confirm, then `campaigns-os next --packet <path>` to advance.");
   rmSync(dir, { recursive: true, force: true });
 });
@@ -398,6 +404,10 @@ test("a CLEAN packet is untouched by the suppression — stage actions still flo
   const result = runNext(packetPath);
 
   assert.equal((result.divergences || []).length, 0, "fixture must be clean");
-  assert.deepEqual((result.next_actions || []).map((action) => action.id), ["doctor_recheck"]);
+  assert.deepEqual((result.next_actions || []).map((action) => action.id), [
+    "checkpoint.page_kit.sdk_version.repair_spec",
+    "checkpoint.page_kit.store_profile.repair_spec",
+    "doctor_recheck",
+  ]);
   rmSync(dir, { recursive: true, force: true });
 });

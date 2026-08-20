@@ -77,6 +77,35 @@ is exposed only as stale/foreign/malformed/expired counts. Raw report records
 remain private to evaluation. Once correction removes all blocker fields,
 waiver history is not evaluated or surfaced as an inert warning.
 
+### Page Kit SDK version checkpoint
+
+The second registered checkpoint requires a canonical released semantic version
+in CampaignSpec and an exact target pin in
+`_data/campaigns.json[public_route_slug].sdk_version`. CampaignSpec prefers
+`runtime.sdk_version` and falls back to the legacy
+`global_config.sdk_version`; declaring both is valid only when their released
+versions are equal. Missing, malformed, present-but-empty, non-string,
+prerelease, non-canonical, or conflicting dual declarations are non-waivable.
+Missing or invalid target evidence is also non-waivable. Only a mismatch between
+two valid released versions has a waiver lane, and the decision fingerprints
+that exact expected/observed pair:
+
+```bash
+campaigns-os checkpoint waive \
+  --packet campaign-runtime.build.json \
+  --gate page_kit.sdk_version \
+  --reason "<why this exact target pin is intentional>" \
+  --waived-by "<named human>" \
+  --review-condition "<specific re-evaluation trigger>"
+```
+
+Changing either version makes the decision stale. The same named-human,
+bounded-decision, visibility, and privacy rules described for Store Profile
+apply. QA evaluates both registered gates from one packet/spec/target/report
+snapshot; a waiver for one never hides a blocker in the other. See
+[QA checkpoint preflight](./qa-and-test-orders.md#packet-local-checkpoint-preflight)
+for the downstream runtime boundary.
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations
@@ -205,10 +234,10 @@ Design Source Package exists. The waiver must remain visible in Campaign
 Readiness Readback and downstream QA evidence; it is not a silent pass.
 In v0, write accepted Source Freshness Waivers directly into `waivers[]`.
 `campaigns-os checkpoint waive` is a staged generic registry and currently
-accepts only registered gates (`page_kit.store_profile` first); it does not yet
-record Source Freshness decisions. SDK and polish checkpoints may register in
-later remediation steps. Existing Source Freshness, theme, and QA waiver paths
-remain authoritative until each gate is explicitly registered.
+accepts the registered `page_kit.store_profile` and `page_kit.sdk_version`
+gates; it does not record Source Freshness, polish, theme, or QA decisions.
+Those existing waiver paths remain authoritative until each gate is explicitly
+registered.
 
 In v0, material source fingerprint fields include contribution identity/kind,
 provenance, presentation intent, Surface Identity catalog and mappings,
