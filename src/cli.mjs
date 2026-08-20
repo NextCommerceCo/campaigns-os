@@ -2530,7 +2530,12 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     const specPath = isNonEmptyString(localSpecPath) ? resolveFromFile(packetPath, localSpecPath) : null;
     derived.spec_path = specPath;
     let specStatus = "missing";
-    if (!isNonEmptyString(localSpecPath)) {
+    if (localSpecPath != null && !isNonEmptyString(localSpecPath)) {
+      // A present-but-unusable local_path is a malformed packet, not an
+      // unconfigured one. Both block, but they are repaired in different
+      // places, so the operator is told which one they have.
+      addIssue(errors, "spec.local_path", `CampaignSpec local_path must be a non-empty string; the packet declares ${typeof localSpecPath}. Repair the packet's spec.local_path before build or QA.`);
+    } else if (!isNonEmptyString(localSpecPath)) {
       addIssue(errors, "spec.local_path", "No local CampaignSpec path is present. Assembly must use a local exported CampaignSpec JSON so page coverage, routing, meta tags, and commerce refs are not guessed.");
     } else if (!existsSync(specPath)) {
       addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${localSpecPath}`);
