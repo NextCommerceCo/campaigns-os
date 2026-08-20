@@ -21,6 +21,10 @@ function runCli(args) {
   }
 }
 
+function runCliSuccess(args) {
+  return execFileSync("node", [CLI, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
 // Guards against a future dispatch refactor (switch table, extracted constant,
 // quote/format change the regex can't follow) silently emptying the derived
 // list. If this fails, knownCommands() stopped seeing dispatch's branches and
@@ -37,6 +41,7 @@ test("knownCommands covers the real dispatch branches", () => {
     "standardize",
     "standardization-report",
     "theme",
+    "checkpoint",
     "tooling",
     "next",
     "qa",
@@ -47,6 +52,14 @@ test("knownCommands covers the real dispatch branches", () => {
   ]) {
     assert.ok(commands.includes(expected), `knownCommands() should include "${expected}"`);
   }
+});
+
+test("help documents the bounded staged checkpoint registry", () => {
+  const out = runCliSuccess(["help"]);
+  assert.match(out, /checkpoint waive .*--gate page_kit\.store_profile/);
+  assert.match(out, /--expires-at <ISO>/);
+  assert.match(out, /--review-condition/);
+  assert.match(out, /one bound is required; staged registry currently accepts Store Profile only/);
 });
 
 test("did-you-mean suggests the nearest command on a close typo", () => {

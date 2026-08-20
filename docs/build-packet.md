@@ -39,6 +39,44 @@ declares `campaign.route_root: "/"`. Rules:
 
 Page-kit also needs `campaign.store_url` for `_data/campaigns.json`. Additional Store Profile fields live under `campaign.store_*` as optional storefront/legal metadata because they are operator-entered, not Campaigns API data.
 
+### Page Kit Store Profile checkpoint
+
+Doctor compares the packet-local CampaignSpec to exactly nine governed fields
+in `_data/campaigns.json[public_route_slug]`, in this order:
+`store_name`, `store_url`, `store_terms`, `store_privacy`, `store_contact`,
+`store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel`.
+Before scaffold, a missing target entry is `not_applicable`; once setup or
+assembly is terminal, or the target output already exists, missing or malformed
+target evidence is a non-waivable blocker. Target-only values remain warnings.
+Mismatches, missing required target values, and known demo residue block.
+
+An intentional, evidence-backed mismatch may be accepted with the first gate in
+the staged checkpoint registry:
+
+```bash
+campaigns-os checkpoint waive \
+  --packet campaign-runtime.build.json \
+  --gate page_kit.store_profile \
+  --reason "<why correction is intentionally deferred>" \
+  --waived-by "<named human>" \
+  --review-condition "<specific re-evaluation trigger>"
+```
+
+Use `--expires-at <canonical-ISO-timestamp>` instead of, or alongside,
+`--review-condition`; at least one bound is required and an expiry must be later
+than `waived_at`. The decision is appended to the Assembly Report's top-level
+`waivers[]` and fingerprints the exact slug, relative target path, and governed
+discrepant field/value set. Stale, foreign, expired, or malformed records are
+inert. A current waiver produces checkpoint status `waived` and doctor/next
+readiness `ready_with_waivers`; it never becomes a clean pass. Raw arbitrary
+campaign entry fields are validation-private and never belong in doctor, next,
+sidecar, or QA evidence. The same boundary applies to waiver history: public
+gate/readback/QA output whitelists the active decision's scope, current safe
+subject, fingerprint, attribution, timestamps, and bound, while inert history
+is exposed only as stale/foreign/malformed/expired counts. Raw report records
+remain private to evaluation. Once correction removes all blocker fields,
+waiver history is not evaluated or surfaced as an inert warning.
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations
@@ -165,10 +203,12 @@ orchestration loop to proceed to Polish, but Polish still must record current
 Polish Evidence, including `source_package_material_fingerprint` when a current
 Design Source Package exists. The waiver must remain visible in Campaign
 Readiness Readback and downstream QA evidence; it is not a silent pass.
-In v0, write accepted Source Freshness Waivers directly into `waivers[]`. A
-generic waiver CLI is intentionally deferred until the broader checkpoint model
-settles; when added, it should cover all Checkpoint Waivers rather than only
-source freshness.
+In v0, write accepted Source Freshness Waivers directly into `waivers[]`.
+`campaigns-os checkpoint waive` is a staged generic registry and currently
+accepts only registered gates (`page_kit.store_profile` first); it does not yet
+record Source Freshness decisions. SDK and polish checkpoints may register in
+later remediation steps. Existing Source Freshness, theme, and QA waiver paths
+remain authoritative until each gate is explicitly registered.
 
 In v0, material source fingerprint fields include contribution identity/kind,
 provenance, presentation intent, Surface Identity catalog and mappings,
