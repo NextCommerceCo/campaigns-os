@@ -353,9 +353,8 @@ function parityJourneyAttempt(orderResult, expectedPlanId = null) {
     ? orderResult.journeyAnalytics.attempts
     : [];
   const normalized = expectedPlanId == null ? null : String(expectedPlanId);
-  return attempts.find((attempt) => String(attempt?.planId || "") === normalized)
-    || attempts[0]
-    || null;
+  if (normalized == null) return attempts[0] || null;
+  return attempts.find((attempt) => String(attempt?.planId || "") === normalized) || null;
 }
 
 function parityCaptureFailureAssertion(scenario, attempt) {

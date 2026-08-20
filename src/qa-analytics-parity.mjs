@@ -137,6 +137,8 @@ export async function attachAnalyticsCapture(page, options = {}) {
   let mainDocumentGeneration = 0;
   let auxiliaryDocumentGeneration = 0;
   let activeMainDocument = null;
+  let unknownMainDocument = null;
+  let unknownAuxiliaryDocument = null;
   const safePageUrl = () => {
     try { return typeof page.url === "function" ? page.url() : null; }
     catch { return null; }
@@ -190,7 +192,11 @@ export async function attachAnalyticsCapture(page, options = {}) {
     if (!entry || typeof entry !== "object") return null;
     const document = entry.document
       ? lookupDocument(entry.document, { mainFrame, fallbackUrl })
-      : fallbackDocument || lookupDocument({}, { mainFrame, fallbackUrl });
+      : fallbackDocument
+        || (mainFrame ? activeMainDocument : null)
+        || (mainFrame
+          ? (unknownMainDocument ||= lookupDocument({}, { mainFrame: true, fallbackUrl }))
+          : (unknownAuxiliaryDocument ||= lookupDocument({}, { mainFrame: false, fallbackUrl })));
     return { ...entry, document };
   };
   let bindingAttached = false;

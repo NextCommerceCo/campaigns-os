@@ -174,6 +174,18 @@ test("parity selects the aligned whole-journey capture even when receipt topolog
   assert.equal(selected.planId, "accept");
 });
 
+test("parity never substitutes another plan when the expected capture is missing", () => {
+  const { parityJourneyAttempt } = __qaParityCaptureTestHooks;
+  const selected = parityJourneyAttempt({
+    journeyAnalytics: {
+      plannedPlanIds: ["accept", "decline"],
+      attempts: [{ planId: "decline", capture: capture() }],
+    },
+  }, "accept");
+
+  assert.equal(selected, null);
+});
+
 test("parity capture failures expose only a stable code and message", () => {
   const { parityCaptureFailureAssertion } = __qaParityCaptureTestHooks;
   const assertion = parityCaptureFailureAssertion(

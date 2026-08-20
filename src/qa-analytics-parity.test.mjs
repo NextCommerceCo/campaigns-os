@@ -42,6 +42,9 @@ function attributedPage() {
     async pushFrom(document, data, { frame = mainFrame, layer = "dataLayer" } = {}) {
       await binding?.({ frame }, { type: "event", entry: { layer, data, document } });
     },
+    async emitWithoutDocument(data, { frame = mainFrame, layer = "dataLayer" } = {}) {
+      await binding?.({ frame }, { type: "event", entry: { layer, data } });
+    },
     async childDocument(url, token) {
       const frame = { url: () => url, parentFrame: () => mainFrame };
       const document = { url, token };
@@ -83,6 +86,24 @@ test("late checkout events cannot roll back the active receipt document or steal
   assert.equal(captures.journey.purchaseSignals.dataLayer, true, "journey retains the delayed checkout Purchase");
   assert.equal(captures.journey.purchaseSignals.meta, true, "journey also retains the receipt Meta fire");
   assert.doesNotMatch(JSON.stringify(captures.currentDocument.document), /ref_id|secret/);
+  handle.detach();
+});
+
+test("context-free events stay attributed to the active main document", async () => {
+  const page = attributedPage();
+  const handle = await attachAnalyticsCapture(page);
+
+  await page.navigate("https://shop.example/receipt/?ref_id=receipt-secret", "receipt-doc");
+  await page.emitWithoutDocument({ event: "dl_purchase", ecommerce: { transaction_id: "receipt-order-secret" } });
+
+  const captures = await handle.collectScopes({ strict: true });
+  assert.deepEqual(captures.currentDocument.document, {
+    route: "https://shop.example/receipt/",
+    generation: 1,
+  });
+  assert.equal(captures.currentDocument.purchase.present, true);
+  assert.equal(captures.journey.purchase.present, true);
+  assert.doesNotMatch(JSON.stringify(captures.currentDocument.document), /ref_id|receipt-secret/);
   handle.detach();
 });
 
