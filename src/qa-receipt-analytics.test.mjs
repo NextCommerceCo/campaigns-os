@@ -81,6 +81,22 @@ test("a reached canonical receipt with no effective Purchase remains a blocker",
   assert.equal(computeDisposition([assertion]), "blocked");
 });
 
+test("a measured zero-signal receipt and an unmeasured one are both blockers but distinguishable", () => {
+  const measuredZero = assess([receiptAttempt({ source: null })]).evidence.receipts[0];
+  const unmeasured = assess([receiptAttempt({ captureError: "analytics binding detached" })]).evidence.receipts[0];
+
+  // Both read purchase_fired:false — that is the trap #198 was made of.
+  assert.equal(measuredZero.purchase_fired, false);
+  assert.equal(unmeasured.purchase_fired, false);
+
+  // `measured` is what separates "we looked and saw nothing" from "we could
+  // not look", without the reader having to consult capture_error_plan_ids.
+  assert.equal(measuredZero.measured, true);
+  assert.deepEqual(measuredZero.signals, { dataLayer: false, meta: false, ga4: false });
+  assert.equal(unmeasured.measured, false);
+  assert.equal(unmeasured.signals, null);
+});
+
 test("multi-plan aggregation is fail-first, then unqualified warning, and passes only when every plan qualifies", () => {
   const passA = receiptAttempt({ planId: "accept", source: "datalayer" });
   const passB = receiptAttempt({ planId: "decline", source: "meta" });
@@ -112,6 +128,10 @@ test("capture errors block explicitly and are never converted into a fake zero-s
   assert.equal(assertion.severity, SEVERITY.BLOCKER);
   assert.deepEqual(assertion.evidence.capture_error_plan_ids, [PLAN]);
   assert.equal(assertion.evidence.receipts[0].purchase_fired, false);
+  // An unmeasured receipt must not read as a measured zero-signal receipt.
+  assert.equal(assertion.evidence.receipts[0].measured, false);
+  assert.equal(assertion.evidence.receipts[0].signals, null);
+  assert.equal(assertion.evidence.receipts[0].via, null);
   assert.ok(!("capture" in assertion.evidence));
 });
 
@@ -287,12 +307,14 @@ test("receipt verdict evidence redacts query/order data and exposes only the fix
     "unqualified_plan_ids",
   ]);
   assert.deepEqual(Object.keys(assertion.evidence.receipts[0]).sort(), [
+    "measured",
     "plan_id",
     "purchase_fired",
     "receipt_url",
     "signals",
     "via",
   ]);
+  assert.equal(assertion.evidence.receipts[0].measured, true);
   assert.equal(assertion.evidence.receipts[0].receipt_url, "https://shop.example/campaign/receipt/");
   assert.equal(assertion.expected, "every deterministic receipt-qualified typed-card order emits Purchase via dataLayer, Meta, or GA4.");
   const serialized = JSON.stringify(assertion);

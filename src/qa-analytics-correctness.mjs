@@ -186,14 +186,22 @@ export function assessReceiptPurchase(receiptAnalytics = {}, options = {}) {
     const captureError = !!attempt.captureError || !captureAvailable;
     if (captureError) captureErrorPlanIds.push(planId);
     const effective = captureAvailable ? effectivePurchase(attempt.capture) : { fired: false, via: null };
-    const signals = receiptSignals(attempt.capture);
     if (!captureError && !effective.fired) noSignalPlanIds.push(planId);
+    // #198 is what happens when an unfalsifiable analytics reading is presented
+    // as a measurement. A failed capture and a receipt that genuinely fired
+    // nothing are BOTH blockers, but they are not the same fact, and a reader
+    // of a single receipt entry must be able to tell them apart without
+    // cross-referencing capture_error_plan_ids. Unmeasured entries carry
+    // measured:false and null signals rather than an all-false reading that
+    // looks like evidence.
+    const measured = !captureError;
     receipts.push({
       plan_id: planId,
       receipt_url: redactUrlQuery(attempt.receiptUrl),
-      purchase_fired: !!effective.fired,
-      via: effective.via || null,
-      signals,
+      measured,
+      purchase_fired: measured && !!effective.fired,
+      via: measured ? (effective.via || null) : null,
+      signals: measured ? receiptSignals(attempt.capture) : null,
     });
   }
 
