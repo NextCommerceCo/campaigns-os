@@ -91,6 +91,12 @@ function normalizedRoutes(values) {
     .filter(Boolean))].sort();
 }
 
+// No cycle guard, deliberately: captures reach this module from exactly two
+// places, and neither can carry one. The producer builds them in-process out of
+// fresh literals (polish-node.mjs), and the re-derivation path reads them back
+// out of the Assembly Report, where JSON.parse cannot produce a cycle by
+// construction. A guard here would be unreachable code standing in for an
+// invariant that holds one level up.
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === "object") {
