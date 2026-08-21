@@ -4,11 +4,13 @@ import assert from "node:assert/strict";
 import { FIXTURES_DIR, evaluateFixture, evaluateFixtureDir } from "./check-campaign-spec-conformance.mjs";
 
 test("evaluateFixture splits validateSpec output by severity", () => {
-  // Empty object: normalize fails → single error-severity violation, no warnings.
+  // Empty object: normalize rejects it (missing funnels[]) → exactly one
+  // Normalize error-severity violation, no warnings.
   const { errors, warnings } = evaluateFixture({});
-  assert.ok(errors.length > 0, "empty spec must produce error-severity violations");
-  assert.ok(errors.every((v) => v.severity === "error"));
-  assert.ok(warnings.every((v) => v.severity === "warning"));
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].ruleId, "Normalize");
+  assert.equal(errors[0].severity, "error");
+  assert.deepEqual(warnings, []);
 });
 
 test("evaluateFixture reports zero errors for a minimal conformant spec", () => {
@@ -52,6 +54,8 @@ test("a broken fixture file surfaces as a ParseError instead of crashing the run
     assert.equal(results.length, 1);
     assert.equal(results[0].errors[0].ruleId, "ParseError");
     assert.equal(results[0].errors[0].severity, "error");
+    assert.equal(results[0].errors[0].path, "");
+    assert.deepEqual(results[0].errors[0].data, { file: "bad.json" });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

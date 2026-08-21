@@ -19,10 +19,19 @@
  * script runs after build:spec, so dist is always present there.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
-import { validateSpec } from "../campaign-spec/dist/index.js";
+// Dynamic import so a fresh clone gets an actionable message instead of a
+// module-resolution crash: static imports hoist above any existence check.
+const distEntry = new URL("../campaign-spec/dist/index.js", import.meta.url);
+if (!existsSync(distEntry)) {
+  console.error(
+    "check-campaign-spec-conformance: campaign-spec/dist/index.js not found — run `npm run build:spec` first.",
+  );
+  process.exit(1);
+}
+const { validateSpec } = await import(distEntry.href);
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 export const FIXTURES_DIR = join(root, "contracts", "fixtures", "campaign-specs");
@@ -45,7 +54,13 @@ export function evaluateFixtureDir(dir) {
     try {
       spec = JSON.parse(readFileSync(path, "utf8"));
     } catch (error) {
-      return { name, errors: [{ ruleId: "ParseError", severity: "error", message: `not valid JSON: ${error.message}` }], warnings: [] };
+      // Same shape as a real Violation (path + data present) so consumers can
+      // iterate errors[] uniformly.
+      return {
+        name,
+        errors: [{ ruleId: "ParseError", severity: "error", message: `not valid JSON: ${error.message}`, path: "", data: { file: name } }],
+        warnings: [],
+      };
     }
     return { name, ...evaluateFixture(spec) };
   });
@@ -56,6 +71,10 @@ function formatViolation(v) {
 }
 
 function main() {
+  if (!existsSync(FIXTURES_DIR)) {
+    console.error(`check-campaign-spec-conformance: fixtures directory missing: ${relative(root, FIXTURES_DIR)}`);
+    process.exit(1);
+  }
   const results = evaluateFixtureDir(FIXTURES_DIR);
   if (results.length === 0) {
     console.error(`check-campaign-spec-conformance: no fixtures found in ${relative(root, FIXTURES_DIR)} — nothing was checked.`);
