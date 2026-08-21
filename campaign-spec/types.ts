@@ -84,17 +84,70 @@ export type PageType =
   | 'downsell'
   | 'thankyou'
 
+/**
+ * Offer condition/benefit blocks, as exported by the Map Builder. Both share
+ * the { type, value, description } shape (e.g. condition
+ * `{ type: 'count', value: 2 }`, benefit
+ * `{ type: 'package_percentage', value: '20.00' }`).
+ */
+export interface OfferCondition {
+  type?: string
+  value?: number | string | null
+  description?: string | null
+  [key: string]: unknown
+}
+
+export interface OfferBenefit {
+  type?: string
+  value?: number | string | null
+  description?: string | null
+  [key: string]: unknown
+}
+
 export interface PageOffer {
   ref_id: string | number
-  code?: string
+  code?: string | null
+  name?: string | null
+  type?: string
+  condition?: OfferCondition
+  benefit?: OfferBenefit
   [key: string]: unknown
 }
 
 export interface PagePackage {
   ref_id?: string | number
-  name?: string
-  price?: number | string
-  price_retail?: number | string
+  /**
+   * Package quantity. The real export key is `qty` (206/211 real package
+   * entries) — NOT `quantity`, which never appears in exports.
+   */
+  qty?: number
+  name?: string | null
+  price?: number | string | null
+  price_retail?: number | string | null
+  product_name?: string | null
+  product_sku?: string | null
+  product_variant_name?: string | null
+  product_purchase_availability?: string | null
+  product_inventory_availability?: string | null
+  image?: string | null
+  /**
+   * Boolean role trio. There is no `role` field in real exports — a
+   * package's role is expressed by is_upsell / is_order_bump /
+   * default_selected flags (absent means a main package).
+   */
+  is_upsell?: boolean
+  is_order_bump?: boolean
+  default_selected?: boolean
+  variant_attributes?: Array<{
+    code?: string
+    name?: string
+    value?: string
+    [key: string]: unknown
+  }>
+  is_recurring?: boolean
+  price_recurring?: number | string | null
+  interval?: string | null
+  interval_count?: number | null
   [key: string]: unknown
 }
 
@@ -246,21 +299,88 @@ export interface PromoCode {
   [key: string]: unknown
 }
 
+/**
+ * SDK-layer page type projection. `thankyou` is the canonical terminal
+ * page.type; `receipt` is its SDK projection and lives HERE (and in
+ * meta_tags["next-page-type"]), never in page.type. Observed values across
+ * the real corpus: product, checkout, upsell, receipt.
+ */
+export type SdkPageType = 'product' | 'checkout' | 'upsell' | 'receipt'
+
+/**
+ * Per-page SDK hints. Real export subkeys are `sdk_page_type` + `meta_tags`
+ * ONLY. `frontmatter` and `template_family` are template-handoff extensions
+ * carried by the contracts/fixtures/campaign-specs agent-contract fixtures
+ * (and blessed as optional extensions by schemas/campaign-spec.v4.schema.json);
+ * they are not Map Builder export fields.
+ */
+export interface SdkHints {
+  sdk_page_type?: SdkPageType
+  meta_tags?: Record<string, string>
+  frontmatter?: Record<string, unknown>
+  template_family?: string
+  [key: string]: unknown
+}
+
+/**
+ * DERIVED routing projection (present on 135/195 real pages). The declared
+ * routing fields (next_page / on_accept / on_decline / success_url) hold
+ * PAGE IDS in every real occurrence; this object is where the corresponding
+ * route paths (`*_route`, trailing-slash) and filenames (`*_filename`,
+ * route path or legacy .html) live.
+ */
+export interface ResolvedRouting {
+  accept?: string
+  decline?: string
+  success?: string
+  next_page?: string
+  accept_route?: string
+  decline_route?: string
+  success_route?: string
+  next_page_route?: string
+  accept_filename?: string
+  decline_filename?: string
+  success_filename?: string
+  next_page_filename?: string
+  [key: string]: unknown
+}
+
+/** Per-page design pointers (93/195 real pages). */
+export interface DesignHooks {
+  figma_frame_url?: string | null
+  component_slots?: unknown
+  [key: string]: unknown
+}
+
 export interface Page {
   id: string
   type: PageType
   label?: string
+  order?: number
+  /** True on funnel entry pages (178/195 real pages carry the flag). */
+  is_entry?: boolean
+  /**
+   * Authored route field: usually a trailing-slash route path
+   * ("checkout/"), occasionally empty, a bare token, or a legacy .html
+   * filename. This — not the declared routing fields — is where authored
+   * route paths live.
+   */
+  page_url?: string
   // Routing fields. Which are valid depends on `type`; rules enforce.
+  // All four hold PAGE IDS in real exports — success_url never holds a URL
+  // despite its name. Route paths live in `resolved_routing` / `page_url`.
   next_page?: string
   success_url?: string
   on_accept?: string
   on_decline?: string
+  resolved_routing?: ResolvedRouting
   // Optional content
   packages?: PagePackage[]
   offers?: PageOffer[]
   exit_intent?: ExitIntent
   promo_code_input?: PromoCodeInput
-  sdk_hints?: { meta_tags?: Record<string, string> }
+  sdk_hints?: SdkHints
+  design_hooks?: DesignHooks
   design_source?: DesignSource
   /**
    * Per-page UI variant hint. Meaningful only on upsell-type pages
@@ -298,10 +418,38 @@ export interface Funnel {
   [key: string]: unknown
 }
 
+/** A package nested under a root offer (package_id identity). */
+export interface OfferPackage {
+  package_id?: number | string
+  package_name?: string | null
+  package_image?: string | null
+  product_name?: string | null
+  product_variant_name?: string | null
+  unit_price?: number | string | null
+  unit_price_before_discount?: number | string | null
+  package_price?: number | string | null
+  package_price_before_discount?: number | string | null
+  package_unit_qty?: number | null
+  [key: string]: unknown
+}
+
+/**
+ * Root offer catalog entry. `ref_id` is the SOLE offer identity — all 236
+ * real offer occurrences use ref_id (+ code, often null, + name). A
+ * `package_ref_id` key never appears in real exports and is not part of
+ * the contract; offer→package links are the nested `packages[]` with
+ * package_id identity.
+ */
 export interface Offer {
   ref_id: string | number
-  code?: string
-  name?: string
+  code?: string | null
+  name?: string | null
+  type?: string
+  condition?: OfferCondition
+  benefit?: OfferBenefit
+  packages?: OfferPackage[]
+  /** Offer-scoped shipping method pricing. */
+  shipping_methods?: unknown[]
   [key: string]: unknown
 }
 
@@ -333,9 +481,29 @@ export type TemplateFamilyHint =
   | 'shop-three-step'
   | (string & {}) // accept future families without TS errors
 
+/**
+ * One entry of the object-shaped available_shipping_countries variant
+ * (`{ code, label }` pairs — 5/33 real specs).
+ */
+export interface ShippingCountry {
+  code?: string
+  label?: string
+  [key: string]: unknown
+}
+
 export interface Campaign {
   ref_id?: number | string
+  /** Campaign slug-style identifier (28/33 real specs), distinct from ref_id. */
+  id?: string
+  name?: string
   slug?: string
+  currency?: string
+  language?: string
+  /** Public-by-design, domain-allowlisted Campaigns API key. */
+  campaigns_api_key?: string | null
+  available_payment_methods?: unknown[]
+  available_express_payment_methods?: unknown[]
+  available_currencies?: string[]
   /**
    * Public route root the campaign is served under. `'/'` declares a
    * ROOT-SERVED campaign: the whole funnel lives at site-root paths
@@ -347,9 +515,26 @@ export interface Campaign {
    */
   route_root?: string
   payment_env_key?: string
-  available_shipping_countries?: 'all' | string[]
+  /**
+   * Arrives in THREE incompatible shapes in real exports: bare string
+   * "all", an array of country-code strings (incl. []), and an array of
+   * { code, label } objects. All three are accepted; normalization to one
+   * canonical shape is deliberately deferred.
+   */
+  available_shipping_countries?: 'all' | string[] | ShippingCountry[]
   tracking?: Record<string, unknown>
   preferred_template_family?: TemplateFamilyHint
+  // Store profile block (15–22 of 33 real specs; null-valued when unset).
+  // store_phone is the display string; store_phone_tel (below) is the
+  // tel:-prefixed URI.
+  store_url?: string | null
+  store_name?: string | null
+  store_contact?: string | null
+  store_terms?: string | null
+  store_shipping?: string | null
+  store_privacy?: string | null
+  store_returns?: string | null
+  store_phone?: string | null
   /**
    * Domain allowlist for the SDK / Campaigns API key (Slice 4f). The
    * Campaigns API treats domain allowlisting as the access boundary for
@@ -469,18 +654,77 @@ export interface AnalyticsContract {
   [key: string]: unknown
 }
 
+/**
+ * Saved Map Builder identity block (26/33 real specs). `source` values
+ * observed: campaign-map-builder, hand-authored-simulation,
+ * local-experimental.
+ */
+export interface SpecIdentity {
+  map_id?: string
+  source?: string
+  id?: string
+  map_url?: string
+  edit_url?: string
+  spec_url?: string
+  spec_hash?: string
+  saved_at?: string
+  public_route_slug?: string
+  variant_slug?: string
+  template_family?: string
+  derived_from?: string
+  authority?: string
+  [key: string]: unknown
+}
+
+/**
+ * funnel_pages[] mirror entry: a Page plus the _funnel_id/_funnel_name
+ * annotations linking it back to its funnel. The mirror is a flattened
+ * LEGACY projection of funnels[].pages[] (declared "legacy" by
+ * _provenance); funnels[] is authoritative.
+ */
+export interface FunnelPageMirrorEntry extends Page {
+  _funnel_id?: string
+  _funnel_name?: string
+}
+
+/**
+ * Field-ownership declaration (27/33 real specs): which JSON paths are
+ * ops-authored vs api-owned vs derived vs legacy mirrors.
+ */
+export interface SpecProvenance {
+  ops?: string[]
+  api?: string[]
+  derived?: string[]
+  legacy?: string[]
+  [key: string]: unknown
+}
+
 export interface CampaignSpec {
   schema_version?: string
-  spec_identity?: { map_id?: string; [key: string]: unknown }
+  builder_version?: string
+  generated_at?: string
+  spec_identity?: SpecIdentity
   campaign?: Campaign
   funnels: Funnel[]                    // required after normalize()
+  /** Flattened legacy mirror of funnels[].pages[]; funnels[] is authoritative. */
+  funnel_pages?: FunnelPageMirrorEntry[]
   offers?: Offer[]
   shipping_methods?: unknown[]
+  /**
+   * CANONICAL home of the SDK pin for the 4.x lineage (33/33 real specs
+   * declare global_config.sdk_version).
+   */
   global_config?: { sdk_version?: string; [key: string]: unknown }
+  /** Accepted ALIAS location for sdk_version (local drafts only). */
   runtime?: { sdk_version?: string; [key: string]: unknown }
   build_scope?: { mode?: 'partial' | 'full'; [key: string]: unknown }
   /** Analytics & attribution contract (optional). See AnalyticsContract. */
   analytics?: AnalyticsContract
+  _provenance?: SpecProvenance
+  /** Flat mirrors of the saved-map identity (7/33 real specs). */
+  slug?: string
+  map_id?: string
+  saved_at?: string
   [key: string]: unknown
 }
 

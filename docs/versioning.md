@@ -8,7 +8,7 @@ This repo uses independent compatibility versions:
 - Assembly Report: `campaign-runtime-assembly-report/v0`
 - Design Source Package: `campaign-design-source-package/v0`
 - Workflow Finding: `campaigns-os-workflow-finding/v0`
-- CampaignSpec: `4.2`
+- CampaignSpec: `4.2`–`4.3` (JSON Schema: `schemas/campaign-spec.v4.schema.json`)
 - starter-template agent contract: `1`
 - commerce surface catalog: `2`
 

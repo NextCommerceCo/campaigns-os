@@ -3,7 +3,7 @@
   "version": "0.1.0-alpha.0",
   "status": "developer-preview",
   "contracts": {
-    "campaign_spec": "4.2",
+    "campaign_spec": "4.2-4.3",
     "build_packet": "campaign-runtime-build-packet/v0",
     "build_context": "campaign-runtime-build-context/v0",
     "assembly_report": "campaign-runtime-assembly-report/v0",
