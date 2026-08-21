@@ -33,7 +33,7 @@
     "funnels": {
       "type": "array",
       "items": { "$ref": "#/$defs/funnel" },
-      "description": "Canonical v4.2+ funnel topology. Required — the one structural precondition normalize() enforces."
+      "description": "Canonical v4.2+ funnel topology. Required — the one structural precondition normalize() enforces (the key must exist as an array). An EMPTY array is structurally valid here by design: mid-edit Map Builder drafts validate structurally, and the FunnelCount rule rejects zero funnels at error severity. Schema owns shape; rules own cardinality."
     },
     "funnel_pages": {
       "type": "array",
@@ -82,12 +82,17 @@
           "description": "Arrives in THREE incompatible shapes in real exports: bare string \"all\" (5 specs), an array of country-code strings incl. [] (22+), and an array of { code, label } objects (5). All three are accepted here; normalization to one canonical shape is deliberately deferred to a later change.",
           "anyOf": [
             { "const": "all" },
-            { "type": "array", "items": { "type": "string" } },
+            {
+              "type": "array",
+              "items": { "type": "string" },
+              "not": { "contains": { "const": "all" } }
+            },
             {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": true,
+                "required": ["code"],
                 "properties": {
                   "code": { "type": "string" },
                   "label": { "type": "string" }
@@ -540,6 +545,7 @@
       "type": "object",
       "additionalProperties": true,
       "required": ["id", "code"],
+      "description": "Authored per-funnel promo roster (campaigns-os Slice 4c) — NOT a Map Builder export field, so corpus evidence does not apply. id + code are the contract's required identity pair, enforced at rule level by PromoCodesShape (empty/duplicate checks); the schema mirrors that contract.",
       "properties": {
         "id": { "type": "string" },
         "code": { "type": "string" },

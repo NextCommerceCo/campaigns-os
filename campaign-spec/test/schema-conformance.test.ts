@@ -19,7 +19,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
-import Ajv2020 from 'ajv/dist/2020.js'
+import { Ajv2020 } from 'ajv/dist/2020.js'
 import { describe, expect, test } from './harness.ts'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
