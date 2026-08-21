@@ -26,7 +26,7 @@
     "source": "adsbranded-templates agent fixture",
     "preferred_template_family": "karna"
   },
-  "runtime": {
+  "global_config": {
     "sdk_version": "0.4.37"
   },
   "funnels": [
@@ -45,10 +45,10 @@
           "page_url": "/checkout/",
           "next_page": "upsell.html",
           "packages": [
-            { "role": "main", "ref_id": 10, "quantity": 1 }
+            { "ref_id": 10, "qty": 1 }
           ],
-          "shipping_methods": ["standard"],
           "sdk_hints": {
+            "sdk_page_type": "checkout",
             "template_family": "karna",
             "frontmatter": {
               "shipping_methods.standard": 20,
@@ -69,12 +69,13 @@
           "on_accept": "receipt.html",
           "on_decline": "receipt.html",
           "packages": [
-            { "role": "upsell", "ref_id": 30, "quantity": 1 }
+            { "ref_id": 30, "qty": 1, "is_upsell": true }
           ],
           "offers": [
-            { "code": "UP50", "package_ref_id": 30 }
+            { "ref_id": "1", "code": "UP50" }
           ],
           "sdk_hints": {
+            "sdk_page_type": "upsell",
             "template_family": "karna",
             "frontmatter": {
               "upsell_offer.package_id": 30,
@@ -90,6 +91,7 @@
           "template": "src/karna/receipt.html",
           "page_url": "/receipt/",
           "sdk_hints": {
+            "sdk_page_type": "receipt",
             "template_family": "karna",
             "frontmatter": {
               "receipt_summary.title": "Order Summary"
@@ -103,6 +105,14 @@
     { "key": "standard", "ref_id": 20, "name": "Standard Shipping", "price": "4.95" }
   ],
   "offers": [
-    { "code": "UP50", "package_ref_id": 30, "discount_type": "percent", "value": 50, "applies_to": ["upsell"] }
+    {
+      "ref_id": "1",
+      "name": "50% off package 30",
+      "type": "offer",
+      "code": "UP50",
+      "condition": { "type": "any", "value": null, "description": "No minimum purchase requirement" },
+      "benefit": { "type": "package_percentage", "value": "50.00", "description": "50% off selected packages" },
+      "packages": [{ "package_id": 30 }]
+    }
   ]
 }

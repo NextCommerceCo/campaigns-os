@@ -37,7 +37,7 @@
     "map_id": "fixture-olympus-mv-two-map",
     "source": "campaign-cart-starter-templates agent fixture"
   },
-  "runtime": {
+  "global_config": {
     "sdk_version": "0.4.37"
   },
   "funnels": [
@@ -49,7 +49,7 @@
       "pages": [
         {
           "id": "select",
-          "type": "product",
+          "type": "landing",
           "order": 1,
           "label": "Select bundle and variants",
           "template": "src/olympus-mv-two-step/select.html",
@@ -57,29 +57,23 @@
           "next_page": "checkout.html",
           "packages": [
             {
-              "role": "main",
               "ref_id": 10,
-              "quantity": 1,
+              "qty": 1,
               "configurable": true
             },
             {
-              "role": "main",
               "ref_id": 10,
-              "quantity": 2,
+              "qty": 2,
               "configurable": true
             },
             {
-              "role": "main",
               "ref_id": 10,
-              "quantity": 3,
+              "qty": 3,
               "configurable": true
             }
           ],
-          "shipping_methods": [
-            "standard",
-            "free"
-          ],
           "sdk_hints": {
+            "sdk_page_type": "product",
             "template_family": "olympus-mv-two-step",
             "frontmatter": {
               "packages.main_package": 10,
@@ -116,6 +110,7 @@
           "page_url": "/checkout/",
           "next_page": "upsell-mv.html",
           "sdk_hints": {
+            "sdk_page_type": "checkout",
             "template_family": "olympus-mv-two-step",
             "frontmatter": {
               "checkout_step.selector_id": "main"
@@ -134,12 +129,13 @@
           "on_decline": "upsell-bundle-stepper.html",
           "packages": [
             {
-              "role": "upsell",
               "ref_id": 10,
-              "quantity": 1
+              "qty": 1,
+              "is_upsell": true
             }
           ],
           "sdk_hints": {
+            "sdk_page_type": "upsell",
             "template_family": "olympus-mv-two-step",
             "frontmatter": {
               "upsell_offer.package_id": 10,
@@ -178,12 +174,13 @@
           "on_decline": "upsell-bundle-tier-pills.html",
           "packages": [
             {
-              "role": "upsell",
               "ref_id": 30,
-              "quantity": 1
+              "qty": 1,
+              "is_upsell": true
             }
           ],
           "sdk_hints": {
+            "sdk_page_type": "upsell",
             "template_family": "olympus-mv-two-step",
             "frontmatter": {
               "upsell_offer.package_id": 30,
@@ -206,12 +203,13 @@
           "on_decline": "upsell-bundle-tier-cards.html",
           "packages": [
             {
-              "role": "upsell",
               "ref_id": 30,
-              "quantity": 1
+              "qty": 1,
+              "is_upsell": true
             }
           ],
           "sdk_hints": {
+            "sdk_page_type": "upsell",
             "template_family": "olympus-mv-two-step",
             "frontmatter": {
               "upsell_offer.package_id": 30,
@@ -252,12 +250,13 @@
           "on_decline": "receipt.html",
           "packages": [
             {
-              "role": "upsell",
               "ref_id": 30,
-              "quantity": 1
+              "qty": 1,
+              "is_upsell": true
             }
           ],
           "sdk_hints": {
+            "sdk_page_type": "upsell",
             "template_family": "olympus-mv-two-step",
             "frontmatter": {
               "upsell_offer.package_id": 30,
@@ -298,6 +297,7 @@
           "template": "src/olympus-mv-two-step/receipt.html",
           "page_url": "/receipt/",
           "sdk_hints": {
+            "sdk_page_type": "receipt",
             "template_family": "olympus-mv-two-step",
             "frontmatter": {
               "receipt_summary.title": "Order Summary",
@@ -325,39 +325,87 @@
   ],
   "offers": [
     {
+      "ref_id": "1",
+      "name": "80% off package 10",
+      "type": "offer",
       "code": "UP80TSHIRT",
-      "package_ref_id": 10,
-      "discount_type": "percent",
-      "value": 80,
-      "applies_to": [
-        "upsell"
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "80.00",
+        "description": "80% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 10
+        }
       ]
     },
     {
+      "ref_id": "2",
+      "name": "50% off package 30",
+      "type": "offer",
       "code": "UP50",
-      "package_ref_id": 30,
-      "discount_type": "percent",
-      "value": 50,
-      "applies_to": [
-        "upsell"
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 30
+        }
       ]
     },
     {
+      "ref_id": "3",
+      "name": "60% off package 30",
+      "type": "offer",
       "code": "UP60",
-      "package_ref_id": 30,
-      "discount_type": "percent",
-      "value": 60,
-      "applies_to": [
-        "upsell"
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "60.00",
+        "description": "60% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 30
+        }
       ]
     },
     {
+      "ref_id": "4",
+      "name": "70% off package 30",
+      "type": "offer",
       "code": "UP70",
-      "package_ref_id": 30,
-      "discount_type": "percent",
-      "value": 70,
-      "applies_to": [
-        "upsell"
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "70.00",
+        "description": "70% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 30
+        }
       ]
     }
   ]

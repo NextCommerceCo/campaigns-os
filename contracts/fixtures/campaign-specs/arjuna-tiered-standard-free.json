@@ -38,7 +38,7 @@
     "source": "adsbranded-templates agent fixture",
     "preferred_template_family": "arjuna"
   },
-  "runtime": {
+  "global_config": {
     "sdk_version": "0.4.37"
   },
   "funnels": [
@@ -58,31 +58,25 @@
           "next_page": "upsell-bundle-stepper.html",
           "packages": [
             {
-              "role": "main",
               "ref_id": 10,
-              "quantity": 1
+              "qty": 1
             },
             {
-              "role": "main",
               "ref_id": 10,
-              "quantity": 2
+              "qty": 2
             },
             {
-              "role": "main",
               "ref_id": 10,
-              "quantity": 3
+              "qty": 3
             },
             {
-              "role": "coverage",
               "ref_id": 14,
-              "quantity": 1
+              "qty": 1,
+              "is_order_bump": true
             }
           ],
-          "shipping_methods": [
-            "standard",
-            "free"
-          ],
           "sdk_hints": {
+            "sdk_page_type": "checkout",
             "template_family": "arjuna",
             "frontmatter": {
               "media_type": "gallery",
@@ -137,18 +131,19 @@
           "on_decline": "receipt.html",
           "packages": [
             {
-              "role": "upsell",
               "ref_id": 30,
-              "quantity": 1
+              "qty": 1,
+              "is_upsell": true
             }
           ],
           "offers": [
             {
-              "code": "UP50",
-              "package_ref_id": 30
+              "ref_id": "1",
+              "code": "UP50"
             }
           ],
           "sdk_hints": {
+            "sdk_page_type": "upsell",
             "template_family": "arjuna",
             "frontmatter": {
               "upsell_offer.package_id": 30,
@@ -165,6 +160,7 @@
           "template": "src/arjuna/receipt.html",
           "page_url": "/receipt/",
           "sdk_hints": {
+            "sdk_page_type": "receipt",
             "template_family": "arjuna",
             "frontmatter": {
               "receipt_summary.title": "Order Summary"
@@ -190,12 +186,24 @@
   ],
   "offers": [
     {
+      "ref_id": "1",
+      "name": "50% off package 30",
+      "type": "offer",
       "code": "UP50",
-      "package_ref_id": 30,
-      "discount_type": "percent",
-      "value": 50,
-      "applies_to": [
-        "upsell"
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 30
+        }
       ]
     }
   ]
