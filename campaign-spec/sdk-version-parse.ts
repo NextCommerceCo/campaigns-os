@@ -40,12 +40,15 @@ export type SdkVersionParseResult =
  */
 export function parseSdkVersion(value: unknown): SdkVersionParseResult {
   if (typeof value !== 'string') return { ok: false, reason: 'non-string' }
-  if (value.trim() === '') return { ok: false, reason: 'empty' }
+  const trimmed = value.trim()
+  if (trimmed === '') return { ok: false, reason: 'empty' }
   if (RELEASED_SDK_VERSION_PATTERN.test(value)) return { ok: true, version: value }
-  if (value !== value.trim() && RELEASED_SDK_VERSION_PATTERN.test(value.trim())) {
+  if (value !== trimmed && RELEASED_SDK_VERSION_PATTERN.test(trimmed)) {
     return { ok: false, reason: 'padded' }
   }
-  if (/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)[-+]/.test(value)) {
+  // Classify against the trimmed form so a padded prerelease ("  0.4.37-beta.1 ")
+  // reports the substantive rejection (the suffix) rather than 'non-canonical'.
+  if (/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)[-+]/.test(trimmed)) {
     return { ok: false, reason: 'prerelease-or-build' }
   }
   return { ok: false, reason: 'non-canonical' }

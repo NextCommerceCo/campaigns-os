@@ -54,6 +54,8 @@ describe('SchemaVersion rule', () => {
     const schemaEnum = (schema as {
       properties: { schema_version: { enum: string[] } }
     }).properties.schema_version.enum
-    expect([...SUPPORTED_SCHEMA_VERSIONS].sort()).toEqual([...schemaEnum].sort())
+    // Exact order, no sort: the constant and the schema enum must agree on
+    // membership AND order (lexical sort would hide drift once '4.10' exists).
+    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([...schemaEnum])
   })
 })

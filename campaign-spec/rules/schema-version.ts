@@ -19,7 +19,7 @@
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
 
 /** Supported CampaignSpec lineage versions — keep in sync with the v4 JSON Schema enum. */
-export const SUPPORTED_SCHEMA_VERSIONS: readonly string[] = ['4.2', '4.3']
+export const SUPPORTED_SCHEMA_VERSIONS: readonly string[] = Object.freeze(['4.2', '4.3'])
 
 export const SchemaVersion: Rule = {
   id: 'SchemaVersion',

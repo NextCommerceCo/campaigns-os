@@ -40,6 +40,8 @@ describe('parseSdkVersion', () => {
       ['0.4.37-beta.1', 'prerelease-or-build'],
       ['0.4.37+build.5', 'prerelease-or-build'],
       ['0.4.37-rc.1+sha.abc', 'prerelease-or-build'],
+      ['  0.4.37-beta.1  ', 'prerelease-or-build'],
+      ['\t0.4.37+build\t', 'prerelease-or-build'],
       ['v0.4.37', 'non-canonical'],
       ['0.4', 'non-canonical'],
       ['0.4.', 'non-canonical'],
