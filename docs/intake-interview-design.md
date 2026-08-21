@@ -1,21 +1,21 @@
 # Intake Interview — Front-Door Design
 
-**Date:** 2026-08-21
+**Date:** 2026-08-21 · **Revision 2** (same day), incorporating the adversarial architecture review; all of its schema/ADR citations verified against the tree
 **Status:** Design for review, not yet built
-**Evidence:** ON-2 operator feedback (`next-mind` deep-pass `friction-on-2` draft rows on-2-005..007) and a code survey of the current intake surface (2026-08-21)
+**Evidence:** ON-2 operator feedback (`next-mind` deep-pass `friction-on-2` draft rows on-2-005..007), code survey of the intake surface, architecture review (2026-08-21)
 
 ## Problem
 
 The first successful CLI command assumes the operator has already done four things off-tool, none of which any command checks: configured Campaigns App, exported a CampaignSpec from Map Builder, converted sources to page-kit-ready HTML, and chosen a template family. `start` demands `--spec|--map-id`, `--source`, `--target`, `--template-family` fully formed, and `tooling status` validates the checkout, not the commission. The ON-2 operator's feedback names the result precisely: unclear how to initiate, which repos need clones versus which are merely in the mix, where page-kit fits, what to provide in what order and format, and what the pipeline can work around versus expects.
 
-Meanwhile the interview's payload already exists without an interviewer:
+The interview's raw material already exists without an interviewer:
 
-- `evaluateCampaignBuildBrief` (`src/build-brief.mjs:435-518`) emits 8 structured business questions with `options[]` and `blocking: true` — no code path ever asks them; in guided-draft mode they land in an artifact as warnings.
-- The source-html intake drafts a manifest on ambiguous page mapping — an "explain what's missing" pattern already shipped.
+- `evaluateCampaignBuildBrief` (`src/build-brief.mjs:435-518`) defines up to eight conditional question classes with `options[]` — evaluated, never asked; in guided-draft mode they land in an artifact as warnings.
+- ADR-0001's Design Source Package normalizes source provenance, Contribution Coverage, Surface Identity, Source Gaps/TODOs, and Source Readiness — the source model intake must feed, not duplicate.
 - The findings journal schema includes `intake` and `start` stages — nothing emits into them, which is why ON-2's journal opened at polish.
-- page-kit's `campaign-init` has a working @clack interactive flow — the estate's one real prompt loop, unreachable from campaigns-os.
+- page-kit's `campaign-init` has a working @clack prompt loop, unreachable from campaigns-os.
 
-The fix is one verb that holds the system's topology so the operator never has to.
+The fix is one verb that **coordinates the existing modules** — CampaignSpec, Build Brief, Design Source Package, Readiness, Run Telemetry — so the operator never has to hold the topology. It introduces no parallel source truth and no readiness dialect.
 
 ## The verb
 
@@ -23,63 +23,79 @@ The fix is one verb that holds the system's topology so the operator never has t
 npm run campaigns-os -- intake [--target <dir>] [--non-interactive] [--json] [--answers <file>]
 ```
 
-Zero required arguments. Interactive by default (@clack, matching `campaign-init`); `--non-interactive --answers` gives agents and CI byte-for-byte parity — the same interview as a data structure, which is what a P4 (agent-operated) run will drive. `start` and `prepare-build` keep their contracts, but every missing-input error gains one line: `Run: npm run campaigns-os -- intake`.
+Zero required arguments. Architecturally one deep **Campaign Intake module** owns detection, answer application, readiness evaluation, and next-action generation; interactive @clack and non-interactive/JSON are thin adapters at the same seam. `--json` is prompt-free by definition. Interactive and non-interactive runs have **semantic parity** (same evaluation, same report content), not byte parity — timestamps and provenance legitimately differ. Cancellation and blocked outcomes get distinct exit codes. `start`/`prepare-build` semantics are untouched; their missing-input errors gain one pointer line: `Run: npm run campaigns-os -- intake`.
+
+### Answers contract (non-interactive spine)
+
+- A versioned answers document (`campaigns-os-intake-answers/v0`) with stable choice values per question class — `options[]` display strings are not the contract.
+- Deterministic answer→Brief reduction: each choice value maps to a defined patch of nested Brief fields.
+- Precedence: explicit CLI flag → answers file → detected fact → default.
+- Unknown keys, stale answers (spec/source fingerprint mismatch), and missing answers each have defined behavior: unknown → error; stale → re-ask (interactive) or blocked (non-interactive); missing → question remains unresolved in the report.
+- Spec and source material fingerprints are recorded so a resumed interview knows what its previous answers were about.
 
 ## Interview flow
 
-Each ask follows one shape: **prompt → why it's needed → accepted formats → what happens if you skip it** (block / proceed-with-recorded-assumption / tool fills it and flags it). Never ask what can be detected; detect first, confirm second.
+Each ask follows one shape: **prompt → why it's needed → accepted formats → what happens if you skip it**. Never ask what can be detected; detect first, confirm second.
 
-**Stage 0 — Environment.** Absorb `tooling status`, add what it doesn't check: Node >= 20.19, target repo present. No target repo → offer to run page-kit `campaign-init` (the flags exist: `--slug --api-key --ai-context --non-interactive`), which dissolves the "what does page-kit have to do with it" question — the operator never learns the boundary because the interview crosses it for them.
+**Stage 0 — Environment.** Absorb `tooling status`, add Node >= 20.19 and target-repository resolution. Four target states, handled distinctly:
+
+1. **Page-kit repo, campaign present** — resume posture; intake updates rather than scaffolds.
+2. **Page-kit repo, no campaign** — the only state where intake may run `campaign-init`, and only after the spec, slug, and template family are confirmed (Stages 1–3) and the operator explicitly permits the mutation.
+3. **Empty directory** — intake names the bootstrap steps (clone/create a page-kit repo, `npm install`) as `next_actions`; it does not fabricate a repository. `campaign-init` installs into an existing repo and cannot bootstrap one.
+4. **Non-page-kit repository** — refuse with an explanation; never scaffold into a foreign tree.
 
 **Stage 1 — Commission.** Campaign name, merchant, and the spec: `--map-id` (fetched, cached — existing path), a local spec file, or neither. Neither → point at Map Builder with the edit URL and stop cleanly: planner-first means commerce is planned there, not improvised here.
 
-**Stage 2 — Sources.** "What do you have?" The five documented entry points (`docs/entry-points.md`) become the answer enum: template-stock / Figma-driven / AI-generated / hand-authored / mixed. HTML dir → run manifest matching now, draft the manifest on ambiguity now (not at prepare-build). Figma → name the `figma-sections-export` handoff contract and its command. Nothing → template-stock is a valid answer, not a failure.
+**Stage 2 — Sources → Design Source Package.** "What do you have?" — the entry-point question (template-stock / Figma-driven / AI-generated / hand-authored / mixed, per `docs/entry-points.md`) routes *detection only*; it is not a taxonomy in any artifact. The stage's output is a drafted or updated **Design Source Package** per ADR-0001: page-level Design Source Contributions, Contribution Coverage against active pages, Source Gaps and Source TODOs for what's missing. Existing HTML → manifest matching now, ambiguity confirmed in-interview. Figma link without semantic-export provenance → a **Source TODO naming the `figma-sections-export` handoff command**; intake never fabricates exporter provenance. Nothing → template-stock, recorded as a Template Reference-backed `template_baseline` contribution — a valid coverage role, not degraded HTML.
 
-**Stage 3 — Commerce & brand.** Ask the Build Brief's 8 questions — finally. Prefill everything derivable from the spec and asset crawl; ask only what remains. Answers write a brief with a new mode, `interviewed`, which prepare-build treats like `prepared` (answered questions stop resurfacing as warnings).
+**Stage 3 — Commerce & brand.** Evaluate every applicable Build Brief question class; **prompt only for the unresolved ones** (prefill from spec and asset crawl). Answers write an ordinary **`prepared`** Build Brief with interview provenance in metadata — no new mode, no schema churn. Template family: intake computes a **candidate** with confidence; interactive confirmation or an explicit answers-file value produces `template_lock.locked_by: operator_ack` / `spec_hint_ack`. A recommendation alone never locks — the packet schema's own invariant.
 
-**Stage 4 — Readiness report.** The interview's output artifact (`.campaign-runtime/intake-report.json` + terminal rendering):
+**Stage 4 — Intake Readiness Checkpoint.** Not a bespoke report: a formal checkpoint using the shared status vocabulary (`pending | blocked | ready | ready_with_gaps | ready_with_waivers | …`) and the Campaign Readiness Readback buckets — `handled`, `blocked_by`, `known_gaps`, `waivers`, `evidence`, `next_actions`. It references the CampaignSpec, Build Brief, and Design Source Package by path + fingerprint; it duplicates none of their truth. Terminal rendering ends with exactly one thing: the next command, or the named blocks.
 
-- **Input contract table** — each input, its tier, its state, and the consequence.
-- **Source tier grade** — see below.
-- **Predicted output level** — what this commission can produce as graded.
-- **The exact next command**, or the named blocks. Nothing else.
+## The input contract (typed, verified against current behavior)
 
-## The input contract (typed, not documented)
-
-| Input | Tier | Missing ⇒ |
+| Input | Class | Missing ⇒ |
 |---|---|---|
 | CampaignSpec (map-id or file) | required | block, with the Map Builder URL |
-| Campaigns API key | required | block (accepted via spec, flag, or `CAMPAIGNS_API_KEY`) |
-| Target repo | synthesizable | interview runs `campaign-init` |
-| Source HTML | degradable | template-stock path, recorded as adopted assumption |
-| Source manifest | synthesizable | drafted from matching; ambiguity → confirm in-interview |
-| Template family | synthesizable | recommended from certified catalog + spec hint; recorded as `template_lock.locked_by: "intake_recommendation"` |
-| Store profile | degradable | proceeds; `page_kit.store_profile` checkpoint (#201 fix) judges it later |
-| Brief answers | degradable | unanswered questions carry into the brief as today's guided-draft warnings |
+| Target repository | required | bootstrap `next_actions` (state 3) or refusal (state 4) |
+| Campaign scaffold in target | synthesizable | guarded `campaign-init` (state 2 only, post-confirmation) |
+| Campaigns API key | degradable | warning; API-side package/shipping/offer confirmation deferred (`src/cli.mjs:4260` behavior, unchanged) |
+| Source HTML / design source | degradable | Template Reference-backed `template_baseline` coverage, or Source Gaps/TODOs per contribution |
+| Source manifest | synthesizable | drafted from matching; ambiguity confirmed in-interview |
+| Template family | synthesizable candidate | recommended, **never locked**, until operator/spec ack |
+| Figma export provenance | required for Figma-driven coverage | Source TODO naming the export command |
+| Store profile parity | out of intake | owned by the `page_kit.store_profile` checkpoint downstream |
+| Brief answers | degradable | unresolved questions carry in the brief exactly as guided-draft does today |
 
-## Instrumentation for free
+## Instrumentation (scoped work, not free)
 
-Intake writes `stage: "intake"` findings to the workflow journal (schema-ready today) and stamps the **source tier** into the packet and build context:
-
-- **T1 complete-reference** — manifest-governed HTML (ON-2's cell)
-- **T2 partial-reference** — Figma-driven or mixed
-- **T3 judgment-required** — template-stock or AI-generated
-
-The tier remits through `/api/runs` with everything else, which makes every real commission self-classify on the source-quality axis with zero ceremony — and makes "better inputs ⇒ cleaner outputs" measurable: the tier is a recorded prediction; the QA verdict is its outcome.
+- Intake appends `stage: "intake"` findings **only for genuine friction and missing prompts** — ordinary missing commission inputs belong in `blocked_by`, Source Gaps, or Source TODOs, not the findings journal.
+- When Campaign Run Identity begins is an open design item: run sessions currently start at `start`/`prepare-build`. Moving the start to intake, adding an intake observation to the run-record schema, and any source-cohort field are **versioned public-surface changes** with their own slice — the run-record schema has no intake artifact kind today.
+- The source-quality measurement survives in the domain's own vocabulary: Contribution Coverage, readiness status, and gap/TODO counts already classify every commission. A derived telemetry cohort, if wanted, is computed downstream from those fields and is never labeled "source quality."
 
 ## Acceptance
 
-A fresh operator with an empty directory, a Map ID, and a Figma link reaches a graded readiness report **without asking a human anything**. Every block names its missing input and the action that supplies it. `--non-interactive --answers` produces an identical report. Negative control: an operator with nothing but a Map ID still exits with a valid report (T3, template-stock) — the interview must never manufacture a dead-end that `start` doesn't have.
+A fresh operator in an existing page-kit repo, holding only a Map ID and a Figma link, reaches an Intake Readiness Checkpoint **without asking a human anything**: spec fetched, Design Source Package drafted with the Figma contribution carrying a Source TODO for the export handoff, template candidate awaiting ack, unresolved Brief questions listed, `next_actions` exact. The same operator in an empty directory gets the named bootstrap steps, not a failure. `--non-interactive --answers` yields a semantically identical checkpoint. Negative control: an operator with nothing but a Map ID still exits `ready_with_gaps` on the template-stock path — intake must never manufacture a dead-end that `start` doesn't have.
 
 Falsifier, per the ambient-instrumentation doctrine: if the next instrumented commission still produces friction rows of the on-2-005..007 classes (entry, topology, format, expects-vs-works-around), the interview failed regardless of how it demos.
 
+## Build sequence
+
+1. Land the Design Source Package emitter/schema where not yet complete (ADR-0001's contract is documented ahead of full implementation).
+2. Pure Campaign Intake module: detection, versioned answers/reduction, readiness evaluation, next-action generation.
+3. Formal Intake Checkpoint + readback projection.
+4. Interactive and JSON/non-interactive adapters at the module seam.
+5. Guarded `campaign-init` delegation; then telemetry/public-surface wiring as its own versioned slice.
+6. Tests: existing repo, empty directory, Figma-without-export, ambiguous HTML, template confirmation vs. lock invariant, cancellation exit codes, resume with stale fingerprints, overwrite protection.
+
 ## Out of scope
 
-New source adapters (still `html_funnel` only), moving `campaign-init` into campaigns-os, Campaigns App configuration, a web version of the interview (Map Builder portal intake is a plausible later home; CLI first because the build is CLI), and any change to `start`/`prepare-build` semantics beyond the pointer line.
+New source adapters (still `html_funnel` only), moving `campaign-init` into campaigns-os, Campaigns App configuration, a web version of the interview (Map Builder portal intake is a plausible later home), any change to `start`/`prepare-build` semantics beyond the pointer line, and run-identity/telemetry surface changes beyond the versioned slice named above.
 
-## Decisions for Devin
+## Adopted decisions (from the 2026-08-21 review)
 
-1. Verb name: `intake` (proposed) vs `begin`/`setup`.
-2. May intake run `campaign-init` itself (proposed) or only print the command?
-3. Brief-question posture at intake: all 8 asked (proposed, with prefill) or only the ones the spec can't answer?
-4. Does the source tier appear in operator-facing output (proposed) or only in telemetry?
+Verb = `intake`. `campaign-init` runs only inside a recognized page-kit repo after explicit confirmation. Brief questions: evaluate all applicable classes, ask only unresolved. No source tier in operator output or packet/context — Source Readiness and Contribution Coverage are the operator-facing truth.
+
+## Remaining decision for Devin
+
+Whether the derived telemetry cohort (computed from coverage/gap/readiness fields, for the inputs→outcomes curve) is in the v0 telemetry slice or deferred until intake itself proves out.
