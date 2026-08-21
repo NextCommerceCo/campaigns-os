@@ -56,8 +56,8 @@ the hidden eager-media assertion uses `polish_gate`.
 projections, and suppresses the runtime `qa run --browser --test-order common`
 suggestion until every checkpoint blocker is clear.
 
-The SDK gate prefers `runtime.sdk_version` and accepts
-`global_config.sdk_version` only as a legacy fallback. Pins must be released,
+The SDK gate reads the canonical `global_config.sdk_version` first and accepts
+`runtime.sdk_version` as an alias. Pins must be released,
 canonical `MAJOR.MINOR.PATCH` versions. Equal dual declarations are valid;
 conflicting declarations, missing declarations, prereleases, empty values, and
 non-string values are non-waivable blockers. Once both sides are valid, only an

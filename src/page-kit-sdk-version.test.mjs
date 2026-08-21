@@ -17,7 +17,7 @@ function targetLoad(sdkVersion = "0.4.37", overrides = {}) {
   };
 }
 
-test("SDK-pin evaluator passes an exact released runtime pin", () => {
+test("SDK-pin evaluator passes an exact released runtime-alias pin", () => {
   const gate = evaluatePageKitSdkVersion({
     spec: { runtime: { sdk_version: "0.4.37" } },
     targetLoad: targetLoad(),
@@ -33,7 +33,7 @@ test("SDK-pin evaluator passes an exact released runtime pin", () => {
   assert.equal(gate.waiver, null);
 });
 
-test("SDK-pin evaluator falls back to the legacy global_config declaration", () => {
+test("SDK-pin evaluator reads the canonical global_config declaration", () => {
   const gate = evaluatePageKitSdkVersion({
     spec: { global_config: { sdk_version: "0.4.37" } },
     targetLoad: targetLoad(),
@@ -44,7 +44,7 @@ test("SDK-pin evaluator falls back to the legacy global_config declaration", () 
   assert.equal(gate.expected_source, "global_config.sdk_version");
 });
 
-test("equal runtime and legacy declarations are valid and runtime is preferred", () => {
+test("equal canonical and alias declarations are valid and global_config is preferred", () => {
   const gate = evaluatePageKitSdkVersion({
     spec: {
       runtime: { sdk_version: "0.4.37" },
@@ -54,7 +54,7 @@ test("equal runtime and legacy declarations are valid and runtime is preferred",
   });
 
   assert.equal(gate.status, "pass");
-  assert.equal(gate.expected_source, "runtime.sdk_version");
+  assert.equal(gate.expected_source, "global_config.sdk_version");
 });
 
 test("differing runtime and legacy declarations block without a waiver lane", () => {

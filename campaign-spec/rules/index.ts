@@ -48,7 +48,7 @@ import { StoreProfileShape } from './store-profile-shape.ts'
 import { AnalyticsContractShape } from './analytics-contract-shape.ts'
 import { CycleDetection } from './cycle-detection.ts'
 
-export { SchemaVersion } from './schema-version.ts'
+export { SchemaVersion, SUPPORTED_SCHEMA_VERSIONS } from './schema-version.ts'
 export { SdkVersion } from './sdk-version.ts'
 export { UnknownTopLevelFields, KNOWN_TOP_LEVEL_FIELDS, KNOWN_CAMPAIGN_FIELDS } from './unknown-top-level-fields.ts'
 export { CampaignMetadata } from './campaign-metadata.ts'
