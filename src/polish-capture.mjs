@@ -493,7 +493,27 @@ export function aggregateCdpResponses(responses, {
   }
 
   const allResources = [...groups.values()].map((group) => {
-    const observedTypes = [...group.observed_resource_types];
+    // CORS preflights share the URL of the request they authorize; observing
+    // preflight alongside the real type is expected, not ambiguity. fetch and
+    // xhr are likewise one programmatic-call class — which transport API a
+    // page used is not a resource-identity conflict. Only explicit preflight
+    // records are set aside (the collector classifies older-protocol OPTIONS
+    // legs as preflight at the source) and only the fetch-class transports
+    // are merged; any pairing outside those, "other" included, remains a
+    // genuine identity conflict.
+    const substantiveTypes = [...new Set(group.observed_resource_types)].filter((value) => value !== "preflight");
+    const canonicalTypes = [...new Set(substantiveTypes.map((value) => (value === "xhr" ? "fetch" : value)))];
+    const observedTypes = canonicalTypes.length ? canonicalTypes : [...group.observed_resource_types];
+    if (observedTypes.length === 1) {
+      // The xhr → fetch mapping exists only to keep the two transports from
+      // reading as an identity conflict; a resource observed under a single
+      // transport keeps the type it was actually observed with.
+      const preferred = substantiveTypes.length === 1 ? substantiveTypes[0] : observedTypes[0];
+      if (group.resource_type !== preferred) {
+        group.resource_type = preferred;
+        group.resource_type_status = KNOWN_RESOURCE_TYPES.has(preferred) ? "known" : "unknown";
+      }
+    }
     if (observedTypes.length > 1) {
       group.resource_type = "unknown";
       group.resource_type_status = "ambiguous";

@@ -134,6 +134,37 @@ test("page-load evidence blocks only hidden eager media strictly above 1,048,576
   for (const secret of ["credential=", "campaign=private"]) assert.equal(serialized.includes(secret), false, secret);
 });
 
+test("aborted-transfer lower-bound bytes still reach the hidden-eager-media threshold", () => {
+  // A browser-canceled range request keeps its observed byte count as a
+  // non-failed 206 record: the lower bound is real eager transfer and must
+  // trip the finding when it exceeds the threshold, while an abort at
+  // exactly the threshold passes the strict comparison.
+  const abortedCapture = (bytes) => pageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_200 },
+    mediaElements: [mediaElement("hidden-aborted.mp4")],
+    responses: [{
+      ...mediaResponse("aborted", "hidden-aborted.mp4", bytes),
+      status: 206,
+    }],
+  });
+
+  const tripped = evidenceForCapture(abortedCapture(HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES + 1));
+  assert.equal(tripped.measurement.status, "complete");
+  assert.equal(tripped.findings.length, 1);
+  assert.equal(tripped.findings[0].code, "polish.hidden_eager_media");
+  assert.equal(tripped.findings[0].transferred_bytes, HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES + 1);
+
+  const boundary = evidenceForCapture(abortedCapture(HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES));
+  assert.equal(boundary.measurement.status, "complete");
+  assert.deepEqual(boundary.findings, []);
+});
+
 test("preload exemptions accept only exact ASCII-case-insensitive none and metadata tokens", () => {
   const preloadAttributes = ["NoNe", "MeTaDaTa", " none ", " metadata "];
   const capture = pageLoadCapture({
