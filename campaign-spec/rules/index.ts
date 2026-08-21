@@ -20,6 +20,7 @@ import type { Rule, RuleSet } from '../types.ts'
 
 import { SchemaVersion } from './schema-version.ts'
 import { SdkVersion } from './sdk-version.ts'
+import { UnknownTopLevelFields } from './unknown-top-level-fields.ts'
 import { FunnelCount } from './funnel-count.ts'
 import { FunnelIdentity } from './funnel-identity.ts'
 import { FunnelHypothesisLength } from './funnel-hypothesis-length.ts'
@@ -49,6 +50,7 @@ import { CycleDetection } from './cycle-detection.ts'
 
 export { SchemaVersion } from './schema-version.ts'
 export { SdkVersion } from './sdk-version.ts'
+export { UnknownTopLevelFields, KNOWN_TOP_LEVEL_FIELDS, KNOWN_CAMPAIGN_FIELDS } from './unknown-top-level-fields.ts'
 export { CampaignMetadata } from './campaign-metadata.ts'
 export { FunnelCount } from './funnel-count.ts'
 export { FunnelIdentity } from './funnel-identity.ts'
@@ -88,6 +90,7 @@ export { CycleDetection } from './cycle-detection.ts'
 export const allRules: RuleSet = [
   SchemaVersion,
   SdkVersion,
+  UnknownTopLevelFields,
   CampaignMetadata,
   FunnelCount,
   FunnelIdentity,
