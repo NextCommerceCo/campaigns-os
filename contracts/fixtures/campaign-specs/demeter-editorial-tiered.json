@@ -1,4 +1,5 @@
 {
+  "schema_version": "4.3",
   "campaign": {
     "id": "fixture-demeter-editorial",
     "name": "Fixture Demeter Editorial Tiered",
@@ -35,6 +36,9 @@
   "spec_identity": {
     "map_id": "fixture-demeter-editorial-map",
     "source": "campaign-cart-starter-templates agent fixture"
+  },
+  "runtime": {
+    "sdk_version": "0.4.37"
   },
   "funnels": [
     {

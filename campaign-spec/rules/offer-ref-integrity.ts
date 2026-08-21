@@ -15,6 +15,11 @@ import type { CampaignSpec, Offer, Rule, Violation } from '../types.ts'
 function buildRefIdIndex(catalog: Offer[]): Set<string> {
   const set = new Set<string>()
   for (const offer of catalog) {
+    // Catalog offers without a ref_id (e.g. package_ref_id-keyed offers) are
+    // excluded from the index — indexing String(undefined) would let a page
+    // offer that also lacks ref_id "resolve" against "undefined" and turn the
+    // whole rule into a silent pass.
+    if (offer.ref_id === undefined || offer.ref_id === null) continue
     set.add(String(offer.ref_id))
   }
   return set
@@ -35,6 +40,11 @@ export const OfferRefIntegrity: Rule = {
       pages.forEach((page, pageIdx) => {
         if (!page.offers || page.offers.length === 0) return
         page.offers.forEach((offer, offerIdx) => {
+          // Page offers with no ref_id are skipped, not flagged: offer identity
+          // canonicalization between ref_id and package_ref_id is deliberately
+          // deferred to a later decision pass, so this rule only judges refs
+          // that actually exist.
+          if (offer.ref_id === undefined || offer.ref_id === null) return
           if (!refIds.has(String(offer.ref_id))) {
             violations.push({
               ruleId: 'OfferRefIntegrity',

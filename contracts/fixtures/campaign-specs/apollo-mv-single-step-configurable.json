@@ -1,4 +1,5 @@
 {
+  "schema_version": "4.3",
   "campaign": {
     "id": "fixture-apollo-mv-single",
     "name": "Fixture Apollo MV Single Step Configurable",
@@ -35,6 +36,9 @@
   "spec_identity": {
     "map_id": "fixture-apollo-mv-single-map",
     "source": "campaign-cart-starter-templates agent fixture"
+  },
+  "runtime": {
+    "sdk_version": "0.4.37"
   },
   "funnels": [
     {
@@ -114,6 +118,15 @@
           "template": "src/apollo-mv-single-step/upsell-mv.html",
           "page_url": "/upsell-mv/",
           "next_page": "upsell-bundle-stepper.html",
+          "on_accept": "upsell-bundle-stepper.html",
+          "on_decline": "upsell-bundle-stepper.html",
+          "packages": [
+            {
+              "role": "upsell",
+              "ref_id": 10,
+              "quantity": 1
+            }
+          ],
           "sdk_hints": {
             "template_family": "apollo-mv-single-step",
             "frontmatter": {
@@ -149,6 +162,15 @@
           "template": "src/apollo-mv-single-step/upsell-bundle-stepper.html",
           "page_url": "/upsell-bundle-stepper/",
           "next_page": "upsell-bundle-tier-pills.html",
+          "on_accept": "upsell-bundle-tier-pills.html",
+          "on_decline": "upsell-bundle-tier-pills.html",
+          "packages": [
+            {
+              "role": "upsell",
+              "ref_id": 30,
+              "quantity": 1
+            }
+          ],
           "sdk_hints": {
             "template_family": "apollo-mv-single-step",
             "frontmatter": {
@@ -168,6 +190,15 @@
           "template": "src/apollo-mv-single-step/upsell-bundle-tier-pills.html",
           "page_url": "/upsell-bundle-tier-pills/",
           "next_page": "upsell-bundle-tier-cards.html",
+          "on_accept": "upsell-bundle-tier-cards.html",
+          "on_decline": "upsell-bundle-tier-cards.html",
+          "packages": [
+            {
+              "role": "upsell",
+              "ref_id": 30,
+              "quantity": 1
+            }
+          ],
           "sdk_hints": {
             "template_family": "apollo-mv-single-step",
             "frontmatter": {
@@ -205,6 +236,15 @@
           "template": "src/apollo-mv-single-step/upsell-bundle-tier-cards.html",
           "page_url": "/upsell-bundle-tier-cards/",
           "next_page": "receipt.html",
+          "on_accept": "receipt.html",
+          "on_decline": "receipt.html",
+          "packages": [
+            {
+              "role": "upsell",
+              "ref_id": 30,
+              "quantity": 1
+            }
+          ],
           "sdk_hints": {
             "template_family": "apollo-mv-single-step",
             "frontmatter": {
