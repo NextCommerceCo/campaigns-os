@@ -81,9 +81,9 @@ waiver history is not evaluated or surfaced as an inert warning.
 
 The second registered checkpoint requires a canonical released semantic version
 in CampaignSpec and an exact target pin in
-`_data/campaigns.json[public_route_slug].sdk_version`. CampaignSpec prefers
-`runtime.sdk_version` and falls back to the legacy
-`global_config.sdk_version`; declaring both is valid only when their released
+`_data/campaigns.json[public_route_slug].sdk_version`. CampaignSpec's
+`global_config.sdk_version` is canonical, with `runtime.sdk_version` as an
+accepted alias; declaring both is valid only when their released
 versions are equal. Missing, malformed, present-but-empty, non-string,
 prerelease, non-canonical, or conflicting dual declarations are non-waivable.
 Missing or invalid target evidence is also non-waivable. Only a mismatch between

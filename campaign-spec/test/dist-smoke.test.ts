@@ -25,6 +25,11 @@ describe('compiled dist bundle', () => {
       'DL_EVENT_NAMES',
       'CAMPAIGN_CART_ANALYTICS_VOCABULARY_SDK_VERSION',
       'CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION',
+      'SUPPORTED_SCHEMA_VERSIONS',
+      'RELEASED_SDK_VERSION_PATTERN',
+      'parseSdkVersion',
+      'isReleasedSdkVersion',
+      'describeSdkVersionRejection',
     ]) {
       expect(typeof (dist as Record<string, unknown>)[name] !== 'undefined').toBe(true)
     }

@@ -51,6 +51,25 @@ export type {
 export { normalize, NormalizeError } from './normalize.ts'
 export { allRules, fastRules, specOnlyRules } from './rules/index.ts'
 
+// Supported schema_version matrix — single source for the SchemaVersion rule
+// and any consumer that needs to present or gate on the supported lineages.
+// A sync test pins it to the schemas/campaign-spec.v4.schema.json enum.
+export { SUPPORTED_SCHEMA_VERSIONS } from './rules/schema-version.ts'
+
+// Strict released-SDK-version parser — shared with the downstream Page Kit
+// SDK-version checkpoint (src/page-kit-sdk-version.mjs) so authoring-time
+// validation and build-time gating reject exactly the same values.
+export {
+  RELEASED_SDK_VERSION_PATTERN,
+  parseSdkVersion,
+  isReleasedSdkVersion,
+  describeSdkVersionRejection,
+} from './sdk-version-parse.ts'
+export type {
+  SdkVersionParseResult,
+  SdkVersionRejectionReason,
+} from './sdk-version-parse.ts'
+
 // Canonical dl_* analytics event vocabulary — synced from the Campaign Cart SDK.
 // The AnalyticsContractShape rule validates blockedEvents against it; the Map
 // Builder picker (via the campaign-spec.js shim) autocompletes from it.

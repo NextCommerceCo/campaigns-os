@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-os
-version: 1.0.4
+version: 1.0.5
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
@@ -27,7 +27,7 @@ Workflow:
 2. Run `campaigns-os start` or `campaigns-os prepare-build` with a local CampaignSpec, prepared HTML/assets source, target page-kit repo, and explicit template family. The family must be certified (commerce catalog + brand contract; the CLI lists them on rejection) — an uncertified/custom family requires `--allow-uncertified-template "<reason>"` and forfeits deterministic assembly, residue QA, and pricing contracts. The entry point auto-opens the run session in the target repo; do not skip `campaigns-os run end` at the finish.
 3. Brand-theme discovery runs in inspect-only mode by default and records `context.theme`. When it proves a brand theme is generatable and the campaign ships commerce pages, the theme gate BLOCKS polish/deploy/QA until the brand layer is applied after `next-core.css` or explicitly waived (`campaigns-os theme waive --packet <p> --reason "<why>"`). Run `campaigns-os theme generate` and apply it during build; do not defer the decision.
 4. Run `campaigns-os doctor --packet <packet>`.
-5. Resolve the registered **Page Kit** checkpoints before runtime work. Correct governed target values for `page_kit.store_profile`. For `page_kit.sdk_version`, use the released CampaignSpec pin (`runtime.sdk_version`, with `global_config.sdk_version` as the legacy fallback) and make the target `_data/campaigns.json` entry match it exactly. Missing/malformed Store Profile or SDK evidence, invalid types or semantic versions, and conflicting dual SDK declarations are not waivable. An exact valid mismatch may be accepted with named-human attribution and a bound: `campaigns-os checkpoint waive --packet <p> --gate <page_kit.store_profile|page_kit.sdk_version> --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <future ISO timestamp>`). The package-owned hidden eager-media checkpoint is produced and resolved during Polish in step 8.
+5. Resolve the registered **Page Kit** checkpoints before runtime work. Correct governed target values for `page_kit.store_profile`. For `page_kit.sdk_version`, use the released CampaignSpec pin (`global_config.sdk_version` is canonical, with `runtime.sdk_version` as an accepted alias) and make the target `_data/campaigns.json` entry match it exactly. Missing/malformed Store Profile or SDK evidence, invalid types or semantic versions, and conflicting dual SDK declarations are not waivable. An exact valid mismatch may be accepted with named-human attribution and a bound: `campaigns-os checkpoint waive --packet <p> --gate <page_kit.store_profile|page_kit.sdk_version> --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <future ISO timestamp>`). The package-owned hidden eager-media checkpoint is produced and resolved during Polish in step 8.
 6. If doctor returns `collect-inputs`, stop and resolve the named blockers.
 7. If doctor returns `assembly`, hand off with `campaigns-os next build --packet <packet>`.
 8. After build, require polish and a preview deploy before QA. During Polish,

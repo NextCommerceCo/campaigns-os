@@ -4,14 +4,13 @@ import {
   checkpointStateFingerprint,
   projectCheckpointWaiverAssessment,
 } from "./checkpoint-waiver.mjs";
+// Strict released-semver parsing lives in the campaign-spec module (built to
+// campaign-spec/dist, same as the cli.mjs import) so the authoring-time
+// SdkVersion rule and this checkpoint share exactly ONE parser.
+import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 
 export const PAGE_KIT_SDK_VERSION_SCOPE = "page_kit.sdk_version";
-const RELEASED_SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const MISSING_TARGET_STATUSES = new Set(["target_repo_missing", "file_missing", "entry_missing"]);
-
-function isReleasedSemver(value) {
-  return typeof value === "string" && RELEASED_SEMVER_PATTERN.test(value);
-}
 
 export function evaluatePageKitSdkVersion({
   spec,
@@ -21,12 +20,15 @@ export function evaluatePageKitSdkVersion({
   required = true,
   now = new Date().toISOString(),
 } = {}) {
-  const hasRuntime = spec?.runtime != null && Object.hasOwn(spec.runtime, "sdk_version");
-  const hasLegacy = spec?.global_config != null && Object.hasOwn(spec.global_config, "sdk_version");
-  const expected_sdk_version = hasRuntime
-    ? spec.runtime.sdk_version
-    : spec?.global_config?.sdk_version;
-  const expected_source = hasRuntime ? "runtime.sdk_version" : "global_config.sdk_version";
+  // global_config.sdk_version is the CANONICAL CampaignSpec home (33/33 real
+  // Map Builder exports declare it there); runtime.sdk_version is an accepted
+  // alias seen only in local drafts. Read canonical first, alias as fallback.
+  const hasCanonical = spec?.global_config != null && Object.hasOwn(spec.global_config, "sdk_version");
+  const hasAlias = spec?.runtime != null && Object.hasOwn(spec.runtime, "sdk_version");
+  const expected_sdk_version = hasCanonical
+    ? spec.global_config.sdk_version
+    : spec?.runtime?.sdk_version;
+  const expected_source = hasCanonical ? "global_config.sdk_version" : "runtime.sdk_version";
   const observed_sdk_version = targetLoad?.entry?.sdk_version;
   const subject = {
     public_route_slug: normalizePublicRouteSlug(targetLoad?.public_route_slug),
@@ -44,7 +46,7 @@ export function evaluatePageKitSdkVersion({
       state: { spec_status: specStatus },
       state_fingerprint: null,
       expected_sdk_version: null,
-      observed_sdk_version: isReleasedSemver(observed_sdk_version) ? observed_sdk_version : null,
+      observed_sdk_version: isReleasedSdkVersion(observed_sdk_version) ? observed_sdk_version : null,
       expected_source: null,
       waiver: null,
       waiver_assessment: {
@@ -59,19 +61,19 @@ export function evaluatePageKitSdkVersion({
       }],
     };
   }
-  if (!hasRuntime && !hasLegacy) {
+  if (!hasCanonical && !hasAlias) {
     return {
       id: PAGE_KIT_SDK_VERSION_SCOPE,
       scope: PAGE_KIT_SDK_VERSION_SCOPE,
       status: "blocked",
       code: "page_kit.sdk_version.spec_missing",
-      reason: "CampaignSpec is missing runtime.sdk_version (and the legacy global_config.sdk_version fallback); add an explicit released SDK pin before build or QA.",
+      reason: "CampaignSpec is missing global_config.sdk_version (and the runtime.sdk_version alias); add an explicit released SDK pin before build or QA.",
       waivable: false,
       subject,
       state: { spec_status: "missing" },
       state_fingerprint: null,
       expected_sdk_version: null,
-      observed_sdk_version: isReleasedSemver(observed_sdk_version) ? observed_sdk_version : null,
+      observed_sdk_version: isReleasedSdkVersion(observed_sdk_version) ? observed_sdk_version : null,
       expected_source: null,
       waiver: null,
       waiver_assessment: {
@@ -87,8 +89,8 @@ export function evaluatePageKitSdkVersion({
     };
   }
   const invalidDeclarations = [
-    ...(hasRuntime && !isReleasedSemver(spec.runtime.sdk_version) ? ["runtime.sdk_version"] : []),
-    ...(hasLegacy && !isReleasedSemver(spec.global_config.sdk_version) ? ["global_config.sdk_version"] : []),
+    ...(hasCanonical && !isReleasedSdkVersion(spec.global_config.sdk_version) ? ["global_config.sdk_version"] : []),
+    ...(hasAlias && !isReleasedSdkVersion(spec.runtime.sdk_version) ? ["runtime.sdk_version"] : []),
   ];
   if (invalidDeclarations.length) {
     return {
@@ -102,7 +104,7 @@ export function evaluatePageKitSdkVersion({
       state: { spec_status: "invalid", invalid_declarations: invalidDeclarations },
       state_fingerprint: null,
       expected_sdk_version: null,
-      observed_sdk_version: isReleasedSemver(observed_sdk_version) ? observed_sdk_version : null,
+      observed_sdk_version: isReleasedSdkVersion(observed_sdk_version) ? observed_sdk_version : null,
       expected_source: null,
       waiver: null,
       waiver_assessment: {
@@ -117,19 +119,19 @@ export function evaluatePageKitSdkVersion({
       }],
     };
   }
-  if (hasRuntime && hasLegacy && spec.runtime.sdk_version !== spec.global_config.sdk_version) {
+  if (hasCanonical && hasAlias && spec.global_config.sdk_version !== spec.runtime.sdk_version) {
     return {
       id: PAGE_KIT_SDK_VERSION_SCOPE,
       scope: PAGE_KIT_SDK_VERSION_SCOPE,
       status: "blocked",
       code: "page_kit.sdk_version.spec_conflict",
-      reason: "CampaignSpec runtime.sdk_version and global_config.sdk_version disagree; resolve the declarations before build or QA.",
+      reason: "CampaignSpec global_config.sdk_version and runtime.sdk_version disagree; global_config is canonical — resolve the declarations before build or QA.",
       waivable: false,
       subject,
       state: { spec_status: "conflict" },
       state_fingerprint: null,
       expected_sdk_version: null,
-      observed_sdk_version: isReleasedSemver(observed_sdk_version) ? observed_sdk_version : null,
+      observed_sdk_version: isReleasedSdkVersion(observed_sdk_version) ? observed_sdk_version : null,
       expected_source: null,
       waiver: null,
       waiver_assessment: {
@@ -140,7 +142,7 @@ export function evaluatePageKitSdkVersion({
         id: "repair_spec",
         kind: "edit",
         command: null,
-        description: "Make the CampaignSpec runtime and legacy SDK declarations identical, then re-run doctor.",
+        description: "Make the CampaignSpec canonical (global_config) and alias (runtime) SDK declarations identical, then re-run doctor.",
       }],
     };
   }
@@ -179,7 +181,7 @@ export function evaluatePageKitSdkVersion({
   }
   const targetEntry = targetLoad?.entry;
   const targetHasVersion = targetEntry != null && Object.hasOwn(targetEntry, "sdk_version");
-  if (!targetHasVersion || !isReleasedSemver(observed_sdk_version)) {
+  if (!targetHasVersion || !isReleasedSdkVersion(observed_sdk_version)) {
     const missing = !targetHasVersion;
     return {
       id: PAGE_KIT_SDK_VERSION_SCOPE,
