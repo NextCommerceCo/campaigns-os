@@ -37,7 +37,7 @@
     "map_id": "fixture-shop-single-step-map",
     "source": "campaign-cart-starter-templates agent fixture"
   },
-  "runtime": {
+  "global_config": {
     "sdk_version": "0.4.37"
   },
   "funnels": [
@@ -57,21 +57,17 @@
           "next_page": "upsell-bundle-stepper.html",
           "packages": [
             {
-              "role": "main",
               "ref_id": 10,
-              "quantity": 1
+              "qty": 1
             },
             {
-              "role": "order_bump",
               "ref_id": 17,
-              "quantity": 1
+              "qty": 1,
+              "is_order_bump": true
             }
           ],
-          "shipping_methods": [
-            "standard",
-            "free"
-          ],
           "sdk_hints": {
+            "sdk_page_type": "checkout",
             "template_family": "shop-single-step",
             "frontmatter": {
               "payment_flags.show_paypal": true,
@@ -93,18 +89,19 @@
           "on_decline": "receipt.html",
           "packages": [
             {
-              "role": "upsell",
               "ref_id": 30,
-              "quantity": 1
+              "qty": 1,
+              "is_upsell": true
             }
           ],
           "offers": [
             {
-              "code": "UP50",
-              "package_ref_id": 30
+              "ref_id": "1",
+              "code": "UP50"
             }
           ],
           "sdk_hints": {
+            "sdk_page_type": "upsell",
             "template_family": "shop-single-step",
             "frontmatter": {
               "upsell_offer.package_id": 30,
@@ -121,6 +118,7 @@
           "template": "src/shop-single-step/receipt.html",
           "page_url": "/receipt/",
           "sdk_hints": {
+            "sdk_page_type": "receipt",
             "template_family": "shop-single-step",
             "frontmatter": {
               "receipt_summary.title": "Order Summary",
@@ -148,12 +146,24 @@
   ],
   "offers": [
     {
+      "ref_id": "1",
+      "name": "50% off package 30",
+      "type": "offer",
       "code": "UP50",
-      "package_ref_id": 30,
-      "discount_type": "percent",
-      "value": 50,
-      "applies_to": [
-        "upsell"
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 30
+        }
       ]
     }
   ]

@@ -21,22 +21,31 @@ checkout -> upsell -> receipt
 Authoring guidance:
 
 - Checkout page:
-  - `type: "checkout"`
-  - `page_url: "/checkout/"`
-  - `packages[]` includes one `role: "main"` package and optional
-    `role: "order_bump"` package.
+  - `type: "checkout"` with `sdk_hints.sdk_page_type: "checkout"`
+  - `page_url: "/checkout/"` — `page_url` is the route field.
+  - `packages[]` entries use `ref_id` + `qty` (the real export key is `qty`,
+    not `quantity`). A plain entry is the main package; add-ons carry the
+    boolean role flags `is_order_bump: true` / `is_upsell: true` — there is
+    no `role` field in exports.
   - `sdk_hints.template_family` names the intended starter family only as a
     hint; the Build Packet still locks the family.
   - `sdk_hints.meta_tags.next-success-url` points to the next runtime route.
+  - `success_url` holds the next PAGE ID (never a URL, despite the name).
 
 - Upsell page:
-  - `type: "upsell"` or `type: "downsell"`
+  - `type: "upsell"` or `type: "downsell"`, with
+    `sdk_hints.sdk_page_type: "upsell"`
   - `page_url` is a Page Kit route, not a source filename.
-  - `packages[]` or `offers[]` names the post-purchase offer refs.
-  - `on_accept` and `on_decline` point to the next CampaignSpec route.
+  - `packages[]` (with `is_upsell: true`) or `offers[]` names the
+    post-purchase offer refs. Offers are identified by `ref_id` into the
+    root `offers[]` catalog (`package_ref_id` is not part of the contract).
+  - `on_accept` and `on_decline` hold the next PAGE IDs; route paths live
+    in `page_url` / derived `resolved_routing`.
 
 - Receipt page:
-  - `type: "thankyou"` or `type: "receipt"`
+  - `type: "thankyou"` — the canonical terminal page type. The SDK-layer
+    `receipt` projection is expressed as `sdk_hints.sdk_page_type: "receipt"`
+    (and `meta_tags["next-page-type"]`), never as `page.type`.
   - `page_url: "/receipt/"`
   - Receipt summary/frontmatter hints preserve SDK-owned order item templates.
 
@@ -56,7 +65,8 @@ Generator checklist:
 ## Order Bump Notes
 
 An order bump is still a checkout package/offer surface. It should be encoded as
-a checkout page package/offer with an explicit role, quantity, and source ref.
+a checkout page package with `is_order_bump: true`, a `qty`, and its source
+`ref_id`.
 When the selected starter family does not support a bump, the build should
 remove the bump surface and record the decision in the Assembly Report instead
 of leaving demo bump refs in copied frontmatter.

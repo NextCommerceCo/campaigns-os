@@ -1,0 +1,582 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaign-spec.v4.schema.json",
+  "title": "CampaignSpec v4 (4.2–4.3)",
+  "description": "The CampaignSpec authoring/export contract, described from the real export surface: a field-union inventory of 33 real CampaignSpec documents (195 pages), including 13 genuine Campaign Map Builder exports. This schema is deliberately PERMISSIVE on unknown fields (additionalProperties stays open everywhere): it names and types the known surface, while rejection of unknown fields is deferred to validation profiles in a later change. Rules in campaign-spec/rules/ own semantic validation (routing completeness, weights, cycles); this schema owns shape. NOTE: some raw API responses wrap the spec in an { ok, data } envelope — this schema describes the spec itself (the .data member), not the envelope.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "funnels"],
+  "properties": {
+    "schema_version": {
+      "enum": ["4.2", "4.3"],
+      "description": "Supported CampaignSpec lineage versions. Real corpus: 4.3×18, 4.2×15; no other values observed. v4.1 funnel_pages-only topology is rejected by normalize() (ADR-002)."
+    },
+    "builder_version": { "type": "string", "description": "Campaign Map Builder version that produced the export (31/33 real specs)." },
+    "generated_at": { "type": "string", "description": "ISO timestamp of export generation." },
+    "campaign": { "$ref": "#/$defs/campaign" },
+    "global_config": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sdk_version": { "type": "string", "description": "CANONICAL home of the campaign-cart SDK pin for the 4.x lineage (present in 33/33 real specs)." }
+      },
+      "description": "Global build configuration. global_config.sdk_version is the canonical SDK version declaration."
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sdk_version": { "type": "string", "description": "Accepted ALIAS of global_config.sdk_version (seen only in 2 local drafts, always redundant). Prefer global_config.sdk_version." }
+      },
+      "description": "Accepted alias location for sdk_version. Not part of the Map Builder export surface."
+    },
+    "funnels": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/funnel" },
+      "description": "Canonical v4.2+ funnel topology. Required — the one structural precondition normalize() enforces (the key must exist as an array). An EMPTY array is structurally valid here by design: mid-edit Map Builder drafts validate structurally, and the FunnelCount rule rejects zero funnels at error severity. Schema owns shape; rules own cardinality."
+    },
+    "funnel_pages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/funnelPageMirror" },
+      "description": "Flattened legacy mirror of funnels[].pages[] with per-page _funnel_id/_funnel_name annotations (27/33 real specs; declared 'legacy' by _provenance). funnels[] is authoritative."
+    },
+    "shipping_methods": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/shippingMethod" },
+      "description": "Campaign-level shipping method catalog (32/33 real specs)."
+    },
+    "offers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/offer" },
+      "description": "Root offer catalog. ref_id is the sole offer identity (all 236 real occurrences); package_ref_id does not exist in real exports and is not part of the contract."
+    },
+    "spec_identity": { "$ref": "#/$defs/specIdentity" },
+    "build_scope": { "$ref": "#/$defs/buildScope" },
+    "analytics": { "$ref": "#/$defs/analyticsContract" },
+    "_provenance": { "$ref": "#/$defs/provenance" },
+    "slug": { "type": "string", "description": "Flat mirror of the saved map slug (7/33 real specs carry flat slug/map_id/saved_at mirrors)." },
+    "map_id": { "type": "string", "description": "Flat mirror of spec_identity.map_id." },
+    "saved_at": { "type": "string", "description": "Flat mirror of spec_identity.saved_at." },
+    "deployment": { "type": "object", "additionalProperties": true, "description": "Local-draft-only extension (2 specs); not a Map Builder export field." },
+    "draft": { "type": ["boolean", "object"], "description": "Local-draft-only extension (2 specs)." },
+    "draft_notes": { "type": ["string", "array", "object"], "description": "Local-draft-only extension (2 specs)." },
+    "figma_url": { "type": ["string", "null"], "description": "Ops-authored design pointer (declared ops-owned by _provenance)." }
+  },
+  "$defs": {
+    "campaign": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "ref_id": { "type": ["number", "string"], "description": "Numeric platform campaign id (33/33 real specs)." },
+        "id": { "type": "string", "description": "Campaign slug-style identifier (28/33 real specs)." },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "currency": { "type": "string" },
+        "language": { "type": "string" },
+        "payment_env_key": { "type": "string" },
+        "campaigns_api_key": { "type": ["string", "null"], "description": "Public-by-design, domain-allowlisted Campaigns API key (32/33 real specs)." },
+        "available_payment_methods": { "type": "array" },
+        "available_express_payment_methods": { "type": "array" },
+        "available_currencies": { "type": "array", "items": { "type": "string" } },
+        "available_shipping_countries": {
+          "description": "Arrives in THREE incompatible shapes in real exports: bare string \"all\" (5 specs), an array of country-code strings incl. [] (22+), and an array of { code, label } objects (5). All three are accepted here; normalization to one canonical shape is deliberately deferred to a later change.",
+          "anyOf": [
+            { "const": "all" },
+            {
+              "type": "array",
+              "items": { "type": "string" },
+              "not": { "contains": { "const": "all" } }
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["code"],
+                "properties": {
+                  "code": { "type": "string" },
+                  "label": { "type": "string" }
+                }
+              }
+            }
+          ]
+        },
+        "tracking": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "status": { "type": "string" },
+            "providers": { "type": "object" }
+          },
+          "description": "Tracking readback block (23/33 real specs): { status, providers }."
+        },
+        "preferred_template_family": { "type": ["string", "null"], "description": "HINT naming the starter template family; build-time template lock still decides (10/33 real specs, null-valued in others)." },
+        "allowed_domains": { "type": "array", "items": { "type": "string" }, "description": "Domain allowlist for the Campaigns API key (2/33 real specs; ops-authored)." },
+        "route_root": { "type": ["string", "null"], "description": "Public route root; '/' declares a root-served campaign. Authoring extension — see campaign-spec/types.ts." },
+        "store_url": { "type": ["string", "null"] },
+        "store_name": { "type": ["string", "null"] },
+        "store_contact": { "type": ["string", "null"] },
+        "store_terms": { "type": ["string", "null"] },
+        "store_shipping": { "type": ["string", "null"] },
+        "store_privacy": { "type": ["string", "null"] },
+        "store_returns": { "type": ["string", "null"] },
+        "store_phone": { "type": ["string", "null"], "description": "Human-readable display phone. See store_phone_tel for the tel: URI." },
+        "store_phone_tel": { "type": ["string", "null"], "description": "tel:-prefixed phone URI for Call-us CTAs; distinct from the display string store_phone." },
+        "footer_links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "label": { "type": "string" },
+              "url": { "type": "string" },
+              "required": { "type": "boolean" }
+            }
+          },
+          "description": "Ops-authored footer link roster (declared ops-owned by _provenance)."
+        },
+        "seo": { "type": "object", "additionalProperties": true, "description": "Ops-authored SEO block (declared ops-owned by _provenance)." }
+      },
+      "description": "Campaign identity + store profile. The store_* block (store_url/name/contact/terms/shipping/privacy/returns/phone/phone_tel) appears on 15–22 of 33 real specs, null-valued when unset."
+    },
+    "funnel": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "hypothesis": { "type": "string" },
+        "weight": { "type": "number" },
+        "pages": { "type": "array", "items": { "$ref": "#/$defs/page" } },
+        "promo_codes": { "type": "array", "items": { "$ref": "#/$defs/promoCode" } }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": {
+          "enum": ["presell", "landing", "checkout", "upsell", "downsell", "thankyou"],
+          "description": "Authoring page type. 'thankyou' is the canonical terminal page type (33/33 real specs); 'receipt' is the SDK-layer projection, expressed via sdk_hints.sdk_page_type and sdk_hints.meta_tags['next-page-type'], never as page.type."
+        },
+        "order": { "type": "number" },
+        "label": { "type": "string" },
+        "is_entry": { "type": "boolean", "description": "True on funnel entry pages (178/195 real pages carry the flag)." },
+        "page_url": { "type": "string", "description": "Authored route field: usually a route path like 'checkout/' (137 of 170 occurrences), sometimes empty, a bare token, or a legacy .html filename." },
+        "next_page": { "type": "string", "description": "PAGE ID of the next page — 100% of real occurrences hold page ids, never routes. Route paths live in resolved_routing." },
+        "on_accept": { "type": "string", "description": "PAGE ID routed to on upsell accept." },
+        "on_decline": { "type": "string", "description": "PAGE ID routed to on upsell decline." },
+        "success_url": { "type": "string", "description": "PAGE ID routed to on checkout success. Despite the name, this never holds a URL in real exports (33/33 occurrences are page ids)." },
+        "_next_label": { "type": ["string", "null"], "description": "Builder-side label shadow of next_page (underscore-prefixed keys are builder annotations)." },
+        "_accept_label": { "type": ["string", "null"] },
+        "_decline_label": { "type": ["string", "null"] },
+        "_success_label": { "type": ["string", "null"] },
+        "resolved_routing": { "$ref": "#/$defs/resolvedRouting" },
+        "sdk_hints": { "$ref": "#/$defs/sdkHints" },
+        "packages": { "type": "array", "items": { "$ref": "#/$defs/pagePackage" } },
+        "offers": { "type": "array", "items": { "$ref": "#/$defs/pageOffer" } },
+        "design_hooks": { "$ref": "#/$defs/designHooks" },
+        "design_source": { "$ref": "#/$defs/designSource" },
+        "exit_intent": { "$ref": "#/$defs/exitIntent" },
+        "promo_code_input": { "$ref": "#/$defs/promoCodeInput" },
+        "upsell_template_pattern": { "type": "string", "description": "Per-page UI variant hint (authoring extension; see campaign-spec/types.ts)." },
+        "upsell_mv_tiers": { "$ref": "#/$defs/upsellMvTiers" },
+        "variant_labels": { "$ref": "#/$defs/variantLabels" },
+        "template": { "type": "string", "description": "Source template path. Hand-authored-spec field only (3 specs) — not a Map Builder export field." },
+        "notes": { "type": ["string", "null"] },
+        "custom_fields": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "funnelPageMirror": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/page" }],
+      "properties": {
+        "_funnel_id": { "type": "string" },
+        "_funnel_name": { "type": "string" }
+      },
+      "description": "funnel_pages[] mirror entry: a page plus the _funnel_id/_funnel_name annotations linking it back to its funnel."
+    },
+    "resolvedRouting": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "accept": { "type": "string", "description": "Resolved PAGE ID for on_accept." },
+        "decline": { "type": "string", "description": "Resolved PAGE ID for on_decline." },
+        "success": { "type": "string", "description": "Resolved PAGE ID for success_url." },
+        "next_page": { "type": "string", "description": "Resolved PAGE ID for next_page." },
+        "accept_route": { "type": "string", "description": "Trailing-slash route path for accept." },
+        "decline_route": { "type": "string" },
+        "success_route": { "type": "string" },
+        "next_page_route": { "type": "string" },
+        "accept_filename": { "type": "string", "description": "Route path or legacy .html filename for accept." },
+        "decline_filename": { "type": "string" },
+        "success_filename": { "type": "string" },
+        "next_page_filename": { "type": "string" }
+      },
+      "description": "DERIVED routing projection (135/195 real pages): page-id fields resolved to route paths (*_route) and filenames (*_filename). The declared routing fields (next_page/on_accept/on_decline/success_url) stay page-ids; this object is where route paths live."
+    },
+    "sdkHints": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sdk_page_type": {
+          "enum": ["product", "checkout", "upsell", "receipt"],
+          "description": "SDK-layer page type projection. Observed values across the real corpus. A page.type of 'thankyou' projects to 'receipt' here."
+        },
+        "meta_tags": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "SDK meta tags for the page. Observed keys: next-page-type, next-currency, next-upsell-accept-url, next-upsell-decline-url, next-success-url, next-prevent-back-navigation, next-predictive-address, next-funnel, next-api-key, next-spreedly-key, next-analytics-view-item."
+        },
+        "frontmatter": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "TEMPLATE-HANDOFF EXTENSION (not a Map Builder export field): starter-template frontmatter mapping used by the contracts/fixtures/campaign-specs agent-contract fixtures to document how spec refs land in template frontmatter."
+        },
+        "template_family": {
+          "type": "string",
+          "description": "TEMPLATE-HANDOFF EXTENSION (not a Map Builder export field): starter-template family the fixture page maps to; must match the commerce-surface-catalog family that references the fixture."
+        }
+      },
+      "description": "Real export subkeys are sdk_page_type + meta_tags ONLY; frontmatter and template_family are blessed template-handoff extensions carried by the agent-contract fixtures."
+    },
+    "pagePackage": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "ref_id": { "type": ["string", "number"] },
+        "qty": { "type": "number", "description": "Package quantity. The real export key is qty (206/211 real package entries) — NOT quantity." },
+        "name": { "type": ["string", "null"] },
+        "price": { "type": ["string", "number", "null"] },
+        "price_retail": { "type": ["string", "number", "null"] },
+        "product_name": { "type": ["string", "null"] },
+        "product_sku": { "type": ["string", "null"] },
+        "product_variant_name": { "type": ["string", "null"] },
+        "product_purchase_availability": { "type": ["string", "null"] },
+        "product_inventory_availability": { "type": ["string", "null"] },
+        "image": { "type": ["string", "null"] },
+        "is_upsell": { "type": "boolean", "description": "Boolean role flag. There is no 'role' field in real exports — role is expressed by the is_upsell/is_order_bump/default_selected boolean trio." },
+        "is_order_bump": { "type": "boolean" },
+        "default_selected": { "type": "boolean" },
+        "configurable": { "type": "boolean", "description": "Fixture/authoring extension marking quantity-configurable package rows." },
+        "variant_attributes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "code": { "type": "string" },
+              "name": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        },
+        "is_recurring": { "type": "boolean" },
+        "price_recurring": { "type": ["string", "number", "null"] },
+        "interval": { "type": ["string", "null"] },
+        "interval_count": { "type": ["number", "null"] }
+      }
+    },
+    "pageOffer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["ref_id"],
+      "properties": {
+        "ref_id": { "type": ["string", "number"], "description": "Sole offer identity, referencing the root offers[] catalog (all 236 real offer occurrences use ref_id)." },
+        "name": { "type": ["string", "null"] },
+        "type": { "type": "string" },
+        "code": { "type": ["string", "null"], "description": "Voucher code; often null in real exports." },
+        "condition": { "$ref": "#/$defs/offerCondition" },
+        "benefit": { "$ref": "#/$defs/offerBenefit" }
+      }
+    },
+    "offer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["ref_id"],
+      "properties": {
+        "ref_id": { "type": ["string", "number"], "description": "Sole offer identity (all 236 real occurrences: ref_id + code (often null) + name). package_ref_id never appears in real exports and is dropped from the contract." },
+        "name": { "type": ["string", "null"] },
+        "type": { "type": "string" },
+        "code": { "type": ["string", "null"] },
+        "condition": { "$ref": "#/$defs/offerCondition" },
+        "benefit": { "$ref": "#/$defs/offerBenefit" },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "package_id": { "type": ["number", "string"] },
+              "package_name": { "type": ["string", "null"] },
+              "package_image": { "type": ["string", "null"] },
+              "product_name": { "type": ["string", "null"] },
+              "product_variant_name": { "type": ["string", "null"] },
+              "unit_price": { "type": ["string", "number", "null"] },
+              "unit_price_before_discount": { "type": ["string", "number", "null"] },
+              "package_price": { "type": ["string", "number", "null"] },
+              "package_price_before_discount": { "type": ["string", "number", "null"] },
+              "package_unit_qty": { "type": ["number", "null"] }
+            }
+          },
+          "description": "Packages the offer applies to, nested with package_id identity."
+        },
+        "shipping_methods": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/shippingMethod" },
+          "description": "Offer-scoped shipping method pricing."
+        }
+      }
+    },
+    "offerCondition": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string" },
+        "value": { "type": ["number", "string", "null"] },
+        "description": { "type": ["string", "null"] }
+      }
+    },
+    "offerBenefit": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string" },
+        "value": { "type": ["number", "string", "null"] },
+        "description": { "type": ["string", "null"] }
+      }
+    },
+    "shippingMethod": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "ref_id": { "type": ["string", "number"] },
+        "code": { "type": ["string", "null"] },
+        "key": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "price": { "type": ["string", "number", "null"] },
+        "price_before_discount": { "type": ["string", "number", "null"] }
+      }
+    },
+    "specIdentity": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "source": { "type": "string", "description": "Observed values: campaign-map-builder, hand-authored-simulation, local-experimental." },
+        "map_id": { "type": "string" },
+        "id": { "type": "string" },
+        "map_url": { "type": "string" },
+        "edit_url": { "type": "string" },
+        "spec_url": { "type": "string" },
+        "spec_hash": { "type": "string" },
+        "saved_at": { "type": "string" },
+        "public_route_slug": { "type": "string" },
+        "variant_slug": { "type": "string" },
+        "template_family": { "type": "string" },
+        "derived_from": { "type": "string" },
+        "authority": { "type": "string" }
+      },
+      "description": "Saved Map Builder identity block (26/33 real specs)."
+    },
+    "buildScope": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": { "enum": ["partial", "full"] },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      },
+      "description": "Ops-authored build scope declaration (16/33 real specs)."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "ops": { "type": "array", "items": { "type": "string" } },
+        "api": { "type": "array", "items": { "type": "string" } },
+        "derived": { "type": "array", "items": { "type": "string" } },
+        "legacy": { "type": "array", "items": { "type": "string" } }
+      },
+      "description": "Declares which JSON paths are ops-owned vs api-owned vs derived vs legacy (27/33 real specs)."
+    },
+    "analyticsContract": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": { "enum": ["auto", "manual", "disabled"] },
+        "enabled": { "type": "boolean" },
+        "providers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "containerId": { "type": "string" },
+              "pixelId": { "type": "string" },
+              "endpoint": { "type": "string" },
+              "transform": { "type": "string" },
+              "blockedEvents": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "out_of_band_pixels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "vendor": { "type": "string" },
+              "loaded_via": { "type": "string" },
+              "id": { "type": "string" }
+            }
+          }
+        },
+        "manual_events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "event": { "type": "string" },
+              "page": { "type": "string" },
+              "trigger": { "type": "string" }
+            }
+          }
+        },
+        "utmTransfer": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "applyToExternalLinks": { "type": "boolean" },
+            "paramsToCopy": { "type": "array", "items": { "type": "string" } },
+            "excludedDomains": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "name": { "type": "string" },
+                  "hides": { "type": "string" },
+                  "pages": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            },
+            "tracking": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "preserve": { "type": "array", "items": { "type": "string" } },
+                "across": { "type": "array", "items": { "type": "string" } },
+                "click_id": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "inbound": { "type": "string" },
+                    "maps_to": { "type": "string" }
+                  }
+                },
+                "external_trackers": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      },
+      "description": "Analytics & attribution contract (3/33 real specs; optional). Mirrors the AnalyticsContract type in campaign-spec/types.ts."
+    },
+    "designHooks": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "figma_frame_url": { "type": ["string", "null"] },
+        "component_slots": { "type": ["object", "array", "null"] }
+      },
+      "description": "Per-page design pointers (93/195 real pages): { figma_frame_url, component_slots }."
+    },
+    "designSource": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string" },
+        "file_url": { "type": "string" },
+        "breakpoints": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "desktop": { "type": "string" },
+            "tablet": { "type": "string" },
+            "mobile": { "type": "string" }
+          }
+        },
+        "notes": { "type": "string" }
+      },
+      "description": "Pointer to the design artifact supplying prepared HTML (authoring extension; see campaign-spec/types.ts)."
+    },
+    "exitIntent": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "offer_ref_id": { "type": ["string", "number"] },
+        "offer_code": { "type": "string" }
+      }
+    },
+    "promoCodeInput": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "type": "string" },
+        "offer_ref_id": { "type": ["string", "number"] },
+        "offer_code": { "type": "string" }
+      }
+    },
+    "promoCode": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "code"],
+      "description": "Authored per-funnel promo roster (campaigns-os Slice 4c) — NOT a Map Builder export field, so corpus evidence does not apply. id + code are the contract's required identity pair, enforced at rule level by PromoCodesShape (empty/duplicate checks); the schema mirrors that contract.",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "starts_at": { "type": "string" },
+        "ends_at": { "type": "string" },
+        "title": { "type": "string" },
+        "emoji": { "type": "string" },
+        "offer1": { "type": "string" },
+        "offer2": { "type": "string" },
+        "top_bar_bg": { "type": "string" },
+        "highlight_color": { "type": "string" },
+        "banner_text": { "type": "string" },
+        "banner_text_sec": { "type": "string" },
+        "limited_time": { "type": "string" }
+      }
+    },
+    "upsellMvTiers": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" }
+      }
+    },
+    "variantLabels": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "primary": { "type": "string" },
+        "secondary": { "type": "string" }
+      }
+    }
+  }
+}

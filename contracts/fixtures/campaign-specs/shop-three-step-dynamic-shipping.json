@@ -37,7 +37,7 @@
     "map_id": "fixture-shop-three-step-map",
     "source": "campaign-cart-starter-templates agent fixture"
   },
-  "runtime": {
+  "global_config": {
     "sdk_version": "0.4.37"
   },
   "funnels": [
@@ -57,12 +57,12 @@
           "next_page": "shipping.html",
           "packages": [
             {
-              "role": "main",
               "ref_id": 10,
-              "quantity": 1
+              "qty": 1
             }
           ],
           "sdk_hints": {
+            "sdk_page_type": "checkout",
             "template_family": "shop-three-step",
             "frontmatter": {
               "next_url": "shipping.html"
@@ -77,11 +77,8 @@
           "template": "src/shop-three-step/shipping.html",
           "page_url": "/shipping/",
           "next_page": "billing.html",
-          "shipping_methods": [
-            "standard",
-            "free"
-          ],
           "sdk_hints": {
+            "sdk_page_type": "checkout",
             "template_family": "shop-three-step",
             "frontmatter": {
               "next_url": "billing.html",
@@ -98,6 +95,7 @@
           "page_url": "/billing/",
           "next_page": "upsell-bundle-stepper.html",
           "sdk_hints": {
+            "sdk_page_type": "checkout",
             "template_family": "shop-three-step",
             "frontmatter": {
               "next_url": "upsell-bundle-stepper.html"
@@ -116,18 +114,19 @@
           "on_decline": "receipt.html",
           "packages": [
             {
-              "role": "upsell",
               "ref_id": 30,
-              "quantity": 1
+              "qty": 1,
+              "is_upsell": true
             }
           ],
           "offers": [
             {
-              "code": "UP50",
-              "package_ref_id": 30
+              "ref_id": "1",
+              "code": "UP50"
             }
           ],
           "sdk_hints": {
+            "sdk_page_type": "upsell",
             "template_family": "shop-three-step",
             "frontmatter": {
               "upsell_offer.package_id": 30,
@@ -144,6 +143,7 @@
           "template": "src/shop-three-step/receipt.html",
           "page_url": "/receipt/",
           "sdk_hints": {
+            "sdk_page_type": "receipt",
             "template_family": "shop-three-step",
             "frontmatter": {
               "receipt_summary.title": "Order Summary",
@@ -171,12 +171,24 @@
   ],
   "offers": [
     {
+      "ref_id": "1",
+      "name": "50% off package 30",
+      "type": "offer",
       "code": "UP50",
-      "package_ref_id": 30,
-      "discount_type": "percent",
-      "value": 50,
-      "applies_to": [
-        "upsell"
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 30
+        }
       ]
     }
   ]
