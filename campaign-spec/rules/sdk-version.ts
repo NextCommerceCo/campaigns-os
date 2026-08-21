@@ -1,9 +1,12 @@
 /**
  * SdkVersion — requires an SDK version on the spec for export.
  *
- * Two acceptable locations: spec.runtime.sdk_version (preferred, current
- * topology) or spec.global_config.sdk_version (legacy, still accepted).
- * Either being present satisfies the rule.
+ * Two acceptable locations: spec.global_config.sdk_version (CANONICAL —
+ * 33/33 real Map Builder exports declare it there) or
+ * spec.runtime.sdk_version (accepted alias, seen only in local drafts and
+ * always redundant there). Either being present satisfies the rule; the
+ * violation path points at the canonical home. Strict single-location
+ * parsing is deliberately NOT enforced here.
  *
  * Message text inherited verbatim from the pre-#110 validator at migration
  * time — the "SDK version is required" substring is matched by caller tests.
@@ -19,13 +22,13 @@ export const SdkVersion: Rule = {
   check(spec: CampaignSpec): Violation[] {
     const runtime = spec.runtime ?? {}
     const globalConfig = spec.global_config ?? {}
-    if (runtime.sdk_version || globalConfig.sdk_version) return []
+    if (globalConfig.sdk_version || runtime.sdk_version) return []
     return [
       {
         ruleId: 'SdkVersion',
         severity: 'error',
         message: 'SDK version is required for spec export.',
-        path: '/runtime/sdk_version',
+        path: '/global_config/sdk_version',
       },
     ]
   },
