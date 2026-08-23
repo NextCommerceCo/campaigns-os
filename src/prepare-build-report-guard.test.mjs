@@ -97,7 +97,7 @@ test("prepare-build on a fresh repository succeeds with no flag", () => {
     const result = runPrepare(dir);
     assert.equal(result.status, 0, result.stderr);
     const report = readJson(reportPathFor(result.target));
-    assert.equal(report.stages.prepare_build.status, "completed");
+    assert.equal(report.stages.prepare_build.status, "blocked");
     assert.equal(report.stages.assembly.status, "pending");
   });
 });

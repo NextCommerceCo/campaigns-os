@@ -888,7 +888,12 @@ export function createDesignSourcePackageArtifactReference(value, {
   };
 }
 
-export function validateDesignSourcePackage(value, { now = Date.now(), verifyFingerprint = true } = {}) {
+export function validateDesignSourcePackage(value, {
+  now = Date.now(),
+  verifyFingerprint = true,
+  currentPageScope = null,
+  currentHtmlFunnelScope = null,
+} = {}) {
   const errors = [];
   const warnings = [];
   const add = (code, path, message) => errors.push({ code, path, message });
@@ -939,6 +944,12 @@ export function validateDesignSourcePackage(value, { now = Date.now(), verifyFin
   });
   if (campaignCount !== 1) {
     add("design_source_package.campaign_surface", "$.surface_identity", "Exactly one reserved {id: campaign, kind: campaign} Surface Identity is required.");
+  }
+  if (currentPageScope != null) {
+    validateCurrentPageScope(value, currentPageScope, add);
+  }
+  if (currentHtmlFunnelScope != null) {
+    validateCurrentHtmlFunnelScope(value, currentHtmlFunnelScope, add);
   }
 
   const contributions = validateArray(value.contributions, "$.contributions", add);
@@ -1030,6 +1041,254 @@ export function validateDesignSourcePackage(value, { now = Date.now(), verifyFin
 }
 
 export const validateDesignSourcePackageArtifact = validateDesignSourcePackage;
+
+function validateCurrentPageScope(value, scope, add) {
+  if (!isObject(scope)) {
+    add("design_source_package.current_page_scope", "$", "currentPageScope must be an object when supplied.");
+    return;
+  }
+  const activePages = scope.activePages;
+  const mappings = scope.mappings;
+  if (!Array.isArray(activePages) || !Array.isArray(mappings)) {
+    add(
+      "design_source_package.current_page_scope",
+      "$",
+      "currentPageScope requires activePages and mappings arrays.",
+    );
+    return;
+  }
+
+  const validActivePages = activePages.filter((page) => isObject(page) && isNonEmptyString(page.id));
+  const validMappings = mappings.filter((mapping) => isObject(mapping) && isNonEmptyString(mapping.page_id));
+  const expected = createSurfaceCatalog(collectPageInputs(validActivePages, validMappings), {
+    campaignMapId: scope.campaignMapId,
+    campaignSlug: scope.campaignSlug,
+  }).surfaces;
+  const expectedPages = expected.filter((surface) => surface.kind === "page");
+  const actualPages = arrayOrEmpty(value?.surface_identity).filter((surface) => surface?.kind === "page");
+  const expectedSpecIds = new Set(validActivePages.map((page) => page.id));
+  const expectedSourceIds = new Set(validMappings.map((mapping) => mapping.page_id));
+
+  const campaignSurface = arrayOrEmpty(value?.surface_identity)
+    .find((surface) => surface?.id === "campaign" && surface?.kind === "campaign");
+  for (const [field, expectedValue] of [
+    ["campaign_map_id", optionalString(scope.campaignMapId)],
+    ["campaign_slug", optionalString(scope.campaignSlug)],
+  ]) {
+    if (expectedValue && campaignSurface?.mappings?.[field] !== expectedValue) {
+      add(
+        "design_source_package.current_campaign_identity",
+        `$.surface_identity[campaign].mappings.${field}`,
+        `Current campaign identity requires ${field} ${JSON.stringify(expectedValue)}.`,
+      );
+    }
+  }
+
+  for (const expectedSurface of expectedPages) {
+    const specId = expectedSurface.mappings.campaign_spec_page_id;
+    const sourceId = expectedSurface.mappings.source_page_id;
+    const matches = actualPages.filter((surface) =>
+      (specId && surface?.mappings?.campaign_spec_page_id === specId)
+      || (sourceId && surface?.mappings?.source_page_id === sourceId));
+    if (matches.length === 0) {
+      add(
+        "design_source_package.current_page_missing",
+        "$.surface_identity",
+        `Current active/mapped page ${JSON.stringify(specId || sourceId)} has no page-level Surface Identity.`,
+      );
+      continue;
+    }
+    if (matches.length > 1) {
+      add(
+        "design_source_package.current_page_duplicate",
+        "$.surface_identity",
+        `Current active/mapped page ${JSON.stringify(specId || sourceId)} resolves to more than one page-level Surface Identity.`,
+      );
+      continue;
+    }
+    const actual = matches[0];
+    for (const field of [
+      "campaign_spec_page_id",
+      "map_builder_label",
+      "map_builder_custom_name",
+      "public_route",
+      "producer_page_type",
+      "source_page_id",
+      "source_path",
+      "page_kit",
+    ]) {
+      if (canonicalJson(actual?.mappings?.[field] ?? null) !== canonicalJson(expectedSurface.mappings[field] ?? null)) {
+        add(
+          "design_source_package.current_page_mapping_stale",
+          `$.surface_identity[${actual?.id || "unknown"}].mappings.${field}`,
+          `Current page ${JSON.stringify(specId || sourceId)} requires ${field} ${canonicalJson(expectedSurface.mappings[field] ?? null)}.`,
+        );
+      }
+    }
+  }
+
+  for (const surface of actualPages) {
+    const specId = optionalString(surface?.mappings?.campaign_spec_page_id);
+    const sourceId = optionalString(surface?.mappings?.source_page_id);
+    if (specId && !expectedSpecIds.has(specId)) {
+      add(
+        "design_source_package.current_active_page_stale",
+        `$.surface_identity[${surface.id}].mappings.campaign_spec_page_id`,
+        `Page Surface Identity references CampaignSpec page ${JSON.stringify(specId)}, which is not active in the current build scope.`,
+      );
+    }
+    if (sourceId && !expectedSourceIds.has(sourceId)) {
+      add(
+        "design_source_package.current_mapped_page_stale",
+        `$.surface_identity[${surface.id}].mappings.source_page_id`,
+        `Page Surface Identity references source page ${JSON.stringify(sourceId)}, which is not mapped by the current source intake.`,
+      );
+    }
+  }
+}
+
+function validateCurrentHtmlFunnelScope(value, scope, add) {
+  if (!isObject(scope)) {
+    add(
+      "design_source_package.current_html_funnel_scope",
+      "$",
+      "currentHtmlFunnelScope must be an object when supplied.",
+    );
+    return;
+  }
+
+  let expected;
+  try {
+    expected = synthesizeHtmlFunnelDesignSourcePackage({
+      ...scope,
+      generatedAt: value?.generated_at || new Date(0).toISOString(),
+    });
+  } catch (error) {
+    add(
+      "design_source_package.current_html_funnel_scope",
+      "$",
+      `Could not derive the current html_funnel material scope: ${error.message}`,
+    );
+    return;
+  }
+
+  const expectedHtml = expected.contributions.find((contribution) => contribution.kind === "html_funnel");
+  const actualHtmlCandidates = arrayOrEmpty(value?.contributions)
+    .filter((contribution) => contribution?.kind === "html_funnel");
+  if (actualHtmlCandidates.length !== 1) {
+    add(
+      "design_source_package.current_html_funnel_material_stale",
+      "$.contributions",
+      `Current html_funnel intake requires exactly one html_funnel contribution; found ${actualHtmlCandidates.length}.`,
+    );
+    return;
+  }
+  const actualHtml = actualHtmlCandidates[0];
+
+  if (canonicalJson(projectProvenance(actualHtml.provenance)) !== canonicalJson(projectProvenance(expectedHtml.provenance))) {
+    add(
+      "design_source_package.current_html_funnel_material_stale",
+      `$.contributions[${actualHtml.id}].provenance`,
+      "HTML source root, manifest/provenance, or asset-crawl provenance does not match the current prepare-build inputs.",
+    );
+  }
+
+  const actualRefs = arrayOrEmpty(actualHtml.source_refs);
+  for (const expectedRef of arrayOrEmpty(expectedHtml.source_refs)) {
+    const matches = actualRefs.filter((actualRef) =>
+      optionalString(actualRef?.path) === optionalString(expectedRef?.path)
+      && optionalString(actualRef?.url) === optionalString(expectedRef?.url));
+    if (!matches.some((actualRef) =>
+      canonicalJson(projectCurrentSourceRef(actualRef)) === canonicalJson(projectCurrentSourceRef(expectedRef)))) {
+      add(
+        "design_source_package.current_source_material_stale",
+        `$.contributions[${actualHtml.id}].source_refs`,
+        `Current source material ${JSON.stringify(expectedRef.path || expectedRef.url)} is missing or has stale kind, role, or byte hash.`,
+      );
+    }
+  }
+
+  const expectedRefsById = new Map(arrayOrEmpty(expectedHtml.source_refs).map((ref) => [ref.id, ref]));
+  const actualRefsById = new Map(actualRefs.map((ref) => [ref?.id, ref]));
+  for (const expectedMapping of arrayOrEmpty(expectedHtml.mappings)) {
+    const expectedLinkedRefs = arrayOrEmpty(expectedMapping.source_refs)
+      .map((id) => expectedRefsById.get(id))
+      .filter(Boolean)
+      .map(projectCurrentSourceRef);
+    const candidates = arrayOrEmpty(actualHtml.mappings).filter((mapping) =>
+      mapping?.surface_id === expectedMapping.surface_id
+      && mapping?.coverage_role === expectedMapping.coverage_role
+      && mapping?.confidence === expectedMapping.confidence);
+    const currentMappingExists = candidates.some((mapping) => {
+      const actualLinkedRefs = arrayOrEmpty(mapping?.source_refs)
+        .map((id) => actualRefsById.get(id))
+        .filter(Boolean)
+        .map(projectCurrentSourceRef);
+      return expectedLinkedRefs.every((expectedRef) =>
+        actualLinkedRefs.some((actualRef) => canonicalJson(actualRef) === canonicalJson(expectedRef)));
+    });
+    if (!currentMappingExists) {
+      add(
+        "design_source_package.current_html_funnel_material_stale",
+        `$.contributions[${actualHtml.id}].mappings`,
+        `HTML coverage for current page surface ${JSON.stringify(expectedMapping.surface_id)} is missing or stale.`,
+      );
+    }
+  }
+
+  validateCurrentTemplateMaterial(value, expected, scope.templateFamily, add);
+}
+
+function projectCurrentSourceRef(ref) {
+  return compactDefined({
+    ...pickFields(ref, ["kind", "path", "url", "role", "media_type"]),
+    sha256: canonicalHashSpelling(ref?.sha256),
+  });
+}
+
+function validateCurrentTemplateMaterial(value, expected, templateFamily, add) {
+  const expectedTemplate = expected.contributions.find((contribution) => contribution.kind === "template_stock");
+  const actualTemplates = arrayOrEmpty(value?.contributions)
+    .filter((contribution) => contribution?.kind === "template_stock");
+  if (!expectedTemplate) {
+    if (actualTemplates.length) {
+      add(
+        "design_source_package.current_template_material_stale",
+        "$.contributions",
+        "The Design Source Package selects template-stock material, but current prepare-build inputs do not select a template family.",
+      );
+    }
+    return;
+  }
+
+  const normalized = normalizeTemplateFamily(templateFamily);
+  const actualTemplate = actualTemplates.find((contribution) => contribution?.id === expectedTemplate.id)
+    || (actualTemplates.length === 1 ? actualTemplates[0] : null);
+  const declaredFamily = optionalString(actualTemplate?.template_reference?.family);
+  const familyMatches = declaredFamily
+    ? declaredFamily === normalized.family
+    : canonicalJson(actualTemplate?.presentation_intent?.summary)
+      === canonicalJson(expectedTemplate.presentation_intent?.summary);
+  if (!actualTemplate || !familyMatches) {
+    add(
+      "design_source_package.current_template_material_stale",
+      "$.contributions",
+      `Template material does not match current family ${JSON.stringify(normalized.family)}.`,
+    );
+    return;
+  }
+
+  if (expectedTemplate.template_reference) {
+    const expectedReference = canonicalJson(projectTemplateReference(expectedTemplate.template_reference));
+    if (canonicalJson(projectTemplateReference(actualTemplate.template_reference)) !== expectedReference) {
+      add(
+        "design_source_package.current_template_material_stale",
+        "$.contributions",
+        "Template Reference material does not match the current family/version/reference inputs.",
+      );
+    }
+  }
+}
 
 function projectSurfaceIdentity(surface) {
   return compactDefined({

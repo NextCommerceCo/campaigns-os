@@ -447,6 +447,46 @@ test("runtime rejects ready when an active page lacks primary, Template Referenc
   assert.ok(runtime.errors.some((error) => error.code === "design_source_package.readiness_blockers"));
 });
 
+test("current page scope validation rejects a package that omits or contradicts the active intake", () => {
+  const packageValue = readyHtmlPackage();
+  const validScope = {
+    activePages: [{
+      id: "landing",
+      type: "landing",
+      label: "Offer Landing",
+      custom_name: "Summer Offer",
+      page_url: "/demo/",
+    }],
+    mappings: [sourcePageMapping()],
+    campaignMapId: "map-demo",
+    campaignSlug: "demo",
+  };
+  assert.equal(validateDesignSourcePackage(packageValue, { now: NOW, currentPageScope: validScope }).ok, true);
+
+  const missingPage = validateDesignSourcePackage(packageValue, {
+    now: NOW,
+    currentPageScope: {
+      ...validScope,
+      activePages: [...validScope.activePages, { id: "checkout", type: "checkout", label: "Checkout" }],
+      mappings: [...validScope.mappings, { page_id: "checkout", skip_reason: "Use template" }],
+    },
+  });
+  assert.equal(missingPage.ok, false);
+  assert.ok(missingPage.errors.some((error) => error.code === "design_source_package.current_page_missing"));
+
+  const stalePath = validateDesignSourcePackage(packageValue, {
+    now: NOW,
+    currentPageScope: {
+      ...validScope,
+      mappings: [{ ...sourcePageMapping(), path: "pages/revised-landing.html" }],
+    },
+  });
+  assert.equal(stalePath.ok, false);
+  assert.ok(stalePath.errors.some((error) =>
+    error.code === "design_source_package.current_page_mapping_stale"
+    && error.path.endsWith(".source_path")));
+});
+
 test("readiness is independent of contribution order when complete and incomplete primary claims coexist", () => {
   const first = readyHtmlPackage();
   const incomplete = clone(first.contributions[0]);

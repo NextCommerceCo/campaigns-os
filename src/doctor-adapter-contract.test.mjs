@@ -11,6 +11,9 @@ import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
+const CURRENT_SOURCE_FULL_HASH = `sha256:${"f".repeat(64)}`;
+const CURRENT_SOURCE_MATERIAL_FINGERPRINT = `sha256:${"e".repeat(64)}`;
+const STALE_SOURCE_MATERIAL_FINGERPRINT = `sha256:${"d".repeat(64)}`;
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -86,9 +89,47 @@ function withPreparedBuild(run) {
 
 function markAssemblyCompleted(reportPath, mutate = (report) => report) {
   const report = readJson(reportPath);
+  report.stages.prepare_build.status = "completed";
+  report.stages.prepare_build.blockers = [];
+  report.blockers = (report.blockers || []).filter((blocker) => blocker.code !== "DESIGN_SOURCE_PACKAGE_NOT_READY");
+  if (report.blockers.length === 0) report.status = "prepared";
   report.stages.assembly.status = "completed";
   report.stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
+  if (report.design_source_package?.material_fingerprint) {
+    report.stages.assembly.source_package_material_fingerprint = report.design_source_package.material_fingerprint;
+  }
   mutate(report);
+  if (report.stages.polish?.status?.startsWith("completed") && report.design_source_package?.material_fingerprint) {
+    report.stages.polish.source_package_material_fingerprint = report.design_source_package.material_fingerprint;
+  }
+  writeJson(reportPath, report);
+}
+
+function setCurrentDesignSourceReferences(packetPath, contextPath, reportPath) {
+  const reference = {
+    schema_version: "campaign-design-source-package/v0",
+    sha256: CURRENT_SOURCE_FULL_HASH,
+    material_fingerprint: CURRENT_SOURCE_MATERIAL_FINGERPRINT,
+  };
+  const packet = readJson(packetPath);
+  packet.design_source_package = {
+    path: ".campaign-runtime/input/design-source-package.json",
+    ...reference,
+  };
+  writeJson(packetPath, packet);
+
+  const context = readJson(contextPath);
+  context.design_source_package = {
+    path: "input/design-source-package.json",
+    ...reference,
+  };
+  writeJson(contextPath, context);
+
+  const report = readJson(reportPath);
+  report.design_source_package = {
+    path: "input/design-source-package.json",
+    ...reference,
+  };
   writeJson(reportPath, report);
 }
 
@@ -399,15 +440,10 @@ test("polish lifecycle gate blocks doctor, next, and qa until distinct evidence 
 });
 
 test("next routes back to build when source package changed after assembly", () => {
-  withPreparedBuild(({ packetPath, reportPath }) => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    setCurrentDesignSourceReferences(packetPath, contextPath, reportPath);
     markAssemblyCompleted(reportPath, (report) => {
-      report.design_source_package = {
-        path: ".campaign-runtime/input/design-source-package.json",
-        schema_version: "campaign-design-source-package/v0",
-        sha256: "sha256:source-full",
-        material_fingerprint: "sha256:source-current",
-      };
-      report.stages.assembly.source_package_material_fingerprint = "sha256:source-old";
+      report.stages.assembly.source_package_material_fingerprint = STALE_SOURCE_MATERIAL_FINGERPRINT;
       report.stages.polish.status = "required";
       report.stages.polish.required_by = "build";
       report.stages.polish.required_for = ["qa"];
@@ -434,14 +470,9 @@ test("next routes back to build when source package changed after assembly", () 
 });
 
 test("source package freshness waiver lets next proceed to polish but not past missing polish evidence", () => {
-  withPreparedBuild(({ packetPath, reportPath }) => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    setCurrentDesignSourceReferences(packetPath, contextPath, reportPath);
     markAssemblyCompleted(reportPath, (report) => {
-      report.design_source_package = {
-        path: ".campaign-runtime/input/design-source-package.json",
-        schema_version: "campaign-design-source-package/v0",
-        sha256: "sha256:source-full",
-        material_fingerprint: "sha256:source-current",
-      };
       report.waivers = [
         {
           scope: "assembly_source_package_freshness",
@@ -452,7 +483,7 @@ test("source package freshness waiver lets next proceed to polish but not past m
           review_condition: "Valid for this run only.",
         },
       ];
-      report.stages.assembly.source_package_material_fingerprint = "sha256:source-old";
+      report.stages.assembly.source_package_material_fingerprint = STALE_SOURCE_MATERIAL_FINGERPRINT;
       report.stages.polish.status = "required";
       report.stages.polish.required_by = "build";
       report.stages.polish.required_for = ["qa"];
@@ -555,13 +586,8 @@ test("a real hidden-media finding exposes repair/capture/waive, and its exact wa
 
 test("valid polish evidence under source freshness waiver lets doctor and next advance beyond polish", () => {
   withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    setCurrentDesignSourceReferences(packetPath, contextPath, reportPath);
     markAssemblyCompleted(reportPath, (report) => {
-      report.design_source_package = {
-        path: ".campaign-runtime/input/design-source-package.json",
-        schema_version: "campaign-design-source-package/v0",
-        sha256: "sha256:source-full",
-        material_fingerprint: "sha256:source-current",
-      };
       report.waivers = [
         {
           scope: "assembly_source_package_freshness",
@@ -572,9 +598,9 @@ test("valid polish evidence under source freshness waiver lets doctor and next a
           review_condition: "Valid for this run only.",
         },
       ];
-      report.stages.assembly.source_package_material_fingerprint = "sha256:source-old";
+      report.stages.assembly.source_package_material_fingerprint = STALE_SOURCE_MATERIAL_FINGERPRINT;
       report.stages.polish = validPolishStage({
-        source_package_material_fingerprint: "sha256:source-current",
+        source_package_material_fingerprint: CURRENT_SOURCE_MATERIAL_FINGERPRINT,
         evidence: { visual_review: { page_load: cleanPageLoad(packetPath) } },
       });
     });
