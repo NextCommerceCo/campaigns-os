@@ -5,6 +5,7 @@ import {
   constants as fsConstants,
   cpSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   readdirSync,
@@ -1258,24 +1259,30 @@ function canonicalPrepareBuildOutputPath(path, label) {
   }
 }
 
+function prepareBuildPathIdentity(path) {
+  return resolve(path).normalize("NFC").toLowerCase();
+}
+
 function assertDistinctPrepareBuildOutputPaths(outputs) {
   const seenPaths = new Map();
   const seenCanonicalPaths = new Map();
   const seenFiles = new Map();
   for (const [label, path] of outputs) {
     const absolute = resolve(path);
-    const priorPath = seenPaths.get(absolute);
+    const pathIdentity = prepareBuildPathIdentity(absolute);
+    const priorPath = seenPaths.get(pathIdentity);
     if (priorPath) {
-      throw new Error(`Prepare-build output path collision: ${priorPath} and ${label} both resolve to ${absolute}. Choose distinct output paths; the Design Source Package path is fixed.`);
+      throw new Error(`Prepare-build output path collision: ${priorPath.label} at ${priorPath.path} and ${label} at ${absolute} are identical after conservative case folding. Choose distinct output paths; the Design Source Package path is fixed.`);
     }
-    seenPaths.set(absolute, label);
+    seenPaths.set(pathIdentity, { label, path: absolute });
 
     const canonical = canonicalPrepareBuildOutputPath(absolute, label);
-    const priorCanonical = seenCanonicalPaths.get(canonical);
+    const canonicalIdentity = prepareBuildPathIdentity(canonical);
+    const priorCanonical = seenCanonicalPaths.get(canonicalIdentity);
     if (priorCanonical) {
       throw new Error(`Prepare-build output path collision: ${priorCanonical.label} at ${priorCanonical.path} and ${label} at ${absolute} resolve through filesystem aliases to ${canonical}. Choose distinct output paths; the Design Source Package path is fixed.`);
     }
-    seenCanonicalPaths.set(canonical, { label, path: absolute });
+    seenCanonicalPaths.set(canonicalIdentity, { label, path: absolute });
 
     // A lexical comparison is insufficient once an output already exists:
     // symlinks and hard links can name the fixed DSP (or another sidecar)
@@ -1296,6 +1303,102 @@ function assertDistinctPrepareBuildOutputPaths(outputs) {
       }
       seenFiles.set(identity, { label, path: absolute });
     }
+  }
+}
+
+function preflightPrepareBuildOutputTargets(outputs, collisionOutputs) {
+  assertDistinctPrepareBuildOutputPaths(collisionOutputs);
+  for (const [label, path] of outputs) {
+    const absolute = resolve(path);
+    let stats = null;
+    try {
+      stats = lstatSync(absolute);
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        throw new Error(`Prepare-build could not inspect ${label} output target at ${absolute}: ${error.message}`, { cause: error });
+      }
+    }
+    if (stats && !stats.isFile()) {
+      const kind = stats.isDirectory() ? "directory" : stats.isSymbolicLink() ? "symbolic link" : "non-regular filesystem entry";
+      throw new Error(`Prepare-build output target is invalid: ${label} at ${absolute} must be absent or a regular file, but found a ${kind}.`);
+    }
+
+    // Atomic rename needs write + search permission on the destination's
+    // directory, while mkdirSync for a missing directory needs those rights
+    // on its nearest existing ancestor. Validate that capability before the
+    // fixed DSP or theme artifacts can be published.
+    let ancestor = dirname(absolute);
+    while (true) {
+      try {
+        const ancestorStats = statSync(ancestor);
+        if (!ancestorStats.isDirectory()) {
+          throw new Error(`nearest existing ancestor ${ancestor} is not a directory`);
+        }
+        try {
+          accessSync(ancestor, fsConstants.W_OK | fsConstants.X_OK);
+        } catch (error) {
+          const code = error?.code ? ` (${error.code})` : "";
+          throw new Error(`Prepare-build output target is not writable: ${label} at ${absolute} has non-writable ancestor ${ancestor}${code}: ${error.message}`, { cause: error });
+        }
+        break;
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        const parent = dirname(ancestor);
+        if (parent === ancestor) throw error;
+        ancestor = parent;
+      }
+    }
+  }
+}
+
+function preflightPrepareBuildDirectWriteTargets(outputs) {
+  for (const [label, path] of outputs) {
+    const absolute = resolve(path);
+    let stats;
+    try {
+      stats = lstatSync(absolute);
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw new Error(`Prepare-build could not inspect direct-write ${label} output target at ${absolute}: ${error.message}`, { cause: error });
+    }
+    if (!stats.isFile()) {
+      const kind = stats.isDirectory() ? "directory" : stats.isSymbolicLink() ? "symbolic link" : "non-regular filesystem entry";
+      throw new Error(`Prepare-build direct-write output target is invalid: ${label} at ${absolute} must be absent or a regular file, but found a ${kind}.`);
+    }
+    try {
+      accessSync(absolute, fsConstants.W_OK);
+    } catch (error) {
+      const code = error?.code ? ` (${error.code})` : "";
+      throw new Error(`Prepare-build direct-write output target is not writable: ${label} at ${absolute}${code}: ${error.message}`, { cause: error });
+    }
+  }
+}
+
+function publishPrepareBuildJsonOutputs(outputs, collisionOutputs) {
+  preflightPrepareBuildOutputTargets(
+    outputs.map(({ label, path }) => [label, path]),
+    collisionOutputs,
+  );
+  const staged = [];
+  try {
+    for (const output of outputs) {
+      const path = resolve(output.path);
+      mkdirSync(dirname(path), { recursive: true });
+      const tmp = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+      writeFileSync(tmp, `${JSON.stringify(output.value, null, 2)}\n`, { flag: "wx" });
+      staged.push({ ...output, path, tmp });
+    }
+
+    // Revalidate after all staging writes. A swap before this point is
+    // rejected; a symlink or hard-link swap after it is safely replaced as a
+    // directory entry by renameSync rather than followed and truncated.
+    preflightPrepareBuildOutputTargets(
+      outputs.map(({ label, path }) => [label, path]),
+      collisionOutputs,
+    );
+    for (const output of staged) renameSync(output.tmp, output.path);
+  } finally {
+    for (const output of staged) rmSync(output.tmp, { force: true });
   }
 }
 
@@ -1326,6 +1429,37 @@ function sourceMaterialFile(sourceRoot, path) {
   }
 }
 
+function manifestPagesForResolvedMappings(pages, mappings) {
+  if (!Array.isArray(pages)) return pages;
+  const groups = new Map();
+  for (const page of pages) {
+    if (!isObject(page) || !isNonEmptyString(page.page_id)) continue;
+    const group = groups.get(page.page_id) || [];
+    group.push(page);
+    groups.set(page.page_id, group);
+  }
+  const resolvedPathByPageId = new Map(
+    mappings
+      .filter((mapping) => isObject(mapping) && isNonEmptyString(mapping.page_id) && isNonEmptyString(mapping.path))
+      .map((mapping) => [mapping.page_id, mapping.path]),
+  );
+  const resolvedDuplicate = new Map();
+  for (const [pageId, group] of groups) {
+    if (group.length < 2) continue;
+    const resolvedPath = resolvedPathByPageId.get(pageId);
+    const matches = resolvedPath
+      ? group.filter((page) => page.path === resolvedPath)
+      : [];
+    resolvedDuplicate.set(pageId, matches.length === 1 ? matches[0] : null);
+  }
+
+  return pages.filter((page) => {
+    if (!isObject(page) || !isNonEmptyString(page.page_id)) return true;
+    if (!resolvedDuplicate.has(page.page_id)) return true;
+    return resolvedDuplicate.get(page.page_id) === page;
+  });
+}
+
 function createCurrentHtmlFunnelScope({
   packagePath,
   activePages,
@@ -1338,6 +1472,14 @@ function createCurrentHtmlFunnelScope({
   publicRouteSlug,
 }) {
   const manifest = manifestResult.manifest ? cloneJson(manifestResult.manifest) : null;
+  if (manifest) {
+    // Source intake owns duplicate-page resolution and records its blocker.
+    // Feed the strict DSP synthesizer only the unique record that agrees with
+    // that resolved mapping; an unmatched duplicate group remains ambiguous
+    // and contributes no page record. Raw manifest bytes/provenance are still
+    // retained through manifest.sha256 below.
+    manifest.pages = manifestPagesForResolvedMappings(manifest.pages, mappings);
+  }
   const crawl = isObject(sourceAssetCrawl) ? cloneJson(sourceAssetCrawl) : null;
   const materialPaths = new Set([
     ...mappings.map((mapping) => mapping?.path),
@@ -1431,27 +1573,71 @@ function prepareDesignSourcePackage({
   let rawBytes;
   let mode;
 
-  if (existsSync(path)) {
-    rawBytes = readFileSync(path);
+  const readExisting = () => {
+    let existingBytes;
     try {
-      value = JSON.parse(rawBytes.toString("utf8"));
+      const stats = lstatSync(path);
+      if (!stats.isFile()) {
+        const kind = stats.isDirectory()
+          ? "directory"
+          : stats.isSymbolicLink()
+            ? "symbolic link"
+            : "non-regular filesystem entry";
+        throw new Error(`expected a regular file, but found a ${kind}`);
+      }
+      existingBytes = readFileSync(path);
     } catch (error) {
-      throw new Error(`Design Source Package at ${path} is not valid JSON: ${error.message}`);
+      const code = error?.code ? ` (${error.code})` : "";
+      throw new Error(`Could not read Design Source Package artifact at ${path}${code}: ${error.message}`, { cause: error });
     }
-    assertValidPreparedDesignSourcePackage(value, path, currentPageScope, currentHtmlFunnelScope);
-    if (value.source_kind !== "html_funnel") {
-      throw new Error(`Design Source Package at ${path} declares source_kind ${JSON.stringify(value.source_kind)}; html_funnel prepare-build requires "html_funnel".`);
+
+    let existingValue;
+    try {
+      existingValue = JSON.parse(existingBytes.toString("utf8"));
+    } catch (error) {
+      throw new Error(`Design Source Package at ${path} is not valid JSON: ${error.message}`, { cause: error });
     }
+    assertValidPreparedDesignSourcePackage(existingValue, path, currentPageScope, currentHtmlFunnelScope);
+    if (existingValue.source_kind !== "html_funnel") {
+      throw new Error(`Design Source Package at ${path} declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`);
+    }
+    return { value: existingValue, rawBytes: existingBytes };
+  };
+
+  if (existsSync(path)) {
+    ({ value, rawBytes } = readExisting());
     mode = "reused";
   } else {
     value = synthesizeHtmlFunnelDesignSourcePackage(currentHtmlFunnelScope);
     assertValidPreparedDesignSourcePackage(value, path, currentPageScope, currentHtmlFunnelScope);
-    const serialized = serializeDesignSourcePackage(value);
+    rawBytes = Buffer.from(serializeDesignSourcePackage(value), "utf8");
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, serialized);
-    rawBytes = readFileSync(path);
-    mode = "emitted";
+    const stagedPath = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+    try {
+      writeFileSync(stagedPath, rawBytes, { flag: "wx" });
+      try {
+        // Linking a fully written same-directory staging file is an atomic,
+        // exclusive publication: it cannot truncate an existing winner.
+        linkSync(stagedPath, path);
+        mode = "emitted";
+      } catch (error) {
+        if (error?.code !== "EEXIST") {
+          throw new Error(`Could not atomically publish Design Source Package artifact at ${path}${error?.code ? ` (${error.code})` : ""}: ${error.message}`, { cause: error });
+        }
+        // Another prepare-build won the exclusive link. Its exact bytes are
+        // now authoritative; validate and reuse them rather than overwriting.
+        ({ value, rawBytes } = readExisting());
+        mode = "reused";
+      }
+    } finally {
+      rmSync(stagedPath, { force: true });
+    }
   }
+
+  const referenceIdentity = createDesignSourcePackageArtifactReference(value, {
+    path: ".",
+    serialized: rawBytes,
+  });
 
   return {
     path,
@@ -1459,10 +1645,10 @@ function prepareDesignSourcePackage({
     rawBytes,
     mode,
     referenceFor(artifactPath) {
-      return createDesignSourcePackageArtifactReference(value, {
+      return {
+        ...referenceIdentity,
         path: artifactRelativePath(artifactPath, path),
-        serialized: rawBytes,
-      });
+      };
     },
   };
 }
@@ -1495,14 +1681,23 @@ function prepareBuild(args, options = {}) {
   const doctorOutPath = resolve(args["doctor-out"] || join(targetRepo, ".campaign-runtime/doctor-output.json"));
   const briefPath = resolve(args["brief-out"] || join(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
   const designSourcePackagePath = resolve(targetRepo, DESIGN_SOURCE_PACKAGE_REL_PATH);
-  assertDistinctPrepareBuildOutputPaths([
+  const prepareBuildOutputPaths = [
     ["Build Packet", packetPath],
     ["Build Context", contextPath],
     ["Assembly Report", reportPath],
     ["Doctor Output", doctorOutPath],
     ["Campaign Build Brief", briefPath],
+  ];
+  const prepareBuildThemeOutputPaths = [
+    ["Theme Report", resolve(targetRepo, ".campaign-runtime/theme/theme-report.json")],
+    ["Brand Theme CSS", resolve(targetRepo, ".campaign-runtime/theme/brand-theme.css")],
+  ];
+  const prepareBuildCollisionPaths = [
+    ...prepareBuildOutputPaths,
+    ...prepareBuildThemeOutputPaths,
     ["Design Source Package", designSourcePackagePath],
-  ]);
+  ];
+  assertDistinctPrepareBuildOutputPaths(prepareBuildCollisionPaths);
   guardAssemblyReportOverwrite(reportPath, args);
   const spec = readJson(specPath);
   const { mapId, publicRouteSlug } = campaignIdentity(spec, args);
@@ -1642,6 +1837,18 @@ function prepareBuild(args, options = {}) {
         field: question.field,
       }))
     : [];
+  // Validate every configurable destination again at the last safe point
+  // before the fixed DSP or any generated sidecar is published. This turns
+  // deterministic later-output failures into an all-artifacts no-op.
+  preflightPrepareBuildOutputTargets(
+    [...prepareBuildOutputPaths, ...prepareBuildThemeOutputPaths],
+    prepareBuildCollisionPaths,
+  );
+  // Theme artifacts are still written directly by the theme adapter, unlike
+  // the atomically renamed JSON sidecars. Check existing theme files
+  // themselves before publishing the DSP. This deliberately includes the CSS
+  // target even when later inspection may decide no CSS generation is needed.
+  preflightPrepareBuildDirectWriteTargets(prepareBuildThemeOutputPaths);
   const designSourcePackage = prepareDesignSourcePackage({
     path: designSourcePackagePath,
     activePages,
@@ -1847,16 +2054,20 @@ function prepareBuild(args, options = {}) {
     designSourcePackage,
   });
 
-  writeJson(packetPath, packet);
-  writeJson(briefPath, buildBrief.artifact);
-  writeJson(contextPath, context);
-  writeJson(reportPath, report);
+  publishPrepareBuildJsonOutputs([
+    { label: "Build Packet", path: packetPath, value: packet },
+    { label: "Campaign Build Brief", path: briefPath, value: buildBrief.artifact },
+    { label: "Build Context", path: contextPath, value: context },
+    { label: "Assembly Report", path: reportPath, value: report },
+  ], prepareBuildCollisionPaths);
 
   let doctor = null;
   if (options.installContext) installAgentContext(targetRepo, false);
   if (options.runDoctor) {
     doctor = doctorPacket(packetPath, { contextPath, reportPath, outputBaseDir: targetRepo });
-    writeJson(doctorOutPath, doctor);
+    publishPrepareBuildJsonOutputs([
+      { label: "Doctor Output", path: doctorOutPath, value: doctor },
+    ], prepareBuildCollisionPaths);
   }
 
   return {
@@ -6113,7 +6324,20 @@ function uniquePrepareBuildBlockers(blockers) {
   const unique = new Map();
   for (const blocker of blockers) {
     if (!isObject(blocker)) continue;
-    const key = `${optionalString(blocker.code, "next.prepare_build")}|${optionalString(blocker.message, "")}|${optionalString(blocker.page_id, "")}`;
+    // Stage and top-level report lists intentionally mirror blockers. Collapse
+    // only complete semantic duplicates: field/detail/index evidence must not
+    // disappear merely because the user-facing header is the same.
+    const canonicalizeBlocker = (value) => {
+      if (Array.isArray(value)) return value.map(canonicalizeBlocker);
+      if (!isObject(value)) return value;
+      return Object.fromEntries(
+        Object.keys(value)
+          .filter((key) => value[key] !== undefined)
+          .sort()
+          .map((key) => [key, canonicalizeBlocker(value[key])]),
+      );
+    };
+    const key = JSON.stringify(canonicalizeBlocker(blocker));
     if (!unique.has(key)) unique.set(key, blocker);
   }
   return [...unique.values()];
@@ -6400,7 +6624,7 @@ export function nextStage(stage, args, ambient = null) {
   const finalize = (result) => {
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate });
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, ambient });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient });
     recordNextRecommendation(ambient, result);
     return result;
   };
@@ -6634,7 +6858,7 @@ function divergenceInspectAction(divergences, packetPath) {
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, ambient }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const pushPolishCheckpointActions = () => {
@@ -6687,6 +6911,22 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     return actions;
   }
   if (result.stage === "prepare-build") {
+    if (prepareBuildGate?.binding_failure) {
+      push(
+        "restore_prepare_build_binding",
+        "manual",
+        null,
+        "Restore or rebind the Build Context and Assembly Report so their packet path, campaign identity, and Design Source Package reference identify this Build Packet. Do not regenerate lifecycle artifacts until their ownership is established.",
+        { required: true },
+      );
+      push(
+        "recheck",
+        "command",
+        `campaigns-os next --packet ${shellToken(packetPath)} --json`,
+        "Re-run next after restoring the recorded artifact bindings.",
+      );
+      return actions;
+    }
     // Packet 03: the "start over" recommendation is the most destructive
     // recovery available and the ledger alone cannot justify it. Divergence
     // already returned above, so reaching here means the ledger and the

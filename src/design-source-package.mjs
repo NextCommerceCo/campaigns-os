@@ -311,8 +311,9 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   presentationIntent = null,
 } = {}) {
   const resolvedMappings = pageMappings == null ? mappings : pageMappings;
+  const resolvedMappingsName = pageMappings == null ? "mappings" : "pageMappings";
   assertInputArray(activePages, "activePages");
-  assertInputArray(resolvedMappings, "mappings");
+  assertInputArray(resolvedMappings, resolvedMappingsName);
   assertInputArray(sourceScreenshots, "sourceScreenshots");
   for (const [name, value] of [
     ["sourceGaps", sourceGaps],
@@ -330,22 +331,23 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   });
   resolvedMappings.forEach((mapping, index) => {
     if (!isObject(mapping) || !isNonEmptyString(mapping.page_id)) {
-      throw new TypeError(`mappings[${index}] must be an object with a non-empty page_id.`);
+      throw new TypeError(`${resolvedMappingsName}[${index}] must be an object with a non-empty page_id.`);
     }
   });
 
   const manifestInput = normalizeManifestInput(manifest, manifestPath);
   const crawl = isObject(sourceAssetCrawl) ? sourceAssetCrawl : isObject(assetCrawl) ? assetCrawl : null;
+  const crawlInputName = isObject(sourceAssetCrawl) ? "sourceAssetCrawl" : "assetCrawl";
+  assertOptionalInputArray(manifestInput.value?.files, "manifest.files");
+  assertOptionalInputArray(manifestInput.value?.pages, "manifest.pages");
+  assertOptionalInputArray(crawl?.scanned_files, `${crawlInputName}.scanned_files`);
+  assertOptionalInputArray(crawl?.references, `${crawlInputName}.references`);
   const pages = collectPageInputs(activePages, resolvedMappings);
   const { surfaces, surfaceByPageId } = createSurfaceCatalog(pages, {
     campaignMapId,
     campaignSlug,
   });
-  const manifestPagesById = new Map(
-    arrayOrEmpty(manifestInput.value?.pages)
-      .filter((entry) => isObject(entry) && isNonEmptyString(entry.page_id))
-      .map((entry) => [entry.page_id, entry]),
-  );
+  const manifestPagesById = indexManifestPagesById(manifestInput.value?.pages);
 
   const sourceRefRegistry = createSourceReferenceRegistry();
   if (manifestInput.path) {
@@ -358,7 +360,11 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
     });
   }
 
-  for (const file of arrayOrEmpty(manifestInput.value?.files)) {
+  const manifestFiles = sortByCanonicalLocation(
+    arrayOrEmpty(manifestInput.value?.files),
+    (file) => optionalString(file?.path),
+  );
+  for (const file of manifestFiles) {
     if (!isObject(file) || !isNonEmptyString(file.path)) continue;
     sourceRefRegistry.add({
       id: `manifest-${slugify(file.path) || "file"}`,
@@ -369,17 +375,26 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
     });
   }
 
-  const crawlHashes = new Map(
-    arrayOrEmpty(crawl?.scanned_files)
-      .filter((file) => isObject(file) && isNonEmptyString(file.path))
-      .map((file) => [file.path, validSha(file.sha256)]),
+  const crawlHashes = new Map();
+  for (const file of sortByCanonicalLocation(
+    arrayOrEmpty(crawl?.scanned_files),
+    (entry) => optionalString(entry?.path),
+  )) {
+    if (isObject(file) && isNonEmptyString(file.path)) {
+      crawlHashes.set(file.path, validSha(file.sha256));
+    }
+  }
+  const crawlReferenceIdsByPageId = new Map();
+  const crawlReferences = sortByCanonicalLocation(
+    arrayOrEmpty(crawl?.references),
+    canonicalCrawlReferenceLocation,
   );
-  for (const ref of arrayOrEmpty(crawl?.references)) {
+  for (const ref of crawlReferences) {
     if (!isObject(ref)) continue;
     const url = /^https?:\/\//i.test(String(ref.raw || "")) ? ref.raw : null;
     const path = optionalString(ref.source_path) || (!url ? optionalString(ref.normalized) : null);
     if (!path && !url) continue;
-    sourceRefRegistry.add({
+    const registered = sourceRefRegistry.add({
       id: `asset-${slugify(path || url) || "reference"}`,
       kind: "asset",
       ...(path ? { path } : {}),
@@ -387,6 +402,12 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
       ...(crawlHashes.get(path) ? { sha256: crawlHashes.get(path) } : {}),
       role: optionalString(ref.asset_kind) || "asset",
     });
+    if (!registered) continue;
+    for (const source of arrayOrEmpty(ref.referenced_by)) {
+      for (const pageId of arrayOrEmpty(source?.page_ids)) {
+        if (isNonEmptyString(pageId)) appendMapArray(crawlReferenceIdsByPageId, pageId, registered.id);
+      }
+    }
   }
 
   const globalVisualRegistry = createVisualReferenceRegistry("source_screenshot");
@@ -394,6 +415,11 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
     sourceScreenshots
       .filter((ref) => isObject(ref) && isNonEmptyString(ref.id))
       .map((ref) => [ref.id, ref]),
+  );
+  const sectionVisualsByPageId = indexSectionVisualCandidates(manifestInput.value);
+  const sourceScreenshotsByPageId = indexVisualCandidatesByPage(
+    sourceScreenshots,
+    surfaceByPageId,
   );
 
   const htmlCoverage = [];
@@ -421,18 +447,14 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
       });
       sourceRefIds.push(sourceRef.id);
     }
-    for (const assetRef of arrayOrEmpty(crawl?.references)) {
-      if (!assetReferenceAppliesToPage(assetRef, page.pageId)) continue;
-      const registered = sourceRefRegistry.findByLocation(assetRef.source_path || assetRef.normalized, assetRef.raw);
-      if (registered) sourceRefIds.push(registered.id);
-    }
+    sourceRefIds.push(...arrayOrEmpty(crawlReferenceIdsByPageId.get(page.pageId)));
 
     const screenshotIds = [];
     const visualCandidates = [
       ...visualCandidatesFrom(mapping, ["screenshot_refs", "source_screenshot_refs", "screenshots"]),
       ...visualCandidatesFrom(manifestPage, ["screenshot_refs", "source_screenshot_refs", "screenshots"]),
-      ...sectionVisualCandidates(manifestInput.value, page.pageId),
-      ...sourceScreenshots.filter((ref) => visualCandidateAppliesToPage(ref, page.pageId, surfaceId)),
+      ...arrayOrEmpty(sectionVisualsByPageId.get(page.pageId)),
+      ...arrayOrEmpty(sourceScreenshotsByPageId.get(page.pageId)),
     ];
     for (const raw of visualCandidates) {
       if (typeof raw === "string") {
@@ -574,22 +596,20 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
     todo.id = uniqueRecordId(todo.id, existingTodoIds);
     generatedTodos.push(todo);
   };
+  const coverageClaimsBySurface = indexCoverageClaimsBySurface(contributions);
+  const readinessExceptions = indexReadinessExceptions(clonedGaps, clonedWaivers, readinessNow);
+  const templateCandidateSurfaceIds = new Set(templateCandidateSurfaces);
 
   for (const surface of surfaces.filter((entry) => entry.kind === "page")) {
-    const primaryClaims = coverageClaimsForSurface(contributions, surface.id)
+    const claims = coverageClaimsBySurface.get(surface.id) || [];
+    const primaryClaims = claims
       .filter(({ mapping }) => mapping.coverage_role === "primary_design");
     const qualifyingPrimaryClaims = sortCoverageClaims(primaryClaims
       .filter(({ mapping }) => ["high", "medium"].includes(mapping.confidence)));
-    const coverageExcepted = hasCoverageException(
-      clonedGaps,
-      clonedWaivers,
-      surface.id,
-      readinessNow,
-      "primary_coverage",
-    );
+    const coverageExcepted = readinessExceptions.hasCoverage(surface.id, "primary_coverage");
     if (qualifyingPrimaryClaims.length) {
       if (qualifyingPrimaryClaims.some(primaryClaimHasRequiredProof)) continue;
-      if (hasCoverageException(clonedGaps, clonedWaivers, surface.id, readinessNow, "source_screenshot")) continue;
+      if (readinessExceptions.hasCoverage(surface.id, "source_screenshot")) continue;
       const primary = bestPrimaryClaimForTodo(qualifyingPrimaryClaims);
       const missingViewports = missingRequiredViewportsForPrimaryClaim(primary);
       for (const viewport of missingViewports) {
@@ -622,7 +642,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
       continue;
     }
 
-    if (template.family && templateCandidateSurfaces.includes(surface.id) && !templateProofAssessment.complete) {
+    if (template.family && templateCandidateSurfaceIds.has(surface.id) && !templateProofAssessment.complete) {
       if (!templateProofAssessment.linked) {
         addTodo({
           id: `link-${surface.id}-template-reference`,
@@ -650,7 +670,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
       continue;
     }
 
-    if (!coverageClaimsForSurface(contributions, surface.id).some(({ mapping }) => mapping.coverage_role === "template_baseline")) {
+    if (!claims.some(({ mapping }) => mapping.coverage_role === "template_baseline")) {
       addTodo({
         id: `provide-${surface.id}-primary-design`,
         kind: "missing_primary_design",
@@ -704,20 +724,22 @@ export function evaluateDesignSourcePackageReadiness(value, {
   const todos = arrayOrEmpty(value?.source_todos);
   const waivers = arrayOrEmpty(value?.waivers);
   const blockingReasons = [];
+  const coverageClaimsBySurface = indexCoverageClaimsBySurface(contributions);
+  const readinessExceptions = indexReadinessExceptions(gaps, waivers, now);
 
   if (pageSurfaces.length === 0) {
     blockingReasons.push("No page-level Surface Identity is available for source-readiness evaluation.");
   }
 
   for (const surface of pageSurfaces) {
-    const claims = coverageClaimsForSurface(contributions, surface.id);
+    const claims = coverageClaimsBySurface.get(surface.id) || [];
     const primaryClaims = sortCoverageClaims(claims.filter(({ mapping }) =>
       mapping.coverage_role === "primary_design" && ["high", "medium"].includes(mapping.confidence)));
     const validPrimary = primaryClaims.some(primaryClaimHasRequiredProof);
-    const validBaseline = claims.some(({ contribution, mapping }) =>
-      mapping.coverage_role === "template_baseline"
-      && templateMappingHasProof(contribution, mapping));
-    const coverageExcepted = hasCoverageException(gaps, waivers, surface.id, now, "primary_coverage");
+    const validBaseline = claims.some((claim) =>
+      claim.mapping.coverage_role === "template_baseline"
+      && claim.template_reference_complete === true);
+    const coverageExcepted = readinessExceptions.hasCoverage(surface.id, "primary_coverage");
 
     if (!primaryClaims.length && !validBaseline && !coverageExcepted) {
       const lowClaim = claims.find(({ mapping }) =>
@@ -728,14 +750,14 @@ export function evaluateDesignSourcePackageReadiness(value, {
     }
 
     if (primaryClaims.length && !validPrimary
-      && !hasCoverageException(gaps, waivers, surface.id, now, "source_screenshot")) {
+      && !readinessExceptions.hasCoverage(surface.id, "source_screenshot")) {
       blockingReasons.push(`Renderable primary_design surface "${surface.id}" has no qualifying claim with linked desktop and mobile source_screenshot proof.`);
     }
   }
 
   for (const todo of todos) {
     if (todo?.status === "completed") continue;
-    if (hasActiveWaiverForRecord(waivers, todo, now)) continue;
+    if (readinessExceptions.hasWaiverForRecord(todo)) continue;
     blockingReasons.push(`Source TODO "${todo?.id || "unknown"}" is ${todo?.status}.`);
   }
   for (const gap of gaps) {
@@ -755,7 +777,7 @@ export function evaluateDesignSourcePackageReadiness(value, {
   }
 
   const uniqueBlockingReasons = uniqueStrings(blockingReasons);
-  const activeWaivers = waivers.filter((waiver) => isActiveApprovedWaiver(waiver, now));
+  const activeWaivers = readinessExceptions.activeWaivers;
   const acceptedGaps = gaps.filter((gap) => gap?.status === "accepted");
   const status = pageSurfaces.length === 0
     ? "pending"
@@ -993,8 +1015,13 @@ export function validateDesignSourcePackage(value, {
       }
     });
   });
+  const validationReadinessExceptions = indexReadinessExceptions(
+    value.source_gaps,
+    value.waivers,
+    now,
+  );
   arrayOrEmpty(value.source_todos).forEach((todo, todoIndex) => {
-    if (todo?.status === "skipped" && !hasActiveWaiverForRecord(value.waivers, todo, now)) {
+    if (todo?.status === "skipped" && !validationReadinessExceptions.hasWaiverForRecord(todo)) {
       add(
         "design_source_package.todo_skipped_without_waiver",
         `$.source_todos[${todoIndex}].status`,
@@ -1058,16 +1085,45 @@ function validateCurrentPageScope(value, scope, add) {
     return;
   }
 
-  const validActivePages = activePages.filter((page) => isObject(page) && isNonEmptyString(page.id));
-  const validMappings = mappings.filter((mapping) => isObject(mapping) && isNonEmptyString(mapping.page_id));
-  const expected = createSurfaceCatalog(collectPageInputs(validActivePages, validMappings), {
+  let malformedItem = false;
+  activePages.forEach((page, index) => {
+    if (!isObject(page) || !isNonEmptyString(page.id)) {
+      malformedItem = true;
+      add(
+        "design_source_package.current_page_scope",
+        `$.currentPageScope.activePages[${index}]`,
+        `currentPageScope.activePages[${index}] must be an object with a non-empty id.`,
+      );
+    }
+  });
+  mappings.forEach((mapping, index) => {
+    if (!isObject(mapping) || !isNonEmptyString(mapping.page_id)) {
+      malformedItem = true;
+      add(
+        "design_source_package.current_page_scope",
+        `$.currentPageScope.mappings[${index}]`,
+        `currentPageScope.mappings[${index}] must be an object with a non-empty page_id.`,
+      );
+    }
+  });
+  if (malformedItem) return;
+
+  const expected = createSurfaceCatalog(collectPageInputs(activePages, mappings), {
     campaignMapId: scope.campaignMapId,
     campaignSlug: scope.campaignSlug,
   }).surfaces;
   const expectedPages = expected.filter((surface) => surface.kind === "page");
   const actualPages = arrayOrEmpty(value?.surface_identity).filter((surface) => surface?.kind === "page");
-  const expectedSpecIds = new Set(validActivePages.map((page) => page.id));
-  const expectedSourceIds = new Set(validMappings.map((mapping) => mapping.page_id));
+  const expectedSpecIds = new Set(activePages.map((page) => page.id));
+  const expectedSourceIds = new Set(mappings.map((mapping) => mapping.page_id));
+  const actualPagesBySpecId = indexRecordsByStringKey(
+    actualPages,
+    (surface) => surface?.mappings?.campaign_spec_page_id,
+  );
+  const actualPagesBySourceId = indexRecordsByStringKey(
+    actualPages,
+    (surface) => surface?.mappings?.source_page_id,
+  );
 
   const campaignSurface = arrayOrEmpty(value?.surface_identity)
     .find((surface) => surface?.id === "campaign" && surface?.kind === "campaign");
@@ -1087,9 +1143,10 @@ function validateCurrentPageScope(value, scope, add) {
   for (const expectedSurface of expectedPages) {
     const specId = expectedSurface.mappings.campaign_spec_page_id;
     const sourceId = expectedSurface.mappings.source_page_id;
-    const matches = actualPages.filter((surface) =>
-      (specId && surface?.mappings?.campaign_spec_page_id === specId)
-      || (sourceId && surface?.mappings?.source_page_id === sourceId));
+    const matches = [...new Set([
+      ...(specId ? actualPagesBySpecId.get(specId) || [] : []),
+      ...(sourceId ? actualPagesBySourceId.get(sourceId) || [] : []),
+    ])];
     if (matches.length === 0) {
       add(
         "design_source_package.current_page_missing",
@@ -1194,12 +1251,9 @@ function validateCurrentHtmlFunnelScope(value, scope, add) {
   }
 
   const actualRefs = arrayOrEmpty(actualHtml.source_refs);
+  const actualRefMaterialKeys = new Set(actualRefs.map(currentSourceRefMaterialKey));
   for (const expectedRef of arrayOrEmpty(expectedHtml.source_refs)) {
-    const matches = actualRefs.filter((actualRef) =>
-      optionalString(actualRef?.path) === optionalString(expectedRef?.path)
-      && optionalString(actualRef?.url) === optionalString(expectedRef?.url));
-    if (!matches.some((actualRef) =>
-      canonicalJson(projectCurrentSourceRef(actualRef)) === canonicalJson(projectCurrentSourceRef(expectedRef)))) {
+    if (!actualRefMaterialKeys.has(currentSourceRefMaterialKey(expectedRef))) {
       add(
         "design_source_package.current_source_material_stale",
         `$.contributions[${actualHtml.id}].source_refs`,
@@ -1210,23 +1264,22 @@ function validateCurrentHtmlFunnelScope(value, scope, add) {
 
   const expectedRefsById = new Map(arrayOrEmpty(expectedHtml.source_refs).map((ref) => [ref.id, ref]));
   const actualRefsById = new Map(actualRefs.map((ref) => [ref?.id, ref]));
+  const actualMappingsByCoverage = new Map();
+  for (const mapping of arrayOrEmpty(actualHtml.mappings)) {
+    const linkedRefKeys = new Set(arrayOrEmpty(mapping?.source_refs)
+      .map((id) => actualRefsById.get(id))
+      .filter(Boolean)
+      .map((ref) => canonicalJson(projectCurrentSourceRef(ref))));
+    appendMapArray(actualMappingsByCoverage, coverageLookupKey(mapping), linkedRefKeys);
+  }
   for (const expectedMapping of arrayOrEmpty(expectedHtml.mappings)) {
-    const expectedLinkedRefs = arrayOrEmpty(expectedMapping.source_refs)
+    const expectedLinkedRefKeys = arrayOrEmpty(expectedMapping.source_refs)
       .map((id) => expectedRefsById.get(id))
       .filter(Boolean)
-      .map(projectCurrentSourceRef);
-    const candidates = arrayOrEmpty(actualHtml.mappings).filter((mapping) =>
-      mapping?.surface_id === expectedMapping.surface_id
-      && mapping?.coverage_role === expectedMapping.coverage_role
-      && mapping?.confidence === expectedMapping.confidence);
-    const currentMappingExists = candidates.some((mapping) => {
-      const actualLinkedRefs = arrayOrEmpty(mapping?.source_refs)
-        .map((id) => actualRefsById.get(id))
-        .filter(Boolean)
-        .map(projectCurrentSourceRef);
-      return expectedLinkedRefs.every((expectedRef) =>
-        actualLinkedRefs.some((actualRef) => canonicalJson(actualRef) === canonicalJson(expectedRef)));
-    });
+      .map((ref) => canonicalJson(projectCurrentSourceRef(ref)));
+    const candidates = actualMappingsByCoverage.get(coverageLookupKey(expectedMapping)) || [];
+    const currentMappingExists = candidates.some((actualLinkedRefKeys) =>
+      expectedLinkedRefKeys.every((expectedRefKey) => actualLinkedRefKeys.has(expectedRefKey)));
     if (!currentMappingExists) {
       add(
         "design_source_package.current_html_funnel_material_stale",
@@ -1244,6 +1297,14 @@ function projectCurrentSourceRef(ref) {
     ...pickFields(ref, ["kind", "path", "url", "role", "media_type"]),
     sha256: canonicalHashSpelling(ref?.sha256),
   });
+}
+
+function currentSourceRefMaterialKey(ref) {
+  return `${optionalString(ref?.path) || ""}\u0000${optionalString(ref?.url) || ""}\u0000${canonicalJson(projectCurrentSourceRef(ref))}`;
+}
+
+function coverageLookupKey(mapping) {
+  return `${mapping?.surface_id || ""}\u0000${mapping?.coverage_role || ""}\u0000${mapping?.confidence || ""}`;
 }
 
 function validateCurrentTemplateMaterial(value, expected, templateFamily, add) {
@@ -1522,6 +1583,18 @@ function normalizeManifestInput(input, explicitPath) {
   return { value: isObject(input) ? input : null, path: optionalString(explicitPath) };
 }
 
+function indexManifestPagesById(pages) {
+  const byId = new Map();
+  for (const entry of arrayOrEmpty(pages)) {
+    if (!isObject(entry) || !isNonEmptyString(entry.page_id)) continue;
+    if (byId.has(entry.page_id)) {
+      throw new TypeError(`manifest.pages contains duplicate page_id ${JSON.stringify(entry.page_id)}.`);
+    }
+    byId.set(entry.page_id, entry);
+  }
+  return byId;
+}
+
 function normalizePresentationIntent(value, fallbackSummary) {
   const input = isObject(value) ? value : {};
   const out = { summary: optionalString(input.summary) || fallbackSummary };
@@ -1588,12 +1661,6 @@ function assessTemplateReference(reference, sourceRefs = templateSourceRefs(refe
   return { linked: true, complete: missing.length === 0, missing_viewports: missing };
 }
 
-function templateMappingHasProof(contribution, mapping) {
-  const reference = contribution?.template_reference;
-  if (!reference || mapping?.template_reference_id !== reference.id) return false;
-  return assessTemplateReference(reference, contribution?.source_refs).complete;
-}
-
 function templateSourceRefs(reference) {
   if (!reference) return [];
   const refs = [];
@@ -1614,39 +1681,52 @@ function templateSourceRefs(reference) {
   return refs;
 }
 
-function coverageClaimsForSurface(contributions, surfaceId) {
-  const claims = [];
+function indexCoverageClaimsBySurface(contributions) {
+  const claimsBySurface = new Map();
   for (const contribution of arrayOrEmpty(contributions)) {
+    const contributionSourceIds = new Set(
+      arrayOrEmpty(contribution?.source_refs).map((ref) => ref?.id),
+    );
+    const screenshotRefsById = new Map(
+      arrayOrEmpty(contribution?.screenshot_refs).map((ref) => [ref?.id, ref]),
+    );
+    const templateReferenceComplete = contribution?.template_reference
+      ? assessTemplateReference(contribution.template_reference, contribution.source_refs).complete
+      : false;
     for (const mapping of arrayOrEmpty(contribution?.mappings)) {
-      if (mapping?.surface_id === surfaceId) claims.push({ contribution, mapping });
+      const mappingSourceIds = new Set(arrayOrEmpty(mapping?.source_refs));
+      const availableViewports = new Set();
+      for (const screenshotId of arrayOrEmpty(mapping?.screenshot_refs)) {
+        const ref = screenshotRefsById.get(screenshotId);
+        if (ref?.kind === "source_screenshot"
+          && ref.availability === "available"
+          && mappingSourceIds.has(ref.source_ref_id)
+          && contributionSourceIds.has(ref.source_ref_id)
+          && VIEWPORTS.has(ref.viewport)) {
+          availableViewports.add(ref.viewport);
+        }
+      }
+      appendMapArray(claimsBySurface, mapping?.surface_id, {
+        contribution,
+        mapping,
+        available_viewports: availableViewports,
+        template_reference_complete: templateReferenceComplete
+          && mapping?.template_reference_id === contribution?.template_reference?.id,
+      });
     }
   }
-  return claims;
-}
-
-function availableViewportsForMapping(contribution, mapping) {
-  const ids = new Set(arrayOrEmpty(mapping?.screenshot_refs));
-  const sourceIds = new Set(arrayOrEmpty(mapping?.source_refs));
-  const contributionSourceIds = new Set(arrayOrEmpty(contribution?.source_refs).map((ref) => ref?.id));
-  return new Set(arrayOrEmpty(contribution?.screenshot_refs)
-    .filter((ref) => ids.has(ref?.id)
-      && ref?.kind === "source_screenshot"
-      && ref?.availability === "available"
-      && sourceIds.has(ref?.source_ref_id)
-      && contributionSourceIds.has(ref?.source_ref_id))
-    .map((ref) => ref.viewport)
-    .filter((viewport) => VIEWPORTS.has(viewport)));
+  return claimsBySurface;
 }
 
 function primaryClaimHasRequiredProof(claim) {
   if (claim?.contribution?.renderable !== true) return true;
-  const viewports = availableViewportsForMapping(claim.contribution, claim.mapping);
+  const viewports = claim.available_viewports || new Set();
   return REQUIRED_SOURCE_VIEWPORTS.every((viewport) => viewports.has(viewport));
 }
 
 function missingRequiredViewportsForPrimaryClaim(claim) {
   if (claim?.contribution?.renderable !== true) return [];
-  const viewports = availableViewportsForMapping(claim.contribution, claim.mapping);
+  const viewports = claim.available_viewports || new Set();
   return REQUIRED_SOURCE_VIEWPORTS.filter((viewport) => !viewports.has(viewport));
 }
 
@@ -1669,26 +1749,51 @@ function bestPrimaryClaimForTodo(claims) {
   })[0];
 }
 
-function hasCoverageException(gaps, waivers, surfaceId, now, purpose) {
-  return gaps.some((gap) => gap?.status === "accepted"
-      && gapMatchesPurpose(gap, purpose)
-      && recordAppliesToSurface(gap, surfaceId))
-    || waivers.some((waiver) => isActiveApprovedWaiver(waiver, now)
-      && waiverMatchesPurpose(waiver, purpose)
-      && recordAppliesToSurface(waiver, surfaceId));
-}
+function indexReadinessExceptions(gaps, waivers, now) {
+  const coverageKeys = new Set();
+  const activeWaivers = arrayOrEmpty(waivers)
+    .filter((waiver) => isActiveApprovedWaiver(waiver, now));
+  const waiversByTarget = new Map();
+  const purposes = ["primary_coverage", "source_screenshot", "template_reference"];
 
-function recordAppliesToSurface(record, surfaceId) {
-  const appliesTo = arrayOrEmpty(record?.applies_to);
-  return appliesTo.includes(surfaceId) || appliesTo.includes("campaign");
-}
+  const indexCoverageRecord = (record, matchesPurpose) => {
+    for (const purpose of purposes) {
+      if (!matchesPurpose(record, purpose)) continue;
+      for (const target of arrayOrEmpty(record?.applies_to)) {
+        coverageKeys.add(`${target}\u0000${purpose}`);
+      }
+    }
+  };
 
-function hasActiveWaiverForRecord(waivers, record, now) {
-  const purpose = purposeForTodo(record);
-  return waivers.some((waiver) => isActiveApprovedWaiver(waiver, now)
-    && waiverMatchesPurpose(waiver, purpose, record?.scope)
-    && (arrayOrEmpty(waiver.applies_to).includes(record?.id)
-      || arrayOrEmpty(record?.applies_to).some((surface) => recordAppliesToSurface(waiver, surface))));
+  for (const gap of arrayOrEmpty(gaps)) {
+    if (gap?.status === "accepted") indexCoverageRecord(gap, gapMatchesPurpose);
+  }
+  for (const waiver of activeWaivers) {
+    indexCoverageRecord(waiver, waiverMatchesPurpose);
+    for (const target of arrayOrEmpty(waiver?.applies_to)) {
+      appendMapArray(waiversByTarget, target, waiver);
+    }
+  }
+
+  return {
+    activeWaivers,
+    hasCoverage(surfaceId, purpose) {
+      return coverageKeys.has(`${surfaceId}\u0000${purpose}`)
+        || coverageKeys.has(`campaign\u0000${purpose}`);
+    },
+    hasWaiverForRecord(record) {
+      const candidates = new Set([
+        ...arrayOrEmpty(waiversByTarget.get(record?.id)),
+        ...arrayOrEmpty(waiversByTarget.get("campaign")),
+      ]);
+      for (const surfaceId of arrayOrEmpty(record?.applies_to)) {
+        for (const waiver of arrayOrEmpty(waiversByTarget.get(surfaceId))) candidates.add(waiver);
+      }
+      const purpose = purposeForTodo(record);
+      return [...candidates].some((waiver) =>
+        waiverMatchesPurpose(waiver, purpose, record?.scope));
+    },
+  };
 }
 
 function gapMatchesPurpose(gap, purpose) {
@@ -1762,12 +1867,6 @@ function createSourceReferenceRegistry() {
       records.push(record);
       byKey.set(key, record);
       return record;
-    },
-    findByLocation(path, url) {
-      const direct = byKey.get(`${optionalString(path) || ""}\u0000${optionalString(url) || ""}`);
-      if (direct) return direct;
-      const normalized = optionalString(path) || optionalString(url);
-      return records.find((record) => record.path === normalized || record.url === normalized) || null;
     },
     values() {
       return records.sort(compareById);
@@ -1858,30 +1957,39 @@ function visualCandidatesFrom(value, keys) {
   return keys.flatMap((key) => arrayOrEmpty(value[key]));
 }
 
-function sectionVisualCandidates(manifest, pageId) {
-  const output = [];
+function indexSectionVisualCandidates(manifest) {
+  const byPageId = new Map();
   for (const section of arrayOrEmpty(manifest?.producer_provenance?.section_exports)) {
     if (!isObject(section)) continue;
     const sectionPageId = optionalString(section.page_id) || optionalString(section.campaign_spec_page_id);
-    if (sectionPageId !== pageId) continue;
+    if (!sectionPageId) continue;
     for (const image of arrayOrEmpty(section.images)) {
       // A string export or an object without `viewport`/`viewport_key` is an
       // asset, not source screenshot proof.
-      if (isObject(image) && isNonEmptyString(image.viewport || image.viewport_key)) output.push(image);
+      if (isObject(image) && isNonEmptyString(image.viewport || image.viewport_key)) {
+        appendMapArray(byPageId, sectionPageId, image);
+      }
     }
   }
-  return output;
+  return byPageId;
 }
 
-function visualCandidateAppliesToPage(ref, pageId, surfaceId) {
-  return isObject(ref)
-    && (ref.page_id === pageId
-      || ref.campaign_spec_page_id === pageId
-      || ref.surface_id === surfaceId);
-}
-
-function assetReferenceAppliesToPage(ref, pageId) {
-  return arrayOrEmpty(ref?.referenced_by).some((source) => arrayOrEmpty(source?.page_ids).includes(pageId));
+function indexVisualCandidatesByPage(records, surfaceByPageId) {
+  const byPageId = new Map();
+  const pageIdBySurfaceId = new Map(
+    [...surfaceByPageId].map(([pageId, surfaceId]) => [surfaceId, pageId]),
+  );
+  for (const ref of arrayOrEmpty(records)) {
+    if (!isObject(ref)) continue;
+    const pageIds = new Set();
+    for (const pageId of [ref.page_id, ref.campaign_spec_page_id]) {
+      if (isNonEmptyString(pageId) && surfaceByPageId.has(pageId)) pageIds.add(pageId);
+    }
+    const surfacePageId = pageIdBySurfaceId.get(ref.surface_id);
+    if (surfacePageId) pageIds.add(surfacePageId);
+    for (const pageId of pageIds) appendMapArray(byPageId, pageId, ref);
+  }
+  return byPageId;
 }
 
 function confidenceForHtmlMapping(mapping, manifestPage) {
@@ -2314,6 +2422,35 @@ function dedupeRecordsById(records) {
   return [...byId.values()].sort(compareById);
 }
 
+function appendMapArray(index, key, value) {
+  const records = index.get(key);
+  if (records) records.push(value);
+  else index.set(key, [value]);
+}
+
+function indexRecordsByStringKey(records, getKey) {
+  const index = new Map();
+  for (const record of arrayOrEmpty(records)) {
+    const key = getKey(record);
+    if (isNonEmptyString(key)) appendMapArray(index, key, record);
+  }
+  return index;
+}
+
+function sortByCanonicalLocation(records, getLocation) {
+  return [...arrayOrEmpty(records)].sort((left, right) => {
+    const locationDelta = compareStrings(getLocation(left) || "", getLocation(right) || "");
+    return locationDelta || compareStrings(canonicalJson(left), canonicalJson(right));
+  });
+}
+
+function canonicalCrawlReferenceLocation(ref) {
+  if (!isObject(ref)) return "";
+  const url = /^https?:\/\//i.test(String(ref.raw || "")) ? optionalString(ref.raw) : null;
+  const path = optionalString(ref.source_path) || (!url ? optionalString(ref.normalized) : null);
+  return `${path || ""}\u0000${url || ""}`;
+}
+
 function compareById(a, b) {
   return compareStrings(String(a?.id || ""), String(b?.id || ""));
 }
@@ -2370,6 +2507,10 @@ function slugify(value) {
 
 function assertInputArray(value, name) {
   if (!Array.isArray(value)) throw new TypeError(`${name} must be an array.`);
+}
+
+function assertOptionalInputArray(value, name) {
+  if (value != null) assertInputArray(value, name);
 }
 
 function arrayOrEmpty(value) {

@@ -267,6 +267,157 @@ test("html_funnel synthesis preserves distinct Surface Identity mappings and pro
   runtimeAndSchemaAgreeValid(packageValue);
 });
 
+test("html_funnel synthesis rejects every non-array array input", () => {
+  const arrayInputs = [
+    "activePages",
+    "mappings",
+    "pageMappings",
+    "sourceScreenshots",
+    "sourceGaps",
+    "sourceTodos",
+    "waivers",
+    "divergences",
+    "proposedExceptions",
+    "notes",
+  ];
+
+  for (const inputName of arrayInputs) {
+    assert.throws(
+      () => synthesizeHtmlFunnelDesignSourcePackage({ [inputName]: {} }),
+      new RegExp(`${inputName} must be an array`),
+      inputName,
+    );
+  }
+});
+
+test("html_funnel synthesis rejects malformed nested manifest and crawl collections", () => {
+  const cases = [
+    ["manifest.files", { manifest: { files: {} } }],
+    ["manifest.pages", { manifest: { pages: {} } }],
+    ["sourceAssetCrawl.scanned_files", { sourceAssetCrawl: { scanned_files: {} } }],
+    ["sourceAssetCrawl.references", { sourceAssetCrawl: { references: {} } }],
+    ["assetCrawl.scanned_files", { assetCrawl: { scanned_files: {} } }],
+    ["assetCrawl.references", { assetCrawl: { references: {} } }],
+  ];
+
+  for (const [inputPath, inputs] of cases) {
+    assert.throws(
+      () => synthesizeHtmlFunnelDesignSourcePackage(inputs),
+      new RegExp(`${inputPath.replace(".", "\\.")} must be an array`),
+      inputPath,
+    );
+  }
+
+  const nullableCollections = synthesizeHtmlFunnelDesignSourcePackage({
+    manifest: { files: null, pages: null },
+    sourceAssetCrawl: { scanned_files: null, references: null },
+    generatedAt: GENERATED_AT,
+  });
+  assert.equal(nullableCollections.readiness.status, "pending");
+  runtimeAndSchemaAgreeValid(nullableCollections);
+});
+
+test("html_funnel synthesis rejects invalid or blank active page and mapping IDs", () => {
+  const invalidIds = [null, {}, "landing", { id: "" }, { id: "   " }];
+  for (const activePage of invalidIds) {
+    assert.throws(
+      () => synthesizeHtmlFunnelDesignSourcePackage({ activePages: [activePage] }),
+      /activePages\[0\] must be an object with a non-empty id/,
+    );
+  }
+
+  const invalidMappings = [null, {}, "landing", { page_id: "" }, { page_id: "   " }];
+  for (const inputName of ["mappings", "pageMappings"]) {
+    for (const mapping of invalidMappings) {
+      assert.throws(
+        () => synthesizeHtmlFunnelDesignSourcePackage({ [inputName]: [mapping] }),
+        new RegExp(`${inputName}\\[0\\] must be an object with a non-empty page_id`),
+      );
+    }
+  }
+});
+
+test("zero-page html_funnel synthesis remains pending and runtime/schema valid", () => {
+  const packageValue = synthesizeHtmlFunnelDesignSourcePackage({ generatedAt: GENERATED_AT });
+
+  assert.deepEqual(packageValue.surface_identity.map(({ id, kind }) => ({ id, kind })), [
+    { id: "campaign", kind: "campaign" },
+  ]);
+  assert.equal(packageValue.readiness.status, "pending");
+  assert.deepEqual(packageValue.readiness.blocking_reasons, [
+    "No page-level Surface Identity is available for source-readiness evaluation.",
+  ]);
+  runtimeAndSchemaAgreeValid(packageValue);
+});
+
+test("colliding source-reference slugs are stable across manifest record order", () => {
+  const files = [
+    { path: "assets/a b.css", role: "asset", sha256: sha("1") },
+    { path: "assets/a-b.css", role: "asset", sha256: sha("2") },
+  ];
+  const build = (orderedFiles) => readyHtmlPackage({
+    manifest: {
+      schema_version: "source-html-manifest/v0",
+      files: orderedFiles,
+      pages: [{ page_id: "landing", path: "pages/landing.html", source_hash: sha("a") }],
+    },
+  });
+  const first = build(files);
+  const reversed = build([...files].reverse());
+  const idsByPath = (value) => Object.fromEntries(value.contributions[0].source_refs
+    .filter((ref) => files.some((file) => file.path === ref.path))
+    .map((ref) => [ref.path, ref.id]));
+
+  assert.deepEqual(idsByPath(first), idsByPath(reversed));
+  assert.notEqual(idsByPath(first)[files[0].path], idsByPath(first)[files[1].path]);
+  assert.equal(first.material_fingerprint, reversed.material_fingerprint);
+  runtimeAndSchemaAgreeValid(first);
+  runtimeAndSchemaAgreeValid(reversed);
+});
+
+test("manifest page permutations are stable and duplicate page IDs fail deterministically", () => {
+  const activePages = [
+    { id: "landing", type: "landing", label: "Landing" },
+    { id: "checkout", type: "checkout", label: "Checkout" },
+  ];
+  const mappings = [
+    { page_id: "landing", path: "pages/landing.html" },
+    { page_id: "checkout", path: "pages/checkout.html" },
+  ];
+  const uniquePages = [
+    { page_id: "landing", path: "pages/landing.html", source_hash: sha("1") },
+    { page_id: "checkout", path: "pages/checkout.html", source_hash: sha("2") },
+  ];
+  const build = (pages) => synthesizeHtmlFunnelDesignSourcePackage({
+    activePages,
+    mappings,
+    manifest: { schema_version: "source-html-manifest/v0", pages },
+    generatedAt: GENERATED_AT,
+  });
+  const first = build(uniquePages);
+  const reversed = build([...uniquePages].reverse());
+  assert.equal(first.material_fingerprint, reversed.material_fingerprint);
+  runtimeAndSchemaAgreeValid(first);
+  runtimeAndSchemaAgreeValid(reversed);
+
+  const duplicates = [
+    { page_id: "landing", path: "pages/landing.html", source_hash: sha("3") },
+    { page_id: "landing", path: "pages/alternate.html", source_hash: sha("4") },
+  ];
+  const messages = [];
+  for (const pages of [duplicates, [...duplicates].reverse()]) {
+    assert.throws(
+      () => build(pages),
+      (error) => {
+        messages.push(error.message);
+        return error instanceof TypeError
+          && error.message === 'manifest.pages contains duplicate page_id "landing".';
+      },
+    );
+  }
+  assert.deepEqual(messages, [messages[0], messages[0]]);
+});
+
 test("renderable primary_design emits typed blocking Source TODOs without explicit desktop/mobile proof", () => {
   const packageValue = readyHtmlPackage({
     mappings: [sourcePageMapping({ screenshots: false })],
@@ -426,6 +577,47 @@ test("attributed Source Gaps and approved time-bound waivers produce their disti
   runtimeAndSchemaAgreeValid(waiverPackage);
 });
 
+test("waiver activity is deterministic for expiry, status, and review-condition boundaries", () => {
+  const pageSurface = {
+    id: "landing",
+    kind: "page",
+    label: "Landing",
+    aliases: ["landing"],
+    mappings: {},
+  };
+  const cases = [
+    ["future expiry", { status: "approved", expires_at: "2026-08-22T10:00:00.001Z" }, "ready_with_waivers"],
+    ["expiry equal to now", { status: "approved", expires_at: GENERATED_AT }, "blocked"],
+    ["past expiry", { status: "approved", expires_at: "2026-08-22T09:59:59.999Z" }, "blocked"],
+    ["invalid expiry", { status: "approved", expires_at: "not-a-date" }, "blocked"],
+    ["revoked future waiver", { status: "revoked", expires_at: "2026-08-22T10:00:00.001Z" }, "blocked"],
+    ["review condition only", { status: "approved", review_condition: "Review before source host access resumes." }, "ready_with_waivers"],
+  ];
+
+  for (const [label, waiverState, expectedStatus] of cases) {
+    const readiness = evaluateDesignSourcePackageReadiness({
+      generated_at: GENERATED_AT,
+      surface_identity: [pageSurface],
+      contributions: [],
+      source_gaps: [],
+      source_todos: [],
+      waivers: [{
+        id: "waiver-landing-design",
+        scope: "primary_design_coverage",
+        applies_to: ["landing"],
+        reason: "Explicit test waiver.",
+        waived_by: "operator@example.test",
+        waived_at: GENERATED_AT,
+        ...waiverState,
+      }],
+      divergences: [],
+      proposed_exceptions: [],
+    }, { generatedAt: GENERATED_AT, now: NOW });
+
+    assert.equal(readiness.status, expectedStatus, label);
+  }
+});
+
 test("runtime rejects ready when an active page lacks primary, Template Reference baseline, gap, or waiver", () => {
   const forged = readyHtmlPackage();
   forged.contributions[0].mappings = [];
@@ -485,6 +677,80 @@ test("current page scope validation rejects a package that omits or contradicts 
   assert.ok(stalePath.errors.some((error) =>
     error.code === "design_source_package.current_page_mapping_stale"
     && error.path.endsWith(".source_path")));
+});
+
+test("current page scope rejects malformed collections and blank page or mapping IDs", () => {
+  const zeroPagePackage = synthesizeHtmlFunnelDesignSourcePackage({ generatedAt: GENERATED_AT });
+  const cases = [
+    ["non-array activePages", { activePages: {}, mappings: [] }],
+    ["non-array mappings", { activePages: [], mappings: {} }],
+    ["non-object active page", { activePages: [null], mappings: [] }],
+    ["blank active page id", { activePages: [{ id: "   " }], mappings: [] }],
+    ["non-object mapping", { activePages: [], mappings: [null] }],
+    ["blank mapping page_id", { activePages: [], mappings: [{ page_id: " " }] }],
+  ];
+
+  for (const [label, currentPageScope] of cases) {
+    const result = validateDesignSourcePackage(zeroPagePackage, {
+      now: NOW,
+      currentPageScope,
+    });
+    assert.equal(result.ok, false, label);
+    assert.ok(
+      result.errors.some((error) => error.code === "design_source_package.current_page_scope"),
+      label,
+    );
+  }
+});
+
+test("indexed synthesis and freshness validation preserve page-local material at scale", () => {
+  const pageCount = 256;
+  const activePages = Array.from({ length: pageCount }, (_, index) => ({
+    id: `page-${index}`,
+    type: "landing",
+    label: `Page ${index}`,
+  }));
+  const mappings = Array.from({ length: pageCount }, (_, index) => ({
+    page_id: `page-${index}`,
+    path: `pages/page-${index}.html`,
+    coverage_role: "primary_design",
+    confidence: "medium",
+  }));
+  const references = Array.from({ length: pageCount }, (_, index) => ({
+    source_path: `assets/asset-${index}.png`,
+    normalized: `assets/asset-${index}.png`,
+    asset_kind: "image",
+    referenced_by: [{ page_ids: [`page-${index}`] }],
+  }));
+  const inputs = {
+    activePages,
+    mappings,
+    assetCrawl: { schema_version: "source-asset-crawl/v0", references },
+    generatedAt: GENERATED_AT,
+  };
+  const packageValue = synthesizeHtmlFunnelDesignSourcePackage(inputs);
+  const html = packageValue.contributions[0];
+
+  assert.equal(html.mappings.length, pageCount);
+  assert.equal(html.source_refs.length, pageCount * 2);
+  assert.equal(packageValue.source_todos.length, pageCount * 2);
+  assert.ok(html.mappings.every((mapping) => mapping.source_refs.length === 2));
+  assert.equal(validateDesignSourcePackage(packageValue, {
+    now: NOW,
+    currentHtmlFunnelScope: inputs,
+  }).ok, true);
+
+  const staleAsset = clone(packageValue);
+  staleAsset.contributions[0].source_refs
+    .find((ref) => ref.path === "assets/asset-127.png").role = "font";
+  refreshDerived(staleAsset);
+  const staleResult = validateDesignSourcePackage(staleAsset, {
+    now: NOW,
+    currentHtmlFunnelScope: inputs,
+  });
+  assert.equal(staleResult.ok, false);
+  assert.ok(staleResult.errors.some((error) =>
+    error.code === "design_source_package.current_source_material_stale"));
 });
 
 test("readiness is independent of contribution order when complete and incomplete primary claims coexist", () => {
@@ -693,6 +959,21 @@ test("published schema and runtime agree on representative malformed records", (
     assert.equal(validateSchema(malformed), false, "published schema should reject malformed package");
     assert.equal(validateDesignSourcePackage(malformed, { now: NOW, verifyFingerprint: false }).ok, false, "runtime should reject malformed package");
   }
+});
+
+test("schema and runtime both reject an empty Surface Identity catalog", () => {
+  const malformed = readyHtmlPackage();
+  malformed.surface_identity = [];
+
+  assert.equal(validateSchema(malformed), false);
+  const runtime = validateDesignSourcePackage(malformed, {
+    now: NOW,
+    verifyFingerprint: false,
+  });
+  assert.equal(runtime.ok, false);
+  assert.ok(runtime.errors.some((error) =>
+    error.code === "design_source_package.campaign_surface"
+    && error.path === "$.surface_identity"));
 });
 
 test("schema and runtime agree on nullable-string boundaries and administrative note types", () => {

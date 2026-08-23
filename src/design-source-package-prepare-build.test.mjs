@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -28,6 +30,11 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 const DSP_REL_PATH = ".campaign-runtime/input/design-source-package.json";
+const CONFIGURABLE_OUTPUT_FLAGS = ["--out", "--context-out", "--report-out", "--doctor-out", "--brief-out"];
+const FIXED_THEME_OUTPUTS = [
+  ".campaign-runtime/theme/theme-report.json",
+  ".campaign-runtime/theme/brand-theme.css",
+];
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 const validateDsp = ajv.compile(readSchema("campaign-design-source-package.v0.schema.json"));
 const validatePacket = ajv.compile(readSchema("campaign-runtime-build-packet.v0.schema.json"));
@@ -119,11 +126,18 @@ function withFixture(run) {
   });
   writeJson(join(target, "package.json"), { private: true });
 
+  let result;
   try {
-    return run({ dir, source, target, specPath });
-  } finally {
+    result = run({ dir, source, target, specPath });
+  } catch (error) {
     rmSync(dir, { recursive: true, force: true });
+    throw error;
   }
+  if (result && typeof result.then === "function") {
+    return result.finally(() => rmSync(dir, { recursive: true, force: true }));
+  }
+  rmSync(dir, { recursive: true, force: true });
+  return result;
 }
 
 function runPrepare({ dir, source, target, specPath }, {
@@ -147,6 +161,40 @@ function runPrepare({ dir, source, target, specPath }, {
     stderr: String(result.stderr || ""),
     json: result.status === 0 ? JSON.parse(result.stdout) : null,
   };
+}
+
+function runPrepareAsync({ dir, source, target, specPath }, {
+  templateFamily = "olympus",
+  extraArgs = [],
+  env = {},
+} = {}) {
+  return new Promise((done) => {
+    const child = spawn(process.execPath, [
+      CLI,
+      "prepare-build",
+      "--spec", specPath,
+      "--source", source,
+      "--target", target,
+      "--template-family", templateFamily,
+      "--no-run-session",
+      ...extraArgs,
+      "--json",
+    ], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("close", (status) => {
+      done({
+        status,
+        stdout,
+        stderr,
+        json: status === 0 ? JSON.parse(stdout) : null,
+      });
+    });
+  });
 }
 
 function runCli(args, cwd) {
@@ -173,6 +221,7 @@ function makePrepareGateTerminal(report) {
 function assertPrepareOnlyNextMatrix(fixture, packetPath, {
   errorCode = null,
   extraArgs = [],
+  actionIds = ["rerun_prepare_build"],
 } = {}) {
   for (const stage of NEXT_STAGE_REQUESTS) {
     const next = runCli([
@@ -185,7 +234,7 @@ function assertPrepareOnlyNextMatrix(fixture, packetPath, {
     if (errorCode) {
       assert.ok(next.json.errors.some((error) => error.code === errorCode), `${stage || "automatic"}: ${JSON.stringify(next.json.errors, null, 2)}`);
     }
-    assert.deepEqual(next.json.next_actions.map((action) => action.id), ["rerun_prepare_build"], stage || "automatic");
+    assert.deepEqual(next.json.next_actions.map((action) => action.id), actionIds, stage || "automatic");
   }
 }
 
@@ -195,7 +244,10 @@ function targetArtifactPaths(target) {
     join(target, "campaign-runtime.build.json"),
     join(target, ".campaign-runtime/build-context.json"),
     join(target, ".campaign-runtime/assembly-report.json"),
+    join(target, ".campaign-runtime/doctor-output.json"),
     join(target, ".campaign-runtime/input/campaign-build-brief.normalized.json"),
+    join(target, ".campaign-runtime/theme/theme-report.json"),
+    join(target, ".campaign-runtime/theme/brand-theme.css"),
   ];
 }
 
@@ -297,6 +349,58 @@ test("packet and context schemas keep the DSP reference optional but make all fo
   }
 });
 
+test("prepare-build reconciles duplicate manifest pages only through resolved source-intake mappings", () => {
+  withFixture((fixture) => {
+    const manifestPath = join(fixture.source, ".campaigns-os/source-html-manifest.json");
+    const manifest = readJson(manifestPath);
+    const extraFiles = {
+      "landing-shadow.html": "<main>Shadow landing</main>\n",
+      "orphan-first.html": "<main>Orphan first</main>\n",
+      "orphan-shadow.html": "<main>Orphan shadow</main>\n",
+    };
+    for (const [path, content] of Object.entries(extraFiles)) {
+      writeFileSync(join(fixture.source, path), content);
+      manifest.files.push({ path, role: "page", sha256: sha256(content) });
+    }
+    manifest.pages.push(
+      {
+        page_id: "landing",
+        page_type: "landing",
+        page_url: "landing-shadow/",
+        path: "landing-shadow.html",
+        source_hash: sha256(extraFiles["landing-shadow.html"]),
+      },
+      { page_id: "orphan", page_type: "landing", page_url: "orphan/", path: "orphan-first.html" },
+      { page_id: "orphan", page_type: "landing", page_url: "orphan-shadow/", path: "orphan-shadow.html" },
+    );
+    writeJson(manifestPath, manifest);
+    const rawManifestBytes = readFileSync(manifestPath);
+
+    const result = runPrepare(fixture);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.json.context.prompts_required.some((prompt) => (
+      prompt.code === "MANIFEST_DUPLICATE_PAGE" && prompt.page_id === "landing"
+    )));
+    assert.ok(result.json.context.prompts_required.some((prompt) => (
+      prompt.code === "MANIFEST_DUPLICATE_PAGE" && prompt.page_id === "orphan"
+    )));
+
+    const dsp = readJson(join(fixture.target, DSP_REL_PATH));
+    assertSchema(validateDsp, dsp, "Design Source Package");
+    const html = dsp.contributions.find((contribution) => contribution.id === "html-funnel");
+    assert.equal(html.provenance.manifest_sha256, `sha256:${sha256(rawManifestBytes)}`);
+    const landingSurface = dsp.surface_identity.find((surface) => (
+      surface.mappings.campaign_spec_page_id === "landing"
+    ));
+    const landingCoverage = html.mappings.find((mapping) => mapping.surface_id === landingSurface.id);
+    const landingCoveragePaths = landingCoverage.source_refs
+      .map((id) => html.source_refs.find((ref) => ref.id === id)?.path)
+      .filter(Boolean);
+    assert.ok(landingCoveragePaths.includes("landing.html"));
+    assert.equal(landingCoveragePaths.includes("landing-shadow.html"), false);
+  });
+});
+
 test("prepare-build validates and reuses harmlessly reformatted DSP bytes without rewriting", () => {
   withFixture((fixture) => {
     const first = runPrepare(fixture);
@@ -323,6 +427,124 @@ test("prepare-build validates and reuses harmlessly reformatted DSP bytes withou
     );
   });
 });
+
+test("prepare-build contextualizes unreadable existing DSP artifacts and leaves every sidecar untouched", async (t) => {
+  await t.test("malformed JSON", () => withFixture((fixture) => {
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    mkdirSync(dirname(dspPath), { recursive: true });
+    writeFileSync(dspPath, "{ malformed\n");
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+
+    const result = runPrepare(fixture);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Design Source Package at .*design-source-package\.json is not valid JSON/);
+    assertArtifactsUnchanged(snapshot);
+  }));
+
+  await t.test("directory at the artifact path", () => withFixture((fixture) => {
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    mkdirSync(dspPath, { recursive: true });
+    const sidecarPaths = targetArtifactPaths(fixture.target).filter((path) => path !== dspPath);
+    const snapshot = snapshotArtifacts(sidecarPaths);
+
+    const result = runPrepare(fixture);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Design Source Package artifact at .*design-source-package\.json.*(?:EISDIR|directory|regular file)/i);
+    assertArtifactsUnchanged(snapshot);
+    assert.equal(lstatSync(dspPath).isDirectory(), true);
+    assert.deepEqual(readdirSync(dspPath), []);
+  }));
+
+  await t.test("permission denial", (t) => withFixture((fixture) => {
+    if (process.platform === "win32" || (typeof process.getuid === "function" && process.getuid() === 0)) {
+      t.skip("portable chmod-based EACCES probe is unavailable on this platform/user");
+      return;
+    }
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const dspBytes = readFileSync(dspPath);
+    const sidecarPaths = targetArtifactPaths(fixture.target).filter((path) => path !== dspPath);
+    const snapshot = snapshotArtifacts(sidecarPaths);
+
+    chmodSync(dspPath, 0o000);
+    let result;
+    try {
+      result = runPrepare(fixture);
+    } finally {
+      chmodSync(dspPath, 0o600);
+    }
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Design Source Package artifact at .*design-source-package\.json.*EACCES/i);
+    assert.ok(readFileSync(dspPath).equals(dspBytes));
+    assertArtifactsUnchanged(snapshot);
+  }));
+});
+
+test("concurrent prepare-build publishes one complete DSP and every process binds to the winning exact bytes", () => withFixture(async (fixture) => {
+  // Preload a process-local fs shim that snapshots the old existsSync result,
+  // then releases every CLI only after all eight have observed the DSP absent.
+  // This synchronizes the real multi-process publication seam without adding
+  // any test hook to production code.
+  const processCount = 8;
+  const barrierDir = join(fixture.dir, "dsp-publication-barrier");
+  const preloadPath = join(fixture.dir, "dsp-publication-barrier.cjs");
+  mkdirSync(barrierDir, { recursive: true });
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalExistsSync = fs.existsSync;
+let observed = false;
+fs.existsSync = function guardedExistsSync(candidate) {
+  const result = originalExistsSync(candidate);
+  if (!observed && path.resolve(String(candidate)) === path.resolve(process.env.DSP_BARRIER_PATH)) {
+    observed = true;
+    fs.writeFileSync(path.join(process.env.DSP_BARRIER_DIR, String(process.pid)), "ready");
+    const deadline = Date.now() + 10000;
+    while (fs.readdirSync(process.env.DSP_BARRIER_DIR).length < Number(process.env.DSP_BARRIER_COUNT)) {
+      if (Date.now() > deadline) throw new Error("DSP publication barrier timed out");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+  return result;
+};
+syncBuiltinESMExports();
+`);
+  const env = {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+    DSP_BARRIER_PATH: join(fixture.target, DSP_REL_PATH),
+    DSP_BARRIER_DIR: barrierDir,
+    DSP_BARRIER_COUNT: String(processCount),
+  };
+  const results = await Promise.all(Array.from({ length: processCount }, () => runPrepareAsync(fixture, { env })));
+  for (const result of results) assert.equal(result.status, 0, result.stderr);
+  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "emitted").length, 1);
+  assert.equal(results.filter((result) => result.json.designSourcePackageMode === "reused").length, processCount - 1);
+
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const rawBytes = readFileSync(dspPath);
+  const dsp = JSON.parse(rawBytes.toString("utf8"));
+  const expectedHash = `sha256:${sha256(rawBytes)}`;
+  for (const result of results) {
+    assert.equal(result.json.packet.design_source_package.sha256, expectedHash);
+    assert.equal(result.json.packet.design_source_package.material_fingerprint, dsp.material_fingerprint);
+  }
+  for (const artifactPath of [
+    join(fixture.target, "campaign-runtime.build.json"),
+    join(fixture.target, ".campaign-runtime/build-context.json"),
+    join(fixture.target, ".campaign-runtime/assembly-report.json"),
+  ]) {
+    const reference = readJson(artifactPath).design_source_package;
+    assert.equal(reference.sha256, expectedHash);
+    assert.equal(reference.material_fingerprint, dsp.material_fingerprint);
+  }
+  assert.deepEqual(
+    readdirSync(dirname(dspPath)).filter((name) => name.includes(".tmp")),
+    [],
+    "exclusive publication must clean every staging name",
+  );
+}));
 
 test("prepare-build refuses stale or contradictory existing packages and leaves their bytes untouched", async (t) => {
   await t.test("stale material fingerprint", () => withFixture((fixture) => {
@@ -517,7 +739,7 @@ test("DSP template material follows the upstream source hint while the packet ow
 });
 
 test("prepare-build rejects every DSP/output collision before mutating artifacts", async (t) => {
-  for (const flag of ["--out", "--context-out", "--report-out"]) {
+  for (const flag of CONFIGURABLE_OUTPUT_FLAGS) {
     await t.test(flag, () => withFixture((fixture) => {
       const first = runPrepare(fixture);
       assert.equal(first.status, 0, first.stderr);
@@ -533,13 +755,37 @@ test("prepare-build rejects every DSP/output collision before mutating artifacts
   }
 });
 
+test("prepare-build rejects every configurable output collision with fixed theme artifacts", async (t) => {
+  for (const themeOutput of FIXED_THEME_OUTPUTS) {
+    for (const flag of CONFIGURABLE_OUTPUT_FLAGS) {
+      await t.test(`${flag} -> ${themeOutput}`, () => withFixture((fixture) => {
+        const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+        const collisionPath = join(fixture.target, themeOutput);
+
+        const collision = runPrepare(fixture, { extraArgs: [flag, collisionPath] });
+        assert.notEqual(collision.status, 0);
+        assert.match(collision.stderr, /output path collision/i);
+        assertArtifactsUnchanged(snapshot);
+      }));
+    }
+  }
+
+  await t.test("case-only Theme Report alias", () => withFixture((fixture) => {
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+    const collisionPath = join(fixture.target, ".campaign-runtime/theme/THEME-REPORT.JSON");
+
+    const collision = runPrepare(fixture, { extraArgs: ["--out", collisionPath] });
+    assert.notEqual(collision.status, 0);
+    assert.match(collision.stderr, /output path collision/i);
+    assertArtifactsUnchanged(snapshot);
+  }));
+});
+
 test("prepare-build rejects symlink and hard-link DSP/output aliases before mutating artifacts", async (t) => {
-  const cases = [
-    { label: "--out symlink", flag: "--out", link: "symlink" },
-    { label: "--context-out symlink", flag: "--context-out", link: "symlink" },
-    { label: "--report-out symlink", flag: "--report-out", link: "symlink" },
-    { label: "--out hard link", flag: "--out", link: "hard" },
-  ];
+  const cases = CONFIGURABLE_OUTPUT_FLAGS.flatMap((flag) => [
+    { label: `${flag} symlink`, flag, link: "symlink" },
+    { label: `${flag} hard link`, flag, link: "hard" },
+  ]);
   for (const entry of cases) {
     await t.test(entry.label, () => withFixture((fixture) => {
       const first = runPrepare(fixture);
@@ -561,7 +807,7 @@ test("prepare-build rejects symlink and hard-link DSP/output aliases before muta
 });
 
 test("fresh prepare-build rejects dangling and parent-directory symlink aliases before creating the DSP", async (t) => {
-  for (const flag of ["--out", "--context-out", "--report-out"]) {
+  for (const flag of CONFIGURABLE_OUTPUT_FLAGS) {
     await t.test(`${flag} dangling leaf`, () => withFixture((fixture) => {
       const paths = targetArtifactPaths(fixture.target);
       const snapshot = snapshotArtifacts(paths);
@@ -578,21 +824,144 @@ test("fresh prepare-build rejects dangling and parent-directory symlink aliases 
     }));
   }
 
-  await t.test("--out symlinked parent directory", () => withFixture((fixture) => {
-    const paths = targetArtifactPaths(fixture.target);
-    const snapshot = snapshotArtifacts(paths);
-    const inputDir = join(fixture.target, ".campaign-runtime/input");
-    const aliasDir = join(fixture.target, ".campaign-runtime/input-alias");
-    mkdirSync(inputDir, { recursive: true });
-    symlinkSync(inputDir, aliasDir);
-    const aliasPath = join(aliasDir, "design-source-package.json");
+  for (const flag of CONFIGURABLE_OUTPUT_FLAGS) {
+    await t.test(`${flag} symlinked parent directory`, () => withFixture((fixture) => {
+      const paths = targetArtifactPaths(fixture.target);
+      const snapshot = snapshotArtifacts(paths);
+      const inputDir = join(fixture.target, ".campaign-runtime/input");
+      const aliasDir = join(fixture.target, `.campaign-runtime/input-alias-${flag.slice(2)}`);
+      mkdirSync(inputDir, { recursive: true });
+      symlinkSync(inputDir, aliasDir);
+      const aliasPath = join(aliasDir, "design-source-package.json");
 
-    const collision = runPrepare(fixture, { extraArgs: ["--out", aliasPath] });
-    assert.notEqual(collision.status, 0);
-    assert.match(collision.stderr, /output path collision/i);
+      const collision = runPrepare(fixture, { extraArgs: [flag, aliasPath] });
+      assert.notEqual(collision.status, 0);
+      assert.match(collision.stderr, /output path collision/i);
+      assertArtifactsUnchanged(snapshot);
+      assert.equal(lstatSync(aliasDir).isSymbolicLink(), true);
+    }));
+  }
+});
+
+test("fresh prepare-build conservatively rejects case-only DSP aliases for every configurable output", async (t) => {
+  for (const flag of CONFIGURABLE_OUTPUT_FLAGS) {
+    await t.test(flag, () => withFixture((fixture) => {
+      const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+      const caseOnlyAlias = join(fixture.target, ".campaign-runtime/input/DESIGN-SOURCE-PACKAGE.JSON");
+
+      const collision = runPrepare(fixture, { extraArgs: [flag, caseOnlyAlias] });
+      assert.notEqual(collision.status, 0);
+      assert.match(collision.stderr, /output path collision/i);
+      assertArtifactsUnchanged(snapshot);
+    }));
+  }
+});
+
+test("an invalid later output target cannot leave a DSP or sidecars partially published", async (t) => {
+  await t.test("fresh target remains absent", () => withFixture((fixture) => {
+    const reportDirectory = join(fixture.target, ".campaign-runtime/reports/not-a-file.json");
+    mkdirSync(reportDirectory, { recursive: true });
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+
+    const result = runPrepare(fixture, { extraArgs: ["--report-out", reportDirectory] });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Assembly Report.*(?:directory|regular file)|output target/i);
     assertArtifactsUnchanged(snapshot);
-    assert.equal(lstatSync(aliasDir).isSymbolicLink(), true);
+    assert.equal(lstatSync(reportDirectory).isDirectory(), true);
   }));
+
+  await t.test("existing target remains byte-identical", () => withFixture((fixture) => {
+    const first = runPrepare(fixture);
+    assert.equal(first.status, 0, first.stderr);
+    const reportDirectory = join(fixture.target, ".campaign-runtime/reports/not-a-file.json");
+    mkdirSync(reportDirectory, { recursive: true });
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+
+    const result = runPrepare(fixture, { extraArgs: ["--report-out", reportDirectory] });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Assembly Report.*(?:directory|regular file)|output target/i);
+    assertArtifactsUnchanged(snapshot);
+    assert.equal(lstatSync(reportDirectory).isDirectory(), true);
+  }));
+
+  await t.test("an unwritable report ancestor leaves fresh artifacts absent and existing sidecars byte-identical", (t) => withFixture((fixture) => {
+    const lockedDirectory = join(fixture.target, "locked-output");
+    const reportPath = join(lockedDirectory, "assembly-report.json");
+    const probePath = join(lockedDirectory, ".permission-probe");
+    const existingDoctorPath = join(fixture.target, ".campaign-runtime/doctor-output.json");
+    mkdirSync(lockedDirectory, { recursive: true });
+    mkdirSync(dirname(existingDoctorPath), { recursive: true });
+    writeFileSync(existingDoctorPath, "pre-existing user sidecar\n");
+    chmodSync(lockedDirectory, 0o500);
+
+    let permissionEnforced = false;
+    try {
+      writeFileSync(probePath, "probe", { flag: "wx" });
+    } catch (error) {
+      if (["EACCES", "EPERM", "EROFS"].includes(error?.code)) permissionEnforced = true;
+      else throw error;
+    } finally {
+      if (existsSync(probePath)) rmSync(probePath, { force: true });
+    }
+    if (!permissionEnforced) {
+      chmodSync(lockedDirectory, 0o700);
+      t.skip("current platform/user demonstrably ignores the directory permission bit");
+      return;
+    }
+
+    const snapshot = snapshotArtifacts([...targetArtifactPaths(fixture.target), reportPath]);
+    let result;
+    try {
+      result = runPrepare(fixture, { extraArgs: ["--report-out", reportPath] });
+    } finally {
+      chmodSync(lockedDirectory, 0o700);
+    }
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /permission denied|EACCES|Assembly Report.*writ/i);
+    assertArtifactsUnchanged(snapshot);
+  }));
+});
+
+test("read-only direct-written theme targets block before DSP publication", async (t) => {
+  for (const readOnlyThemeOutput of FIXED_THEME_OUTPUTS) {
+    await t.test(readOnlyThemeOutput, (t) => withFixture((fixture) => {
+      const themePaths = FIXED_THEME_OUTPUTS.map((relativePath) => join(fixture.target, relativePath));
+      const [themeReportPath, themeCssPath] = themePaths;
+      writeJson(themeReportPath, {
+        schema_version: "campaign-runtime-brand-theme/v0",
+        selected_source: null,
+      });
+      writeFileSync(themeCssPath, "/* pre-existing brand theme */\n");
+
+      const readOnlyPath = join(fixture.target, readOnlyThemeOutput);
+      const permissionProbe = join(dirname(readOnlyPath), `.permission-probe-${readOnlyThemeOutput.endsWith(".css") ? "css" : "report"}`);
+      writeFileSync(permissionProbe, "before\n");
+      chmodSync(readOnlyPath, 0o444);
+      chmodSync(permissionProbe, 0o444);
+
+      let permissionEnforced = false;
+      try {
+        writeFileSync(permissionProbe, "after\n");
+      } catch (error) {
+        if (["EACCES", "EPERM", "EROFS"].includes(error?.code)) permissionEnforced = true;
+        else throw error;
+      } finally {
+        chmodSync(permissionProbe, 0o600);
+        rmSync(permissionProbe, { force: true });
+      }
+      if (!permissionEnforced) {
+        chmodSync(readOnlyPath, 0o600);
+        t.skip("current platform/user demonstrably ignores the existing-file permission bit");
+        return;
+      }
+
+      const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+      const result = runPrepare(fixture);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /Theme Report|Brand Theme CSS|permission denied|EACCES|writ/i);
+      assertArtifactsUnchanged(snapshot);
+    }));
+  }
 });
 
 test("a nested custom report keeps the DSP reference canonical and omits duplicate blocker paths", () => {
@@ -726,6 +1095,7 @@ test("packet-only next treats a mismatched context packet binding as blocking ev
 
     assertPrepareOnlyNextMatrix(fixture, packetPath, {
       errorCode: "next.prepare_build.context_packet_mismatch",
+      actionIds: ["restore_prepare_build_binding", "recheck"],
     });
   });
 });
@@ -757,6 +1127,7 @@ test("packet-only next refuses a terminal foreign report selected by the current
 
     assertPrepareOnlyNextMatrix(fixture, packetPath, {
       errorCode: "next.prepare_build.report_packet_mismatch",
+      actionIds: ["restore_prepare_build_binding", "recheck"],
     });
   });
 });
@@ -789,7 +1160,10 @@ test("each report identity and DSP binding independently blocks an otherwise ter
       assert.notEqual(next.status, 0);
       assert.equal(next.json.stage, "prepare-build");
       assert.ok(next.json.errors.some((error) => error.code === errorCode), JSON.stringify(next.json.errors, null, 2));
-      assert.deepEqual(next.json.next_actions.map((action) => action.id), ["rerun_prepare_build"]);
+      assert.deepEqual(next.json.next_actions.map((action) => action.id), ["restore_prepare_build_binding", "recheck"]);
+      for (const action of next.json.next_actions) {
+        assert.doesNotMatch(String(action.command || ""), /campaigns-os (?:start|prepare-build)/);
+      }
     }));
   }
 });
@@ -848,4 +1222,53 @@ test("each contradictory prepare ledger signal independently blocks a terminal s
       assert.deepEqual(next.json.next_actions.map((action) => action.id), ["rerun_prepare_build"]);
     }));
   }
+});
+
+test("prepare blocker deduplication preserves distinct evidence and collapses exact mirrored copies", async (t) => {
+  await t.test("exact stage/top-level mirrors collapse", () => withFixture((fixture) => {
+    const prepared = runPrepare(fixture);
+    assert.equal(prepared.status, 0, prepared.stderr);
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const report = readJson(reportPath);
+    const blocker = structuredClone(report.blockers.find((entry) => entry.code === "DESIGN_SOURCE_PACKAGE_NOT_READY"));
+    report.status = "blocked";
+    report.stages.prepare_build.status = "completed";
+    report.blockers = [blocker];
+    report.stages.prepare_build.blockers = [structuredClone(blocker)];
+    writeJson(reportPath, report);
+
+    const next = runCli(["next", "--packet", packetPath, "--no-write"], fixture.dir);
+    const surfaced = next.json.errors.filter((error) => error.code === blocker.code);
+    assert.equal(surfaced.length, 1, JSON.stringify(surfaced, null, 2));
+    assert.deepEqual(surfaced[0].detail, blocker);
+  }));
+
+  await t.test("same header with distinct detail and field remains distinct", () => withFixture((fixture) => {
+    const prepared = runPrepare(fixture);
+    assert.equal(prepared.status, 0, prepared.stderr);
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const report = readJson(reportPath);
+    const first = structuredClone(report.blockers.find((entry) => entry.code === "DESIGN_SOURCE_PACKAGE_NOT_READY"));
+    const second = {
+      ...structuredClone(first),
+      field: "design_source_package.readiness.secondary",
+      detail: { ...first.detail, blocker_index: first.detail.blocker_index + 100, evidence: { viewport: "mobile" } },
+    };
+    report.status = "blocked";
+    report.stages.prepare_build.status = "completed";
+    report.blockers = [first, second];
+    report.stages.prepare_build.blockers = [structuredClone(first), structuredClone(second)];
+    writeJson(reportPath, report);
+
+    const next = runCli(["next", "--packet", packetPath, "--no-write"], fixture.dir);
+    const surfaced = next.json.errors.filter((error) => error.code === first.code);
+    assert.equal(surfaced.length, 2, JSON.stringify(surfaced, null, 2));
+    assert.deepEqual(
+      surfaced.map((error) => error.detail.detail.blocker_index).sort((left, right) => left - right),
+      [first.detail.blocker_index, second.detail.blocker_index].sort((left, right) => left - right),
+    );
+    assert.ok(surfaced.some((error) => error.detail.field === second.field));
+  }));
 });
