@@ -186,8 +186,12 @@ draft at `.campaign-runtime/input/campaign-build-brief.normalized.json`.
 See [Campaign Build Brief](./campaign-build-brief.md) for the schema and
 prepared/guided behavior.
 
-`start` / `prepare-build` also writes the normalized Design Source Package to
-`.campaign-runtime/input/design-source-package.json`. Its schema version is
+`start` / `prepare-build` also prepares the normalized Design Source Package at
+`.campaign-runtime/input/design-source-package.json`. When that path is absent,
+the command synthesizes and writes the package; when it exists, the command
+validates it against the current campaign/page/source/template inputs and reuses
+its exact bytes. It refuses stale or contradictory packages instead of silently
+regenerating them. Its schema version is
 `campaign-design-source-package/v0` (schema file:
 `schemas/campaign-design-source-package.v0.schema.json`). The Build Packet,
 Build Context, and Assembly Report reference that artifact by path, full artifact
@@ -197,6 +201,11 @@ and reproduction; the material fingerprint drives freshness gates. The package
 includes a generated top-level `readiness` summary with
 `status`, `blocking_reasons`, `gap_count`, `todo_count`, `waiver_count`, and
 `generated_at`; detailed gaps, TODOs, and waivers remain authoritative.
+See the dedicated [Design Source Package v0 guide](./design-source-package.md)
+for the exact reference shape, material projection, emit/reuse/refusal boundary,
+and lifecycle ownership contract. This section keeps the Build Packet handoff
+context and does not replace that consumer guide.
+
 `readiness.status` uses `pending`, `blocked`, `ready`, `ready_with_gaps`, or
 `ready_with_waivers`, not `ready_with_warnings`. The package may include
 free-form `notes`, but notes do not affect readiness; any concern that affects
@@ -232,8 +241,8 @@ use `notes` for unusual cases. Mapping `confidence` is also a coarse enum:
 surface/coverage mapping, not design quality or approval. Low confidence blocks
 source readiness only when it affects required page-level `primary_design`
 coverage; represent that as a Source TODO unless waived. Low confidence on
-brand-token, reference-only, or other non-primary coverage may produce
-`ready_with_gaps` or a readback note instead.
+brand-token, reference-only, or other non-primary coverage does not by itself
+block the v0 readiness evaluator; any gap or note is a separate explicit record.
 
 Screenshot references in the Design Source Package are source-side or
 reference-side proof only: canonical URLs, exports, captured source renders, or
@@ -243,18 +252,21 @@ the current build fingerprint. Polish should compare against Design Source
 Package refs and Template Reference refs without mutating either source artifact.
 If Polish can capture a missing canonical source render, it should emit a
 proposed source-reference update or Source TODO rather than silently updating the
-Design Source Package. Source preparation or an explicit source-reference refresh
-action owns package mutation and must record attribution.
+Design Source Package. Source preparation owns any package mutation and must
+record it explicitly with attribution.
 Material source-reference refreshes create a new Design Source Package
 fingerprint. Any Build, Polish, or QA evidence tied to the previous source
-fingerprint is stale until refreshed or explicitly waived. Purely administrative
-changes that do not alter readiness, coverage, provenance, or comparison refs may
-be non-material if the package records that distinction.
+fingerprint is stale until refreshed or explicitly waived. v0 determines
+materiality through its explicit projection, not a marker in the package.
+Top-level `generated_at`, generated readiness/readback, notes, visual
+`captured_at` alone, formatting, key order, and normalized record/set order are
+non-material; the exact artifact-byte hash still changes when their serialized
+bytes change.
 Polish Evidence must record both the current build fingerprint and the current
 Design Source Package material fingerprint, conventionally as
 `source_build_fingerprint` for the assembly/build artifact and
 `source_package_material_fingerprint` for the design source context. Freshness
-gates should consider Polish current only when both match the latest artifacts;
+gates consider Polish current only when both match the latest artifacts;
 if either changes materially, Polish is stale unless a structured waiver explains
 the exception. During the v0 transition, the polish gate enforces
 `source_package_material_fingerprint` only when the Assembly Report exposes a
@@ -263,8 +275,9 @@ current Design Source Package material fingerprint, such as
 source package keep the build-fingerprint gate and emit a readiness warning
 instead of blocking.
 
-Assembly should also record the Design Source Package material fingerprint it
-consumed on `stages.assembly.source_package_material_fingerprint`. If the current
+Build must also record the Design Source Package material fingerprint it
+consumed on `stages.assembly.source_package_material_fingerprint`; Prepare does
+not populate that consumption field. If the current
 `design_source_package.material_fingerprint` is missing from Assembly or differs
 from the Assembly-recorded value, `campaigns-os next` routes back to Build before
 Polish. Polish must review a build made from the current material source context;
@@ -292,7 +305,7 @@ provenance, presentation intent, Surface Identity catalog and mappings,
 contribution coverage roles, mapping confidence, source refs, source
 screenshot/reference refs, Template Reference linkage, Source Gaps, Source
 TODOs, accepted waivers, and any source divergence or proposed exception that
-affects readiness or comparison. Generated readback prose, formatting/key order,
+has `readiness_affecting: true`. Generated readback prose, formatting/key order,
 and administrative notes are non-material when they do not alter readiness,
 coverage, provenance, or comparison basis. Capture timestamps alone may be
 non-material, but changing the viewport key, URL, dimensions, artifact path, or
@@ -406,9 +419,11 @@ renamed into the Design Source Package. In the normalized source workflow,
 `prepare-build` uses source-html manifests, filesystem fallback, template-stock
 inputs, and other adapters to emit a separate public Design Source Package with
 contributions, coverage, gaps/TODOs, Surface Identity, references, and readback.
-When legacy packet/source-html data is the only available input, v0 may
-synthesize the package during source preparation. Downstream Build and Polish
-should still consume the package concept rather than branching back to
+When source-html data is the available input and the default package path is
+missing, current v0 `prepare-build` synthesizes the package. If a package already
+exists, it is validated against the current material inputs and reused byte for
+byte or refused; it is never silently regenerated. Downstream Build and Polish
+consume the package concept rather than branching back to
 `packet.source_html` as a second source model. The emitted package lives at
 `.campaign-runtime/input/design-source-package.json` by default and is referenced
 from packet/context/report by path, full artifact hash, and material fingerprint.

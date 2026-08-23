@@ -61,6 +61,7 @@
     "docs/supported-surface.md",
     "docs/campaigns-os-build-flow.md",
     "docs/build-packet.md",
+    "docs/design-source-package.md",
     "docs/campaign-build-brief.md",
     "docs/campaign-standardization-report.md",
     "docs/brand-theme-bridge.md",
