@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -357,6 +370,140 @@ test("theme generate writes artifacts and treats identical reruns as current", (
     assert.equal(second.wrote.css, false);
     assert.equal(second.already_current.css, true);
   });
+});
+
+test("theme artifact publication replaces report and CSS aliases without mutating their referents", async (t) => {
+  for (const aliases of [
+    { report: "hard link", css: "symlink" },
+    { report: "symlink", css: "hard link" },
+  ]) {
+    await t.test(`report ${aliases.report}, CSS ${aliases.css}`, () => withTempDir((dir) => {
+      const { source, target, packet, packetPath } = makePacket(dir);
+      mkdirSync(join(source, "assets/css"), { recursive: true });
+      writeFileSync(join(source, "landing.html"), `<main>Landing</main>`);
+      writeFileSync(join(source, "assets/css/tokens.css"), highConfidenceTokens());
+      const inspection = inspectBrandTheme({ packet, packetPath });
+      const themeDir = join(target, ".campaign-runtime/theme");
+      const reportPath = join(themeDir, "theme-report.json");
+      const cssPath = join(themeDir, "brand-theme.css");
+      const reportReferent = join(target, "protected-design-source-package.json");
+      const cssReferent = join(target, "protected-output.css");
+      const reportReferentBytes = Buffer.from('{"protected":"dsp"}\n');
+      const cssReferentBytes = Buffer.from("/* protected output */\n");
+      mkdirSync(themeDir, { recursive: true });
+      writeFileSync(reportReferent, reportReferentBytes);
+      writeFileSync(cssReferent, cssReferentBytes);
+      if (aliases.report === "hard link") linkSync(reportReferent, reportPath);
+      else symlinkSync(reportReferent, reportPath);
+      if (aliases.css === "hard link") linkSync(cssReferent, cssPath);
+      else symlinkSync(cssReferent, cssPath);
+
+      const written = writeThemeArtifacts(inspection, {
+        writeCss: true,
+        writeReport: true,
+        force: true,
+      });
+
+      assert.equal(written.ok, true);
+      assert.deepEqual(written.wrote, { report: true, css: true });
+      assert.ok(readFileSync(reportReferent).equals(reportReferentBytes));
+      assert.ok(readFileSync(cssReferent).equals(cssReferentBytes));
+      assert.equal(lstatSync(reportPath).isFile(), true);
+      assert.equal(lstatSync(cssPath).isFile(), true);
+      assert.notEqual(statSync(reportPath).ino, statSync(reportReferent).ino);
+      assert.notEqual(statSync(cssPath).ino, statSync(cssReferent).ino);
+      assert.equal(readFileSync(reportPath, "utf8"), `${JSON.stringify(inspection.report, null, 2)}\n`);
+      assert.equal(readFileSync(cssPath, "utf8"), inspection.css);
+      assert.deepEqual(readdirSync(themeDir).filter((name) => name.includes(".tmp")), []);
+    }));
+  }
+});
+
+test("theme artifact publication atomically replaces read-only regular targets", (t) => {
+  withTempDir((dir) => {
+    if (process.platform === "win32" || (typeof process.getuid === "function" && process.getuid() === 0)) {
+      t.skip("portable chmod-based direct-write control is unavailable on this platform/user");
+      return;
+    }
+    const { source, target, packet, packetPath } = makePacket(dir);
+    mkdirSync(join(source, "assets/css"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<main>Landing</main>`);
+    writeFileSync(join(source, "assets/css/tokens.css"), highConfidenceTokens());
+    const inspection = inspectBrandTheme({ packet, packetPath });
+    const themeDir = join(target, ".campaign-runtime/theme");
+    const reportPath = join(themeDir, "theme-report.json");
+    const cssPath = join(themeDir, "brand-theme.css");
+    const permissionProbe = join(themeDir, ".permission-probe");
+    mkdirSync(themeDir, { recursive: true });
+    writeFileSync(reportPath, "old report\n");
+    writeFileSync(cssPath, "old css\n");
+    writeFileSync(permissionProbe, "before\n");
+    chmodSync(permissionProbe, 0o444);
+    let permissionEnforced = false;
+    try {
+      writeFileSync(permissionProbe, "after\n");
+    } catch (error) {
+      if (["EACCES", "EPERM", "EROFS"].includes(error?.code)) permissionEnforced = true;
+      else throw error;
+    } finally {
+      chmodSync(permissionProbe, 0o600);
+      rmSync(permissionProbe, { force: true });
+    }
+    if (!permissionEnforced) {
+      t.skip("current platform/user demonstrably ignores existing-file permission bits");
+      return;
+    }
+    chmodSync(reportPath, 0o444);
+    chmodSync(cssPath, 0o444);
+
+    let written;
+    try {
+      written = writeThemeArtifacts(inspection, {
+        writeCss: true,
+        writeReport: true,
+        force: true,
+      });
+    } finally {
+      chmodSync(reportPath, 0o600);
+      chmodSync(cssPath, 0o600);
+    }
+
+    assert.equal(written.ok, true);
+    assert.deepEqual(written.wrote, { report: true, css: true });
+    assert.equal(readFileSync(reportPath, "utf8"), `${JSON.stringify(inspection.report, null, 2)}\n`);
+    assert.equal(readFileSync(cssPath, "utf8"), inspection.css);
+    assert.deepEqual(readdirSync(themeDir).filter((name) => name.includes(".tmp")), []);
+  });
+});
+
+test("failed atomic theme replacement cleans its same-directory staging file", async (t) => {
+  for (const targetKind of ["report", "css"]) {
+    await t.test(targetKind, () => withTempDir((dir) => {
+      const themeDir = join(dir, "theme");
+      const reportPath = join(themeDir, "theme-report.json");
+      const cssPath = join(themeDir, "brand-theme.css");
+      mkdirSync(themeDir, { recursive: true });
+      mkdirSync(targetKind === "report" ? reportPath : cssPath);
+      const inspection = {
+        errors: [],
+        status: "ready",
+        context_theme: { generated: { can_generate: true } },
+        report: { schema_version: "campaign-runtime-brand-theme/v0" },
+        css: ":root { --brand--color--primary: #123456; }\n",
+        absolute_paths: {
+          report_path: reportPath,
+          css_path: cssPath,
+        },
+      };
+
+      assert.throws(() => writeThemeArtifacts(inspection, {
+        writeReport: targetKind === "report",
+        writeCss: targetKind === "css",
+        force: true,
+      }));
+      assert.deepEqual(readdirSync(themeDir).filter((name) => name.includes(".tmp")), []);
+    }));
+  }
 });
 
 test("theme generate refuses different existing CSS without force and prints a safe command", () => {

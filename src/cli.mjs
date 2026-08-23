@@ -1351,29 +1351,6 @@ function preflightPrepareBuildOutputTargets(outputs, collisionOutputs) {
   }
 }
 
-function preflightPrepareBuildDirectWriteTargets(outputs) {
-  for (const [label, path] of outputs) {
-    const absolute = resolve(path);
-    let stats;
-    try {
-      stats = lstatSync(absolute);
-    } catch (error) {
-      if (error?.code === "ENOENT") continue;
-      throw new Error(`Prepare-build could not inspect direct-write ${label} output target at ${absolute}: ${error.message}`, { cause: error });
-    }
-    if (!stats.isFile()) {
-      const kind = stats.isDirectory() ? "directory" : stats.isSymbolicLink() ? "symbolic link" : "non-regular filesystem entry";
-      throw new Error(`Prepare-build direct-write output target is invalid: ${label} at ${absolute} must be absent or a regular file, but found a ${kind}.`);
-    }
-    try {
-      accessSync(absolute, fsConstants.W_OK);
-    } catch (error) {
-      const code = error?.code ? ` (${error.code})` : "";
-      throw new Error(`Prepare-build direct-write output target is not writable: ${label} at ${absolute}${code}: ${error.message}`, { cause: error });
-    }
-  }
-}
-
 function publishPrepareBuildJsonOutputs(outputs, collisionOutputs) {
   preflightPrepareBuildOutputTargets(
     outputs.map(({ label, path }) => [label, path]),
@@ -1616,16 +1593,26 @@ function prepareDesignSourcePackage({
     try {
       writeFileSync(stagedPath, rawBytes, { flag: "wx" });
       try {
-        // Linking a fully written same-directory staging file is an atomic,
-        // exclusive publication: it cannot truncate an existing winner.
+        // Linking a fully written same-directory staging file is the Node
+        // primitive that combines atomic visibility with no-replace
+        // publication. A plain rename fallback is intentionally unsafe here:
+        // it could replace a concurrent winner after the absence check.
         linkSync(stagedPath, path);
         mode = "emitted";
       } catch (error) {
-        if (error?.code !== "EEXIST") {
-          throw new Error(`Could not atomically publish Design Source Package artifact at ${path}${error?.code ? ` (${error.code})` : ""}: ${error.message}`, { cause: error });
+        // EEXIST is the ordinary loser path. For any other link failure, a
+        // package may still have appeared concurrently at the publication
+        // seam; prefer validating that winner before failing closed.
+        if (error?.code !== "EEXIST" && !existsSync(path)) {
+          throw new Error(
+            `Could not atomically publish Design Source Package artifact at ${path}${error?.code ? ` (${error.code})` : ""}: `
+            + `exclusive hard-link publication failed; refusing an unsafe rename fallback that could overwrite a concurrent winner: ${error.message}`,
+            { cause: error },
+          );
         }
-        // Another prepare-build won the exclusive link. Its exact bytes are
-        // now authoritative; validate and reuse them rather than overwriting.
+        // Another publisher won (or completed while this link failed). Its
+        // exact bytes are authoritative; validate and reuse them rather than
+        // overwriting.
         ({ value, rawBytes } = readExisting());
         mode = "reused";
       }
@@ -1837,18 +1824,15 @@ function prepareBuild(args, options = {}) {
         field: question.field,
       }))
     : [];
-  // Validate every configurable destination again at the last safe point
-  // before the fixed DSP or any generated sidecar is published. This turns
-  // deterministic later-output failures into an all-artifacts no-op.
+  // Reject deterministic destination failures before publishing the fixed
+  // DSP. The DSP intentionally precedes the theme and JSON artifacts that
+  // reference it; a later I/O race may therefore leave a valid DSP for a
+  // subsequent run to validate and reuse. Never roll it back here because a
+  // concurrent prepare may already have consumed its exact bytes.
   preflightPrepareBuildOutputTargets(
     [...prepareBuildOutputPaths, ...prepareBuildThemeOutputPaths],
     prepareBuildCollisionPaths,
   );
-  // Theme artifacts are still written directly by the theme adapter, unlike
-  // the atomically renamed JSON sidecars. Check existing theme files
-  // themselves before publishing the DSP. This deliberately includes the CSS
-  // target even when later inspection may decide no CSS generation is needed.
-  preflightPrepareBuildDirectWriteTargets(prepareBuildThemeOutputPaths);
   const designSourcePackage = prepareDesignSourcePackage({
     path: designSourcePackagePath,
     activePages,
@@ -2023,6 +2007,14 @@ function prepareBuild(args, options = {}) {
     force: args.force === true,
   });
   const shouldWriteThemeCss = themeInspection.context_theme?.generated?.can_auto_generate === true;
+  // Inspection can take time, so reject aliases or invalid target types again
+  // before publication. The shared theme writer then stages each artifact in
+  // its destination directory and atomically replaces the final entry, making
+  // a post-preflight symlink or hard-link swap safe without rolling back DSP.
+  preflightPrepareBuildOutputTargets(
+    prepareBuildThemeOutputPaths,
+    prepareBuildCollisionPaths,
+  );
   const writtenTheme = writeThemeArtifacts(themeInspection, {
     writeReport: true,
     writeCss: shouldWriteThemeCss,

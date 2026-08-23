@@ -546,6 +546,73 @@ syncBuiltinESMExports();
   );
 }));
 
+test("unsupported hard-link publication fails closed or reuses a concurrent winner without renaming", async (t) => {
+  async function runWithUnsupportedLink(fixture, winnerPath = null) {
+    const preloadPath = join(fixture.dir, "dsp-unsupported-link.cjs");
+    writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalLinkSync = fs.linkSync;
+fs.linkSync = function unsupportedDspLink(source, destination) {
+  if (path.resolve(String(destination)) === path.resolve(process.env.DSP_UNSUPPORTED_LINK_PATH)) {
+    if (process.env.DSP_CONCURRENT_WINNER_PATH) {
+      fs.writeFileSync(destination, fs.readFileSync(process.env.DSP_CONCURRENT_WINNER_PATH), { flag: "wx" });
+    }
+    const error = new Error("simulated filesystem without hard-link publication");
+    error.code = "EOPNOTSUPP";
+    throw error;
+  }
+  return originalLinkSync(source, destination);
+};
+syncBuiltinESMExports();
+`);
+    return runPrepareAsync(fixture, {
+      env: {
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+        DSP_UNSUPPORTED_LINK_PATH: join(fixture.target, DSP_REL_PATH),
+        ...(winnerPath ? { DSP_CONCURRENT_WINNER_PATH: winnerPath } : {}),
+      },
+    });
+  }
+
+  await t.test("no winner fails closed before any artifact publication", () => withFixture(async (fixture) => {
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
+
+    const result = await runWithUnsupportedLink(fixture);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /exclusive hard-link publication failed.*unsafe rename fallback.*concurrent winner/i);
+    assertArtifactsUnchanged(snapshot);
+    assert.deepEqual(
+      existsSync(dirname(dspPath))
+        ? readdirSync(dirname(dspPath)).filter((name) => name.includes(".tmp"))
+        : [],
+      [],
+    );
+  }));
+
+  await t.test("a winner appearing at the failed link seam is validated and reused byte-for-byte", () => withFixture(async (fixture) => {
+    const seeded = runPrepare(fixture);
+    assert.equal(seeded.status, 0, seeded.stderr);
+    const dspPath = join(fixture.target, DSP_REL_PATH);
+    const winnerPath = join(fixture.dir, "concurrent-winner-design-source-package.json");
+    const winnerBytes = readFileSync(dspPath);
+    writeFileSync(winnerPath, winnerBytes);
+    for (const path of targetArtifactPaths(fixture.target)) rmSync(path, { force: true });
+
+    const result = await runWithUnsupportedLink(fixture, winnerPath);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.json.designSourcePackageMode, "reused");
+    assert.ok(readFileSync(dspPath).equals(winnerBytes));
+    assert.equal(result.json.packet.design_source_package.sha256, `sha256:${sha256(winnerBytes)}`);
+    assert.equal(
+      result.json.packet.design_source_package.material_fingerprint,
+      JSON.parse(winnerBytes.toString("utf8")).material_fingerprint,
+    );
+  }));
+});
+
 test("prepare-build refuses stale or contradictory existing packages and leaves their bytes untouched", async (t) => {
   await t.test("stale material fingerprint", () => withFixture((fixture) => {
     const first = runPrepare(fixture);
@@ -922,7 +989,7 @@ test("an invalid later output target cannot leave a DSP or sidecars partially pu
   }));
 });
 
-test("read-only direct-written theme targets block before DSP publication", async (t) => {
+test("atomic theme publication does not require existing theme files to be writable", async (t) => {
   for (const readOnlyThemeOutput of FIXED_THEME_OUTPUTS) {
     await t.test(readOnlyThemeOutput, (t) => withFixture((fixture) => {
       const themePaths = FIXED_THEME_OUTPUTS.map((relativePath) => join(fixture.target, relativePath));
@@ -955,14 +1022,103 @@ test("read-only direct-written theme targets block before DSP publication", asyn
         return;
       }
 
-      const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
-      const result = runPrepare(fixture);
-      assert.notEqual(result.status, 0);
-      assert.match(result.stderr, /Theme Report|Brand Theme CSS|permission denied|EACCES|writ/i);
-      assertArtifactsUnchanged(snapshot);
+      const beforeBytes = readFileSync(readOnlyPath);
+      const beforeInode = statSync(readOnlyPath).ino;
+      let result;
+      try {
+        result = runPrepare(fixture);
+      } finally {
+        if (existsSync(readOnlyPath)) chmodSync(readOnlyPath, 0o600);
+      }
+      assert.equal(result.status, 0, result.stderr);
+      const dspPath = join(fixture.target, DSP_REL_PATH);
+      assertSchema(validateDsp, readJson(dspPath), "Design Source Package");
+      assert.equal(existsSync(join(fixture.target, "campaign-runtime.build.json")), true);
+      if (readOnlyThemeOutput.endsWith("theme-report.json")) {
+        assert.notEqual(statSync(readOnlyPath).ino, beforeInode);
+        assert.equal(readJson(readOnlyPath).schema_version, "campaign-runtime-brand-theme/v0");
+      } else {
+        assert.equal(statSync(readOnlyPath).ino, beforeInode);
+        assert.ok(readFileSync(readOnlyPath).equals(beforeBytes));
+      }
+      assert.deepEqual(
+        readdirSync(dirname(readOnlyPath)).filter((name) => name.includes(".tmp")),
+        [],
+      );
     }));
   }
 });
+
+test("atomic theme publication replaces a post-preflight hard-link alias without mutating the DSP", () => withFixture(async (fixture) => {
+  const dspPath = join(fixture.target, DSP_REL_PATH);
+  const themeReportPath = join(fixture.target, FIXED_THEME_OUTPUTS[0]);
+  const swapMarkerPath = join(fixture.dir, "theme-hard-link-swap-complete");
+  mkdirSync(dirname(themeReportPath), { recursive: true });
+  writeJson(themeReportPath, {
+    schema_version: "campaign-runtime-brand-theme/v0",
+    selected_source: null,
+  });
+
+  const preloadPath = join(fixture.dir, "theme-post-preflight-hard-link-swap.cjs");
+  writeFileSync(preloadPath, `
+const fs = require("node:fs");
+const path = require("node:path");
+const { syncBuiltinESMExports } = require("node:module");
+const originalMkdirSync = fs.mkdirSync;
+let swapped = false;
+fs.mkdirSync = function swapThemeAfterFinalPreflight(candidate, ...args) {
+  const result = originalMkdirSync(candidate, ...args);
+  if (!swapped
+      && path.resolve(String(candidate)) === path.dirname(path.resolve(process.env.THEME_REPORT_PATH))
+      && fs.existsSync(process.env.DSP_PATH)) {
+    swapped = true;
+    fs.unlinkSync(process.env.THEME_REPORT_PATH);
+    fs.linkSync(process.env.DSP_PATH, process.env.THEME_REPORT_PATH);
+    fs.writeFileSync(process.env.SWAP_MARKER_PATH, "swapped\\n", { flag: "wx" });
+  }
+  return result;
+};
+syncBuiltinESMExports();
+`);
+  const result = await runPrepareAsync(fixture, {
+    env: {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim(),
+      DSP_PATH: dspPath,
+      THEME_REPORT_PATH: themeReportPath,
+      SWAP_MARKER_PATH: swapMarkerPath,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(swapMarkerPath), true, "the real filesystem hard-link swap must execute");
+  const dspBytes = readFileSync(dspPath);
+  const dsp = JSON.parse(dspBytes.toString("utf8"));
+  const themeReportBytes = readFileSync(themeReportPath);
+  assertSchema(validateDsp, dsp, "Design Source Package after hard-link swap");
+  assert.equal(JSON.parse(themeReportBytes.toString("utf8")).schema_version, "campaign-runtime-brand-theme/v0");
+  assert.equal(themeReportBytes.equals(dspBytes), false);
+  assert.notEqual(statSync(themeReportPath).ino, statSync(dspPath).ino);
+
+  const expectedHash = `sha256:${sha256(dspBytes)}`;
+  for (const artifactPath of [
+    join(fixture.target, "campaign-runtime.build.json"),
+    join(fixture.target, ".campaign-runtime/build-context.json"),
+    join(fixture.target, ".campaign-runtime/assembly-report.json"),
+  ]) {
+    assert.equal(existsSync(artifactPath), true);
+    assert.equal(readJson(artifactPath).design_source_package.sha256, expectedHash);
+  }
+  for (const artifactDir of [dirname(dspPath), dirname(themeReportPath)]) {
+    assert.deepEqual(readdirSync(artifactDir).filter((name) => name.includes(".tmp")), []);
+  }
+
+  const recovery = runPrepare(fixture);
+  assert.equal(recovery.status, 0, recovery.stderr);
+  assert.equal(recovery.json.designSourcePackageMode, "reused");
+  assert.ok(readFileSync(dspPath).equals(dspBytes));
+  assert.equal(recovery.json.packet.design_source_package.sha256, expectedHash);
+  assert.equal(recovery.json.packet.design_source_package.material_fingerprint, dsp.material_fingerprint);
+}));
 
 test("a nested custom report keeps the DSP reference canonical and omits duplicate blocker paths", () => {
   withFixture((fixture) => {
