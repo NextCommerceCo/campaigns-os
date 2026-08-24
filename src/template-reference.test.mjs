@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
+import {
+  isUnresolvedTemplateFamily,
+  resolveTemplateFamilyDesignSource,
+  UNRESOLVED_TEMPLATE_FAMILIES,
+} from "./template-reference.mjs";
+
+test("unresolved family policy has one shared sentinel set", () => {
+  assert.deepEqual(UNRESOLVED_TEMPLATE_FAMILIES, ["auto", "undecided"]);
+  assert.equal(isUnresolvedTemplateFamily("auto"), true);
+  assert.equal(isUnresolvedTemplateFamily("undecided"), true);
+  assert.equal(isUnresolvedTemplateFamily("apollo"), false);
+});
 
 test("catalog Template Reference becomes DSP family input without sharing mutable state", () => {
   const catalog = {

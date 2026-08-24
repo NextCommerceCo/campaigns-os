@@ -499,13 +499,13 @@
         "id": "template-reference-apollo",
         "family": "apollo",
         "version": "sdk-0.4.37-2026-08-21",
-        "contract_path": "docs/commerce-surface-catalog.json",
-        "artifact_path": "docs/template-references/apollo",
+        "source_commit": "e9a2fc17beefe572b8ddc0c4f9b1b8e2f97f9a59",
+        "provenance_url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/README.md",
+        "contract_path": "contracts/commerce-surface-catalog.json",
         "standard_viewport_refs": [
           {
             "id": "apollo-checkout-desktop",
             "viewport": "desktop",
-            "path": "docs/template-references/apollo/checkout-desktop.png",
             "url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/checkout-desktop.png",
             "width": 1440,
             "height": 1491,
@@ -517,7 +517,6 @@
           {
             "id": "apollo-checkout-mobile",
             "viewport": "mobile",
-            "path": "docs/template-references/apollo/checkout-mobile.png",
             "url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/checkout-mobile.png",
             "width": 390,
             "height": 2650,
@@ -2393,5 +2392,5 @@
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
   "_synced_from_ref": "apollo-template-reference",
-  "_synced_from_sha": "43379480b095d18037436790cb51c8fd9614d6df"
+  "_synced_from_sha": "258d19596a9f55cfd801e8be308202bed0562854"
 }

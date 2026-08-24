@@ -8,6 +8,38 @@ import {
   preserveLocalOnlyFamilies,
 } from "./refresh-starter-template-catalog.mjs";
 
+test("catalog refresh rewrites Template Reference locations for the vendored checkout", () => {
+  const sourceCatalog = {
+    families: {
+      apollo: {
+        templateReference: {
+          contract_path: "docs/commerce-surface-catalog.json",
+          artifact_path: "docs/template-references/apollo",
+          provenance_path: "docs/template-references/apollo/README.md",
+          provenance_url: "https://raw.example.test/README.md",
+          standard_viewport_refs: [{
+            viewport: "desktop",
+            path: "docs/template-references/apollo/checkout-desktop.png",
+            url: "https://raw.example.test/checkout-desktop.png",
+            sha256: "a".repeat(64),
+          }],
+        },
+      },
+    },
+  };
+
+  const adapted = adaptCatalogForCampaignsOs(sourceCatalog);
+  const reference = adapted.families.apollo.templateReference;
+  assert.equal(reference.contract_path, "contracts/commerce-surface-catalog.json");
+  assert.equal(reference.artifact_path, undefined);
+  assert.equal(reference.provenance_path, undefined);
+  assert.equal(reference.provenance_url, "https://raw.example.test/README.md");
+  assert.equal(reference.standard_viewport_refs[0].path, undefined);
+  assert.equal(reference.standard_viewport_refs[0].url, "https://raw.example.test/checkout-desktop.png");
+  assert.equal(reference.standard_viewport_refs[0].sha256, "a".repeat(64));
+  assert.equal(sourceCatalog.families.apollo.templateReference.artifact_path, "docs/template-references/apollo");
+});
+
 test("catalog refresh preserves private families absent from the public source (no arjuna clobber)", () => {
   const sourceCatalog = {
     families: {

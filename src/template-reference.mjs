@@ -6,6 +6,13 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+export const UNRESOLVED_TEMPLATE_FAMILIES = Object.freeze(["auto", "undecided"]);
+
+export function isUnresolvedTemplateFamily(value) {
+  const family = nonEmptyString(value);
+  return !family || UNRESOLVED_TEMPLATE_FAMILIES.includes(family);
+}
+
 /**
  * Resolve the selected catalog family into the input shape consumed by the
  * Design Source Package synthesizer. A family without published proof remains
@@ -13,7 +20,7 @@ function nonEmptyString(value) {
  */
 export function resolveTemplateFamilyDesignSource(catalog, family) {
   const normalizedFamily = nonEmptyString(family);
-  if (!normalizedFamily || ["auto", "undecided"].includes(normalizedFamily)) return null;
+  if (isUnresolvedTemplateFamily(normalizedFamily)) return null;
 
   const entry = isObject(catalog?.families?.[normalizedFamily])
     ? catalog.families[normalizedFamily]

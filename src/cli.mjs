@@ -120,7 +120,7 @@ import {
   BRIEF_PAYLOAD_REL_PATH,
 } from "./content-residue.mjs";
 import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
-import { resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
+import { isUnresolvedTemplateFamily, resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
 import {
   resolveBuiltSiteScope,
   synthesizeMinimalBuildPacket,
@@ -238,8 +238,7 @@ const KNOWN_TEMPLATE_FAMILIES = new Set([
 // waiver, never a default road the agent can wander onto.
 // Recomputed per call (a handful of small JSON reads) so long-lived
 // processes never serve a stale certified set after contract edits.
-function certifiedTemplateFamilies() {
-  const catalog = resolveCommerceCatalog();
+function certifiedTemplateFamilies(catalog = resolveCommerceCatalog()) {
   const certified = Object.keys(catalog.families || {}).filter((family) => {
     try {
       return resolveTemplateBrandContract(family) !== null;
@@ -250,8 +249,8 @@ function certifiedTemplateFamilies() {
   return new Set(certified);
 }
 
-function isCertifiedTemplateFamily(family) {
-  return certifiedTemplateFamilies().has(String(family || ""));
+function isCertifiedTemplateFamily(family, catalog) {
+  return certifiedTemplateFamilies(catalog).has(String(family || ""));
 }
 
 function isKnownTemplateFamily(family) {
@@ -1451,6 +1450,7 @@ function createCurrentHtmlFunnelScope({
   manifestResult,
   sourceAssetCrawl,
   templateFamily,
+  commerceCatalog,
   sourceRoot,
   mapId,
   publicRouteSlug,
@@ -1515,7 +1515,7 @@ function createCurrentHtmlFunnelScope({
       ? artifactRelativePath(packagePath, manifestResult.path)
       : null,
     sourceAssetCrawl: crawl,
-    templateFamily: resolveTemplateFamilyDesignSource(resolveCommerceCatalog(), templateFamily),
+    templateFamily: resolveTemplateFamilyDesignSource(commerceCatalog, templateFamily),
     packageId: `${mapId}:design-source`,
     campaignMapId: mapId,
     campaignSlug: publicRouteSlug,
@@ -1530,6 +1530,7 @@ function prepareDesignSourcePackage({
   manifestResult,
   sourceAssetCrawl,
   templateFamily,
+  commerceCatalog,
   sourceRoot,
   mapId,
   publicRouteSlug,
@@ -1547,6 +1548,7 @@ function prepareDesignSourcePackage({
     manifestResult,
     sourceAssetCrawl,
     templateFamily,
+    commerceCatalog,
     sourceRoot,
     mapId,
     publicRouteSlug,
@@ -1710,18 +1712,20 @@ function prepareBuild(args, options = {}) {
   // remains its template input even when Build locks a different CLI override.
   // With no source hint, the explicit family is the only honest DSP input.
   const designSourceTemplateFamily = hintedTemplateFamily || explicitTemplateFamily || "undecided";
-  const templateLocked = Boolean(explicitTemplateFamily) && templateFamily !== "undecided" && templateFamily !== "auto";
+  const commerceCatalogPath = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
+  const commerceCatalog = resolveCommerceCatalog(commerceCatalogPath);
+  const templateLocked = Boolean(explicitTemplateFamily) && !isUnresolvedTemplateFamily(templateFamily);
   // Certified-template gate, enforced at the entry point: a decided family
   // must be certified (commerce catalog + brand contract) or the operator
   // must record the uncertified decision explicitly. Failing HERE — before
   // any packet exists — keeps "build on an uncertified template" from ever
   // being a default road.
   const uncertifiedReason = optionalString(args["allow-uncertified-template"]);
-  const familyDecided = templateFamily !== "undecided" && templateFamily !== "auto";
-  const familyCertified = familyDecided && isCertifiedTemplateFamily(templateFamily);
+  const familyDecided = !isUnresolvedTemplateFamily(templateFamily);
+  const familyCertified = familyDecided && isCertifiedTemplateFamily(templateFamily, commerceCatalog);
   if (familyDecided && !familyCertified && !uncertifiedReason) {
     throw new Error(
-      `Template family "${templateFamily}" is not certified. Certified families: ${[...certifiedTemplateFamilies()].sort().join(", ")}. ` +
+      `Template family "${templateFamily}" is not certified. Certified families: ${[...certifiedTemplateFamilies(commerceCatalog)].sort().join(", ")}. ` +
       `Pick a certified family, or pass --allow-uncertified-template "<reason>" to record an explicit waiver (deterministic assembly, residue QA, and pricing contracts will not cover the build).`,
     );
   }
@@ -1770,7 +1774,6 @@ function prepareBuild(args, options = {}) {
     }
   }
   const liveUrlPath = optionalString(args["live-url-path"], specRouteRoot === "/" ? "/" : `/${publicRouteSlug}/`);
-  const commerceCatalog = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
   const themePolicy = optionalString(args["theme-policy"], "inspect_only");
   const portable = (path) => relFromDir(targetRepo, path);
   const commerceZoneFindings = inspectCommerceZones(sourceRoot, htmlFiles);
@@ -1845,6 +1848,7 @@ function prepareBuild(args, options = {}) {
     manifestResult,
     sourceAssetCrawl,
     templateFamily: designSourceTemplateFamily,
+    commerceCatalog,
     sourceRoot,
     mapId,
     publicRouteSlug,
@@ -1889,7 +1893,7 @@ function prepareBuild(args, options = {}) {
       implementation: "next-campaigns-build",
       target_repo: relFromFile(packetPath, targetRepo),
       output_dir: outputDir,
-      template_family: templateFamily === "auto" ? "undecided" : templateFamily,
+      template_family: isUnresolvedTemplateFamily(templateFamily) ? "undecided" : templateFamily,
       template_decision_notes: templateLocked
         ? `Template family locked by prepare-build --template-family ${templateFamily}.`
         : hintedTemplateFamily
@@ -1906,7 +1910,7 @@ function prepareBuild(args, options = {}) {
         required: true,
         family: templateLocked ? templateFamily : null,
         version: null,
-        path: relFromFile(packetPath, commerceCatalog),
+        path: relFromFile(packetPath, commerceCatalogPath),
       },
       compatible_outputs: ["static-html", "campaign-cart-sdk"],
     },

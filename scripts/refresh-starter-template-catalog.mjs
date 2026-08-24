@@ -87,6 +87,20 @@ export function adaptCatalogForCampaignsOs(catalog) {
     if (Array.isArray(fixtures)) {
       family.agentContract.fixtures = fixtures.map(mapTemplateSnapshotPath);
     }
+
+    const reference = family.templateReference || family.template_reference;
+    if (reference && typeof reference === "object" && !Array.isArray(reference)) {
+      // The catalog snapshot itself is the local Campaigns OS contract. Source
+      // artifact paths belong to the upstream repository and are not vendored;
+      // keep their immutable hashes and public URLs without advertising paths
+      // that would resolve against the wrong checkout.
+      reference.contract_path = DEFAULT_TARGET_CATALOG;
+      delete reference.artifact_path;
+      if (reference.provenance_url) delete reference.provenance_path;
+      for (const viewportRef of reference.standard_viewport_refs || reference.standardViewportRefs || []) {
+        if (viewportRef?.url) delete viewportRef.path;
+      }
+    }
   }
 
   return next;
