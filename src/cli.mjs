@@ -120,6 +120,7 @@ import {
   BRIEF_PAYLOAD_REL_PATH,
 } from "./content-residue.mjs";
 import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
+import { resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
 import {
   resolveBuiltSiteScope,
   synthesizeMinimalBuildPacket,
@@ -1514,9 +1515,7 @@ function createCurrentHtmlFunnelScope({
       ? artifactRelativePath(packagePath, manifestResult.path)
       : null,
     sourceAssetCrawl: crawl,
-    templateFamily: templateFamily && !["auto", "undecided"].includes(templateFamily)
-      ? { family: templateFamily }
-      : null,
+    templateFamily: resolveTemplateFamilyDesignSource(resolveCommerceCatalog(), templateFamily),
     packageId: `${mapId}:design-source`,
     campaignMapId: mapId,
     campaignSlug: publicRouteSlug,
