@@ -338,6 +338,32 @@ test("prepare-build emits a schema-valid DSP and carries one exact-byte referenc
   });
 });
 
+test("prepare-build consumes Apollo Template Reference proof from the commerce catalog", () => {
+  withFixture((fixture) => {
+    const manifestPath = join(fixture.source, ".campaigns-os/source-html-manifest.json");
+    const manifest = readJson(manifestPath);
+    manifest.pages = manifest.pages.filter((page) => page.page_id !== "checkout");
+    manifest.files = manifest.files.filter((file) => file.path !== "checkout.html");
+    writeJson(manifestPath, manifest);
+    rmSync(join(fixture.source, "checkout.html"));
+
+    const result = runPrepare(fixture, { templateFamily: "apollo" });
+    assert.equal(result.status, 0, result.stderr);
+
+    const dsp = readJson(join(fixture.target, DSP_REL_PATH));
+    const template = dsp.contributions.find((contribution) => contribution.id === "template-baseline");
+    assert.equal(template.template_reference.family, "apollo");
+    assert.equal(template.template_reference.version, "sdk-0.4.37-2026-08-21");
+    assert.deepEqual(
+      new Set(template.template_reference.standard_viewport_refs.map((ref) => ref.viewport)),
+      new Set(["desktop", "mobile"]),
+    );
+    assert.ok(template.mappings.some((mapping) =>
+      mapping.coverage_role === "template_baseline" && mapping.surface_id === "checkout"));
+    assert.equal(dsp.source_todos.some((todo) => todo.kind === "missing_template_reference"), false);
+  });
+});
+
 test("packet and context schemas keep the DSP reference optional but make all four reference fields strict", () => {
   for (const name of [
     "campaign-runtime-build-packet.v0.schema.json",

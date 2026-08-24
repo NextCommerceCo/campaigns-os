@@ -267,7 +267,7 @@
   },
   "campaignSpecFixturePolicy": {
     "directory": "contracts/fixtures/campaign-specs",
-    "purpose": "Small CampaignSpec-shaped examples for agent contract reasoning. They are not live Campaigns App exports.",
+    "purpose": "Small CampaignSpec-shaped examples for agent contract reasoning, authored in the real Map Builder export dialect (schema_version 4.3). They are not live Campaigns App exports.",
     "requiredShape": [
       "campaign.id",
       "campaign.name",
@@ -495,6 +495,38 @@
     },
     "apollo": {
       "description": "Single-step checkout with Apollo direct-response layout, include-driven bundle selector with interchangeable card styles, and optional checkout reveal.",
+      "templateReference": {
+        "id": "template-reference-apollo",
+        "family": "apollo",
+        "version": "sdk-0.4.37-2026-08-21",
+        "source_commit": "e9a2fc17beefe572b8ddc0c4f9b1b8e2f97f9a59",
+        "provenance_url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/README.md",
+        "contract_path": "contracts/commerce-surface-catalog.json",
+        "standard_viewport_refs": [
+          {
+            "id": "apollo-checkout-desktop",
+            "viewport": "desktop",
+            "url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/checkout-desktop.png",
+            "width": 1440,
+            "height": 1491,
+            "sha256": "e0fd4854422b9ca90b54adc1477e1291824fc63e898e50c5c6cc8e4e58ce39e6",
+            "device_profile": "Desktop 1440",
+            "browser": "chromium",
+            "captured_at": "2026-08-24T05:10:18.000Z"
+          },
+          {
+            "id": "apollo-checkout-mobile",
+            "viewport": "mobile",
+            "url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/checkout-mobile.png",
+            "width": 390,
+            "height": 2650,
+            "sha256": "14386e851e70b21f03ac2608c1efcde18b2bfc4d31736cb07add199e1953fe5c",
+            "device_profile": "Mobile 390",
+            "browser": "chromium",
+            "captured_at": "2026-08-24T05:10:23.000Z"
+          }
+        ]
+      },
       "frontmatterStatus": "include-driven",
       "strongSignals": [
         "apollo in spec, path, or export metadata",
@@ -2359,6 +2391,6 @@
     }
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
-  "_synced_from_ref": "main",
-  "_synced_from_sha": "4869c46b4c02742fbb587257375773347ad2a973"
+  "_synced_from_ref": "apollo-template-reference",
+  "_synced_from_sha": "dfd10225ab189de263afa82ee2c604cea77d9ca3"
 }
