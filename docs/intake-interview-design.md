@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-21 · **Revision 4**, incorporating adversarial architecture reviews rounds 1–3; all cited schema/ADR/code behavior verified against the tree
 **Status:** Build-ready
-**Evidence:** ON-2 operator feedback (`next-mind` deep-pass `friction-on-2` draft rows on-2-005..007), code survey of the intake surface, architecture reviews rounds 1–3
+**Evidence:** ON-2 operator feedback (deep-pass `friction-on-2` draft rows on-2-005..007), code survey of the intake surface, architecture reviews rounds 1–3
 
 ## Problem
 

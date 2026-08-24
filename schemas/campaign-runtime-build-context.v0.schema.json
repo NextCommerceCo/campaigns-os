@@ -12,6 +12,18 @@
     "status": { "enum": ["prepared", "blocked"] },
     "packet_path": { "type": "string" },
     "report_path": { "type": "string" },
+    "design_source_package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "schema_version", "sha256", "material_fingerprint"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "schema_version": { "const": "campaign-design-source-package/v0" },
+        "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "material_fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "description": "Context-relative reference to the normalized Design Source Package. sha256 hashes the exact artifact bytes; material_fingerprint drives freshness gates."
+    },
     "spec": {
       "type": "object",
       "required": ["path", "hash", "active_pages"],

@@ -1,0 +1,697 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaign-design-source-package.v0.schema.json",
+  "title": "Campaigns OS Design Source Package v0",
+  "description": "Strict public contract for normalized upstream creative/provenance context. The schema identity carried by artifacts is campaign-design-source-package/v0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "package_id",
+    "source_kind",
+    "generated_at",
+    "material_fingerprint",
+    "surface_identity",
+    "contributions",
+    "source_gaps",
+    "source_todos",
+    "waivers",
+    "divergences",
+    "proposed_exceptions",
+    "notes",
+    "readiness",
+    "readback"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "campaign-design-source-package/v0"
+    },
+    "package_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_kind": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "material_fingerprint": {
+      "$ref": "#/$defs/prefixedSha256"
+    },
+    "surface_identity": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/surfaceIdentity" },
+      "contains": {
+        "type": "object",
+        "required": ["id", "kind"],
+        "properties": {
+          "id": { "const": "campaign" },
+          "kind": { "const": "campaign" }
+        }
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "contributions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/contribution" }
+    },
+    "source_gaps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sourceGap" }
+    },
+    "source_todos": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sourceTodo" }
+    },
+    "waivers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/waiver" }
+    },
+    "divergences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/divergence" }
+    },
+    "proposed_exceptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/proposedException" }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Administrative context only. Notes never change source readiness or the material fingerprint."
+    },
+    "readiness": {
+      "$ref": "#/$defs/sourceReadiness"
+    },
+    "readback": {
+      "$ref": "#/$defs/readback"
+    }
+  },
+  "$defs": {
+    "checkpointStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "blocked",
+        "ready",
+        "ready_with_gaps",
+        "ready_with_waivers",
+        "completed",
+        "completed_with_warnings",
+        "skipped"
+      ],
+      "description": "Shared Campaigns OS Readiness Checkpoint vocabulary. Source readiness intentionally uses the narrower sourceReadinessStatus definition."
+    },
+    "sourceReadinessStatus": {
+      "type": "string",
+      "enum": ["pending", "blocked", "ready", "ready_with_gaps", "ready_with_waivers"],
+      "description": "Design Source Package readiness deliberately forbids ready_with_warnings."
+    },
+    "coverageRole": {
+      "type": "string",
+      "enum": [
+        "primary_design",
+        "partial_design",
+        "brand_tokens",
+        "asset_source",
+        "copy_source",
+        "template_baseline",
+        "reference_only",
+        "fallback_legacy"
+      ]
+    },
+    "mappingConfidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "unknown"]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^(?:sha256:)?[0-9a-f]{64}$"
+    },
+    "prefixedSha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "pageKitProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_path", "output_path", "public_route", "page_type"],
+      "properties": {
+        "target_path": { "type": "string", "minLength": 1 },
+        "output_path": { "type": "string", "minLength": 1 },
+        "public_route": { "type": "string", "minLength": 1 },
+        "spec_route": { "type": ["string", "null"] },
+        "page_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "permalink_required": { "type": ["boolean", "null"] }
+      }
+    },
+    "surfaceMappings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "campaign_map_id": { "type": ["string", "null"], "minLength": 1 },
+        "campaign_slug": { "type": ["string", "null"], "minLength": 1 },
+        "campaign_spec_page_id": { "type": ["string", "null"], "minLength": 1 },
+        "map_builder_label": { "type": ["string", "null"], "minLength": 1 },
+        "map_builder_custom_name": { "type": ["string", "null"], "minLength": 1 },
+        "public_route": { "type": ["string", "null"], "minLength": 1 },
+        "producer_page_type": { "type": ["string", "null"], "minLength": 1 },
+        "source_page_id": { "type": ["string", "null"], "minLength": 1 },
+        "source_path": { "type": ["string", "null"], "minLength": 1 },
+        "page_kit": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/pageKitProjection" }
+          ]
+        },
+        "parent_surface_id": { "type": ["string", "null"], "minLength": 1 },
+        "dom_selector": { "type": ["string", "null"], "minLength": 1 },
+        "runtime_surface": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "surfaceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "label", "aliases", "mappings"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+        },
+        "kind": {
+          "enum": ["campaign", "page", "section", "runtime_surface"]
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "mappings": { "$ref": "#/$defs/surfaceMappings" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "id": { "const": "campaign" } },
+            "required": ["id"]
+          },
+          "then": {
+            "properties": { "kind": { "const": "campaign" } },
+            "required": ["kind"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "campaign" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": { "id": { "const": "campaign" } },
+            "required": ["id"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "page" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "mappings": {
+                "type": "object",
+                "properties": {
+                  "campaign_spec_page_id": true,
+                  "map_builder_label": true,
+                  "map_builder_custom_name": true,
+                  "public_route": true,
+                  "producer_page_type": true,
+                  "source_page_id": true,
+                  "source_path": true,
+                  "page_kit": true
+                },
+                "required": [
+                  "campaign_spec_page_id",
+                  "map_builder_label",
+                  "map_builder_custom_name",
+                  "public_route",
+                  "producer_page_type",
+                  "source_page_id",
+                  "source_path",
+                  "page_kit"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "sourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": ["html_file", "manifest", "asset", "url", "export", "document", "other"]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "role": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string", "minLength": 1 },
+        "notes": { "type": ["string", "null"] }
+      },
+      "anyOf": [
+        { "properties": { "path": true }, "required": ["path"] },
+        { "properties": { "url": true }, "required": ["url"] }
+      ]
+    },
+    "visualReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "viewport", "availability"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "source_screenshot",
+            "template_reference_screenshot",
+            "render_reference",
+            "export_reference",
+            "unavailable_render"
+          ]
+        },
+        "viewport": { "enum": ["mobile", "desktop", "tablet"] },
+        "availability": { "enum": ["available", "unavailable"] },
+        "url": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "device_profile": { "type": "string", "minLength": 1 },
+        "scale_factor": { "type": "number", "exclusiveMinimum": 0 },
+        "browser": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": "string", "minLength": 1 },
+        "source_ref_id": { "type": "string", "minLength": 1 },
+        "unavailable_reason": { "type": "string", "minLength": 1 },
+        "notes": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "availability": { "const": "available" } },
+            "required": ["availability"]
+          },
+          "then": {
+            "anyOf": [
+              { "properties": { "path": true }, "required": ["path"] },
+              { "properties": { "url": true }, "required": ["url"] }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "availability": { "const": "unavailable" } },
+            "required": ["availability"]
+          },
+          "then": {
+            "properties": { "unavailable_reason": true },
+            "required": ["unavailable_reason"]
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "kind": { "enum": ["source_screenshot", "template_reference_screenshot"] },
+              "availability": { "const": "available" }
+            },
+            "required": ["kind", "availability"]
+          },
+          "then": {
+            "properties": { "source_ref_id": true },
+            "required": ["source_ref_id"]
+          }
+        }
+      ]
+    },
+    "sourceScreenshotReference": {
+      "allOf": [
+        { "$ref": "#/$defs/visualReference" },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "enum": ["source_screenshot", "unavailable_render"] }
+          }
+        }
+      ]
+    },
+    "comparisonReference": {
+      "allOf": [
+        { "$ref": "#/$defs/visualReference" },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "enum": ["render_reference", "export_reference", "template_reference_screenshot", "unavailable_render"] }
+          }
+        }
+      ]
+    },
+    "templateScreenshotReference": {
+      "allOf": [
+        { "$ref": "#/$defs/visualReference" },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "enum": ["template_reference_screenshot", "unavailable_render"] }
+          }
+        }
+      ]
+    },
+    "templateReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "family", "version", "standard_viewport_refs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "family": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "contract_path": { "type": "string", "minLength": 1 },
+        "artifact_path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "standard_viewport_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/templateScreenshotReference" }
+        }
+      },
+      "anyOf": [
+        { "properties": { "contract_path": true }, "required": ["contract_path"] },
+        { "properties": { "artifact_path": true }, "required": ["artifact_path"] }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_type", "adapter"],
+      "properties": {
+        "source_type": { "type": "string", "minLength": 1 },
+        "adapter": { "type": "string", "minLength": 1 },
+        "producer": { "type": ["string", "null"], "minLength": 1 },
+        "generator": { "type": ["string", "null"], "minLength": 1 },
+        "generator_version": { "type": ["string", "null"], "minLength": 1 },
+        "source_root": { "type": ["string", "null"], "minLength": 1 },
+        "manifest_schema_version": { "type": ["string", "null"], "minLength": 1 },
+        "manifest_path": { "type": ["string", "null"], "minLength": 1 },
+        "manifest_sha256": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/sha256" }
+          ]
+        },
+        "producer_material_fingerprint": { "type": ["string", "null"], "minLength": 1 },
+        "asset_crawl_schema_version": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "presentationIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "composition": { "$ref": "#/$defs/stringList" },
+        "content_hierarchy": { "$ref": "#/$defs/stringList" },
+        "imagery": { "$ref": "#/$defs/stringList" },
+        "copy": { "$ref": "#/$defs/stringList" },
+        "brand": { "$ref": "#/$defs/stringList" },
+        "responsive_behavior": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "coverageMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "surface_id",
+        "coverage_role",
+        "confidence",
+        "source_refs",
+        "screenshot_refs",
+        "reference_refs"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "surface_id": { "type": "string", "minLength": 1 },
+        "coverage_role": { "$ref": "#/$defs/coverageRole" },
+        "confidence": { "$ref": "#/$defs/mappingConfidence" },
+        "source_refs": { "$ref": "#/$defs/stringList" },
+        "screenshot_refs": { "$ref": "#/$defs/stringList" },
+        "reference_refs": { "$ref": "#/$defs/stringList" },
+        "template_reference_id": { "type": "string", "minLength": 1 },
+        "notes": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "coverage_role": { "const": "template_baseline" } },
+            "required": ["coverage_role"]
+          },
+          "then": {
+            "properties": { "template_reference_id": true },
+            "required": ["template_reference_id"]
+          }
+        }
+      ]
+    },
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "trust",
+        "renderable",
+        "provenance",
+        "presentation_intent",
+        "source_refs",
+        "screenshot_refs",
+        "reference_refs",
+        "mappings"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "html_funnel",
+            "figma_frames",
+            "figma_sections",
+            "page_kit",
+            "static_source",
+            "template_stock",
+            "agency_source",
+            "other"
+          ]
+        },
+        "trust": { "enum": ["native", "structured", "rendered", "opaque"] },
+        "renderable": { "type": "boolean" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "presentation_intent": { "$ref": "#/$defs/presentationIntent" },
+        "source_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourceReference" }
+        },
+        "screenshot_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourceScreenshotReference" }
+        },
+        "reference_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/comparisonReference" }
+        },
+        "template_reference": { "$ref": "#/$defs/templateReference" },
+        "mappings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/coverageMapping" }
+        },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+    "sourceGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "scope", "applies_to", "reason", "status", "attributed_by"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": ["coverage_absence", "screenshot_absence", "reference_absence", "source_limitation", "other"]
+        },
+        "scope": { "type": "string", "minLength": 1 },
+        "applies_to": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["proposed", "accepted", "resolved"] },
+        "attributed_by": { "type": "string", "minLength": 1 },
+        "attributed_at": { "type": ["string", "null"] },
+        "evidence_refs": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "sourceTodo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "scope", "applies_to", "description", "status", "owner"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "missing_source_screenshot",
+            "missing_template_reference",
+            "missing_template_viewport",
+            "missing_primary_design",
+            "low_confidence_primary_design",
+            "unreadable_reference",
+            "other"
+          ]
+        },
+        "scope": { "type": "string", "minLength": 1 },
+        "applies_to": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["pending", "blocked", "completed", "skipped"] },
+        "owner": { "type": "string", "minLength": 1 },
+        "required_viewports": {
+          "type": "array",
+          "items": { "enum": ["mobile", "desktop", "tablet"] },
+          "uniqueItems": true
+        },
+        "source_ref_ids": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "waiver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "applies_to", "reason", "status", "waived_by", "waived_at"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "applies_to": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["proposed", "approved", "revoked", "expired"] },
+        "waived_by": { "type": "string", "minLength": 1 },
+        "waived_at": { "type": "string", "minLength": 1 },
+        "expires_at": { "type": "string", "minLength": 1 },
+        "review_condition": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "$ref": "#/$defs/stringList" }
+      },
+      "anyOf": [
+        { "properties": { "expires_at": true }, "required": ["expires_at"] },
+        { "properties": { "review_condition": true }, "required": ["review_condition"] }
+      ]
+    },
+    "divergence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scope",
+        "applies_to",
+        "summary",
+        "status",
+        "recorded_stage",
+        "readiness_affecting",
+        "attributed_by"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "applies_to": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "summary": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["proposed", "accepted", "rejected", "resolved"] },
+        "recorded_stage": { "enum": ["prepare_build", "build", "polish", "qa", "operator"] },
+        "readiness_affecting": { "type": "boolean" },
+        "attributed_by": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "proposedException": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "applies_to", "reason", "status", "readiness_affecting", "proposed_by"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "applies_to": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["proposed", "accepted", "rejected"] },
+        "readiness_affecting": { "type": "boolean" },
+        "proposed_by": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "sourceReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "blocking_reasons", "gap_count", "todo_count", "waiver_count", "generated_at"],
+      "properties": {
+        "status": { "$ref": "#/$defs/sourceReadinessStatus" },
+        "blocking_reasons": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "gap_count": { "type": "integer", "minimum": 0 },
+        "todo_count": { "type": "integer", "minimum": 0 },
+        "waiver_count": { "type": "integer", "minimum": 0 },
+        "generated_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "readback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "included_sources", "handled", "blockers", "gaps", "todos", "waivers", "next_actions"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "included_sources": { "$ref": "#/$defs/stringList" },
+        "handled": { "$ref": "#/$defs/stringList" },
+        "blockers": { "$ref": "#/$defs/stringList" },
+        "gaps": { "$ref": "#/$defs/stringList" },
+        "todos": { "$ref": "#/$defs/stringList" },
+        "waivers": { "$ref": "#/$defs/stringList" },
+        "next_actions": { "$ref": "#/$defs/stringList" }
+      }
+    }
+  }
+}

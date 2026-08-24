@@ -1,13 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,6 +39,20 @@ function readJson(path) {
 
 function readJsonIfExists(path) {
   return path && existsSync(path) ? readJson(path) : null;
+}
+
+function replaceFileAtomically(path, content) {
+  const targetPath = resolve(path);
+  mkdirSync(dirname(targetPath), { recursive: true });
+  const stagedPath = join(dirname(targetPath), `.${basename(targetPath)}.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(stagedPath, content, { flag: "wx" });
+    // Same-directory rename replaces the pathname's directory entry instead
+    // of following a symlink or hard-link alias planted at the final name.
+    renameSync(stagedPath, targetPath);
+  } finally {
+    rmSync(stagedPath, { force: true });
+  }
 }
 
 function sha256(content) {
@@ -997,8 +1013,7 @@ export function writeThemeArtifacts(inspection, { writeCss = false, writeReport 
   const cssPath = resolvePathFromInspection(inspection, "css_path");
 
   if (writeReport && inspection.report) {
-    mkdirSync(dirname(reportPath), { recursive: true });
-    writeFileSync(reportPath, `${JSON.stringify(inspection.report, null, 2)}\n`);
+    replaceFileAtomically(reportPath, `${JSON.stringify(inspection.report, null, 2)}\n`);
     wrote.report = true;
   }
 
@@ -1020,8 +1035,7 @@ export function writeThemeArtifacts(inspection, { writeCss = false, writeReport 
         ));
       }
     } else {
-      mkdirSync(dirname(cssPath), { recursive: true });
-      writeFileSync(cssPath, inspection.css);
+      replaceFileAtomically(cssPath, inspection.css);
       wrote.css = true;
     }
   }

@@ -74,6 +74,18 @@
         { "required": ["local_path"] }
       ]
     },
+    "design_source_package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "schema_version", "sha256", "material_fingerprint"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "schema_version": { "const": "campaign-design-source-package/v0" },
+        "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "material_fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      },
+      "description": "Packet-relative reference to the normalized Design Source Package. sha256 hashes the exact artifact bytes; material_fingerprint drives freshness gates."
+    },
     "source_html": {
       "type": "object",
       "additionalProperties": false,
@@ -343,6 +355,29 @@
               "items": { "type": "string" }
             }
           }
+        },
+        "template_certification": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["certified"],
+              "properties": {
+                "certified": { "type": "boolean" },
+                "waiver": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["reason", "waived_by", "waived_at"],
+                  "properties": {
+                    "reason": { "type": "string", "minLength": 1 },
+                    "waived_by": { "type": "string", "minLength": 1 },
+                    "waived_at": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          ]
         },
         "commerce_catalog": {
           "type": "object",

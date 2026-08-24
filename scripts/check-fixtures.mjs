@@ -1653,12 +1653,64 @@ const nextOrchestrationTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-next-or
 try {
   const sourceRoot = resolve(nextOrchestrationTmp, "source-html");
   const targetRepo = resolve(nextOrchestrationTmp, "target-page-kit");
-  mkdirSync(sourceRoot, { recursive: true });
+  mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+  mkdirSync(resolve(sourceRoot, "source-screens"), { recursive: true });
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+  const manifestFiles = [];
+  const manifestPages = [];
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+    const htmlPath = `${page}.html`;
+    const html = `<html><body>${page}</body></html>`;
+    writeFileSync(resolve(sourceRoot, htmlPath), html);
+    manifestFiles.push({
+      path: htmlPath,
+      role: "page",
+      sha256: createHash("sha256").update(html).digest("hex"),
+      bytes: Buffer.byteLength(html),
+    });
+
+    const screenshotRefs = [
+      { viewport: "desktop", width: 1440, height: 900 },
+      { viewport: "mobile", width: 390, height: 844 },
+    ].map(({ viewport, width, height }) => {
+      const screenshotPath = `source-screens/${page}-${viewport}.svg`;
+      const screenshot = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#fff"/><text x="32" y="64" fill="#111" font-family="sans-serif" font-size="32">${page}</text></svg>`;
+      writeFileSync(resolve(sourceRoot, screenshotPath), screenshot);
+      const sha256 = createHash("sha256").update(screenshot).digest("hex");
+      manifestFiles.push({
+        path: screenshotPath,
+        role: "asset",
+        sha256,
+        bytes: Buffer.byteLength(screenshot),
+      });
+      return {
+        id: `${page}-${viewport}`,
+        viewport,
+        path: screenshotPath,
+        width,
+        height,
+        sha256,
+        captured_at: "2026-08-23T00:00:00.000Z",
+      };
+    });
+    manifestPages.push({
+      page_id: page,
+      path: htmlPath,
+      page_type: page === "receipt" ? "thankyou" : page,
+      source_hash: manifestFiles.find((file) => file.path === htmlPath).sha256,
+      screenshot_refs: screenshotRefs,
+    });
   }
+  writeJson(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"), {
+    schema_version: "source-html-manifest/v0",
+    generated_at: "2026-08-23T00:00:00.000Z",
+    generator: "campaigns-os-next-orchestration-fixture@1.0.0",
+    campaign_slug: "runtime-packet-demo",
+    root: ".",
+    files: manifestFiles,
+    pages: manifestPages,
+  });
   const specPath = resolve(nextOrchestrationTmp, "campaignspec.json");
   writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
   runCliJsonAllowFailure([
@@ -1672,6 +1724,29 @@ try {
 
   const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
   const reportPath = resolve(targetRepo, ".campaign-runtime/assembly-report.json");
+  const designSourcePackagePath = resolve(targetRepo, ".campaign-runtime/input/design-source-package.json");
+  const designSourcePackage = readJson(designSourcePackagePath);
+  const { validateDesignSourcePackage } = await import("../src/design-source-package.mjs");
+  const designSourceValidation = validateDesignSourcePackage(designSourcePackage);
+  if (!designSourceValidation.ok) {
+    throw new Error(`next-orchestration fixture: emitted Design Source Package failed validation: ${JSON.stringify(designSourceValidation.errors)}`);
+  }
+  const sourceContribution = designSourcePackage.contributions?.find((contribution) => contribution.kind === "html_funnel");
+  const sourceScreenshotsById = new Map((sourceContribution?.screenshot_refs || []).map((ref) => [ref.id, ref]));
+  const screenshotCoverageReady = (sourceContribution?.mappings || []).length === 4
+    && sourceContribution.mappings.every((mapping) => {
+      const viewports = new Set((mapping.screenshot_refs || []).map((id) => sourceScreenshotsById.get(id)?.viewport));
+      return viewports.has("desktop") && viewports.has("mobile");
+    });
+  if (designSourcePackage.readiness?.status !== "ready"
+    || designSourcePackage.readiness?.blocking_reasons?.length !== 0
+    || !screenshotCoverageReady) {
+    throw new Error(`next-orchestration fixture: emitted Design Source Package should be genuinely ready with desktop/mobile source proof for all pages, got ${JSON.stringify({ readiness: designSourcePackage.readiness, screenshot_coverage_ready: screenshotCoverageReady })}`);
+  }
+  const designSourceMaterialFingerprint = readJson(reportPath).design_source_package?.material_fingerprint;
+  if (!designSourceMaterialFingerprint) {
+    throw new Error("next-orchestration fixture: emitted report is missing design_source_package.material_fingerprint");
+  }
 
   function nextNoStage() {
     return runCliJsonAllowFailure(["next", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
@@ -1743,7 +1818,10 @@ try {
   }
 
   // Mark assembly completed → picker should advance to polish.
-  markStageStatus("assembly", "completed", { build_fingerprint: FIXTURE_BUILD_FINGERPRINT });
+  markStageStatus("assembly", "completed", {
+    build_fingerprint: FIXTURE_BUILD_FINGERPRINT,
+    source_package_material_fingerprint: designSourceMaterialFingerprint,
+  });
   step = nextNoStage();
   if (step.stage !== "polish") {
     throw new Error(`next-orchestration fixture: after assembly completed, expected "polish", got ${step.stage}. picked_reason=${step.picked_reason}`);
@@ -1753,6 +1831,7 @@ try {
   markStageStatus("polish", "completed", {
     performed_by: "next-campaigns-polish",
     source_build_fingerprint: FIXTURE_BUILD_FINGERPRINT,
+    source_package_material_fingerprint: designSourceMaterialFingerprint,
     completed_at: "2026-06-22T00:00:00.000Z",
     evidence: {
       visual_review: {
@@ -1925,6 +2004,9 @@ try {
   // Also drop the manifest so the coverage failure surfaces through the
   // filesystem-fallback path (which routes through coverageErrorMessage).
   rmSync(manifestPath);
+  // This variant intentionally exercises ADR-0001's v0 no-existing-package
+  // compatibility path after materially changing the source handoff.
+  rmSync(resolve(targetRepo, ".campaign-runtime/input/design-source-package.json"));
   const aiGenDoctorResult = runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
