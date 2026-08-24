@@ -64,6 +64,10 @@ const DEFAULT_QA_TEST_EMAIL = "qa-test@campaigns-os.test";
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 const ORDER_UPSELLS_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/upsells\/?(?:[?#].*)?$/i;
 const ORDER_CREATE_RESPONSE_PATTERN = /\/api\/v1\/orders\/?(?:[?#].*)?$/i;
+// Cart CREATE only. Anchored like the order patterns so a querystring still
+// matches while sibling endpoints (notably /api/v1/carts/calculate/) do not —
+// a repricing call is not evidence that a cart was created.
+const CART_CREATE_RESPONSE_PATTERN = /\/api\/v1\/carts\/?(?:[?#].*)?$/i;
 
 export async function runBrowserChecks(topologies, args = {}, options = {}) {
   const browser = await launchChromium(args);
@@ -1654,15 +1658,110 @@ function formatStepEvent(entry) {
   return `[qa:test-order] step=${entry.step} status=${entry.status} ${entry.duration_ms}ms`;
 }
 
+// Cart-API observation for the cart_created step. The old check was a boolean
+// "did any URL contain /carts/" probe, which both told the reader nothing and
+// counted /carts/calculate/ repricing calls as cart creation. This reports what
+// the API actually said: the most recent create response's status and, when the
+// body exposes them, how many lines the cart holds.
+function cartLineCount(body) {
+  if (!body || typeof body !== "object") return null;
+  const candidates = [body.lines, body.items, body.cart?.lines, body.cart?.items, body.data?.lines, body.data?.items];
+  const lines = candidates.find((value) => Array.isArray(value));
+  return Array.isArray(lines) ? lines.length : null;
+}
+
+function cartCreationEvidence(events) {
+  const responses = (events?.responses || []).filter((response) => CART_CREATE_RESPONSE_PATTERN.test(String(response?.url || "")));
+  if (!responses.length) return null;
+  // Last create wins, matching how rejectedOrderCreateResponse reads retries.
+  const latest = responses[responses.length - 1];
+  const status = Number(latest.status);
+  const lineCount = cartLineCount(latest.body);
+  return {
+    endpoint: "cart_create",
+    status: Number.isFinite(status) ? status : null,
+    ok: Number.isFinite(status) ? status >= 200 && status < 300 : null,
+    ...(lineCount === null ? {} : { line_count: lineCount }),
+    response_count: responses.length,
+    url: redactUrlQuery(latest.url),
+  };
+}
+
+// Customer/address-field trace. Deliberately NOT named a checkout-field trace:
+// it covers the customer and shipping/billing address fields reached through
+// [data-next-checkout-field], and does NOT cover payment entry — the card
+// number and CVV live in cross-origin Spreedly iframes this trace never sees.
+//
+// An entry is appended BEFORE its action runs and mutated in place after, so a
+// step that times out mid-action leaves the offending field visible as the one
+// still marked "pending". That is what turns "customer_fields_filled timed out"
+// into "it was hanging on postal".
+function createFieldTrace() {
+  const fields = [];
+  return {
+    fields,
+    async inspect(field, action, fn, { optional = false } = {}) {
+      const entry = { field, action, status: "pending", optional, duration_ms: 0 };
+      fields.push(entry);
+      const startedMs = Date.now();
+      try {
+        const result = await fn();
+        entry.duration_ms = Date.now() - startedMs;
+        // An optional field that reported unusable returns false rather than
+        // throwing; that is best-effort success for the step, not a failure.
+        entry.status = result === false ? "unusable" : "ok";
+        return result;
+      } catch (error) {
+        entry.duration_ms = Date.now() - startedMs;
+        entry.status = "failed";
+        entry.error = error instanceof Error ? error.message : String(error);
+        throw error;
+      }
+    },
+    // Shaped for a verdict reader: the blocking field first, then the counts.
+    summary() {
+      const blocking = fields.find((entry) => entry.status === "failed")
+        || fields.find((entry) => entry.status === "pending")
+        || null;
+      return {
+        coverage: "customer_and_address_fields",
+        fields: fields.map((entry) => ({ ...entry })),
+        field_count: fields.length,
+        ...(blocking ? { blocking_field: blocking.field, blocking_status: blocking.status } : {}),
+      };
+    },
+  };
+}
+
+// Structured step evidence. Callers pass either an object or a thunk; a thunk
+// is resolved at record time so a step that fails or times out still reports
+// what it had gathered up to the failure (that is the whole point — the field
+// trace is only useful on the path that broke). A thunk that throws yields no
+// evidence rather than masking the step's own error.
+function resolveStepEvidence(evidence) {
+  let value = evidence;
+  if (typeof evidence === "function") {
+    try {
+      value = evidence();
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return Object.keys(value).length ? value : null;
+}
+
 function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), now = () => Date.now() } = {}) {
   const steps = [];
-  const record = (step, status, { startedAt = null, durationMs = 0, detail = null, error = null } = {}) => {
+  const record = (step, status, { startedAt = null, durationMs = 0, detail = null, error = null, evidence = null } = {}) => {
+    const resolvedEvidence = resolveStepEvidence(evidence);
     const entry = {
       step,
       status,
       started_at: startedAt || new Date(now()).toISOString(),
       duration_ms: Math.max(0, Math.round(durationMs)),
       ...(detail ? { detail } : {}),
+      ...(resolvedEvidence ? { evidence: resolvedEvidence } : {}),
       ...(error ? { error } : {}),
     };
     steps.push(entry);
@@ -1672,21 +1771,30 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
   return {
     steps,
     has: (step) => steps.some((entry) => entry.step === step),
-    ok: (step, detail = null) => record(step, "ok", { detail }),
-    fail: (step, error, detail = null) => record(step, "failed", { error, detail }),
-    skip: (step, reason) => record(step, "skipped", { detail: reason }),
+    ok: (step, detail = null, evidence = null) => record(step, "ok", { detail, evidence }),
+    fail: (step, error, detail = null, evidence = null) => record(step, "failed", { error, detail, evidence }),
+    skip: (step, reason, evidence = null) => record(step, "skipped", { detail: reason, evidence }),
     // Run a step with a bounded timeout. A resolved string becomes the step
     // detail; a resolved { skip } object records the step as skipped.
-    async run(step, fn, { timeoutMs, detail = null } = {}) {
+    async run(step, fn, { timeoutMs, detail = null, evidence = null } = {}) {
       const startedMs = now();
       const startedAt = new Date(startedMs).toISOString();
       try {
         const value = await withStepTimeout(fn(), timeoutMs, step);
+        // A step may return its own evidence alongside a detail string; an
+        // explicit option still wins so callers keep a stable seam.
+        const returnedEvidence = value && typeof value === "object" && !Array.isArray(value) ? value.evidence : null;
         if (value && typeof value === "object" && typeof value.skip === "string") {
-          record(step, "skipped", { startedAt, durationMs: now() - startedMs, detail: value.skip });
+          record(step, "skipped", { startedAt, durationMs: now() - startedMs, detail: value.skip, evidence: evidence || returnedEvidence });
           return value;
         }
-        record(step, "ok", { startedAt, durationMs: now() - startedMs, detail: typeof value === "string" ? value : detail });
+        const returnedDetail = value && typeof value === "object" && typeof value.detail === "string" ? value.detail : null;
+        record(step, "ok", {
+          startedAt,
+          durationMs: now() - startedMs,
+          detail: typeof value === "string" ? value : returnedDetail || detail,
+          evidence: evidence || returnedEvidence,
+        });
         return value;
       } catch (error) {
         const timedOut = error?.code === "step_timeout";
@@ -1694,6 +1802,7 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
           startedAt,
           durationMs: now() - startedMs,
           detail,
+          evidence,
           error: error instanceof Error ? error.message : String(error),
         });
         throw error;
@@ -1993,10 +2102,11 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   }, { timeoutMs: budget() });
 
   try {
+    const fieldTrace = createFieldTrace();
     await ladder.run("customer_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
-      await fillCheckoutFields(page, args, email);
-    }, { timeoutMs: budget() });
+      await fillCheckoutFields(page, args, email, { trace: fieldTrace, actionTimeoutMs: budget() });
+    }, { timeoutMs: budget(), evidence: () => fieldTrace.summary() });
     await ladder.run("coupon_applied", async () => {
       const code = stringArg(args["apply-coupon"]);
       if (!code) return { skip: "no --apply-coupon code requested" };
@@ -2008,8 +2118,10 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       await fillPaymentFields(page, args);
     }, { timeoutMs: budget() });
     await ladder.run("cart_created", async () => {
-      const seen = events.responses.some((response) => /\/api\/v1\/carts\/?/i.test(response.url));
-      return seen ? "cart API response observed" : { skip: "no cart API call observed; checkout posts the order directly" };
+      const cart = cartCreationEvidence(events);
+      if (!cart) return { skip: "no cart API call observed; checkout posts the order directly" };
+      const lines = cart.line_count === undefined ? "line count not exposed by response body" : `${cart.line_count} line(s)`;
+      return { detail: `cart create responded ${cart.status ?? "(no status)"}, ${lines}`, evidence: cart };
     }, { timeoutMs: budget() });
     await ladder.run("order_submitted", async () => {
       ensurePageFillable(page, checkoutPage.url);
@@ -2755,7 +2867,16 @@ async function hasVisibleCheckoutFields(page) {
     .catch(() => false);
 }
 
-async function fillCheckoutFields(page, args, email) {
+async function fillCheckoutFields(page, args, email, options = {}) {
+  const trace = options.trace || null;
+  const actionTimeoutMs = options.actionTimeoutMs;
+  // Field order, progressive-disclosure calls and optional/onlyVisible flags
+  // below are unchanged; only the per-field recording wrapper is new.
+  const track = (field, action, fn, opts = {}) => (trace ? trace.inspect(field, action, fn, opts) : fn());
+  const fill = (field, value, opts = {}) =>
+    track(field, "fill", () => fillByField(page, field, value, { ...opts, actionTimeoutMs }), opts);
+  const select = (field, value, opts = {}) =>
+    track(field, "select", () => selectByField(page, field, value, { ...opts, actionTimeoutMs }), opts);
   const address = {
     firstName: stringArg(args["test-first-name"]) || "QA",
     lastName: stringArg(args["test-last-name"]) || "Playwright",
@@ -2768,17 +2889,17 @@ async function fillCheckoutFields(page, args, email) {
     postal: stringArg(args["test-postal"]) || "94043",
   };
 
-  await fillByField(page, "fname", address.firstName);
-  await fillByField(page, "lname", address.lastName);
-  await fillByField(page, "email", address.email);
-  await fillByField(page, "phone", address.phone, { optional: true });
-  await selectByField(page, "country", address.country);
-  await fillByField(page, "address1", address.address1);
+  await fill("fname", address.firstName);
+  await fill("lname", address.lastName);
+  await fill("email", address.email);
+  await fill("phone", address.phone, { optional: true });
+  await select("country", address.country);
+  await fill("address1", address.address1);
   await settleAddressAutocomplete(page);
   await revealProgressiveLocationFields(page, address.address1);
-  await fillByField(page, "city", address.city);
-  await selectByField(page, "province", address.province);
-  await fillByField(page, "postal", address.postal);
+  await fill("city", address.city);
+  await select("province", address.province);
+  await fill("postal", address.postal);
   await closeAddressAutocomplete(page);
 
   const sameAsShipping = page.locator("#use_shipping_address").first();
@@ -2789,14 +2910,14 @@ async function fillCheckoutFields(page, args, email) {
     await sameAsShipping.check({ timeout: 3000 }).catch(() => {});
   }
 
-  await fillByField(page, "billing-fname", address.firstName, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-lname", address.lastName, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-phone", address.phone, { optional: true, onlyVisible: true });
-  await selectByField(page, "billing-country", address.country, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-address1", address.address1, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-city", address.city, { optional: true, onlyVisible: true });
-  await selectByField(page, "billing-province", address.province, { optional: true, onlyVisible: true });
-  await fillByField(page, "billing-postal", address.postal, { optional: true, onlyVisible: true });
+  await fill("billing-fname", address.firstName, { optional: true, onlyVisible: true });
+  await fill("billing-lname", address.lastName, { optional: true, onlyVisible: true });
+  await fill("billing-phone", address.phone, { optional: true, onlyVisible: true });
+  await select("billing-country", address.country, { optional: true, onlyVisible: true });
+  await fill("billing-address1", address.address1, { optional: true, onlyVisible: true });
+  await fill("billing-city", address.city, { optional: true, onlyVisible: true });
+  await select("billing-province", address.province, { optional: true, onlyVisible: true });
+  await fill("billing-postal", address.postal, { optional: true, onlyVisible: true });
 }
 
 async function fillPaymentFields(page, args) {
@@ -3246,12 +3367,23 @@ async function fillByField(page, field, value, options = {}) {
   // accept input (covered by a collapsed section, disabled by the funnel's
   // billing toggle) must not eat the step budget with a full default wait —
   // the focusing click included.
-  await locator.click(options.optional ? { timeout: 3000 } : {}).catch(() => {});
+  await locator.click(options.optional ? { timeout: 3000 } : requiredActionTimeout(options)).catch(() => {});
   if (options.optional) {
     return locator.fill(value, { timeout: 3000 }).then(() => true).catch(() => false);
   }
-  await locator.fill(value);
+  await locator.fill(value, requiredActionTimeout(options));
   return true;
+}
+
+// Required checkout actions are bounded so one stuck field fails as that field
+// rather than as an anonymous step timeout. Never LOOSER than Playwright's own
+// 30s default: a caller-supplied budget only ever tightens the ceiling, so this
+// cannot make a slow-but-working funnel wait longer than it does today.
+const MAX_REQUIRED_ACTION_TIMEOUT_MS = 30000;
+function requiredActionTimeout(options = {}) {
+  const budget = options.actionTimeoutMs;
+  if (!Number.isFinite(budget) || budget <= 0) return {};
+  return { timeout: Math.min(budget, MAX_REQUIRED_ACTION_TIMEOUT_MS) };
 }
 
 async function selectByField(page, field, value, options = {}) {
@@ -3263,7 +3395,7 @@ async function selectByField(page, field, value, options = {}) {
   if (options.optional) {
     return locator.selectOption(value, { timeout: 3000 }).then(() => true).catch(() => false);
   }
-  await locator.selectOption(value);
+  await locator.selectOption(value, requiredActionTimeout(options));
   return true;
 }
 
@@ -3963,6 +4095,11 @@ export const __qaBrowserTestHooks = Object.freeze({
   assessOrderCreation,
   TEST_ORDER_STEP_LADDER,
   createStepLadder,
+  createFieldTrace,
+  fillCheckoutFields,
+  cartCreationEvidence,
+  cartLineCount,
+  requiredActionTimeout,
   recordTestOrderTerminalEvidence,
   collectOrderAnalytics,
   journeyAnalyticsAttempt,

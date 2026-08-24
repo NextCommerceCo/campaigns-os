@@ -548,6 +548,49 @@ controls on an ordinary or unknown page remain blockers; they are not treated
 as evidence that a receipt was reached. Cross-origin handoffs count as terminal
 navigation, but not as Campaigns OS receipt rendering or persisted-receipt proof.
 
+### Step-ladder evidence
+
+Every typed-card path executes as an ordered ladder of named, individually timed
+steps, and each step appends to the ladder the moment it finishes — a crash or
+timeout still leaves the ladder up to the point of failure. Ladder entries carry
+`step`, `status`, `started_at`, `duration_ms`, an optional human-readable
+`detail`, and, where the step has something structured to say, an `evidence`
+object. Evidence is resolved even when the step fails or times out, because the
+failing path is the one worth reading.
+
+Two steps write structured evidence today.
+
+**`customer_fields_filled` — customer/address-field trace.** Each field is
+recorded before its action runs and updated after, as
+`{ field, action, status, optional, duration_ms }`. Statuses are `ok`,
+`unusable` (an optional field that reported visible but would not accept input —
+best-effort, not a failure), `failed`, and `pending`. `pending` is the useful
+one: a step that hangs mid-field leaves that field pending, so the verdict names
+the field instead of reporting an anonymous step timeout. The summary lifts the
+first failed-or-pending field to `blocking_field` / `blocking_status`.
+
+Coverage is `customer_and_address_fields` and the name is literal: this trace
+covers the customer and shipping/billing fields reached through
+`[data-next-checkout-field]`. It does **not** cover payment entry — the card
+number and CVV are typed into cross-origin hosted iframes that no page-side
+trace can observe.
+
+Required field actions are bounded by the step budget, capped at Playwright's
+own 30s default, so a caller-supplied budget only ever tightens the ceiling. A
+stuck required field fails as that field rather than as an anonymous step
+timeout; a slow-but-working funnel waits no longer than it did before.
+
+**`cart_created` — cart-API observation.** The step reports what the cart API
+actually returned: the most recent `POST /api/v1/carts/` response's `status`, an
+`ok` flag, `line_count` when the response body exposes lines, `response_count`,
+and the query-redacted `url`. Matching is anchored like the order-create
+patterns, so a querystring still matches while `/api/v1/carts/calculate/`
+repricing calls do not — a repricing call is not evidence that a cart was
+created. A campaign whose checkout posts the order directly, with no cart call
+at all, still records the step as `skipped` with that reason; a create that
+responds non-2xx is reported as `ok: false` rather than hidden. A response body
+whose line shape is unreadable omits `line_count` rather than reporting zero.
+
 ### Package/bundle card selection and coupons
 
 Two flags target funnels the default-tier drive cannot prove:
