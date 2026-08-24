@@ -38,22 +38,26 @@ export function projectVerdictForSidecar(verdict, { generatedAt }) {
   if (errors.length) {
     throw new Error(`QA verdict failed validation before sidecar projection:\n- ${errors.join("\n- ")}`);
   }
-  if (typeof generatedAt !== "string" || Number.isNaN(Date.parse(generatedAt))) {
-    throw new Error("Sidecar projection requires a parseable generatedAt instant.");
+  // Strict RFC3339 UTC with a Z suffix, not bare Date.parse: downstream
+  // freshness (readback staleness) documents the Z-suffixed form, and
+  // Date.parse would admit zone-less or locale strings that consumers can
+  // mis-parse.
+  if (typeof generatedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(generatedAt)) {
+    throw new Error("Sidecar projection requires an ISO-8601 UTC generatedAt with a Z suffix.");
   }
   const assertions = (verdict.assertions || [])
     .filter((assertion) => assertion && typeof assertion === "object")
     .map((assertion) => pick(assertion, ASSERTION_FIELDS));
-  // Exceptions are re-derived from the PROJECTED assertions, then trimmed to
-  // the allowlist: deriveExceptions carries url/expected/actual, which must
-  // not reach a committed file.
+  // Exceptions are re-derived from the PROJECTED assertions — which no longer
+  // carry url/expected/actual, so deriveExceptions can only emit null/absent
+  // for those keys — then pick() drops the null-valued keys themselves.
   const exceptions = deriveExceptions(assertions).map((exception) => pick(exception, EXCEPTION_FIELDS));
   return {
     schema_version: verdict.schema_version,
     run_id: verdict.run_id,
     campaign_slug: verdict.campaign_slug,
-    ...(verdict.public_route_slug !== undefined ? { public_route_slug: verdict.public_route_slug } : {}),
-    ...(verdict.campaign_ref_id !== undefined ? { campaign_ref_id: verdict.campaign_ref_id } : {}),
+    ...(verdict.public_route_slug != null ? { public_route_slug: verdict.public_route_slug } : {}),
+    ...(verdict.campaign_ref_id != null ? { campaign_ref_id: verdict.campaign_ref_id } : {}),
     spec_version: verdict.spec_version,
     spec_hash: verdict.spec_hash,
     started_at: verdict.started_at,
@@ -74,6 +78,34 @@ export function sidecarPathForPacket(packetPath) {
   return join(dirname(resolve(packetPath)), SIDECAR_RELATIVE_PATH);
 }
 
+const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
+
+/**
+ * Assert the sidecar anchor is a real Build Packet before any write. A typo'd
+ * or stale --packet path would otherwise scatter qa-verdict.json sidecars
+ * into unrelated trees — exactly the artifact sprawl the contracted home
+ * exists to prevent.
+ */
+function assertPacketAnchor(packetPath) {
+  let raw;
+  try {
+    raw = readFileSync(resolve(packetPath), "utf8");
+  } catch (error) {
+    // error.code only, never error.message: raw fs messages can carry local
+    // uid/path detail that does not belong in surfaced output.
+    throw new Error(`Sidecar anchor ${packetPath} is not a readable Build Packet (${error.code || "unreadable"}).`);
+  }
+  let packet;
+  try {
+    packet = JSON.parse(raw);
+  } catch {
+    throw new Error(`Sidecar anchor ${packetPath} is not a readable Build Packet (not valid JSON).`);
+  }
+  if (packet?.schema_version !== PACKET_SCHEMA) {
+    throw new Error(`Sidecar anchor ${packetPath} is not a Build Packet (expected schema_version ${PACKET_SCHEMA}).`);
+  }
+}
+
 function writeJsonAtomicAt(path, value) {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${randomUUID()}.tmp`;
@@ -88,6 +120,7 @@ function writeJsonAtomicAt(path, value) {
  * that dies before finalization never touches an existing sidecar.
  */
 export function writeQaSidecar({ verdict, packetPath, now = () => new Date().toISOString() }) {
+  assertPacketAnchor(packetPath);
   const projected = projectVerdictForSidecar(verdict, { generatedAt: now() });
   const destination = sidecarPathForPacket(packetPath);
   writeJsonAtomicAt(destination, projected);
@@ -106,6 +139,7 @@ export function promoteQaVerdict({ verdictPath, packetPath, now = () => new Date
   if (!verdictPath || !packetPath) {
     throw new Error("qa promote requires both --verdict <full-verdict.json> and --packet <campaign-runtime.build.json>.");
   }
+  assertPacketAnchor(packetPath);
   const source = resolve(verdictPath);
   const destination = sidecarPathForPacket(packetPath);
   if (source === destination) {

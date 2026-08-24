@@ -39,7 +39,7 @@ function fullVerdict(overrides = {}) {
         severity: "blocker",
         expected: "/demo/receipt/",
         actual: "/receipt",
-        evidence: { request_url: "https://api.example.com/v1/orders?key=sk_secret", final_url: "http://localhost:8788/demo/receipt/?order=ORD-77" },
+        evidence: { request_url: "https://api.example.com/v1/orders?key=sk_secret", final_url: "http://localhost:8788/demo/receipt/?order=ORD-77", har_path: "/private/tmp/qa-run/capture.har", win_path: "C:\\Users\\op\\capture.har" },
       },
       { id: "route-link:landing:next", family: "funnel-flow", page: "landing", url: "http://localhost:8788/demo/landing/", status: "pass", severity: "warn" },
       { id: "browser-console-errors:landing", family: "browser-runtime", page: "landing", status: "skipped", severity: "warn", blocked_by: "meta:checkout:next-success-url" },
@@ -57,6 +57,22 @@ function scanScalars(value, path = "$") {
   if (typeof value === "string") return [{ path, value }];
   if (typeof value !== "object") return [];
   return Object.entries(value).flatMap(([key, child]) => scanScalars(child, `${path}.${key}`));
+}
+
+function looksLeaked(value) {
+  return /https?:\/\//i.test(value)
+    || /ref_id=/i.test(value)
+    || /ORD-77/.test(value)
+    || /sk_secret/.test(value)
+    || /someuser/.test(value)
+    || /^\/(?:Users|home|private|root|tmp|var|etc)\//.test(value)
+    || /^[A-Za-z]:\\/.test(value);
+}
+
+// Writers refuse a sidecar anchor that is not a real Build Packet, so every
+// test that writes needs one at the anchor path.
+function seedPacket(packetPath) {
+  writeFileSync(packetPath, `${JSON.stringify({ schema_version: "campaign-runtime-build-packet/v0" })}\n`);
 }
 
 test("projection passes validateVerdict and preserves disposition and assertion statuses", () => {
@@ -78,14 +94,7 @@ test("projection passes validateVerdict and preserves disposition and assertion 
 
 test("no URL, ref, order reference, key, username, or absolute path survives projection at any depth", () => {
   const projected = projectVerdictForSidecar(fullVerdict(), { generatedAt: NOW });
-  const leaks = scanScalars(projected).filter(({ value }) => (
-    /https?:\/\//i.test(value)
-    || /ref_id=/i.test(value)
-    || /ORD-77/.test(value)
-    || /sk_secret/.test(value)
-    || /someuser/.test(value)
-    || /^\//.test(value) === true && /\/Users\/|\/home\//.test(value)
-  ));
+  const leaks = scanScalars(projected).filter(({ value }) => looksLeaked(value));
   assert.deepEqual(leaks, []);
   assert.deepEqual(projected.entry_urls, []);
   assert.deepEqual(projected.page_urls, []);
@@ -102,6 +111,7 @@ test("writeQaSidecar lands beside the packet for ready and blocked dispositions 
   const dir = mkdtempSync(join(tmpdir(), "qa-sidecar-"));
   try {
     const packetPath = join(dir, "campaign-runtime.build.json");
+    seedPacket(packetPath);
     for (const disposition of ["ready", "blocked"]) {
       const result = writeQaSidecar({ verdict: fullVerdict({ disposition }), packetPath, now: () => NOW });
       assert.equal(result.path, sidecarPathForPacket(packetPath));
@@ -118,6 +128,7 @@ test("invalid source fails closed and preserves the prior sidecar bytes", () => 
   const dir = mkdtempSync(join(tmpdir(), "qa-sidecar-"));
   try {
     const packetPath = join(dir, "campaign-runtime.build.json");
+    seedPacket(packetPath);
     writeQaSidecar({ verdict: fullVerdict(), packetPath, now: () => NOW });
     const before = readFileSync(sidecarPathForPacket(packetPath), "utf8");
 
@@ -138,6 +149,7 @@ test("promote projects the exact named source, leaves it byte-identical, and sta
   const dir = mkdtempSync(join(tmpdir(), "qa-sidecar-"));
   try {
     const packetPath = join(dir, "campaign-runtime.build.json");
+    seedPacket(packetPath);
     const outputDir = join(dir, "qa-output", "demo-map-abcd");
     mkdirSync(outputDir, { recursive: true });
     // Two verdicts on disk: promote must take the named one, never scan.
@@ -164,6 +176,7 @@ test("promote refuses the destination sidecar as its own source and requires bot
   const dir = mkdtempSync(join(tmpdir(), "qa-sidecar-"));
   try {
     const packetPath = join(dir, "campaign-runtime.build.json");
+    seedPacket(packetPath);
     writeQaSidecar({ verdict: fullVerdict(), packetPath, now: () => NOW });
     assert.throws(
       () => promoteQaVerdict({ verdictPath: sidecarPathForPacket(packetPath), packetPath, now: () => NOW }),
@@ -174,4 +187,31 @@ test("promote refuses the destination sidecar as its own source and requires bot
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("generatedAt must be a Z-suffixed UTC instant, not merely Date.parse-able", () => {
+  for (const bad of ["2026-01-01", "Sat Jan 01 2026", "2026-08-24T12:00:00+02:00", "2026-08-24T12:00:00"]) {
+    assert.throws(() => projectVerdictForSidecar(fullVerdict(), { generatedAt: bad }), /Z suffix/);
+  }
+  assert.ok(projectVerdictForSidecar(fullVerdict(), { generatedAt: "2026-08-24T12:00:00Z" }));
+});
+
+test("writers refuse a sidecar anchor that is not a real Build Packet", () => {
+  const dir = mkdtempSync(join(tmpdir(), "qa-sidecar-"));
+  try {
+    const missing = join(dir, "campaign-runtime.build.json");
+    assert.throws(() => writeQaSidecar({ verdict: fullVerdict(), packetPath: missing, now: () => NOW }), /not a readable Build Packet/);
+    const notPacket = join(dir, "not-a-packet.json");
+    writeFileSync(notPacket, `${JSON.stringify({ schema_version: "something-else/v9" })}\n`);
+    assert.throws(() => promoteQaVerdict({ verdictPath: join(dir, "v.json"), packetPath: notPacket, now: () => NOW }), /not a Build Packet/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("null identity fields stay absent from the sidecar instead of serializing as null", () => {
+  const projected = projectVerdictForSidecar(fullVerdict({ public_route_slug: null, campaign_ref_id: null }), { generatedAt: NOW });
+  assert.ok(!("public_route_slug" in projected));
+  assert.ok(!("campaign_ref_id" in projected));
+  assert.deepEqual(validateVerdict(projected), []);
 });
