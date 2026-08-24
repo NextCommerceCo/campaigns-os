@@ -361,6 +361,8 @@ test("scenario cap refuses an oversized plan before any proxy request", async ()
   assert.equal(result.commercial.planned_scenarios, 257);
   assert.deepEqual(result.commercial.issues, [{ code: "commercial_scenario_limit", count: 1 }]);
   assert.equal(result.commercial.status, "incomplete");
+  assert.equal(result.commercial.checked_pages, 1);
+  assert.equal(result.commercial.unmatched_page_count, 0);
   assert.equal(result.commercial.extracted_price_claims, 1);
   assert.equal(result.commercial.compared_price_claims, 0);
   assert.equal(result.commercial.unresolved_price_claims, 1);
@@ -368,11 +370,21 @@ test("scenario cap refuses an oversized plan before any proxy request", async ()
 
 test("aggregate claim cap emits no partial mismatch assertions and keeps the verdict publishable", async () => {
   const spec = rawRecurringSpec();
+  let indexedVoucherReads = 0;
+  const vouchers = new Proxy(
+    Array.from({ length: 257 }, (_, index) => ({ code: `CODE${index}` })),
+    {
+      get(target, property, receiver) {
+        if (/^\d+$/.test(String(property))) indexedVoucherReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    },
+  );
   const capture = {
     page_id: "page_mt104ehn_11",
     price_claims: [],
     recurrence_claims: [],
-    vouchers: Array.from({ length: 257 }, (_, index) => ({ code: `CODE${index}` })),
+    vouchers,
   };
   let fetched = false;
   const result = await runCommercialParity({
@@ -385,6 +397,7 @@ test("aggregate claim cap emits no partial mismatch assertions and keeps the ver
   });
 
   assert.equal(fetched, false);
+  assert.equal(indexedVoucherReads, 0);
   assert.deepEqual(result.assertions, []);
   assert.equal(result.commercial.status, "incomplete");
   assert.equal(result.commercial.observed_claims, 257);
@@ -394,6 +407,49 @@ test("aggregate claim cap emits no partial mismatch assertions and keeps the ver
   assert.equal(result.commercial.unresolved_voucher_claims, 257);
   assert.deepEqual(result.commercial.issues, [{ code: "commercial_aggregate_claim_limit", count: 1 }]);
   assert.deepEqual(result.commercial.findings, []);
+});
+
+test("aggregate count-only overflow excludes unmatched claims without walking their elements", async () => {
+  const spec = rawRecurringSpec();
+  let indexedVoucherReads = 0;
+  const unmatchedVouchers = new Proxy(
+    Array.from({ length: 256 }, (_, index) => ({ code: `UNMATCHED${index}` })),
+    {
+      get(target, property, receiver) {
+        if (/^\d+$/.test(String(property))) indexedVoucherReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    },
+  );
+  let fetched = false;
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [{
+      page_id: "page_mt104ehn_11",
+      price_claims: [],
+      recurrence_claims: [],
+      vouchers: [{ code: "MATCHED" }],
+    }, {
+      page_id: "other-page",
+      price_claims: [],
+      recurrence_claims: [],
+      vouchers: unmatchedVouchers,
+    }],
+    fetchImpl: async () => {
+      fetched = true;
+      throw new Error("must not fetch");
+    },
+  });
+
+  assert.equal(fetched, false);
+  assert.equal(indexedVoucherReads, 0);
+  assert.equal(result.commercial.observed_claims, 257);
+  assert.equal(result.commercial.extracted_voucher_claims, 1);
+  assert.equal(result.commercial.compared_voucher_claims, 0);
+  assert.equal(result.commercial.unresolved_voucher_claims, 1);
+  assert.deepEqual(result.commercial.unmatched_pages, [{ page_id: "other-page" }]);
+  assert.deepEqual(result.commercial.findings, []);
+  assert.deepEqual(result.assertions, []);
 });
 
 test("per-document and aggregate claim ceilings keep distinct issue codes", async () => {

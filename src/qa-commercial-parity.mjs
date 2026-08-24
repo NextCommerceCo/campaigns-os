@@ -465,6 +465,35 @@ function compactReport(report, journey, plan, executed, issues, observedClaims, 
   };
 }
 
+function withScenarioOverflowPages(journey, plannedPages) {
+  const normalizedPages = array(journey?.pages);
+  const normalizedIds = new Set(normalizedPages.map((page) => String(page?.page_id)));
+  const reason = "Unresolved: commercial scenario limit exceeded";
+  const overflowPages = array(plannedPages)
+    .filter((page) => present(page?.id) && !normalizedIds.has(String(page.id)))
+    .map((page) => ({
+      page_id: String(page.id),
+      page_type: page?.type ?? null,
+      page_label: page?.label ?? page?.name ?? page?.id ?? null,
+      page_order: Number(page?.order) || 0,
+      state: PricingState.Unresolved,
+      reason,
+      rows: [],
+      offers: [],
+      representative_total: { state: PricingState.Unresolved, reason },
+      shipping: { present: false, state: PricingState.Unresolved, reason },
+      bumps: [],
+    }));
+  if (!overflowPages.length) return journey;
+  return {
+    ...journey,
+    state: PricingState.Unresolved,
+    reason: journey?.reason || reason,
+    pages: [...normalizedPages, ...overflowPages]
+      .sort((left, right) => left.page_order - right.page_order),
+  };
+}
+
 export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
   return {
     schema_version: COMMERCIAL_PARITY_SCHEMA_VERSION,
@@ -568,12 +597,18 @@ export async function runCommercialParity({
       catalog_imported_at: catalogImportedAt(resolved?.rawSpec || resolved?.spec),
     },
   );
-  const parity = createCommercialParityReport(captures, journey, { maxAssertions });
+  const parityJourney = scenarioOverflow
+    ? withScenarioOverflowPages(journey, commercialPlanning.pages)
+    : journey;
+  const parity = createCommercialParityReport(captures, parityJourney, {
+    maxAssertions,
+    countsOnly: aggregateClaimOverflow,
+  });
   return {
     assertions: parity.assertions,
     commercial: compactReport(
       parity,
-      journey,
+      parityJourney,
       plan,
       executed,
       issues,

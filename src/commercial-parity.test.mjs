@@ -126,6 +126,57 @@ test("malformed vouchers and unlabeled multi-page captures are explicit incomple
   assert.equal(report.coverage_complete, false);
 });
 
+test("commercial claim totals exclude valid captures that do not match a normalized page", () => {
+  const matched = {
+    page_id: "checkout",
+    price_claims: [{ binding: "bundle.main.price", value: "10.00" }],
+    recurrence_claims: [{ package_id: 5, amount: "29.99", interval_count: 1, interval: "month" }],
+    vouchers: [{ code: "SAVE10" }],
+  };
+  const unmatched = {
+    page_id: "other-page",
+    price_claims: [{ binding: "bundle.other.price", value: "99.00" }],
+    recurrence_claims: [{ package_id: 9, amount: "99.00", interval_count: 1, interval: "year" }],
+    vouchers: [{ code: "GHOST" }],
+  };
+  const journey = {
+    pages: [{
+      page_id: "checkout",
+      representative_total: { state: "Exact", value: "10.00" },
+      rows: [{
+        package_id: 5,
+        state: "Exact",
+        recurrence: {
+          state: "Exact",
+          amount: { state: "Exact", value: "29.99" },
+          interval_count: 1,
+          interval: "month",
+        },
+      }],
+      offers: [{
+        code: "SAVE10",
+        calculation_evidence: "calculated_pair",
+        state: "Exact",
+        status: "Applied",
+      }],
+    }],
+  };
+
+  const report = createCommercialParityReport([matched, unmatched], journey);
+
+  assert.deepEqual(report.unmatched_pages, [{ page_id: "other-page" }]);
+  assert.equal(report.extracted_price_claims, 1);
+  assert.equal(report.compared_price_claims, 1);
+  assert.equal(report.unresolved_price_claims, 0);
+  assert.equal(report.extracted_recurrence_claims, 1);
+  assert.equal(report.compared_recurrence_claims, 1);
+  assert.equal(report.unresolved_recurrence_claims, 0);
+  assert.equal(report.extracted_voucher_claims, 1);
+  assert.equal(report.compared_voucher_claims, 1);
+  assert.equal(report.unresolved_voucher_claims, 0);
+  assert.equal(report.coverage_complete, false);
+});
+
 test("serialized price captures must use the governed terminal binding grammar", () => {
   const report = createCommercialParityReport([{
     page_id: "checkout",
