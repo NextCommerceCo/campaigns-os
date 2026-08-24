@@ -700,3 +700,41 @@ test("canonical resolved qa run fetches HTML once and writes deterministic comme
     rmSync(outputDir, { recursive: true, force: true });
   }
 });
+
+test("preflight overflow issues keep the aggregate-before-scenario order", async () => {
+  const spec = rawRecurringSpec();
+  spec.funnels[0].pages.push({
+    ...spec.funnels[0].pages[0],
+    id: "page_mt104ehn_12",
+    order: 2,
+  });
+  const capture = {
+    page_id: "page_mt104ehn_11",
+    price_claims: [],
+    recurrence_claims: [],
+    vouchers: [
+      { code: "SAVE1", raw: "SAVE1" },
+      { code: "SAVE2", raw: "SAVE2" },
+    ],
+  };
+  let fetched = false;
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [capture],
+    limits: { max_scenarios: 1, max_aggregate_claims: 1 },
+    fetchImpl: async () => {
+      fetched = true;
+      throw new Error("must not fetch");
+    },
+  });
+
+  assert.equal(fetched, false);
+  // deepEqual on an array is order-sensitive: this pins the preflight push
+  // order (aggregate first, then scenario) that operators and downstream
+  // tooling read positionally.
+  assert.deepEqual(result.commercial.issues, [
+    { code: "commercial_aggregate_claim_limit", count: 1 },
+    { code: "commercial_scenario_limit", count: 1 },
+  ]);
+  assert.equal(result.commercial.status, "incomplete");
+});
