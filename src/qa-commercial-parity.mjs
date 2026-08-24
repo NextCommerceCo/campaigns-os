@@ -558,9 +558,14 @@ export async function runCommercialParity({
   const scenarioOverflow = commercialPlanning.overflow || plan.length > limits.max_scenarios;
   const observedClaims = array(captures).reduce((sum, capture) => sum + captureClaimCount(capture), 0);
   const aggregateClaimOverflow = observedClaims > limits.max_aggregate_claims;
-  const issues = captureIssues(captures);
-  if (aggregateClaimOverflow) issues.push({ code: "commercial_aggregate_claim_limit" });
-  if (scenarioOverflow) issues.push({ code: "commercial_scenario_limit" });
+  const orderedPreflightIssues = [
+    { exceeded: aggregateClaimOverflow, code: "commercial_aggregate_claim_limit" },
+    { exceeded: scenarioOverflow, code: "commercial_scenario_limit" },
+  ];
+  const issues = [
+    ...captureIssues(captures),
+    ...orderedPreflightIssues.filter((issue) => issue.exceeded).map(({ code }) => ({ code })),
+  ];
   const apiKeyResolution = resolveCommercialApiKey(resolved);
   const apiKey = apiKeyResolution.value;
   let executed = [];

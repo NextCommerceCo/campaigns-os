@@ -409,6 +409,52 @@ test("aggregate claim cap emits no partial mismatch assertions and keeps the ver
   assert.deepEqual(result.commercial.findings, []);
 });
 
+test("simultaneous aggregate and scenario ceilings keep aggregate as the canonical first issue", async () => {
+  const spec = rawRecurringSpec();
+  spec.funnels[0].pages[0].packages = Array.from({ length: 256 }, (_, index) => ({
+    ref_id: String(index + 1),
+    qty: 1,
+  }));
+  let indexedVoucherReads = 0;
+  const vouchers = new Proxy(
+    Array.from({ length: 257 }, (_, index) => ({ code: `CODE${index}` })),
+    {
+      get(target, property, receiver) {
+        if (/^\d+$/.test(String(property))) indexedVoucherReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    },
+  );
+  let fetched = false;
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [{
+      page_id: "page_mt104ehn_11",
+      price_claims: [],
+      recurrence_claims: [],
+      vouchers,
+    }],
+    fetchImpl: async () => {
+      fetched = true;
+      throw new Error("must not fetch");
+    },
+  });
+
+  assert.equal(fetched, false);
+  assert.equal(indexedVoucherReads, 0);
+  assert.equal(result.commercial.planned_scenarios, 257);
+  assert.equal(result.commercial.executed_scenarios, 0);
+  assert.equal(result.commercial.extracted_voucher_claims, 257);
+  assert.equal(result.commercial.unresolved_voucher_claims, 257);
+  assert.equal(result.commercial.issues[0]?.code, "commercial_aggregate_claim_limit");
+  assert.deepEqual(result.commercial.issues, [
+    { code: "commercial_aggregate_claim_limit", count: 1 },
+    { code: "commercial_scenario_limit", count: 1 },
+  ]);
+  assert.deepEqual(result.assertions, []);
+  assert.equal(result.commercial.status, "incomplete");
+});
+
 test("aggregate count-only overflow excludes unmatched claims without walking their elements", async () => {
   const spec = rawRecurringSpec();
   let indexedVoucherReads = 0;
