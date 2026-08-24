@@ -170,6 +170,16 @@ campaign-runtime.build.json
 .campaign-runtime/input/design-source-package.json
 ```
 
+The packet's top-level `generated_at` (ISO-8601 UTC, `Z` suffix) is stamped by
+`prepare-build` on every new packet. Downstream freshness — campaigns-agent's
+readback staleness comparison and its multi-packet selection at the repository
+root — reads this field, never file mtime. Packets generated before the field
+existed remain schema-valid without it, but they cannot win freshness selection
+and never satisfy a fresh-artifact readback on their own; regenerate rather
+than hand-adding the field. Note that a committed artifact set always reads
+stale to the readback once HEAD moves past it — freshness proof is a
+regeneration at HEAD, not a property a commit can preserve.
+
 Commit durable packet/context/report artifacts when they represent a real build handoff. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.
 
 `campaigns-os start` / `campaigns-os prepare-build` writes packet, context, report, and generated doctor-output paths as relative paths by default, including sibling CampaignSpec/source directories such as `../campaign-source`. `campaigns-os doctor` and `validate-build-packet` continue to accept older absolute-path packets; use `campaigns-os doctor --strip-paths` when regenerating a commit-ready doctor output from an older packet. Committed handoff artifacts should not contain machine-local absolute paths unless no relative form is possible.

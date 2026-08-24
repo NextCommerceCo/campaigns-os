@@ -139,6 +139,38 @@ npm run campaigns-os -- qa run \
 
 The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags`, writes a local verdict JSON under `qa-output/<map-id>/<run-id>.json`, and returns exit code `4` when the verdict is blocked.
 
+### Committed verdict sidecar (`.campaign-runtime/qa-verdict.json`)
+
+Packet-based `qa run` also writes a committed sidecar beside the Build Packet
+at `.campaign-runtime/qa-verdict.json` — the artifact campaigns-agent's
+readback consumes. It is written for every finalized disposition, blocked
+included: the sidecar records what QA concluded, it is not a pass mark. A run
+that dies before verdict finalization or fails local validation never touches
+an existing sidecar. Packet-less runs (`--site`, raw map-id) have no packet
+home and write no sidecar.
+
+The sidecar is an allowlist **projection** of the full verdict, same schema
+(`1.0`), stamped with its own `generated_at` at promotion time. Full verdicts
+under `qa-output/` are gitignored because they carry live storefront URLs,
+request evidence, and order references; the projection keeps identity,
+disposition, per-assertion `id`/`family`/`page`/`status`/`severity`/
+`blocked_by`, and trimmed exceptions, and empties every URL-bearing field. Do
+not commit a full verdict, and do not hand-author the sidecar.
+
+To backfill from an existing full verdict, name the exact source explicitly —
+nothing is ever selected by mtime or "latest":
+
+```bash
+campaigns-os qa promote \
+  --packet campaign-runtime.build.json \
+  --verdict qa-output/<map-id>/<run-id>.json \
+  --json
+```
+
+`qa promote` validates the source before writing, replaces the sidecar
+atomically, refuses the destination sidecar as its own source, and leaves the
+source verdict byte-identical.
+
 Add `--browser --test-order common` for the normal proof pass: first-party
 Playwright browser checks plus the default typed-card order sample. If the
 browser binary is missing, the CLI will prompt you to run
