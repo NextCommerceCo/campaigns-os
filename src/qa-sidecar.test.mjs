@@ -39,7 +39,7 @@ function fullVerdict(overrides = {}) {
         severity: "blocker",
         expected: "/demo/receipt/",
         actual: "/receipt",
-        evidence: { request_url: "https://api.example.com/v1/orders?key=sk_secret", final_url: "http://localhost:8788/demo/receipt/?order=ORD-77" },
+        evidence: { request_url: "https://api.example.com/v1/orders?key=sk_secret", final_url: "http://localhost:8788/demo/receipt/?order=ORD-77", har_path: "/private/tmp/qa-run/capture.har", win_path: "C:\\Users\\op\\capture.har" },
       },
       { id: "route-link:landing:next", family: "funnel-flow", page: "landing", url: "http://localhost:8788/demo/landing/", status: "pass", severity: "warn" },
       { id: "browser-console-errors:landing", family: "browser-runtime", page: "landing", status: "skipped", severity: "warn", blocked_by: "meta:checkout:next-success-url" },
@@ -65,7 +65,8 @@ function looksLeaked(value) {
     || /ORD-77/.test(value)
     || /sk_secret/.test(value)
     || /someuser/.test(value)
-    || /^\/(?:Users|home)\//.test(value);
+    || /^\/(?:Users|home|private|root|tmp|var|etc)\//.test(value)
+    || /^[A-Za-z]:\\/.test(value);
 }
 
 // Writers refuse a sidecar anchor that is not a real Build Packet, so every

@@ -87,11 +87,19 @@ const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
  * exists to prevent.
  */
 function assertPacketAnchor(packetPath) {
+  let raw;
+  try {
+    raw = readFileSync(resolve(packetPath), "utf8");
+  } catch (error) {
+    // error.code only, never error.message: raw fs messages can carry local
+    // uid/path detail that does not belong in surfaced output.
+    throw new Error(`Sidecar anchor ${packetPath} is not a readable Build Packet (${error.code || "unreadable"}).`);
+  }
   let packet;
   try {
-    packet = JSON.parse(readFileSync(resolve(packetPath), "utf8"));
-  } catch (error) {
-    throw new Error(`Sidecar anchor ${packetPath} is not a readable Build Packet: ${error.message}`);
+    packet = JSON.parse(raw);
+  } catch {
+    throw new Error(`Sidecar anchor ${packetPath} is not a readable Build Packet (not valid JSON).`);
   }
   if (packet?.schema_version !== PACKET_SCHEMA) {
     throw new Error(`Sidecar anchor ${packetPath} is not a Build Packet (expected schema_version ${PACKET_SCHEMA}).`);
