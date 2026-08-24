@@ -30,9 +30,19 @@ import {
   evaluatePageKitSdkVersion,
   PAGE_KIT_SDK_VERSION_SCOPE,
 } from "./page-kit-sdk-version.mjs";
+import {
+  captureCommercialClaims,
+  createPageSourceLoader,
+  planCommercialParity,
+  runCommercialParity,
+  unavailableCommercialCapture,
+  unavailableCommercialReport,
+} from "./qa-commercial-parity.mjs";
+import { serializeCommercialFindings } from "./commercial-parity.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
+const QA_VERDICT_ASSERTION_LIMIT = 500;
 
 const HELP = `campaigns-os qa — Node/npm spec-aware QA
 
@@ -56,8 +66,12 @@ Options:
                                   Requires --base-url and --family. No Map ID / CampaignSpec needed.
   --spec <path>                   Local exported CampaignSpec JSON for the non-packet Map ID flow.
                                   Packet QA always uses packet.spec.local_path and rejects this override.
-  --proxy-base <url>              Campaign Map proxy base for fetching /api/spec/<map-id>.
+  --proxy-base <url>              Campaign Map proxy base for /api/spec, /api/price-preview, and verdict publishing.
   --base-url <url>                Deployed campaign root. Packet deploy URL is used when omitted.
+                                  Commercial pages are checked automatically against /api/price-preview;
+                                  no commercial sidecar or extra catalog flag is required.
+                                  HTML/proxy bodies, parser work, claims, and scenarios are hard-bounded;
+                                  unavailable proof is recorded as incomplete rather than a guessed mismatch.
   --output-dir <path>             Local verdict directory. Default: qa-output.
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
@@ -1549,6 +1563,10 @@ async function runParityQa(args) {
 
 async function runQa(args) {
   const resolved = await resolveQaInputs(args);
+  return runResolvedQa(args, resolved);
+}
+
+async function runResolvedQa(args, resolved) {
   const startedAt = new Date().toISOString();
   const runId = generateRunId();
   const gate = resolved.themeGate;
@@ -1564,6 +1582,7 @@ async function runQa(args) {
       startedAt,
       assertions: checkpointBlockedAssertions(checkpointGates, polishGate, gate),
       testOrders: [],
+      commercial: unavailableCommercialReport("checkpoint_gate_blocked"),
     });
   }
   const checkpointAssertions = checkpointGates.map(checkpointGateAssertion);
@@ -1575,6 +1594,7 @@ async function runQa(args) {
       startedAt,
       assertions: [...checkpointAssertions, ...polishBlockedAssertions(polishGate, gate).filter((item) => item.family !== "api-metadata")],
       testOrders: [],
+      commercial: unavailableCommercialReport("polish_gate_blocked"),
     });
   }
   // Blocked theme gate refuses the whole run: the verdict carries the gate
@@ -1588,6 +1608,7 @@ async function runQa(args) {
       startedAt,
       assertions: [...checkpointAssertions, ...themeBlockedAssertions(gate, polishGate).filter((item) => item.family !== "api-metadata")],
       testOrders: [],
+      commercial: unavailableCommercialReport("theme_gate_blocked"),
     });
   }
 
@@ -1598,10 +1619,36 @@ async function runQa(args) {
   ];
   const contractAssertion = templateBrandContractAssertion(resolved);
   if (contractAssertion) assertions.push(contractAssertion);
+  const commercialPlanning = planCommercialParity(resolved.rawSpec || resolved.spec);
+  const sourceLoader = createPageSourceLoader({ authCookie: args["auth-cookie"] });
+  const commercialIds = new Set(commercialPlanning.pages
+    .filter((page) => page?.id !== undefined && page?.id !== null)
+    .map((page) => String(page.id)));
+  const capturesByPageId = new Map();
   for (const topology of resolved.topologies) {
     for (const page of topology.pages) {
-      assertions.push(...await runPageChecks(page, args));
+      const captureCommercial = !commercialPlanning.overflow && commercialIds.has(String(page.page_id));
+      const pageResult = await runPageChecks(page, args, { sourceLoader, captureCommercial });
+      assertions.push(...pageResult.assertions);
+      if (captureCommercial && pageResult.commercialCapture && !capturesByPageId.has(String(page.page_id))) {
+        capturesByPageId.set(String(page.page_id), pageResult.commercialCapture);
+      }
     }
+  }
+  let commercialResult;
+  try {
+    commercialResult = await runCommercialParity({
+      resolved,
+      captures: [...capturesByPageId.values()],
+      planning: commercialPlanning,
+      maxAssertions: 0,
+    });
+  } catch (error) {
+    commercialResult = {
+      assertions: [],
+      commercial: unavailableCommercialReport("commercial_runner_error"),
+    };
+    process.stderr.write(`[campaigns-os] Commercial parity could not complete: ${error instanceof Error ? error.message : String(error)}\n`);
   }
   if (args.browser === true) {
     assertions.push(...await runBrowserChecks(resolved.topologies, args, {
@@ -1612,7 +1659,23 @@ async function runQa(args) {
   }
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions });
-  return finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders });
+  const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
+  const serializedCommercial = serializeCommercialFindings(commercialResult.commercial.findings, {
+    maxAssertions: remainingAssertionBudget,
+  });
+  commercialResult.assertions = serializedCommercial.assertions;
+  commercialResult.commercial.serialized_assertion_count = serializedCommercial.assertions.length;
+  commercialResult.commercial.omitted_assertion_count = serializedCommercial.omittedFindingCount;
+  assertions.push(...commercialResult.assertions);
+  return finalizeQaRun({
+    args,
+    resolved,
+    runId,
+    startedAt,
+    assertions,
+    testOrders,
+    commercial: commercialResult.commercial,
+  });
 }
 
 // Keep the correctness/order chronology in one testable seam. Root inventory
@@ -1660,7 +1723,7 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
   return result.orders;
 }
 
-async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders }) {
+async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null }) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
   const testedUrls = deriveTestedUrlsFromAssertions(assertions, pageUrls);
@@ -1681,6 +1744,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     testedUrls,
     assertions,
     testOrders,
+    commercial,
   });
 
   const validationErrors = validateVerdict(verdict);
@@ -1734,6 +1798,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
+    commercial: verdict.commercial || null,
     next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath }),
     verdict,
   };
@@ -1822,7 +1887,10 @@ function topologyList(topologies) {
   return Array.isArray(topologies) ? topologies : [];
 }
 
-async function runPageChecks(page, args) {
+async function runPageChecks(page, args, {
+  sourceLoader = createPageSourceLoader({ authCookie: args["auth-cookie"] }),
+  captureCommercial = false,
+} = {}) {
   const assertions = [];
   if (!page.url) {
     assertions.push(assertion({
@@ -1835,49 +1903,44 @@ async function runPageChecks(page, args) {
       actual: null,
       evidence: { transport_error: { code: "missing_url", message: "No page URL could be resolved. Provide --base-url or explicit spec page URLs." } },
     }));
-    return assertions;
+    return {
+      assertions,
+      commercialCapture: captureCommercial
+        ? unavailableCommercialCapture(page, new Error("No page URL was resolved."))
+        : null,
+    };
   }
 
-  let html = "";
-  try {
-    const headers = { Accept: "text/html,application/xhtml+xml" };
-    if (args["auth-cookie"]) headers.Cookie = args["auth-cookie"];
-    const response = await fetch(page.url, { headers });
-    if (!response.ok) {
-      assertions.push(assertion({
-        id: `http:${page.page_id}`,
-        family: "funnel-flow",
-        page,
-        status: STATUS.FAIL,
-        severity: SEVERITY.BLOCKER,
-        expected: "2xx HTTP response",
-        actual: `${response.status} ${response.statusText}`,
-        evidence: { transport_error: { code: "http_status", message: `${response.status} ${response.statusText}` } },
-      }));
-      return assertions;
-    }
-    html = await response.text();
-    assertions.push(assertion({
-      id: `http:${page.page_id}`,
-      family: "funnel-flow",
-      page,
-      status: STATUS.PASS,
-      expected: "2xx HTTP response",
-      actual: `${response.status} ${response.statusText}`,
-    }));
-  } catch (error) {
+  const source = await sourceLoader(page);
+  if (!source.ok) {
+    const isHttpStatus = source.error_code === "http_status";
     assertions.push(assertion({
       id: `http:${page.page_id}`,
       family: "funnel-flow",
       page,
       status: STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
-      expected: "fetchable deployed page",
-      actual: null,
-      evidence: { transport_error: { code: "fetch_error", message: error instanceof Error ? error.message : String(error) } },
+      expected: isHttpStatus ? "2xx HTTP response" : "fetchable bounded deployed page",
+      actual: isHttpStatus ? `${source.status} ${source.status_text}`.trim() : null,
+      evidence: { transport_error: { code: source.error_code, message: source.error } },
     }));
-    return assertions;
+    return {
+      assertions,
+      commercialCapture: captureCommercial
+        ? unavailableCommercialCapture(page, new Error(`${source.error_code}: ${source.error}`))
+        : null,
+    };
   }
+  const html = source.html;
+  const commercialCapture = captureCommercial ? captureCommercialClaims(page, html) : null;
+  assertions.push(assertion({
+    id: `http:${page.page_id}`,
+    family: "funnel-flow",
+    page,
+    status: STATUS.PASS,
+    expected: "2xx HTTP response",
+    actual: `${source.status} ${source.status_text}`.trim(),
+  }));
 
   const expectedMeta = page.expected_meta_tags || {};
   const actualMeta = extractMetaTags(html);
@@ -1937,7 +2000,7 @@ async function runPageChecks(page, args) {
     }));
   }
 
-  return assertions;
+  return { assertions, commercialCapture };
 }
 
 async function maybeRunTestOrders(
@@ -2324,6 +2387,9 @@ function output(value, args) {
     console.log(`Disposition: ${value.verdict.disposition}`);
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
     printThemeGateLines(value.theme_gate);
+    if (value.commercial) {
+      console.log(`Commercial parity: ${value.commercial.status} (${value.commercial.finding_count || 0} findings, ${value.commercial.checked_pages || 0} pages checked)`);
+    }
     console.log(`Local copy: ${value.local_path}`);
     if (value.posted?.ok && value.dashboard_url) {
       console.log(`QA portal: ${value.dashboard_url}`);
@@ -2901,6 +2967,8 @@ function extractApiError(raw) {
 
 export const __qaNodeTestHooks = Object.freeze({
   resolveQaInputs,
+  runResolvedQa,
+  runPageChecks,
   analyticsCorrectnessLegDecision,
   analyticsCorrectnessDisabledAssertion,
   runAnalyticsOrderSequence,

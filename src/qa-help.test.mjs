@@ -15,4 +15,6 @@ test("qa help describes topology-derived common and full test-order coverage", (
   assert.match(output, /full.*every actual terminal path/s);
   assert.match(output, /cycles, missing routes, and reachable nonterminals.*block before browser launch/s);
   assert.match(output, /default cap is 6; overflow names the exact raise/s);
+  assert.match(output, /Commercial pages are checked automatically against \/api\/price-preview/s);
+  assert.match(output, /no commercial sidecar or extra catalog flag is required/s);
 });

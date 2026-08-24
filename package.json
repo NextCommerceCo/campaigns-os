@@ -9,6 +9,14 @@
     "campaigns-os": "./bin/campaigns-os.mjs"
   },
   "exports": {
+    "./commercial-journey": {
+      "import": "./src/commercial-journey.mjs",
+      "default": "./src/commercial-journey.mjs"
+    },
+    "./commercial-parity": {
+      "import": "./src/commercial-parity.mjs",
+      "default": "./src/commercial-parity.mjs"
+    },
     "./campaign-spec": {
       "types": "./campaign-spec/dist/index.d.ts",
       "import": "./campaign-spec/dist/index.js",
