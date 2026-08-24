@@ -1285,13 +1285,19 @@ function assertDistinctPrepareBuildOutputPaths(outputs) {
     seenCanonicalPaths.set(canonicalIdentity, { label, path: absolute });
 
     // A lexical comparison is insufficient once an output already exists:
-    // symlinks and hard links can name the fixed DSP (or another sidecar)
-    // through a different path, and writeFileSync would follow that alias.
-    // Device + inode identify the actual filesystem object for both cases.
+    // hard links can name the fixed DSP (or another sidecar) through a
+    // different path, and writeFileSync would follow that alias. Symlink
+    // aliases are already caught by the canonical-path check above, so
+    // device + inode only need to identify hard links — files with
+    // nlink > 1. Recording an identity for nlink === 1 files is unsound
+    // here: the stat calls are not atomic across outputs, and a concurrent
+    // prepare-build against the same target can unlink one output and let
+    // the kernel recycle its inode for another, making two distinct files
+    // momentarily share dev:ino.
     let identity = null;
     try {
       const stats = statSync(absolute);
-      identity = `${stats.dev}:${stats.ino}`;
+      if (stats.nlink > 1) identity = `${stats.dev}:${stats.ino}`;
     } catch {
       // Missing output paths have no filesystem identity yet; the normalized
       // absolute-path check above is authoritative until they are created.
