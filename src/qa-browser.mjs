@@ -1658,15 +1658,6 @@ function formatStepEvent(entry) {
   return `[qa:test-order] step=${entry.step} status=${entry.status} ${entry.duration_ms}ms`;
 }
 
-// Customer/address-field trace. Deliberately NOT named a checkout-field trace:
-// it covers the customer and shipping/billing address fields reached through
-// [data-next-checkout-field], and does NOT cover payment entry — the card
-// number and CVV live in cross-origin Spreedly iframes this trace never sees.
-//
-// An entry is appended BEFORE its action runs and mutated in place after, so a
-// step that times out mid-action leaves the offending field visible as the one
-// still marked "pending". That is what turns "customer_fields_filled timed out"
-// into "it was hanging on postal".
 // Cart-API observation for the cart_created step. The old check was a boolean
 // "did any URL contain /carts/" probe, which both told the reader nothing and
 // counted /carts/calculate/ repricing calls as cart creation. This reports what
@@ -1696,6 +1687,15 @@ function cartCreationEvidence(events) {
   };
 }
 
+// Customer/address-field trace. Deliberately NOT named a checkout-field trace:
+// it covers the customer and shipping/billing address fields reached through
+// [data-next-checkout-field], and does NOT cover payment entry — the card
+// number and CVV live in cross-origin Spreedly iframes this trace never sees.
+//
+// An entry is appended BEFORE its action runs and mutated in place after, so a
+// step that times out mid-action leaves the offending field visible as the one
+// still marked "pending". That is what turns "customer_fields_filled timed out"
+// into "it was hanging on postal".
 function createFieldTrace() {
   const fields = [];
   return {
