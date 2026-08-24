@@ -560,15 +560,14 @@ export async function runCommercialParity({
   const aggregateClaimOverflow = observedClaims > limits.max_aggregate_claims;
   const issues = captureIssues(captures);
   if (aggregateClaimOverflow) issues.push({ code: "commercial_aggregate_claim_limit" });
+  if (scenarioOverflow) issues.push({ code: "commercial_scenario_limit" });
   const apiKeyResolution = resolveCommercialApiKey(resolved);
   const apiKey = apiKeyResolution.value;
   let executed = [];
 
-  if (aggregateClaimOverflow) {
-    // Do not execute or compare a partial claim set. The verdict remains
-    // publishable and explicitly records that commercial proof is incomplete.
-  } else if (scenarioOverflow) {
-    issues.push({ code: "commercial_scenario_limit" });
+  if (aggregateClaimOverflow || scenarioOverflow) {
+    // Do not execute or compare a partial claim/scenario set. Independent
+    // preflight issues above remain visible when multiple ceilings are hit.
   } else if (apiKeyResolution.unsupported) {
     issues.push({ code: "unsupported_campaigns_api_key_source" });
   } else if (plan.some((descriptor) => !descriptor?.unresolved) && !present(apiKey)) {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -473,6 +473,52 @@ test("per-document and aggregate claim ceilings keep distinct issue codes", asyn
   assert.equal(result.commercial.status, "incomplete");
 });
 
+test("simultaneous per-document and aggregate claim ceilings preserve both issues", async () => {
+  const spec = rawRecurringSpec();
+  const html = Array.from({ length: 501 }, (_, index) => (
+    `<span data-next-display="bundle.item${index}.price" data-next-format="currency">$29.99</span>`
+  )).join("");
+  const limitedCapture = captureCommercialClaims({ page_id: "page_mt104ehn_11" }, html);
+  assert.equal(limitedCapture.extraction_errors?.[0]?.type, "commercial_html_claims_limit");
+
+  let indexedVoucherReads = 0;
+  const vouchers = new Proxy(
+    Array.from({ length: 257 }, (_, index) => ({ code: `CODE${index}` })),
+    {
+      get(target, property, receiver) {
+        if (/^\d+$/.test(String(property))) indexedVoucherReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    },
+  );
+  let fetched = false;
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [limitedCapture, {
+      page_id: "page_mt104ehn_11",
+      price_claims: [],
+      recurrence_claims: [],
+      vouchers,
+    }],
+    fetchImpl: async () => {
+      fetched = true;
+      throw new Error("must not fetch");
+    },
+  });
+
+  assert.equal(fetched, false);
+  assert.equal(indexedVoucherReads, 0);
+  assert.equal(result.commercial.invalid_capture_count, 1);
+  assert.equal(result.commercial.extracted_voucher_claims, 257);
+  assert.equal(result.commercial.unresolved_voucher_claims, 257);
+  assert.deepEqual(result.commercial.issues, [
+    { code: "commercial_aggregate_claim_limit", count: 1 },
+    { code: "commercial_html_claims_limit", count: 1 },
+  ]);
+  assert.deepEqual(result.assertions, []);
+  assert.equal(result.commercial.status, "incomplete");
+});
+
 test("compact verdict evidence preserves sanitized missing, unmatched, invalid, and finding arrays", async () => {
   const spec = rawRecurringSpec();
   delete spec.campaign.campaigns_api_key;
@@ -498,6 +544,10 @@ test("compact verdict evidence preserves sanitized missing, unmatched, invalid, 
 
 test("canonical resolved qa run fetches HTML once and writes deterministic commercial assertions into the verdict", async () => {
   const outputDir = mkdtempSync(join(tmpdir(), "campaigns-os-commercial-qa-"));
+  const packetPath = join(outputDir, "campaign-runtime.build.json");
+  writeFileSync(packetPath, `${JSON.stringify({
+    schema_version: "campaign-runtime-build-packet/v0",
+  })}\n`);
   const originalFetch = globalThis.fetch;
   const rawSpec = rawRecurringSpec();
   const pageUrl = "https://preview.example.test/checkout/";
@@ -539,7 +589,7 @@ test("canonical resolved qa run fetches HTML once and writes deterministic comme
       analyticsCaptureTarget: { url: null, source: "unresolved" },
       brandContract: null,
       brandContractStatus: "not_evaluated",
-      packetPath: join(outputDir, "campaign-runtime.build.json"),
+      packetPath,
       packet: null,
       mapId: "commercial-integration",
       publicRouteSlug: "commercial-integration",
