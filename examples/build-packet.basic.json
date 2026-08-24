@@ -1,5 +1,6 @@
 {
   "schema_version": "campaign-runtime-build-packet/v0",
+  "generated_at": "2026-08-24T00:00:00.000Z",
   "campaign": {
     "public_route_slug": "runtime-packet-demo",
     "campaign_directory": "runtime-packet-demo",
