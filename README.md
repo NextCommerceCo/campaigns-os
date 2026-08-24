@@ -83,6 +83,11 @@ npm run campaigns-os -- findings harvest --packet <packet.json>
 npm run campaigns-os -- findings export --summary
 ```
 
+`qa run` automatically checks contract-governed authored price, recurring
+cadence, and voucher claims against fresh `/api/price-preview` results for
+commercial pages. It needs no private repo import or extra catalog flag; proven
+mismatches are warn-severity pricing assertions in the normal verdict.
+
 Run `tooling status` before a build session to verify the local checkout,
 package metadata, CLI entrypoint, and installed Campaigns OS skills agree. The
 package is currently private/local-checkout based, so npm does not

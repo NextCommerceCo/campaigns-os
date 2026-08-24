@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-qa
-version: 1.0.2
+version: 1.0.3
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
@@ -34,6 +34,7 @@ Inputs:
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
+- Canonical `qa run` automatically runs commercial parity for enabled pages with package rows when their source evidence is available. It reuses each page's read-only source fetch and the existing read-only `POST /api/price-preview`; neither creates carts, orders, or transactions. The lane is warn-first: proven price, recurring-cadence, and voucher mismatches become warn-severity `pricing` assertions, with compact coverage and findings at top-level `verdict.commercial`. Omitted or otherwise unprovable claims emit no mismatch assertion and do not change an otherwise-ready disposition; incomplete coverage remains visible in `verdict.commercial`.
 - Use `qa parity` for migration cells that carry a parity fixture; select the fixture scenario and drive that offer through the candidate funnel.
 - Parity capture blocking proof is the voucher-adjusted persisted line from typed-card order readback. Browser totals and client state do not replace the persisted-line voucher guard.
 - Read client purchase values per event. A whole-cart `dl_purchase` must not mask or supply an offer-level upsell purchase expectation.

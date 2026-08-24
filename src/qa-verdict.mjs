@@ -70,6 +70,14 @@ export function computeDisposition(assertions) {
   return "ready";
 }
 
+function dispositionWithCommercial(assertions, commercial) {
+  const disposition = computeDisposition(assertions);
+  if (disposition === "blocked") return disposition;
+  return commercial?.status === "mismatch"
+    ? "ready_with_exceptions"
+    : disposition;
+}
+
 export function createVerdict({
   runId,
   mapId,
@@ -88,6 +96,7 @@ export function createVerdict({
   assertions,
   testOrders = [],
   exceptions = null,
+  commercial = null,
 }) {
   const normalizedExceptions = Array.isArray(exceptions)
     ? exceptions
@@ -114,10 +123,13 @@ export function createVerdict({
     entry_urls: normalizedEntryUrls,
     page_urls: normalizedPageUrls,
     tested_urls: normalizedTestedUrls,
-    disposition: computeDisposition(assertions),
+    disposition: dispositionWithCommercial(assertions, commercial),
     assertions,
     test_orders: testOrders,
     exceptions: normalizedExceptions,
+    ...(commercial && typeof commercial === "object" && !Array.isArray(commercial)
+      ? { commercial }
+      : {}),
   };
 }
 
@@ -161,5 +173,9 @@ export function validateVerdict(verdict) {
   if (!Array.isArray(verdict.assertions)) errors.push("assertions: must be an array");
   if (!Array.isArray(verdict.test_orders)) errors.push("test_orders: must be an array");
   if (!Array.isArray(verdict.exceptions)) errors.push("exceptions: must be an array");
+  if (verdict.commercial !== undefined
+    && (!verdict.commercial || typeof verdict.commercial !== "object" || Array.isArray(verdict.commercial))) {
+    errors.push("commercial: must be an object when present");
+  }
   return errors;
 }

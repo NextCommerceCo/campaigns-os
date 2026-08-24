@@ -139,6 +139,44 @@ npm run campaigns-os -- qa run \
 
 The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags`, writes a local verdict JSON under `qa-output/<map-id>/<run-id>.json`, and returns exit code `4` when the verdict is blocked.
 
+### Automatic commercial parity
+
+When the CampaignSpec has enabled pages with package rows, the same `qa run`
+automatically plans calculate scenarios from the packet's raw CampaignSpec and
+executes them through the existing proxy `POST /api/price-preview` contract.
+The runner uses the established credential precedence: a direct packet
+`campaign.campaigns_api_key`/`api_key`, then CampaignSpec key fields, then the
+single trusted packet fallback `campaign.api_key_source = "env:CAMPAIGNS_API_KEY"`.
+Other environment-variable names are rejected so an untrusted packet cannot
+forward unrelated process credentials to an overridden proxy. The resolved value is supplied
+only as the `X-Campaign-Key` request header and is never serialized into the verdict.
+No private runtime import, commercial sidecar, duplicated price calculation, or
+extra catalog flag is involved. Recurring package facts come from the authored
+page rows carried into each portable descriptor.
+
+The deployed source response is fetched once per distinct URL and shared by
+the normal static checks and commercial extractor. Limits are deliberately
+hard: 2 MiB per HTML response, 16 MiB of retained HTML across the run, 50,000 parsed elements, nesting depth 128, 500
+claims per document, 256 claims across the run, 1 MiB per price-preview
+response, 256 calculate scenarios, four concurrent proxy requests, and 20
+seconds per request. A limit, missing key, malformed response,
+or unavailable page records incomplete commercial evidence; it never invents
+a mismatch. `commercial.status = "incomplete"` preserves the disposition
+derived from the ordinary QA assertions; it does not create an exception by
+itself. QA dispositions remain `ready`, `ready_with_exceptions`, or `blocked` —
+`ready_with_waivers` is the doctor/`next` checkpoint-readiness term.
+
+Only contract-governed claims are compared, and only against `Exact` normalized
+truth. Proven differences emit warn-severity `pricing` assertions named
+`price-claim-mismatch`, `cadence-disclosure-mismatch`, or
+`voucher-not-applied`. Decorative, ambiguous, stale, unresolved, or malformed
+claims remain silent. The verdict's top-level `commercial` section records
+coverage, sanitized missing/unmatched/invalid capture evidence, proxy issues,
+and findings; the same findings are serialized deterministically into the flat
+`assertions` array consumed by existing QA tooling. A proven mismatch keeps the
+verdict at `ready_with_exceptions` even when the flat assertion budget retains
+the finding only under `verdict.commercial`.
+
 ### Committed verdict sidecar (`.campaign-runtime/qa-verdict.json`)
 
 Packet-based `qa run` also writes a committed sidecar beside the Build Packet

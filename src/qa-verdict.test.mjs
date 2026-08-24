@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { createVerdict, deriveExceptions, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS } from "./qa-verdict.mjs";
+import { createVerdict, deriveExceptions, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 
 const baseVerdict = {
   runId: "RUN1",
@@ -140,6 +140,92 @@ test("createVerdict emits public_route_slug null when no route slug is known", (
   const verdict = createVerdict(baseVerdict);
 
   assert.equal(verdict.public_route_slug, null);
+});
+
+test("createVerdict carries the compact commercial evidence section", () => {
+  const commercial = {
+    schema_version: "campaigns-os-commercial-parity/v0",
+    status: "mismatch",
+    coverage_complete: true,
+    finding_count: 1,
+    findings: [{ type: "price-claim-mismatch" }],
+  };
+  const verdict = createVerdict({ ...baseVerdict, commercial });
+
+  assert.deepEqual(verdict.commercial, commercial);
+  assert.deepEqual(validateVerdict(verdict), []);
+});
+
+test("commercial disposition changes only for proven mismatches, not incomplete proof", () => {
+  const pass = {
+    id: "http:checkout",
+    family: "funnel-flow",
+    page: "checkout",
+    status: STATUS.PASS,
+  };
+  const warn = {
+    id: "browser:manual",
+    family: "browser-runtime",
+    page: "checkout",
+    status: STATUS.WARN,
+    severity: SEVERITY.WARN,
+  };
+  const blocker = {
+    id: "http:checkout",
+    family: "funnel-flow",
+    page: "checkout",
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+  };
+  const disposition = (assertions, status) => createVerdict({
+    ...baseVerdict,
+    assertions,
+    commercial: {
+      schema_version: "campaigns-os-commercial-parity/v0",
+      status,
+      coverage_complete: status !== "incomplete",
+      finding_count: status === "mismatch" ? 1 : 0,
+      findings: status === "mismatch" ? [{ type: "price-claim-mismatch" }] : [],
+    },
+  }).disposition;
+
+  assert.equal(disposition([pass], "incomplete"), "ready");
+  assert.equal(disposition([pass], "mismatch"), "ready_with_exceptions");
+  assert.equal(disposition([pass, warn], "incomplete"), "ready_with_exceptions");
+  assert.equal(disposition([blocker], "mismatch"), "blocked");
+});
+
+test("commercial mismatch keeps an exception disposition when the flat assertion budget is exhausted", () => {
+  const assertions = Array.from({ length: 500 }, (_, index) => ({
+    id: `pass:${index}`,
+    family: "funnel-flow",
+    page: "campaign",
+    status: STATUS.PASS,
+    expected: "pass",
+    actual: "pass",
+  }));
+  const verdict = createVerdict({
+    ...baseVerdict,
+    assertions,
+    commercial: {
+      schema_version: "campaigns-os-commercial-parity/v0",
+      status: "mismatch",
+      coverage_complete: true,
+      finding_count: 1,
+      omitted_assertion_count: 1,
+      findings: [{ type: "price-claim-mismatch" }],
+    },
+  });
+
+  assert.equal(verdict.assertions.length, 500);
+  assert.equal(verdict.disposition, "ready_with_exceptions");
+});
+
+test("validateVerdict rejects a non-object commercial section", () => {
+  const verdict = createVerdict(baseVerdict);
+  verdict.commercial = [];
+
+  assert.match(validateVerdict(verdict).join("\n"), /commercial: must be an object/);
 });
 
 test("QA_ASSERTION_FAMILY_VOCABULARY matches every family literal the runner emits", () => {
