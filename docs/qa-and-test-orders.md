@@ -161,7 +161,10 @@ claims per document, 256 claims across the run, 1 MiB per price-preview
 response, 256 calculate scenarios, four concurrent proxy requests, and 20
 seconds per request. A limit, missing key, malformed response,
 or unavailable page records incomplete commercial evidence; it never invents
-a mismatch.
+a mismatch. `commercial.status = "incomplete"` preserves the disposition
+derived from the ordinary QA assertions; it does not create an exception by
+itself. QA dispositions remain `ready`, `ready_with_exceptions`, or `blocked` —
+`ready_with_waivers` is the doctor/`next` checkpoint-readiness term.
 
 Only contract-governed claims are compared, and only against `Exact` normalized
 truth. Proven differences emit warn-severity `pricing` assertions named
@@ -170,7 +173,41 @@ truth. Proven differences emit warn-severity `pricing` assertions named
 claims remain silent. The verdict's top-level `commercial` section records
 coverage, sanitized missing/unmatched/invalid capture evidence, proxy issues,
 and findings; the same findings are serialized deterministically into the flat
-`assertions` array consumed by existing QA tooling.
+`assertions` array consumed by existing QA tooling. A proven mismatch keeps the
+verdict at `ready_with_exceptions` even when the flat assertion budget retains
+the finding only under `verdict.commercial`.
+
+### Committed verdict sidecar (`.campaign-runtime/qa-verdict.json`)
+
+Packet-based `qa run` also writes a committed sidecar beside the Build Packet
+at `.campaign-runtime/qa-verdict.json` — the artifact campaigns-agent's
+readback consumes. It is written for every finalized disposition, blocked
+included: the sidecar records what QA concluded, it is not a pass mark. A run
+that dies before verdict finalization or fails local validation never touches
+an existing sidecar. Packet-less runs (`--site`, raw map-id) have no packet
+home and write no sidecar.
+
+The sidecar is an allowlist **projection** of the full verdict, same schema
+(`1.0`), stamped with its own `generated_at` at promotion time. Full verdicts
+under `qa-output/` are gitignored because they carry live storefront URLs,
+request evidence, and order references; the projection keeps identity,
+disposition, per-assertion `id`/`family`/`page`/`status`/`severity`/
+`blocked_by`, and trimmed exceptions, and empties every URL-bearing field. Do
+not commit a full verdict, and do not hand-author the sidecar.
+
+To backfill from an existing full verdict, name the exact source explicitly —
+nothing is ever selected by mtime or "latest":
+
+```bash
+campaigns-os qa promote \
+  --packet campaign-runtime.build.json \
+  --verdict qa-output/<map-id>/<run-id>.json \
+  --json
+```
+
+`qa promote` validates the source before writing, replaces the sidecar
+atomically, refuses the destination sidecar as its own source, and leaves the
+source verdict byte-identical.
 
 Add `--browser --test-order common` for the normal proof pass: first-party
 Playwright browser checks plus the default typed-card order sample. If the

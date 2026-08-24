@@ -73,7 +73,7 @@ export function computeDisposition(assertions) {
 function dispositionWithCommercial(assertions, commercial) {
   const disposition = computeDisposition(assertions);
   if (disposition === "blocked") return disposition;
-  return commercial?.status === "mismatch" || commercial?.status === "incomplete"
+  return commercial?.status === "mismatch"
     ? "ready_with_exceptions"
     : disposition;
 }

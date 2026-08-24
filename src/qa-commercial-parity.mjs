@@ -142,8 +142,8 @@ export function commercialSpecPages(spec, { maxPages = Number.POSITIVE_INFINITY 
       : [];
   for (const funnel of funnels) {
     for (const page of array(funnel?.pages)) {
-      if (page?.enabled === false || array(page?.packages).length === 0) continue;
-      const key = present(page?.id) ? `id:${String(page.id)}` : `index:${pages.length}`;
+      if (page?.enabled === false || array(page?.packages).length === 0 || !present(page?.id)) continue;
+      const key = `id:${String(page.id)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       pages.push(page);
@@ -405,7 +405,7 @@ function captureIssues(captures) {
   array(captures).forEach((capture) => {
     array(capture?.extraction_errors).forEach((error) => {
       if (error?.type === "commercial_html_claims_limit") {
-        issues.push({ code: "commercial_claim_limit" });
+        issues.push({ code: "commercial_html_claims_limit" });
       }
     });
   });
@@ -530,7 +530,7 @@ export async function runCommercialParity({
   const observedClaims = array(captures).reduce((sum, capture) => sum + captureClaimCount(capture), 0);
   const aggregateClaimOverflow = observedClaims > limits.max_aggregate_claims;
   const issues = captureIssues(captures);
-  if (aggregateClaimOverflow) issues.push({ code: "commercial_claim_limit" });
+  if (aggregateClaimOverflow) issues.push({ code: "commercial_aggregate_claim_limit" });
   const apiKeyResolution = resolveCommercialApiKey(resolved);
   const apiKey = apiKeyResolution.value;
   let executed = [];
@@ -568,11 +568,7 @@ export async function runCommercialParity({
       catalog_imported_at: catalogImportedAt(resolved?.rawSpec || resolved?.spec),
     },
   );
-  const parity = createCommercialParityReport(
-    aggregateClaimOverflow || scenarioOverflow ? [] : captures,
-    journey,
-    { maxAssertions },
-  );
+  const parity = createCommercialParityReport(captures, journey, { maxAssertions });
   return {
     assertions: parity.assertions,
     commercial: compactReport(

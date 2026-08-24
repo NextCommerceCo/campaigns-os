@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import {
   captureCommercialClaims,
   commercialSpecPages,
   createPageSourceLoader,
+  planCommercialParity,
   resolveCommercialApiKey,
   runCommercialParity,
 } from "./qa-commercial-parity.mjs";
@@ -126,6 +127,44 @@ test("runner plans from raw resolve data and preserves package-5 cadence into th
   assert.doesNotMatch(JSON.stringify(result), /packet-secret|campaign-secret/);
 });
 
+test("runner owns commercial assertion serialization at the supplied budget", async () => {
+  const spec = rawRecurringSpec();
+  const capture = captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `
+    <span data-next-display="bundle.main.price" data-next-format="currency">$30.00</span>
+    <div data-next-package-toggle>
+      <strong data-next-package-id="5">Game Club</strong>
+      Your first charge of $29.99, then $59.98 every two months.
+    </div>
+  `);
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [capture],
+    maxAssertions: 1,
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+    },
+  });
+
+  assert.equal(result.commercial.finding_count, 2);
+  assert.equal(result.commercial.serialized_assertion_count, 1);
+  assert.equal(result.commercial.omitted_assertion_count, 2);
+  assert.deepEqual(result.assertions.map((assertion) => assertion.id), [
+    "commercial-parity:additional-findings",
+  ]);
+});
+
+test("commercial runner errors stay silent in JSON mode", () => {
+  const written = [];
+  const write = (message) => written.push(message);
+
+  assert.equal(__qaNodeTestHooks.reportCommercialRunnerError({ json: true }, new Error("boom"), write), false);
+  assert.deepEqual(written, []);
+  assert.equal(__qaNodeTestHooks.reportCommercialRunnerError({}, new Error("boom"), write), true);
+  assert.equal(written.length, 1);
+  assert.match(written[0], /^\[campaigns-os\] Commercial parity could not complete: boom\n$/);
+});
+
 test("page source loader fetches each URL once and rejects an oversized streamed body", async () => {
   let fetches = 0;
   const loader = createPageSourceLoader({
@@ -214,6 +253,45 @@ test("legacy funnel_pages specs remain in automatic commercial scope", () => {
   assert.deepEqual(commercialSpecPages({ funnel_pages: [page] }), [page]);
 });
 
+test("id-less pages are excluded before commercial scenario accounting", () => {
+  const spec = rawRecurringSpec();
+  spec.funnels[0].pages.unshift({
+    type: "checkout",
+    packages: Array.from({ length: 300 }, (_, index) => ({ ref_id: String(index + 10), qty: 1 })),
+  });
+
+  const planning = planCommercialParity(spec);
+
+  assert.deepEqual(planning.pages.map((page) => page.id), ["page_mt104ehn_11"]);
+  assert.equal(planning.overflow, false);
+  assert.equal(planning.observed_scenarios, 2);
+  assert.equal(planning.plan.length, 2);
+});
+
+test("an all-id-less commercial spec is not applicable and performs no proxy work", async () => {
+  const spec = {
+    campaign: { campaigns_api_key: "campaign-secret" },
+    funnels: [{
+      id: "default",
+      pages: [{ type: "checkout", packages: [{ ref_id: "5", qty: 1 }] }],
+    }],
+  };
+  let fetched = false;
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    fetchImpl: async () => {
+      fetched = true;
+      throw new Error("must not fetch");
+    },
+  });
+
+  assert.equal(fetched, false);
+  assert.equal(result.commercial.status, "not_applicable");
+  assert.equal(result.commercial.planned_scenarios, 0);
+  assert.deepEqual(result.commercial.issues, []);
+  assert.deepEqual(result.assertions, []);
+});
+
 test("spec-only resolve fallback uses the same spec for planning and proxy credentials", async () => {
   const spec = rawRecurringSpec();
   let requests = 0;
@@ -269,7 +347,10 @@ test("scenario cap refuses an oversized plan before any proxy request", async ()
   let fetched = false;
   const result = await runCommercialParity({
     resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
-    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, "<main></main>")],
+    captures: [captureCommercialClaims(
+      { page_id: "page_mt104ehn_11" },
+      '<span data-next-display="bundle.main.price" data-next-format="currency">$29.99</span>',
+    )],
     fetchImpl: async () => {
       fetched = true;
       throw new Error("must not fetch");
@@ -280,6 +361,9 @@ test("scenario cap refuses an oversized plan before any proxy request", async ()
   assert.equal(result.commercial.planned_scenarios, 257);
   assert.deepEqual(result.commercial.issues, [{ code: "commercial_scenario_limit", count: 1 }]);
   assert.equal(result.commercial.status, "incomplete");
+  assert.equal(result.commercial.extracted_price_claims, 1);
+  assert.equal(result.commercial.compared_price_claims, 0);
+  assert.equal(result.commercial.unresolved_price_claims, 1);
 });
 
 test("aggregate claim cap emits no partial mismatch assertions and keeps the verdict publishable", async () => {
@@ -305,8 +389,32 @@ test("aggregate claim cap emits no partial mismatch assertions and keeps the ver
   assert.equal(result.commercial.status, "incomplete");
   assert.equal(result.commercial.observed_claims, 257);
   assert.equal(result.commercial.claim_limit, 256);
-  assert.deepEqual(result.commercial.issues, [{ code: "commercial_claim_limit", count: 1 }]);
+  assert.equal(result.commercial.extracted_voucher_claims, 257);
+  assert.equal(result.commercial.compared_voucher_claims, 0);
+  assert.equal(result.commercial.unresolved_voucher_claims, 257);
+  assert.deepEqual(result.commercial.issues, [{ code: "commercial_aggregate_claim_limit", count: 1 }]);
   assert.deepEqual(result.commercial.findings, []);
+});
+
+test("per-document and aggregate claim ceilings keep distinct issue codes", async () => {
+  const spec = rawRecurringSpec();
+  const html = Array.from({ length: 501 }, (_, index) => (
+    `<span data-next-display="bundle.item${index}.price" data-next-format="currency">$29.99</span>`
+  )).join("");
+  const capture = captureCommercialClaims({ page_id: "page_mt104ehn_11" }, html);
+  assert.equal(capture.extraction_errors?.[0]?.type, "commercial_html_claims_limit");
+
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [capture],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+    },
+  });
+
+  assert.deepEqual(result.commercial.issues, [{ code: "commercial_html_claims_limit", count: 1 }]);
+  assert.equal(result.commercial.status, "incomplete");
 });
 
 test("compact verdict evidence preserves sanitized missing, unmatched, invalid, and finding arrays", async () => {
@@ -375,7 +483,7 @@ test("canonical resolved qa run fetches HTML once and writes deterministic comme
       analyticsCaptureTarget: { url: null, source: "unresolved" },
       brandContract: null,
       brandContractStatus: "not_evaluated",
-      packetPath: null,
+      packetPath: join(outputDir, "campaign-runtime.build.json"),
       packet: null,
       mapId: "commercial-integration",
       publicRouteSlug: "commercial-integration",
@@ -423,6 +531,17 @@ test("canonical resolved qa run fetches HTML once and writes deterministic comme
       "price-claim-mismatch",
       "cadence-disclosure-mismatch",
     ]);
+    assert.equal(result.verdict.commercial.serialized_assertion_count, 2);
+    assert.equal(result.verdict.commercial.omitted_assertion_count, 0);
+    const sidecar = JSON.parse(readFileSync(result.qa_sidecar.path, "utf8"));
+    assert.deepEqual(
+      sidecar.assertions.filter((entry) => entry.family === "pricing").map((entry) => entry.id),
+      [
+        "price-claim-mismatch:page_mt104ehn_11:bundle.main.price",
+        "cadence-disclosure-mismatch:page_mt104ehn_11:package-5",
+      ],
+    );
+    assert.equal(sidecar.commercial, undefined, "the committed sidecar retains its strict allowlist projection");
     assert.doesNotMatch(JSON.stringify(result.verdict), /campaign-secret/);
   } finally {
     globalThis.fetch = originalFetch;

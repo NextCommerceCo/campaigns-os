@@ -877,6 +877,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
   const { assertions, omittedFindingCount } = serializeCommercialFindings(findings, options);
   const captureMatches = captures.map((capture) => ({ capture, page: pageForCapture(capture, journey) }));
   const matched = captureMatches.filter((entry) => entry.page);
+  const unmatchedCaptures = captureMatches.filter((entry) => !entry.page).map(({ capture }) => capture);
   const unmatchedPages = captureMatches.filter((entry) => !entry.page)
     .map(({ capture }) => ({
       page_id: present(capture.page_id) ? String(capture.page_id) : null,
@@ -893,18 +894,24 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     counts.unresolved += comparison.unresolved;
     return counts;
   }, { compared: 0, unresolved: 0 });
+  priceComparisonCounts.unresolved += unmatchedCaptures
+    .reduce((sum, capture) => sum + array(capture.price_claims).length, 0);
   const recurrenceComparisonCounts = matched.reduce((counts, { capture, page }) => {
     const comparison = recurrenceComparisonClaims(capture, page);
     counts.compared += comparison.compared.length;
     counts.unresolved += comparison.unresolved;
     return counts;
   }, { compared: 0, unresolved: 0 });
+  recurrenceComparisonCounts.unresolved += unmatchedCaptures
+    .reduce((sum, capture) => sum + array(capture.recurrence_claims).length, 0);
   const voucherComparisonCounts = matched.reduce((counts, { capture, page }) => {
     const comparison = voucherComparisonClaims(capture, page);
     counts.compared += comparison.compared.length;
     counts.unresolved += comparison.unresolved;
     return counts;
   }, { compared: 0, unresolved: 0 });
+  voucherComparisonCounts.unresolved += unmatchedCaptures
+    .reduce((sum, capture) => sum + array(capture.vouchers).length, 0);
 
   return {
     schema_version: COMMERCIAL_PARITY_SCHEMA_VERSION,
@@ -921,13 +928,13 @@ export function createCommercialParityReport(capturesValue, journey, options = {
       && priceComparisonCounts.unresolved === 0
       && recurrenceComparisonCounts.unresolved === 0
       && voucherComparisonCounts.unresolved === 0,
-    extracted_price_claims: matched.reduce((sum, { capture }) => sum + array(capture.price_claims).length, 0),
+    extracted_price_claims: captures.reduce((sum, capture) => sum + array(capture.price_claims).length, 0),
     compared_price_claims: priceComparisonCounts.compared,
     unresolved_price_claims: priceComparisonCounts.unresolved,
-    extracted_recurrence_claims: matched.reduce((sum, { capture }) => sum + array(capture.recurrence_claims).length, 0),
+    extracted_recurrence_claims: captures.reduce((sum, capture) => sum + array(capture.recurrence_claims).length, 0),
     compared_recurrence_claims: recurrenceComparisonCounts.compared,
     unresolved_recurrence_claims: recurrenceComparisonCounts.unresolved,
-    extracted_voucher_claims: matched.reduce((sum, { capture }) => sum + array(capture.vouchers).length, 0),
+    extracted_voucher_claims: captures.reduce((sum, capture) => sum + array(capture.vouchers).length, 0),
     compared_voucher_claims: voucherComparisonCounts.compared,
     unresolved_voucher_claims: voucherComparisonCounts.unresolved,
     serialized_assertion_count: assertions.length,

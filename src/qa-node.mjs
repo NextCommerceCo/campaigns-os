@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
@@ -38,7 +39,6 @@ import {
   unavailableCommercialCapture,
   unavailableCommercialReport,
 } from "./qa-commercial-parity.mjs";
-import { serializeCommercialFindings } from "./commercial-parity.mjs";
 
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
@@ -52,6 +52,7 @@ Usage:
   campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--no-remit] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
+  campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
   campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
@@ -175,6 +176,11 @@ export async function runQaCli(args) {
   }
   if (subcommand === "waive") {
     const result = qaWaive(args);
+    output(result, args);
+    return result;
+  }
+  if (subcommand === "promote") {
+    const result = promoteQaVerdict({ verdictPath: args.verdict, packetPath: args.packet });
     output(result, args);
     return result;
   }
@@ -1627,28 +1633,13 @@ async function runResolvedQa(args, resolved) {
   const capturesByPageId = new Map();
   for (const topology of resolved.topologies) {
     for (const page of topology.pages) {
-      const captureCommercial = !commercialPlanning.overflow && commercialIds.has(String(page.page_id));
+      const captureCommercial = commercialIds.has(String(page.page_id));
       const pageResult = await runPageChecks(page, args, { sourceLoader, captureCommercial });
       assertions.push(...pageResult.assertions);
       if (captureCommercial && pageResult.commercialCapture && !capturesByPageId.has(String(page.page_id))) {
         capturesByPageId.set(String(page.page_id), pageResult.commercialCapture);
       }
     }
-  }
-  let commercialResult;
-  try {
-    commercialResult = await runCommercialParity({
-      resolved,
-      captures: [...capturesByPageId.values()],
-      planning: commercialPlanning,
-      maxAssertions: 0,
-    });
-  } catch (error) {
-    commercialResult = {
-      assertions: [],
-      commercial: unavailableCommercialReport("commercial_runner_error"),
-    };
-    process.stderr.write(`[campaigns-os] Commercial parity could not complete: ${error instanceof Error ? error.message : String(error)}\n`);
   }
   if (args.browser === true) {
     assertions.push(...await runBrowserChecks(resolved.topologies, args, {
@@ -1660,12 +1651,21 @@ async function runResolvedQa(args, resolved) {
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions });
   const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
-  const serializedCommercial = serializeCommercialFindings(commercialResult.commercial.findings, {
-    maxAssertions: remainingAssertionBudget,
-  });
-  commercialResult.assertions = serializedCommercial.assertions;
-  commercialResult.commercial.serialized_assertion_count = serializedCommercial.assertions.length;
-  commercialResult.commercial.omitted_assertion_count = serializedCommercial.omittedFindingCount;
+  let commercialResult;
+  try {
+    commercialResult = await runCommercialParity({
+      resolved,
+      captures: [...capturesByPageId.values()],
+      planning: commercialPlanning,
+      maxAssertions: remainingAssertionBudget,
+    });
+  } catch (error) {
+    commercialResult = {
+      assertions: [],
+      commercial: unavailableCommercialReport("commercial_runner_error"),
+    };
+    reportCommercialRunnerError(args, error);
+  }
   assertions.push(...commercialResult.assertions);
   return finalizeQaRun({
     args,
@@ -1676,6 +1676,12 @@ async function runResolvedQa(args, resolved) {
     testOrders,
     commercial: commercialResult.commercial,
   });
+}
+
+function reportCommercialRunnerError(args, error, write = (message) => process.stderr.write(message)) {
+  if (args?.json === true) return false;
+  write(`[campaigns-os] Commercial parity could not complete: ${error instanceof Error ? error.message : String(error)}\n`);
+  return true;
 }
 
 // Keep the correctness/order chronology in one testable seam. Root inventory
@@ -1751,6 +1757,12 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   if (validationErrors.length) throw new Error(`QA verdict failed local validation:\n- ${validationErrors.join("\n- ")}`);
   const outputDir = resolve(args["output-dir"] || "qa-output");
   const localPath = writeLocalVerdict(verdict, outputDir);
+  // The committed sidecar lands beside the Build Packet regardless of
+  // --output-dir, for every finalized disposition including blocked: it is
+  // what campaigns-agent's readback consumes, and a blocked run the agent can
+  // read faithfully beats a missing artifact. Packet-less runs (--site / raw
+  // map-id) have no packet home, so there is nowhere contracted to write.
+  const sidecar = resolved.packetPath ? writeQaSidecar({ verdict, packetPath: resolved.packetPath }) : null;
   // Publish to the QA portal by default so runs land in the Campaign Map QA tab without the
   // operator needing to know a flag (LLM/agent UIs are the primary interface). Opt out with
   // --no-post-verdict / --local-only / --post-verdict false. Never fail the run if publish is unreachable.
@@ -1791,6 +1803,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     tested_urls: testedUrls,
     dashboard_url: dashboardUrl,
     local_path: localPath,
+    qa_sidecar: sidecar,
     posted: postResult,
     post_error: postError,
     publish_skipped: !shouldPublish,
@@ -2997,4 +3010,5 @@ export const __qaNodeTestHooks = Object.freeze({
   buildAnalyticsCaptureTarget,
   isRoutingMetaTag,
   unsupportedSdkMetaHint,
+  reportCommercialRunnerError,
 });

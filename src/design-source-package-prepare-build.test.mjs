@@ -290,6 +290,16 @@ test("prepare-build emits a schema-valid DSP and carries one exact-byte referenc
     assertSchema(validateContext, context, "Build Context");
     assertSchema(validateReport, report, "Assembly Report");
 
+    // Downstream freshness (campaigns-agent readback staleness, multi-packet
+    // selection) reads the packet's own generated_at, never file mtime.
+    assert.equal(typeof packet.generated_at, "string");
+    assert.ok(!Number.isNaN(Date.parse(packet.generated_at)), `packet generated_at must be parseable ISO-8601, got ${packet.generated_at}`);
+    assert.ok(packet.generated_at.endsWith("Z"), "packet generated_at must be UTC with a Z suffix");
+    // Packets generated before the field existed stay schema-valid.
+    const legacyPacket = { ...packet };
+    delete legacyPacket.generated_at;
+    assertSchema(validatePacket, legacyPacket, "legacy Build Packet without generated_at");
+
     assert.deepEqual(packet.design_source_package, {
       path: DSP_REL_PATH,
       schema_version: "campaign-design-source-package/v0",

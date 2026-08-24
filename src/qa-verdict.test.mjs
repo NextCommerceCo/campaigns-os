@@ -156,6 +156,45 @@ test("createVerdict carries the compact commercial evidence section", () => {
   assert.deepEqual(validateVerdict(verdict), []);
 });
 
+test("commercial disposition changes only for proven mismatches, not incomplete proof", () => {
+  const pass = {
+    id: "http:checkout",
+    family: "funnel-flow",
+    page: "checkout",
+    status: STATUS.PASS,
+  };
+  const warn = {
+    id: "browser:manual",
+    family: "browser-runtime",
+    page: "checkout",
+    status: STATUS.WARN,
+    severity: SEVERITY.WARN,
+  };
+  const blocker = {
+    id: "http:checkout",
+    family: "funnel-flow",
+    page: "checkout",
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+  };
+  const disposition = (assertions, status) => createVerdict({
+    ...baseVerdict,
+    assertions,
+    commercial: {
+      schema_version: "campaigns-os-commercial-parity/v0",
+      status,
+      coverage_complete: status !== "incomplete",
+      finding_count: status === "mismatch" ? 1 : 0,
+      findings: status === "mismatch" ? [{ type: "price-claim-mismatch" }] : [],
+    },
+  }).disposition;
+
+  assert.equal(disposition([pass], "incomplete"), "ready");
+  assert.equal(disposition([pass], "mismatch"), "ready_with_exceptions");
+  assert.equal(disposition([pass, warn], "incomplete"), "ready_with_exceptions");
+  assert.equal(disposition([blocker], "mismatch"), "blocked");
+});
+
 test("commercial mismatch keeps an exception disposition when the flat assertion budget is exhausted", () => {
   const assertions = Array.from({ length: 500 }, (_, index) => ({
     id: `pass:${index}`,

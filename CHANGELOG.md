@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.7.0] - 2026-08-24
+## [1.8.0] - 2026-08-24
 
 ### Added
 
@@ -18,7 +18,7 @@ Notable supported-surface changes are recorded here.
 
 ### Changed
 
-- Bumped the supported surface to `1.7.0` for the two additive package
+- Bumped the supported surface to `1.8.0` for the two additive package
   exports. The package remains developer preview `0.1.0-alpha.0`.
 
 ## [1.6.0] - 2026-08-23
