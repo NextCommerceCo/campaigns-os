@@ -17,6 +17,7 @@ implementation detail, however stable it looks.
 | CLI commands: `start`, `prepare-build`, `build`, `polish`, `checkpoint`, `doctor`, `standardize`, `standardization-report`, `qa`, `findings`, `run-record`, `run` | Scriptable entry points (this is the argv surface Campaigns Agent's remit fixture pins). `polish capture` owns page-load evidence production. `checkpoint waive` currently accepts three registered gates: `page_kit.store_profile`, `page_kit.sdk_version`, and `polish.hidden_eager_media`. Within Polish, only the broader Source Freshness waiver remains on its existing report lane; theme and QA decisions also retain their existing lanes. | Additive commands bump `surface_version` in the same PR. Subcommands, registered gates, and flags may grow freely beneath a listed command. Renaming or removing one fails the gate. Do not infer support for an unregistered checkpoint from the top-level command. |
 | `bin/campaigns-os.mjs` (`campaigns-os`) | The CLI entry itself. | Declared in `package.json` `bin`; the gate fails if it disappears. |
 | Package export `./campaign-spec` | The versioned campaign-spec rule registry, consumed as `@nextcommerce/campaigns-os` (pinned by consumers' lockfiles; lockstep policy — ADR-003 in the ops repo). | Behavior-guarded from the consumer side by their contract tests; the export path itself is gated here. |
+| Package exports `./commercial-journey` and `./commercial-parity` | Portable scenario planning, response normalization, contract-governed source extraction, Exact-only parity comparison, and deterministic QA assertion serialization. These modules own no network transport and do not calculate prices locally. | Consumers execute descriptors through a supported calculate transport, then pass captured envelopes into the pure normalizer. Existing export paths are gated and may not be renamed or removed without a breaking surface change. |
 | Contract docs: `CONTEXT.md`, `docs/campaigns-os-build-flow.md`, `docs/build-packet.md`, `docs/design-source-package.md`, `docs/campaign-build-brief.md`, `docs/campaign-standardization-report.md`, `docs/brand-theme-bridge.md`, `docs/qa-and-test-orders.md`, `docs/versioning.md`, `docs/workflow-findings-sidecar.md`, this file | Named entry points consumers pin for context. | Content evolves freely; the path must keep existing. |
 | `skills.json` + `skills/` + `skills.sh` | Versioned skill packages and their installer. | Governed by `check-skill-versions.mjs` (parity + bump gate + reserved external names). `skills.json` ships in the npm pack as of surface 1.0.0. |
 | `compatibility.json` | The published compatibility statement. | Named; must keep existing. |
@@ -27,7 +28,9 @@ the package a consumer installs."
 
 ## What is NOT supported
 
-- `src/**` — including files downstream context spines currently read
+- `src/**` except the files reached through the explicit
+  `./commercial-journey` and `./commercial-parity` package exports — including
+  files downstream context spines currently read
   (`src/cli.mjs`, `src/qa-*.mjs`, `src/doctor-check-registry.mjs`, …). Reading
   them for context is fine; importing or pinning behavior from them is not.
   Doctor issue **codes** are contract-adjacent but currently governed by the

@@ -2,6 +2,25 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.7.0] - 2026-08-24
+
+### Added
+
+- Added supported `./commercial-journey` and `./commercial-parity` package
+  exports for portable calculate-scenario planning, normalization,
+  contract-governed authored-claim extraction, and Exact-only mismatch
+  serialization.
+- Added automatic commercial parity to canonical `campaigns-os qa run`.
+  Authored HTML is fetched once per URL with hard byte/node/depth limits;
+  calculate descriptors use the existing `/api/price-preview` proxy, and the
+  three ratified mismatch classes enter the verdict as warn-severity pricing
+  assertions plus a `commercial` evidence section.
+
+### Changed
+
+- Bumped the supported surface to `1.7.0` for the two additive package
+  exports. The package remains developer preview `0.1.0-alpha.0`.
+
 ## [1.6.0] - 2026-08-23
 
 ### Added
