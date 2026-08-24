@@ -4,7 +4,12 @@ import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
 const {
   TEST_ORDER_STEP_LADDER,
+  cartCreationEvidence,
+  cartLineCount,
+  createFieldTrace,
   createStepLadder,
+  fillCheckoutFields,
+  requiredActionTimeout,
   formatStepEvent,
   hostedRedirectInfo,
   recordTestOrderTerminalEvidence,
@@ -196,4 +201,268 @@ test("failed path maps to a blocker assertion that carries the step ladder up to
   assert.equal(result.status, "fail");
   assert.equal(result.severity, "blocker");
   assert.deepEqual(result.evidence.steps, steps);
+});
+
+
+// --- Step-ladder evidence: the structured seam, the customer/address-field
+// trace written through it, and the cart-API observation that replaced a
+// boolean "did any URL contain /carts/" probe.
+//
+// The behaviour-preservation tests here are deliberate: the field trace wraps a
+// fill sequence whose ordering, progressive-disclosure calls and optional-field
+// tolerance are load-bearing, and a wrapper is exactly the kind of change that
+// regresses them silently.
+
+const FIELD_SELECTOR = (field) => `[data-next-checkout-field="${field}"]`;
+
+// A Playwright-shaped stub covering only what fillCheckoutFields touches.
+// `fields` is keyed by checkout field name; anything unlisted is present and
+// visible and accepts input.
+function fakePage(fields = {}, extras = {}) {
+  const calls = [];
+  const configFor = (selector) => {
+    const entry = Object.entries(fields).find(([field]) => selector === FIELD_SELECTOR(field));
+    if (entry) return entry[1];
+    return extras[selector] || {};
+  };
+  const makeLocator = (selector) => {
+    const cfg = configFor(selector);
+    const present = cfg.present !== false;
+    const locator = {
+      first: () => locator,
+      locator: () => locator,
+      count: async () => (present ? 1 : 0),
+      // `visible` may be a thunk so a stub can model progressive disclosure:
+      // a field that is hidden until the funnel reveals it.
+      isVisible: async () => present && (typeof cfg.visible === "function" ? cfg.visible() : cfg.visible !== false),
+      waitFor: async () => {
+        calls.push(`waitFor:${selector}`);
+      },
+      click: async () => {
+        calls.push(`click:${selector}`);
+        if (cfg.clickError) throw new Error(cfg.clickError);
+      },
+      check: async () => {
+        calls.push(`check:${selector}`);
+      },
+      fill: async (value) => {
+        calls.push(`fill:${selector}:${value}`);
+        if (cfg.fillError) throw new Error(cfg.fillError);
+      },
+      selectOption: async (value) => {
+        calls.push(`select:${selector}:${value}`);
+        if (cfg.selectError) throw new Error(cfg.selectError);
+      },
+      pressSequentially: async (value) => {
+        calls.push(`pressSequentially:${selector}:${value}`);
+        if (cfg.onPressSequentially) cfg.onPressSequentially();
+      },
+      press: async (key) => {
+        calls.push(`press:${selector}:${key}`);
+      },
+      evaluateAll: async () => [],
+    };
+    return locator;
+  };
+  return {
+    calls,
+    page: {
+      locator: makeLocator,
+      waitForTimeout: async () => {},
+    },
+  };
+}
+
+test("ladder entries carry structured evidence, and a failing step still reports what it gathered", async () => {
+  const ladder = createStepLadder({ emit: () => {} });
+
+  ladder.ok("opened_checkout", "loaded", { url_kind: "campaign" });
+  assert.deepEqual(ladder.steps[0].evidence, { url_kind: "campaign" });
+
+  // Empty and non-object evidence never produces an empty `evidence` key.
+  ladder.ok("selected_bundle", "default");
+  assert.equal("evidence" in ladder.steps[1], false);
+  ladder.skip("bump_state", "none", {});
+  assert.equal("evidence" in ladder.steps[2], false);
+
+  // The failure path resolves the thunk, so partial work survives the throw.
+  const gathered = { fields: ["email"] };
+  await assert.rejects(
+    ladder.run("customer_fields_filled", async () => {
+      gathered.fields.push("postal");
+      throw new Error("boom");
+    }, { timeoutMs: 1000, evidence: () => gathered }),
+  );
+  const failed = ladder.steps.at(-1);
+  assert.equal(failed.status, "failed");
+  assert.deepEqual(failed.evidence, { fields: ["email", "postal"] });
+
+  // A thunk that throws yields no evidence rather than masking the step result.
+  ladder.ok("card_fields_filled", null, () => {
+    throw new Error("evidence blew up");
+  });
+  assert.equal("evidence" in ladder.steps.at(-1), false);
+});
+
+test("a failing customer field names itself in the step evidence", async () => {
+  const { page } = fakePage({ postal: { fillError: "element is not editable" } });
+  const trace = createFieldTrace();
+
+  await assert.rejects(() => fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace }));
+
+  const summary = trace.summary();
+  assert.equal(summary.blocking_field, "postal");
+  assert.equal(summary.blocking_status, "failed");
+  assert.equal(summary.coverage, "customer_and_address_fields");
+  const postal = summary.fields.find((entry) => entry.field === "postal");
+  assert.equal(postal.status, "failed");
+  assert.match(postal.error, /not editable/);
+  // Fields completed before the failure are recorded as ok, so the reader sees
+  // how far the fill got — not just where it stopped.
+  assert.equal(summary.fields.find((entry) => entry.field === "email").status, "ok");
+});
+
+test("a step that hangs mid-field leaves that field pending, which is what names it", async () => {
+  const trace = createFieldTrace();
+  let release;
+  const stuck = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  const inflight = trace.inspect("city", "fill", () => stuck).catch(() => {});
+  await Promise.resolve();
+  // While the action is still in flight the entry is already on the trace.
+  assert.equal(trace.summary().blocking_field, "city");
+  assert.equal(trace.summary().blocking_status, "pending");
+  release();
+  await inflight;
+});
+
+test("optional fields stay best-effort: an unusable one is recorded, not thrown", async () => {
+  // A visible optional billing field that refuses input is the exact shape that
+  // must NOT become a blocker.
+  const { page } = fakePage({
+    phone: { present: false },
+    "billing-city": { fillError: "intercepted by another element" },
+  });
+  const trace = createFieldTrace();
+
+  await fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace });
+
+  const summary = trace.summary();
+  assert.equal(summary.fields.find((entry) => entry.field === "phone").status, "unusable");
+  assert.equal(summary.fields.find((entry) => entry.field === "billing-city").status, "unusable");
+  // Nothing blocking: an unusable optional field is not a failure.
+  assert.equal("blocking_field" in summary, false);
+});
+
+test("progressive-address disclosure still runs when city starts hidden", async () => {
+  // Models the real funnel: city is hidden until address1 is typed into.
+  let cityRevealed = false;
+  const { page, calls } = fakePage({
+    city: { visible: () => cityRevealed },
+    address1: { onPressSequentially: () => { cityRevealed = true; } },
+  });
+
+  await fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace: createFieldTrace() });
+
+  // address1 is re-typed keystroke-by-keystroke to trigger the funnel's
+  // disclosure, and city is then waited for.
+  assert.ok(calls.some((call) => call.startsWith(`pressSequentially:${FIELD_SELECTOR("address1")}`)));
+  assert.ok(calls.includes(`waitFor:${FIELD_SELECTOR("city")}`));
+});
+
+test("the customer/address fill sequence is unchanged by the trace wrapper", async () => {
+  const { page, calls } = fakePage();
+  await fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace: createFieldTrace() });
+
+  const order = calls
+    .filter((call) => call.startsWith("fill:") || call.startsWith("select:"))
+    .map((call) => call.split(":")[1].replace(/\[data-next-checkout-field="(.*)"\]/, "$1"));
+  assert.deepEqual(order.slice(0, 9), [
+    "fname",
+    "lname",
+    "email",
+    "phone",
+    "country",
+    "address1",
+    "city",
+    "province",
+    "postal",
+  ]);
+
+  // The trace is optional: without one the fill still runs identically.
+  const bare = fakePage();
+  await fillCheckoutFields(bare.page, {}, "qa@campaigns-os.test");
+  assert.deepEqual(bare.calls, calls);
+});
+
+test("cart observation reports status and line count, and ignores repricing calls", () => {
+  const evidence = cartCreationEvidence({
+    responses: [
+      { status: 422, url: "https://api.example.test/api/v1/carts/calculate/", body: { lines: [1, 2, 3, 4] } },
+      { status: 201, url: "https://api.example.test/api/v1/carts/", body: { lines: [{ id: 1 }, { id: 2 }] } },
+    ],
+  });
+
+  assert.equal(evidence.status, 201);
+  assert.equal(evidence.ok, true);
+  assert.equal(evidence.line_count, 2);
+  assert.equal(evidence.response_count, 1);
+  assert.match(evidence.url, /\/api\/v1\/carts\/$/);
+
+  // A repricing call alone is not cart creation.
+  assert.equal(cartCreationEvidence({
+    responses: [{ status: 200, url: "https://api.example.test/api/v1/carts/calculate/", body: {} }],
+  }), null);
+
+  // No cart traffic at all → the step's documented skip path.
+  assert.equal(cartCreationEvidence({ responses: [] }), null);
+});
+
+test("cart observation is query-tolerant and the latest create decides", () => {
+  const withQuery = cartCreationEvidence({
+    responses: [{ status: 201, url: "https://api.example.test/api/v1/carts/?expand=lines", body: { items: [{}] } }],
+  });
+  assert.equal(withQuery.status, 201);
+  assert.equal(withQuery.line_count, 1);
+
+  // A 500 retried into a 201 reports the 201, mirroring order-create handling.
+  const retried = cartCreationEvidence({
+    responses: [
+      { status: 500, url: "https://api.example.test/api/v1/carts/", body: {} },
+      { status: 201, url: "https://api.example.test/api/v1/carts/", body: { lines: [] } },
+    ],
+  });
+  assert.equal(retried.status, 201);
+  assert.equal(retried.line_count, 0);
+  assert.equal(retried.response_count, 2);
+
+  // A failing create is reported as failing, not hidden.
+  const failing = cartCreationEvidence({
+    responses: [{ status: 422, url: "https://api.example.test/api/v1/carts/", body: {} }],
+  });
+  assert.equal(failing.ok, false);
+  // An unreadable body omits line_count rather than guessing zero.
+  assert.equal("line_count" in failing, false);
+});
+
+test("cart line counts read the shapes the API actually returns", () => {
+  assert.equal(cartLineCount({ lines: [1, 2] }), 2);
+  assert.equal(cartLineCount({ items: [1] }), 1);
+  assert.equal(cartLineCount({ cart: { lines: [1, 2, 3] } }), 3);
+  assert.equal(cartLineCount({ data: { items: [] } }), 0);
+  assert.equal(cartLineCount({ lines: "nope" }), null);
+  assert.equal(cartLineCount(null), null);
+});
+
+test("the required-action timeout only ever tightens Playwright's default", () => {
+  // No budget → no explicit timeout, i.e. today's behaviour.
+  assert.deepEqual(requiredActionTimeout({}), {});
+  assert.deepEqual(requiredActionTimeout({ actionTimeoutMs: 0 }), {});
+  assert.deepEqual(requiredActionTimeout({ actionTimeoutMs: -1 }), {});
+  // A budget under the default tightens.
+  assert.deepEqual(requiredActionTimeout({ actionTimeoutMs: 9000 }), { timeout: 9000 });
+  // A budget over the default is capped, never loosened.
+  assert.deepEqual(requiredActionTimeout({ actionTimeoutMs: 120000 }), { timeout: 30000 });
 });
