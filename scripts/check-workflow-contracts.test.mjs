@@ -54,6 +54,23 @@ test("ignoring untracked fixture additions fails the workflow contract", () => {
   assert.ok(errors.some((error) => error.includes("git status --porcelain --untracked-files=all")));
 });
 
+test("omitting the exact source checkout or its validation path fails the workflow contract", () => {
+  const missingCheckout = clone(loadWorkflow());
+  missingCheckout.jobs.refresh.steps = missingCheckout.jobs.refresh.steps.filter(
+    (step) => !step.run?.includes("campaign-cart-starter-templates.git"),
+  );
+  assert.ok(
+    validateRefreshWorkflow(missingCheckout).some((error) => error.includes("exact refreshed templates SHA")),
+  );
+
+  const missingPath = clone(loadWorkflow());
+  const validate = missingPath.jobs.refresh.steps.find((step) => step.run?.trim() === "npm run check");
+  delete validate.env.STARTER_TEMPLATES_PATH;
+  assert.ok(
+    validateRefreshWorkflow(missingPath).some((error) => error.includes("STARTER_TEMPLATES_PATH")),
+  );
+});
+
 test("stale PR metadata or an orphaned recovery issue fails the workflow contract", () => {
   const workflow = clone(loadWorkflow());
   const pr = workflow.jobs.refresh.steps.find((step) => step.run?.includes("gh pr create"));

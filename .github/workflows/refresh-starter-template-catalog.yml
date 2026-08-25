@@ -79,8 +79,25 @@ jobs:
           fi
           node scripts/refresh-starter-template-catalog.mjs "${args[@]}"
 
+      - name: Check out exact templates snapshot for validation
+        env:
+          STARTER_TEMPLATES_PATH: ${{ runner.temp }}/campaign-cart-starter-templates
+        run: |
+          sha="$(jq -r '._synced_from_sha // empty' contracts/commerce-surface-catalog.json)"
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Refreshed catalog has no valid _synced_from_sha."
+            exit 1
+          fi
+          git init --quiet "$STARTER_TEMPLATES_PATH"
+          git -C "$STARTER_TEMPLATES_PATH" remote add origin \
+            https://github.com/NextCommerceCo/campaign-cart-starter-templates.git
+          git -C "$STARTER_TEMPLATES_PATH" fetch --quiet --depth=1 origin "$sha"
+          git -C "$STARTER_TEMPLATES_PATH" checkout --quiet --detach FETCH_HEAD
+
       - name: Validate refreshed snapshot
         run: npm run check
+        env:
+          STARTER_TEMPLATES_PATH: ${{ runner.temp }}/campaign-cart-starter-templates
 
       - name: Open refresh PR
         env:

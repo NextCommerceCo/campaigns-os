@@ -41,6 +41,11 @@ export function validateRefreshWorkflow(workflow) {
   );
   const resolveIndex = steps.findIndex((step) => step?.id === "source");
   const refreshIndex = steps.findIndex((step) => runText(step).includes("refresh-starter-template-catalog.mjs"));
+  const templatesCheckoutIndex = steps.findIndex(
+    (step) =>
+      runText(step).includes("campaign-cart-starter-templates.git") &&
+      runText(step).includes('fetch --quiet --depth=1 origin "$sha"'),
+  );
   const validateIndex = steps.findIndex((step) => runText(step).trim() === "npm run check");
   const prIndex = steps.findIndex((step) => runText(step).includes("gh pr create"));
 
@@ -49,6 +54,9 @@ export function validateRefreshWorkflow(workflow) {
   if (installIndex < 0) errors.push("refresh workflow must install locked dependencies with npm ci");
   if (resolveIndex < 0) errors.push("refresh workflow must resolve source ref and SHA separately");
   if (refreshIndex < 0) errors.push("refresh workflow must run the catalog refresh script");
+  if (templatesCheckoutIndex < 0) {
+    errors.push("refresh workflow must check out the exact refreshed templates SHA before doctrine validation");
+  }
   if (validateIndex < 0) errors.push("refresh workflow must validate the generated snapshot with npm run check");
   if (prIndex < 0) errors.push("refresh workflow must attempt to open a pull request");
 
@@ -57,6 +65,9 @@ export function validateRefreshWorkflow(workflow) {
   }
   if (installIndex >= 0 && validateIndex >= 0 && installIndex > validateIndex) {
     errors.push("npm ci must run before npm run check");
+  }
+  if (templatesCheckoutIndex >= 0 && validateIndex >= 0 && templatesCheckoutIndex > validateIndex) {
+    errors.push("the exact templates snapshot must be checked out before npm run check");
   }
 
   const checkoutToken = steps[checkoutIndex]?.with?.token;
@@ -79,6 +90,11 @@ export function validateRefreshWorkflow(workflow) {
   const refreshRun = runText(steps[refreshIndex]);
   if (!refreshRun.includes("--source-ref") || !refreshRun.includes("--synced-from-sha")) {
     errors.push("refresh must preserve the source ref while pinning the exact dispatch SHA");
+  }
+
+  const validateTemplatesPath = steps[validateIndex]?.env?.STARTER_TEMPLATES_PATH;
+  if (typeof validateTemplatesPath !== "string" || !validateTemplatesPath.includes("runner.temp")) {
+    errors.push("npm run check must receive STARTER_TEMPLATES_PATH for the exact refreshed snapshot");
   }
 
   const prStep = steps[prIndex];
