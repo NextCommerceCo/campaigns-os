@@ -1,5 +1,13 @@
 name: Refresh Starter Template Catalog
 
+# Two supported operating modes:
+# - With CATALOG_REFRESH_TOKEN (fine-grained contents + pull requests: write),
+#   the workflow pushes a stable bot branch and opens/updates its PR; PAT-authored
+#   events trigger normal PR CI.
+# - Without it, the repository-scoped token still pushes the validated branch,
+#   then opens or updates one durable issue with a one-click human PR link.
+#   This repo forbids Actions-created PRs, so the fallback is expected behavior.
+
 on:
   workflow_dispatch:
     inputs:
@@ -9,20 +17,35 @@ on:
         default: "main"
   repository_dispatch:
     types: [starter-template-catalog-updated]
+  pull_request:
+    types: [opened, reopened]
+    branches: [main]
 
 permissions:
   contents: write
   pull-requests: write
+  issues: write
+
+concurrency:
+  group: refresh-starter-template-catalog
+  cancel-in-progress: false
 
 jobs:
   refresh:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.CATALOG_REFRESH_TOKEN || github.token }}
 
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Resolve source ref
         id: source
@@ -33,54 +56,151 @@ jobs:
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           source_ref="$INPUT_SOURCE_REF"
+          source_sha=""
           if [ "$EVENT_NAME" = "repository_dispatch" ]; then
-            source_ref="$DISPATCH_SOURCE_SHA"
-            if [ -z "$source_ref" ]; then
-              source_ref="$DISPATCH_SOURCE_REF"
-            fi
+            source_ref="$DISPATCH_SOURCE_REF"
+            source_sha="$DISPATCH_SOURCE_SHA"
           fi
           if [ -z "$source_ref" ]; then
             source_ref="main"
           fi
           echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
       - name: Refresh vendored catalog snapshot
         env:
           STARTER_TEMPLATES_TOKEN: ${{ secrets.STARTER_TEMPLATES_READ_TOKEN || github.token }}
+          SOURCE_REF: ${{ steps.source.outputs.source_ref }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
         run: |
-          node scripts/refresh-starter-template-catalog.mjs --source-ref "${{ steps.source.outputs.source_ref }}"
+          args=(--source-ref "$SOURCE_REF")
+          if [ -n "$SOURCE_SHA" ]; then
+            args+=(--synced-from-sha "$SOURCE_SHA")
+          fi
+          node scripts/refresh-starter-template-catalog.mjs "${args[@]}"
 
       - name: Validate refreshed snapshot
         run: npm run check
 
       - name: Open refresh PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.CATALOG_REFRESH_TOKEN || github.token }}
+          FALLBACK_GH_TOKEN: ${{ github.token }}
+          PR_TOKEN_CONFIGURED: ${{ secrets.CATALOG_REFRESH_TOKEN != '' }}
           SOURCE_REF: ${{ steps.source.outputs.source_ref }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           SOURCE_REPO: NextCommerceCo/campaign-cart-starter-templates
         run: |
-          if git diff --quiet; then
+          changed="$(git status --porcelain --untracked-files=all -- \
+            contracts/commerce-surface-catalog.json \
+            contracts/fixtures/campaign-specs)"
+          if [ -z "$changed" ]; then
             echo "Starter template catalog snapshot is already current."
             exit 0
           fi
 
-          safe_ref="$(printf '%s' "$SOURCE_REF" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-24)"
-          branch="automation/refresh-starter-template-catalog-${safe_ref}-${GITHUB_RUN_ID}"
+          branch="automation/refresh-starter-template-catalog"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
+          git switch -C "$branch"
           git add contracts/commerce-surface-catalog.json contracts/fixtures/campaign-specs
           git commit -m "Refresh starter template catalog snapshot"
-          git push origin "$branch"
+          # This branch is workflow-owned and concurrency serializes its writers.
+          git push --force origin "$branch"
 
-          gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "Refresh starter template catalog snapshot" \
-            --body "Refreshes the vendored Campaigns OS starter-template catalog snapshot from \`${SOURCE_REPO}@${SOURCE_REF}\`.
+          source_label="${SOURCE_REPO}@${SOURCE_REF}"
+          if [ -n "$SOURCE_SHA" ]; then
+            source_label="${source_label} (${SOURCE_SHA})"
+          fi
+          pr_title="Refresh starter template catalog snapshot"
+          body="Refreshes the vendored Campaigns OS starter-template catalog snapshot from \`${source_label}\`.
 
           Validation:
           - \`npm run check\`
 
           Triggered by: \`${GITHUB_EVENT_NAME}\`"
+          issue_title="Starter catalog refresh needs human action"
+
+          recovery_issue_number() {
+            GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue list \
+              --state open \
+              --limit 100 \
+              --json number,title \
+              --jq 'map(select(.title == "Starter catalog refresh needs human action" or .title == "Open the generated starter catalog refresh PR")) | .[0].number // empty'
+          }
+
+          close_recovery_issue() {
+            issue_number="$(recovery_issue_number)"
+            if [ -n "$issue_number" ]; then
+              GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue close "$issue_number" \
+                --comment "Automation opened or updated the validated refresh PR, so this recovery issue is resolved."
+            fi
+          }
+
+          existing_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing_pr" ]; then
+            echo "Refresh PR #${existing_pr} already open; branch updated."
+            if [ "$PR_TOKEN_CONFIGURED" = "true" ]; then
+              gh pr edit "$existing_pr" --title "$pr_title" --body "$body"
+              close_recovery_issue
+              exit 0
+            fi
+            GH_TOKEN="$FALLBACK_GH_TOKEN" gh pr comment "$existing_pr" \
+              --body "The validated refresh branch was updated from \`${source_label}\`. Close and reopen this PR to run checks, or configure \`CATALOG_REFRESH_TOKEN\` for automatic CI-triggering updates." || true
+          fi
+
+          if [ -z "$existing_pr" ]; then
+            if gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "$pr_title" \
+              --body "$body"; then
+              echo "Refresh PR opened automatically."
+              close_recovery_issue
+              exit 0
+            fi
+          fi
+
+          # Expected when CATALOG_REFRESH_TOKEN is not configured: the default
+          # Actions token may push the branch but repository policy forbids it
+          # from opening a PR. Leave a durable issue plus a one-click PR link so
+          # the refresh is actionable rather than a red or silent workflow run.
+          compare_url="https://github.com/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1"
+          if [ -n "$existing_pr" ]; then
+            note="The starter catalog refresh passed validation and updated PR #${existing_pr}, but a default-token push does not trigger CI. Close and reopen that PR to run checks, or configure \`CATALOG_REFRESH_TOKEN\` for automatic updates. Source: \`${source_label}\`."
+          else
+            note="The starter catalog refresh passed validation and the branch \`${branch}\` is ready, but Actions cannot open the PR without \`CATALOG_REFRESH_TOKEN\`. [Open the generated PR](${compare_url}) for \`${source_label}\`."
+          fi
+          echo "::warning title=Catalog refresh PR needs a human::${note}"
+          printf '### Catalog refresh PR needs a human\n\n%s\n' "$note" >> "$GITHUB_STEP_SUMMARY"
+
+          issue_number="$(recovery_issue_number)"
+          if [ -n "$issue_number" ]; then
+            GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue edit "$issue_number" --title "$issue_title"
+            GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue comment "$issue_number" --body "$note"
+            echo "Updated fallback issue #${issue_number}."
+          else
+            GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue create --title "$issue_title" --body "$note"
+          fi
+
+  close-recovery-issue:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'automation/refresh-starter-template-catalog'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close resolved recovery issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          issue_number="$(gh issue list \
+            --state open \
+            --limit 100 \
+            --json number,title \
+            --jq 'map(select(.title == "Starter catalog refresh needs human action" or .title == "Open the generated starter catalog refresh PR")) | .[0].number // empty')"
+          if [ -n "$issue_number" ]; then
+            gh issue close "$issue_number" \
+              --comment "The generated refresh PR is now open and CI can run, so this recovery issue is resolved."
+          fi

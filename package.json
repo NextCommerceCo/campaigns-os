@@ -35,7 +35,7 @@
     "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
     "prepare": "npm run build:spec",
     "check:spec": "node --test \"campaign-spec/test/**/*.test.ts\"",
-    "check": "node ./scripts/check-catalog-provenance.mjs && npm run build:spec && node --test ./src/*.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs ./scripts/check-catalog-provenance.test.mjs ./scripts/check-slot-manifest.test.mjs ./scripts/check-skill-versions.test.mjs ./scripts/check-supported-surface.test.mjs ./scripts/check-campaign-spec-conformance.test.mjs && npm run check:spec && node ./scripts/check-fixtures.mjs && node ./scripts/check-campaign-spec-conformance.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs && node ./scripts/check-slot-manifest.mjs && node ./scripts/check-skill-versions.mjs && node ./scripts/check-cart-readiness-contract.mjs && node ./scripts/check-supported-surface.mjs && npm run check:pack",
+    "check": "node ./scripts/check-catalog-provenance.mjs && node ./scripts/check-workflow-contracts.mjs && npm run build:spec && node --test ./src/*.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs ./scripts/check-catalog-provenance.test.mjs ./scripts/check-workflow-contracts.test.mjs ./scripts/check-slot-manifest.test.mjs ./scripts/check-skill-versions.test.mjs ./scripts/check-supported-surface.test.mjs ./scripts/check-campaign-spec-conformance.test.mjs && npm run check:spec && node ./scripts/check-fixtures.mjs && node ./scripts/check-campaign-spec-conformance.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs && node ./scripts/check-slot-manifest.mjs && node ./scripts/check-skill-versions.mjs && node ./scripts/check-cart-readiness-contract.mjs && node ./scripts/check-supported-surface.mjs && npm run check:pack",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
     "check:spec-conformance": "node ./scripts/check-campaign-spec-conformance.mjs",
     "check:pack": "node ./scripts/check-pack.mjs",
@@ -43,6 +43,7 @@
     "check:template-doctrine": "node ./scripts/check-template-doctrine.mjs",
     "check:cart-readiness": "node ./scripts/check-cart-readiness-contract.mjs",
     "check:provenance": "node ./scripts/check-catalog-provenance.mjs",
+    "check:workflows": "node ./scripts/check-workflow-contracts.mjs",
     "check:skill-versions": "node ./scripts/check-skill-versions.mjs"
   },
   "engines": {
