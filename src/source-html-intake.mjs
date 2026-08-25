@@ -436,7 +436,9 @@ function defaultPublicRouteForTargetPath(targetPath, publicRouteSlug) {
 }
 
 function nextUrlForPage(page, pageById, publicRouteSlug) {
-  if (page.type === "presell" || page.type === "landing") {
+  // A select page routes forward like a landing page: the selector step hands
+  // off through next_page. Without this it would wire to no next URL at all.
+  if (page.type === "presell" || page.type === "landing" || page.type === "select") {
     return pageKitFlowUrl(page.next_page, pageById, publicRouteSlug);
   }
   if (page.type === "checkout") {

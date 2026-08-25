@@ -16,6 +16,7 @@ function getNextIds(page: Page): string[] {
   switch (page.type) {
     case 'presell':
     case 'landing':
+    case 'select':
       if (page.next_page) ids.push(page.next_page)
       if (page.success_url) ids.push(page.success_url)
       break

@@ -1190,7 +1190,11 @@ async function checkoutOrderBumpEvidence(browserPage) {
 // functions below turn that evidence into assertions so the decisions are
 // testable without Playwright.
 
-const RESIDUE_PAGE_TYPES = ["checkout", "upsell", "downsell", "receipt"];
+// Template-owned commerce pages. "select" is the two-step bundle-selection
+// step: it is template-owned and SDK-driven, so the brand contracts already
+// scope logo and computed-style residue to it — that scoping was inert until
+// "select" became a real page type, because no spec-valid page could carry it.
+const RESIDUE_PAGE_TYPES = ["checkout", "select", "upsell", "downsell", "receipt"];
 
 function contractPageType(page) {
   const type = String(page?.page_type || "").toLowerCase();
@@ -4108,6 +4112,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   formatStepEvent,
   hostedRedirectInfo,
   redactUrlQuery,
+  RESIDUE_PAGE_TYPES,
   computedStyleResidueAssertions,
   logoResidueAssertion,
   methodPaymentArtifacts,

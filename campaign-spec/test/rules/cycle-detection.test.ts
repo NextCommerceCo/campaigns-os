@@ -59,6 +59,53 @@ describe('CycleDetection rule', () => {
     expect(violations[0].data?.cycle).toEqual(['looper', 'looper'])
   })
 
+  test('a select page routes forward like a landing page, so cycles through it are caught', () => {
+    // The two-step shape: select → checkout → thankyou, with the selector step
+    // looping back. If 'select' had no outgoing edges in getNextIds, this cycle
+    // would be invisible — which is the whole reason the type needs routing
+    // semantics rather than just enum membership.
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'f',
+          name: 'F',
+          hypothesis: 'two-step selector cycle',
+          weight: 100,
+          pages: [
+            { id: 'select', type: 'select', label: 'Select bundle', next_page: 'chk' },
+            { id: 'chk', type: 'checkout', label: 'Checkout', success_url: 'select' },
+            { id: 'ty', type: 'thankyou', label: 'Thank You' },
+          ],
+        },
+      ],
+    }
+    const violations = CycleDetection.check(normalize(spec))
+    expect(violations).toHaveLength(1)
+    expect(violations[0].severity).toBe('error')
+    expect(violations[0].data?.cycle).toEqual(['select', 'chk', 'select'])
+  })
+
+  test('a clean two-step funnel through a select page emits no violations', () => {
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'f',
+          name: 'F',
+          hypothesis: 'two-step clean',
+          weight: 100,
+          pages: [
+            { id: 'select', type: 'select', label: 'Select bundle', next_page: 'chk' },
+            { id: 'chk', type: 'checkout', label: 'Checkout', success_url: 'ty' },
+            { id: 'ty', type: 'thankyou', label: 'Thank You' },
+          ],
+        },
+      ],
+    }
+    expect(CycleDetection.check(normalize(spec))).toEqual([])
+  })
+
   test('DAG convergence (two paths into the same page) is not a cycle', () => {
     // Both landing and an alt landing route to the same checkout. Not a cycle.
     const spec: CampaignSpec = {

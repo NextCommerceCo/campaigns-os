@@ -18,6 +18,38 @@ Every promoted catalog family must declare:
 - bundle picker, order-bump, upsell/downsell, and exit-pop behavior
 - QA selectors and invariants used by browser QA
 
+## Page IDs and page types are different namespaces
+
+Two vocabularies in these contracts look identical and are not:
+
+- **Page type** — the authoring `page.type` from CampaignSpec, enumerated in
+  `campaign-spec/types.ts` and `schemas/campaign-spec.v4.schema.json`:
+  `presell`, `landing`, `select`, `checkout`, `upsell`, `downsell`, `thankyou`.
+  This is what the `page_types` lists in `template-brand-contract.*.json` are
+  matched against at QA time, with one projection: `thankyou` is matched as
+  `receipt`.
+- **Page ID / family page slot** — author-chosen page identifiers and the
+  family's own page vocabulary. `supported_pages` and
+  `required_sdk_anchors` are keyed in this namespace, which is why they legally
+  contain entries such as `information`, `shipping`, `billing` and `receipt`
+  that are not page types at all. `commerce_owned_pages` in the slot manifests
+  is likewise a list of page IDs (`upsell-mv`, `variant-picker`).
+
+The distinction matters because a `page_types` entry naming something outside
+the authoring enum does not error — it silently never matches. That is exactly
+how the selector step lost its residue coverage before `select` became a real
+page type (#207). The drift gate is the page-type enum test in
+`campaign-spec/test/schema-conformance.test.ts`.
+
+### The `select` page type
+
+`select` is the bundle-selection step of a two-step family: a template-owned
+commerce page where the shopper picks a package before checkout. It is
+deliberately not `landing`. A landing page is design-source-owned and carries no
+SDK cart selection, so commerce gates — brand-theme load order, logo and
+computed-style residue, bump pricing — apply to `select` and not to `landing`.
+It routes forward like a landing page (`next_page` / `success_url`).
+
 ## Inventory Matrix
 
 | Family | Pages | Bundle Picker | Order Bump | Upsell/Downsell | Exit Pop | Key QA Invariants |

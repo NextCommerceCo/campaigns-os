@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import { describe, expect, test } from './harness.ts'
+import type { PageType } from '../types.ts'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const schemaPath = join(root, 'schemas', 'campaign-spec.v4.schema.json')
@@ -101,5 +102,36 @@ describe('campaign-spec.v4 schema conformance', () => {
     expect(schema.properties.schema_version.enum).toEqual(['4.2', '4.3'])
     expect(schema.required.sort()).toEqual(['funnels', 'schema_version'])
     expect(schema.additionalProperties).toBe(true)
+  })
+
+  /**
+   * Page-type drift gate. The authoring PageType union in types.ts and this
+   * enum are two statements of one fact, and #207 is what happens when they
+   * disagree: contracts and CLI branches accumulated around a `select` page
+   * type the union did not have, so the code was dead and the contract scoping
+   * was inert — silently, for months.
+   *
+   * PageType is a compile-time union with no runtime representation, so the
+   * union side is pinned by the type annotation on PAGE_TYPES below: adding a
+   * member to the schema without adding it to the union (or vice versa) fails
+   * to compile or fails here.
+   */
+  test('page-type enum matches the authoring PageType union exactly', () => {
+    const PAGE_TYPES: PageType[] = [
+      'presell',
+      'landing',
+      'select',
+      'checkout',
+      'upsell',
+      'downsell',
+      'thankyou',
+    ]
+    expect(schema.$defs.page.properties.type.enum).toEqual(PAGE_TYPES)
+  })
+
+  test("'receipt' is a projection, never an authoring page type", () => {
+    // contractPageType() maps thankyou → receipt for contract scoping. That
+    // projection must not leak back into the authoring enum.
+    expect((schema.$defs.page.properties.type.enum as string[]).includes('receipt')).toBe(false)
   })
 })

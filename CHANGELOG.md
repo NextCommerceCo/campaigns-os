@@ -2,6 +2,34 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.9.0] - 2026-08-25
+
+### Added
+
+- Added `select` to the authoring `PageType` union and the CampaignSpec v4
+  JSON Schema page-type enum: the bundle-selection step of a two-step family,
+  a template-owned commerce page that routes forward like a landing page
+  (`next_page` / `success_url`) but carries SDK cart selection. Additive — every
+  existing spec stays valid, and `schema_version` is unchanged because that
+  field tracks the exporter's lineage (4.2/4.3), not this repo's schema edits.
+  Map Builder exports may now legally emit `select`.
+- Added a page-type drift gate pinning the JSON Schema enum to the authoring
+  union, plus documentation of page IDs and page types as separate namespaces
+  in `docs/template-family-contracts.md`.
+
+### Changed
+
+- Commerce residue checking now covers the selector step. `select` joins
+  `RESIDUE_PAGE_TYPES`, which turns on logo and computed-style residue coverage
+  the shipped brand contracts already declared for it — those `page_types`
+  entries were inert while no spec-valid page could carry the type. A branded
+  selector page passes; an unbranded one carrying the starter palette or the
+  starter logo is now a blocker where it previously passed silently.
+- Cycle detection traverses `select` pages. Without routing semantics a cycle
+  through the selector step would have been invisible.
+- Bumped the supported surface to `1.9.0` for the additive page-type enum. The
+  package remains developer preview `0.1.0-alpha.0`.
+
 ## [1.8.0] - 2026-08-24
 
 ### Added
