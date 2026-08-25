@@ -59,6 +59,61 @@ describe('CycleDetection rule', () => {
     expect(violations[0].data?.cycle).toEqual(['looper', 'looper'])
   })
 
+  /**
+   * The regression this rule almost shipped. Source intake wires a checkout's
+   * next_page — twelve pages across ten certified fixtures route that way —
+   * while getNextIds followed only success_url on a checkout. The loop below
+   * therefore BUILT as a live link while staying invisible to the rule that
+   * blocks on cycles. Edges now come from the shared resolver, which reads
+   * every declared routing field regardless of page type.
+   */
+  test('a loop through a checkout next_page is caught, not just through success_url', () => {
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'f',
+          name: 'F',
+          hypothesis: 'checkout loops back via next_page',
+          weight: 100,
+          pages: [
+            { id: 'landing', type: 'landing', next_page: 'checkout' },
+            { id: 'checkout', type: 'checkout', next_page: 'landing' },
+            { id: 'ty', type: 'thankyou' },
+          ],
+        },
+      ],
+    }
+    const violations = CycleDetection.check(normalize(spec))
+    expect(violations).toHaveLength(1)
+    expect(violations[0].severity).toBe('error')
+    expect(violations[0].data?.cycle).toEqual(['landing', 'checkout', 'landing'])
+  })
+
+  test('a traversable edge is followed whatever the page type carries it', () => {
+    // A thank-you page that continues into a second offer sequence is unusual
+    // and entirely legal; the old terminal-by-type table could not see it, so a
+    // sequence routing back INTO the receipt looked clean.
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'f',
+          name: 'F',
+          hypothesis: 'post-receipt continuation loops',
+          weight: 100,
+          pages: [
+            { id: 'chk', type: 'checkout', success_url: 'ty' },
+            { id: 'ty', type: 'thankyou', next_page: 'chk' },
+          ],
+        },
+      ],
+    }
+    const violations = CycleDetection.check(normalize(spec))
+    expect(violations).toHaveLength(1)
+    expect(violations[0].data?.cycle).toEqual(['chk', 'ty', 'chk'])
+  })
+
   test('a select page routes forward like a landing page, so cycles through it are caught', () => {
     // The two-step shape: select → checkout → thankyou, with the selector step
     // looping back. If 'select' had no outgoing edges in getNextIds, this cycle
@@ -104,6 +159,51 @@ describe('CycleDetection rule', () => {
       ],
     }
     expect(CycleDetection.check(normalize(spec))).toEqual([])
+  })
+
+  test('a shadowed forward field does not manufacture a cycle', () => {
+    // Regression: cycle detection briefly followed EVERY declared field, so a
+    // checkout whose success_url wins at runtime and terminates cleanly was
+    // reported as a release-blocking cycle through an unused next_page.
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'f',
+          name: 'F',
+          hypothesis: 'stale shadowed field',
+          weight: 100,
+          pages: [
+            { id: 'chk', type: 'checkout', success_url: 'ty', next_page: 'chk' },
+            { id: 'ty', type: 'thankyou' },
+          ],
+        },
+      ],
+    }
+    expect(CycleDetection.check(normalize(spec))).toEqual([])
+  })
+
+  test('a padded route target still resolves, so the loop is still seen', () => {
+    // Regression: an untrimmed target missed the page map, hiding a real loop.
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'f',
+          name: 'F',
+          hypothesis: 'padded target',
+          weight: 100,
+          pages: [
+            { id: 'landing', type: 'landing', next_page: 'checkout' },
+            { id: 'checkout', type: 'checkout', next_page: '  landing  ' },
+            { id: 'ty', type: 'thankyou' },
+          ],
+        },
+      ],
+    }
+    const violations = CycleDetection.check(normalize(spec))
+    expect(violations).toHaveLength(1)
+    expect(violations[0].data?.cycle).toEqual(['landing', 'checkout', 'landing'])
   })
 
   test('DAG convergence (two paths into the same page) is not a cycle', () => {

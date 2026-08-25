@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -498,4 +498,137 @@ test("prepare-build blocks ambiguous filesystem source matches and drafts a mani
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Forward-link resolution is type-agnostic (#230): a page that declares any
+// routing edge gets a next_url, whatever its type and whichever field carried
+// the intent. Before this, twelve checkout-typed pages across ten certified
+// fixtures routed through next_page and silently emitted no next_url at all,
+// including every hand-off in the three-step shop flow.
+//
+// This is a GOLDEN comparison, not a presence check. A presence check ("every
+// page that declares an edge has some next_url") passes even if the resolver
+// picks the WRONG field — reordering the precedence to prefer on_decline kept
+// an earlier version of this test green while repointing every upsell's
+// forward link at its decline target. Pinning exact values is what makes a
+// precedence change fail loudly.
+function corpusFrontmatter() {
+  const dir = resolve(ROOT, "contracts/fixtures/campaign-specs");
+  const emitted = {};
+  for (const name of readdirSync(dir).filter((file) => file.endsWith(".json")).sort()) {
+    const spec = JSON.parse(readFileSync(join(dir, name), "utf8"));
+    for (const funnel of spec.funnels || []) {
+      const specPages = funnel.pages || [];
+      const result = createSourceHtmlIntake({
+        sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+        specPages,
+        htmlFiles: specPages.map((page) => ({ path: `${page.id}.html`, basename: page.id })),
+        publicRouteSlug: "campaign",
+        outputDir: "src/campaign",
+      });
+      for (const mapping of result.mappings || []) {
+        if (!mapping.page_kit) continue;
+        emitted[`${name}::${funnel.id}::${mapping.page_id}`] = mapping.page_kit.frontmatter;
+      }
+    }
+  }
+  return emitted;
+}
+
+// Regenerate after an intentional corpus or routing change:
+//   UPDATE_GOLDEN=1 node --test src/source-html-intake.test.mjs
+// Then READ the diff. A golden is only worth having if the diff gets reviewed;
+// hand-editing it to make this pass defeats the entire point of the file.
+const GOLDEN_PATH = "contracts/fixtures/expected/page-kit-frontmatter.golden.json";
+
+test("page-kit frontmatter for the certified corpus matches the golden artifact", () => {
+  const goldenPath = resolve(ROOT, GOLDEN_PATH);
+  const emitted = corpusFrontmatter();
+  if (process.env.UPDATE_GOLDEN) {
+    writeFileSync(goldenPath, `${JSON.stringify(emitted, null, 2)}\n`);
+  }
+  const golden = JSON.parse(readFileSync(goldenPath, "utf8"));
+  assert.deepEqual(
+    emitted,
+    golden,
+    `Emitted page-kit frontmatter differs from ${GOLDEN_PATH}. If the change is intentional, regenerate with UPDATE_GOLDEN=1 node --test src/source-html-intake.test.mjs and review the diff.`,
+  );
+});
+
+test("no certified fixture silently drops a declared forward edge", () => {
+  const dir = resolve(ROOT, "contracts/fixtures/campaign-specs");
+  const emitted = corpusFrontmatter();
+  const dropped = [];
+  for (const name of readdirSync(dir).filter((file) => file.endsWith(".json"))) {
+    const spec = JSON.parse(readFileSync(join(dir, name), "utf8"));
+    for (const funnel of spec.funnels || []) {
+      for (const page of funnel.pages || []) {
+        const key = `${name}::${funnel.id}::${page.id}`;
+        if (!(key in emitted)) continue;
+        const declares = ["on_accept", "success_url", "next_page"].some((field) => page[field]);
+        if (declares && !emitted[key].next_url) {
+          dropped.push(`${key} (type=${page.type}) declares a forward edge but emits no next_url`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(dropped, []);
+});
+
+test("forward-link precedence is specific-before-generic, and wiring proves it end to end", () => {
+  const wire = (page) => {
+    // Explicit page_url on each target: routes derive from page type when it is
+    // absent, which would make three upsell targets share one route.
+    const pages = [
+      page,
+      { id: "accept-target", type: "upsell", page_url: "accept-target/" },
+      { id: "success-target", type: "upsell", page_url: "success-target/" },
+      { id: "next-target", type: "upsell", page_url: "next-target/" },
+      { id: "decline-target", type: "downsell", page_url: "decline-target/" },
+    ];
+    const result = createSourceHtmlIntake({
+      sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+      specPages: pages,
+      htmlFiles: pages.map((p) => ({ path: `${p.id}.html`, basename: p.id })),
+      publicRouteSlug: "campaign",
+      outputDir: "src/campaign",
+    });
+    return result.mappings.find((m) => m.page_id === page.id).page_kit.frontmatter;
+  };
+
+  // on_accept beats everything.
+  assert.equal(
+    wire({ id: "p", type: "upsell", on_accept: "accept-target", success_url: "success-target", next_page: "next-target" }).next_url,
+    "/campaign/accept-target/",
+  );
+  // success_url beats the generic next_page.
+  assert.equal(
+    wire({ id: "p", type: "checkout", success_url: "success-target", next_page: "next-target" }).next_url,
+    "/campaign/success-target/",
+  );
+  // next_page is the fallback — and works on a checkout, which is the whole fix.
+  assert.equal(wire({ id: "p", type: "checkout", next_page: "next-target" }).next_url, "/campaign/next-target/");
+  // A page declaring nothing wires nothing, rather than inventing a route.
+  assert.equal("next_url" in wire({ id: "p", type: "checkout" }), false);
+});
+
+test("the decline branch is taken wherever it is declared, not only on upsells", () => {
+  // Kilo review on #233: de-gating declineUrlForPage had zero assertions, since
+  // the corpus only declares on_decline on upsell/downsell pages, which the old
+  // type gate already wired.
+  const pages = [
+    { id: "p", type: "checkout", next_page: "next-target", on_decline: "decline-target" },
+    { id: "next-target", type: "upsell", page_url: "next-target/" },
+    { id: "decline-target", type: "downsell", page_url: "decline-target/" },
+  ];
+  const result = createSourceHtmlIntake({
+    sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+    specPages: pages,
+    htmlFiles: pages.map((p) => ({ path: `${p.id}.html`, basename: p.id })),
+    publicRouteSlug: "campaign",
+    outputDir: "src/campaign",
+  });
+  const frontmatter = result.mappings.find((m) => m.page_id === "p").page_kit.frontmatter;
+  assert.equal(frontmatter.next_url, "/campaign/next-target/");
+  assert.equal(frontmatter.decline_url, "/campaign/decline-target/");
 });

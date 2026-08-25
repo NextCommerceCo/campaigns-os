@@ -48,7 +48,9 @@ commerce page where the shopper picks a package before checkout. It is
 deliberately not `landing`. A landing page is design-source-owned and carries no
 SDK cart selection, so commerce gates — brand-theme load order, logo and
 computed-style residue, bump pricing — apply to `select` and not to `landing`.
-It routes forward like a landing page (`next_page` / `success_url`).
+Its forward link resolves like every other page's, from whichever routing
+field it declares (`campaign-spec/routing.ts`) — page type does not gate
+routing for any type.
 
 ## Inventory Matrix
 

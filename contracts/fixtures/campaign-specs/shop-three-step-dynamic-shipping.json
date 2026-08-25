@@ -93,12 +93,12 @@
           "label": "Billing",
           "template": "src/shop-three-step/billing.html",
           "page_url": "/billing/",
-          "next_page": "upsell-bundle-stepper.html",
+          "next_page": "upsell-stepper.html",
           "sdk_hints": {
             "sdk_page_type": "checkout",
             "template_family": "shop-three-step",
             "frontmatter": {
-              "next_url": "upsell-bundle-stepper.html"
+              "next_url": "upsell-stepper.html"
             }
           }
         },

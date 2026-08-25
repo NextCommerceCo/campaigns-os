@@ -2,6 +2,67 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.10.0] - 2026-08-25
+
+### Added
+
+- Added `campaign-spec/routing.ts` and exported it from `./campaign-spec`:
+  `forwardRouteTarget`, `declineRouteTarget`, `hasForwardRoute`,
+  `outgoingEdgeIds`, and the field constants. This is the single source of
+  truth for "where does this page go". Source intake, cycle detection, the
+  CheckoutHasSuccessUrl rule and the QA topology extractor all consume it
+  instead of keeping their own page-type tables, which had already drifted
+  apart into three different answers.
+
+- Added the `RouteTargetResolves` rule: every declared routing target must name
+  a page in the same funnel. Warning severity, never blocking — absolute URLs,
+  `#` fragments and rooted paths (the documented partial-scope pattern) are
+  deliberate off-graph destinations and are not flagged. It ships already quiet
+  across every certified fixture, which is the precondition for adding any gate
+  here.
+
+### Fixed
+
+- Corrected six certified fixtures whose checkout declared
+  `next_page: "upsell-bundle-stepper.html"` while their funnel's upsell is
+  `upsell-stepper` — the target name was copied from the MV families, which do
+  have that page. Nothing resolved those targets, so intake's route fallback
+  emitted a confident link to a route nothing serves: apollo-tiered, arjuna,
+  demeter, olympus-tiered, shop-single-step, and the three-step shop flow's
+  `billing` page all sent the shopper to a 404 immediately after checkout. The
+  page-kit frontmatter golden is regenerated accordingly.
+
+### Changed
+
+- Forward-link resolution is no longer a page-type switch anywhere. A page's
+  next link comes from whichever routing field it declares, in
+  specific-before-generic precedence (`on_accept`, `success_url`, `next_page`),
+  and the decline link from `on_decline` wherever it appears. A campaign is a
+  free-form headless journey; the previous type tables silently discarded any
+  edge declared outside them. Twelve checkout-typed pages across ten certified
+  fixtures — including every hand-off in the three-step shop flow — routed
+  through `next_page` and built with no `next_url` at all.
+- Cycle detection now follows the edges a page can actually traverse — its
+  resolved forward link plus its decline branch — rather than a per-type edge
+  table. It previously ignored `next_page` on a checkout, so once intake began
+  wiring that edge a loop through it would have built as a live link while
+  staying invisible to the rule that blocks on cycles. Shadowed forward fields
+  are deliberately excluded: a page whose `success_url` wins at runtime and
+  terminates cleanly must not be blocked by a stale, unreachable `next_page`.
+- QA topology extraction resolves `expected_next_url` through the same
+  resolver. It previously read `next_page || success_url` and ignored
+  `on_accept`, a third precedence that could disagree with the built page.
+- `CheckoutHasSuccessUrl` warns when a checkout has no forward route at all,
+  instead of when it lacks `success_url` specifically. It was firing on twelve
+  pages across ten shipped fixtures whose checkouts route correctly, telling
+  authors to rename a field they had already filled in. Corpus warnings drop
+  from 22 to 10. The message and the violation `path` now describe the
+  page-level condition; the rule ID is unchanged for consumer stability.
+- Bumped the supported surface to `1.10.0`. No hashed schema changed, so the
+  gate does not owe a bump — but the new exports and the changed routing
+  behaviour are consumer-visible, and downstream pins update against a version
+  they can see move.
+
 ## [1.9.0] - 2026-08-25
 
 ### Added

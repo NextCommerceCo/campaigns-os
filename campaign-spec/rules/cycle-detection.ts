@@ -10,29 +10,20 @@
  */
 
 import type { CampaignSpec, Page, Rule, Violation } from '../types.ts'
+import { outgoingEdgeIds } from '../routing.ts'
 
+/**
+ * Outgoing edges come from the shared resolver, which reads every routing
+ * field a page declares regardless of its type. Over-approximating is correct
+ * here and nowhere else: a missed edge is a missed release-blocking cycle.
+ *
+ * This used to be a page-type switch that followed only `success_url` on a
+ * checkout. Source intake wires `next_page` on checkouts — twelve pages across
+ * ten certified fixtures do exactly that — so a loop through such an edge
+ * built successfully while staying invisible to this rule.
+ */
 function getNextIds(page: Page): string[] {
-  const ids: string[] = []
-  switch (page.type) {
-    case 'presell':
-    case 'landing':
-    case 'select':
-      if (page.next_page) ids.push(page.next_page)
-      if (page.success_url) ids.push(page.success_url)
-      break
-    case 'checkout':
-      if (page.success_url) ids.push(page.success_url)
-      break
-    case 'upsell':
-    case 'downsell':
-      if (page.on_accept) ids.push(page.on_accept)
-      if (page.on_decline) ids.push(page.on_decline)
-      break
-    case 'thankyou':
-      // Terminal — no outgoing edges.
-      break
-  }
-  return ids
+  return outgoingEdgeIds(page)
 }
 
 /**

@@ -6,6 +6,9 @@ import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
+// Shared outgoing-edge resolver, so QA expectations and build-time wiring
+// cannot drift on which declared routing field wins.
+import { declineRouteTarget, forwardRouteTarget } from "../campaign-spec/dist/index.js";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
@@ -2175,9 +2178,13 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
         url: urlById.get(page.id) || null,
         is_entry: Boolean(page.is_entry),
         expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug }),
-        expected_next_url: resolveSibling(pageById, urlById, page.next_page || page.success_url, baseUrl, publicRouteSlug),
+        // Same resolver as build-time wiring. This previously read
+        // `next_page || success_url` and ignored on_accept entirely, so the QA
+        // expectation and the built page could disagree about which declared
+        // field wins on any page carrying more than one.
+        expected_next_url: resolveSibling(pageById, urlById, forwardRouteTarget(page), baseUrl, publicRouteSlug),
         expected_accept_url: resolveSibling(pageById, urlById, page.on_accept, baseUrl, publicRouteSlug),
-        expected_decline_url: resolveSibling(pageById, urlById, page.on_decline, baseUrl, publicRouteSlug),
+        expected_decline_url: resolveSibling(pageById, urlById, declineRouteTarget(page), baseUrl, publicRouteSlug),
         packages: page.packages || [],
         ...(page.exit_intent !== undefined ? { exit_intent: page.exit_intent } : {}),
         ...(page.promo_code_input !== undefined ? { promo_code_input: page.promo_code_input } : {}),
@@ -2979,6 +2986,7 @@ function extractApiError(raw) {
 }
 
 export const __qaNodeTestHooks = Object.freeze({
+  extractTopologies,
   resolveQaInputs,
   runResolvedQa,
   runPageChecks,

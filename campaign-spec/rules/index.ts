@@ -30,6 +30,7 @@ import { ThankYouRequirement } from './thank-you-requirement.ts'
 import { PageIdUniqueness } from './page-id-uniqueness.ts'
 import { UpsellHasPackages } from './upsell-has-packages.ts'
 import { UpsellRoutingComplete } from './upsell-routing-complete.ts'
+import { RouteTargetResolves } from './route-target-resolves.ts'
 import { CheckoutHasSuccessUrl } from './checkout-has-success-url.ts'
 import { UpsellWithoutCheckout } from './upsell-without-checkout.ts'
 import { DownsellWithoutUpsell } from './downsell-without-upsell.ts'
@@ -101,6 +102,7 @@ export const allRules: RuleSet = [
   PageIdUniqueness,
   UpsellHasPackages,
   UpsellRoutingComplete,
+  RouteTargetResolves,
   CheckoutHasSuccessUrl,
   UpsellWithoutCheckout,
   DownsellWithoutUpsell,

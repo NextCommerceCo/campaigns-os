@@ -49,6 +49,19 @@ export type {
 } from './types.ts'
 
 export { normalize, NormalizeError } from './normalize.ts'
+
+// Outgoing-edge resolution — the single source of truth for "where does this
+// page go". Source intake, cycle detection and the QA topology extractor all
+// consume these rather than keeping their own page-type tables.
+export {
+  FORWARD_ROUTE_FIELDS,
+  DECLINE_ROUTE_FIELD,
+  ROUTE_FIELDS,
+  forwardRouteTarget,
+  declineRouteTarget,
+  hasForwardRoute,
+  outgoingEdgeIds,
+} from './routing.ts'
 export { allRules, fastRules, specOnlyRules } from './rules/index.ts'
 
 // Supported schema_version matrix — single source for the SchemaVersion rule

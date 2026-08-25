@@ -2,6 +2,9 @@ import { basename, extname, join, resolve } from "node:path";
 import {
   readSourceHtmlManifestFile,
 } from "./source-html-manifest.mjs";
+// Built output of campaign-spec (same import shape as src/page-kit-sdk-version.mjs),
+// so build-time wiring and spec-time analysis share one edge resolver.
+import { declineRouteTarget, forwardRouteTarget } from "../campaign-spec/dist/index.js";
 
 const CPK_PAGE_TYPES = new Set(["product", "checkout", "upsell", "receipt"]);
 
@@ -435,32 +438,19 @@ function defaultPublicRouteForTargetPath(targetPath, publicRouteSlug) {
   return `/${normalizePublicRouteSlug(publicRouteSlug)}/${filename}/`;
 }
 
+// Forward and decline links come from campaign-spec/routing.ts, the single
+// source of truth every consumer shares — see that module for why the forward
+// link is a first-match precedence while cycle detection takes the full edge
+// set. This used to be a page-type switch that silently discarded any edge
+// declared outside its table: twelve checkout-typed pages across ten
+// certified fixtures route through next_page, and every one of them built with
+// no next_url at all.
 function nextUrlForPage(page, pageById, publicRouteSlug) {
-  // A select page routes forward like a landing page: the selector step hands
-  // off through next_page. Without this it would wire to no next URL at all.
-  //
-  // Deliberately narrower than cycle-detection's edge set for the same types,
-  // which also follows success_url. The two have opposite failure costs: cycle
-  // detection is a safety analysis that must OVER-approximate (a missed edge is
-  // a missed release-blocking cycle), while this emits one concrete forward
-  // link, where over-approximating would invent a route. success_url is
-  // documented as the checkout-success target, so a selector step authoring it
-  // is a spec-authoring error to catch in a rule, not to paper over here.
-  if (page.type === "presell" || page.type === "landing" || page.type === "select") {
-    return pageKitFlowUrl(page.next_page, pageById, publicRouteSlug);
-  }
-  if (page.type === "checkout") {
-    return pageKitFlowUrl(page.success_url, pageById, publicRouteSlug);
-  }
-  if (page.type === "upsell" || page.type === "downsell") {
-    return pageKitFlowUrl(page.on_accept, pageById, publicRouteSlug);
-  }
-  return null;
+  return pageKitFlowUrl(forwardRouteTarget(page), pageById, publicRouteSlug);
 }
 
 function declineUrlForPage(page, pageById, publicRouteSlug) {
-  if (page.type !== "upsell" && page.type !== "downsell") return null;
-  return pageKitFlowUrl(page.on_decline, pageById, publicRouteSlug);
+  return pageKitFlowUrl(declineRouteTarget(page), pageById, publicRouteSlug);
 }
 
 function pageKitFlowUrl(value, pageById, publicRouteSlug) {
