@@ -438,6 +438,14 @@ function defaultPublicRouteForTargetPath(targetPath, publicRouteSlug) {
 function nextUrlForPage(page, pageById, publicRouteSlug) {
   // A select page routes forward like a landing page: the selector step hands
   // off through next_page. Without this it would wire to no next URL at all.
+  //
+  // Deliberately narrower than cycle-detection's edge set for the same types,
+  // which also follows success_url. The two have opposite failure costs: cycle
+  // detection is a safety analysis that must OVER-approximate (a missed edge is
+  // a missed release-blocking cycle), while this emits one concrete forward
+  // link, where over-approximating would invent a route. success_url is
+  // documented as the checkout-success target, so a selector step authoring it
+  // is a spec-authoring error to catch in a rule, not to paper over here.
   if (page.type === "presell" || page.type === "landing" || page.type === "select") {
     return pageKitFlowUrl(page.next_page, pageById, publicRouteSlug);
   }

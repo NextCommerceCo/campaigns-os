@@ -28,10 +28,16 @@ export function inferPageType(routeOrName) {
   if (/up[\s_/-]*sell|(^|[\s_/-])oto([\s_/-]|\d|$)|one[\s_/-]*time[\s_/-]*offer/.test(value)) return "upsell";
   if (/thank|receipt|confirm(ation)?|order[\s_/-]*complete/.test(value)) return "receipt";
   if (/checkout|\bcart\b|\border\b/.test(value)) return "checkout";
-  // The two-step bundle-selection step. Deliberately narrow: only a route that
-  // is about choosing a bundle, so an unrelated "selected-reviews" page stays
-  // generic. Checkout/cart/order win above, so "select-checkout" stays checkout.
-  if (/^select$|bundle[\s_/-]*select|select[\s_/-]*bundle|choose[\s_/-]*(your[\s_/-]*)?(bundle|package)/.test(value)) return "select";
+  // The two-step bundle-selection step. Deliberately narrow, and anchored on
+  // BOTH ends: the route must *be* about choosing a bundle, not merely contain
+  // the words. An editorial "/our-choose-bundle-guide/" stays generic rather
+  // than being pulled into commerce residue checking. Checkout/cart/order win
+  // above, so "select-checkout" stays checkout.
+  // Matched against the FINAL route segment, whole: the segment must *be* the
+  // selector step, not merely contain the words. "/our-choose-bundle-guide/"
+  // and "selected-items" stay generic.
+  const lastSegment = value.split("/").filter(Boolean).pop() || value;
+  if (/^(?:select|bundle[\s_-]*select|select[\s_-]*bundle|choose[\s_-]*(?:your[\s_-]*)?(?:bundle|package))$/.test(lastSegment)) return "select";
   if (/presell|advertorial|listicle|review/.test(value)) return "presell";
   if (/landing|^home$|index/.test(value)) return "landing";
   return "page";

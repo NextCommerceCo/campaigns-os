@@ -44,9 +44,15 @@ test("inferPageType maps routes/filenames to funnel page types", () => {
   assert.equal(inferPageType("choose-your-bundle"), "select");
   // Checkout/cart/order still win, and unrelated "select" copy stays generic.
   assert.equal(inferPageType("select-checkout"), "checkout");
-  // Narrow by design: an unrelated page that merely contains "select" stays
-  // generic rather than being pulled into commerce residue checking.
+  assert.equal(inferPageType("bundle-select"), "select");
+  assert.equal(inferPageType("choose-package"), "select");
+  assert.equal(inferPageType("/campaign/select/"), "select");
+  // Narrow by design: the final route segment must BE the selector step, not
+  // merely contain the words, so an unrelated page is never pulled into
+  // commerce residue checking.
   assert.equal(inferPageType("selected-items"), "page");
+  assert.equal(inferPageType("our-choose-bundle-guide"), "page");
+  assert.equal(inferPageType("choose-bundle-guide"), "page");
   assert.equal(inferPageType("order-complete"), "receipt");
   assert.equal(inferPageType("presell"), "presell");
   assert.equal(inferPageType("advertorial"), "presell");

@@ -40,34 +40,52 @@ test("the selector step is inside the commerce residue scope", () => {
   assert.deepEqual([...RESIDUE_PAGE_TYPES], ["checkout", "select", "upsell", "downsell", "receipt"]);
 });
 
-test("the contract's selector-page style check now resolves for a select page", () => {
+test("the contract declares selector-scoped style checks, and they now resolve", () => {
   const checks = checksFor("select");
-  assert.equal(checks.length, 1);
-  assert.equal(checks[0].id, "selected_bundle_card");
-  assert.equal(checks[0].selector, ".os-card.next-selected");
+  // Guard the intent, not a specific id: the contract must scope at least one
+  // computed-style check to the selector step, whatever it is called. If this
+  // fails, the contract moved — update the proof below to match.
+  assert.ok(
+    checks.length >= 1,
+    `expected olympus-mv-two-step to scope at least one computed_style_check to "select"; found ${checks.length}. The contract moved — update this reachability proof.`,
+  );
+  // Every select-scoped check must also be a real, runnable check.
+  for (const check of checks) {
+    assert.ok(check.id, "a select-scoped check is missing an id");
+    assert.ok(check.selector, `select-scoped check ${check.id} is missing a selector`);
+  }
+  // The known one, pinned separately so a rename is a clear, single failure
+  // rather than an opaque count mismatch.
+  const bundleCard = checks.find((check) => check.id === "selected_bundle_card");
+  assert.ok(bundleCard, `expected a "selected_bundle_card" check scoped to select; found: ${checks.map((c) => c.id).join(", ")}`);
+  assert.equal(bundleCard.selector, ".os-card.next-selected");
   // It was always declared for both surfaces; only checkout could ever reach it.
-  assert.deepEqual(checks[0].page_types, ["checkout", "select"]);
+  assert.deepEqual(bundleCard.page_types, ["checkout", "select"]);
 });
 
-test("reachability: a branded selector page PASSES the newly scoped style check", () => {
-  const [check] = checksFor("select");
-  const result = computedStyleResidueAssertions({
-    page: selectPage,
-    evidence: [{
-      id: check.id,
-      selector: check.selector,
-      optional: check.optional,
-      found: true,
-      // A real brand's selected-card treatment — arcticclip's palette.
-      properties: { "border-color": "rgb(11, 32, 24)", "outline-color": "rgb(232, 255, 105)" },
-    }],
-    forbidden,
-    severity: "blocker",
-  })[0];
+test("reachability: a branded selector page PASSES every newly scoped style check", () => {
+  // Whatever the contract scopes to select must be passable on a real branded
+  // page — proved for all of them, so adding a check to the contract cannot
+  // quietly introduce an unpassable gate.
+  for (const check of checksFor("select")) {
+    const result = computedStyleResidueAssertions({
+      page: selectPage,
+      evidence: [{
+        id: check.id,
+        selector: check.selector,
+        optional: check.optional,
+        found: true,
+        // A real brand's selected-card treatment — arcticclip's palette.
+        properties: { "border-color": "rgb(11, 32, 24)", "outline-color": "rgb(232, 255, 105)" },
+      }],
+      forbidden,
+      severity: "blocker",
+    })[0];
 
-  assert.equal(result.status, "pass");
-  assert.equal(result.severity, undefined);
-  assert.equal(result.page, selectPage.page_id);
+    assert.equal(result.status, "pass", `select-scoped check ${check.id} cannot pass on a branded page`);
+    assert.equal(result.severity, undefined);
+    assert.equal(result.page, selectPage.page_id);
+  }
 });
 
 test("reachability: a branded selector-page logo PASSES the newly scoped logo check", () => {
@@ -86,7 +104,7 @@ test("reachability: a branded selector-page logo PASSES the newly scoped logo ch
 test("the gate still bites: starter residue on a selector page is a blocker", () => {
   // The point of turning coverage on. An unbranded selector step shipping the
   // starter palette now fails where it previously passed silently.
-  const [check] = checksFor("select");
+  const check = checksFor("select").find((entry) => entry.id === "selected_bundle_card");
   const result = computedStyleResidueAssertions({
     page: selectPage,
     evidence: [{
@@ -116,7 +134,7 @@ test("a selector page with no rendered bundle card is skipped, not blocked", () 
   // selected_bundle_card is optional: a selector step whose cards are not in the
   // selected state when the check runs must not become a false blocker. This is
   // the failure mode that would make the new coverage unreachable in practice.
-  const [check] = checksFor("select");
+  const check = checksFor("select").find((entry) => entry.id === "selected_bundle_card");
   const result = computedStyleResidueAssertions({
     page: selectPage,
     evidence: [{ id: check.id, selector: check.selector, optional: true, found: false, properties: {} }],
