@@ -2,6 +2,9 @@ import { basename, extname, join, resolve } from "node:path";
 import {
   readSourceHtmlManifestFile,
 } from "./source-html-manifest.mjs";
+// Built output of campaign-spec (same import shape as src/page-kit-sdk-version.mjs),
+// so build-time wiring and spec-time analysis share one edge resolver.
+import { declineRouteTarget, forwardRouteTarget } from "../campaign-spec/dist/index.js";
 
 const CPK_PAGE_TYPES = new Set(["product", "checkout", "upsell", "receipt"]);
 
@@ -435,37 +438,19 @@ function defaultPublicRouteForTargetPath(targetPath, publicRouteSlug) {
   return `/${normalizePublicRouteSlug(publicRouteSlug)}/${filename}/`;
 }
 
-// Forward-link resolution is deliberately NOT a page-type switch. A campaign is
-// a free-form headless shopping journey: it usually runs landing → checkout →
-// upsells → receipt, but nothing requires that, and a type table silently drops
-// any edge an author declares outside it. Nine certified family fixtures — plus
-// every hand-off in the three-step shop flow — route their checkout through
-// next_page rather than success_url, and those edges used to resolve to null,
-// emitting a built page with no next_url at all.
-//
-// Precedence is specific-before-generic: on_accept and success_url each name a
-// particular branch (upsell accept, order success), while next_page is the
-// generic "wherever this page goes next". On the current corpus this is
-// behaviour-preserving everywhere except those previously-dropped checkouts:
-// pages carrying several of these fields always agree, and the only pages whose
-// co-authored fields diverge are upsells branching accept vs decline.
-const FORWARD_ROUTE_FIELDS = ["on_accept", "success_url", "next_page"];
-
-function forwardRouteTarget(page) {
-  for (const field of FORWARD_ROUTE_FIELDS) {
-    if (page?.[field]) return page[field];
-  }
-  return null;
-}
-
+// Forward and decline links come from campaign-spec/routing.ts, the single
+// source of truth every consumer shares — see that module for why the forward
+// link is a first-match precedence while cycle detection takes the full edge
+// set. This used to be a page-type switch that silently discarded any edge
+// declared outside its table: twelve checkout-typed pages across nine
+// certified families route through next_page, and every one of them built with
+// no next_url at all.
 function nextUrlForPage(page, pageById, publicRouteSlug) {
   return pageKitFlowUrl(forwardRouteTarget(page), pageById, publicRouteSlug);
 }
 
-// The decline branch is likewise taken wherever it is declared rather than only
-// on upsell/downsell pages, so a journey that branches somewhere else keeps it.
 function declineUrlForPage(page, pageById, publicRouteSlug) {
-  return pageKitFlowUrl(page?.on_decline, pageById, publicRouteSlug);
+  return pageKitFlowUrl(declineRouteTarget(page), pageById, publicRouteSlug);
 }
 
 function pageKitFlowUrl(value, pageById, publicRouteSlug) {

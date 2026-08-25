@@ -1,0 +1,160 @@
+{
+  "apollo-mv-single-step-configurable.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-mv/"
+  },
+  "apollo-mv-single-step-configurable.json::default::upsell-mv": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "apollo-mv-single-step-configurable.json::default::upsell-bundle-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-tier-pills/"
+  },
+  "apollo-mv-single-step-configurable.json::default::upsell-bundle-tier-pills": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-tier-cards/"
+  },
+  "apollo-mv-single-step-configurable.json::default::upsell-bundle-tier-cards": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "apollo-mv-single-step-configurable.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "apollo-tiered-apollo-layout.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "apollo-tiered-apollo-layout.json::default::upsell-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "apollo-tiered-apollo-layout.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "arjuna-tiered-standard-free.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "arjuna-tiered-standard-free.json::default::upsell-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "arjuna-tiered-standard-free.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "demeter-editorial-tiered.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "demeter-editorial-tiered.json::default::upsell-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "demeter-editorial-tiered.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "karna-cart-standard.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell/"
+  },
+  "karna-cart-standard.json::default::upsell": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "karna-cart-standard.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "olympus-mv-single-step-configurable.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-mv/"
+  },
+  "olympus-mv-single-step-configurable.json::default::upsell-mv": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "olympus-mv-single-step-configurable.json::default::upsell-bundle-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-tier-pills/"
+  },
+  "olympus-mv-single-step-configurable.json::default::upsell-bundle-tier-pills": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-tier-cards/"
+  },
+  "olympus-mv-single-step-configurable.json::default::upsell-bundle-tier-cards": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "olympus-mv-single-step-configurable.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "olympus-mv-two-step-configurable.json::default::select": {
+    "page_type": "checkout",
+    "next_url": "/campaign/checkout/"
+  },
+  "olympus-mv-two-step-configurable.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-mv/"
+  },
+  "olympus-mv-two-step-configurable.json::default::upsell-mv": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "olympus-mv-two-step-configurable.json::default::upsell-bundle-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-tier-pills/"
+  },
+  "olympus-mv-two-step-configurable.json::default::upsell-bundle-tier-pills": {
+    "page_type": "upsell",
+    "next_url": "/campaign/upsell-bundle-tier-cards/"
+  },
+  "olympus-mv-two-step-configurable.json::default::upsell-bundle-tier-cards": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "olympus-mv-two-step-configurable.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "olympus-tiered-standard-free.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "olympus-tiered-standard-free.json::default::upsell-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "olympus-tiered-standard-free.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "shop-single-step-upsell-receipt.json::default::checkout": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "shop-single-step-upsell-receipt.json::default::upsell-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "shop-single-step-upsell-receipt.json::default::receipt": {
+    "page_type": "receipt"
+  },
+  "shop-three-step-dynamic-shipping.json::default::information": {
+    "page_type": "checkout",
+    "next_url": "/campaign/shipping/"
+  },
+  "shop-three-step-dynamic-shipping.json::default::shipping": {
+    "page_type": "checkout",
+    "next_url": "/campaign/billing/"
+  },
+  "shop-three-step-dynamic-shipping.json::default::billing": {
+    "page_type": "checkout",
+    "next_url": "/campaign/upsell-bundle-stepper/"
+  },
+  "shop-three-step-dynamic-shipping.json::default::upsell-stepper": {
+    "page_type": "upsell",
+    "next_url": "/campaign/receipt/"
+  },
+  "shop-three-step-dynamic-shipping.json::default::receipt": {
+    "page_type": "receipt"
+  }
+}

@@ -4,7 +4,7 @@
       "ruleId": "CheckoutHasSuccessUrl",
       "severity": "warning",
       "message": "Checkout has no forward route (set success_url or next_page to reach the first upsell).",
-      "path": "/funnels/0/pages/1/success_url",
+      "path": "/funnels/0/pages/1",
       "data": {
         "pageId": "f-c"
       }

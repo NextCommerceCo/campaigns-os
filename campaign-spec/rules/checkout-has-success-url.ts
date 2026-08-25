@@ -15,24 +15,20 @@
  * route to thankyou via the default thankyou path and don't need a
  * checkout-level forward route declared.
  *
- * Pairs with type-agnostic forward-link resolution in
- * src/source-html-intake.mjs: narrowing this rule is only safe because that
- * edge now actually wires. Narrowed alone it would have removed the sole
- * signal on a still-dropped edge.
+ * "Forward route" is whatever campaign-spec/routing.ts resolves, the same
+ * source source-intake and the QA topology extractor consume. Narrowing this
+ * rule is only safe because that edge now actually wires; narrowed alone it
+ * would have removed the sole signal on a still-dropped edge.
+ *
+ * The rule ID keeps its original name for consumer stability even though the
+ * condition is now field-agnostic. The violation path points at the page, not
+ * at /success_url, because no single field is the answer any more.
  *
  * Warning severity (not error) — preserves legacy classification.
  */
 
-import type { CampaignSpec, Page, Rule, Violation } from '../types.ts'
-
-/**
- * Any declared forward edge counts. Mirrors the precedence list in
- * src/source-html-intake.mjs — if the wiring can resolve a link from the page,
- * the shopper can continue and there is nothing to warn about.
- */
-function hasForwardRoute(page: Page): boolean {
-  return Boolean(page.success_url || page.next_page || page.on_accept)
-}
+import type { CampaignSpec, Rule, Violation } from '../types.ts'
+import { hasForwardRoute } from '../routing.ts'
 
 function specHasUpsell(spec: CampaignSpec): boolean {
   for (const funnel of spec.funnels) {
@@ -62,7 +58,7 @@ export const CheckoutHasSuccessUrl: Rule = {
           ruleId: 'CheckoutHasSuccessUrl',
           severity: 'warning',
           message: 'Checkout has no forward route (set success_url or next_page to reach the first upsell).',
-          path: `/funnels/${funnelIdx}/pages/${pageIdx}/success_url`,
+          path: `/funnels/${funnelIdx}/pages/${pageIdx}`,
           data: { pageId: page.id },
         })
       })

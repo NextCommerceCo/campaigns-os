@@ -3,6 +3,11 @@ import { CheckoutHasSuccessUrl } from '../../rules/checkout-has-success-url.ts'
 import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'
 import type { CampaignSpec } from '../../types.ts'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 
 describe('CheckoutHasSuccessUrl rule', () => {
   test('flags when upsell exists but checkout success_url is missing', () => {
@@ -88,13 +93,10 @@ describe('CheckoutHasSuccessUrl rule', () => {
     expect(violations[0].message).toContain('no forward route')
   })
 
-  test('every certified family fixture is now quiet — the nine false alarms are gone', async () => {
+  test('every certified family fixture is now quiet — the nine false alarms are gone', () => {
     // The corpus IS the proof here: before the narrowing this rule fired on
     // nine shipped fixtures whose checkouts route perfectly well.
-    const { readdirSync, readFileSync } = await import('node:fs')
-    const { fileURLToPath } = await import('node:url')
-    const { join, resolve } = await import('node:path')
-    const dir = join(resolve(fileURLToPath(new URL('../../..', import.meta.url))), 'contracts', 'fixtures', 'campaign-specs')
+    const dir = join(root, 'contracts', 'fixtures', 'campaign-specs')
     const noisy: string[] = []
     for (const name of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
       const spec = JSON.parse(readFileSync(join(dir, name), 'utf8')) as CampaignSpec
