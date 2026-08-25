@@ -36,6 +36,13 @@ Notable supported-surface changes are recorded here.
 
 ### Added
 
+- Exported `applicableForwardFields` from `./campaign-spec`: the forward fields
+  a page's TYPE can route from, declared or not. It answers "what should this
+  author have set instead", which is a question about the page type rather than
+  about the spec — filtering `FORWARD_ROUTE_FIELDS` against
+  `inapplicableForwardFields` gets it wrong, since that list only names fields
+  the author actually declared.
+
 - Exported `acceptRouteTarget` and `ACCEPT_ROUTE_FIELD` from `./campaign-spec`.
   `acceptRouteTarget` answers "where does accepting this page's offer go" — a
   question only an offer page can be asked — and is gated by the same

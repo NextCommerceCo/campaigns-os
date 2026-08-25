@@ -245,3 +245,35 @@ test("gate: no certified fixture produces a dead-end assertion", async () => {
   assert.deepEqual(noisy, []);
   assert.ok(scanned >= 10, `expected the certified corpus, scanned ${scanned}`);
 });
+
+test("the remediation hint names the forward field this page type can actually use", async () => {
+  // Kilo review on #237. The hint hardcoded "Set next_page to the real next
+  // step", which is right for a selector step and wrong for an upsell: an
+  // upsell's forward step is on_accept, and following that advice would route
+  // the shopper past the offer entirely. The suggestion is now derived from the
+  // resolver's applicability table, so it cannot drift from what routing allows.
+  const loader = async () => ({ ok: true, html: "<html></html>", status: 200, status_text: "OK" });
+  const noteFor = async (pages, id) => {
+    const page = topologyFor(pages)[id];
+    const { assertions } = await runPageChecks(page, {}, { sourceLoader: loader });
+    return assertions.find((a) => a.id.startsWith("forward-route:"));
+  };
+
+  const upsell = await noteFor([
+    { id: "oto", type: "upsell", success_url: "receipt", page_url: "oto/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ], "oto");
+  assert.deepEqual(upsell.evidence.applicable_forward_fields, ["on_accept", "next_page"]);
+  assert.match(upsell.evidence.note, /on_accept, next_page/);
+
+  const select = await noteFor([
+    { id: "sel", type: "select", success_url: "up", page_url: "sel/" },
+    { id: "up", type: "upsell", on_accept: "r", on_decline: "r", page_url: "up/" },
+    { id: "r", type: "thankyou", page_url: "r/" },
+  ], "sel");
+  // A selector step has no offer and takes no payment, so next_page is the only
+  // field it can route from — and success_url must not be suggested back to the
+  // author as a fix for the field that was just ignored.
+  assert.deepEqual(select.evidence.applicable_forward_fields, ["next_page"]);
+  assert.doesNotMatch(select.evidence.note, /on_accept|Set next_page to the real next step/);
+});

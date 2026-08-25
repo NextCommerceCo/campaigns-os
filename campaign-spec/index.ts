@@ -64,6 +64,7 @@ export {
   acceptRouteTarget,
   declineRouteTarget,
   hasForwardRoute,
+  applicableForwardFields,
   inapplicableForwardFields,
   describeForwardField,
   outgoingEdgeIds,

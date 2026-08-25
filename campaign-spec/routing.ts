@@ -214,6 +214,22 @@ export function describeForwardField(field: string): ForwardFieldApplicability |
 }
 
 /**
+ * Forward fields this page's type CAN route from, declared or not. The
+ * complement of the applicability table rather than of what the author wrote,
+ * because its job is to answer "what should I have set instead" — a question
+ * about the page type, not about this spec.
+ *
+ * Kept here rather than derived at a call site: a consumer filtering
+ * FORWARD_ROUTE_FIELDS against `inapplicableForwardFields` would get the wrong
+ * answer, since that list only names fields the author actually declared. An
+ * upsell that declares no `success_url` would come back as though `success_url`
+ * were a legitimate option for it.
+ */
+export function applicableForwardFields(page: Page | null | undefined): string[] {
+  return FORWARD_ROUTE_FIELDS.filter((field) => fieldAppliesTo(page, field))
+}
+
+/**
  * Forward fields this page declares with a real target but which its type
  * cannot satisfy, so routing skips them. Empty for almost every page; the
  * diagnostic that teaches authors about a stray `success_url` reads it, rather

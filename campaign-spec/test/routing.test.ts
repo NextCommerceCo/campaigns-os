@@ -17,6 +17,7 @@ import {
   PAYMENT_BEARING_PAGE_TYPES,
   ROUTE_FIELDS,
   acceptRouteTarget,
+  applicableForwardFields,
   declineRouteTarget,
   forwardRouteTarget,
   hasForwardRoute,
@@ -212,7 +213,37 @@ describe('routing — shared outgoing-edge resolver', () => {
     expect(acceptRouteTarget(null)).toBe(null)
     // Normalized like every other target, so consumers resolve one string.
     expect(acceptRouteTarget(page({ type: 'upsell', on_accept: '  a  ' }))).toBe('a')
+    // Kilo review on #237: an offer page that OMITS on_accept and one that
+    // declares it blank are the same answer, and stay the same answer. A
+    // consumer that ever treated "absent" and "present but empty" differently
+    // would be reading intent into whitespace.
     expect(acceptRouteTarget(page({ type: 'upsell', on_accept: '   ' }))).toBe(null)
+    expect(acceptRouteTarget(page({ type: 'upsell' }))).toBe(null)
+    expect(acceptRouteTarget(page({ type: 'upsell', on_accept: '' }))).toBe(null)
+    expect(acceptRouteTarget(page({ type: 'upsell', on_accept: null }))).toBe(null)
+  })
+
+  test('applicableForwardFields answers "what could this page type have used"', () => {
+    // Deliberately about the TYPE, not about what the author declared: it
+    // powers the remediation hint on a page that already got its field wrong.
+    expect(applicableForwardFields(page({ type: 'upsell' }))).toEqual(['on_accept', 'next_page'])
+    expect(applicableForwardFields(page({ type: 'downsell' }))).toEqual(['on_accept', 'next_page'])
+    expect(applicableForwardFields(page({ type: 'checkout' }))).toEqual(['success_url', 'next_page'])
+    expect(applicableForwardFields(page({ type: 'select' }))).toEqual(['next_page'])
+    expect(applicableForwardFields(page({ type: 'landing' }))).toEqual(['next_page'])
+    // Never empty: next_page is honoured on every page type, so there is always
+    // a correct answer to give an author.
+    for (const type of ALL_PAGE_TYPES) {
+      expect(applicableForwardFields(page({ type })).includes('next_page')).toBe(true)
+    }
+    // Exact complement of the applicability table, on every page type.
+    for (const type of ALL_PAGE_TYPES) {
+      const declaredEverything = page({ type, on_accept: 'a', success_url: 's', next_page: 'n' })
+      const applicable = applicableForwardFields(declaredEverything)
+      const ignored = inapplicableForwardFields(declaredEverything)
+      expect(`${type}:${[...applicable, ...ignored].sort().join(',')}`)
+        .toBe(`${type}:${[...FORWARD_ROUTE_FIELDS].sort().join(',')}`)
+    }
   })
 
   test('acceptRouteTarget never disagrees with the forward resolver about on_accept', () => {

@@ -10,6 +10,7 @@ import { remit } from "./remit.mjs";
 // cannot drift on which declared routing field wins.
 import {
   acceptRouteTarget,
+  applicableForwardFields,
   declineRouteTarget,
   forwardRouteTarget,
   inapplicableForwardFields,
@@ -2009,6 +2010,14 @@ async function runPageChecks(page, args, {
   const ignoredForwardFields = Array.isArray(page.ignored_forward_fields) ? page.ignored_forward_fields : [];
   if (!page.expected_next_url && ignoredForwardFields.length) {
     const fields = ignoredForwardFields.join(", ");
+    const applicable = Array.isArray(page.applicable_forward_fields) ? page.applicable_forward_fields : [];
+    // Name the fields this page type can actually route from. `next_page` is
+    // right for a selector step and wrong for an upsell, whose forward step is
+    // `on_accept` — a hint that named one field for every page type would send
+    // an upsell author straight past their own offer.
+    const remedy = applicable.length
+      ? `Declare one of the forward fields this page type can route from: ${applicable.join(", ")}.`
+      : "Declare a forward route this page type can satisfy.";
     assertions.push(assertion({
       id: `forward-route:${page.page_id}:resolves`,
       family: "funnel-flow",
@@ -2019,7 +2028,8 @@ async function runPageChecks(page, args, {
       actual: `none — "${fields}" declared but ignored on a "${page.page_type}" page`,
       evidence: {
         ignored_forward_fields: ignoredForwardFields,
-        note: `"${fields}" cannot route from a "${page.page_type}" page, and no other forward field is declared, so the built page has no next link. Set next_page to the real next step.`,
+        applicable_forward_fields: applicable,
+        note: `"${fields}" cannot route from a "${page.page_type}" page, and no other forward field is declared, so the built page has no next link. ${remedy}`,
       },
     }));
   }
@@ -2225,7 +2235,14 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
         // hand-off) apart from "meant to continue and lost its only edge",
         // which are indistinguishable from a null expected_next_url alone.
         ...(inapplicableForwardFields(page).length
-          ? { ignored_forward_fields: inapplicableForwardFields(page) }
+          ? {
+              ignored_forward_fields: inapplicableForwardFields(page),
+              // The fields this page TYPE could route from, so the remediation
+              // hint can name the right one. Derived from the resolver, never
+              // hardcoded: telling an upsell author to "set next_page" would
+              // route the shopper past the offer entirely.
+              applicable_forward_fields: applicableForwardFields(page),
+            }
           : {}),
         packages: page.packages || [],
         ...(page.exit_intent !== undefined ? { exit_intent: page.exit_intent } : {}),
