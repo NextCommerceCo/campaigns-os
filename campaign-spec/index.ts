@@ -55,11 +55,13 @@ export { normalize, NormalizeError } from './normalize.ts'
 // consume these rather than keeping their own page-type tables.
 export {
   FORWARD_ROUTE_FIELDS,
+  ACCEPT_ROUTE_FIELD,
   DECLINE_ROUTE_FIELD,
   ROUTE_FIELDS,
   PAYMENT_BEARING_PAGE_TYPES,
   OFFER_BEARING_PAGE_TYPES,
   forwardRouteTarget,
+  acceptRouteTarget,
   declineRouteTarget,
   hasForwardRoute,
   inapplicableForwardFields,

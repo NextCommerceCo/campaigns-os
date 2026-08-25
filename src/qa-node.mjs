@@ -8,7 +8,12 @@ import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
 // cannot drift on which declared routing field wins.
-import { declineRouteTarget, forwardRouteTarget } from "../campaign-spec/dist/index.js";
+import {
+  acceptRouteTarget,
+  declineRouteTarget,
+  forwardRouteTarget,
+  inapplicableForwardFields,
+} from "../campaign-spec/dist/index.js";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
@@ -1995,6 +2000,30 @@ async function runPageChecks(page, args, {
     }));
   }
 
+  // A page that declared a forward step and resolved to nothing is a dead end:
+  // the shopper reaches it and cannot continue. Asserted BEFORE the loop below,
+  // because that loop skips on a falsy URL — which is correct for a page that
+  // terminates on purpose and silently wrong for this one. Without this, the
+  // funnel-flow family emits ZERO assertions for the broken page and the run
+  // comes back clean.
+  const ignoredForwardFields = Array.isArray(page.ignored_forward_fields) ? page.ignored_forward_fields : [];
+  if (!page.expected_next_url && ignoredForwardFields.length) {
+    const fields = ignoredForwardFields.join(", ");
+    assertions.push(assertion({
+      id: `forward-route:${page.page_id}:resolves`,
+      family: "funnel-flow",
+      page,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      expected: "a forward route the shopper can follow",
+      actual: `none — "${fields}" declared but ignored on a "${page.page_type}" page`,
+      evidence: {
+        ignored_forward_fields: ignoredForwardFields,
+        note: `"${fields}" cannot route from a "${page.page_type}" page, and no other forward field is declared, so the built page has no next link. Set next_page to the real next step.`,
+      },
+    }));
+  }
+
   for (const [kind, expectedUrl] of [
     ["next", page.expected_next_url],
     ["accept", page.expected_accept_url],
@@ -2183,8 +2212,21 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
         // expectation and the built page could disagree about which declared
         // field wins on any page carrying more than one.
         expected_next_url: resolveSibling(pageById, urlById, forwardRouteTarget(page), baseUrl, publicRouteSlug),
-        expected_accept_url: resolveSibling(pageById, urlById, page.on_accept, baseUrl, publicRouteSlug),
+        // acceptRouteTarget, never `page.on_accept` raw. Reading the field
+        // directly outlived its correctness: since #234 gated `on_accept` to
+        // offer pages, a `select` page's inert on_accept produced an
+        // expected_accept_url, so QA hunted for an accept link the built page
+        // correctly does not have and flagged a correct build.
+        expected_accept_url: resolveSibling(pageById, urlById, acceptRouteTarget(page), baseUrl, publicRouteSlug),
         expected_decline_url: resolveSibling(pageById, urlById, declineRouteTarget(page), baseUrl, publicRouteSlug),
+        // Forward fields the author declared that routing skipped because this
+        // page type cannot satisfy them. Carried into the topology so QA can
+        // tell "terminates on purpose" (a thank-you page, a partial-scope
+        // hand-off) apart from "meant to continue and lost its only edge",
+        // which are indistinguishable from a null expected_next_url alone.
+        ...(inapplicableForwardFields(page).length
+          ? { ignored_forward_fields: inapplicableForwardFields(page) }
+          : {}),
         packages: page.packages || [],
         ...(page.exit_intent !== undefined ? { exit_intent: page.exit_intent } : {}),
         ...(page.promo_code_input !== undefined ? { promo_code_input: page.promo_code_input } : {}),

@@ -9,9 +9,25 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
 
-const { extractTopologies } = __qaNodeTestHooks;
+const { extractTopologies, runPageChecks } = __qaNodeTestHooks;
+
+const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
+
+// runPageChecks fetches the page; these tests are about what QA concludes from
+// the TOPOLOGY, so the transport is stubbed with a page whose HTML links
+// nowhere. Any funnel-flow assertion that survives is derived from the spec.
+const stubbedSource = (html = "<html><body><h1>page</h1></body></html>") =>
+  async () => ({ ok: true, html, status: 200, status_text: "OK" });
+
+const funnelFlowIds = async (page) => {
+  const { assertions } = await runPageChecks(page, {}, { sourceLoader: stubbedSource() });
+  return assertions.filter((a) => a.family === "funnel-flow");
+};
 
 const BASE = "https://shop.example.test/campaign/";
 
@@ -117,4 +133,115 @@ test("padded route targets resolve, rather than degrading to a raw string", () =
     { id: "receipt", type: "thankyou", page_url: "receipt/" },
   ]);
   assert.match(byId.checkout.expected_next_url, /\/campaign\/receipt\/$/);
+});
+
+test("a page that declared a forward field and resolved to nothing FAILS, rather than going quiet", async () => {
+  // #236. Both consumers of expected_next_url skip on a falsy value
+  // (`if (!expectedUrl) continue`), which is right for a page that terminates
+  // on purpose and silently wrong for a page that meant to continue. Before
+  // this, the dead-ended select page below emitted ZERO funnel-flow route
+  // assertions and the run came back clean.
+  const byId = topologyFor([
+    { id: "select", type: "select", success_url: "upsell", page_url: "select/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  assert.equal(byId.select.expected_next_url, undefined);
+  assert.deepEqual(byId.select.ignored_forward_fields, ["success_url"]);
+
+  const found = await funnelFlowIds(byId.select);
+  const deadEnd = found.find((a) => a.id === "forward-route:select:resolves");
+  assert.ok(deadEnd, "expected a forward-route assertion for the dead-ended page");
+  assert.equal(deadEnd.status, "fail");
+  assert.equal(deadEnd.severity, "blocker");
+  assert.match(deadEnd.actual, /success_url/);
+  assert.deepEqual(deadEnd.evidence.ignored_forward_fields, ["success_url"]);
+});
+
+test("a page that terminates on purpose stays quiet", async () => {
+  // The reason this is not "assert on every page with no next URL". A
+  // thank-you page declaring nothing is the correct end of the journey, and a
+  // gate that fires on it is a gate someone switches off.
+  const byId = topologyFor([
+    { id: "checkout", type: "checkout", success_url: "receipt", page_url: "checkout/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  assert.equal(byId.receipt.expected_next_url, undefined);
+  assert.equal(byId.receipt.ignored_forward_fields, undefined);
+
+  const found = await funnelFlowIds(byId.receipt);
+  assert.equal(found.filter((a) => a.id.startsWith("forward-route:")).length, 0);
+});
+
+test("a rooted partial-scope hand-off is not a dead end", async () => {
+  // The documented ThankYouRequirement shape: traffic continues to an existing
+  // downstream route outside this spec's page graph. A first cut of
+  // RouteTargetResolves on #233 fired on exactly this and had to be pulled, so
+  // it is pinned here before this gate ships rather than after.
+  const byId = topologyFor([
+    { id: "checkout", type: "checkout", success_url: "/existing-receipt/", page_url: "checkout/" },
+  ]);
+  assert.ok(byId.checkout.expected_next_url, "a rooted success_url still resolves off-graph");
+  assert.equal(byId.checkout.ignored_forward_fields, undefined);
+  const found = await funnelFlowIds(byId.checkout);
+  assert.equal(found.filter((a) => a.id.startsWith("forward-route:")).length, 0);
+});
+
+test("a select page with a working next_page is unaffected", async () => {
+  const byId = topologyFor([
+    { id: "select", type: "select", next_page: "checkout", success_url: "upsell", page_url: "select/" },
+    { id: "checkout", type: "checkout", success_url: "upsell", page_url: "checkout/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  // The stray field is still recorded — it IS ignored — but the page routes, so
+  // there is no dead end to fail on. Recording without failing is the point of
+  // carrying the field list rather than a boolean.
+  assert.deepEqual(byId.select.ignored_forward_fields, ["success_url"]);
+  assert.equal(byId.select.expected_next_url, `${BASE}checkout/`);
+  const found = await funnelFlowIds(byId.select);
+  assert.equal(found.filter((a) => a.id.startsWith("forward-route:")).length, 0);
+});
+
+test("expected_accept_url respects the on_accept gate, so QA stops hunting for a link that should not exist", async () => {
+  // The second half of #236, and a regression this change introduces if it is
+  // missed: extractTopologies read `page.on_accept` raw. After #234 gated the
+  // field, a select page's inert on_accept still produced an
+  // expected_accept_url, so QA emitted route-link:select:accept looking for an
+  // upsell link the built page CORRECTLY does not have — flagging a good build.
+  const byId = topologyFor([
+    { id: "select", type: "select", next_page: "checkout", on_accept: "upsell", page_url: "select/" },
+    { id: "checkout", type: "checkout", success_url: "upsell", page_url: "checkout/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  assert.equal(byId.select.expected_accept_url, undefined);
+  // The upsell below it presents the offer, so its accept branch still resolves.
+  assert.equal(byId.upsell.expected_accept_url, `${BASE}receipt/`);
+
+  const found = await funnelFlowIds(byId.select);
+  assert.equal(found.filter((a) => a.id === "route-link:select:accept").length, 0);
+});
+
+test("gate: no certified fixture produces a dead-end assertion", async () => {
+  // The precondition for shipping any gate here. A QA gate that fires on our
+  // own shipped campaigns is the failure mode, not the feature. Asserted over
+  // every certified family fixture, with a count guard so an empty directory
+  // cannot make this vacuously true.
+  const dir = join(REPO_ROOT, "contracts", "fixtures", "campaign-specs");
+  const noisy = [];
+  let scanned = 0;
+  for (const name of readdirSync(dir).filter((file) => file.endsWith(".json"))) {
+    const spec = JSON.parse(readFileSync(join(dir, name), "utf8"));
+    scanned += 1;
+    for (const topology of extractTopologies(spec, { baseUrl: BASE, publicRouteSlug: "campaign" })) {
+      for (const page of topology.pages) {
+        if (page.ignored_forward_fields) {
+          noisy.push(`${name}::${page.page_id} ignored ${page.ignored_forward_fields.join(",")}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(noisy, []);
+  assert.ok(scanned >= 10, `expected the certified corpus, scanned ${scanned}`);
 });
