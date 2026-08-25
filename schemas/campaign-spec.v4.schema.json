@@ -159,8 +159,8 @@
       "properties": {
         "id": { "type": "string" },
         "type": {
-          "enum": ["presell", "landing", "checkout", "upsell", "downsell", "thankyou"],
-          "description": "Authoring page type. 'thankyou' is the canonical terminal page type (33/33 real specs); 'receipt' is the SDK-layer projection, expressed via sdk_hints.sdk_page_type and sdk_hints.meta_tags['next-page-type'], never as page.type."
+          "enum": ["presell", "landing", "select", "checkout", "upsell", "downsell", "thankyou"],
+          "description": "Authoring page type. 'thankyou' is the canonical terminal page type (33/33 real specs); 'receipt' is the SDK-layer projection, expressed via sdk_hints.sdk_page_type and sdk_hints.meta_tags['next-page-type'], never as page.type. 'select' is the bundle-selection step of a two-step family — a template-owned commerce page that routes forward like a landing page but carries SDK cart selection, so commerce gates apply to it and not to 'landing'. Distinct from the page ID \"select\", which is a separate namespace."
         },
         "order": { "type": "number" },
         "label": { "type": "string" },

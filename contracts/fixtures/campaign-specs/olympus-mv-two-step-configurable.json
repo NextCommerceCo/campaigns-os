@@ -49,7 +49,7 @@
       "pages": [
         {
           "id": "select",
-          "type": "landing",
+          "type": "select",
           "order": 1,
           "label": "Select bundle and variants",
           "template": "src/olympus-mv-two-step/select.html",

@@ -79,6 +79,18 @@ export type RuleSet = Rule[]
 export type PageType =
   | 'presell'
   | 'landing'
+  /**
+   * The bundle-selection step of a two-step family: a template-owned commerce
+   * page where the shopper picks a package before checkout. Distinct from
+   * 'landing' — a landing page is design-source-owned and carries no SDK cart
+   * selection, so commerce gates (brand-theme load order, logo and
+   * computed-style residue, bump pricing) apply to 'select' and not to
+   * 'landing'. Routes forward like a landing page: next_page / success_url.
+   *
+   * Not to be confused with the page ID "select", which several family
+   * contracts use for this page and which is a separate namespace.
+   */
+  | 'select'
   | 'checkout'
   | 'upsell'
   | 'downsell'
