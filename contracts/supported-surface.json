@@ -41,7 +41,7 @@
       "sha256": "8a049d03398d7778e8284a17b4024506a911812abce27961ded8e31e5c6ac40b"
     },
     "schemas/campaign-spec.v4.schema.json": {
-      "sha256": "988146421c90e3cbcb18cbdd5363383821e65fce425f69125922d7c5f8ffaf0c"
+      "sha256": "12b57573739357acb2b007d00a737cd86face441c47f2719fc51b041dc8ea4a5"
     },
     "schemas/campaigns-os-run-record.v0.schema.json": {
       "sha256": "51c7441e73d693d42d201676e35714d94a749b4174fe678d4f4c68e855eba496"

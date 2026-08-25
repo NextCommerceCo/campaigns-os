@@ -167,7 +167,7 @@
         "is_entry": { "type": "boolean", "description": "True on funnel entry pages (178/195 real pages carry the flag)." },
         "page_url": { "type": "string", "description": "Authored route field: usually a route path like 'checkout/' (137 of 170 occurrences), sometimes empty, a bare token, or a legacy .html filename." },
         "next_page": { "type": "string", "description": "PAGE ID of the next page — 100% of real occurrences hold page ids, never routes. Route paths live in resolved_routing." },
-        "on_accept": { "type": "string", "description": "PAGE ID routed to on upsell accept." },
+        "on_accept": { "type": "string", "description": "PAGE ID routed to on upsell accept. Meaningful only on a page that presents an accept/decline offer (type 'upsell' or 'downsell'); on any other page type there is no offer to accept, so it is ignored for routing." },
         "on_decline": { "type": "string", "description": "PAGE ID routed to on upsell decline." },
         "success_url": { "type": "string", "description": "PAGE ID routed to on checkout success. Despite the name, this never holds a URL in real exports (33/33 occurrences are page ids). Meaningful only on a page that takes payment (type 'checkout'); on any other page type there is no payment success to route from, so it is ignored for routing and next_page wins."},
         "_next_label": { "type": ["string", "null"], "description": "Builder-side label shadow of next_page (underscore-prefixed keys are builder annotations)." },
@@ -205,7 +205,7 @@
       "properties": {
         "accept": { "type": "string", "description": "Resolved PAGE ID for on_accept." },
         "decline": { "type": "string", "description": "Resolved PAGE ID for on_decline." },
-        "success": { "type": "string", "description": "Resolved PAGE ID for success_url." },
+        "success": { "type": "string", "description": "Resolved PAGE ID for success_url. Like the declared field, meaningful only on a page that takes payment (type 'checkout'); the exporter may still emit it elsewhere, where routing ignores it." },
         "next_page": { "type": "string", "description": "Resolved PAGE ID for next_page." },
         "accept_route": { "type": "string", "description": "Trailing-slash route path for accept." },
         "decline_route": { "type": "string" },

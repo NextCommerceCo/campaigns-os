@@ -14,6 +14,7 @@ import {
   SOURCE_HTML_MANIFEST_SCHEMA,
   validateSourceHtmlManifest,
 } from "./source-html-manifest.mjs";
+import { forwardRouteTarget } from "../campaign-spec/dist/index.js";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -565,7 +566,11 @@ test("no certified fixture silently drops a declared forward edge", () => {
       for (const page of funnel.pages || []) {
         const key = `${name}::${funnel.id}::${page.id}`;
         if (!(key in emitted)) continue;
-        const declares = ["on_accept", "success_url", "next_page"].some((field) => page[field]);
+        // Ask the resolver, never a local copy of its precedence list: since
+        // #234 a declared field the page type cannot satisfy is NOT an edge,
+        // and a hardcoded array would flag a correctly-inert success_url on a
+        // select page as a dropped edge.
+        const declares = forwardRouteTarget(page) !== null;
         if (declares && !emitted[key].next_url) {
           dropped.push(`${key} (type=${page.type}) declares a forward edge but emits no next_url`);
         }
@@ -610,6 +615,56 @@ test("forward-link precedence is specific-before-generic, and wiring proves it e
   assert.equal(wire({ id: "p", type: "checkout", next_page: "next-target" }).next_url, "/campaign/next-target/");
   // A page declaring nothing wires nothing, rather than inventing a route.
   assert.equal("next_url" in wire({ id: "p", type: "checkout" }), false);
+});
+
+test("a stray success_url off a checkout does not wire the built page past payment", () => {
+  // #234 end to end. This is the layer the reported bug actually broke: the
+  // built select page's forward link pointed at the upsell, so a real shopper
+  // left the funnel without paying. Asserted on both page types from one spec,
+  // because the carve-out is meaningless unless the checkout below still works.
+  const pages = [
+    { id: "select", type: "select", next_page: "checkout", success_url: "upsell", page_url: "select/" },
+    { id: "checkout", type: "checkout", next_page: "select", success_url: "upsell", page_url: "checkout/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ];
+  const result = createSourceHtmlIntake({
+    sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+    specPages: pages,
+    htmlFiles: pages.map((p) => ({ path: `${p.id}.html`, basename: p.id })),
+    publicRouteSlug: "campaign",
+    outputDir: "src/campaign",
+  });
+  const frontmatter = (id) => result.mappings.find((m) => m.page_id === id).page_kit.frontmatter;
+
+  assert.equal(frontmatter("select").next_url, "/campaign/checkout/");
+  assert.equal(frontmatter("checkout").next_url, "/campaign/upsell/");
+});
+
+test("a stray on_accept off an offer page does not wire the built page past payment", () => {
+  // The same end-to-end proof for the second gated field. on_accept sits at the
+  // top of the precedence list, so this is the shape that still skipped payment
+  // after the success_url carve-out landed.
+  const pages = [
+    { id: "select", type: "select", next_page: "checkout", on_accept: "upsell", page_url: "select/" },
+    { id: "checkout", type: "checkout", success_url: "upsell", on_accept: "receipt", page_url: "checkout/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ];
+  const result = createSourceHtmlIntake({
+    sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+    specPages: pages,
+    htmlFiles: pages.map((p) => ({ path: `${p.id}.html`, basename: p.id })),
+    publicRouteSlug: "campaign",
+    outputDir: "src/campaign",
+  });
+  const frontmatter = (id) => result.mappings.find((m) => m.page_id === id).page_kit.frontmatter;
+
+  assert.equal(frontmatter("select").next_url, "/campaign/checkout/");
+  // The checkout keeps its own success_url instead of the shadowing on_accept.
+  assert.equal(frontmatter("checkout").next_url, "/campaign/upsell/");
+  // The upsell presents the offer, so its on_accept still wins.
+  assert.equal(frontmatter("upsell").next_url, "/campaign/receipt/");
 });
 
 test("the decline branch is taken wherever it is declared, not only on upsells", () => {

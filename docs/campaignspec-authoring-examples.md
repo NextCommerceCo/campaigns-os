@@ -34,9 +34,22 @@ Authoring guidance:
   - A checkout may equally declare its forward step as `next_page`; twelve
     pages across ten certified fixtures do. Forward links resolve from
     whichever routing field a page declares — `on_accept`, then `success_url`,
-    then `next_page` — with no page-type gate, so an unconventional journey is
-    wired rather than dropped.
-    See `campaign-spec/routing.ts`.
+    then `next_page` — so an unconventional journey is wired rather than
+    dropped.
+  - `next_page` is the generic "wherever this page goes next" and is honoured on
+    every page type. The other two forward fields carry a page-shaped meaning
+    and are honoured only where that meaning exists:
+    - `success_url` means "after payment succeeds" — only on `type: "checkout"`.
+    - `on_accept` means "after accepting the offer on this page" — only on
+      `type: "upsell"` or `"downsell"`.
+
+    Declared anywhere else they are inert, `next_page` wins, and the
+    `RouteFieldIgnoredForPageType` warning says which field was skipped and
+    where the shopper actually goes. A `select` page is the first step of a
+    two-step checkout: it neither takes payment nor presents an accept/decline
+    offer, so a copy-pasted `success_url` or `on_accept` there does not route.
+    See `campaign-spec/routing.ts` (`PAYMENT_BEARING_PAGE_TYPES`,
+    `OFFER_BEARING_PAGE_TYPES`).
 
 - Upsell page:
   - `type: "upsell"` or `type: "downsell"`, with

@@ -1,0 +1,17 @@
+{
+  "violations": [
+    {
+      "ruleId": "RouteFieldIgnoredForPageType",
+      "severity": "warning",
+      "message": "\"on_accept\" is ignored for routing on a \"select\" page — it means where the shopper goes after accepting the offer on this page, which only \"upsell\" or \"downsell\" can satisfy. This page routes forward to \"checkout-1\" instead.",
+      "path": "/funnels/0/pages/0/on_accept",
+      "data": {
+        "pageId": "select-1",
+        "pageType": "select",
+        "field": "on_accept",
+        "target": "upsell-1",
+        "routedTo": "checkout-1"
+      }
+    }
+  ]
+}

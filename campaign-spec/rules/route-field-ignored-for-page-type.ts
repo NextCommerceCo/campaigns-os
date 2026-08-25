@@ -22,12 +22,20 @@
  * Blocking on it would fail builds that ship fine.
  *
  * The set of ignored fields comes from routing.ts via
- * `inapplicableForwardFields`, never re-derived here: a rule that disagreed
- * with the resolver about which fields are live would be worse than no rule.
+ * `inapplicableForwardFields`, and the field's meaning and permitted types
+ * from `describeForwardField` — never re-derived here. A rule that
+ * disagreed with the resolver about which fields are live would be worse than
+ * no rule, and a hand-written checkout-specific sentence would quietly become
+ * a lie the first time a second field or a second payment-bearing type joins
+ * the table.
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
-import { forwardRouteTarget, inapplicableForwardFields } from '../routing.ts'
+import {
+  describeForwardField,
+  forwardRouteTarget,
+  inapplicableForwardFields,
+} from '../routing.ts'
 
 export const RouteFieldIgnoredForPageType: Rule = {
   id: 'RouteFieldIgnoredForPageType',
@@ -52,10 +60,23 @@ export const RouteFieldIgnoredForPageType: Rule = {
           : 'This page has no forward route at all as a result.'
 
         for (const field of ignored) {
+          const applicability = describeForwardField(field)
+          const honoured = (applicability?.requiredTypes ?? [])
+            .map((type) => `"${type}"`)
+            .join(' or ')
+          const meaning = applicability?.meaning ?? 'something this page type cannot provide'
+          // A page with no usable `type` reaches here too, and telling that
+          // author about payment semantics points at the wrong defect: the
+          // real problem is the missing required field, not the routing.
+          const where =
+            typeof page.type === 'string' && page.type.trim()
+              ? `on a "${page.type}" page`
+              : 'because this page declares no valid "type"'
+
           violations.push({
             ruleId: 'RouteFieldIgnoredForPageType',
             severity: 'warning',
-            message: `"${field}" is ignored for routing on a "${page.type}" page — only a checkout takes payment, so there is no payment success to route from. ${outcome}`,
+            message: `"${field}" is ignored for routing ${where} — it means ${meaning}, which only ${honoured} can satisfy. ${outcome}`,
             path: `/funnels/${funnelIdx}/pages/${pageIdx}/${field}`,
             data: {
               pageId: page.id,

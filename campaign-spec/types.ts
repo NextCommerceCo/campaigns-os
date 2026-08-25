@@ -86,8 +86,9 @@ export type PageType =
    * selection, so commerce gates (brand-theme load order, logo and
    * computed-style residue, bump pricing) apply to 'select' and not to
    * 'landing'. Routes forward like a landing page, through `next_page`: it is
-   * the first step of a two-step checkout flow, and payment happens at the
-   * checkout, so a `success_url` here is ignored for routing (campaigns-os#234).
+   * the first step of a two-step checkout flow, and it neither takes payment
+   * nor presents an accept/decline offer, so a `success_url` or `on_accept`
+   * here is ignored for routing (campaigns-os#234).
    *
    * Not to be confused with the page ID "select", which several family
    * contracts use for this page and which is a separate namespace.
@@ -385,10 +386,12 @@ export interface Page {
   // `page_url`.
   //
   // Which edge a page actually traverses is decided in routing.ts, never here
-  // or at a call site. `next_page` and `on_accept` are honoured on every page
-  // type; `success_url` means "after payment succeeds" and is honoured only on
-  // a page that takes payment, so on any other type it is inert and the
-  // RouteFieldIgnoredForPageType rule warns.
+  // or at a call site. `next_page` is the generic "wherever this goes next" and
+  // is honoured on every page type. The other two carry a page-shaped meaning
+  // and are honoured only where that meaning exists: `success_url` ("after
+  // payment succeeds") on a page that takes payment, `on_accept` ("after
+  // accepting this page's offer") on a page that presents one. Declared
+  // anywhere else they are inert and RouteFieldIgnoredForPageType warns.
   next_page?: string
   success_url?: string
   on_accept?: string
