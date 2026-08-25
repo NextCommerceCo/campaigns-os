@@ -57,6 +57,9 @@ export const FORWARD_ROUTE_FIELDS = Object.freeze([
   'next_page',
 ] as const)
 
+/** The accept branch. Also a forward field, so it appears in both lists. */
+export const ACCEPT_ROUTE_FIELD = 'on_accept' as const
+
 /** The decline branch. Separate because it is a second edge, not a fallback. */
 export const DECLINE_ROUTE_FIELD = 'on_decline' as const
 
@@ -211,6 +214,22 @@ export function describeForwardField(field: string): ForwardFieldApplicability |
 }
 
 /**
+ * Forward fields this page's type CAN route from, declared or not. The
+ * complement of the applicability table rather than of what the author wrote,
+ * because its job is to answer "what should I have set instead" — a question
+ * about the page type, not about this spec.
+ *
+ * Kept here rather than derived at a call site: a consumer filtering
+ * FORWARD_ROUTE_FIELDS against `inapplicableForwardFields` would get the wrong
+ * answer, since that list only names fields the author actually declared. An
+ * upsell that declares no `success_url` would come back as though `success_url`
+ * were a legitimate option for it.
+ */
+export function applicableForwardFields(page: Page | null | undefined): string[] {
+  return FORWARD_ROUTE_FIELDS.filter((field) => fieldAppliesTo(page, field))
+}
+
+/**
  * Forward fields this page declares with a real target but which its type
  * cannot satisfy, so routing skips them. Empty for almost every page; the
  * diagnostic that teaches authors about a stray `success_url` reads it, rather
@@ -220,6 +239,23 @@ export function inapplicableForwardFields(page: Page | null | undefined): string
   return FORWARD_ROUTE_FIELDS.filter(
     (field) => !fieldAppliesTo(page, field) && declared(page, field) !== null,
   )
+}
+
+/**
+ * The accept-branch target: `on_accept`, but only where the page can satisfy
+ * it. Distinct from `forwardRouteTarget`, which answers "the ONE forward link"
+ * and may resolve to a different field; this answers "where does accepting
+ * this page's offer go", which is a question only an offer page can be asked.
+ *
+ * Exists because reading `page.on_accept` raw is now wrong. The QA topology
+ * extractor did exactly that and, after #234 gated the field, emitted an
+ * `expected_accept_url` for a `select` page's inert `on_accept` — so QA looked
+ * for an accept link the built page correctly does not have, and flagged a
+ * correct build. Every consumer asks the resolver; that is the whole point of
+ * this module.
+ */
+export function acceptRouteTarget(page: Page | null | undefined): string | null {
+  return fieldAppliesTo(page, ACCEPT_ROUTE_FIELD) ? declared(page, ACCEPT_ROUTE_FIELD) : null
 }
 
 /** The decline-branch target, wherever it is declared. */

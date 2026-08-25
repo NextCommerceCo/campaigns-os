@@ -2,6 +2,53 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.12.0] - 2026-08-25
+
+### Fixed
+
+- **QA no longer passes a funnel whose page dead-ends.** Both consumers of
+  `expected_next_url` skip on a falsy value — `if (!expectedUrl) continue` in
+  the funnel-flow route-link loop, `if (!page?.expected_next_url) return false`
+  in the primary-CTA check — which is correct for a page that terminates on
+  purpose and silently wrong for a page that meant to continue. 1.11.0 made
+  that state reachable: a page whose only forward field was `success_url` or
+  `on_accept` off an eligible type now resolves to no forward link, source
+  intake omits `next_url`, and the built page has nowhere to go. QA emitted
+  **zero** assertions for it and the run came back clean.
+
+  The QA topology now carries `ignored_forward_fields` — the forward fields the
+  author declared that routing skipped — so QA can tell "terminates on purpose"
+  apart from "meant to continue and lost its only edge", which a null
+  `expected_next_url` cannot express on its own. A page in the second state
+  emits `forward-route:<page>:resolves`, status `fail`, severity `blocker`.
+
+  Deliberately narrow. A `thankyou` page declaring nothing stays quiet, and a
+  rooted `success_url` handing off to an existing downstream route (the
+  partial-scope pattern `ThankYouRequirement` documents) still passes. Proven
+  quiet across every certified family fixture before shipping.
+
+- **`expected_accept_url` respects the `on_accept` applicability rule.** The QA
+  topology extractor read `page.on_accept` raw, which outlived its correctness
+  when 1.11.0 gated the field: a `select` page's inert `on_accept` still
+  produced an `expected_accept_url`, so QA looked for an accept link the built
+  page correctly does not have and flagged a good build. It now reads
+  `acceptRouteTarget`. An upsell's own accept branch is unaffected.
+
+### Added
+
+- Exported `applicableForwardFields` from `./campaign-spec`: the forward fields
+  a page's TYPE can route from, declared or not. It answers "what should this
+  author have set instead", which is a question about the page type rather than
+  about the spec — filtering `FORWARD_ROUTE_FIELDS` against
+  `inapplicableForwardFields` gets it wrong, since that list only names fields
+  the author actually declared.
+
+- Exported `acceptRouteTarget` and `ACCEPT_ROUTE_FIELD` from `./campaign-spec`.
+  `acceptRouteTarget` answers "where does accepting this page's offer go" — a
+  question only an offer page can be asked — and is gated by the same
+  applicability table as the forward resolver, so a consumer cannot read the
+  raw field and drift from routing the way the QA extractor did.
+
 ## [1.11.0] - 2026-08-25
 
 ### Changed
