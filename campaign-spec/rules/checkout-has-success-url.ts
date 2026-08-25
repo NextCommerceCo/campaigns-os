@@ -16,9 +16,9 @@
  * checkout-level forward route declared.
  *
  * "Forward route" is whatever campaign-spec/routing.ts resolves, the same
- * source source-intake and the QA topology extractor consume. Narrowing this
- * rule is only safe because that edge now actually wires; narrowed alone it
- * would have removed the sole signal on a still-dropped edge.
+ * source that source intake and the QA topology extractor consume. Narrowing
+ * this rule is only safe because that edge now actually wires; narrowed alone
+ * it would have removed the sole signal on a still-dropped edge.
  *
  * The rule ID keeps its original name for consumer stability even though the
  * condition is now field-agnostic. The violation path points at the page, not
