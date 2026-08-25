@@ -15,8 +15,8 @@
  * route to thankyou via the default thankyou path and don't need a
  * checkout-level forward route declared.
  *
- * "Forward route" is whatever campaign-spec/routing.ts resolves, the same
- * source that source intake and the QA topology extractor consume. Narrowing
+ * "Forward route" is whatever campaign-spec/routing.ts resolves — the same
+ * resolver that source intake and the QA topology extractor consume. Narrowing
  * this rule is only safe because that edge now actually wires; narrowed alone
  * it would have removed the sole signal on a still-dropped edge.
  *
