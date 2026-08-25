@@ -139,16 +139,21 @@ describe('RouteTargetResolves rule', () => {
   })
 
   test('the .html suffix is stripped by length, so any casing resolves', () => {
-    expect(
-      RouteTargetResolves.check(
-        normalize(
-          specWith([
-            { id: 'chk', type: 'checkout', next_page: 'receipt.HTML' },
-            { id: 'receipt', type: 'thankyou' },
-          ]),
+    // Mixed case is the variant most likely to expose a regression — a naive
+    // `.replace(/\.html$/, '')` would pass `.HTML` by missing it entirely for
+    // the wrong reason, and fail `.Html`.
+    for (const suffix of ['.html', '.HTML', '.Html', '.hTmL']) {
+      expect(
+        RouteTargetResolves.check(
+          normalize(
+            specWith([
+              { id: 'chk', type: 'checkout', next_page: `receipt${suffix}` },
+              { id: 'receipt', type: 'thankyou' },
+            ]),
+          ),
         ),
-      ),
-    ).toEqual([])
+      ).toEqual([])
+    }
   })
 
   test('case is not folded — the rule agrees with a case-sensitive build lookup', () => {

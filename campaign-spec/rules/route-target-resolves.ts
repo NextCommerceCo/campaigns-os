@@ -67,7 +67,7 @@ function resolvableNames(pages: Page[]): Set<string> {
       names.add(page.id)
       names.add(normalizeRouteish(page.id))
     }
-    const route = (page as Record<string, unknown>).page_url
+    const route = page.page_url
     if (typeof route === 'string' && route.trim()) names.add(normalizeRouteish(route))
   }
   names.delete('')
