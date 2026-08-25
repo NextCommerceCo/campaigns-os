@@ -31,6 +31,7 @@ import { PageIdUniqueness } from './page-id-uniqueness.ts'
 import { UpsellHasPackages } from './upsell-has-packages.ts'
 import { UpsellRoutingComplete } from './upsell-routing-complete.ts'
 import { RouteTargetResolves } from './route-target-resolves.ts'
+import { RouteFieldIgnoredForPageType } from './route-field-ignored-for-page-type.ts'
 import { CheckoutHasSuccessUrl } from './checkout-has-success-url.ts'
 import { UpsellWithoutCheckout } from './upsell-without-checkout.ts'
 import { DownsellWithoutUpsell } from './downsell-without-upsell.ts'
@@ -62,6 +63,7 @@ export { ThankYouRequirement } from './thank-you-requirement.ts'
 export { PageIdUniqueness } from './page-id-uniqueness.ts'
 export { UpsellHasPackages } from './upsell-has-packages.ts'
 export { UpsellRoutingComplete } from './upsell-routing-complete.ts'
+export { RouteFieldIgnoredForPageType } from './route-field-ignored-for-page-type.ts'
 export { CheckoutHasSuccessUrl } from './checkout-has-success-url.ts'
 export { UpsellWithoutCheckout } from './upsell-without-checkout.ts'
 export { DownsellWithoutUpsell } from './downsell-without-upsell.ts'
@@ -103,6 +105,7 @@ export const allRules: RuleSet = [
   UpsellHasPackages,
   UpsellRoutingComplete,
   RouteTargetResolves,
+  RouteFieldIgnoredForPageType,
   CheckoutHasSuccessUrl,
   UpsellWithoutCheckout,
   DownsellWithoutUpsell,

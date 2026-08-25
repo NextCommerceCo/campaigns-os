@@ -169,7 +169,7 @@
         "next_page": { "type": "string", "description": "PAGE ID of the next page — 100% of real occurrences hold page ids, never routes. Route paths live in resolved_routing." },
         "on_accept": { "type": "string", "description": "PAGE ID routed to on upsell accept." },
         "on_decline": { "type": "string", "description": "PAGE ID routed to on upsell decline." },
-        "success_url": { "type": "string", "description": "PAGE ID routed to on checkout success. Despite the name, this never holds a URL in real exports (33/33 occurrences are page ids)." },
+        "success_url": { "type": "string", "description": "PAGE ID routed to on checkout success. Despite the name, this never holds a URL in real exports (33/33 occurrences are page ids). Meaningful only on a page that takes payment (type 'checkout'); on any other page type there is no payment success to route from, so it is ignored for routing and next_page wins."},
         "_next_label": { "type": ["string", "null"], "description": "Builder-side label shadow of next_page (underscore-prefixed keys are builder annotations)." },
         "_accept_label": { "type": ["string", "null"] },
         "_decline_label": { "type": ["string", "null"] },

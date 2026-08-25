@@ -57,9 +57,11 @@ export {
   FORWARD_ROUTE_FIELDS,
   DECLINE_ROUTE_FIELD,
   ROUTE_FIELDS,
+  PAYMENT_BEARING_PAGE_TYPES,
   forwardRouteTarget,
   declineRouteTarget,
   hasForwardRoute,
+  inapplicableForwardFields,
   outgoingEdgeIds,
 } from './routing.ts'
 export { allRules, fastRules, specOnlyRules } from './rules/index.ts'
