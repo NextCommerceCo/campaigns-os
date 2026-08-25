@@ -32,9 +32,10 @@ Authoring guidance:
   - `sdk_hints.meta_tags.next-success-url` points to the next runtime route.
   - `success_url` holds the next PAGE ID (never a URL, despite the name).
   - A checkout may equally declare its forward step as `next_page`; twelve
-    pages across ten certified fixtures do. Forward links resolve from whichever routing field a
-    page declares — `on_accept`, then `success_url`, then `next_page` — with no
-    page-type gate, so an unconventional journey is wired rather than dropped.
+    pages across ten certified fixtures do. Forward links resolve from
+    whichever routing field a page declares — `on_accept`, then `success_url`,
+    then `next_page` — with no page-type gate, so an unconventional journey is
+    wired rather than dropped.
     See `campaign-spec/routing.ts`.
 
 - Upsell page:

@@ -121,6 +121,47 @@ describe('RouteTargetResolves rule', () => {
     ).toEqual([])
   })
 
+  test('a page reached at an explicit page_url resolves by that route', () => {
+    // Regression: matching page IDs alone flagged a working link. A page with an
+    // explicit page_url is served at that route, intake resolves a target naming
+    // it, and the rule must agree or it fires on a legitimate shape.
+    expect(
+      RouteTargetResolves.check(
+        normalize(
+          specWith([
+            { id: 'checkout', type: 'checkout', next_page: 'oto-1.html', page_url: 'checkout/' },
+            { id: 'upsell-1', type: 'upsell', page_url: 'oto-1/' },
+            { id: 'receipt', type: 'thankyou', page_url: 'receipt/' },
+          ]),
+        ),
+      ),
+    ).toEqual([])
+  })
+
+  test('the .html suffix is stripped by length, so any casing resolves', () => {
+    expect(
+      RouteTargetResolves.check(
+        normalize(
+          specWith([
+            { id: 'chk', type: 'checkout', next_page: 'receipt.HTML' },
+            { id: 'receipt', type: 'thankyou' },
+          ]),
+        ),
+      ),
+    ).toEqual([])
+  })
+
+  test('case is not folded — the rule agrees with a case-sensitive build lookup', () => {
+    // Deliberately NOT permissive: intake's page lookup is case-sensitive, so
+    // passing a target here that the build then fails to resolve would be a
+    // false negative, which is worse than the false positive it avoids.
+    const violations = RouteTargetResolves.check(
+      normalize(specWith([{ id: 'chk', type: 'checkout', next_page: 'RECEIPT' }, { id: 'receipt', type: 'thankyou' }])),
+    )
+    expect(violations).toHaveLength(1)
+    expect(violations[0].data?.target).toBe('RECEIPT')
+  })
+
   test('reachability: the rule is already quiet across every certified fixture', () => {
     // The precondition for shipping any new gate here. A checkpoint that fires
     // on our own shipped campaigns is the failure mode, not the feature.

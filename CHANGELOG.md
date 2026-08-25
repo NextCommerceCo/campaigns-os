@@ -55,9 +55,9 @@ Notable supported-surface changes are recorded here.
 - `CheckoutHasSuccessUrl` warns when a checkout has no forward route at all,
   instead of when it lacks `success_url` specifically. It was firing on twelve
   pages across ten shipped fixtures whose checkouts route correctly, telling
-  authors to rename a field they had already filled in. Corpus warnings drop from 22 to 10. The
-  message and the violation `path` now describe the page-level condition; the
-  rule ID is unchanged for consumer stability.
+  authors to rename a field they had already filled in. Corpus warnings drop
+  from 22 to 10. The message and the violation `path` now describe the
+  page-level condition; the rule ID is unchanged for consumer stability.
 - Bumped the supported surface to `1.10.0`. No hashed schema changed, so the
   gate does not owe a bump — but the new exports and the changed routing
   behaviour are consumer-visible, and downstream pins update against a version
