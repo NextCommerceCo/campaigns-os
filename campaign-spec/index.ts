@@ -57,11 +57,16 @@ export {
   FORWARD_ROUTE_FIELDS,
   DECLINE_ROUTE_FIELD,
   ROUTE_FIELDS,
+  PAYMENT_BEARING_PAGE_TYPES,
+  OFFER_BEARING_PAGE_TYPES,
   forwardRouteTarget,
   declineRouteTarget,
   hasForwardRoute,
+  inapplicableForwardFields,
+  describeForwardField,
   outgoingEdgeIds,
 } from './routing.ts'
+export type { ForwardFieldApplicability } from './routing.ts'
 export { allRules, fastRules, specOnlyRules } from './rules/index.ts'
 
 // Supported schema_version matrix — single source for the SchemaVersion rule

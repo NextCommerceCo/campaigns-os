@@ -30,7 +30,7 @@
  */
 
 import type { CampaignSpec, Page, Rule, Violation } from '../types.ts'
-import { ROUTE_FIELDS } from '../routing.ts'
+import { ROUTE_FIELDS, inapplicableForwardFields } from '../routing.ts'
 
 /**
  * Destinations that deliberately leave this spec's page graph. A rooted path is
@@ -87,7 +87,15 @@ export const RouteTargetResolves: Rule = {
       const known = resolvableNames(pages)
 
       pages.forEach((page: Page, pageIdx: number) => {
+        // A field the page's type cannot satisfy is inert: routing skips it, so
+        // the built page does NOT link to its target and this rule's message
+        // ("the built page would link to a route nothing serves") would be
+        // false. RouteFieldIgnoredForPageType owns that shape. Reading the
+        // exclusion from the resolver keeps the two rules from telling an
+        // author opposite stories about the same field (#234).
+        const inert = new Set(inapplicableForwardFields(page))
         for (const field of ROUTE_FIELDS) {
+          if (inert.has(field)) continue
           const raw = (page as Record<string, unknown>)[field]
           if (typeof raw !== 'string') continue
           const target = raw.trim()

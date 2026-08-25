@@ -43,6 +43,42 @@ test("a checkout routing through success_url is unchanged", () => {
   assert.match(byId.checkout.expected_next_url, /\/campaign\/receipt\/$/);
 });
 
+test("a select page's stray success_url does not aim QA past the checkout", () => {
+  // #234 at the QA layer. The bug reported on #234 manifested as wiring, not as
+  // a resolver return value: a select page carrying a copy-pasted success_url
+  // pointed both the built page and the QA expectation at the upsell, so QA
+  // confirmed the payment-skipping route was "correct". Pinning it here means a
+  // consumer that re-derives routing locally (as extractTopologies once did,
+  // with `next_page || success_url`) cannot bring the bug back with a green suite.
+  const byId = topologyFor([
+    { id: "select", type: "select", next_page: "checkout", success_url: "upsell", page_url: "select/" },
+    { id: "checkout", type: "checkout", success_url: "upsell", page_url: "checkout/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  assert.equal(byId.select.expected_next_url, `${BASE}checkout/`);
+  // The checkout below it is the page that DOES take payment, so its own
+  // success_url still wins — the carve-out is about the page type, not the field.
+  assert.equal(byId.checkout.expected_next_url, `${BASE}upsell/`);
+});
+
+test("a select page's stray on_accept does not aim QA past the checkout either", () => {
+  // Same break one field over. on_accept outranks everything, so this is the
+  // shape that stayed open after the success_url carve-out landed.
+  const byId = topologyFor([
+    { id: "select", type: "select", next_page: "checkout", on_accept: "upsell", page_url: "select/" },
+    { id: "checkout", type: "checkout", success_url: "upsell", on_accept: "receipt", page_url: "checkout/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+  assert.equal(byId.select.expected_next_url, `${BASE}checkout/`);
+  // And the checkout's own success_url is no longer shadowed by a stray
+  // on_accept, so QA still expects the upsell sequence rather than the receipt.
+  assert.equal(byId.checkout.expected_next_url, `${BASE}upsell/`);
+  // The upsell itself is unchanged: it presents the offer, so on_accept wins.
+  assert.equal(byId.upsell.expected_next_url, `${BASE}receipt/`);
+});
+
 test("forward precedence at the QA layer matches build-time wiring", () => {
   // A page declaring several forward fields must resolve the SAME way here as
   // in source intake, or the QA expectation contradicts the built page.

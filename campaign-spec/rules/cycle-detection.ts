@@ -13,9 +13,13 @@ import type { CampaignSpec, Page, Rule, Violation } from '../types.ts'
 import { outgoingEdgeIds } from '../routing.ts'
 
 /**
- * Outgoing edges come from the shared resolver, which reads every routing
- * field a page declares regardless of its type. Over-approximating is correct
- * here and nowhere else: a missed edge is a missed release-blocking cycle.
+ * Outgoing edges come from the shared resolver, which returns the pair the
+ * runtime can actually traverse: the forward link plus the decline branch.
+ * NOT every declared field — a field shadowed by a higher-precedence one, or
+ * one the page type cannot satisfy (`success_url` off a checkout, #234),
+ * contributes no edge, so a loop through it is intentionally not reported.
+ * #233 landed that accuracy-over-breadth decision; this comment claimed the
+ * opposite until #234.
  *
  * This used to be a page-type switch that followed only `success_url` on a
  * checkout. Source intake wires `next_page` on checkouts — twelve pages across

@@ -103,6 +103,12 @@ import analyticsContractMalformedExpected from './expected/analytics-contract-ma
 import analyticsContractDeclared from './analytics-contract-declared.json' with { type: 'json' }
 import analyticsContractDeclaredExpected from './expected/analytics-contract-declared.expected.json' with { type: 'json' }
 
+import successUrlOffCheckout from './success-url-off-checkout.json' with { type: 'json' }
+import successUrlOffCheckoutExpected from './expected/success-url-off-checkout.expected.json' with { type: 'json' }
+
+import onAcceptOffOfferPage from './on-accept-off-offer-page.json' with { type: 'json' }
+import onAcceptOffOfferPageExpected from './expected/on-accept-off-offer-page.expected.json' with { type: 'json' }
+
 export interface NamedFixture extends Fixture {
   name: string
 }
@@ -150,6 +156,8 @@ export const corpus: NamedFixture[] = [
   build('store-profile-malformed', storeProfileMalformed, storeProfileMalformedExpected),
   build('analytics-contract-malformed', analyticsContractMalformed, analyticsContractMalformedExpected),
   build('analytics-contract-declared', analyticsContractDeclared, analyticsContractDeclaredExpected),
+  build('success-url-off-checkout', successUrlOffCheckout, successUrlOffCheckoutExpected),
+  build('on-accept-off-offer-page', onAcceptOffOfferPage, onAcceptOffOfferPageExpected),
 ]
 
 export function fixtureByName(name: string): NamedFixture {

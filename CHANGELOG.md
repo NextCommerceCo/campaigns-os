@@ -2,6 +2,75 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.11.0] - 2026-08-25
+
+### Changed
+
+- **Behaviour change — rebuilding an unchanged spec can rewire a funnel.**
+  The two forward-route fields that carry a page-shaped meaning now participate
+  in precedence only where that meaning exists:
+
+  - `success_url` ("where the shopper goes after payment succeeds") only on a
+    page that takes payment, `type: "checkout"`.
+  - `on_accept` ("where the shopper goes after accepting the offer on this
+    page") only on a page that presents one, `type: "upsell"` or `"downsell"`.
+
+  Anywhere else those fields are now inert and `next_page` wins. Previously
+  precedence was type-blind, and because these two outrank `next_page` a page
+  carrying a copy-pasted one routed the shopper past its real next step: a
+  `select` page declaring `next_page: "checkout"` alongside
+  `success_url: "upsell"` — or alongside `on_accept: "upsell"` — wired the
+  upsell and skipped payment entirely. A checkout carrying a stray `on_accept`
+  also shadowed its own `success_url`, skipping the whole upsell sequence after
+  the order was placed.
+
+  This is not a return of the page-type routing gates removed in 1.9.0/1.10.0.
+  Those DROPPED edges an author had declared, on tables that disagreed about
+  which fields a type may use. `next_page` — the generic "wherever this page
+  goes next" — remains honoured on every page type without exception, and so
+  does the `on_decline` branch. The carve-out is about what two fields MEAN.
+
+  To find affected specs before upgrading: any page declaring a non-empty
+  `success_url` whose `type` is not `checkout`, or a non-empty `on_accept` whose
+  `type` is neither `upsell` nor `downsell`. Zero pages across the certified
+  fixture corpus match, and the corpus golden regenerates byte-identical — but
+  that corpus contains no instance of either shape, so it is not evidence about
+  your specs. `RouteFieldIgnoredForPageType` (below) reports both on any spec
+  you validate.
+
+  `schema_version` stays `4.3` deliberately: the CampaignSpec version tracks the
+  exporter's lineage rather than this repo's edits, the same exemption 1.9.0
+  took. The field's SHAPE is unchanged; only which toolkit versions act on it
+  differs, and that is what `surface_version` moving is for.
+
+- `RouteTargetResolves` no longer reports a target carried by a field the page's
+  type cannot satisfy. Routing skips such a field, so the built page does not
+  link to that target and the rule's "would link to a route nothing serves"
+  message was false. `RouteFieldIgnoredForPageType` owns that shape instead, so
+  the two rules cannot tell an author opposite stories about the same field.
+
+### Added
+
+- Added the `RouteFieldIgnoredForPageType` rule: a page declaring a forward
+  field its type cannot satisfy is told so, and told where the shopper actually
+  goes instead (or that the page now has no forward route at all). Covers both
+  gated fields, and reads the field's meaning and permitted types from
+  `routing.ts` rather than restating them, so it cannot tell an author a field
+  is dead while the resolver still uses it. Warning severity, never blocking. `RouteTargetResolves` catches this only when the
+  target does not resolve; when both targets name real pages it has nothing to
+  say. Ships already quiet across every certified fixture. Consumers that
+  snapshot `validateSpec` output will see this new `ruleId` — new
+  warning-severity rule IDs are additive, and consumers must tolerate unknown
+  ones.
+
+- Exported `PAYMENT_BEARING_PAGE_TYPES`, `OFFER_BEARING_PAGE_TYPES`,
+  `inapplicableForwardFields` and `describeForwardField` from `./campaign-spec`,
+  so an authoring UI can gray out an inert field and explain why using the same
+  definition the resolver uses.
+
+- The `success_url`, `on_accept` and `resolved_routing.success` descriptions in
+  `schemas/campaign-spec.v4.schema.json` now state their applicability rules.
+
 ## [1.10.0] - 2026-08-25
 
 ### Added

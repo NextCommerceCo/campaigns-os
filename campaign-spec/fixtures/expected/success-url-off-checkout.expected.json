@@ -1,0 +1,17 @@
+{
+  "violations": [
+    {
+      "ruleId": "RouteFieldIgnoredForPageType",
+      "severity": "warning",
+      "message": "\"success_url\" is ignored for routing on a \"select\" page — it means where the shopper goes after payment succeeds, which only \"checkout\" can satisfy. This page routes forward to \"checkout-1\" instead.",
+      "path": "/funnels/0/pages/0/success_url",
+      "data": {
+        "pageId": "select-1",
+        "pageType": "select",
+        "field": "success_url",
+        "target": "upsell-1",
+        "routedTo": "checkout-1"
+      }
+    }
+  ]
+}
