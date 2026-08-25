@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -498,4 +498,42 @@ test("prepare-build blocks ambiguous filesystem source matches and drafts a mani
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Forward-link resolution is type-agnostic (#230): a page that declares any
+// routing edge gets a next_url, whatever its type and whichever field carried
+// the intent. The corpus is the proof — before this, twelve checkout-typed
+// pages across nine certified families routed through next_page and silently
+// emitted no next_url at all, including every hand-off in the three-step shop
+// flow. A campaign is a free-form journey; a page-type table strands the ones
+// that do not match it.
+test("no certified fixture silently drops a declared forward edge", () => {
+  const dir = resolve(ROOT, "contracts/fixtures/campaign-specs");
+  const FORWARD_FIELDS = ["on_accept", "success_url", "next_page"];
+  const dropped = [];
+
+  for (const name of readdirSync(dir).filter((file) => file.endsWith(".json"))) {
+    const spec = JSON.parse(readFileSync(join(dir, name), "utf8"));
+    for (const funnel of spec.funnels || []) {
+      const specPages = funnel.pages || [];
+      const result = createSourceHtmlIntake({
+        sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+        specPages,
+        htmlFiles: specPages.map((page) => ({ path: `${page.id}.html`, basename: page.id })),
+        publicRouteSlug: "campaign",
+        outputDir: "src/campaign",
+      });
+      const byId = new Map(specPages.map((page) => [page.id, page]));
+      for (const mapping of result.mappings || []) {
+        const page = byId.get(mapping.page_id);
+        if (!page || !mapping.page_kit) continue;
+        const declares = FORWARD_FIELDS.some((field) => page[field]);
+        if (declares && !mapping.page_kit.frontmatter.next_url) {
+          dropped.push(`${name}:${page.id} (type=${page.type}) declares a forward edge but emits no next_url`);
+        }
+      }
+    }
+  }
+
+  assert.deepEqual(dropped, []);
 });

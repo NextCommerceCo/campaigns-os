@@ -435,32 +435,37 @@ function defaultPublicRouteForTargetPath(targetPath, publicRouteSlug) {
   return `/${normalizePublicRouteSlug(publicRouteSlug)}/${filename}/`;
 }
 
-function nextUrlForPage(page, pageById, publicRouteSlug) {
-  // A select page routes forward like a landing page: the selector step hands
-  // off through next_page. Without this it would wire to no next URL at all.
-  //
-  // Deliberately narrower than cycle-detection's edge set for the same types,
-  // which also follows success_url. The two have opposite failure costs: cycle
-  // detection is a safety analysis that must OVER-approximate (a missed edge is
-  // a missed release-blocking cycle), while this emits one concrete forward
-  // link, where over-approximating would invent a route. success_url is
-  // documented as the checkout-success target, so a selector step authoring it
-  // is a spec-authoring error to catch in a rule, not to paper over here.
-  if (page.type === "presell" || page.type === "landing" || page.type === "select") {
-    return pageKitFlowUrl(page.next_page, pageById, publicRouteSlug);
-  }
-  if (page.type === "checkout") {
-    return pageKitFlowUrl(page.success_url, pageById, publicRouteSlug);
-  }
-  if (page.type === "upsell" || page.type === "downsell") {
-    return pageKitFlowUrl(page.on_accept, pageById, publicRouteSlug);
+// Forward-link resolution is deliberately NOT a page-type switch. A campaign is
+// a free-form headless shopping journey: it usually runs landing → checkout →
+// upsells → receipt, but nothing requires that, and a type table silently drops
+// any edge an author declares outside it. Nine certified family fixtures — plus
+// every hand-off in the three-step shop flow — route their checkout through
+// next_page rather than success_url, and those edges used to resolve to null,
+// emitting a built page with no next_url at all.
+//
+// Precedence is specific-before-generic: on_accept and success_url each name a
+// particular branch (upsell accept, order success), while next_page is the
+// generic "wherever this page goes next". On the current corpus this is
+// behaviour-preserving everywhere except those previously-dropped checkouts:
+// pages carrying several of these fields always agree, and the only pages whose
+// co-authored fields diverge are upsells branching accept vs decline.
+const FORWARD_ROUTE_FIELDS = ["on_accept", "success_url", "next_page"];
+
+function forwardRouteTarget(page) {
+  for (const field of FORWARD_ROUTE_FIELDS) {
+    if (page?.[field]) return page[field];
   }
   return null;
 }
 
+function nextUrlForPage(page, pageById, publicRouteSlug) {
+  return pageKitFlowUrl(forwardRouteTarget(page), pageById, publicRouteSlug);
+}
+
+// The decline branch is likewise taken wherever it is declared rather than only
+// on upsell/downsell pages, so a journey that branches somewhere else keeps it.
 function declineUrlForPage(page, pageById, publicRouteSlug) {
-  if (page.type !== "upsell" && page.type !== "downsell") return null;
-  return pageKitFlowUrl(page.on_decline, pageById, publicRouteSlug);
+  return pageKitFlowUrl(page?.on_decline, pageById, publicRouteSlug);
 }
 
 function pageKitFlowUrl(value, pageById, publicRouteSlug) {

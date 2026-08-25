@@ -36,4 +36,70 @@ describe('CheckoutHasSuccessUrl rule', () => {
     const { spec } = fixtureByName('single-funnel-basic')
     expect(CheckoutHasSuccessUrl.check(normalize(spec))).toEqual([])
   })
+
+  /**
+   * The narrowing. A checkout that routes through next_page has said exactly
+   * where the shopper goes; warning at it told the author to rename a field
+   * they had already filled in. Nine certified family fixtures do this.
+   */
+  test('silent when the checkout routes forward through next_page instead of success_url', () => {
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'f',
+          name: 'F',
+          hypothesis: 'checkout routes via next_page',
+          weight: 100,
+          pages: [
+            { id: 'l', type: 'landing', next_page: 'c' },
+            { id: 'c', type: 'checkout', next_page: 'u' },
+            { id: 'u', type: 'upsell', on_accept: 'ty' },
+            { id: 'ty', type: 'thankyou' },
+          ],
+        },
+      ],
+    }
+    expect(CheckoutHasSuccessUrl.check(normalize(spec))).toEqual([])
+  })
+
+  test('still fires when the checkout has no forward route at all — the real dead end', () => {
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'f',
+          name: 'F',
+          hypothesis: 'checkout strands the shopper',
+          weight: 100,
+          pages: [
+            { id: 'l', type: 'landing', next_page: 'c' },
+            { id: 'c', type: 'checkout' },
+            { id: 'u', type: 'upsell', on_accept: 'ty' },
+            { id: 'ty', type: 'thankyou' },
+          ],
+        },
+      ],
+    }
+    const violations = CheckoutHasSuccessUrl.check(normalize(spec))
+    expect(violations).toHaveLength(1)
+    expect(violations[0].severity).toBe('warning')
+    expect(violations[0].data?.pageId).toBe('c')
+    expect(violations[0].message).toContain('no forward route')
+  })
+
+  test('every certified family fixture is now quiet — the nine false alarms are gone', async () => {
+    // The corpus IS the proof here: before the narrowing this rule fired on
+    // nine shipped fixtures whose checkouts route perfectly well.
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { join, resolve } = await import('node:path')
+    const dir = join(resolve(fileURLToPath(new URL('../../..', import.meta.url))), 'contracts', 'fixtures', 'campaign-specs')
+    const noisy: string[] = []
+    for (const name of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+      const spec = JSON.parse(readFileSync(join(dir, name), 'utf8')) as CampaignSpec
+      if (CheckoutHasSuccessUrl.check(normalize(spec)).length) noisy.push(name)
+    }
+    expect(noisy).toEqual([])
+  })
 })

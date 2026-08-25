@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [Unreleased]
+
+### Changed
+
+- Forward-link resolution during source intake is no longer a page-type switch.
+  A page's next link is taken from whichever routing field it declares, in
+  specific-before-generic precedence (`on_accept`, then `success_url`, then
+  `next_page`), and the decline link from `on_decline` wherever it appears. A
+  campaign is a free-form headless journey; the previous type table silently
+  discarded any edge an author declared outside it. Twelve checkout-typed pages
+  across nine certified families — including every hand-off in the three-step
+  shop flow — routed through `next_page` and emitted no `next_url` at all.
+  Golden comparison across the certified corpus: twelve `next_url` values
+  added, zero changed, zero removed.
+- `CheckoutHasSuccessUrl` now warns when a checkout has no forward route at
+  all, instead of when it lacks `success_url` specifically. It was firing on
+  nine shipped fixtures whose checkouts route correctly through `next_page`,
+  telling authors to rename a field they had already filled in. Genuinely
+  stranded checkouts still warn; corpus warnings drop from 22 to 10. The rule
+  message changed to match the condition it now tests.
+
 ## [1.9.0] - 2026-08-25
 
 ### Added
