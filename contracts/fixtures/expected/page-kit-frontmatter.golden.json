@@ -24,7 +24,7 @@
   },
   "apollo-tiered-apollo-layout.json::default::checkout": {
     "page_type": "checkout",
-    "next_url": "/campaign/upsell-bundle-stepper/"
+    "next_url": "/campaign/upsell-stepper/"
   },
   "apollo-tiered-apollo-layout.json::default::upsell-stepper": {
     "page_type": "upsell",
@@ -35,7 +35,7 @@
   },
   "arjuna-tiered-standard-free.json::default::checkout": {
     "page_type": "checkout",
-    "next_url": "/campaign/upsell-bundle-stepper/"
+    "next_url": "/campaign/upsell-stepper/"
   },
   "arjuna-tiered-standard-free.json::default::upsell-stepper": {
     "page_type": "upsell",
@@ -46,7 +46,7 @@
   },
   "demeter-editorial-tiered.json::default::checkout": {
     "page_type": "checkout",
-    "next_url": "/campaign/upsell-bundle-stepper/"
+    "next_url": "/campaign/upsell-stepper/"
   },
   "demeter-editorial-tiered.json::default::upsell-stepper": {
     "page_type": "upsell",
@@ -118,7 +118,7 @@
   },
   "olympus-tiered-standard-free.json::default::checkout": {
     "page_type": "checkout",
-    "next_url": "/campaign/upsell-bundle-stepper/"
+    "next_url": "/campaign/upsell-stepper/"
   },
   "olympus-tiered-standard-free.json::default::upsell-stepper": {
     "page_type": "upsell",
@@ -129,7 +129,7 @@
   },
   "shop-single-step-upsell-receipt.json::default::checkout": {
     "page_type": "checkout",
-    "next_url": "/campaign/upsell-bundle-stepper/"
+    "next_url": "/campaign/upsell-stepper/"
   },
   "shop-single-step-upsell-receipt.json::default::upsell-stepper": {
     "page_type": "upsell",
@@ -148,7 +148,7 @@
   },
   "shop-three-step-dynamic-shipping.json::default::billing": {
     "page_type": "checkout",
-    "next_url": "/campaign/upsell-bundle-stepper/"
+    "next_url": "/campaign/upsell-stepper/"
   },
   "shop-three-step-dynamic-shipping.json::default::upsell-stepper": {
     "page_type": "upsell",

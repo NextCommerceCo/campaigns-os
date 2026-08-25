@@ -55,7 +55,7 @@
           "label": "Checkout",
           "template": "src/arjuna/checkout.html",
           "page_url": "/checkout/",
-          "next_page": "upsell-bundle-stepper.html",
+          "next_page": "upsell-stepper.html",
           "packages": [
             {
               "ref_id": 10,

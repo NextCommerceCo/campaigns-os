@@ -14,6 +14,24 @@ Notable supported-surface changes are recorded here.
   instead of keeping their own page-type tables, which had already drifted
   apart into three different answers.
 
+- Added the `RouteTargetResolves` rule: every declared routing target must name
+  a page in the same funnel. Warning severity, never blocking — absolute URLs,
+  `#` fragments and rooted paths (the documented partial-scope pattern) are
+  deliberate off-graph destinations and are not flagged. It ships already quiet
+  across every certified fixture, which is the precondition for adding any gate
+  here.
+
+### Fixed
+
+- Corrected six certified fixtures whose checkout declared
+  `next_page: "upsell-bundle-stepper.html"` while their funnel's upsell is
+  `upsell-stepper` — the target name was copied from the MV families, which do
+  have that page. Nothing resolved those targets, so intake's route fallback
+  emitted a confident link to a route nothing serves: apollo-tiered, arjuna,
+  demeter, olympus-tiered, shop-single-step, and the three-step shop flow's
+  `billing` page all sent the shopper to a 404 immediately after checkout. The
+  page-kit frontmatter golden is regenerated accordingly.
+
 ### Changed
 
 - Forward-link resolution is no longer a page-type switch anywhere. A page's
