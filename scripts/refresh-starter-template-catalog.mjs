@@ -58,8 +58,8 @@ Options:
   --source-ref <ref>              Source branch, tag, or SHA. Default: ${DEFAULT_SOURCE_REF}
   --source-catalog <path>         Source catalog path. Default: ${DEFAULT_SOURCE_CATALOG}
   --target-catalog <path>         Vendored catalog path. Default: ${DEFAULT_TARGET_CATALOG}
-  --synced-from-sha <sha>         Record this commit SHA as the snapshot provenance
-                                  instead of resolving --source-ref via the API.
+  --synced-from-sha <sha>         Fetch and record this exact commit while retaining
+                                  --source-ref as the human-readable provenance ref.
                                   Pass the dispatch source_sha (GITHUB_SHA) in CI.
   --dry-run                       Fetch and adapt without writing files
   --no-fixtures                   Refresh only the catalog file
@@ -243,6 +243,17 @@ export function stampProvenance(catalog, { repo, ref, sha }) {
   return next;
 }
 
+export async function resolveSnapshotSource(
+  { sourceRepo, sourceRef, syncedFromSha },
+  { token, resolveSha = resolveCommitSha } = {},
+) {
+  const sha = syncedFromSha || (await resolveSha({ repo: sourceRepo, ref: sourceRef, token }));
+  if (!SHA_RE.test(sha || "")) {
+    throw new Error(`resolveSnapshotSource: expected a 40-char commit SHA, got "${sha}"`);
+  }
+  return { contentRef: sha, syncedFromSha: sha };
+}
+
 // Resolve a ref (branch, tag, or SHA) to its concrete commit SHA via the GitHub
 // commits API, so a snapshot taken from `main` records the head commit rather
 // than the moving branch name.
@@ -337,10 +348,13 @@ function writeText(path, text) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const token = process.env.STARTER_TEMPLATES_TOKEN || process.env.GITHUB_TOKEN || "";
+  // Resolve moving refs before the first fetch. Catalog and fixture reads must
+  // all use the same immutable commit or the stamped provenance can lie.
+  const { contentRef, syncedFromSha } = await resolveSnapshotSource(args, { token });
 
   const rawCatalog = await fetchRepoFile({
     repo: args.sourceRepo,
-    ref: args.sourceRef,
+    ref: contentRef,
     path: args.sourceCatalog,
     token,
   });
@@ -351,13 +365,6 @@ async function main() {
     existingCatalog,
   );
 
-  // Record the exact source commit. Prefer the explicitly-passed SHA (the
-  // dispatch source_sha in CI); otherwise resolve the ref via the API.
-  const syncedFromSha = args.syncedFromSha || (await resolveCommitSha({
-    repo: args.sourceRepo,
-    ref: args.sourceRef,
-    token,
-  }));
   const stampedCatalog = stampProvenance(adaptedCatalog, {
     repo: args.sourceRepo,
     ref: args.sourceRef,
@@ -373,7 +380,7 @@ async function main() {
       const targetFixture = mapTemplateSnapshotPath(sourceFixture);
       const fixtureText = await fetchRepoFile({
         repo: args.sourceRepo,
-        ref: args.sourceRef,
+        ref: contentRef,
         path: sourceFixture,
         token,
       });
@@ -385,8 +392,8 @@ async function main() {
 
   const action = args.dryRun ? "Checked" : "Refreshed";
   console.log(
-    `${action} ${args.targetCatalog} from ${args.sourceRepo}:${args.sourceCatalog}@${args.sourceRef} ` +
-      `(pinned to ${syncedFromSha})`,
+    `${action} ${args.targetCatalog} from ${args.sourceRepo}:${args.sourceCatalog}@${contentRef} ` +
+      `(source ref ${args.sourceRef}, pinned to ${syncedFromSha})`,
   );
 }
 

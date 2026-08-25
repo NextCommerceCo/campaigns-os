@@ -85,6 +85,7 @@ export function validateRefreshWorkflow(workflow) {
   const prRun = runText(prStep);
   for (const required of [
     'branch="automation/refresh-starter-template-catalog"',
+    "git status --porcelain --untracked-files=all",
     'git push --force origin "$branch"',
     "gh issue create",
     "GITHUB_STEP_SUMMARY",

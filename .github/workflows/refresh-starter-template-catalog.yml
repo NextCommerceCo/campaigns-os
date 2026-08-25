@@ -87,7 +87,10 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           SOURCE_REPO: NextCommerceCo/campaign-cart-starter-templates
         run: |
-          if git diff --quiet; then
+          changed="$(git status --porcelain --untracked-files=all -- \
+            contracts/commerce-surface-catalog.json \
+            contracts/fixtures/campaign-specs)"
+          if [ -z "$changed" ]; then
             echo "Starter template catalog snapshot is already current."
             exit 0
           fi

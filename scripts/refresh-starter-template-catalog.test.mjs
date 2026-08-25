@@ -6,7 +6,34 @@ import {
   fetchWithTimeout,
   mergeLocalQaStructure,
   preserveLocalOnlyFamilies,
+  resolveSnapshotSource,
 } from "./refresh-starter-template-catalog.mjs";
+
+test("dispatch provenance SHA also pins the content fetch without resolving a moving ref", async () => {
+  const sha = "a".repeat(40);
+  const result = await resolveSnapshotSource(
+    { sourceRepo: "owner/templates", sourceRef: "main", syncedFromSha: sha },
+    { resolveSha: () => assert.fail("an explicit dispatch SHA must not be resolved again") },
+  );
+  assert.deepEqual(result, { contentRef: sha, syncedFromSha: sha });
+});
+
+test("a manual moving ref is resolved once before any snapshot content is fetched", async () => {
+  const sha = "b".repeat(40);
+  const calls = [];
+  const result = await resolveSnapshotSource(
+    { sourceRepo: "owner/templates", sourceRef: "main", syncedFromSha: null },
+    {
+      token: "read-token",
+      resolveSha: async (input) => {
+        calls.push(input);
+        return sha;
+      },
+    },
+  );
+  assert.deepEqual(calls, [{ repo: "owner/templates", ref: "main", token: "read-token" }]);
+  assert.deepEqual(result, { contentRef: sha, syncedFromSha: sha });
+});
 
 test("catalog refresh rewrites Template Reference locations for the vendored checkout", () => {
   const sourceCatalog = {

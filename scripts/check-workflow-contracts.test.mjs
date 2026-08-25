@@ -39,6 +39,14 @@ test("dropping exact-SHA provenance or the human recovery path fails closed", ()
   assert.ok(errors.some((error) => error.includes("gh issue create")));
 });
 
+test("ignoring untracked fixture additions fails the workflow contract", () => {
+  const workflow = clone(loadWorkflow());
+  const pr = workflow.jobs.refresh.steps.find((step) => step.run?.includes("gh pr create"));
+  pr.run = pr.run.replace("git status --porcelain --untracked-files=all", "git diff --quiet");
+  const errors = validateRefreshWorkflow(workflow);
+  assert.ok(errors.some((error) => error.includes("git status --porcelain --untracked-files=all")));
+});
+
 test("collapsing the dispatch ref back into its SHA fails the workflow contract", () => {
   const workflow = clone(loadWorkflow());
   const resolve = workflow.jobs.refresh.steps.find((step) => step.id === "source");
