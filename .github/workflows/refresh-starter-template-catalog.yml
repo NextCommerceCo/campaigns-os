@@ -17,6 +17,9 @@ on:
         default: "main"
   repository_dispatch:
     types: [starter-template-catalog-updated]
+  pull_request:
+    types: [opened, reopened]
+    branches: [main]
 
 permissions:
   contents: write
@@ -29,6 +32,7 @@ concurrency:
 
 jobs:
   refresh:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -105,32 +109,55 @@ jobs:
           # This branch is workflow-owned and concurrency serializes its writers.
           git push --force origin "$branch"
 
-          existing_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
-          if [ -n "$existing_pr" ]; then
-            echo "Refresh PR #${existing_pr} already open; branch updated."
-            if [ "$PR_TOKEN_CONFIGURED" = "true" ]; then
-              exit 0
-            fi
-          fi
-
           source_label="${SOURCE_REPO}@${SOURCE_REF}"
           if [ -n "$SOURCE_SHA" ]; then
             source_label="${source_label} (${SOURCE_SHA})"
           fi
+          pr_title="Refresh starter template catalog snapshot"
           body="Refreshes the vendored Campaigns OS starter-template catalog snapshot from \`${source_label}\`.
 
           Validation:
           - \`npm run check\`
 
           Triggered by: \`${GITHUB_EVENT_NAME}\`"
+          issue_title="Starter catalog refresh needs human action"
+
+          recovery_issue_number() {
+            GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue list \
+              --state open \
+              --limit 100 \
+              --json number,title \
+              --jq 'map(select(.title == "Starter catalog refresh needs human action" or .title == "Open the generated starter catalog refresh PR")) | .[0].number // empty'
+          }
+
+          close_recovery_issue() {
+            issue_number="$(recovery_issue_number)"
+            if [ -n "$issue_number" ]; then
+              GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue close "$issue_number" \
+                --comment "Automation opened or updated the validated refresh PR, so this recovery issue is resolved."
+            fi
+          }
+
+          existing_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing_pr" ]; then
+            echo "Refresh PR #${existing_pr} already open; branch updated."
+            if [ "$PR_TOKEN_CONFIGURED" = "true" ]; then
+              gh pr edit "$existing_pr" --title "$pr_title" --body "$body"
+              close_recovery_issue
+              exit 0
+            fi
+            GH_TOKEN="$FALLBACK_GH_TOKEN" gh pr comment "$existing_pr" \
+              --body "The validated refresh branch was updated from \`${source_label}\`. Close and reopen this PR to run checks, or configure \`CATALOG_REFRESH_TOKEN\` for automatic CI-triggering updates." || true
+          fi
 
           if [ -z "$existing_pr" ]; then
             if gh pr create \
               --base main \
               --head "$branch" \
-              --title "Refresh starter template catalog snapshot" \
+              --title "$pr_title" \
               --body "$body"; then
               echo "Refresh PR opened automatically."
+              close_recovery_issue
               exit 0
             fi
           fi
@@ -148,11 +175,32 @@ jobs:
           echo "::warning title=Catalog refresh PR needs a human::${note}"
           printf '### Catalog refresh PR needs a human\n\n%s\n' "$note" >> "$GITHUB_STEP_SUMMARY"
 
-          issue_title="Open the generated starter catalog refresh PR"
-          issue_number="$(GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue list --state open --search "${issue_title} in:title" --json number --jq '.[0].number // empty')"
+          issue_number="$(recovery_issue_number)"
           if [ -n "$issue_number" ]; then
+            GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue edit "$issue_number" --title "$issue_title"
             GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue comment "$issue_number" --body "$note"
             echo "Updated fallback issue #${issue_number}."
           else
             GH_TOKEN="$FALLBACK_GH_TOKEN" gh issue create --title "$issue_title" --body "$note"
+          fi
+
+  close-recovery-issue:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'automation/refresh-starter-template-catalog'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close resolved recovery issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          issue_number="$(gh issue list \
+            --state open \
+            --limit 100 \
+            --json number,title \
+            --jq 'map(select(.title == "Starter catalog refresh needs human action" or .title == "Open the generated starter catalog refresh PR")) | .[0].number // empty')"
+          if [ -n "$issue_number" ]; then
+            gh issue close "$issue_number" \
+              --comment "The generated refresh PR is now open and CI can run, so this recovery issue is resolved."
           fi

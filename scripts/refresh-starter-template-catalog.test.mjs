@@ -35,6 +35,17 @@ test("a manual moving ref is resolved once before any snapshot content is fetche
   assert.deepEqual(result, { contentRef: sha, syncedFromSha: sha });
 });
 
+test("a malformed dispatch SHA fails before ref resolution or content fetching", async () => {
+  await assert.rejects(
+    () =>
+      resolveSnapshotSource(
+        { sourceRepo: "owner/templates", sourceRef: "main", syncedFromSha: "not-a-sha" },
+        { resolveSha: () => assert.fail("an explicit malformed SHA must fail without resolving the ref") },
+      ),
+    /expected a 40-char commit SHA/,
+  );
+});
+
 test("catalog refresh rewrites Template Reference locations for the vendored checkout", () => {
   const sourceCatalog = {
     families: {

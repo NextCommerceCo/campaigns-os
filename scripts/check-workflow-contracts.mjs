@@ -24,6 +24,10 @@ export function validateRefreshWorkflow(workflow) {
   if (workflow?.concurrency?.["cancel-in-progress"] !== false) {
     errors.push("refresh workflow must not cancel an in-progress catalog writer");
   }
+  const pullRequestTypes = workflow?.on?.pull_request?.types;
+  if (!Array.isArray(pullRequestTypes) || !["opened", "reopened"].every((type) => pullRequestTypes.includes(type))) {
+    errors.push("refresh workflow must close recovery issues when the generated PR is opened or reopened");
+  }
   for (const permission of ["contents", "pull-requests", "issues"]) {
     if (workflow?.permissions?.[permission] !== "write") {
       errors.push(`refresh workflow requires ${permission}: write`);
@@ -32,7 +36,9 @@ export function validateRefreshWorkflow(workflow) {
 
   const checkoutIndex = steps.findIndex((step) => usesText(step).startsWith("actions/checkout@"));
   const setupIndex = steps.findIndex((step) => usesText(step).startsWith("actions/setup-node@"));
-  const installIndex = steps.findIndex((step) => runText(step).trim() === "npm ci");
+  const installIndex = steps.findIndex(
+    (step) => !step?.uses && /^npm ci(?:\s|$)/.test(runText(step).trim()),
+  );
   const resolveIndex = steps.findIndex((step) => step?.id === "source");
   const refreshIndex = steps.findIndex((step) => runText(step).includes("refresh-starter-template-catalog.mjs"));
   const validateIndex = steps.findIndex((step) => runText(step).trim() === "npm run check");
@@ -87,7 +93,10 @@ export function validateRefreshWorkflow(workflow) {
     'branch="automation/refresh-starter-template-catalog"',
     "git status --porcelain --untracked-files=all",
     'git push --force origin "$branch"',
+    "gh pr edit",
+    "gh pr comment",
     "gh issue create",
+    "gh issue close",
     "GITHUB_STEP_SUMMARY",
   ]) {
     if (!prRun.includes(required)) {
@@ -96,6 +105,17 @@ export function validateRefreshWorkflow(workflow) {
   }
   if (prRun.includes("GITHUB_RUN_ID")) {
     errors.push("PR step must reuse one workflow-owned branch instead of leaking a branch per run");
+  }
+
+  const closeJob = workflow?.jobs?.["close-recovery-issue"];
+  const closeRun = Array.isArray(closeJob?.steps) ? closeJob.steps.map(runText).join("\n") : "";
+  if (
+    typeof closeJob?.if !== "string" ||
+    !closeJob.if.includes("head.repo.full_name == github.repository") ||
+    !closeJob.if.includes("automation/refresh-starter-template-catalog") ||
+    !closeRun.includes("gh issue close")
+  ) {
+    errors.push("generated PR lifecycle must close the durable recovery issue");
   }
 
   return errors;

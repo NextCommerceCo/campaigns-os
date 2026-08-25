@@ -27,6 +27,13 @@ test("installing dependencies after validation fails the workflow contract", () 
   assert.ok(errors.some((error) => error.includes("before npm run check")));
 });
 
+test("npm ci flags remain a valid locked dependency installation", () => {
+  const workflow = clone(loadWorkflow());
+  const install = workflow.jobs.refresh.steps.find((step) => step.run?.trim() === "npm ci");
+  install.run = "npm ci --no-audit";
+  assert.deepEqual(validateRefreshWorkflow(workflow), []);
+});
+
 test("dropping exact-SHA provenance or the human recovery path fails closed", () => {
   const workflow = clone(loadWorkflow());
   const steps = workflow.jobs.refresh.steps;
@@ -45,6 +52,22 @@ test("ignoring untracked fixture additions fails the workflow contract", () => {
   pr.run = pr.run.replace("git status --porcelain --untracked-files=all", "git diff --quiet");
   const errors = validateRefreshWorkflow(workflow);
   assert.ok(errors.some((error) => error.includes("git status --porcelain --untracked-files=all")));
+});
+
+test("stale PR metadata or an orphaned recovery issue fails the workflow contract", () => {
+  const workflow = clone(loadWorkflow());
+  const pr = workflow.jobs.refresh.steps.find((step) => step.run?.includes("gh pr create"));
+  pr.run = pr.run.replace("gh pr edit", "echo stale-pr").replace("gh issue close", "echo orphaned-issue");
+  const errors = validateRefreshWorkflow(workflow);
+  assert.ok(errors.some((error) => error.includes("gh pr edit")));
+  assert.ok(errors.some((error) => error.includes("gh issue close")));
+});
+
+test("opening the human-generated PR must resolve its recovery issue", () => {
+  const workflow = clone(loadWorkflow());
+  delete workflow.jobs["close-recovery-issue"];
+  const errors = validateRefreshWorkflow(workflow);
+  assert.ok(errors.some((error) => error.includes("generated PR lifecycle")));
 });
 
 test("collapsing the dispatch ref back into its SHA fails the workflow contract", () => {
