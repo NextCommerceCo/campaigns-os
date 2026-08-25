@@ -92,9 +92,14 @@ export function validateRefreshWorkflow(workflow) {
     errors.push("refresh must preserve the source ref while pinning the exact dispatch SHA");
   }
 
+  const expectedTemplatesPath = "${{ runner.temp }}/campaign-cart-starter-templates";
+  const checkoutTemplatesPath = steps[templatesCheckoutIndex]?.env?.STARTER_TEMPLATES_PATH;
   const validateTemplatesPath = steps[validateIndex]?.env?.STARTER_TEMPLATES_PATH;
-  if (typeof validateTemplatesPath !== "string" || !validateTemplatesPath.includes("runner.temp")) {
-    errors.push("npm run check must receive STARTER_TEMPLATES_PATH for the exact refreshed snapshot");
+  if (checkoutTemplatesPath !== expectedTemplatesPath) {
+    errors.push("the exact templates checkout must use the canonical runner temporary path");
+  }
+  if (validateTemplatesPath !== checkoutTemplatesPath || validateTemplatesPath !== expectedTemplatesPath) {
+    errors.push("npm run check must receive the same canonical STARTER_TEMPLATES_PATH used by the exact checkout");
   }
 
   const prStep = steps[prIndex];

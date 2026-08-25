@@ -69,6 +69,13 @@ test("omitting the exact source checkout or its validation path fails the workfl
   assert.ok(
     validateRefreshWorkflow(missingPath).some((error) => error.includes("STARTER_TEMPLATES_PATH")),
   );
+
+  const mismatchedPath = clone(loadWorkflow());
+  const mismatchedValidate = mismatchedPath.jobs.refresh.steps.find((step) => step.run?.trim() === "npm run check");
+  mismatchedValidate.env.STARTER_TEMPLATES_PATH = "${{ runner.temp }}/different-templates-checkout";
+  assert.ok(
+    validateRefreshWorkflow(mismatchedPath).some((error) => error.includes("same canonical STARTER_TEMPLATES_PATH")),
+  );
 });
 
 test("stale PR metadata or an orphaned recovery issue fails the workflow contract", () => {
