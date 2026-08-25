@@ -442,8 +442,8 @@ function defaultPublicRouteForTargetPath(targetPath, publicRouteSlug) {
 // source of truth every consumer shares — see that module for why the forward
 // link is a first-match precedence while cycle detection takes the full edge
 // set. This used to be a page-type switch that silently discarded any edge
-// declared outside its table: twelve checkout-typed pages across nine
-// certified families route through next_page, and every one of them built with
+// declared outside its table: twelve checkout-typed pages across ten
+// certified fixtures route through next_page, and every one of them built with
 // no next_url at all.
 function nextUrlForPage(page, pageById, publicRouteSlug) {
   return pageKitFlowUrl(forwardRouteTarget(page), pageById, publicRouteSlug);

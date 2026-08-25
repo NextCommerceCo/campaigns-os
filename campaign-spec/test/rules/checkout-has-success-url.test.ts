@@ -93,15 +93,27 @@ describe('CheckoutHasSuccessUrl rule', () => {
     expect(violations[0].message).toContain('no forward route')
   })
 
-  test('every certified family fixture is now quiet — the nine false alarms are gone', () => {
+  test('every certified fixture is now quiet — all twelve false alarms are gone', () => {
     // The corpus IS the proof here: before the narrowing this rule fired on
-    // nine shipped fixtures whose checkouts route perfectly well.
+    // twelve pages across ten shipped fixtures whose checkouts route perfectly
+    // well. The count is asserted, not just named in the title, so a corpus
+    // change that alters it fails loudly rather than silently outdating this.
     const dir = join(root, 'contracts', 'fixtures', 'campaign-specs')
     const noisy: string[] = []
+    // What the OLD rule flagged: a checkout with no success_url, regardless of
+    // any other forward route it declared.
+    const wouldHaveWarned: string[] = []
     for (const name of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
       const spec = JSON.parse(readFileSync(join(dir, name), 'utf8')) as CampaignSpec
       if (CheckoutHasSuccessUrl.check(normalize(spec)).length) noisy.push(name)
+      for (const funnel of spec.funnels ?? []) {
+        for (const page of funnel.pages ?? []) {
+          if (page.type === 'checkout' && !page.success_url) wouldHaveWarned.push(`${name}:${page.id}`)
+        }
+      }
     }
     expect(noisy).toEqual([])
+    expect(wouldHaveWarned.length).toBe(12)
+    expect(new Set(wouldHaveWarned.map((entry) => entry.split(':')[0])).size).toBe(10)
   })
 })

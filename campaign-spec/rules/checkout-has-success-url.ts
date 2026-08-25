@@ -5,8 +5,9 @@
  *
  * The check is on the shopper being able to continue, NOT on which field
  * carried that intent. `success_url` and `next_page` express the same edge, and
- * nine certified family fixtures use `next_page` on their checkout — warning at
- * those told authors to rename a field they had already filled in correctly. A
+ * twelve pages across ten certified fixtures use `next_page` on their checkout
+ * — warning at those told authors to rename a field they had already filled in
+ * correctly. A
  * campaign is a free-form journey; the tool has no business having an opinion
  * about the field name when the route is unambiguous.
  *

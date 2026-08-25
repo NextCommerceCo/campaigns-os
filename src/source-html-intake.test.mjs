@@ -502,8 +502,8 @@ test("prepare-build blocks ambiguous filesystem source matches and drafts a mani
 
 // Forward-link resolution is type-agnostic (#230): a page that declares any
 // routing edge gets a next_url, whatever its type and whichever field carried
-// the intent. Before this, twelve checkout-typed pages across nine certified
-// families routed through next_page and silently emitted no next_url at all,
+// the intent. Before this, twelve checkout-typed pages across ten certified
+// fixtures routed through next_page and silently emitted no next_url at all,
 // including every hand-off in the three-step shop flow.
 //
 // This is a GOLDEN comparison, not a presence check. A presence check ("every
@@ -535,9 +535,24 @@ function corpusFrontmatter() {
   return emitted;
 }
 
+// Regenerate after an intentional corpus or routing change:
+//   UPDATE_GOLDEN=1 node --test src/source-html-intake.test.mjs
+// Then READ the diff. A golden is only worth having if the diff gets reviewed;
+// hand-editing it to make this pass defeats the entire point of the file.
+const GOLDEN_PATH = "contracts/fixtures/expected/page-kit-frontmatter.golden.json";
+
 test("page-kit frontmatter for the certified corpus matches the golden artifact", () => {
-  const golden = JSON.parse(readFileSync(resolve(ROOT, "contracts/fixtures/expected/page-kit-frontmatter.golden.json"), "utf8"));
-  assert.deepEqual(corpusFrontmatter(), golden);
+  const goldenPath = resolve(ROOT, GOLDEN_PATH);
+  const emitted = corpusFrontmatter();
+  if (process.env.UPDATE_GOLDEN) {
+    writeFileSync(goldenPath, `${JSON.stringify(emitted, null, 2)}\n`);
+  }
+  const golden = JSON.parse(readFileSync(goldenPath, "utf8"));
+  assert.deepEqual(
+    emitted,
+    golden,
+    `Emitted page-kit frontmatter differs from ${GOLDEN_PATH}. If the change is intentional, regenerate with UPDATE_GOLDEN=1 node --test src/source-html-intake.test.mjs and review the diff.`,
+  );
 });
 
 test("no certified fixture silently drops a declared forward edge", () => {

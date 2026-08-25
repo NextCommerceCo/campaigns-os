@@ -19,7 +19,7 @@ import { outgoingEdgeIds } from '../routing.ts'
  *
  * This used to be a page-type switch that followed only `success_url` on a
  * checkout. Source intake wires `next_page` on checkouts — twelve pages across
- * nine certified families do exactly that — so a loop through such an edge
+ * ten certified fixtures do exactly that — so a loop through such an edge
  * built successfully while staying invisible to this rule.
  */
 function getNextIds(page: Page): string[] {

@@ -2986,6 +2986,7 @@ function extractApiError(raw) {
 }
 
 export const __qaNodeTestHooks = Object.freeze({
+  extractTopologies,
   resolveQaInputs,
   runResolvedQa,
   runPageChecks,

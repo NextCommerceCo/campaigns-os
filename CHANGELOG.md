@@ -21,20 +21,23 @@ Notable supported-surface changes are recorded here.
   specific-before-generic precedence (`on_accept`, `success_url`, `next_page`),
   and the decline link from `on_decline` wherever it appears. A campaign is a
   free-form headless journey; the previous type tables silently discarded any
-  edge declared outside them. Twelve checkout-typed pages across nine certified
-  families — including every hand-off in the three-step shop flow — routed
+  edge declared outside them. Twelve checkout-typed pages across ten certified
+  fixtures — including every hand-off in the three-step shop flow — routed
   through `next_page` and built with no `next_url` at all.
-- Cycle detection now follows every declared routing field rather than a
-  per-type edge table. It previously ignored `next_page` on a checkout, so once
-  intake began wiring that edge a loop through it would have built as a live
-  link while staying invisible to the rule that blocks on cycles.
+- Cycle detection now follows the edges a page can actually traverse — its
+  resolved forward link plus its decline branch — rather than a per-type edge
+  table. It previously ignored `next_page` on a checkout, so once intake began
+  wiring that edge a loop through it would have built as a live link while
+  staying invisible to the rule that blocks on cycles. Shadowed forward fields
+  are deliberately excluded: a page whose `success_url` wins at runtime and
+  terminates cleanly must not be blocked by a stale, unreachable `next_page`.
 - QA topology extraction resolves `expected_next_url` through the same
   resolver. It previously read `next_page || success_url` and ignored
   `on_accept`, a third precedence that could disagree with the built page.
 - `CheckoutHasSuccessUrl` warns when a checkout has no forward route at all,
-  instead of when it lacks `success_url` specifically. It was firing on nine
-  shipped fixtures whose checkouts route correctly, telling authors to rename a
-  field they had already filled in. Corpus warnings drop from 22 to 10. The
+  instead of when it lacks `success_url` specifically. It was firing on twelve
+  pages across ten shipped fixtures whose checkouts route correctly, telling
+  authors to rename a field they had already filled in. Corpus warnings drop from 22 to 10. The
   message and the violation `path` now describe the page-level condition; the
   rule ID is unchanged for consumer stability.
 - Bumped the supported surface to `1.10.0`. No hashed schema changed, so the
