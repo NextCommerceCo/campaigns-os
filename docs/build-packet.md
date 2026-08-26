@@ -441,10 +441,23 @@ from packet/context/report by path, full artifact hash, and material fingerprint
 Behavior:
 
 - The manifest is consumed only when it passes the `source-html-manifest/v0`
-  validator. Unknown schema versions, missing `page_id`/`path`, or malformed
-  `source_hash` values log a warning and fall back to filesystem matching so
-  out-of-band tools cannot silently corrupt the packet. Doctor also validates a
-  present manifest at the source root.
+  validator. Unknown schema versions, missing `page_id`, entries with neither
+  (or both) `path` and `skip_reason`, or malformed `source_hash` values log a
+  warning and fall back to filesystem matching so out-of-band tools cannot
+  silently corrupt the packet. Doctor also validates a present manifest at the
+  source root.
+- A partial-source build is declarable (#238). A page entry may carry
+  `skip_reason` instead of `path` to declare that active page out of source
+  scope (a template-derived page has no source HTML by design), and
+  CampaignSpec `build_scope.mode: "partial"` declares the same thing as a
+  blanket for active pages with no manifest entry and no `design_source`.
+  Declared pages are recorded on the packet as `skip_reason` mappings and on
+  the assembly report under `stages.prepare_build.declared_out_of_scope`;
+  prepare-build reaches `completed_partial` instead of blocking on
+  `MISSING_SOURCE_PAGE`, and the declaration regenerates identically on every
+  `start`/`prepare-build` run because it derives from the spec and manifest.
+  A page that declares `design_source` still blocks without a per-page skip
+  entry, and full/undeclared scope keeps the blocking behavior exactly.
 - The manifest's `page_id` must match an active CampaignSpec page id. Manifest entries with no matching spec page surface as a `MANIFEST_EXTRA_PAGE` prompt (analogous to the existing `MISSING_SOURCE_PAGE` prompt) so the operator reconciles either the spec or the manifest before build.
 - Optional manifest `page_url` values must be unique after Page Kit route normalization. Duplicate values surface as `MANIFEST_DUPLICATE_PAGE_URL`; prepare-build keeps the first value for route fallback matching and asks the operator to deduplicate before build.
 - Path values are relative to the source HTML root (`<source>`), not to the `.campaigns-os/` directory that contains the manifest. For example, use `checkout/index.html`, not `../checkout/index.html`.

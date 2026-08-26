@@ -122,7 +122,12 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "required": ["page_id", "path"],
+        "required": ["page_id"],
+        "description": "Exactly one of path (bind a source HTML file) or skip_reason (declare the page out of source scope) is required per entry; the oneOf below enforces the exclusion.",
+        "oneOf": [
+          { "required": ["path"], "not": { "required": ["skip_reason"] } },
+          { "required": ["skip_reason"], "not": { "required": ["path"] } }
+        ],
         "properties": {
           "page_id": {
             "type": "string",
@@ -133,6 +138,11 @@
             "type": "string",
             "minLength": 1,
             "description": "Source-root-relative HTML file path."
+          },
+          "skip_reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Reason this active page carries no source HTML (e.g. template-derived)."
           },
           "page_type": {
             "type": "string",

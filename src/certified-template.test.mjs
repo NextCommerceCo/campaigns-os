@@ -136,9 +136,20 @@ test("prepare-build marks a certified family and doctor reports it ready", () =>
     const packet = readJson(join(result.target, "campaign-runtime.build.json"));
     assert.deepEqual(packet.assembly.template_certification, { certified: true });
 
-    const doctor = JSON.parse(execFileSync("node", [
-      CLI, "doctor", "--packet", join(result.target, "campaign-runtime.build.json"), "--json",
-    ], { encoding: "utf8", cwd: dir, stdio: "pipe" }));
+    // The synthetic fixture's report retains prepare-build blockers (no DSP
+    // evidence), and doctor now agrees with the stage ladder about those
+    // (#238) — so tolerate a blocked exit and assert on the certification line.
+    const out = (() => {
+      try {
+        return execFileSync("node", [
+          CLI, "doctor", "--packet", join(result.target, "campaign-runtime.build.json"), "--json",
+        ], { encoding: "utf8", cwd: dir, stdio: "pipe" });
+      } catch (error) {
+        if (error.status !== 2 || !String(error.stdout || "").trim()) throw error;
+        return String(error.stdout);
+      }
+    })();
+    const doctor = JSON.parse(out);
     assert.ok(doctor.ready.some((line) => /Template family "olympus" is certified/.test(line)));
   });
 });
