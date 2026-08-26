@@ -117,6 +117,41 @@ function readPacket(fixture) {
   return readJson(join(fixture.target, "campaign-runtime.build.json"));
 }
 
+// Simulate the state right after a partial-scope assembly: the in-scope
+// landing page is built and bootstrapped, the target carries the campaigns
+// data entry, and the assembly stage records completion with a build
+// fingerprint — while the declared out-of-scope pages have no built HTML,
+// exactly as a partial build leaves them.
+function completeAssemblyWithInScopeBuild(fixture) {
+  const spec = readJson(fixture.specPath);
+  const slug = spec.spec_identity.public_route_slug;
+
+  const landingDir = join(fixture.target, "_site", slug, "landing");
+  mkdirSync(landingDir, { recursive: true });
+  writeFileSync(join(landingDir, "index.html"), [
+    "<html><head>",
+    '<meta name="next-page-type" content="product">',
+    '<script src="https://campaign-cart-cdn.example.com/campaign-cart@0.4.0/dist/loader.js"></script>',
+    "</head><body data-next-page-type=\"product\">Landing</body></html>",
+  ].join("\n"));
+
+  const campaignEntry = Object.fromEntries([
+    "store_name", "store_url", "store_terms", "store_privacy", "store_contact",
+    "store_returns", "store_shipping", "store_phone", "store_phone_tel",
+  ].map((field) => [field, spec.campaign[field]]));
+  campaignEntry.sdk_version = spec.runtime?.sdk_version || spec.global_config?.sdk_version;
+  writeJson(join(fixture.target, "_data/campaigns.json"), { [slug]: campaignEntry });
+
+  const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+  const report = readJson(reportPath);
+  report.stages.assembly.status = "completed";
+  report.stages.assembly.build_fingerprint = `sha256:${"a".repeat(64)}`;
+  if (report.design_source_package?.material_fingerprint) {
+    report.stages.assembly.source_package_material_fingerprint = report.design_source_package.material_fingerprint;
+  }
+  writeJson(reportPath, report);
+}
+
 const TEMPLATE_PAGE_IDS = ["checkout", "upsell", "receipt"];
 const PARTIAL_BUILD_SCOPE = {
   mode: "partial",
@@ -304,6 +339,59 @@ test("a non-array build_scope.reasons surfaces SOURCE_SCOPE_REASONS_IGNORED on t
     assert.doesNotMatch(skip.skip_reason, /Reasons:/);
   }
 }, { buildScope: { mode: "partial", reasons: "Only the landing page has source." } }));
+
+test("post-assembly doctor does not error on declared out-of-scope pages; the ladder reaches polish", () => withFixture((fixture) => {
+  const prepared = runPrepare(fixture);
+  assert.equal(prepared.status, 0, prepared.stderr);
+  completeAssemblyWithInScopeBuild(fixture);
+
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  const doctor = runCli(["doctor", "--packet", packetPath], fixture.dir);
+
+  // The declared pages must not surface under any built_output escalation.
+  const scopeBlindCodes = new Set([
+    "built_output.page_missing",
+    "built_output.route_drift",
+    "sdk_hints.meta_tags.missing",
+    "sdk_hints.meta_tags.route_mismatch",
+  ]);
+  const scopeBlindErrors = doctor.json.errors.filter((issue) => scopeBlindCodes.has(issue.code));
+  assert.deepEqual(scopeBlindErrors, [], JSON.stringify(scopeBlindErrors, null, 2));
+
+  // Pre-polish, the only legitimate blockers on a healthy build are the
+  // polish gate's own (real polish evidence cannot be self-certified by a
+  // fixture, by design). doctor reporting polish-only errors is exactly the
+  // state the ladder routes to the polish stage instead of doctor-blocked.
+  for (const issue of doctor.json.errors) {
+    assert.match(issue.code, /^polish\./, JSON.stringify(issue, null, 2));
+  }
+  assert.ok(doctor.json.ready.some((line) => /declared out-of-scope page/.test(line)), JSON.stringify(doctor.json.ready, null, 2));
+
+  const next = runCli(["next", "--packet", packetPath, "--no-write"], fixture.dir);
+  assert.equal(next.json.stage, "polish", JSON.stringify(next.json, null, 2));
+}, { buildScope: PARTIAL_BUILD_SCOPE }));
+
+test("post-assembly doctor still errors on in-scope pages with no built HTML", () => withFixture((fixture) => {
+  // Same shape but with NO scope declaration: the missing pages are in scope,
+  // and once assembly records complete their absence is a real failure — the
+  // escalation the declared path skips must stay fully intact here.
+  const prepared = runPrepare(fixture);
+  assert.equal(prepared.status, 0, prepared.stderr);
+  completeAssemblyWithInScopeBuild(fixture);
+
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  const doctor = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  assert.notEqual(doctor.status, 0);
+
+  const missingPages = doctor.json.errors
+    .filter((issue) => issue.code === "built_output.page_missing")
+    .map((issue) => issue.detail?.page_id)
+    .sort();
+  // checkout and upsell declare sdk_hints.meta_tags in the example spec;
+  // receipt (no meta hints) is covered by the route-drift escalation below.
+  assert.deepEqual(missingPages, ["checkout", "upsell"], JSON.stringify(doctor.json.errors, null, 2));
+  assert.ok(doctor.json.errors.some((issue) => issue.code === "built_output.route_drift"));
+}));
 
 test("manifest page entries require exactly one of path or skip_reason", () => {
   const base = {
