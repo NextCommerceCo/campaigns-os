@@ -4103,8 +4103,14 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
     });
   }
 
-  const verifiedNote = `${claimed.size}/${pages.length} verified`
-    + `${skippedOutOfScope.length ? `, ${skippedOutOfScope.length} declared out of scope` : ""}`
+  // Denominator is the in-scope page count when a declaration is present:
+  // "2/9 verified, 7 declared out of scope" reads as seven attempted-but-
+  // unverified pages, while "2/2 in-scope verified" states what was actually
+  // checked. Full-scope campaigns keep the original phrasing untouched.
+  const inScopeCount = pages.length - skippedOutOfScope.length;
+  const verifiedNote = (skippedOutOfScope.length
+    ? `${claimed.size}/${inScopeCount} in-scope verified, ${skippedOutOfScope.length} declared out of scope`
+    : `${claimed.size}/${pages.length} verified`)
     + `${unverifiable.length ? `, ${unverifiable.length} unverifiable` : ""}`;
   if (drifted.length === 0) {
     ready.push(`Built routes match CampaignSpec page routes (${verifiedNote})`);
@@ -4132,6 +4138,12 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
       + (unmatched.length ? `Built output has unmatched route(s): ${unmatched.join(", ")}. ` : "")
       + (unverifiable.length ? `Unverifiable (no page_url): ${unverifiable.map((u) => `"${u.page_id}"`).join(", ")}. ` : "")
       + `page-kit routes by source filename, so reconcile the spec page_url with the built route — otherwise QA (which resolves URLs from page_url) targets phantom URLs and reports live pages as 404.`,
+    // Detail granularity contract: per-page issues (built_output.page_missing)
+    // carry only that page's identity — a declared page never produces one, so
+    // the declared list would be dead weight there. This aggregate is the
+    // campaign-level route reconciliation, and its detail is the full
+    // inventory; declared_out_of_scope belongs here because the ready summary
+    // that otherwise reports the skips is suppressed when drift fires.
     { drifted, unmatched_built_routes: unmatched, unverifiable, verified_count: claimed.size, declared_out_of_scope: skippedOutOfScope },
   );
 }

@@ -366,6 +366,12 @@ test("post-assembly doctor does not error on declared out-of-scope pages; the la
     assert.match(issue.code, /^polish\./, JSON.stringify(issue, null, 2));
   }
   assert.ok(doctor.json.ready.some((line) => /declared out-of-scope page/.test(line)), JSON.stringify(doctor.json.ready, null, 2));
+  // The route summary counts against the in-scope denominator, so declared
+  // pages never read as attempted-but-unverified.
+  assert.ok(
+    doctor.json.ready.some((line) => /1\/1 in-scope verified, 3 declared out of scope/.test(line)),
+    JSON.stringify(doctor.json.ready, null, 2),
+  );
 
   const next = runCli(["next", "--packet", packetPath, "--no-write"], fixture.dir);
   assert.equal(next.json.stage, "polish", JSON.stringify(next.json, null, 2));
