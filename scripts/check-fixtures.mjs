@@ -317,13 +317,22 @@ try {
   }
 
   // Doctor surfaces the fixture's retained prepare-build blockers (no DSP
-  // evidence) as errors so it agrees with the stage ladder (#238). Path
-  // acceptance is proven by every error being one of those recorded stage
-  // blockers — a path problem would surface under its own code.
+  // evidence) as errors so it agrees with the stage ladder (#238). This
+  // fixture exists to prove doctor ACCEPTS the generated relative paths, so
+  // the assertion is scoped to that: allow the recorded stage blockers plus
+  // the doctor-check codes that legitimately co-fire with them describing the
+  // same source-coverage state — while path-resolution failures (a referenced
+  // file doctor cannot find from the relative packet) still fail loudly.
   const generatedDoctor = runCliJsonAllowFailure(["doctor", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
-  const recordedBlockerCodes = new Set((generatedReport.stages.prepare_build.blockers || []).map((blocker) => blocker.code));
+  const acceptedDoctorCodes = new Set([
+    ...(generatedReport.stages.prepare_build.blockers || []).map((blocker) => blocker.code),
+    // validateSourceCoverage's twin of MISSING_SOURCE_PAGE: same missing
+    // page, doctor-check code.
+    "source_html.pages.coverage",
+  ]);
+  const pathFailureCodes = new Set(["source_html.pages.path", "spec.local_path"]);
   for (const issue of generatedDoctor.errors || []) {
-    if (!recordedBlockerCodes.has(issue.code)) {
+    if (pathFailureCodes.has(issue.code) || !acceptedDoctorCodes.has(issue.code)) {
       throw new Error(`Doctor should accept generated relative packet paths; unexpected error [${issue.code}] ${issue.message}`);
     }
   }

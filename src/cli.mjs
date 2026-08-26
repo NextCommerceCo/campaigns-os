@@ -1755,6 +1755,9 @@ function prepareBuild(args, options = {}) {
     buildScope: isObject(spec.build_scope) ? spec.build_scope : null,
   });
   const declaredScopeSkips = sourceIntake.declaredSkips || [];
+  const buildScopeReasonsInvalid = isObject(spec.build_scope)
+    && spec.build_scope.reasons != null
+    && !Array.isArray(spec.build_scope.reasons);
   const manifestResult = sourceIntake.manifestResult;
   const manifestWarnings = sourceIntake.manifestWarnings;
   const matched = {
@@ -2065,6 +2068,7 @@ function prepareBuild(args, options = {}) {
     blockers,
     designSourcePackage,
     declaredScopeSkips,
+    buildScopeReasonsInvalid,
   });
 
   publishPrepareBuildJsonOutputs([
@@ -2197,6 +2201,7 @@ function createAssemblyReport({
   blockers,
   designSourcePackage,
   declaredScopeSkips = [],
+  buildScopeReasonsInvalid = false,
 }) {
   const scaffoldRequired = context.scaffold.required;
   const portable = (path) => relFromDir(targetRepo, path);
@@ -2248,6 +2253,13 @@ function createAssemblyReport({
     evidence: [],
     blockers,
     warnings: [
+      ...(buildScopeReasonsInvalid
+        ? [{
+            code: "SOURCE_SCOPE_REASONS_IGNORED",
+            stage: "prepare_build",
+            message: "CampaignSpec build_scope.reasons is not an array and was ignored; declared out-of-scope pages carry the generic partial-scope reason. Make build_scope.reasons a string array to record the real reasons.",
+          }]
+        : []),
       ...(declaredScopeSkips.length
         ? [{
             code: "SOURCE_SCOPE_PARTIAL",
@@ -4965,13 +4977,19 @@ function coverageErrorMessage(page) {
  */
 function coverageErrorDetail(page) {
   const designSource = page && isObject(page.design_source) ? page.design_source : null;
-  if (!designSource) return null;
+  // Always carry page_id so downstream consumers (including the prepare-build
+  // gate dedup in addPrepareBuildGateErrors) can match this issue to the page
+  // without re-parsing the message string.
   return {
-    page_id: page.id,
-    design_source: {
-      type: designSource.type || null,
-      file_url: optionalString(designSource.file_url) || null,
-    },
+    page_id: page?.id ?? null,
+    ...(designSource
+      ? {
+          design_source: {
+            type: designSource.type || null,
+            file_url: optionalString(designSource.file_url) || null,
+          },
+        }
+      : {}),
   };
 }
 
@@ -6436,13 +6454,26 @@ function prepareBuildGateIssue(report, { required = false, reportPath = null, bi
 
 function addPrepareBuildGateErrors(errors, report, gate = prepareBuildGateIssue(report)) {
   if (!gate) return false;
-  // doctorPacket surfaces the same gate (doctor and the ladder agree, #238),
-  // so callers that merge doctor errors before adding gate errors would
-  // duplicate every blocker. Add only issues not already surfaced.
+  // Doctor's own checks run BEFORE this gate merges in the recorded
+  // prepare-build blockers: doctorPacket calls validatePacket/runDoctorChecks
+  // first and then surfaces the gate, and nextStage seeds its error list from
+  // doctor.errors before calling this (doctor and the ladder agree, #238).
+  // Two dedup keys keep the merged list from reporting one problem twice:
+  // an exact [code, message, detail] match drops a blocker doctor already
+  // surfaced verbatim, and a page-level match drops a MISSING_SOURCE_PAGE
+  // blocker when the source-coverage check already named the same missing
+  // page under its own code (source_html.pages.coverage).
   const seen = new Set(errors.map((issue) => JSON.stringify([issue.code, issue.message, issue.detail ?? null])));
+  const coveredPageIds = new Set(
+    errors
+      .filter((issue) => issue.code === "source_html.pages.coverage")
+      .map((issue) => issue.detail?.page_id)
+      .filter(isNonEmptyString),
+  );
   const addUnique = (code, message, detail) => {
     const key = JSON.stringify([code, message, detail ?? null]);
     if (seen.has(key)) return;
+    if (code === "MISSING_SOURCE_PAGE" && isNonEmptyString(detail?.page_id) && coveredPageIds.has(detail.page_id)) return;
     seen.add(key);
     addIssue(errors, code, message, detail);
   };

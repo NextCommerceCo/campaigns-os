@@ -240,6 +240,31 @@ test("a per-page manifest skip_reason entry declares a page out of scope without
   ],
 }));
 
+test("doctor reports a missing designed page once, not under two codes", () => withFixture((fixture) => {
+  // Filesystem-fallback shape: no manifest, and the checkout page declares
+  // design_source with no produced HTML. validateSourceCoverage names the
+  // page under source_html.pages.coverage and the recorded stage blocker is
+  // MISSING_SOURCE_PAGE — the prepare-build gate dedup must not surface the
+  // same missing page under both codes.
+  rmSync(join(fixture.source, ".campaigns-os/source-html-manifest.json"));
+  const spec = readJson(fixture.specPath);
+  const checkoutPage = spec.funnels[0].pages.find((page) => page.type === "checkout");
+  checkoutPage.design_source = { type: "figma_file", file_url: "https://design.example.com/files/checkout-fixture" };
+  writeJson(fixture.specPath, spec);
+
+  const prepared = runPrepare(fixture);
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  const doctor = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  assert.notEqual(doctor.status, 0);
+
+  const checkoutIssues = doctor.json.errors.filter((issue) =>
+    ["MISSING_SOURCE_PAGE", "source_html.pages.coverage"].includes(issue.code)
+    && (issue.detail?.page_id === checkoutPage.id || issue.page_id === checkoutPage.id));
+  assert.equal(checkoutIssues.length, 1, JSON.stringify(checkoutIssues, null, 2));
+  assert.equal(checkoutIssues[0].code, "source_html.pages.coverage");
+}));
+
 test("manifest page entries require exactly one of path or skip_reason", () => {
   const base = {
     schema_version: "source-html-manifest/v0",

@@ -76,7 +76,10 @@ function buildScopeSkipReason(buildScope) {
 }
 
 function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifestPath = null }) {
-  const skipReason = skipEntry ? skipEntry.skip_reason.trim() : buildScopeSkipReason(buildScope);
+  // Mirror the validator's contract (skip_reason is a non-empty string) rather
+  // than assuming it: a malformed entry falls back to the build_scope text
+  // instead of throwing mid-intake.
+  const skipReason = optionalString(skipEntry?.skip_reason) || buildScopeSkipReason(buildScope);
   return {
     mapping: { page_id: page.id, skip_reason: skipReason },
     declaredSkip: {
