@@ -260,10 +260,50 @@ test("doctor reports a missing designed page once, not under two codes", () => w
 
   const checkoutIssues = doctor.json.errors.filter((issue) =>
     ["MISSING_SOURCE_PAGE", "source_html.pages.coverage"].includes(issue.code)
-    && (issue.detail?.page_id === checkoutPage.id || issue.page_id === checkoutPage.id));
+    && issue.detail?.page_id === checkoutPage.id);
   assert.equal(checkoutIssues.length, 1, JSON.stringify(checkoutIssues, null, 2));
   assert.equal(checkoutIssues[0].code, "source_html.pages.coverage");
 }));
+
+test("coverage error detail always carries page_id; design_source appears only when the page declares one", () => withFixture((fixture) => {
+  const prepared = runPrepare(fixture);
+  assert.equal(prepared.status, 0, prepared.stderr);
+
+  // An unmapped active page WITHOUT design_source: drop its mapping from the
+  // packet and let doctor's coverage check name it. The detail shape is a
+  // contract for downstream consumers (including the prepare-build gate
+  // dedup), so pin it: page_id always present, design_source only when the
+  // spec page declares one.
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  const packet = readJson(packetPath);
+  packet.source_html.pages = packet.source_html.pages.filter((page) => page.page_id !== "upsell");
+  writeJson(packetPath, packet);
+
+  const doctor = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  assert.notEqual(doctor.status, 0);
+  const coverage = doctor.json.errors.find((issue) => issue.code === "source_html.pages.coverage");
+  assert.ok(coverage, JSON.stringify(doctor.json.errors, null, 2));
+  assert.deepEqual(coverage.detail, { page_id: "upsell" });
+}));
+
+test("a non-array build_scope.reasons surfaces SOURCE_SCOPE_REASONS_IGNORED on the assembly report", () => withFixture((fixture) => {
+  const prepared = runPrepare(fixture);
+  assert.equal(prepared.status, 0, prepared.stderr);
+
+  const report = readReport(fixture);
+  const warning = report.warnings.find((entry) => entry.code === "SOURCE_SCOPE_REASONS_IGNORED");
+  assert.ok(warning, JSON.stringify(report.warnings, null, 2));
+  assert.equal(warning.stage, "prepare_build");
+
+  // The declaration itself still works — the malformed reasons only lose
+  // their text, falling back to the generic partial-scope reason.
+  const stage = report.stages.prepare_build;
+  assert.equal(stage.status, "completed_partial");
+  for (const skip of stage.declared_out_of_scope) {
+    assert.match(skip.skip_reason, /Declared out of source scope/);
+    assert.doesNotMatch(skip.skip_reason, /Reasons:/);
+  }
+}, { buildScope: { mode: "partial", reasons: "Only the landing page has source." } }));
 
 test("manifest page entries require exactly one of path or skip_reason", () => {
   const base = {

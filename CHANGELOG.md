@@ -32,6 +32,12 @@ Notable supported-surface changes are recorded here.
   declares `design_source` still blocks without a per-page skip entry, and a
   missing page under full/undeclared scope blocks exactly as before.
 
+  Two adjacent shape notes: doctor's `source_html.pages.coverage` error
+  `detail` now always carries `page_id` (previously the detail was null for a
+  page without `design_source`), and a CampaignSpec `build_scope.reasons`
+  that is present but not an array surfaces as a `SOURCE_SCOPE_REASONS_IGNORED`
+  assembly-report warning instead of being silently dropped.
+
 ### Fixed
 
 - **doctor and the stage ladder agree over one packet.** doctor computed its
