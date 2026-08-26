@@ -122,7 +122,11 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "required": ["page_id", "path"],
+        "required": ["page_id"],
+        "oneOf": [
+          { "required": ["path"], "not": { "required": ["skip_reason"] } },
+          { "required": ["skip_reason"], "not": { "required": ["path"] } }
+        ],
         "properties": {
           "page_id": {
             "type": "string",
@@ -132,7 +136,12 @@
           "path": {
             "type": "string",
             "minLength": 1,
-            "description": "Source-root-relative HTML file path."
+            "description": "Source-root-relative HTML file path. Exactly one of path or skip_reason is required."
+          },
+          "skip_reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Declares this active page out of source scope (e.g. template-derived) with a reason. Exactly one of path or skip_reason is required."
           },
           "page_type": {
             "type": "string",

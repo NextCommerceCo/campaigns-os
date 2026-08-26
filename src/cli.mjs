@@ -1141,13 +1141,19 @@ function createStage(stage, status, extras = {}) {
  * completed or blocked from the source/spec readiness result, while `setup` is
  * pending only when starter scaffold adoption is required and skipped otherwise.
  */
-function createInitialAssemblyReportStages({ scaffoldRequired, blockers, outputs }) {
+function createInitialAssemblyReportStages({ scaffoldRequired, blockers, outputs, declaredScopeSkips = [] }) {
   const stages = Object.fromEntries(
     ASSEMBLY_REPORT_STAGE_KEYS.map((stage) => [stage, createStage(stage, "pending")])
   );
-  stages.prepare_build = createStage("prepare_build", blockers.length ? "blocked" : "completed", {
+  // "completed_partial" is terminal under the prefix-matching stage contract
+  // (STAGE_TERMINAL_STATUS_PREFIXES): declared out-of-scope pages do not hold
+  // the ladder, they are recorded on the stage so downstream consumers can see
+  // exactly which pages assemble from the template family instead of source HTML.
+  const terminalStatus = declaredScopeSkips.length ? "completed_partial" : "completed";
+  stages.prepare_build = createStage("prepare_build", blockers.length ? "blocked" : terminalStatus, {
     outputs,
     blockers,
+    ...(declaredScopeSkips.length ? { declared_out_of_scope: declaredScopeSkips } : {}),
   });
   stages.setup = createStage("setup", scaffoldRequired ? "pending" : "skipped");
   return stages;
@@ -1746,7 +1752,9 @@ function prepareBuild(args, options = {}) {
     htmlFiles,
     publicRouteSlug,
     outputDir,
+    buildScope: isObject(spec.build_scope) ? spec.build_scope : null,
   });
+  const declaredScopeSkips = sourceIntake.declaredSkips || [];
   const manifestResult = sourceIntake.manifestResult;
   const manifestWarnings = sourceIntake.manifestWarnings;
   const matched = {
@@ -2056,6 +2064,7 @@ function prepareBuild(args, options = {}) {
     context,
     blockers,
     designSourcePackage,
+    declaredScopeSkips,
   });
 
   publishPrepareBuildJsonOutputs([
@@ -2187,6 +2196,7 @@ function createAssemblyReport({
   context,
   blockers,
   designSourcePackage,
+  declaredScopeSkips = [],
 }) {
   const scaffoldRequired = context.scaffold.required;
   const portable = (path) => relFromDir(targetRepo, path);
@@ -2220,6 +2230,7 @@ function createAssemblyReport({
     stages: createInitialAssemblyReportStages({
       scaffoldRequired,
       blockers,
+      declaredScopeSkips,
       outputs: [
         portable(packetPath),
         portable(contextPath),
@@ -2237,6 +2248,13 @@ function createAssemblyReport({
     evidence: [],
     blockers,
     warnings: [
+      ...(declaredScopeSkips.length
+        ? [{
+            code: "SOURCE_SCOPE_PARTIAL",
+            stage: "prepare_build",
+            message: `Partial source scope: ${declaredScopeSkips.length} active CampaignSpec page(s) are declared out of source scope and assemble from the template family: ${declaredScopeSkips.map((skip) => skip.page_id).join(", ")}.`,
+          }]
+        : []),
       ...(context.source?.ambiguous_candidates?.length
         ? [{
             code: "AMBIGUOUS_SOURCE_HTML_CANDIDATES",
@@ -2810,6 +2828,17 @@ export function doctorPacket(packetPath, { contextPath = undefined, reportPath =
 
   validatePacket(packet, packetPath, errors, warnings, ready, derived, { context, report });
   runDoctorChecks(ARTIFACT_DOCTOR_CHECKS, { context, report, errors, warnings, ready, derived });
+
+  // Doctor and the stage ladder must agree over one packet (#238): when the
+  // recorded assembly report holds prepare_build at "blocked" (or claims a
+  // terminal status while retaining blocking evidence), every `next <stage>`
+  // command refuses to run — so doctor surfaces the same blockers as errors
+  // instead of exiting 0 and naming a stage the ladder then rejects. Doctor
+  // exit 0 means the command it names will actually run.
+  const prepareBuildLadderGate = prepareBuildGateIssue(report);
+  if (prepareBuildLadderGate?.blocked) {
+    addPrepareBuildGateErrors(errors, report, prepareBuildLadderGate);
+  }
 
   // Theme gate: evaluated once here so `next`, QA, and run telemetry all read
   // the same decision from derived.theme_gate. The doctor reports a blocked
@@ -6407,8 +6436,18 @@ function prepareBuildGateIssue(report, { required = false, reportPath = null, bi
 
 function addPrepareBuildGateErrors(errors, report, gate = prepareBuildGateIssue(report)) {
   if (!gate) return false;
+  // doctorPacket surfaces the same gate (doctor and the ladder agree, #238),
+  // so callers that merge doctor errors before adding gate errors would
+  // duplicate every blocker. Add only issues not already surfaced.
+  const seen = new Set(errors.map((issue) => JSON.stringify([issue.code, issue.message, issue.detail ?? null])));
+  const addUnique = (code, message, detail) => {
+    const key = JSON.stringify([code, message, detail ?? null]);
+    if (seen.has(key)) return;
+    seen.add(key);
+    addIssue(errors, code, message, detail);
+  };
   if (Array.isArray(gate.issues) && gate.issues.length) {
-    for (const issue of gate.issues) addIssue(errors, issue.code, issue.message, issue.detail || null);
+    for (const issue of gate.issues) addUnique(issue.code, issue.message, issue.detail || null);
     return true;
   }
   const blockerSource = Array.isArray(gate.blockers) && gate.blockers.length
@@ -6419,7 +6458,7 @@ function addPrepareBuildGateErrors(errors, report, gate = prepareBuildGateIssue(
     gate.stage ? "next.prepare_build" : "next.prepare_build.report_unavailable",
     gate.reason,
   )) {
-    addIssue(errors, issue.code, issue.message, issue.detail || null);
+    addUnique(issue.code, issue.message, issue.detail || null);
   }
   return true;
 }

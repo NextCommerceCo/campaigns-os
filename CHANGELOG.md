@@ -2,6 +2,49 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.13.0] - 2026-08-26
+
+### Added
+
+- **A partial-source build is declarable (#238).** Some active CampaignSpec
+  pages carry prepared source HTML and the rest assemble from a certified
+  template family — the ordinary shape of a designed campaign on a template
+  family — and until now every escape from `MISSING_SOURCE_PAGE` was closed:
+  manifest entries required a `path`, a hand-authored `skip_reason` was
+  overwritten on the next `start`, removing the manifest destroyed the page
+  binding and provenance, and `spec.build_scope.mode: "partial"` was read only
+  to phrase a doctor warning. Two declarations now work, and both regenerate
+  identically on every run because they derive from the spec and manifest
+  rather than from packet state:
+
+  - A source-html manifest page entry may carry `skip_reason` instead of
+    `path` (exactly one of the two is required) to declare that page out of
+    source scope with a per-page reason.
+  - CampaignSpec `build_scope.mode: "partial"` declares the same thing as a
+    blanket for active pages with no manifest entry and no `design_source`;
+    the recorded reason carries `build_scope.reasons[]`.
+
+  Declared pages land on the packet as `skip_reason` mappings — the shape
+  doctor's scope summary already understands — and on the assembly report
+  under `stages.prepare_build.declared_out_of_scope`, with one decision per
+  page. `prepare_build` reaches `completed_partial` (terminal under the
+  prefix-matching stage contract) and the ladder advances. A page that
+  declares `design_source` still blocks without a per-page skip entry, and a
+  missing page under full/undeclared scope blocks exactly as before.
+
+### Fixed
+
+- **doctor and the stage ladder agree over one packet.** doctor computed its
+  verdict from its own checks without consulting
+  `stages.prepare_build.status`, so it could exit 0 and hand the operator a
+  `next setup` command the ladder then refused with exit 2 — a green light
+  pointing at a closed road. doctor now surfaces the recorded prepare-build
+  gate (blocked status, or a terminal claim contradicted by retained blocking
+  evidence) as errors, so exit 0 means the command doctor names will actually
+  run. `start`'s embedded doctor inherits the same contract, so a `start`
+  that leaves prepare-build blocked now exits 2 with the blockers printed
+  instead of reporting ready.
+
 ## [1.12.0] - 2026-08-25
 
 ### Fixed

@@ -278,7 +278,11 @@ try {
 
   const specPath = resolve(specDir, "campaignspec.json");
   writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
-  runCliJson([
+  // The synthetic fixture has no Design Source Package evidence, so start's
+  // embedded doctor reports the retained prepare-build blockers and exits 2
+  // (doctor and the stage ladder agree, #238). The artifacts under test here
+  // are still fully written; this check asserts path relativity, not readiness.
+  runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
     "--source", sourceRoot,
@@ -312,12 +316,19 @@ try {
     throw new Error("doctor.next.command should not leak the temp workspace absolute path.");
   }
 
-  const generatedDoctor = runCliJson(["doctor", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
-  if (!generatedDoctor.ok) {
-    throw new Error("Doctor should accept generated relative packet paths.");
+  // Doctor surfaces the fixture's retained prepare-build blockers (no DSP
+  // evidence) as errors so it agrees with the stage ladder (#238). Path
+  // acceptance is proven by every error being one of those recorded stage
+  // blockers — a path problem would surface under its own code.
+  const generatedDoctor = runCliJsonAllowFailure(["doctor", "--packet", packetPath, "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  const recordedBlockerCodes = new Set((generatedReport.stages.prepare_build.blockers || []).map((blocker) => blocker.code));
+  for (const issue of generatedDoctor.errors || []) {
+    if (!recordedBlockerCodes.has(issue.code)) {
+      throw new Error(`Doctor should accept generated relative packet paths; unexpected error [${issue.code}] ${issue.message}`);
+    }
   }
 
-  const strippedDoctor = runCliJson(["doctor", "--packet", packetPath, "--strip-paths", "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  const strippedDoctor = runCliJsonAllowFailure(["doctor", "--packet", packetPath, "--strip-paths", "--json"], envWithout("CAMPAIGNS_API_KEY"));
   assertRelativePath(strippedDoctor.derived.packet_path, "doctor --strip-paths derived.packet_path");
   assertRelativePath(strippedDoctor.derived.source_root, "doctor --strip-paths derived.source_root");
 } finally {
@@ -857,7 +868,9 @@ try {
   if (!manifestUpsellPage) throw new Error("manifest fixture: example spec has no upsell page; adjust fixture spec.");
   manifestUpsellPage.variant_labels = { primary: "Size", secondary: "Color" };
   writeJson(specPath, manifestSpec);
-  runCliJson([
+  // No DSP evidence in this fixture: start's embedded doctor exits 2 on the
+  // retained prepare-build blockers (#238) while still writing every artifact.
+  runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
     "--source", sourceRoot,
@@ -1056,7 +1069,7 @@ try {
 
   const specPath = resolve(mixedSourceTmp, "campaignspec.json");
   writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
-  runCliJson([
+  runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
     "--source", sourceRoot,
@@ -1137,7 +1150,7 @@ try {
 
   const specPath = resolve(templateStockTmp, "campaignspec.json");
   writeJson(specPath, spec);
-  const result = runCliJson([
+  const result = runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
     "--source", sourceRoot,
@@ -1974,7 +1987,7 @@ try {
 
   // Run start → prepare-build is invoked internally; packet should pick up
   // the manifest's source_hash and thread it onto the mapping.
-  runCliJson([
+  runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
     "--source", sourceRoot,
@@ -2111,7 +2124,7 @@ try {
   }
   const specPath = resolve(handAuthoredTmp, "campaignspec.json");
   writeJson(specPath, spec);
-  const result = runCliJson([
+  const result = runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
     "--source", sourceRoot,
@@ -2183,7 +2196,7 @@ try {
 
   const specPath = resolve(driftTmp, "campaignspec.json");
   writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
-  const startResult = runCliJson([
+  const startResult = runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
     "--source", sourceRoot,
@@ -2268,7 +2281,7 @@ try {
 
   const specPath = resolve(mixedManifestTmp, "campaignspec.json");
   writeJson(specPath, readJson(resolve(root, "examples/campaignspec.v42.basic.json")));
-  runCliJson([
+  runCliJsonAllowFailure([
     "start",
     "--spec", specPath,
     "--source", sourceRoot,

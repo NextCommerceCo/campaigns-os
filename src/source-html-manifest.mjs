@@ -90,8 +90,15 @@ function validateManifestPage(entry, index, add) {
   if (!isNonEmptyString(entry.page_id)) {
     add(`${location}.page_id`, `${location}.page_id is required and must be a non-empty string.`);
   }
-  if (!isNonEmptyString(entry.path)) {
-    add(`${location}.path`, `${location}.path is required and must be a non-empty string.`);
+  // A page entry binds either a source HTML file (path) or a declared
+  // out-of-scope skip (skip_reason) — exactly one. Skip-only entries are how
+  // a partial-source build declares template-derived pages per page.
+  const hasPath = isNonEmptyString(entry.path);
+  const hasSkipReason = isNonEmptyString(entry.skip_reason);
+  if (hasPath && hasSkipReason) {
+    add(`${location}.skip_reason`, `${location} declares both path and skip_reason; a page is either bound to a source file or declared out of source scope, not both.`);
+  } else if (!hasPath && !hasSkipReason) {
+    add(`${location}.path`, `${location} requires path (source HTML file) or skip_reason (declared out-of-scope page), and each must be a non-empty string.`);
   }
   for (const field of ["page_type", "page_url"]) {
     if (entry[field] != null && !isNonEmptyString(entry[field])) {

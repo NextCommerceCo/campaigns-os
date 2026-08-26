@@ -14,11 +14,12 @@ export function createSourceHtmlIntake({
   htmlFiles,
   publicRouteSlug,
   outputDir,
+  buildScope = null,
 }) {
   const manifestResult = readSourceHtmlManifestFile(sourceRoot);
   const matched = manifestResult.manifest
-    ? applyManifestToPages(specPages, manifestResult.manifest, manifestResult.path)
-    : matchSourcePages(specPages, htmlFiles);
+    ? applyManifestToPages(specPages, manifestResult.manifest, manifestResult.path, buildScope)
+    : matchSourcePages(specPages, htmlFiles, buildScope);
   const pageById = new Map((specPages || []).map((page) => [page.id, page]));
   const projectionDecisions = [];
 
@@ -50,6 +51,51 @@ export function createSourceHtmlIntake({
     decisions: [...matched.decisions, ...projectionDecisions],
     ambiguousCandidates: matched.ambiguousCandidates || [],
     manifestDraft: matched.manifestDraft || null,
+    declaredSkips: matched.declaredSkips || [],
+  };
+}
+
+// A partial-source build is the ordinary shape of a template-family campaign:
+// a few designed pages carry prepared source HTML, the rest assemble from the
+// certified family. Two explicit declarations turn a missing source file from
+// a blocker into a recorded out-of-scope page:
+//   1. a source-html manifest entry with skip_reason instead of path (per-page), or
+//   2. CampaignSpec build_scope.mode "partial" (blanket, for pages with no
+//      manifest entry and no design_source).
+// A page that declares design_source still blocks without a per-page skip
+// entry — it was produced to have source HTML, so its absence stays an error.
+// Full/undeclared scope keeps today's blocking behavior exactly.
+function declaredPartialScope(buildScope) {
+  return buildScope?.mode === "partial";
+}
+
+function buildScopeSkipReason(buildScope) {
+  const reasons = Array.isArray(buildScope?.reasons) ? buildScope.reasons.filter(isNonEmptyString).map((reason) => reason.trim()) : [];
+  const base = 'Declared out of source scope by CampaignSpec build_scope (mode "partial"); the page assembles from the selected template family.';
+  return reasons.length ? `${base} Reasons: ${reasons.join(" ")}` : base;
+}
+
+function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifestPath = null }) {
+  const skipReason = skipEntry ? skipEntry.skip_reason.trim() : buildScopeSkipReason(buildScope);
+  return {
+    mapping: { page_id: page.id, skip_reason: skipReason },
+    declaredSkip: {
+      page_id: page.id,
+      skip_reason: skipReason,
+      declared_by: skipEntry ? "source_html_manifest" : "campaign_spec_build_scope",
+    },
+    decision: {
+      id: `dec_page_scope_${page.id}`,
+      stage: "prepare_build",
+      decision_type: "deterministic_derivation",
+      decision: `recorded CampaignSpec page "${page.id}" as declared out of source scope (${skipEntry ? "explicit source-html manifest skip entry" : 'CampaignSpec build_scope mode "partial"'}); the page assembles from the selected template family`,
+      confidence: "high",
+      evidence: [
+        skipEntry
+          ? `source-html manifest entry for "${page.id}" at ${manifestPath} declares skip_reason without a path`
+          : `CampaignSpec build_scope.mode is "partial" and page "${page.id}" has no bound source HTML and no design_source`,
+      ],
+    },
   };
 }
 
@@ -87,10 +133,11 @@ function pageRouteForPageKit(value) {
   }
 }
 
-function applyManifestToPages(specPages, manifest, manifestPath) {
+function applyManifestToPages(specPages, manifest, manifestPath, buildScope = null) {
   const mappings = [];
   const prompts = [];
   const decisions = [];
+  const declaredSkips = [];
   const manifestPages = Array.isArray(manifest.pages) ? manifest.pages : [];
   const byPageId = new Map();
   for (const entry of manifestPages) {
@@ -182,9 +229,19 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
         evidence: [`source-html manifest entry matched page "${page.id}" by ${matchVia}; path="${entry.path}" from ${manifestPath}`],
       });
     } else {
+      const skipEntry = entry && !isNonEmptyString(entry.path) && isNonEmptyString(entry.skip_reason) ? entry : null;
+      if (skipEntry || (declaredPartialScope(buildScope) && !isObject(page.design_source))) {
+        const declared = declaredScopeSkip(page, { skipEntry, buildScope, manifestPath });
+        if (skipEntry) usedEntries.add(skipEntry);
+        matchedIds.add(page.id);
+        mappings.push(declared.mapping);
+        declaredSkips.push(declared.declaredSkip);
+        decisions.push(declared.decision);
+        continue;
+      }
       mappings.push({
         page_id: page.id,
-        skip_reason: `No entry for "${page.id}" in source-html manifest at ${manifestPath}; add this page_id to the manifest, provide an explicit skip_reason in the packet, or remove the manifest to fall back to filesystem matching.`,
+        skip_reason: `No entry for "${page.id}" in source-html manifest at ${manifestPath}; add this page_id to the manifest (with a path, or a skip_reason to declare it out of source scope), set CampaignSpec build_scope.mode to "partial" for template-derived pages, or remove the manifest to fall back to filesystem matching.`,
       });
       prompts.push({
         code: "MISSING_SOURCE_PAGE",
@@ -208,14 +265,15 @@ function applyManifestToPages(specPages, manifest, manifestPath) {
     });
   }
 
-  return { mappings, prompts, decisions };
+  return { mappings, prompts, decisions, declaredSkips };
 }
 
-function matchSourcePages(specPages, htmlFiles) {
+function matchSourcePages(specPages, htmlFiles, buildScope = null) {
   const usedByPageId = new Map();
   const mappings = [];
   const prompts = [];
   const decisions = [];
+  const declaredSkips = [];
   const ambiguousCandidates = [];
   const counts = new Map();
   const ordinals = new Map();
@@ -298,6 +356,13 @@ function matchSourcePages(specPages, htmlFiles) {
       });
     } else {
       const hasDesignSource = isObject(page.design_source);
+      if (declaredPartialScope(buildScope) && !hasDesignSource) {
+        const declared = declaredScopeSkip(page, { buildScope });
+        mappings.push(declared.mapping);
+        declaredSkips.push(declared.declaredSkip);
+        decisions.push(declared.decision);
+        continue;
+      }
       if (!hasDesignSource) {
         mappings.push({ page_id: page.id, skip_reason: "No matching source HTML file found; provide a source file or an explicit skip reason before build." });
       }
@@ -318,6 +383,7 @@ function matchSourcePages(specPages, htmlFiles) {
     mappings,
     prompts,
     decisions,
+    declaredSkips,
     ambiguousCandidates,
     manifestDraft: ambiguousCandidates.length > 0
       ? createManifestDraft(specPages, mappings, ambiguousCandidates)
