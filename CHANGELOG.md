@@ -40,6 +40,22 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
+- **Built-output checks honor the partial-scope declaration after assembly.**
+  Once assembly recorded complete, `validateBuiltSdkMetaTags` pushed one
+  `built_output.page_missing` error for every active spec page with meta
+  hints and no built HTML, and `validateBuiltRouteDrift` escalated the same
+  absent pages as route drift — never consulting the out-of-scope declaration
+  prepare-build recorded, so a partial build's ladder re-blocked at doctor
+  one gate after the declaration fixed prepare-build. Both checks now skip
+  pages listed in `stages.prepare_build.declared_out_of_scope` on the
+  recorded assembly report (the declaration authority — NOT the packet's
+  skip mappings, which blocked pages carry too), record the skips in
+  doctor's ready output, and keep the full error escalation for in-scope
+  pages: a missing in-scope page still errors post-assembly exactly as
+  before, and full-scope campaigns are untouched. A built page is verified
+  regardless of declaration. `completed_partial` continues to count as
+  assembly-complete for in-scope enforcement.
+
 - **doctor and the stage ladder agree over one packet.** doctor computed its
   verdict from its own checks without consulting
   `stages.prepare_build.status`, so it could exit 0 and hand the operator a

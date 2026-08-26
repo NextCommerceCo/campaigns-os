@@ -3920,6 +3920,24 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
   );
 }
 
+// Pages declared out of source scope (#238/#239: a manifest skip_reason entry
+// or CampaignSpec build_scope "partial") assemble from the template family and
+// are not built by a partial-scope build, so their absence from _site/ is the
+// declared state — not a missing-page failure. In-scope pages keep the full
+// post-assembly escalation.
+//
+// The authority is stages.prepare_build.declared_out_of_scope on the recorded
+// assembly report — NOT derived.scope.out_of_scope_pages, which also contains
+// blocked pages carrying the auto-generated skip_reason remedy text (a packet
+// blocked on MISSING_SOURCE_PAGE has skip mappings too, and those pages must
+// keep failing loud). With no report recorded the set is empty, so every page
+// stays in scope — the safe default.
+function declaredOutOfScopePageIds(buildState) {
+  const declared = buildState?.report?.stages?.prepare_build?.declared_out_of_scope;
+  if (!Array.isArray(declared)) return new Set();
+  return new Set(declared.map((skip) => skip?.page_id).filter(isNonEmptyString));
+}
+
 export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState = {}) {
   const expectedPages = activeSpecPages(spec)
     .map((page) => ({
@@ -3944,13 +3962,23 @@ export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, 
     return;
   }
 
+  const outOfScopePageIds = declaredOutOfScopePageIds(buildState);
+  const skippedOutOfScope = [];
   let checked = 0;
   for (const { page, metaTags } of expectedPages) {
     const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
     if (!builtPath || !existsSync(builtPath)) {
+      // A declared out-of-scope page has no built HTML by declaration; a page
+      // that IS built despite the declaration still gets its meta verified
+      // below, so the skip covers exactly the declared absence.
+      if (outOfScopePageIds.has(page.id)) {
+        skippedOutOfScope.push(page.id);
+        continue;
+      }
       const issue = {
         code: "built_output.page_missing",
         message: `Built HTML is missing for CampaignSpec page "${page.id}" at ${builtPath ? relFromDir(targetRepo, builtPath) : "_site/<slug>/..."}.`,
+        detail: { page_id: page.id },
       };
       (assemblyComplete ? errors : warnings).push(issue);
       continue;
@@ -3985,6 +4013,9 @@ export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, 
   }
 
   if (checked > 0) ready.push(`Built SDK meta tags checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
+  if (skippedOutOfScope.length > 0) {
+    ready.push(`Built SDK meta verification skipped for ${skippedOutOfScope.length} declared out-of-scope page(s): ${skippedOutOfScope.join(", ")}`);
+  }
 }
 
 function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState = {}) {
@@ -4038,6 +4069,8 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
   const claimed = new Set();
   const drifted = [];
   const unverifiable = [];
+  const skippedOutOfScope = [];
+  const outOfScopePageIds = declaredOutOfScopePageIds(buildState);
   // Served-route display honors route_root: a root-served campaign's pages
   // are reached at /<route>/, not /<slug>/<route>/, even though the built
   // files still live under _site/<slug>/.
@@ -4045,14 +4078,21 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
   const rootSegments = routeRoot === "/" ? [] : [publicRouteSlug];
   for (const page of pages) {
     const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
+    if (builtPath && existsSync(builtPath)) {
+      claimed.add(resolve(builtPath));
+      continue;
+    }
+    // Declared out-of-scope pages (#238) are not built by a partial-scope
+    // build; their absence is the declared state, not route drift. A built
+    // page is still claimed above regardless of declaration.
+    if (outOfScopePageIds.has(page.id)) {
+      skippedOutOfScope.push(page.id);
+      continue;
+    }
     if (!builtPath) {
       // No page_url / source permalink to resolve a route from: doctor cannot
       // determine the expected route, so this is "unverifiable", not drift.
       unverifiable.push({ page_id: page.id, type: page.type || "page", reason: "no page_url / source permalink to resolve an expected route" });
-      continue;
-    }
-    if (existsSync(builtPath)) {
-      claimed.add(resolve(builtPath));
       continue;
     }
     const segments = [...rootSegments, ...relFromDir(siteRoot, dirname(builtPath)).split("/")].filter((segment) => segment && segment !== ".");
@@ -4063,7 +4103,15 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
     });
   }
 
-  const verifiedNote = `${claimed.size}/${pages.length} verified${unverifiable.length ? `, ${unverifiable.length} unverifiable` : ""}`;
+  // Denominator is the in-scope page count when a declaration is present:
+  // "2/9 verified, 7 declared out of scope" reads as seven attempted-but-
+  // unverified pages, while "2/2 in-scope verified" states what was actually
+  // checked. Full-scope campaigns keep the original phrasing untouched.
+  const inScopeCount = pages.length - skippedOutOfScope.length;
+  const verifiedNote = (skippedOutOfScope.length
+    ? `${claimed.size}/${inScopeCount} in-scope verified, ${skippedOutOfScope.length} declared out of scope`
+    : `${claimed.size}/${pages.length} verified`)
+    + `${unverifiable.length ? `, ${unverifiable.length} unverifiable` : ""}`;
   if (drifted.length === 0) {
     ready.push(`Built routes match CampaignSpec page routes (${verifiedNote})`);
     if (unverifiable.length) {
@@ -4090,7 +4138,13 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
       + (unmatched.length ? `Built output has unmatched route(s): ${unmatched.join(", ")}. ` : "")
       + (unverifiable.length ? `Unverifiable (no page_url): ${unverifiable.map((u) => `"${u.page_id}"`).join(", ")}. ` : "")
       + `page-kit routes by source filename, so reconcile the spec page_url with the built route — otherwise QA (which resolves URLs from page_url) targets phantom URLs and reports live pages as 404.`,
-    { drifted, unmatched_built_routes: unmatched, unverifiable, verified_count: claimed.size },
+    // Detail granularity contract: per-page issues (built_output.page_missing)
+    // carry only that page's identity — a declared page never produces one, so
+    // the declared list would be dead weight there. This aggregate is the
+    // campaign-level route reconciliation, and its detail is the full
+    // inventory; declared_out_of_scope belongs here because the ready summary
+    // that otherwise reports the skips is suppressed when drift fires.
+    { drifted, unmatched_built_routes: unmatched, unverifiable, verified_count: claimed.size, declared_out_of_scope: skippedOutOfScope },
   );
 }
 
