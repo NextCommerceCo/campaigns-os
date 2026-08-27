@@ -2915,21 +2915,32 @@ async function fillCheckoutFields(page, args, email, options = {}) {
     await sameAsShipping.check({ timeout: 3000 }).catch(() => {});
   }
 
-  await fill("billing-fname", address.firstName, { optional: true, onlyVisible: true });
-  await fill("billing-lname", address.lastName, { optional: true, onlyVisible: true });
-  await fill("billing-phone", address.phone, { optional: true, onlyVisible: true });
-  await select("billing-country", address.country, { optional: true, onlyVisible: true });
-  await fill("billing-address1", address.address1, { optional: true, onlyVisible: true });
-  await fill("billing-city", address.city, { optional: true, onlyVisible: true });
-  await select("billing-province", address.province, { optional: true, onlyVisible: true });
-  await fill("billing-postal", address.postal, { optional: true, onlyVisible: true });
+  // Canonical billing fields share one collapsed section. Probe that section
+  // once so a checked "same as shipping" toggle cannot turn eight optional
+  // fields into eight separate Playwright actionability waits.
+  const billingCollapsed = await billingFieldsCollapsed(page);
+  const fillBilling = (field, value) => (billingCollapsed
+    ? track(field, "fill", async () => false, { optional: true })
+    : fill(field, value, { optional: true, onlyVisible: true }));
+  const selectBilling = (field, value) => (billingCollapsed
+    ? track(field, "select", async () => false, { optional: true })
+    : select(field, value, { optional: true, onlyVisible: true }));
+
+  await fillBilling("billing-fname", address.firstName);
+  await fillBilling("billing-lname", address.lastName);
+  await fillBilling("billing-phone", address.phone);
+  await selectBilling("billing-country", address.country);
+  await fillBilling("billing-address1", address.address1);
+  await fillBilling("billing-city", address.city);
+  await selectBilling("billing-province", address.province);
+  await fillBilling("billing-postal", address.postal);
 }
 
 async function revealCheckoutForm(page, options = {}) {
   const activeForm = page.locator('.checkout-form--reveal:not(.is-revealed)').first();
   if (!await activeForm.count().catch(() => 0)) return false;
 
-  const trigger = page.locator('.checkout-form--reveal:not(.is-revealed) [data-checkout-reveal-trigger]').first();
+  const trigger = activeForm.locator('[data-checkout-reveal-trigger]').first();
   if (!await trigger.count().catch(() => 0)) {
     throw new Error("Checkout reveal is active, but its reveal CTA is missing.");
   }
@@ -3443,21 +3454,24 @@ async function selectYear(page, value) {
 async function fieldUsable(locator, options = {}) {
   const count = await locator.count().catch(() => 0);
   if (!count) return false;
-  if (options.onlyVisible) return fieldImmediatelyInteractable(locator);
+  if (options.onlyVisible) return locator.isVisible().catch(() => false);
   await locator.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
   return locator.isVisible().catch(() => false);
 }
 
-async function fieldImmediatelyInteractable(locator) {
-  if (!await locator.isVisible().catch(() => false)) return false;
+async function billingFieldsCollapsed(page) {
+  const locator = page.locator('[data-next-checkout-field="billing-fname"]').first();
+  if (!await locator.count().catch(() => 0)) return false;
+  if (!await locator.isVisible().catch(() => false)) return true;
   return locator.evaluate((element) => {
     for (let current = element; current; current = current.parentElement) {
-      if (current.hidden || current.inert || current.getAttribute("aria-hidden") === "true") return false;
-      if (current.classList.contains("billing-form-collapsed")) return false;
-      const style = window.getComputedStyle(current);
-      if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") return false;
+      const ariaHidden = current.getAttribute("aria-hidden");
+      if (current.hidden || current.inert || (ariaHidden !== null && ariaHidden.toLowerCase() !== "false")) return true;
+      if (current.classList.contains("billing-form-collapsed")) return true;
+      const style = current.ownerDocument.defaultView.getComputedStyle(current);
+      if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") return true;
     }
-    return true;
+    return false;
   }).catch(() => false);
 }
 

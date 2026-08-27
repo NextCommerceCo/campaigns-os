@@ -231,7 +231,7 @@ function fakePage(fields = {}, extras = {}) {
     const present = () => (typeof cfg.present === "function" ? cfg.present() : cfg.present !== false);
     const locator = {
       first: () => locator,
-      locator: () => locator,
+      locator: (innerSelector) => makeLocator(`${selector} ${innerSelector}`),
       count: async () => (present() ? 1 : 0),
       // `visible` may be a thunk so a stub can model progressive disclosure:
       // a field that is hidden until the funnel reveals it.
@@ -262,7 +262,22 @@ function fakePage(fields = {}, extras = {}) {
       press: async (key) => {
         calls.push(`press:${selector}:${key}`);
       },
-      evaluate: async () => cfg.immediatelyInteractable !== false,
+      evaluate: async (predicate) => predicate({
+        hidden: cfg.hidden === true,
+        inert: cfg.inert === true,
+        getAttribute: (name) => (name === "aria-hidden" ? cfg.ariaHidden ?? null : null),
+        classList: { contains: (name) => name === "billing-form-collapsed" && cfg.billingCollapsed === true },
+        ownerDocument: {
+          defaultView: {
+            getComputedStyle: () => ({
+              display: cfg.display || "block",
+              visibility: cfg.visibility || "visible",
+              pointerEvents: cfg.pointerEvents || "auto",
+            }),
+          },
+        },
+        parentElement: null,
+      }),
       evaluateAll: async () => [],
     };
     return locator;
@@ -409,7 +424,7 @@ test("a malformed active checkout reveal fails with reveal-specific evidence", a
 });
 
 test("collapsed billing fields are skipped before any click timeout can start", async () => {
-  const fields = Object.fromEntries([
+  const billingFieldNames = [
     "billing-fname",
     "billing-lname",
     "billing-phone",
@@ -418,7 +433,9 @@ test("collapsed billing fields are skipped before any click timeout can start", 
     "billing-city",
     "billing-province",
     "billing-postal",
-  ].map((field) => [field, { visible: true, immediatelyInteractable: false }]));
+  ];
+  const fields = Object.fromEntries(billingFieldNames.map((field) => [field, { visible: true }]));
+  fields["billing-fname"].pointerEvents = "none";
   const { page, calls } = fakePage(fields);
   const trace = createFieldTrace();
 
@@ -428,6 +445,20 @@ test("collapsed billing fields are skipped before any click timeout can start", 
     assert.ok(!calls.includes(`click:${FIELD_SELECTOR(field)}`), `${field} was not clicked`);
     assert.equal(trace.summary().fields.find((entry) => entry.field === field).status, "unusable");
   }
+});
+
+test("boolean-form aria-hidden collapses the canonical billing section", async () => {
+  const fields = {
+    "billing-fname": { visible: true, ariaHidden: "" },
+    "billing-lname": { visible: true },
+  };
+  const { page, calls } = fakePage(fields);
+  const trace = createFieldTrace();
+
+  await fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace });
+
+  assert.ok(!calls.includes(`click:${FIELD_SELECTOR("billing-fname")}`));
+  assert.equal(trace.summary().fields.find((entry) => entry.field === "billing-fname").status, "unusable");
 });
 
 test("the customer/address fill sequence is unchanged by the trace wrapper", async () => {
