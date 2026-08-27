@@ -2874,6 +2874,7 @@ async function hasVisibleCheckoutFields(page) {
 async function fillCheckoutFields(page, args, email, options = {}) {
   const trace = options.trace || null;
   const actionTimeoutMs = options.actionTimeoutMs;
+  await revealCheckoutForm(page, { actionTimeoutMs });
   // Field order, progressive-disclosure calls and optional/onlyVisible flags
   // below are unchanged; only the per-field recording wrapper is new.
   const track = (field, action, fn, opts = {}) => (trace ? trace.inspect(field, action, fn, opts) : fn());
@@ -2922,6 +2923,32 @@ async function fillCheckoutFields(page, args, email, options = {}) {
   await fill("billing-city", address.city, { optional: true, onlyVisible: true });
   await select("billing-province", address.province, { optional: true, onlyVisible: true });
   await fill("billing-postal", address.postal, { optional: true, onlyVisible: true });
+}
+
+async function revealCheckoutForm(page, options = {}) {
+  const activeForm = page.locator('.checkout-form--reveal:not(.is-revealed)').first();
+  if (!await activeForm.count().catch(() => 0)) return false;
+
+  const trigger = page.locator('.checkout-form--reveal:not(.is-revealed) [data-checkout-reveal-trigger]').first();
+  if (!await trigger.count().catch(() => 0)) {
+    throw new Error("Checkout reveal is active, but its reveal CTA is missing.");
+  }
+
+  const timeout = Number.isFinite(options.actionTimeoutMs) && options.actionTimeoutMs > 0
+    ? Math.min(options.actionTimeoutMs, 8000)
+    : 8000;
+  if (!await trigger.isVisible().catch(() => false)) {
+    throw new Error("Checkout reveal is active, but its reveal CTA is not visible.");
+  }
+  await trigger.click({ timeout }).catch((error) => {
+    throw new Error(`Could not open checkout reveal: ${error?.message || error}`);
+  });
+
+  const panel = page.locator('.checkout-form--reveal.is-revealed [data-checkout-reveal-panel]').first();
+  await panel.waitFor({ state: "visible", timeout }).catch((error) => {
+    throw new Error(`Checkout reveal CTA was clicked, but the customer form did not reveal: ${error?.message || error}`);
+  });
+  return true;
 }
 
 async function fillPaymentFields(page, args) {
@@ -3416,9 +3443,22 @@ async function selectYear(page, value) {
 async function fieldUsable(locator, options = {}) {
   const count = await locator.count().catch(() => 0);
   if (!count) return false;
-  if (options.onlyVisible) return locator.isVisible().catch(() => false);
+  if (options.onlyVisible) return fieldImmediatelyInteractable(locator);
   await locator.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
   return locator.isVisible().catch(() => false);
+}
+
+async function fieldImmediatelyInteractable(locator) {
+  if (!await locator.isVisible().catch(() => false)) return false;
+  return locator.evaluate((element) => {
+    for (let current = element; current; current = current.parentElement) {
+      if (current.hidden || current.inert || current.getAttribute("aria-hidden") === "true") return false;
+      if (current.classList.contains("billing-form-collapsed")) return false;
+      const style = window.getComputedStyle(current);
+      if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") return false;
+    }
+    return true;
+  }).catch(() => false);
 }
 
 async function settleAddressAutocomplete(page) {
