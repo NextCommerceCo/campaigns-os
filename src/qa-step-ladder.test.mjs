@@ -223,24 +223,26 @@ function fakePage(fields = {}, extras = {}) {
   const configFor = (selector) => {
     const entry = Object.entries(fields).find(([field]) => selector === FIELD_SELECTOR(field));
     if (entry) return entry[1];
+    if (selector.startsWith('.checkout-form--reveal')) return extras[selector] || { present: false };
     return extras[selector] || {};
   };
   const makeLocator = (selector) => {
     const cfg = configFor(selector);
-    const present = cfg.present !== false;
+    const present = () => (typeof cfg.present === "function" ? cfg.present() : cfg.present !== false);
     const locator = {
       first: () => locator,
-      locator: () => locator,
-      count: async () => (present ? 1 : 0),
+      locator: (innerSelector) => makeLocator(`${selector} ${innerSelector}`),
+      count: async () => (present() ? 1 : 0),
       // `visible` may be a thunk so a stub can model progressive disclosure:
       // a field that is hidden until the funnel reveals it.
-      isVisible: async () => present && (typeof cfg.visible === "function" ? cfg.visible() : cfg.visible !== false),
+      isVisible: async () => present() && (typeof cfg.visible === "function" ? cfg.visible() : cfg.visible !== false),
       waitFor: async () => {
         calls.push(`waitFor:${selector}`);
       },
       click: async () => {
         calls.push(`click:${selector}`);
         if (cfg.clickError) throw new Error(cfg.clickError);
+        if (cfg.onClick) cfg.onClick();
       },
       check: async () => {
         calls.push(`check:${selector}`);
@@ -260,6 +262,22 @@ function fakePage(fields = {}, extras = {}) {
       press: async (key) => {
         calls.push(`press:${selector}:${key}`);
       },
+      evaluate: async (predicate) => predicate({
+        hidden: cfg.hidden === true,
+        inert: cfg.inert === true,
+        getAttribute: (name) => (name === "aria-hidden" ? cfg.ariaHidden ?? null : null),
+        classList: { contains: (name) => name === "billing-form-collapsed" && cfg.billingCollapsed === true },
+        ownerDocument: {
+          defaultView: {
+            getComputedStyle: () => ({
+              display: cfg.display || "block",
+              visibility: cfg.visibility || "visible",
+              pointerEvents: cfg.pointerEvents || "auto",
+            }),
+          },
+        },
+        parentElement: null,
+      }),
       evaluateAll: async () => [],
     };
     return locator;
@@ -370,6 +388,77 @@ test("progressive-address disclosure still runs when city starts hidden", async 
   // disclosure, and city is then waited for.
   assert.ok(calls.some((call) => call.startsWith(`pressSequentially:${FIELD_SELECTOR("address1")}`)));
   assert.ok(calls.includes(`waitFor:${FIELD_SELECTOR("city")}`));
+});
+
+test("checkout reveal is opened before the first customer field is filled", async () => {
+  const activeForm = '.checkout-form--reveal:not(.is-revealed)';
+  const trigger = '.checkout-form--reveal:not(.is-revealed) [data-checkout-reveal-trigger]';
+  const revealedPanel = '.checkout-form--reveal.is-revealed [data-checkout-reveal-panel]';
+  let revealed = false;
+  const { page, calls } = fakePage({}, {
+    [activeForm]: { present: () => !revealed },
+    [trigger]: { present: () => !revealed, onClick: () => { revealed = true; } },
+    [revealedPanel]: { present: () => revealed, visible: () => revealed },
+  });
+
+  await fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace: createFieldTrace() });
+
+  const revealClick = calls.indexOf(`click:${trigger}`);
+  const firstFieldFill = calls.findIndex((call) => call.startsWith(`fill:${FIELD_SELECTOR("fname")}`));
+  assert.ok(revealClick >= 0, "the canonical checkout reveal trigger was clicked");
+  assert.ok(revealClick < firstFieldFill, "the reveal happened before customer-field interaction");
+  assert.ok(calls.includes(`waitFor:${revealedPanel}`), "the prober waited for the revealed panel state");
+});
+
+test("a malformed active checkout reveal fails with reveal-specific evidence", async () => {
+  const activeForm = '.checkout-form--reveal:not(.is-revealed)';
+  const { page, calls } = fakePage({}, {
+    [activeForm]: { present: true },
+  });
+
+  await assert.rejects(
+    () => fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace: createFieldTrace() }),
+    /Checkout reveal is active, but its reveal CTA is missing/,
+  );
+  assert.ok(!calls.some((call) => call.startsWith(`fill:${FIELD_SELECTOR("fname")}`)));
+});
+
+test("collapsed billing fields are skipped before any click timeout can start", async () => {
+  const billingFieldNames = [
+    "billing-fname",
+    "billing-lname",
+    "billing-phone",
+    "billing-country",
+    "billing-address1",
+    "billing-city",
+    "billing-province",
+    "billing-postal",
+  ];
+  const fields = Object.fromEntries(billingFieldNames.map((field) => [field, { visible: true }]));
+  fields["billing-fname"].pointerEvents = "none";
+  const { page, calls } = fakePage(fields);
+  const trace = createFieldTrace();
+
+  await fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace });
+
+  for (const field of Object.keys(fields)) {
+    assert.ok(!calls.includes(`click:${FIELD_SELECTOR(field)}`), `${field} was not clicked`);
+    assert.equal(trace.summary().fields.find((entry) => entry.field === field).status, "unusable");
+  }
+});
+
+test("boolean-form aria-hidden collapses the canonical billing section", async () => {
+  const fields = {
+    "billing-fname": { visible: true, ariaHidden: "" },
+    "billing-lname": { visible: true },
+  };
+  const { page, calls } = fakePage(fields);
+  const trace = createFieldTrace();
+
+  await fillCheckoutFields(page, {}, "qa@campaigns-os.test", { trace });
+
+  assert.ok(!calls.includes(`click:${FIELD_SELECTOR("billing-fname")}`));
+  assert.equal(trace.summary().fields.find((entry) => entry.field === "billing-fname").status, "unusable");
 });
 
 test("the customer/address fill sequence is unchanged by the trace wrapper", async () => {

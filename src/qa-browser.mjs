@@ -2874,6 +2874,7 @@ async function hasVisibleCheckoutFields(page) {
 async function fillCheckoutFields(page, args, email, options = {}) {
   const trace = options.trace || null;
   const actionTimeoutMs = options.actionTimeoutMs;
+  await revealCheckoutForm(page, { actionTimeoutMs });
   // Field order, progressive-disclosure calls and optional/onlyVisible flags
   // below are unchanged; only the per-field recording wrapper is new.
   const track = (field, action, fn, opts = {}) => (trace ? trace.inspect(field, action, fn, opts) : fn());
@@ -2914,14 +2915,51 @@ async function fillCheckoutFields(page, args, email, options = {}) {
     await sameAsShipping.check({ timeout: 3000 }).catch(() => {});
   }
 
-  await fill("billing-fname", address.firstName, { optional: true, onlyVisible: true });
-  await fill("billing-lname", address.lastName, { optional: true, onlyVisible: true });
-  await fill("billing-phone", address.phone, { optional: true, onlyVisible: true });
-  await select("billing-country", address.country, { optional: true, onlyVisible: true });
-  await fill("billing-address1", address.address1, { optional: true, onlyVisible: true });
-  await fill("billing-city", address.city, { optional: true, onlyVisible: true });
-  await select("billing-province", address.province, { optional: true, onlyVisible: true });
-  await fill("billing-postal", address.postal, { optional: true, onlyVisible: true });
+  // Canonical billing fields share one collapsed section. Probe that section
+  // once so a checked "same as shipping" toggle cannot turn eight optional
+  // fields into eight separate Playwright actionability waits.
+  const billingCollapsed = await billingFieldsCollapsed(page);
+  const fillBilling = (field, value) => (billingCollapsed
+    ? track(field, "fill", async () => false, { optional: true })
+    : fill(field, value, { optional: true, onlyVisible: true }));
+  const selectBilling = (field, value) => (billingCollapsed
+    ? track(field, "select", async () => false, { optional: true })
+    : select(field, value, { optional: true, onlyVisible: true }));
+
+  await fillBilling("billing-fname", address.firstName);
+  await fillBilling("billing-lname", address.lastName);
+  await fillBilling("billing-phone", address.phone);
+  await selectBilling("billing-country", address.country);
+  await fillBilling("billing-address1", address.address1);
+  await fillBilling("billing-city", address.city);
+  await selectBilling("billing-province", address.province);
+  await fillBilling("billing-postal", address.postal);
+}
+
+async function revealCheckoutForm(page, options = {}) {
+  const activeForm = page.locator('.checkout-form--reveal:not(.is-revealed)').first();
+  if (!await activeForm.count().catch(() => 0)) return false;
+
+  const trigger = activeForm.locator('[data-checkout-reveal-trigger]').first();
+  if (!await trigger.count().catch(() => 0)) {
+    throw new Error("Checkout reveal is active, but its reveal CTA is missing.");
+  }
+
+  const timeout = Number.isFinite(options.actionTimeoutMs) && options.actionTimeoutMs > 0
+    ? Math.min(options.actionTimeoutMs, 8000)
+    : 8000;
+  if (!await trigger.isVisible().catch(() => false)) {
+    throw new Error("Checkout reveal is active, but its reveal CTA is not visible.");
+  }
+  await trigger.click({ timeout }).catch((error) => {
+    throw new Error(`Could not open checkout reveal: ${error?.message || error}`);
+  });
+
+  const panel = page.locator('.checkout-form--reveal.is-revealed [data-checkout-reveal-panel]').first();
+  await panel.waitFor({ state: "visible", timeout }).catch((error) => {
+    throw new Error(`Checkout reveal CTA was clicked, but the customer form did not reveal: ${error?.message || error}`);
+  });
+  return true;
 }
 
 async function fillPaymentFields(page, args) {
@@ -3419,6 +3457,22 @@ async function fieldUsable(locator, options = {}) {
   if (options.onlyVisible) return locator.isVisible().catch(() => false);
   await locator.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
   return locator.isVisible().catch(() => false);
+}
+
+async function billingFieldsCollapsed(page) {
+  const locator = page.locator('[data-next-checkout-field="billing-fname"]').first();
+  if (!await locator.count().catch(() => 0)) return false;
+  if (!await locator.isVisible().catch(() => false)) return true;
+  return locator.evaluate((element) => {
+    for (let current = element; current; current = current.parentElement) {
+      const ariaHidden = current.getAttribute("aria-hidden");
+      if (current.hidden || current.inert || (ariaHidden !== null && ariaHidden.toLowerCase() !== "false")) return true;
+      if (current.classList.contains("billing-form-collapsed")) return true;
+      const style = current.ownerDocument.defaultView.getComputedStyle(current);
+      if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") return true;
+    }
+    return false;
+  }).catch(() => false);
 }
 
 async function settleAddressAutocomplete(page) {
