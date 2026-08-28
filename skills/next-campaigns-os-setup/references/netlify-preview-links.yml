@@ -1,7 +1,9 @@
 # managed-by: next-campaigns-os-setup netlify-preview-links v1
 # Canonical source: campaigns-os skills/next-campaigns-os-setup/references/netlify-preview-links.yml
-# __NETLIFY_SITE_NAME__ is substituted with the repo's Netlify site name at install
-# time. While it is still a __PLACEHOLDER__ the workflow exits without commenting.
+# The SITE_NAME placeholder below is substituted with the repo's Netlify site name
+# at install time. Until then the workflow detects it and exits without commenting.
+# Do not repeat the placeholder token in a comment: installers substitute globally,
+# so a second occurrence would be rewritten into nonsense in every provisioned repo.
 name: Netlify campaign preview links
 
 on:
