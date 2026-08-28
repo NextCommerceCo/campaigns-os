@@ -240,8 +240,11 @@ export function deriveExceptions(rows) {
 }
 
 /**
- * Full report. `matrixHash` pins the contract revision the verdicts were
- * produced under, so a verdict is always traceable to its rules.
+ * Full report. `matrixHash` pins the revision of
+ * contracts/reconcile-comparison-matrix.v0.json that the verdicts were produced
+ * under. That file is machine-checked against these modules by
+ * scripts/check-reconcile-matrix.mjs, so the hash certifies rules something
+ * actually enforces rather than a document that can quietly drift.
  */
 export function createReconciliationReport(spec, observed, { matrixHash = null, generatedAt = null } = {}) {
   const plan = planReconciliation(spec);

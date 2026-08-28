@@ -1,0 +1,80 @@
+{
+  "_note": "The reconciliation comparison contract, as data. This is the authority: `docs/reconcile-comparison-matrix-v0.md` explains it for humans but does not define it, and scripts/check-reconcile-matrix.mjs fails the build if the modules and this file disagree. Every reconciliation report embeds this file's sha256 as `matrix_hash`, so a verdict is always traceable to the exact rules that produced it — which only means something because the checker keeps those rules and the code in step.",
+  "matrix_version": "v0",
+  "verdicts": {
+    "matched": "Asserted, observed, equal under the row's normalization rule.",
+    "changed": "Asserted, observed, not equal. Carries both values and the field path.",
+    "missing_live": "Asserted, observable in principle, absent from the response.",
+    "extra_live": "Present live, referenced by no spec selection entry.",
+    "unresolved_binding": "A package reference did not resolve to a live entity, so no field comparison was attempted.",
+    "unsupported": "Not observable from this source, so it can never be compared here. Never missing_live.",
+    "not_asserted": "Reported as evidence, never judged. Either the spec cannot express it, or it is spec-side structure with no live counterpart."
+  },
+  "outcomes": {
+    "reconciled_no_asserted_differences": "Every asserted row compared equal.",
+    "reconciled_with_differences": "At least one changed, missing_live, or unresolved_binding row.",
+    "inconclusive": "Input was partial or truncated. Never reported as differences."
+  },
+  "difference_verdicts": ["changed", "missing_live", "unresolved_binding"],
+  "accounted_verdicts": ["unsupported", "not_asserted"],
+  "normalization": {
+    "nfc_trim": "Unicode NFC, trim outer whitespace. No case folding — campaign names are case-significant.",
+    "code_set": "Take `code` from each item, drop the display key (`name` on the campaign resource, `label` on gateway groups), compare as an order-insensitive set.",
+    "money": "Exact decimal string, normalized to two places. Never parsed as a float.",
+    "currency_map": "Compare per currency code; a currency asserted but absent from prices[] is missing_live for that currency only.",
+    "id_exact": "Integer identity, no string coercion."
+  },
+  "settings_rows": [
+    { "field": "name", "spec_path": "campaign.name", "observed_path": "name", "normalize": "nfc_trim", "judged": true },
+    { "field": "currency", "spec_path": "campaign.currency", "observed_path": "currency", "normalize": "code_set", "judged": true },
+    { "field": "additional_currencies", "spec_path": "campaign.available_currencies", "observed_path": "additional_currencies", "normalize": "code_set", "judged": true, "note": "Spec lists every currency including the default; the API splits the default into `currency` and reports only the rest here." },
+    { "field": "language", "spec_path": "campaign.language", "observed_path": "language", "normalize": "nfc_trim", "judged": true },
+    { "field": "available_shipping_countries", "spec_path": "campaign.available_shipping_countries", "observed_path": "available_shipping_countries[].code", "normalize": "code_set", "judged": true, "note": "Three shapes in the wild: bare code array, {code,name} objects, comma-joined string. All collapse to a code set." },
+    { "field": "available_payment_methods", "spec_path": "campaign.available_payment_methods", "observed_path": "available_payment_methods[].code", "normalize": "code_set", "judged": true },
+    { "field": "available_express_payment_methods", "spec_path": "campaign.available_express_payment_methods", "observed_path": "available_express_payment_methods[].code", "normalize": "code_set", "judged": true },
+    { "field": "paypal_account_id", "spec_path": null, "observed_path": "paypal_account_id", "verdict": "not_asserted", "judged": false },
+    { "field": "statement_descriptor", "spec_path": null, "observed_path": "statement_descriptor", "verdict": "not_asserted", "judged": false },
+    { "field": "payment_gateway_group", "spec_path": null, "observed_path": "payment_gateway_group_id + payment_gateway_group_name", "verdict": "not_asserted", "judged": false, "note": "Observable but inexpressible in CampaignSpec. Expressing it is future spec work." }
+  ],
+  "package_model": {
+    "unit": "selection_entry",
+    "selection_entry_key": ["page_id", "ref_id", "qty"],
+    "deduplicate_by_ref_id": false,
+    "many_entries_to_one_package": true,
+    "why": "A page may reference one package at several quantities — a bundle picker (1x/2x/3x of one SKU, with campaign offers supplying the tier discounts). De-duplicating by ref_id drops every option but the first."
+  },
+  "entry_rows": [
+    { "field": "binding", "spec_path": "funnels[].pages[].packages[].ref_id", "observed_path": "results[].id", "normalize": "id_exact", "judged": true, "unresolved_verdict": "unresolved_binding" },
+    { "field": "qty", "spec_path": "funnels[].pages[].packages[].qty", "observed_path": null, "verdict": "not_asserted", "judged": false, "note": "Selection quantity is spec-side: how many units a picker option adds. The live package resource has no per-selection quantity and is correct not to. This is NOT an API coverage gap." }
+  ],
+  "package_rows": [
+    { "field": "name", "spec_path": "funnels[].pages[].packages[].name", "observed_path": "results[].name", "normalize": "nfc_trim", "judged": true },
+    { "field": "price", "spec_path": "funnels[].pages[].packages[].price", "observed_path": "results[].prices[] by currency", "normalize": "money+currency_map", "judged": true, "basis": "list" },
+    { "field": "product_sku", "spec_path": "funnels[].pages[].packages[].product_sku", "observed_path": "results[].product_sku", "normalize": "nfc_trim", "judged": true },
+    { "field": "is_recurring", "spec_path": "funnels[].pages[].packages[].is_recurring", "observed_path": "results[].is_recurring", "judged": true, "note": "Absent in the spec asserts one-time." },
+    { "field": "product_variant_id", "spec_path": null, "observed_path": "results[].product_variant_id", "verdict": "not_asserted", "judged": false }
+  ],
+  "never_compared": [
+    { "field": "interval", "observed_path": "results[].interval, results[].interval_count", "why": "Populated even when is_recurring is false — every one-time package reports interval \"month\". Comparing it classifies all of them as monthly. Carried as evidence only." },
+    { "field": "api_key", "observed_path": "api_key", "why": "Dropped at normalization, before any value reaches a differ or serializer. The observed value is a bare 40-character string with no `cmp_pk_` prefix, so a prefix-keyed filter silently fails to match — the boundary is structural, not a pattern check." }
+  ],
+  "unsupported_resources": [
+    { "resource": "offers", "asserted_by_spec": true, "observable_here": false, "provenance": "Admin API Offers endpoints are in development. Offers are readable today from the storefront Campaign Retrieve API — a different observation source than this reconciler consumes. `unsupported` here means 'not from this source yet', not 'unknowable'." },
+    { "resource": "campaign_shipping_methods", "asserted_by_spec": true, "observable_here": false, "provenance": "The shipping API is global and read-only, with no campaign association." }
+  ],
+  "price_basis": {
+    "value": "list",
+    "why": "Observed package prices are list prices; offers are applied downstream and are not carried by this source. Every price row is labelled so a `matched` verdict is not misread as what a customer is charged."
+  },
+  "coverage_rules": {
+    "accounted_verdicts_reduce_coverage": false,
+    "unresolved_binding_breaks_coverage": true,
+    "partial_input_breaks_coverage": true,
+    "unread_pagination_breaks_coverage": true,
+    "why": "unsupported and not_asserted rows are counted, not skipped, so a report can never present 'nothing to report' and 'nothing was checked' as the same result."
+  },
+  "known_untested": [
+    "Cursor pagination: every recorded response returned next: null, so multi-page behaviour is unobserved. The normalizer surfaces has_more and the report goes inconclusive rather than assuming one page.",
+    "Whether ?sku= is exact or substring: a one-SKU recording cannot distinguish, so a multi-result response is treated as unresolved_binding rather than guessed."
+  ]
+}

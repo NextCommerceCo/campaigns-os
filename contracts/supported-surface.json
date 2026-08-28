@@ -9,7 +9,8 @@
     "./reconcile-plan",
     "./reconcile-normalize",
     "./reconcile-diff",
-    "./schemas/campaign-reconcile-report.v0.schema.json"
+    "./schemas/campaign-reconcile-report.v0.schema.json",
+    "./contracts/reconcile-comparison-matrix.v0.json"
   ],
   "bin": [
     "campaigns-os"
@@ -58,6 +59,9 @@
     },
     "schemas/campaign-reconcile-report.v0.schema.json": {
       "sha256": "fffd9a8c4350ab47bd6b6255a8c477664c0d0f6587ad39a7b87a50d6b8fddc67"
+    },
+    "contracts/reconcile-comparison-matrix.v0.json": {
+      "sha256": "1091a10ce0d02de5abcb641d2d4e80328a59c67e493eda78b1fbd1301e931c7b"
     }
   },
   "named": [

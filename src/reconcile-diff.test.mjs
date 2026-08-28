@@ -204,3 +204,16 @@ test("a spec asserting nothing still reports rather than silently passing", () =
   const extras = result.rows.filter((row) => row.verdict === VERDICT.EXTRA_LIVE);
   assert.equal(extras.length, 4, "all four live packages are unreferenced extras");
 });
+
+test("the contract is the authority the modules are actually held to", async () => {
+  const { readFileSync } = await import("node:fs");
+  const contract = JSON.parse(readFileSync(
+    new URL("../contracts/reconcile-comparison-matrix.v0.json", import.meta.url), "utf8"));
+  // The vocabulary in code and contract must be the same closed set. The build
+  // enforces this too (scripts/check-reconcile-matrix.mjs); this keeps the
+  // failure local and fast when someone edits one side.
+  assert.deepEqual(Object.keys(contract.verdicts).sort(), Object.values(VERDICT).sort());
+  assert.deepEqual(Object.keys(contract.outcomes).sort(), Object.values(OUTCOME).sort());
+  assert.equal(contract.package_model.deduplicate_by_ref_id, false);
+  assert.equal(contract.price_basis.value, "list");
+});
