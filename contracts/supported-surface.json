@@ -1,11 +1,15 @@
 {
-  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.13.0",
+  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act \u2014 hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here \u2014 src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file \u2014 is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
+  "surface_version": "1.14.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
     "./campaign-spec",
-    "./schemas/campaign-spec.v4.schema.json"
+    "./schemas/campaign-spec.v4.schema.json",
+    "./reconcile-plan",
+    "./reconcile-normalize",
+    "./reconcile-diff",
+    "./schemas/campaign-reconcile-report.v0.schema.json"
   ],
   "bin": [
     "campaigns-os"
@@ -51,6 +55,9 @@
     },
     "schemas/source-html-manifest.v0.schema.json": {
       "sha256": "b5afa4772715c1ea553ba94ab2008b23838876cc6b05e831da7d4a13f55c66b6"
+    },
+    "schemas/campaign-reconcile-report.v0.schema.json": {
+      "sha256": "e4c6208d608eb14588e222d581baf70ac6ed73be0fd2b1c86bf4a96178a0986f"
     }
   },
   "named": [

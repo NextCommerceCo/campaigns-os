@@ -1,0 +1,82 @@
+{
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1,
+      "name": "Default",
+      "available_express_payment_methods": [
+        {
+          "code": "apple_pay",
+          "label": "Apple Pay"
+        },
+        {
+          "code": "google_pay",
+          "label": "Google Pay"
+        }
+      ],
+      "available_payment_methods": [
+        {
+          "code": "bankcard",
+          "label": "Bankcard"
+        },
+        {
+          "code": "apple_pay",
+          "label": "Apple Pay"
+        },
+        {
+          "code": "google_pay",
+          "label": "Google Pay"
+        }
+      ],
+      "available_currencies": [
+        {
+          "code": "USD",
+          "label": "$ USD"
+        },
+        {
+          "code": "GBP",
+          "label": "\u00a3 GBP"
+        },
+        {
+          "code": "EUR",
+          "label": "\u20ac EUR"
+        }
+      ],
+      "card_types": [
+        {
+          "code": "american_express",
+          "label": "American Express"
+        },
+        {
+          "code": "dankort",
+          "label": "Dankort"
+        },
+        {
+          "code": "diners_club",
+          "label": "Diners Club"
+        },
+        {
+          "code": "discover",
+          "label": "Discover"
+        },
+        {
+          "code": "jcb",
+          "label": "JCB"
+        },
+        {
+          "code": "maestro",
+          "label": "Maestro"
+        },
+        {
+          "code": "mastercard",
+          "label": "Mastercard"
+        },
+        {
+          "code": "visa",
+          "label": "Visa"
+        }
+      ]
+    }
+  ]
+}

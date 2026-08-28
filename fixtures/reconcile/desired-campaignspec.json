@@ -1,0 +1,1009 @@
+{
+  "schema_version": "4.3",
+  "builder_version": "0.7.1",
+  "generated_at": "2026-08-02T14:32:15.000Z",
+  "_provenance": {
+    "ops": [
+      "funnels.*.pages.*.label",
+      "funnels.*.pages.*.notes",
+      "funnels.*.pages.*.custom_fields",
+      "funnels.*.pages.*.design_source",
+      "funnels.*.pages.*.upsell_template_pattern",
+      "funnels.*.pages.*.upsell_mv_tiers",
+      "funnels.*.pages.*.variant_labels",
+      "funnels.*.pages.*.offers",
+      "funnels.*.pages.*.exit_intent",
+      "funnels.*.pages.*.promo_code_input",
+      "funnels.*.promo_codes",
+      "build_scope",
+      "global_config.sdk_version",
+      "campaign.store_*",
+      "campaign.allowed_domains",
+      "campaign.tracking",
+      "analytics",
+      "campaign.footer_links",
+      "campaign.seo",
+      "campaign.preferred_template_family",
+      "figma_url"
+    ],
+    "api": [
+      "campaign.*",
+      "shipping_methods",
+      "offers",
+      "funnels.*.pages.*.packages.*.name",
+      "funnels.*.pages.*.packages.*.price"
+    ],
+    "derived": [
+      "funnels.*.pages.*.page_url",
+      "funnels.*.pages.*.sdk_hints",
+      "funnels.*.pages.*.order",
+      "funnels.*.pages.*.is_entry",
+      "schema_version",
+      "builder_version",
+      "generated_at"
+    ],
+    "legacy": [
+      "funnel_pages"
+    ]
+  },
+  "campaign": {
+    "ref_id": 1602,
+    "slug": "example-go-bag-gear-stack",
+    "id": "example-go-bag-gear-stack",
+    "name": "Example Go-Bag Gear Stack",
+    "currency": "USD",
+    "language": "en",
+    "payment_env_key": "EXAMPLEPAYMENTENVKEY000000",
+    "campaigns_api_key": "cmp_pk_REDACTED_FIXTURE",
+    "available_payment_methods": [
+      "apple_pay",
+      "bankcard",
+      "google_pay"
+    ],
+    "available_express_payment_methods": [
+      "apple_pay",
+      "google_pay"
+    ],
+    "available_currencies": [
+      "USD"
+    ],
+    "available_shipping_countries": [
+      "US"
+    ],
+    "store_url": "https://example-store.example.com/",
+    "store_name": "",
+    "store_terms": "",
+    "store_privacy": "",
+    "store_contact": "",
+    "store_returns": "",
+    "store_shipping": "",
+    "store_phone": "",
+    "store_phone_tel": "",
+    "tracking": {
+      "status": "unknown",
+      "providers": {}
+    },
+    "preferred_template_family": "demeter"
+  },
+  "global_config": {
+    "sdk_version": "0.4.30"
+  },
+  "build_scope": {
+    "mode": "full",
+    "reasons": []
+  },
+  "funnels": [
+    {
+      "id": "default",
+      "name": "Default",
+      "hypothesis": "Hand-authored simulation of the Go-Bag Gear Stack funnel (field-proof run).",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "page_gbs_1",
+          "type": "presell",
+          "order": 1,
+          "label": "Presell",
+          "is_entry": true,
+          "page_url": "",
+          "next_page": "page_gbs_2",
+          "_next_label": "Landing (PDP)",
+          "resolved_routing": {
+            "next_page": "page_gbs_2",
+            "next_page_route": "landing/",
+            "next_page_filename": "landing/"
+          },
+          "sdk_hints": {
+            "sdk_page_type": "product",
+            "meta_tags": {
+              "next-page-type": "product"
+            }
+          }
+        },
+        {
+          "id": "page_gbs_2",
+          "type": "landing",
+          "order": 2,
+          "label": "Landing (PDP)",
+          "is_entry": true,
+          "page_url": "landing/",
+          "next_page": "page_gbs_3",
+          "_next_label": "Checkout",
+          "resolved_routing": {
+            "next_page": "page_gbs_3",
+            "next_page_route": "checkout/",
+            "next_page_filename": "checkout/"
+          },
+          "sdk_hints": {
+            "sdk_page_type": "product",
+            "meta_tags": {
+              "next-page-type": "product",
+              "next-currency": "USD"
+            }
+          }
+        },
+        {
+          "id": "page_gbs_3",
+          "type": "checkout",
+          "order": 3,
+          "label": "Checkout",
+          "is_entry": false,
+          "page_url": "checkout/",
+          "packages": [
+            {
+              "ref_id": "1",
+              "qty": 1,
+              "name": "Tactical Sling Bag",
+              "price": "79.98",
+              "price_retail": null,
+              "product_name": "Tactical Sling Bag",
+              "product_sku": "EXAMPLE-GB-TACSLINGBAG01",
+              "product_variant_name": "Tactical Sling Bag",
+              "product_purchase_availability": "available",
+              "product_inventory_availability": "in_stock",
+              "image": "https://cdn.example.com/media/example-package.webp"
+            },
+            {
+              "ref_id": "1",
+              "qty": 2,
+              "name": "Tactical Sling Bag",
+              "price": "79.98",
+              "price_retail": null,
+              "product_name": "Tactical Sling Bag",
+              "product_sku": "EXAMPLE-GB-TACSLINGBAG01",
+              "product_variant_name": "Tactical Sling Bag",
+              "product_purchase_availability": "available",
+              "product_inventory_availability": "in_stock",
+              "image": "https://cdn.example.com/media/example-package.webp"
+            },
+            {
+              "ref_id": "1",
+              "qty": 3,
+              "name": "Tactical Sling Bag",
+              "price": "79.98",
+              "price_retail": null,
+              "product_name": "Tactical Sling Bag",
+              "product_sku": "EXAMPLE-GB-TACSLINGBAG01",
+              "product_variant_name": "Tactical Sling Bag",
+              "product_purchase_availability": "available",
+              "product_inventory_availability": "in_stock",
+              "image": "https://cdn.example.com/media/example-package.webp"
+            },
+            {
+              "ref_id": "2",
+              "qty": 1,
+              "name": "OTO Checkout",
+              "price": "59.99",
+              "price_retail": null,
+              "product_name": "Tactical Knife",
+              "product_sku": "EXAMPLE-GB-TACKNIFE01",
+              "product_variant_name": "Tactical Knife",
+              "product_purchase_availability": "available",
+              "product_inventory_availability": "in_stock",
+              "image": "https://cdn.example.com/media/example-package.webp",
+              "is_upsell": true
+            }
+          ],
+          "offers": [
+            {
+              "ref_id": "1",
+              "name": "Buy 1 Get 50% Discount",
+              "type": "offer",
+              "code": null,
+              "condition": {
+                "type": "count",
+                "value": 1,
+                "description": "Minimum purchase of 1 selected packages"
+              },
+              "benefit": {
+                "type": "package_percentage",
+                "value": "50.00",
+                "description": "50% off selected packages"
+              }
+            },
+            {
+              "ref_id": "2",
+              "name": "Buy 2 Get 55% Discount",
+              "type": "offer",
+              "code": null,
+              "condition": {
+                "type": "count",
+                "value": 2,
+                "description": "Minimum purchase of 2 selected packages"
+              },
+              "benefit": {
+                "type": "package_percentage",
+                "value": "55.00",
+                "description": "55% off selected packages"
+              }
+            },
+            {
+              "ref_id": "3",
+              "name": "Buy 3 Get 70% Discount",
+              "type": "offer",
+              "code": null,
+              "condition": {
+                "type": "count",
+                "value": 3,
+                "description": "Minimum purchase of 3 selected packages"
+              },
+              "benefit": {
+                "type": "package_percentage",
+                "value": "70.00",
+                "description": "70% off selected packages"
+              }
+            }
+          ],
+          "success_url": "page_gbs_4",
+          "_success_label": "Upsell 1",
+          "resolved_routing": {
+            "success": "page_gbs_4",
+            "success_route": "upsell/",
+            "success_filename": "upsell/"
+          },
+          "sdk_hints": {
+            "sdk_page_type": "checkout",
+            "meta_tags": {
+              "next-page-type": "checkout",
+              "next-currency": "USD",
+              "next-predictive-address": "true",
+              "next-success-url": "/example-go-bag-gear-stack/upsell/"
+            }
+          }
+        },
+        {
+          "id": "page_gbs_4",
+          "type": "upsell",
+          "order": 4,
+          "label": "Upsell 1 (Headlamp)",
+          "is_entry": false,
+          "page_url": "upsell/",
+          "upsell_template_pattern": "bundle_tier_cards",
+          "packages": [
+            {
+              "ref_id": "3",
+              "qty": 1,
+              "name": "OTO Headlamp",
+              "price": "49.99",
+              "price_retail": null,
+              "product_name": "Headlamp",
+              "product_sku": "EXAMPLE-GB-HEADLAMP01",
+              "product_variant_name": "Headlamp",
+              "product_purchase_availability": "available",
+              "product_inventory_availability": "in_stock",
+              "image": "https://cdn.example.com/media/example-package.webp"
+            }
+          ],
+          "on_accept": "page_gbs_5",
+          "on_decline": "page_gbs_5",
+          "_accept_label": "Upsell 2",
+          "_decline_label": "Upsell 2",
+          "resolved_routing": {
+            "accept": "page_gbs_5",
+            "accept_route": "upsell-2/",
+            "accept_filename": "upsell-2/",
+            "decline": "page_gbs_5",
+            "decline_route": "upsell-2/",
+            "decline_filename": "upsell-2/"
+          },
+          "sdk_hints": {
+            "sdk_page_type": "upsell",
+            "meta_tags": {
+              "next-page-type": "upsell",
+              "next-currency": "USD",
+              "next-prevent-back-navigation": "true",
+              "next-upsell-accept-url": "/example-go-bag-gear-stack/upsell-2/",
+              "next-upsell-decline-url": "/example-go-bag-gear-stack/upsell-2/"
+            }
+          }
+        },
+        {
+          "id": "page_gbs_5",
+          "type": "upsell",
+          "order": 5,
+          "label": "Upsell 2 (Water Filter Straw)",
+          "is_entry": false,
+          "page_url": "upsell-2/",
+          "upsell_template_pattern": "bundle_tier_pills",
+          "packages": [
+            {
+              "ref_id": "4",
+              "qty": 1,
+              "name": "OTO Water Filter Straw",
+              "price": "49.99",
+              "price_retail": null,
+              "product_name": "Portable Water Filter Straw",
+              "product_sku": "EXAMPLE-GB-WATERFILTERSTRAW01",
+              "product_variant_name": "Portable Water Filter Straw",
+              "product_purchase_availability": "available",
+              "product_inventory_availability": "in_stock",
+              "image": "https://cdn.example.com/media/example-package.webp"
+            }
+          ],
+          "on_accept": "page_gbs_6",
+          "on_decline": "page_gbs_6",
+          "_accept_label": "Thank You",
+          "_decline_label": "Thank You",
+          "resolved_routing": {
+            "accept": "page_gbs_6",
+            "accept_route": "receipt/",
+            "accept_filename": "receipt/",
+            "decline": "page_gbs_6",
+            "decline_route": "receipt/",
+            "decline_filename": "receipt/"
+          },
+          "sdk_hints": {
+            "sdk_page_type": "upsell",
+            "meta_tags": {
+              "next-page-type": "upsell",
+              "next-currency": "USD",
+              "next-upsell-accept-url": "/example-go-bag-gear-stack/receipt/",
+              "next-upsell-decline-url": "/example-go-bag-gear-stack/receipt/"
+            }
+          }
+        },
+        {
+          "id": "page_gbs_6",
+          "type": "thankyou",
+          "order": 6,
+          "label": "Thank You",
+          "is_entry": false,
+          "page_url": "receipt/",
+          "sdk_hints": {
+            "sdk_page_type": "receipt",
+            "meta_tags": {
+              "next-page-type": "receipt"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "funnel_pages": [
+    {
+      "id": "page_gbs_1",
+      "type": "presell",
+      "order": 1,
+      "label": "Presell",
+      "is_entry": true,
+      "page_url": "",
+      "next_page": "page_gbs_2",
+      "_next_label": "Landing (PDP)",
+      "resolved_routing": {
+        "next_page": "page_gbs_2",
+        "next_page_route": "landing/",
+        "next_page_filename": "landing/"
+      },
+      "sdk_hints": {
+        "sdk_page_type": "product",
+        "meta_tags": {
+          "next-page-type": "product"
+        }
+      },
+      "_funnel_id": "default",
+      "_funnel_name": "Default"
+    },
+    {
+      "id": "page_gbs_2",
+      "type": "landing",
+      "order": 2,
+      "label": "Landing (PDP)",
+      "is_entry": true,
+      "page_url": "landing/",
+      "next_page": "page_gbs_3",
+      "_next_label": "Checkout",
+      "resolved_routing": {
+        "next_page": "page_gbs_3",
+        "next_page_route": "checkout/",
+        "next_page_filename": "checkout/"
+      },
+      "sdk_hints": {
+        "sdk_page_type": "product",
+        "meta_tags": {
+          "next-page-type": "product",
+          "next-currency": "USD"
+        }
+      },
+      "_funnel_id": "default",
+      "_funnel_name": "Default"
+    },
+    {
+      "id": "page_gbs_3",
+      "type": "checkout",
+      "order": 3,
+      "label": "Checkout",
+      "is_entry": false,
+      "page_url": "checkout/",
+      "packages": [
+        {
+          "ref_id": "1",
+          "qty": 1,
+          "name": "Tactical Sling Bag",
+          "price": "79.98",
+          "price_retail": null,
+          "product_name": "Tactical Sling Bag",
+          "product_sku": "EXAMPLE-GB-TACSLINGBAG01",
+          "product_variant_name": "Tactical Sling Bag",
+          "product_purchase_availability": "available",
+          "product_inventory_availability": "in_stock",
+          "image": "https://cdn.example.com/media/example-package.webp"
+        },
+        {
+          "ref_id": "1",
+          "qty": 2,
+          "name": "Tactical Sling Bag",
+          "price": "79.98",
+          "price_retail": null,
+          "product_name": "Tactical Sling Bag",
+          "product_sku": "EXAMPLE-GB-TACSLINGBAG01",
+          "product_variant_name": "Tactical Sling Bag",
+          "product_purchase_availability": "available",
+          "product_inventory_availability": "in_stock",
+          "image": "https://cdn.example.com/media/example-package.webp"
+        },
+        {
+          "ref_id": "1",
+          "qty": 3,
+          "name": "Tactical Sling Bag",
+          "price": "79.98",
+          "price_retail": null,
+          "product_name": "Tactical Sling Bag",
+          "product_sku": "EXAMPLE-GB-TACSLINGBAG01",
+          "product_variant_name": "Tactical Sling Bag",
+          "product_purchase_availability": "available",
+          "product_inventory_availability": "in_stock",
+          "image": "https://cdn.example.com/media/example-package.webp"
+        },
+        {
+          "ref_id": "2",
+          "qty": 1,
+          "name": "OTO Checkout",
+          "price": "59.99",
+          "price_retail": null,
+          "product_name": "Tactical Knife",
+          "product_sku": "EXAMPLE-GB-TACKNIFE01",
+          "product_variant_name": "Tactical Knife",
+          "product_purchase_availability": "available",
+          "product_inventory_availability": "in_stock",
+          "image": "https://cdn.example.com/media/example-package.webp",
+          "is_upsell": true
+        }
+      ],
+      "offers": [
+        {
+          "ref_id": "1",
+          "name": "Buy 1 Get 50% Discount",
+          "type": "offer",
+          "code": null,
+          "condition": {
+            "type": "count",
+            "value": 1,
+            "description": "Minimum purchase of 1 selected packages"
+          },
+          "benefit": {
+            "type": "package_percentage",
+            "value": "50.00",
+            "description": "50% off selected packages"
+          }
+        },
+        {
+          "ref_id": "2",
+          "name": "Buy 2 Get 55% Discount",
+          "type": "offer",
+          "code": null,
+          "condition": {
+            "type": "count",
+            "value": 2,
+            "description": "Minimum purchase of 2 selected packages"
+          },
+          "benefit": {
+            "type": "package_percentage",
+            "value": "55.00",
+            "description": "55% off selected packages"
+          }
+        },
+        {
+          "ref_id": "3",
+          "name": "Buy 3 Get 70% Discount",
+          "type": "offer",
+          "code": null,
+          "condition": {
+            "type": "count",
+            "value": 3,
+            "description": "Minimum purchase of 3 selected packages"
+          },
+          "benefit": {
+            "type": "package_percentage",
+            "value": "70.00",
+            "description": "70% off selected packages"
+          }
+        }
+      ],
+      "success_url": "page_gbs_4",
+      "_success_label": "Upsell 1",
+      "resolved_routing": {
+        "success": "page_gbs_4",
+        "success_route": "upsell/",
+        "success_filename": "upsell/"
+      },
+      "sdk_hints": {
+        "sdk_page_type": "checkout",
+        "meta_tags": {
+          "next-page-type": "checkout",
+          "next-currency": "USD",
+          "next-predictive-address": "true",
+          "next-success-url": "/example-go-bag-gear-stack/upsell/"
+        }
+      },
+      "_funnel_id": "default",
+      "_funnel_name": "Default"
+    },
+    {
+      "id": "page_gbs_4",
+      "type": "upsell",
+      "order": 4,
+      "label": "Upsell 1 (Headlamp)",
+      "is_entry": false,
+      "page_url": "upsell/",
+      "upsell_template_pattern": "bundle_tier_cards",
+      "packages": [
+        {
+          "ref_id": "3",
+          "qty": 1,
+          "name": "OTO Headlamp",
+          "price": "49.99",
+          "price_retail": null,
+          "product_name": "Headlamp",
+          "product_sku": "EXAMPLE-GB-HEADLAMP01",
+          "product_variant_name": "Headlamp",
+          "product_purchase_availability": "available",
+          "product_inventory_availability": "in_stock",
+          "image": "https://cdn.example.com/media/example-package.webp"
+        }
+      ],
+      "on_accept": "page_gbs_5",
+      "on_decline": "page_gbs_5",
+      "_accept_label": "Upsell 2",
+      "_decline_label": "Upsell 2",
+      "resolved_routing": {
+        "accept": "page_gbs_5",
+        "accept_route": "upsell-2/",
+        "accept_filename": "upsell-2/",
+        "decline": "page_gbs_5",
+        "decline_route": "upsell-2/",
+        "decline_filename": "upsell-2/"
+      },
+      "sdk_hints": {
+        "sdk_page_type": "upsell",
+        "meta_tags": {
+          "next-page-type": "upsell",
+          "next-currency": "USD",
+          "next-prevent-back-navigation": "true",
+          "next-upsell-accept-url": "/example-go-bag-gear-stack/upsell-2/",
+          "next-upsell-decline-url": "/example-go-bag-gear-stack/upsell-2/"
+        }
+      },
+      "_funnel_id": "default",
+      "_funnel_name": "Default"
+    },
+    {
+      "id": "page_gbs_5",
+      "type": "upsell",
+      "order": 5,
+      "label": "Upsell 2 (Water Filter Straw)",
+      "is_entry": false,
+      "page_url": "upsell-2/",
+      "upsell_template_pattern": "bundle_tier_pills",
+      "packages": [
+        {
+          "ref_id": "4",
+          "qty": 1,
+          "name": "OTO Water Filter Straw",
+          "price": "49.99",
+          "price_retail": null,
+          "product_name": "Portable Water Filter Straw",
+          "product_sku": "EXAMPLE-GB-WATERFILTERSTRAW01",
+          "product_variant_name": "Portable Water Filter Straw",
+          "product_purchase_availability": "available",
+          "product_inventory_availability": "in_stock",
+          "image": "https://cdn.example.com/media/example-package.webp"
+        }
+      ],
+      "on_accept": "page_gbs_6",
+      "on_decline": "page_gbs_6",
+      "_accept_label": "Thank You",
+      "_decline_label": "Thank You",
+      "resolved_routing": {
+        "accept": "page_gbs_6",
+        "accept_route": "receipt/",
+        "accept_filename": "receipt/",
+        "decline": "page_gbs_6",
+        "decline_route": "receipt/",
+        "decline_filename": "receipt/"
+      },
+      "sdk_hints": {
+        "sdk_page_type": "upsell",
+        "meta_tags": {
+          "next-page-type": "upsell",
+          "next-currency": "USD",
+          "next-upsell-accept-url": "/example-go-bag-gear-stack/receipt/",
+          "next-upsell-decline-url": "/example-go-bag-gear-stack/receipt/"
+        }
+      },
+      "_funnel_id": "default",
+      "_funnel_name": "Default"
+    },
+    {
+      "id": "page_gbs_6",
+      "type": "thankyou",
+      "order": 6,
+      "label": "Thank You",
+      "is_entry": false,
+      "page_url": "receipt/",
+      "sdk_hints": {
+        "sdk_page_type": "receipt",
+        "meta_tags": {
+          "next-page-type": "receipt"
+        }
+      },
+      "_funnel_id": "default",
+      "_funnel_name": "Default"
+    }
+  ],
+  "shipping_methods": [
+    {
+      "ref_id": "1",
+      "code": "default",
+      "price": "0.00",
+      "price_before_discount": "0.00"
+    },
+    {
+      "ref_id": "2",
+      "code": "default",
+      "price": "4.99",
+      "price_before_discount": "4.99"
+    }
+  ],
+  "offers": [
+    {
+      "ref_id": "1",
+      "name": "Buy 1 Get 50% Discount",
+      "type": "offer",
+      "code": null,
+      "condition": {
+        "type": "count",
+        "value": 1,
+        "description": "Minimum purchase of 1 selected packages"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 1,
+          "package_image": "https://cdn.example.com/media/example-package.webp",
+          "package_name": "Tactical Sling Bag",
+          "product_name": "Tactical Sling Bag",
+          "product_variant_name": "Tactical Sling Bag",
+          "unit_price": "39.99",
+          "unit_price_before_discount": "79.98",
+          "package_price": "39.99",
+          "package_price_before_discount": "79.98",
+          "package_unit_qty": 1
+        }
+      ],
+      "shipping_methods": [
+        {
+          "ref_id": 1,
+          "code": "default",
+          "price": "0.00",
+          "price_before_discount": "0.00"
+        },
+        {
+          "ref_id": 2,
+          "code": "default",
+          "price": "4.99",
+          "price_before_discount": "4.99"
+        }
+      ]
+    },
+    {
+      "ref_id": "2",
+      "name": "Buy 2 Get 55% Discount",
+      "type": "offer",
+      "code": null,
+      "condition": {
+        "type": "count",
+        "value": 2,
+        "description": "Minimum purchase of 2 selected packages"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "55.00",
+        "description": "55% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 1,
+          "package_image": "https://cdn.example.com/media/example-package.webp",
+          "package_name": "Tactical Sling Bag",
+          "product_name": "Tactical Sling Bag",
+          "product_variant_name": "Tactical Sling Bag",
+          "unit_price": "35.99",
+          "unit_price_before_discount": "79.98",
+          "package_price": "35.99",
+          "package_price_before_discount": "79.98",
+          "package_unit_qty": 1
+        }
+      ],
+      "shipping_methods": [
+        {
+          "ref_id": 1,
+          "code": "default",
+          "price": "0.00",
+          "price_before_discount": "0.00"
+        },
+        {
+          "ref_id": 2,
+          "code": "default",
+          "price": "4.99",
+          "price_before_discount": "4.99"
+        }
+      ]
+    },
+    {
+      "ref_id": "3",
+      "name": "Buy 3 Get 70% Discount",
+      "type": "offer",
+      "code": null,
+      "condition": {
+        "type": "count",
+        "value": 3,
+        "description": "Minimum purchase of 3 selected packages"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "70.00",
+        "description": "70% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 1,
+          "package_image": "https://cdn.example.com/media/example-package.webp",
+          "package_name": "Tactical Sling Bag",
+          "product_name": "Tactical Sling Bag",
+          "product_variant_name": "Tactical Sling Bag",
+          "unit_price": "23.99",
+          "unit_price_before_discount": "79.98",
+          "package_price": "23.99",
+          "package_price_before_discount": "79.98",
+          "package_unit_qty": 1
+        }
+      ],
+      "shipping_methods": [
+        {
+          "ref_id": 1,
+          "code": "default",
+          "price": "0.00",
+          "price_before_discount": "0.00"
+        },
+        {
+          "ref_id": 2,
+          "code": "default",
+          "price": "4.99",
+          "price_before_discount": "4.99"
+        }
+      ]
+    },
+    {
+      "ref_id": "4",
+      "name": "Exit pop 10% Discount",
+      "type": "voucher",
+      "code": "EXIT10",
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "10.00",
+        "description": "10% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 1,
+          "package_image": "https://cdn.example.com/media/example-package.webp",
+          "package_name": "Tactical Sling Bag",
+          "product_name": "Tactical Sling Bag",
+          "product_variant_name": "Tactical Sling Bag",
+          "unit_price": "71.99",
+          "unit_price_before_discount": "79.98",
+          "package_price": "71.99",
+          "package_price_before_discount": "79.98",
+          "package_unit_qty": 1
+        }
+      ],
+      "shipping_methods": [
+        {
+          "ref_id": 1,
+          "code": "default",
+          "price": "0.00",
+          "price_before_discount": "0.00"
+        },
+        {
+          "ref_id": 2,
+          "code": "default",
+          "price": "4.99",
+          "price_before_discount": "4.99"
+        }
+      ]
+    },
+    {
+      "ref_id": "5",
+      "name": "OTO Knife",
+      "type": "voucher",
+      "code": "KNIFE",
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 2,
+          "package_image": "https://cdn.example.com/media/example-package.webp",
+          "package_name": "OTO Checkout",
+          "product_name": "Tactical Knife",
+          "product_variant_name": "Tactical Knife",
+          "unit_price": "29.99",
+          "unit_price_before_discount": "59.99",
+          "package_price": "29.99",
+          "package_price_before_discount": "59.99",
+          "package_unit_qty": 1
+        }
+      ],
+      "shipping_methods": [
+        {
+          "ref_id": 1,
+          "code": "default",
+          "price": "0.00",
+          "price_before_discount": "0.00"
+        },
+        {
+          "ref_id": 2,
+          "code": "default",
+          "price": "4.99",
+          "price_before_discount": "4.99"
+        }
+      ]
+    },
+    {
+      "ref_id": "6",
+      "name": "OTO Headlamp",
+      "type": "voucher",
+      "code": "HEADLAMP",
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 3,
+          "package_image": "https://cdn.example.com/media/example-package.webp",
+          "package_name": "OTO Headlamp",
+          "product_name": "Headlamp",
+          "product_variant_name": "Headlamp",
+          "unit_price": "24.99",
+          "unit_price_before_discount": "49.99",
+          "package_price": "24.99",
+          "package_price_before_discount": "49.99",
+          "package_unit_qty": 1
+        }
+      ],
+      "shipping_methods": [
+        {
+          "ref_id": 1,
+          "code": "default",
+          "price": "0.00",
+          "price_before_discount": "0.00"
+        },
+        {
+          "ref_id": 2,
+          "code": "default",
+          "price": "4.99",
+          "price_before_discount": "4.99"
+        }
+      ]
+    },
+    {
+      "ref_id": "7",
+      "name": "OTO Water Filter Straw",
+      "type": "voucher",
+      "code": "WATERSTRAW",
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 4,
+          "package_image": "https://cdn.example.com/media/example-package.webp",
+          "package_name": "OTO Water Filter Straw",
+          "product_name": "Portable Water Filter Straw",
+          "product_variant_name": "Portable Water Filter Straw",
+          "unit_price": "24.99",
+          "unit_price_before_discount": "49.99",
+          "package_price": "24.99",
+          "package_price_before_discount": "49.99",
+          "package_unit_qty": 1
+        }
+      ],
+      "shipping_methods": [
+        {
+          "ref_id": 1,
+          "code": "default",
+          "price": "0.00",
+          "price_before_discount": "0.00"
+        },
+        {
+          "ref_id": 2,
+          "code": "default",
+          "price": "4.99",
+          "price_before_discount": "4.99"
+        }
+      ]
+    }
+  ],
+  "slug": "example-go-bag-gear-stack-wx11",
+  "map_id": "example-go-bag-gear-stack-wx11",
+  "saved_at": "2026-08-02T14:32:15.000Z",
+  "spec_identity": {
+    "source": "hand-authored-simulation",
+    "map_id": "example-go-bag-gear-stack-wx11",
+    "id": "map:example-go-bag-gear-stack-wx11",
+    "map_url": null,
+    "edit_url": null,
+    "spec_url": null,
+    "public_route_slug": "example-go-bag-gear-stack"
+  }
+}

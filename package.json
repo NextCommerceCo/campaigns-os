@@ -17,13 +17,26 @@
       "import": "./src/commercial-parity.mjs",
       "default": "./src/commercial-parity.mjs"
     },
+    "./reconcile-plan": {
+      "import": "./src/reconcile-plan.mjs",
+      "default": "./src/reconcile-plan.mjs"
+    },
+    "./reconcile-normalize": {
+      "import": "./src/reconcile-normalize.mjs",
+      "default": "./src/reconcile-normalize.mjs"
+    },
+    "./reconcile-diff": {
+      "import": "./src/reconcile-diff.mjs",
+      "default": "./src/reconcile-diff.mjs"
+    },
     "./campaign-spec": {
       "types": "./campaign-spec/dist/index.d.ts",
       "import": "./campaign-spec/dist/index.js",
       "default": "./campaign-spec/dist/index.js"
     },
     "./schemas/campaign-spec.v4.schema.json": "./schemas/campaign-spec.v4.schema.json",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./schemas/campaign-reconcile-report.v0.schema.json": "./schemas/campaign-reconcile-report.v0.schema.json"
   },
   "scripts": {
     "campaigns-os": "node ./bin/campaigns-os.mjs",

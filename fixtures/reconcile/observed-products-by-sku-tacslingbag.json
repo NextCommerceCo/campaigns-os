@@ -1,0 +1,133 @@
+{
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 382,
+      "url": "https://example-store.example.com/catalogue/example-tactical-sling-bag_382/",
+      "title": "Tactical Sling Bag",
+      "slug": "tactical-sling-bag",
+      "structure": "parent",
+      "is_discountable": true,
+      "is_public": false,
+      "ranking": 0,
+      "categories": [],
+      "enable_subscription": false,
+      "interval": null,
+      "interval_counts": [],
+      "images": [
+        {
+          "id": 363,
+          "attachment": "https://cdn.example.com/media/example-product.png",
+          "caption": "Tactical Sling Bag",
+          "display_order": 0,
+          "product": 382,
+          "variants": []
+        },
+        {
+          "id": 364,
+          "attachment": "https://cdn.example.com/media/example-product.png",
+          "caption": "Tactical Sling Bag",
+          "display_order": 1,
+          "product": 382,
+          "variants": []
+        },
+        {
+          "id": 365,
+          "attachment": "https://cdn.example.com/media/example-product.png",
+          "caption": "Tactical Sling Bag",
+          "display_order": 2,
+          "product": 382,
+          "variants": []
+        },
+        {
+          "id": 366,
+          "attachment": "https://cdn.example.com/media/example-product.png",
+          "caption": "Tactical Sling Bag",
+          "display_order": 3,
+          "product": 382,
+          "variants": []
+        }
+      ],
+      "recommended_products": [],
+      "external_tax_code": null,
+      "variant_attributes": [],
+      "variants": [
+        {
+          "id": 383,
+          "product_id": 382,
+          "title": "Tactical Sling Bag",
+          "sku": "EXAMPLE-GB-TACSLINGBAG01",
+          "upc": "",
+          "purchase_availability": "available",
+          "inventory_availability": "in_stock",
+          "track_stock": true,
+          "allow_backorders": false,
+          "images": [
+            {
+              "id": 363,
+              "attachment": "https://cdn.example.com/media/example-product.png",
+              "caption": "Tactical Sling Bag",
+              "display_order": 0,
+              "product": 382,
+              "variants": []
+            }
+          ],
+          "variant_attribute_values": [],
+          "prices": [
+            {
+              "currency": "USD",
+              "price": "39.99",
+              "retail": "64.99",
+              "subscription": null,
+              "subscription_suggested_downsell": null
+            },
+            {
+              "currency": "GBP",
+              "price": "30.99",
+              "retail": "48.99",
+              "subscription": null,
+              "subscription_suggested_downsell": null
+            },
+            {
+              "currency": "EUR",
+              "price": "34.99",
+              "retail": "55.99",
+              "subscription": null,
+              "subscription_suggested_downsell": null
+            }
+          ],
+          "stockrecords": [
+            {
+              "id": 439,
+              "location_id": 68,
+              "num_in_stock": 1000,
+              "num_allocated": 0,
+              "low_stock_threshold": 0
+            }
+          ],
+          "unit_cost": "13.00",
+          "requires_shipping": true,
+          "date_created": "2026-05-12T14:40:55.960622+07:00",
+          "date_updated": "2026-05-12T14:40:55.968226+07:00",
+          "metadata": {
+            "category": "outdoor_tactical",
+            "source_sku": "TACSLINGBAG01",
+            "dogfood_batch": "example-campaigns-os-2026-05"
+          }
+        }
+      ],
+      "rating": null,
+      "date_created": "2026-05-12T14:40:55.935066+07:00",
+      "date_updated": "2026-05-12T14:40:55.941404+07:00",
+      "metadata": {
+        "category": "outdoor_tactical",
+        "source_sku": "TACSLINGBAG01",
+        "imported_by": "codex",
+        "campaign_role": "lead",
+        "dogfood_batch": "example-campaigns-os-2026-05",
+        "source_folder": "Tactical Sling Bag (TACSLINGBAG01)"
+      }
+    }
+  ]
+}

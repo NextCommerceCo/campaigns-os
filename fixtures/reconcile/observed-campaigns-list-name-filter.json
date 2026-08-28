@@ -1,0 +1,30 @@
+{
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1650,
+      "name": "Example Travel Tech Go-Bag v1",
+      "currency": "USD",
+      "language": "en",
+      "created_at": "2026-06-09T12:55:02.018899+07:00",
+      "updated_at": "2026-06-09T12:55:02.089279+07:00"
+    },
+    {
+      "id": 1647,
+      "name": "Example Travel Tech Go-Bag v0",
+      "currency": "USD",
+      "language": "en",
+      "created_at": "2026-06-09T12:14:09.338784+07:00",
+      "updated_at": "2026-06-09T12:14:09.403448+07:00"
+    },
+    {
+      "id": 1602,
+      "name": "Example Go-Bag Gear Stack",
+      "currency": "USD",
+      "language": "en",
+      "created_at": "2026-05-20T02:58:52.178258+07:00",
+      "updated_at": "2026-05-20T02:58:52.198556+07:00"
+    }
+  ]
+}
