@@ -1,0 +1,186 @@
+# managed-by: next-campaigns-os-setup netlify-preview-links v1
+# Canonical source: campaigns-os skills/next-campaigns-os-setup/references/netlify-preview-links.yml
+# __NETLIFY_SITE_NAME__ is substituted with the repo's Netlify site name at install
+# time. While it is still a __PLACEHOLDER__ the workflow exits without commenting.
+name: Netlify campaign preview links
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: netlify-preview-links-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview-links:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build the preview comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SITE_NAME: __NETLIFY_SITE_NAME__
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          MARKER: "<!-- netlify-campaign-previews -->"
+        run: |
+          set -euo pipefail
+
+          # Unsubstituted install: the site name is still wrapped in double
+          # underscores. Stay silent rather than post links that cannot resolve.
+          case "$SITE_NAME" in
+            __*__)
+              echo "Netlify site name is not configured for this repo; skipping preview links."
+              exit 0
+              ;;
+          esac
+
+          for sha in "$BASE_SHA" "$HEAD_SHA"; do
+            git cat-file -e "$sha^{commit}" 2>/dev/null || git fetch --quiet origin "$sha"
+          done
+
+          # A project is a top-level directory holding both package.json and src/.
+          # Campaign Page Kit's root build discovers projects exactly this way.
+          list_projects() {
+            local sha="$1" dir
+            while IFS= read -r dir; do
+              [ -n "$dir" ] || continue
+              git cat-file -e "$sha:$dir/package.json" 2>/dev/null || continue
+              [ "$(git cat-file -t "$sha:$dir/src" 2>/dev/null || true)" = "tree" ] || continue
+              printf '%s\n' "$dir"
+            done < <(git ls-tree -d --name-only "$sha")
+          }
+
+          # Slug directories are the campaign identifiers and the deployed URL paths.
+          list_slugs() {
+            local sha="$1" project="$2"
+            [ "$(git cat-file -t "$sha:$project/src" 2>/dev/null || true)" = "tree" ] || return 0
+            git ls-tree -d --name-only "$sha:$project/src"
+          }
+
+          head_projects=$(list_projects "$HEAD_SHA")
+          base_projects=$(list_projects "$BASE_SHA")
+          all_projects=$(printf '%s\n%s\n' "$head_projects" "$base_projects" | sed '/^$/d' | sort -u)
+
+          head_slugs=""
+          while IFS= read -r project; do
+            [ -n "$project" ] || continue
+            head_slugs=$(printf '%s\n%s\n' "$head_slugs" "$(list_slugs "$HEAD_SHA" "$project")")
+          done <<< "$head_projects"
+          head_slugs=$(printf '%s\n' "$head_slugs" | sed '/^$/d' | sort -u)
+
+          # --no-renames so a moved file reports both its old and new path: the old
+          # path is how a deleted or relocated slug becomes visible at all.
+          changed=$(git diff --no-renames --name-only "$BASE_SHA" "$HEAD_SHA")
+
+          candidates=""
+          global_change=0
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+
+            owner=""
+            while IFS= read -r project; do
+              [ -n "$project" ] || continue
+              case "$path" in
+                "$project"/*) owner="$project"; break ;;
+              esac
+            done <<< "$all_projects"
+
+            if [ -n "$owner" ]; then
+              rest=${path#"$owner"/}
+              case "$rest" in
+                src/*/*)
+                  slug=${rest#src/}
+                  slug=${slug%%/*}
+                  candidates=$(printf '%s\n%s\n' "$candidates" "$slug")
+                  ;;
+                *)
+                  # Anything else in a project (_includes/, _layouts/, assets/,
+                  # _data/, package.json, its lockfile) rebuilds every campaign
+                  # in that project. Fall back to the base tree when the whole
+                  # project was deleted, so its slugs still get reported.
+                  owner_slugs=$(list_slugs "$HEAD_SHA" "$owner")
+                  [ -n "$owner_slugs" ] || owner_slugs=$(list_slugs "$BASE_SHA" "$owner")
+                  candidates=$(printf '%s\n%s\n' "$candidates" "$owner_slugs")
+                  ;;
+              esac
+              continue
+            fi
+
+            # Root-level build inputs rebuild the whole site. Every other root
+            # path (README, docs, .github/, CLAUDE.md) changes no campaign.
+            case "$path" in
+              netlify.toml|scripts/*|package.json|package-lock.json) global_change=1 ;;
+            esac
+          done <<< "$changed"
+
+          if [ "$global_change" = "1" ]; then
+            candidates=$(printf '%s\n%s\n' "$candidates" "$head_slugs")
+          fi
+          candidates=$(printf '%s\n' "$candidates" | sed '/^$/d' | sort -u)
+
+          previewable=""
+          removed=""
+          while IFS= read -r slug; do
+            [ -n "$slug" ] || continue
+            if printf '%s\n' "$head_slugs" | grep -qxF "$slug"; then
+              previewable=$(printf '%s\n%s\n' "$previewable" "$slug")
+            else
+              removed=$(printf '%s\n%s\n' "$removed" "$slug")
+            fi
+          done <<< "$candidates"
+          previewable=$(printf '%s\n' "$previewable" | sed '/^$/d' | sort -u)
+          removed=$(printf '%s\n' "$removed" | sed '/^$/d' | sort -u)
+
+          base_url="https://deploy-preview-${PR_NUMBER}--${SITE_NAME}.netlify.app"
+          body=comment-body.md
+          printf '%s\n\n' "$MARKER" > "$body"
+          printf '### Campaign previews\n\n' >> "$body"
+
+          if [ -n "$previewable" ]; then
+            if [ "$global_change" = "1" ]; then
+              printf 'This PR touches shared build inputs, so every campaign rebuilds.\n\n' >> "$body"
+            fi
+            while IFS= read -r slug; do
+              [ -n "$slug" ] || continue
+              printf -- '- [%s](%s/%s/)\n' "$slug" "$base_url" "$slug" >> "$body"
+            done <<< "$previewable"
+          elif [ -z "$removed" ]; then
+            printf 'No campaign directories changed in this PR.\n' >> "$body"
+          fi
+
+          if [ -n "$removed" ]; then
+            printf '\nRemoved in this PR (no preview):\n\n' >> "$body"
+            while IFS= read -r slug; do
+              [ -n "$slug" ] || continue
+              printf -- '- `%s`\n' "$slug" >> "$body"
+            done <<< "$removed"
+          fi
+
+          if [ -n "$previewable" ]; then
+            printf '\nLinks go live once the Netlify deploy preview for this PR finishes building.\n' >> "$body"
+          fi
+
+          # --paginate: on a long-lived PR the marker comment can sit past the
+          # first page, and missing it would post a duplicate instead of editing.
+          existing=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq "map(select(.body | contains(\"$MARKER\"))) | .[0].id // empty" | head -n 1)
+
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$existing" -F "body=@$body" --silent
+            echo "Updated preview comment $existing"
+          else
+            gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" -F "body=@$body" --silent
+            echo "Posted preview comment"
+          fi
