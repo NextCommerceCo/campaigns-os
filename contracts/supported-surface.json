@@ -57,7 +57,7 @@
       "sha256": "b5afa4772715c1ea553ba94ab2008b23838876cc6b05e831da7d4a13f55c66b6"
     },
     "schemas/campaign-reconcile-report.v0.schema.json": {
-      "sha256": "e4c6208d608eb14588e222d581baf70ac6ed73be0fd2b1c86bf4a96178a0986f"
+      "sha256": "fffd9a8c4350ab47bd6b6255a8c477664c0d0f6587ad39a7b87a50d6b8fddc67"
     }
   },
   "named": [

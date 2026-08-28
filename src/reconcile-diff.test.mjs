@@ -70,10 +70,25 @@ test("unresolved_binding: a missing live package yields one row, not a field cas
   const observedState = observed();
   observedState.packages.results = observedState.packages.results.filter((p) => p.id !== 2);
   const result = report(spec(), observedState);
-  const rows = result.rows.filter((row) => row.scope === "package[2]");
+  const rows = result.rows.filter((row) => row.scope.includes("2x1") || row.scope === "package[2]");
   assert.equal(rows.length, 1);
   assert.equal(rows[0].verdict, VERDICT.UNRESOLVED_BINDING);
   assert.equal(result.coverage_complete, false, "an unresolved binding must break coverage");
+});
+
+test("a bundle picker binds many selection entries to one live package", () => {
+  const result = report();
+  const picker = result.rows.filter((row) => row.field === "binding" && row.scope.startsWith("selection[checkout#1x"));
+  assert.equal(picker.length, 3, "1x, 2x and 3x all bind");
+  assert.ok(picker.every((row) => row.verdict === VERDICT.MATCHED && row.observed === 1));
+  assert.deepEqual(picker.map((row) => row.qty), [1, 2, 3]);
+  // ...and the shared package is compared exactly once.
+  assert.equal(result.rows.filter((row) => row.scope === "package[1]" && row.field === "price").length, 1);
+});
+
+test("a live package referenced by any entry is never reported as extra", () => {
+  const result = report();
+  assert.equal(result.rows.filter((row) => row.verdict === VERDICT.EXTRA_LIVE).length, 0);
 });
 
 test("extra_live: a live package the spec never asserted is reported", () => {
@@ -87,15 +102,23 @@ test("extra_live: a live package the spec never asserted is reported", () => {
   assert.equal(row.verdict, VERDICT.EXTRA_LIVE);
 });
 
-test("unsupported: quantity and offers are accounted, never missing_live", () => {
+test("unsupported: offers and shipping methods are accounted, never missing_live", () => {
   const result = report();
-  const qty = rowFor(result, "package[1]", "qty");
-  assert.equal(qty.verdict, VERDICT.UNSUPPORTED);
   assert.equal(rowFor(result, "campaign", "offers").verdict, VERDICT.UNSUPPORTED);
   assert.equal(rowFor(result, "campaign", "offers").asserted_count, 7);
   assert.equal(rowFor(result, "campaign", "campaign_shipping_methods").asserted_count, 2);
-  const unsupported = result.rows.filter((row) => row.verdict === VERDICT.UNSUPPORTED);
-  assert.ok(unsupported.every((row) => row.verdict !== VERDICT.MISSING_LIVE));
+  assert.ok(!result.rows.some((row) => row.verdict === VERDICT.MISSING_LIVE));
+});
+
+test("quantity is spec-side structure, not an API coverage gap", () => {
+  const result = report();
+  const qtyRows = result.rows.filter((row) => row.field === "qty");
+  assert.equal(qtyRows.length, 6, "one per selection entry");
+  assert.ok(qtyRows.every((row) => row.verdict === VERDICT.NOT_ASSERTED));
+  assert.deepEqual(qtyRows.map((row) => row.desired), [1, 2, 3, 1, 1, 1]);
+  // It must never be filed as an unsupported API field again.
+  assert.ok(!qtyRows.some((row) => row.verdict === VERDICT.UNSUPPORTED));
+  assert.equal(result.coverage_complete, true, "spec-side structure never breaks coverage");
 });
 
 test("not_asserted: gateway group is recorded as evidence but never judged", () => {
@@ -115,20 +138,20 @@ test("a one-time package is never called recurring just because interval is popu
   }
 });
 
-test("every price row is labelled pre-Offer so matched is not read as effective price", () => {
+test("price rows are labelled list-basis and compared once per live package", () => {
   const result = report();
   const priceRows = result.rows.filter((row) => row.field === "price");
-  assert.ok(priceRows.length > 0);
-  assert.ok(priceRows.every((row) => row.basis === "pre_offer"));
-  assert.equal(result.price_basis, "pre_offer");
-  assert.equal(result.offers_affect_price, true);
+  assert.equal(priceRows.length, 4, "four live packages, not six selection entries");
+  assert.ok(priceRows.every((row) => row.basis === "list"));
+  assert.equal(result.price_basis, "list");
+  assert.equal(result.offers_asserted, true);
 });
 
 test("partial input is inconclusive, never a set of differences", () => {
   const result = createReconciliationReport(spec(), { campaign: observed().campaign }, {});
   assert.equal(result.outcome, OUTCOME.INCONCLUSIVE);
   assert.equal(result.partial_input, true);
-  assert.ok(!result.rows.some((row) => row.verdict === VERDICT.MISSING_LIVE && row.scope === "package[1]"));
+  assert.ok(!result.rows.some((row) => row.verdict === VERDICT.MISSING_LIVE));
 });
 
 test("an unread second page is inconclusive rather than a pile of missing packages", () => {
@@ -179,5 +202,5 @@ test("coverage counts accounted rows separately from compared rows", () => {
 test("a spec asserting nothing still reports rather than silently passing", () => {
   const result = createReconciliationReport({ campaign: {} }, observed(), {});
   const extras = result.rows.filter((row) => row.verdict === VERDICT.EXTRA_LIVE);
-  assert.equal(extras.length, 4, "all four live packages are unasserted extras");
+  assert.equal(extras.length, 4, "all four live packages are unreferenced extras");
 });

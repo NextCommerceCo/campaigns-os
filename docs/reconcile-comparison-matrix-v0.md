@@ -26,9 +26,8 @@ Four observations from that run shape the rules below:
    read from `is_recurring` alone.
 3. **Payment-method item keys differ by resource.** The campaign resource returns
    `{code, name}`; the gateway-group resource returns `{code, label}`.
-4. **Package price is pre-discount.** The Offers layer that changes the effective price is not
-   exposed by the API at all. See "Price is pre-Offer" below — this is the most consequential
-   limitation in the matrix.
+4. **Package price is a list price.** Offers are applied downstream and are not part of this
+   observation source. See "Offers are out of scope for this source" below.
 
 ## Verdict vocabulary (closed)
 
@@ -85,55 +84,70 @@ three collapse to a code set before comparison; the normalizer owns this, not th
 
 ## Package rows
 
-Binding runs first. A package is bound by `ref_id` → live package `id` (`id_exact`). If a
-spec package has no live counterpart the whole package yields one `unresolved_binding` row and
-**no field-level rows** — reporting six field mismatches for one missing package is noise that
-buries the actual finding.
+### A selection entry is the unit, not a package
 
-| Field | Desired path | Spec asserts? | Observed path | Normalization | Verdict |
-| --- | --- | --- | --- | --- | --- |
-| binding | `funnels[].pages[].packages[].ref_id` | yes | `results[].id` | `id_exact` | `matched` / `unresolved_binding` |
-| name | `…packages[].name` | yes | `results[].name` | `nfc_trim` | `matched` / `changed` |
-| price (per currency) | `…packages[].price` | yes | `results[].prices[]` keyed by `currency` | `money` + `currency_map` | `matched` / `changed` / `missing_live` per currency |
-| product SKU | `…packages[].product_sku` | yes | `results[].product_sku` | `nfc_trim` | `matched` / `changed` |
-| product variant binding | — | no (not expressible) | `results[].product_variant_id` | `id_exact` | `not_asserted`; corroborates against `variants[].id` in the product fixture |
-| recurrence | `…packages[].is_recurring` (absent ⇒ one-time) | yes | `results[].is_recurring` | boolean | `matched` / `changed` |
-| interval | — | no | `results[].interval`, `interval_count` | — | **Never compared.** Populated even when `is_recurring` is false (observation 2); comparing it would report every one-time package as monthly. Carried as evidence only. |
-| quantity | `…packages[].qty` | yes | — | — | **`unsupported`, fixed row.** See below. |
+A page may reference the same package `ref_id` more than once at different quantities. That is
+how a bundle picker is expressed — 1x / 2x / 3x of one SKU as three choices, with campaign
+offers supplying the tier discounts. In the reference spec the checkout page carries six
+selection entries against four live packages, three of them ref_id 1 at qty 1, 2, and 3.
 
-### Quantity is asserted and unobservable
+**Entries are never de-duplicated by `ref_id`.** Collapsing them destroys the picker and
+silently drops every option but the first. Many entries binding to one live package is normal
+and expected, not a duplicate to be cleaned up.
 
-The spec asserts `qty` per package. The package payload has no quantity field of any kind.
-This is `unsupported`, never `missing_live` — the value is not absent from a surface that could
-have carried it; the surface does not exist.
+The two levels are compared differently:
 
-**Quantity must not be inferred from price.** Dividing package price by variant unit price
-recovers a *discount* ratio, not a quantity, because of the Offers layer described next. That
-inference produces confident wrong answers and is explicitly forbidden.
+- **Entry level** (`selection[page#refxqty]`) — binding and quantity, once per entry.
+- **Package level** (`package[ref]`) — name, SKU, price, recurrence, once per referenced live
+  package. Comparing these per entry would triple-count one package's price.
 
-### Price is pre-Offer — the load-bearing limitation
+### Quantity is spec-side, not an API gap
 
-Package prices are **pre-discount**. The Offers layer that determines what a customer actually
-pays is not exposed by the Admin API ("coming soon"), so the reconciler cannot compute or verify
-an effective price.
+Quantity belongs to the selection entry: how many units this picker option adds. It is **not**
+a property of the live package, and the Admin API is correct not to expose one. It is recorded
+as asserted structure with verdict `not_asserted` — reported, never judged, and never counted
+as missing coverage. An earlier revision of this matrix wrongly filed it as an unsupported API
+field; that conflated a Map-level concept with a wire-level gap.
 
-This is more dangerous than the quantity gap, because quantity is *visibly* absent while price
-is present and compares cleanly. In the reference fixture, package 1 is `79.98` in both spec and
-live — a clean `matched` — while the effective price is `39.99`, set by an always-on 50% offer
-the API cannot see. A reader who takes `matched` on price to mean "the customer is charged this"
-is wrong, and nothing in the payload corrects them.
+| Field | Level | Desired path | Spec asserts? | Observed path | Normalization | Verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| binding | entry | `…packages[].ref_id` | yes | `results[].id` | `id_exact` | `matched` / `unresolved_binding` |
+| qty | entry | `…packages[].qty` | yes | — | — | `not_asserted` (spec-side selection structure) |
+| name | package | `…packages[].name` | yes | `results[].name` | `nfc_trim` | `matched` / `changed` |
+| price | package | `…packages[].price` | yes | `results[].prices[]` by `currency` | `money` + `currency_map` | `matched` / `changed` / `missing_live` |
+| product SKU | package | `…packages[].product_sku` | yes | `results[].product_sku` | `nfc_trim` | `matched` / `changed` |
+| recurrence | package | `…packages[].is_recurring` (absent ⇒ one-time) | yes | `results[].is_recurring` | boolean | `matched` / `changed` |
+| product variant | package | — | no | `results[].product_variant_id` | `id_exact` | `not_asserted`; corroborates against `variants[].id` |
+| interval | package | — | no | `results[].interval` | — | **Never compared.** Populated even when `is_recurring` is false; comparing it reports every one-time package as monthly. Evidence only. |
 
-Therefore: **every price row carries `basis: "pre_offer"`**, and the report's campaign outcome
-is annotated whenever any offer is asserted. Coverage counts must show the asserted-offer count
-so the gap is a number on the report, not a footnote in this file.
+A live package referenced by no selection entry is `extra_live`. A spec entry whose `ref_id`
+resolves to no live package yields one `unresolved_binding` row and **no** package-level rows —
+six field failures for one missing package buries the finding.
 
 ## Resource-level rows
 
-| Resource | Spec asserts? | Observable? | Verdict | Note |
+### Offers are out of scope for this observation source
+
+The reference spec asserts seven offers, including the always-on "Buy 1 Get 50%" that sets
+package 1's effective price. This reconciler does not evaluate them, for one reason only:
+**Admin API Offers endpoints are still in development.** Offers are readable today from the
+storefront Campaign Retrieve API — a different observation source than this reconciler consumes.
+
+So `unsupported` here means "not available from *this* source *yet*", not "unknowable". When
+the Admin endpoints land, offers become ordinary comparable rows and this section shrinks to a
+normal matrix entry. Nothing in the design should work around their absence, and no verdict
+should be reconstructed from price arithmetic in the meantime.
+
+The practical consequence is bounded and worth stating once rather than threading through every
+row: **package prices here are list prices.** What a customer is charged depends on the offer
+layer this source does not carry. Price rows are labelled `basis: "list"` so that is legible on
+the report, and the asserted-offer count is reported so the scope limit is a number rather than
+a footnote.
+
+| Resource | Spec asserts? | Observable from this source? | Verdict | Note |
 | --- | --- | --- | --- | --- |
-| Offers | **yes — 7 in the reference spec** | no | **`unsupported`, fixed row** | Provenance: no Offers surface, "coming soon". Asserted-but-unobservable; count appears in coverage. |
-| Quantity-tier pricing (offer tiers) | yes, via `offers[]` | no | **`unsupported`, fixed row** | Expressed as offers with `condition.type: "count"`. **Never `missing_live`.** |
-| Campaign shipping methods | yes — 2 in the reference spec | no | **`unsupported`, fixed row** | The shipping API is global and read-only with no campaign association. |
+| Offers | yes — 7 in the reference spec | not yet | `unsupported` | Admin endpoints in development; readable today via storefront Campaign Retrieve. |
+| Campaign shipping methods | yes — 2 in the reference spec | no | `unsupported` | Shipping API is global and read-only, with no campaign association. |
 | Tracking / analytics config | no (`status: "unknown"`) | no | `not_asserted` | |
 | Store profile fields | no (empty in spec) | n/a | `not_asserted` | Not part of the Admin campaign surface. |
 

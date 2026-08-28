@@ -145,73 +145,73 @@ function settingsRows(spec, snapshot) {
 function packageRows(plan, spec, snapshot) {
   const rows = [];
   const liveById = new Map(snapshot.packages.map((pkg) => [String(pkg.id), pkg]));
-  const boundLiveIds = new Set();
-  const specPackages = new Map();
-  for (const funnel of array(spec?.funnels)) {
-    for (const page of array(funnel?.pages)) {
-      for (const pkg of array(page?.packages)) {
-        const ref = pkg?.ref_id ?? pkg?.package_id;
-        if (present(ref) && !specPackages.has(String(ref))) specPackages.set(String(ref), pkg);
-      }
-    }
-  }
+  const referencedIds = new Set();
+  const currency = nfcTrim(spec?.campaign?.currency) || "USD";
 
-  for (const planned of plan.packages) {
-    const scope = `package[${planned.ref_id}]`;
-    const desired = specPackages.get(planned.ref_id) ?? {};
-    const live = liveById.get(planned.ref_id);
+  // A selection entry is (page, package ref, qty). Several entries may point at
+  // one live package — that is a bundle picker, not a duplicate. Package FIELDS
+  // are therefore compared once per referenced live package, while entry-level
+  // structure (quantity) is reported per entry.
+  const comparedPackages = new Set();
+
+  for (const entry of plan.packages) {
+    const scope = `selection[${entry.selection_id}]`;
+    const live = liveById.get(entry.ref_id);
 
     if (!live) {
-      // One row for the package, no field rows. Six field mismatches for one
-      // missing package buries the actual finding.
       rows.push(matrixRow("binding", scope, VERDICT.UNRESOLVED_BINDING, {
-        desired: planned.ref_id,
+        desired: entry.ref_id,
         note: "no live package resolved for this ref_id",
       }));
       continue;
     }
-    boundLiveIds.add(String(live.id));
-    rows.push(matrixRow("binding", scope, VERDICT.MATCHED, { desired: planned.ref_id, observed: live.id }));
-    rows.push(compareScalar("name", scope, desired.name, live.name));
-    rows.push(compareScalar("product_sku", scope, desired.product_sku, live.product_sku));
+    referencedIds.add(entry.ref_id);
+    rows.push(matrixRow("binding", scope, VERDICT.MATCHED, {
+      desired: entry.ref_id, observed: live.id, qty: entry.qty,
+    }));
 
-    // Price is per currency, and pre-Offer. The basis label travels with the row.
-    const currency = nfcTrim(spec?.campaign?.currency) || "USD";
+    // Quantity is a Map/spec selection concept: how many units this picker
+    // option adds. It is not a property of the live package and the Admin API
+    // is correct not to expose one. Recorded as asserted structure, not as a
+    // coverage gap.
+    rows.push(matrixRow("qty", scope, VERDICT.NOT_ASSERTED, {
+      desired: entry.qty,
+      note: "selection quantity is spec-side; the live package resource has no per-selection quantity",
+    }));
+
+    if (comparedPackages.has(entry.ref_id)) continue;
+    comparedPackages.add(entry.ref_id);
+
+    const desired = entry.spec_package ?? entry.spec ?? {};
+    const pkgScope = `package[${entry.ref_id}]`;
+    rows.push(compareScalar("name", pkgScope, desired.name, live.name));
+    rows.push(compareScalar("product_sku", pkgScope, desired.product_sku, live.product_sku));
+
     const desiredPrice = normalizeMoney(desired.price);
     const observedPrice = live.prices?.[currency]?.price ?? null;
     if (!present(desiredPrice)) {
-      rows.push(matrixRow("price", scope, VERDICT.NOT_ASSERTED, { currency, observed: observedPrice, basis: "pre_offer" }));
+      rows.push(matrixRow("price", pkgScope, VERDICT.NOT_ASSERTED, { currency, observed: observedPrice, basis: "list" }));
     } else if (observedPrice === null) {
-      rows.push(matrixRow("price", scope, VERDICT.MISSING_LIVE, { currency, desired: desiredPrice, basis: "pre_offer" }));
+      rows.push(matrixRow("price", pkgScope, VERDICT.MISSING_LIVE, { currency, desired: desiredPrice, basis: "list" }));
     } else {
-      rows.push(matrixRow("price", scope, desiredPrice === observedPrice ? VERDICT.MATCHED : VERDICT.CHANGED, {
-        currency, desired: desiredPrice, observed: observedPrice, basis: "pre_offer",
+      rows.push(matrixRow("price", pkgScope, desiredPrice === observedPrice ? VERDICT.MATCHED : VERDICT.CHANGED, {
+        currency, desired: desiredPrice, observed: observedPrice, basis: "list",
       }));
     }
 
-    // Absent is-recurring in the spec asserts one-time.
     const desiredRecurring = desired.is_recurring === true;
-    rows.push(matrixRow("is_recurring", scope, desiredRecurring === live.is_recurring ? VERDICT.MATCHED : VERDICT.CHANGED, {
+    rows.push(matrixRow("is_recurring", pkgScope, desiredRecurring === live.is_recurring ? VERDICT.MATCHED : VERDICT.CHANGED, {
       desired: desiredRecurring, observed: live.is_recurring,
     }));
-
-    // Asserted by the spec, no surface on the wire.
-    if (planned.unobservable_fields.includes("qty")) {
-      rows.push(matrixRow("qty", scope, VERDICT.UNSUPPORTED, {
-        desired: desired.qty ?? null,
-        note: "package quantity has no Admin API surface; never inferred from price",
-      }));
-    }
-
-    rows.push(matrixRow("product_variant_id", scope, VERDICT.NOT_ASSERTED, {
+    rows.push(matrixRow("product_variant_id", pkgScope, VERDICT.NOT_ASSERTED, {
       observed: live.product_variant_id,
     }));
   }
 
   for (const pkg of snapshot.packages) {
-    if (!boundLiveIds.has(String(pkg.id))) {
+    if (!referencedIds.has(String(pkg.id))) {
       rows.push(matrixRow("binding", `package[live:${pkg.id}]`, VERDICT.EXTRA_LIVE, {
-        observed: pkg.id, note: "live package not asserted by the spec",
+        observed: pkg.id, note: "live package not referenced by any spec selection entry",
       }));
     }
   }
@@ -270,7 +270,7 @@ export function createReconciliationReport(spec, observed, { matrixHash = null, 
     matrix_hash: matrixHash,
     ...(generatedAt ? { generated_at: generatedAt } : {}),
     price_basis: plan.price_basis,
-    offers_affect_price: plan.offers_affect_price,
+    offers_asserted: plan.offers_asserted,
     coverage_complete: !snapshot.partial && !snapshot.packages_have_more && counts.unresolved === 0,
     compared_row_count: counts.compared,
     unresolved_row_count: counts.unresolved,
@@ -296,7 +296,7 @@ export function projectReportForSidecar(report) {
     snapshot_hash: report.snapshot_hash,
     matrix_hash: report.matrix_hash,
     price_basis: report.price_basis,
-    offers_affect_price: report.offers_affect_price,
+    offers_asserted: report.offers_asserted,
     coverage_complete: report.coverage_complete,
     compared_row_count: report.compared_row_count,
     unresolved_row_count: report.unresolved_row_count,

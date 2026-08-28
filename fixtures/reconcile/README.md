@@ -42,6 +42,10 @@ Three behaviours here will silently corrupt a comparator that assumes otherwise:
 
 1. `interval` is `"month"` on all four packages even though `is_recurring` is `false`.
 2. Package `prices` is an array keyed by currency, not a scalar.
-3. Package price is **pre-Offer**. In this campaign an always-on 50% offer takes package 1 from
-   `79.98` to an effective `39.99`. The Offers layer has no API surface, so no fixture here can
-   show it and no code can derive it.
+3. The spec's checkout page references package 1 **three times**, at qty 1, 2 and 3 — a bundle
+   picker, not duplicate rows. De-duplicating selection entries by `ref_id` silently drops two
+   of the three options.
+4. Package prices are **list prices**. Campaign offers (seven in this spec, including an
+   always-on 50% on package 1) are applied downstream and are not carried by this source —
+   Admin API Offers endpoints are in development, and offers are readable today from the
+   storefront Campaign Retrieve API.

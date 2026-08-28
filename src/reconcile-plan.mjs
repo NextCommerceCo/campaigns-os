@@ -35,7 +35,6 @@ export const NOT_ASSERTED_SETTINGS = Object.freeze([
 /** Asserted (or assertable) but with no API surface -> always `unsupported`. */
 export const UNSUPPORTED_RESOURCES = Object.freeze([
   "offers",
-  "quantity_tier_pricing",
   "campaign_shipping_methods",
 ]);
 
@@ -82,22 +81,37 @@ export function authorityForPath(provenance, path) {
   return "unknown";
 }
 
-/** Collect distinct packages across all funnel pages, keyed by ref_id. */
+/**
+ * Collect package SELECTION ENTRIES across funnel pages.
+ *
+ * A page may reference the same package ref_id more than once at different
+ * quantities — that is how a bundle picker is expressed (1x / 2x / 3x of one
+ * SKU, with campaign offers supplying the tier discounts). Entries are
+ * therefore NOT de-duplicated by ref_id: collapsing them destroys the picker
+ * and silently drops every option but the first.
+ *
+ * Many entries legitimately bind to one live package. Quantity belongs to the
+ * entry, not to the package.
+ */
 export function collectSpecPackages(spec) {
-  const byRef = new Map();
+  const entries = [];
   for (const funnel of array(spec?.funnels)) {
     for (const page of array(funnel?.pages)) {
-      for (const pkg of array(page?.packages)) {
+      const pageId = page?.type ?? page?.label ?? "page";
+      array(page?.packages).forEach((pkg, index) => {
         const ref = pkg?.ref_id ?? pkg?.package_id;
-        if (!present(ref)) continue;
-        const key = String(ref);
-        if (!byRef.has(key)) byRef.set(key, pkg);
-      }
+        if (!present(ref)) return;
+        entries.push({
+          ref_id: String(ref),
+          qty: Number.isFinite(Number(pkg?.qty)) ? Number(pkg.qty) : 1,
+          page_id: String(pageId),
+          entry_index: index,
+          spec: pkg,
+        });
+      });
     }
   }
-  return [...byRef.entries()]
-    .map(([ref_id, pkg]) => ({ ref_id, spec: pkg }))
-    .sort((a, b) => a.ref_id.localeCompare(b.ref_id, "en", { numeric: true }));
+  return entries;
 }
 
 /**
@@ -121,18 +135,27 @@ export function planReconciliation(spec) {
     };
   });
 
-  const packages = collectSpecPackages(spec).map(({ ref_id, spec: pkg }) => ({
-    ref_id,
-    spec_path: `funnels.*.pages.*.packages.${ref_id}`,
+  const entries = collectSpecPackages(spec);
+  const packages = entries.map((entry) => ({
+    ref_id: entry.ref_id,
+    qty: entry.qty,
+    page_id: entry.page_id,
+    // Distinct identity for a selection entry; several may share a ref_id.
+    selection_id: `${entry.page_id}#${entry.ref_id}x${entry.qty}`,
+    spec_path: `funnels.*.pages.${entry.page_id}.packages[${entry.entry_index}]`,
+    spec_package: entry.spec,
     asserted_fields: PACKAGE_FIELDS.filter((field) => {
       if (field === "is_recurring") return true; // absent means one-time, which is an assertion
-      if (field === "price") return present(pkg?.price);
-      return present(pkg?.[field]);
+      if (field === "price") return present(entry.spec?.price);
+      return present(entry.spec?.[field]);
     }),
-    // Asserted by the spec, unobservable on the wire. Recorded so coverage shows it.
-    unobservable_fields: present(pkg?.qty) ? ["qty"] : [],
     authority: authorityForPath(provenance, "funnels.*.pages.*.packages.*.price"),
   }));
+
+  // Distinct live packages the entries reference. Many-to-one is normal.
+  const referencedPackageIds = [...new Set(entries.map((entry) => entry.ref_id))].sort(
+    (a, b) => a.localeCompare(b, "en", { numeric: true }),
+  );
 
   const offers = array(spec?.offers);
   const shippingMethods = array(spec?.shipping_methods);
@@ -143,17 +166,13 @@ export function planReconciliation(spec) {
     settings,
     not_asserted_settings: [...NOT_ASSERTED_SETTINGS],
     packages,
+    referenced_package_ids: referencedPackageIds,
+    selection_entry_count: entries.length,
     unsupported: {
       offers: {
         asserted_count: offers.length,
         observable: false,
-        provenance: "no Offers surface on the Admin API (coming soon)",
-      },
-      quantity_tier_pricing: {
-        // Tiers are expressed as offers with a count condition.
-        asserted_count: offers.filter((offer) => offer?.condition?.type === "count").length,
-        observable: false,
-        provenance: "tier pricing is expressed via dashboard Offers, which have no API surface",
+        provenance: "Admin API Offers endpoints are in development; offers are readable today from the storefront Campaign Retrieve API, which is a different observation source than this reconciler consumes",
       },
       campaign_shipping_methods: {
         asserted_count: shippingMethods.length,
@@ -161,8 +180,9 @@ export function planReconciliation(spec) {
         provenance: "shipping API is global and read-only, with no campaign association",
       },
     },
-    // Any asserted offer means observed package prices are not effective prices.
-    price_basis: "pre_offer",
-    offers_affect_price: offers.length > 0,
+    // Admin package prices are list prices; offers are applied downstream and
+    // are not part of this observation source.
+    price_basis: "list",
+    offers_asserted: offers.length > 0,
   };
 }
