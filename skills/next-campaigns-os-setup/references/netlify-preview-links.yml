@@ -145,8 +145,19 @@ jobs:
           previewable=$(printf '%s\n' "$previewable" | sed '/^$/d' | sort -u)
           removed=$(printf '%s\n' "$removed" | sed '/^$/d' | sort -u)
 
+          # A slug is a directory name chosen by whoever can land a campaign, and it
+          # goes into both the link text and the URL. Anything outside this set is
+          # not a usable URL path segment anyway, and left unescaped it could close
+          # the markdown link or code span and control how the comment renders — so
+          # such names are never linked, and are shown with the offending characters
+          # replaced rather than passed through.
+          is_safe_slug() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._-]+$'; }
+          redact_slug() { printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9._-]/?/g'; }
+
           base_url="https://deploy-preview-${PR_NUMBER}--${SITE_NAME}.netlify.app"
           body=comment-body.md
+          unsafe=""
+          linked=0
           printf '%s\n\n' "$MARKER" > "$body"
           printf '### Campaign previews\n\n' >> "$body"
 
@@ -156,7 +167,12 @@ jobs:
             fi
             while IFS= read -r slug; do
               [ -n "$slug" ] || continue
-              printf -- '- [%s](%s/%s/)\n' "$slug" "$base_url" "$slug" >> "$body"
+              if is_safe_slug "$slug"; then
+                printf -- '- [%s](%s/%s/)\n' "$slug" "$base_url" "$slug" >> "$body"
+                linked=$((linked+1))
+              else
+                unsafe=$(printf '%s\n%s\n' "$unsafe" "$(redact_slug "$slug")")
+              fi
             done <<< "$previewable"
           elif [ -z "$removed" ]; then
             printf 'No campaign directories changed in this PR.\n' >> "$body"
@@ -166,11 +182,26 @@ jobs:
             printf '\nRemoved in this PR (no preview):\n\n' >> "$body"
             while IFS= read -r slug; do
               [ -n "$slug" ] || continue
-              printf -- '- `%s`\n' "$slug" >> "$body"
+              if is_safe_slug "$slug"; then
+                printf -- '- `%s`\n' "$slug" >> "$body"
+              else
+                unsafe=$(printf '%s\n%s\n' "$unsafe" "$(redact_slug "$slug")")
+              fi
             done <<< "$removed"
           fi
 
-          if [ -n "$previewable" ]; then
+          unsafe=$(printf '%s\n' "$unsafe" | sed '/^$/d' | sort -u)
+          if [ -n "$unsafe" ]; then
+            printf '\nNot linked — these directory names are not valid URL path segments (characters outside `A-Za-z0-9._-` shown as `?`):\n\n' >> "$body"
+            while IFS= read -r slug; do
+              [ -n "$slug" ] || continue
+              printf -- '- `%s`\n' "$slug" >> "$body"
+            done <<< "$unsafe"
+          fi
+
+          # Gate on links actually written, not on the candidate list: a change
+          # confined to unlinkable directory names produces no links at all.
+          if [ "$linked" -gt 0 ]; then
             printf '\nLinks go live once the Netlify deploy preview for this PR finishes building.\n' >> "$body"
           fi
 
