@@ -143,6 +143,8 @@ const ledgerExample = (limits) => ({
       date: "2026-08-28",
       kind: "release",
       surface_version: "1.14.0",
+      changelog_section: "1.14.0",
+      changelog_sha256: DIGEST,
       agent_impact: "A consumer may now read the orientation contract and release ledger from Git objects.",
       compatibility: "additive",
       migration: "none",
@@ -226,7 +228,7 @@ export function buildEnvelopeFixtures(limits) {
     runtime: { recipe_id: null, source_fingerprint: DIGEST, generated_state: "stale", emitter_commit: OID_A, refresh_action: "prepare_new_generation", ready: false, reason_code: "runtime_refresh_required" },
     outcome: {
       disposition: "restart_required",
-      reason_code: "orientation_rendered",
+      reason_code: "runtime_refresh_required",
       active_generation_changed: false,
       fresh_exec_required: true,
       next_actions: ["prepare a new generation", "start a fresh session"],

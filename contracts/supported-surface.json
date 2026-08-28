@@ -50,7 +50,7 @@
       "sha256": "51c7441e73d693d42d201676e35714d94a749b4174fe678d4f4c68e855eba496"
     },
     "schemas/campaigns-os-tooling-orientation.v1.schema.json": {
-      "sha256": "fa360abfcaabf8db8fcc02cf3b6a8c2548f757398131c265f951db504103b036"
+      "sha256": "480ddbc72dc42d09aa7a1a1cd8a1447372a21404b4d42315de51993b3f985133"
     },
     "schemas/campaigns-os-workflow-finding.v0.schema.json": {
       "sha256": "41ff370de4395149781d7e8c4ad6d7d4e2f896eb2030944399d36f1237726a20"

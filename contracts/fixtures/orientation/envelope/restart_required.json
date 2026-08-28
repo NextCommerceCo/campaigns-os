@@ -60,6 +60,8 @@
         "date": "2026-08-28",
         "kind": "release",
         "surface_version": "1.14.0",
+        "changelog_section": "1.14.0",
+        "changelog_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
         "agent_impact": "A consumer may now read the orientation contract and release ledger from Git objects.",
         "compatibility": "additive",
         "migration": "none",
@@ -109,7 +111,7 @@
   },
   "outcome": {
     "disposition": "restart_required",
-    "reason_code": "orientation_rendered",
+    "reason_code": "runtime_refresh_required",
     "active_generation_changed": false,
     "fresh_exec_required": true,
     "next_actions": [

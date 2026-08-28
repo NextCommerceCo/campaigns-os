@@ -155,7 +155,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "sequence", "date", "kind", "surface_version", "agent_impact", "compatibility", "migration", "changes", "entry_sha256", "introducing_commit"],
+            "required": ["id", "sequence", "date", "kind", "surface_version", "changelog_section", "changelog_sha256", "agent_impact", "compatibility", "migration", "changes", "entry_sha256", "introducing_commit"],
             "properties": {
               "id": { "type": "string", "pattern": "^RL-[0-9]{4}$" },
               "sequence": { "type": "integer", "minimum": 1 },
@@ -163,6 +163,8 @@
               "kind": { "type": "string", "enum": ["release", "amendment"] },
               "amends": { "type": "string", "pattern": "^RL-[0-9]{4}$" },
               "surface_version": { "oneOf": [{ "$ref": "#/$defs/semver" }, { "type": "null" }] },
+              "changelog_section": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(\\+agent\\.[0-9]+)?$" },
+              "changelog_sha256": { "$ref": "#/$defs/sha256" },
               "agent_impact": { "type": "string", "minLength": 1 },
               "compatibility": { "type": "string", "enum": ["compatible", "additive", "breaking"] },
               "migration": { "type": "string", "minLength": 1 },

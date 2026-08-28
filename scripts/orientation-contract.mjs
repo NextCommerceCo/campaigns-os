@@ -187,10 +187,9 @@ export function validateLedgerStructure(ledger, { policy, surface, sections }) {
   const seenIds = new Set();
   const seenIdentities = new Map();
   const seenSections = new Map();
-  let previousSequence = 0;
   let previousDate = "";
 
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     const where = `${LEDGER_PATH} ${entry?.id ?? "<entry with no id>"}`;
 
     // The self-reference ban, enforced by name and not only by the schema's
@@ -208,10 +207,12 @@ export function validateLedgerStructure(ledger, { policy, surface, sections }) {
     if (seenIds.has(entry.id)) errors.push(`${where}: duplicate entry id`);
     seenIds.add(entry.id);
 
-    if (entry.sequence !== previousSequence + 1) {
-      errors.push(`${where}: sequence must be ${previousSequence + 1} (append-only order), got ${entry.sequence}`);
+    // Expected sequence comes from the entry's POSITION, not from the previous
+    // entry's claimed value — resyncing to a wrong claim would let every entry
+    // after a gap pass while only the first violation is reported.
+    if (entry.sequence !== index + 1) {
+      errors.push(`${where}: sequence must be ${index + 1} (append-only order), got ${entry.sequence}`);
     }
-    previousSequence = typeof entry.sequence === "number" ? entry.sequence : previousSequence + 1;
 
     if (typeof entry.date === "string" && entry.date < previousDate) {
       errors.push(`${where}: date ${entry.date} is earlier than the previous entry's ${previousDate}; entries are ordered`);
@@ -220,6 +221,7 @@ export function validateLedgerStructure(ledger, { policy, surface, sections }) {
 
     if (entry.kind === "amendment") {
       if (!entry.amends) errors.push(`${where}: an amendment must name the entry it amends`);
+      else if (entry.amends === entry.id) errors.push(`${where}: an amendment cannot amend itself`);
       else if (!seenIds.has(entry.amends)) errors.push(`${where}: amends ${entry.amends}, which is not an earlier entry`);
       if (!entry.amendment_reason) errors.push(`${where}: an amendment must carry amendment_reason`);
     } else if (entry.amends || entry.amendment_reason) {
@@ -272,6 +274,10 @@ export function validateLedgerStructure(ledger, { policy, surface, sections }) {
     }
 
     for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
+      if (!change || typeof change !== "object") {
+        errors.push(`${where}: change items must be objects, got ${JSON.stringify(change)}`);
+        continue;
+      }
       if (!knownClasses.has(change.class)) {
         errors.push(`${where}: change class ${JSON.stringify(change.class)} is not defined in ${POLICY_PATH}`);
         continue;
