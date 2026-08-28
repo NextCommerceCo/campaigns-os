@@ -1,0 +1,17 @@
+{
+  "_note": "Fixture copy. Shape-compatible with the real manifest so a consumer's parser exercises the same code path; the values are invented and describe nothing real.",
+  "surface_version": "9.0.0",
+  "package_exports": [],
+  "bin": [],
+  "cli_commands": [],
+  "hashed": {
+    "schemas/example.v0.schema.json": {
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "named": [
+    "CHANGELOG.md",
+    "contracts/release-ledger.json",
+    "docs/example-contract.md"
+  ]
+}

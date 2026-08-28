@@ -1,0 +1,21 @@
+{
+  "_note": "Enumerates every tripwire in this fixture so a consumer's no-execution test can assert an exact expected set instead of hand-copying a list that silently rots when a tripwire is added.",
+  "schema": "campaigns-os-hostile-target-fixture/v1",
+  "fixture_version": "1.0.0",
+  "target_root": "repo",
+  "invariant": "A conforming orientation read of target_root executes none of the tripwires below. The expected hit count is exactly 0.",
+  "tripwire_log_env": "CAMPAIGNS_OS_TRIPWIRE_LOG",
+  "expected_hit_count": 0,
+  "tripwires": [
+    { "path": "repo/hooks/post-checkout", "kind": "git_hook", "mode": "755", "fires_on": "git checkout / git worktree add against a repository with these hooks installed" },
+    { "path": "repo/hooks/post-merge", "kind": "git_hook", "mode": "755", "fires_on": "git merge or git pull" },
+    { "path": "repo/hooks/pre-commit", "kind": "git_hook", "mode": "755", "fires_on": "git commit" },
+    { "path": "repo/bin/tripwire.mjs", "kind": "executable_file", "mode": "755", "fires_on": "direct execution of a target-supplied binary" },
+    { "path": "repo/package.json", "kind": "package_lifecycle_script", "mode": "644", "fires_on": "npm install / npm ci / npm pack without --ignore-scripts (preinstall, install, postinstall, prepare, prepack)" }
+  ],
+  "orientation_data": {
+    "changelog": "repo/CHANGELOG.md",
+    "release_ledger": "repo/contracts/release-ledger.json",
+    "supported_surface": "repo/contracts/supported-surface.json"
+  }
+}

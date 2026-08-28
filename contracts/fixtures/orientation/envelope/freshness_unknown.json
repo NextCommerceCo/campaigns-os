@@ -1,0 +1,97 @@
+{
+  "schema_version": "campaigns-os-tooling-orientation/v1",
+  "request": {
+    "run_id": "run-example-0001",
+    "checkout_mode": "managed",
+    "mutation_policy": "observe_only",
+    "baseline": {
+      "kind": "supported_surface",
+      "commit": "1111111111111111111111111111111111111111",
+      "surface_version": "1.13.0"
+    },
+    "accepted_orientation_schemas": [
+      "campaigns-os-tooling-orientation/v1"
+    ],
+    "accepted_surface_range": ">=1.13.0 <2.0.0",
+    "manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "repository": {
+    "owner": "NextCommerceCo",
+    "repository": "campaigns-os",
+    "branch": "main",
+    "upstream": "origin/main",
+    "clean": true,
+    "shallow": false,
+    "graph_relation": "unknown",
+    "common_git_identity": "managed-store-0001",
+    "worktree_identity": "generation-0001",
+    "commit_before": "1111111111111111111111111111111111111111",
+    "commit_fetched": null,
+    "commit_after": "1111111111111111111111111111111111111111"
+  },
+  "freshness": {
+    "state": "unknown",
+    "observed_at": "2026-08-28T00:00:00Z",
+    "fetch_result": {
+      "attempted": true,
+      "succeeded": false,
+      "duration_ms": 30000,
+      "reason_code": "fetch_failed"
+    }
+  },
+  "surface": {
+    "reviewed_version": "1.13.0",
+    "target_version": null,
+    "current_version": "1.13.0",
+    "compatibility_result": "unknown",
+    "compatibility_rule": "no target was observed, so compatibility is not decidable",
+    "transitions": []
+  },
+  "release_ledger": {
+    "ledger_schema_version": "campaigns-os-release-ledger/v1",
+    "entries": []
+  },
+  "changelog": {
+    "sections": []
+  },
+  "runtime": {
+    "recipe_id": null,
+    "source_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+    "generated_state": "fresh",
+    "emitter_commit": "1111111111111111111111111111111111111111",
+    "refresh_action": "none",
+    "ready": true
+  },
+  "transaction": {
+    "state": "none",
+    "commit_before": "1111111111111111111111111111111111111111",
+    "commit_target": "1111111111111111111111111111111111111111",
+    "commit_observed": "1111111111111111111111111111111111111111",
+    "recovered_interrupted_update": false
+  },
+  "outcome": {
+    "disposition": "freshness_unknown",
+    "reason_code": "fetch_failed",
+    "active_generation_changed": false,
+    "fresh_exec_required": false,
+    "next_actions": [
+      "restore network access and rerun"
+    ],
+    "refusal_remedy": "Restore network access and rerun. The prior verified generation is left intact and no launch proceeds under strict-latest policy."
+  },
+  "limits": {
+    "limits_version": "1.0.0",
+    "max_source_bytes": 1048576,
+    "max_section_count": 64,
+    "max_section_bytes": 65536,
+    "max_envelope_bytes": 262144,
+    "max_ledger_entries": 256,
+    "applied": {
+      "source_bytes": 22024,
+      "section_count": 8,
+      "max_observed_section_bytes": 3903,
+      "envelope_bytes": 4096,
+      "ledger_entries": 1
+    }
+  }
+}

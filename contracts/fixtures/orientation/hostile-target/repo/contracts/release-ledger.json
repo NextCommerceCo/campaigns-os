@@ -1,0 +1,48 @@
+{
+  "_note": "Fixture copy. Two entries so a consumer exercises a multi-entry orientation window. Values are invented and describe nothing real.",
+  "schema_version": "campaigns-os-release-ledger/v1",
+  "entries": [
+    {
+      "id": "RL-0001",
+      "sequence": 1,
+      "date": "2026-01-01",
+      "kind": "release",
+      "surface_version": "8.0.0",
+      "changelog_section": "8.0.0",
+      "changelog_sha256": "1649c529470b313079ced834b043748de37805683fe9e61f6473d729639b4bd3",
+      "agent_impact": "None. The fixture surface came into existence.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/example.v0.schema.json",
+          "surface_entry": "schemas/example.v0.schema.json",
+          "summary": "The fixture schema was introduced."
+        }
+      ],
+      "entry_sha256": "541525e9550ed6a3c6892b03316f8141b59d7bc1bc8cb1e3077ccf1cee648208"
+    },
+    {
+      "id": "RL-0002",
+      "sequence": 2,
+      "date": "2026-01-02",
+      "kind": "release",
+      "surface_version": "9.0.0",
+      "changelog_section": "9.0.0",
+      "changelog_sha256": "92a3adaca47437b957530dd984780f707c9766fe53aa0b03c8da489f8b8bacd0",
+      "agent_impact": "None. A second entry exists so a consumer reads a multi-entry window.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/example-contract.md",
+          "surface_entry": "docs/example-contract.md",
+          "summary": "The fixture contract doc gained a section."
+        }
+      ],
+      "entry_sha256": "cd08981736013e6192e9998e9e1e64032d2cb09378feb9ee1e49043cef17d2f3"
+    }
+  ]
+}

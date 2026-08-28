@@ -21,6 +21,8 @@ implementation detail, however stable it looks.
 | Contract docs: `CONTEXT.md`, `docs/campaigns-os-build-flow.md`, `docs/build-packet.md`, `docs/design-source-package.md`, `docs/campaign-build-brief.md`, `docs/campaign-standardization-report.md`, `docs/brand-theme-bridge.md`, `docs/qa-and-test-orders.md`, `docs/versioning.md`, `docs/workflow-findings-sidecar.md`, this file | Named entry points consumers pin for context. | Content evolves freely; the path must keep existing. |
 | `skills.json` + `skills/` + `skills.sh` | Versioned skill packages and their installer. | Governed by `check-skill-versions.mjs` (parity + bump gate + reserved external names). `skills.json` ships in the npm pack as of surface 1.0.0. |
 | `compatibility.json` | The published compatibility statement. | Named; must keep existing. |
+| Orientation contract: `AGENTS.md`, `CHANGELOG.md`, `contracts/release-ledger.json`, `contracts/agent-relevant-change-policy.v1.json`, `contracts/orientation-limits.v1.json`, `contracts/orientation-reason-codes.v1.json`, `docs/orientation-contract-reference.md`, `docs/release-ledger-authoring-guide.md` | The declarative data a consumer reads from Git objects to decide whether a commit is safe to work against, without executing anything from this repository. Schema `campaigns-os-tooling-orientation/v1`; ledger schema `campaigns-os-release-ledger/v1`. Entry point: [`AGENTS.md`](../AGENTS.md). | Named. The ledger is append-only: a correction ships as a new amendment entry, never an edit. `scripts/check-release-ledger.mjs` enforces the two-way gate; `docs/orientation-contract-reference.md` is generated and CI fails on a stale copy. |
+| Orientation fixtures: `contracts/fixtures/orientation/envelope/*.json`, `contracts/fixtures/orientation/hostile-target/**` (as named) | The bytes a consumer's parser validates against: one envelope per terminal outcome, plus a hostile target carrying Git hooks, an executable file, and npm lifecycle scripts for proving a reader executes nothing. | Named. Regenerate the envelopes with `npm run generate:orientation-docs`. Fixtures under `contracts/fixtures/` that are **not** named here are this repo's own test data and are not supported. |
 
 Everything on this list must also **ship in the npm tarball** — the gate checks
 `package.json` `files[]` coverage, so "supported" can never mean "absent from
@@ -37,8 +39,11 @@ the package a consumer installs."
   ops-repo ADR-003 parity baseline, not this manifest.
 - `scripts/**` — repo checkers, including this gate's own implementation.
 - `examples/**`, `prompts/**`, `agents/**` — illustrative, regenerated at will.
-- `contracts/**` other than `supported-surface.json` and
-  `reserved-skill-names.json` — internal build/QA contract data.
+- `contracts/**` other than `supported-surface.json`,
+  `reserved-skill-names.json`, and the orientation contract/fixture entries
+  named in the manifest — internal build/QA contract data. In particular,
+  `contracts/fixtures/orientation/release-gate/cases.json` is this repo's own
+  release-gate test matrix, not a consumer contract.
 - CLI output text, log lines, and human-facing handoff strings. Machine-readable
   artifact fields are governed by their schemas, not by prose.
 
@@ -51,7 +56,14 @@ the package a consumer installs."
    manifest adds a `cli_commands`, `package_exports`, or `bin` entry: those are
    additive public-surface expansions even though the gate cannot yet derive
    the owed bump automatically.
-3. Breaking a consumer-visible shape? New schema-version const, and say so in
+3. Add a release-ledger entry. Every agent-relevant change — hashed or named
+   path, CLI command/subcommand/flag, skill, schema, package export,
+   compatibility policy, agent-facing documentation, workflow, or generated
+   runtime — owes exactly one entry in `contracts/release-ledger.json`, whether
+   or not `surface_version` moved. `scripts/check-release-ledger.mjs --base`
+   enforces this in both directions. See
+   [the authoring guide](release-ledger-authoring-guide.md).
+4. Breaking a consumer-visible shape? New schema-version const, and say so in
    the PR body — downstream pins (Campaigns Agent context spine, ops-repo
    `public-contracts.manifest.json`) update on their own cadence against a
    version they can see move.

@@ -1,0 +1,195 @@
+{
+  "_note": "Append-only. One entry per accepted release or reviewed amendment; one change item per agent-relevant semantic change. Entries carry NO commit identifier — a consumer derives the introducing commit from Git history at the target OID. Historical entries are never rewritten; a correction ships as a new amendment entry. Authoring rules: docs/release-ledger-authoring-guide.md.",
+  "schema_version": "campaigns-os-release-ledger/v1",
+  "entries": [
+    {
+      "id": "RL-0001",
+      "sequence": 1,
+      "date": "2026-08-28",
+      "kind": "release",
+      "surface_version": "1.14.0",
+      "changelog_section": "1.14.0",
+      "changelog_sha256": "fa7ce3767d17a61f9c7a72d265609941c16b7a5803a6c6b278cdb76e8fde02b8",
+      "agent_impact": "A consumer may now assemble a campaigns-os-tooling-orientation/v1 envelope from Git objects at a resolved commit, without executing anything from this repository. Nothing existing changed shape; adoption is optional and additive.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "The agent entry point was introduced: canonical reading order, the supported-versus-internal boundary, mixed-version rules, and the rule that a consumer never executes target code to decide whether to trust the target."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/agent-relevant-change-policy.v1.json",
+          "surface_entry": "contracts/agent-relevant-change-policy.v1.json",
+          "summary": "The single machine-readable definition of an agent-relevant change was introduced: ten semantic classes, an ordered total classifier, and a stated reason for every exclusion."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/current.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/current.json",
+          "summary": "A validated example orientation envelope for the current terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/freshness_unknown.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/freshness_unknown.json",
+          "summary": "A validated example orientation envelope for the freshness_unknown terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/legacy_baseline.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/legacy_baseline.json",
+          "summary": "A validated example orientation envelope for the legacy_baseline terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/orientation_available.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/orientation_available.json",
+          "summary": "A validated example orientation envelope for the orientation_available terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/recovered_interrupted_update.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/recovered_interrupted_update.json",
+          "summary": "A validated example orientation envelope for the recovered_interrupted_update terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/refused.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/refused.json",
+          "summary": "A validated example orientation envelope for the refused terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/restart_required.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/restart_required.json",
+          "summary": "A validated example orientation envelope for the restart_required terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/updated.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/updated.json",
+          "summary": "A validated example orientation envelope for the updated terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/manifest.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/manifest.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: manifest.json."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/CHANGELOG.md",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/CHANGELOG.md",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/CHANGELOG.md."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/bin/tripwire.mjs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/contracts/release-ledger.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/contracts/release-ledger.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/contracts/release-ledger.json."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/contracts/supported-surface.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/contracts/supported-surface.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/contracts/supported-surface.json."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/hooks/post-checkout."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-merge",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-merge",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/hooks/post-merge."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hooks/pre-commit",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hooks/pre-commit",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/hooks/pre-commit."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/package.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/package.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/package.json."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/orientation-limits.v1.json",
+          "surface_entry": "contracts/orientation-limits.v1.json",
+          "summary": "Versioned bounds on an orientation read were introduced: source bytes, section count, section bytes, envelope bytes, and ledger entries. Exceeding one refuses with orientation_too_large; nothing is truncated."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/orientation-reason-codes.v1.json",
+          "surface_entry": "contracts/orientation-reason-codes.v1.json",
+          "summary": "The stable reason-code vocabulary was introduced, with one meaning, one deterministic remedy, one owning test id, and the terminal outcomes it may accompany per code."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advanced to 1.14.0; two orientation schemas were added as hashed entries and twenty-five orientation contract, documentation, and fixture paths as named entries."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "The normative orientation reference was introduced. It is generated from the contract files and fixtures, so a stale copy fails CI rather than misleading a reader."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/release-ledger-authoring-guide.md",
+          "surface_entry": "docs/release-ledger-authoring-guide.md",
+          "summary": "The release-ledger authoring guide was introduced: what counts as agent-relevant, how a same-surface change is recorded, how an amendment works, and the full pass/fail matrix."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The compatibility promise now covers the orientation contract and its fixtures, and the change procedure now requires a release-ledger entry."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "The orientation, ledger, change-policy, reason-code, and limits version lines were declared alongside the existing contract versions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "AGENTS.md and CHANGELOG.md were added to files[] so the new named surface actually ships, and the release-ledger and generated-documentation gates were added to npm run check."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-release-ledger.v1.schema.json",
+          "surface_entry": "schemas/campaigns-os-release-ledger.v1.schema.json",
+          "summary": "The append-only release-ledger schema was introduced. It rejects any commit-shaped property, because an entry cannot honestly name the commit that contains it."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-tooling-orientation.v1.schema.json",
+          "surface_entry": "schemas/campaigns-os-tooling-orientation.v1.schema.json",
+          "summary": "The orientation envelope schema was introduced: ten required semantic groups, eight terminal outcomes, and the stable reason-code enum."
+        }
+      ],
+      "entry_sha256": "ebc88354a792f7020dd15fd08ef5ae4feb6fa0e5802867b65722722a80a0a42f"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Tripwire. Records that a consumer executed target-controlled code, then exits
+# 0 so the run under test continues and the counter, not a crash, reports it.
+printf 'git_hook %s\n' "post-checkout" >> "${CAMPAIGNS_OS_TRIPWIRE_LOG:-$(dirname "$0")/../../tripwire.log}"
+exit 0

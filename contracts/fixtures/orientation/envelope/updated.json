@@ -1,0 +1,133 @@
+{
+  "schema_version": "campaigns-os-tooling-orientation/v1",
+  "request": {
+    "run_id": "run-example-0001",
+    "checkout_mode": "managed",
+    "mutation_policy": "managed_update",
+    "baseline": {
+      "kind": "supported_surface",
+      "commit": "1111111111111111111111111111111111111111",
+      "surface_version": "1.13.0"
+    },
+    "accepted_orientation_schemas": [
+      "campaigns-os-tooling-orientation/v1"
+    ],
+    "accepted_surface_range": ">=1.13.0 <2.0.0",
+    "manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "repository": {
+    "owner": "NextCommerceCo",
+    "repository": "campaigns-os",
+    "branch": "main",
+    "upstream": "origin/main",
+    "clean": true,
+    "shallow": false,
+    "graph_relation": "identical",
+    "common_git_identity": "managed-store-0001",
+    "worktree_identity": "generation-0001",
+    "commit_before": "1111111111111111111111111111111111111111",
+    "commit_fetched": "2222222222222222222222222222222222222222",
+    "commit_after": "2222222222222222222222222222222222222222"
+  },
+  "freshness": {
+    "state": "updated",
+    "observed_at": "2026-08-28T00:00:00Z",
+    "fetch_result": {
+      "attempted": true,
+      "succeeded": true,
+      "duration_ms": 610
+    }
+  },
+  "surface": {
+    "reviewed_version": "1.13.0",
+    "target_version": "1.14.0",
+    "current_version": "1.13.0",
+    "compatibility_result": "compatible",
+    "compatibility_rule": "target surface_version is inside the consumer's accepted_surface_range",
+    "transitions": [
+      {
+        "from": "1.13.0",
+        "to": "1.14.0"
+      }
+    ]
+  },
+  "release_ledger": {
+    "ledger_schema_version": "campaigns-os-release-ledger/v1",
+    "entries": [
+      {
+        "id": "RL-0001",
+        "sequence": 1,
+        "date": "2026-08-28",
+        "kind": "release",
+        "surface_version": "1.14.0",
+        "agent_impact": "A consumer may now read the orientation contract and release ledger from Git objects.",
+        "compatibility": "additive",
+        "migration": "none",
+        "affected_surface_entries": [
+          "contracts/release-ledger.json"
+        ],
+        "changes": [
+          {
+            "class": "named_surface",
+            "path": "contracts/release-ledger.json",
+            "surface_entry": "contracts/release-ledger.json",
+            "summary": "The append-only agent-relevant release ledger was introduced."
+          }
+        ],
+        "entry_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "introducing_commit": "2222222222222222222222222222222222222222"
+      }
+    ]
+  },
+  "changelog": {
+    "sections": [
+      {
+        "section_id": "1.14.0",
+        "date": "2026-08-28",
+        "agent_impact": "A consumer may now read the orientation contract and release ledger from Git objects.",
+        "migration_action": "none",
+        "body_markdown": "## [1.14.0] - 2026-08-28\n\n### Added\n\n- The orientation contract and the agent-relevant release ledger.",
+        "body_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      }
+    ]
+  },
+  "runtime": {
+    "recipe_id": null,
+    "source_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+    "generated_state": "fresh",
+    "emitter_commit": "1111111111111111111111111111111111111111",
+    "refresh_action": "none",
+    "ready": true
+  },
+  "transaction": {
+    "state": "finalized",
+    "commit_before": "1111111111111111111111111111111111111111",
+    "commit_target": "2222222222222222222222222222222222222222",
+    "commit_observed": "2222222222222222222222222222222222222222",
+    "recovered_interrupted_update": false
+  },
+  "outcome": {
+    "disposition": "updated",
+    "reason_code": "orientation_rendered",
+    "active_generation_changed": true,
+    "fresh_exec_required": true,
+    "next_actions": [
+      "start a fresh session against the promoted generation"
+    ]
+  },
+  "limits": {
+    "limits_version": "1.0.0",
+    "max_source_bytes": 1048576,
+    "max_section_count": 64,
+    "max_section_bytes": 65536,
+    "max_envelope_bytes": 262144,
+    "max_ledger_entries": 256,
+    "applied": {
+      "source_bytes": 22024,
+      "section_count": 8,
+      "max_observed_section_bytes": 3903,
+      "envelope_bytes": 4096,
+      "ledger_entries": 1
+    }
+  }
+}

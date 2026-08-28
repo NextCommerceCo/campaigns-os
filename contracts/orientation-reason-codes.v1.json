@@ -1,0 +1,196 @@
+{
+  "_note": "The stable reason-code vocabulary for campaigns-os-tooling-orientation/v1. This file is the single source: the schema enum in schemas/campaigns-os-tooling-orientation.v1.schema.json is checked against these keys exactly, and docs/orientation-contract-reference.md is GENERATED from here. Codes are append-only — a code may gain meaning text, but renaming, merging, or removing one is a breaking surface change. `owner` says which repository's test suite is obliged to exercise the code; a campaigns-os-owned code must have a test whose name contains its test_id in this repository.",
+  "schema": "campaigns-os-orientation-reason-codes/v1",
+  "vocabulary_version": "1.0.0",
+  "codes": {
+    "wrong_remote": {
+      "meaning": "The observed checkout's origin remote does not normalize to the expected owner/repository identity.",
+      "remedy": "Point the checkout at the expected remote, or supply a checkout whose origin matches the manifest's remote_identity. The refusal names the expected identity.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D2-wrong-remote"
+    },
+    "dirty_checkout": {
+      "meaning": "The operator-supplied checkout has uncommitted worktree or index changes, so its bytes are not the bytes of any commit.",
+      "remedy": "Commit or stash the local changes, or run against a managed generation. Orientation never writes to an operator checkout to clean it.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D4-dirty-checkout"
+    },
+    "detached_head": {
+      "meaning": "The checkout's HEAD is detached, so there is no branch to compare against the expected branch.",
+      "remedy": "Check out the expected branch, or declare the checkout managed so orientation supplies its own generation.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D4-detached-head"
+    },
+    "missing_upstream": {
+      "meaning": "The checkout's current branch has no upstream tracking ref, so ahead/behind cannot be computed.",
+      "remedy": "Set the branch upstream to the expected remote branch, or use managed mode.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D4-missing-upstream"
+    },
+    "ahead_of_upstream": {
+      "meaning": "The checkout carries commits the upstream default branch does not, so its contracts are not a published generation.",
+      "remedy": "Push or drop the local commits, or run against a managed generation at the published OID.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D4-ahead-of-upstream"
+    },
+    "diverged_history": {
+      "meaning": "The checkout and the upstream default branch have diverged; neither is an ancestor of the other.",
+      "remedy": "Reconcile the branch with upstream by hand. Orientation refuses rather than choosing a side.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D3-diverged-history"
+    },
+    "history_incomplete": {
+      "meaning": "The reviewed baseline commit or an entry's introducing commit is not reachable in the available history, typically a shallow clone.",
+      "remedy": "Deepen the clone to include the reviewed baseline, or adopt a newer reviewed baseline that is present.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-B2-shallow-history"
+    },
+    "fetch_failed": {
+      "meaning": "The bounded freshness fetch did not complete: offline, DNS failure, timeout, or authentication failure.",
+      "remedy": "Restore network access and rerun. The prior verified generation is left intact and no launch proceeds under strict-latest policy.",
+      "outcomes": ["freshness_unknown", "refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D2-fetch-failed"
+    },
+    "orientation_in_progress": {
+      "meaning": "Another process holds the orientation lock for this target.",
+      "remedy": "Wait for the holder named in the diagnostic to finish, or clear a stale lock after confirming its owner process is gone.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D3-orientation-in-progress"
+    },
+    "pointer_race": {
+      "meaning": "The active generation pointer changed between read and compare-and-swap.",
+      "remedy": "Rerun. The transaction is safe to retry; the prior generation stays active until a swap succeeds.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-E2-pointer-race"
+    },
+    "orientation_incomplete": {
+      "meaning": "The target commit declares an agent-relevant change that no release-ledger entry covers, or a ledger entry that maps to no classified change and no reviewed amendment. The two-way release gate is not satisfied at that commit.",
+      "remedy": "At the target commit, add the missing ledger change item, or add a reviewed amendment entry. The refusal names the uncovered path or the orphaned change identity. Never weaken the classifier to pass.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-os",
+      "test_id": "A1-orientation-incomplete"
+    },
+    "orientation_too_large": {
+      "meaning": "A declared limit in contracts/orientation-limits.v1.json was exceeded: source bytes, section count, section bytes, envelope bytes, or ledger entries.",
+      "remedy": "Adopt a newer reviewed baseline so the window is smaller, or raise the limit as a reviewed policy change that advances limits_version and carries its own ledger entry. Orientation refuses; it never truncates.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-os",
+      "test_id": "A1-orientation-too-large"
+    },
+    "surface_incompatible": {
+      "meaning": "The target supported-surface version falls outside the consumer's accepted supported_surface_range.",
+      "remedy": "Upgrade the consumer to a build whose accepted range covers the target, or pin a reviewed baseline inside the current range.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-G-surface-incompatible"
+    },
+    "orientation_contract_missing": {
+      "meaning": "The target commit predates campaigns-os-tooling-orientation/v1 and carries no orientation contract, and it is not the one reviewed legacy baseline.",
+      "remedy": "Target a commit that ships the orientation contract, or declare the exact reviewed legacy baseline for the one-time attended migration path.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-G-orientation-contract-missing"
+    },
+    "checkout_missing": {
+      "meaning": "No checkout exists at the configured location and the mode does not authorize acquiring one.",
+      "remedy": "Supply the operator checkout at the configured path, or switch to managed mode so a generation can be acquired.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D1-checkout-missing"
+    },
+    "checkout_acquisition_failed": {
+      "meaning": "Managed acquisition did not complete: interrupted clone, remote validation failure, or a broken linked-worktree backpointer. Partial state is quarantined, never exposed as ready.",
+      "remedy": "Rerun acquisition. If it fails repeatedly, inspect the quarantined partial named in the diagnostic and confirm remote reachability.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D1-acquisition-failed"
+    },
+    "checkout_already_exists": {
+      "meaning": "The managed root reserved for acquisition appeared concurrently and is not an empty reservation this run owns.",
+      "remedy": "Rerun so the existing root is validated as a managed store, or remove the unexpected directory after confirming it holds no needed state.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D1-checkout-already-exists"
+    },
+    "checkout_mutation_not_authorized": {
+      "meaning": "The requested action would write to an operator-supplied checkout, which is always inspect-only.",
+      "remedy": "Switch to managed mode, or perform the change yourself in the operator checkout. No flag grants this authority.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D4-mutation-not-authorized"
+    },
+    "git_environment_unsafe": {
+      "meaning": "Ambient Git configuration could change command behavior: hooks, aliases, pagers, credential prompts, external diff or merge helpers, or filesystem monitors.",
+      "remedy": "Rerun through the supported launcher, which runs Git under an explicit environment and config allowlist. Do not disable the allowlist.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-D2-hostile-git-config"
+    },
+    "runtime_refresh_required": {
+      "meaning": "The generated runtime is absent or does not match its source fingerprint at the target commit.",
+      "remedy": "Let the launcher prepare a fresh generation, which runs the declared preparation recipe in isolation. Never rebuild in place over an active generation.",
+      "outcomes": ["restart_required", "refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-E1-runtime-refresh-required"
+    },
+    "runtime_refresh_failed": {
+      "meaning": "The declared preparation recipe ran and did not produce a verifiable generated runtime.",
+      "remedy": "Read the recorded recipe output in the run evidence. The prior verified generation remains active and usable.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-E1-runtime-refresh-failed"
+    },
+    "runtime_commit_mismatch": {
+      "meaning": "Source, skills, and command-line bytes in the candidate generation do not all resolve to one commit.",
+      "remedy": "Discard the candidate generation and prepare a fresh one. A session is never bound to a mixed-commit generation.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-E2-runtime-commit-mismatch"
+    },
+    "transaction_incomplete": {
+      "meaning": "A prior promotion transaction was interrupted and its record cannot be reconciled to a safe terminal state.",
+      "remedy": "Inspect the promotion record named in the diagnostic. The prior verified generation stays active; no partial generation is promoted.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-E3-transaction-incomplete"
+    },
+    "transaction_reconciled": {
+      "meaning": "An interrupted promotion transaction was found and completed or rolled back deterministically on this run.",
+      "remedy": "None. This is an informational terminal state; the reconciliation outcome is recorded in run evidence.",
+      "outcomes": ["recovered_interrupted_update"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-E3-transaction-reconciled"
+    },
+    "evidence_budget_exceeded": {
+      "meaning": "Bounded operator-state evidence storage would be exceeded by this run's records.",
+      "remedy": "Let retention prune, or raise the evidence budget as a reviewed policy change. Orientation refuses rather than launching a session it cannot audit.",
+      "outcomes": ["refused"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-F-evidence-budget-exceeded"
+    },
+    "already_current": {
+      "meaning": "The verified target equals the active generation; nothing changed and no restart is required.",
+      "remedy": "None.",
+      "outcomes": ["current"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-B3-already-current"
+    },
+    "orientation_rendered": {
+      "meaning": "A complete orientation envelope was assembled and rendered without mutating anything.",
+      "remedy": "None. Read the envelope's release_ledger and changelog groups to see what changed since the reviewed baseline.",
+      "outcomes": ["orientation_available", "updated", "restart_required", "legacy_baseline"],
+      "owner": "campaigns-agent",
+      "test_id": "TP-B3-orientation-rendered"
+    }
+  }
+}
