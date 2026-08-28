@@ -15,6 +15,12 @@
       "migration": "none",
       "changes": [
         {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "CI now runs the release-ledger completeness gate with --base on every pull request; npm run check runs only the structural half, because completeness needs a comparison point."
+        },
+        {
           "class": "documentation",
           "path": "AGENTS.md",
           "surface_entry": "AGENTS.md",
@@ -82,15 +88,15 @@
         },
         {
           "class": "named_surface",
-          "path": "contracts/fixtures/orientation/hostile-target/repo/CHANGELOG.md",
-          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/CHANGELOG.md",
-          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/CHANGELOG.md."
-        },
-        {
-          "class": "named_surface",
           "path": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
           "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
           "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/bin/tripwire.mjs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/CHANGELOG.md",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/CHANGELOG.md",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/CHANGELOG.md."
         },
         {
           "class": "named_surface",
@@ -189,7 +195,7 @@
           "summary": "The orientation envelope schema was introduced: ten required semantic groups, eight terminal outcomes, and the stable reason-code enum."
         }
       ],
-      "entry_sha256": "ebc88354a792f7020dd15fd08ef5ae4feb6fa0e5802867b65722722a80a0a42f"
+      "entry_sha256": "828477876a01cb72280456c86990cbcbbf5de713e802127dfb02d051452aef68"
     }
   ]
 }
