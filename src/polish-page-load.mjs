@@ -200,6 +200,16 @@ function resourceLedgerSort(a, b) {
   return String(a.url).localeCompare(String(b.url)) || String(a.resource_id).localeCompare(String(b.resource_id));
 }
 
+function hasOwn(value, field) {
+  return Boolean(value) && Object.prototype.hasOwnProperty.call(value, field);
+}
+
+function hasDeclaredLedgerShape(resource) {
+  return hasOwn(resource, "declared_bytes")
+    || hasOwn(resource, "canceled_request_count")
+    || hasOwn(resource, "declared_request_count");
+}
+
 function validResourceLedgerEntry(resource) {
   if (!resource || typeof resource !== "object" || Array.isArray(resource)) return false;
   if (!isSha256(resource.resource_id) || safeHttpUrl(resource.url) !== resource.url) return false;
@@ -219,6 +229,10 @@ function validResourceLedgerEntry(resource) {
   ]) {
     if (!isNonnegativeInteger(resource[field])) return false;
   }
+  const declaredShape = hasDeclaredLedgerShape(resource);
+  if (declaredShape && (!isNonnegativeInteger(resource.declared_bytes)
+    || !isNonnegativeInteger(resource.canceled_request_count)
+    || !isNonnegativeInteger(resource.declared_request_count))) return false;
   for (const field of [
     "unmeasured_request_count",
     "failed_request_count",
@@ -229,6 +243,10 @@ function validResourceLedgerEntry(resource) {
   ]) {
     if (resource[field] > resource.request_count) return false;
   }
+  if (declaredShape && (resource.canceled_request_count > resource.request_count
+    || resource.declared_request_count > resource.request_count
+    || resource.declared_request_count > resource.canceled_request_count
+    || (resource.declared_request_count === 0 && resource.declared_bytes !== 0))) return false;
   if (resource.cross_origin_request_count !== 0
     && resource.cross_origin_request_count !== resource.request_count) return false;
   if (!isSortedUnique(resource.statuses, (a, b) => a - b)
@@ -250,6 +268,11 @@ function projectResourceLedgerEntry(resource) {
       : "unknown",
     transferred_bytes: projectedInteger(resource?.transferred_bytes),
     request_count: projectedInteger(resource?.request_count),
+    ...(hasDeclaredLedgerShape(resource) ? {
+      declared_bytes: projectedInteger(resource?.declared_bytes),
+      canceled_request_count: projectedInteger(resource?.canceled_request_count),
+      declared_request_count: projectedInteger(resource?.declared_request_count),
+    } : {}),
     unmeasured_request_count: projectedInteger(resource?.unmeasured_request_count),
     failed_request_count: projectedInteger(resource?.failed_request_count),
     statuses: (Array.isArray(resource?.statuses) ? resource.statuses : [])
@@ -394,6 +417,7 @@ function expectedFetchedResources(media, ledgerEntries) {
       resource_type: resource.resource_type,
       transferred_bytes: resource.transferred_bytes,
       request_count: resource.request_count,
+      ...(hasDeclaredLedgerShape(resource) ? { declared_bytes: resource.declared_bytes } : {}),
       matched_source_resource_ids: matchedSourceIds.sort(),
     }];
   }).sort(resourceLedgerSort);
@@ -407,6 +431,7 @@ function validFetchedResource(resource) {
     && safeHttpUrl(resource.url) === resource.url
     && RESOURCE_TYPES.has(resource.resource_type)
     && isNonnegativeInteger(resource.transferred_bytes)
+    && (!hasOwn(resource, "declared_bytes") || isNonnegativeInteger(resource.declared_bytes))
     && isNonnegativeInteger(resource.request_count)
     && isSortedUnique(resource.matched_source_resource_ids)
     && resource.matched_source_resource_ids.every(isSha256);
@@ -419,6 +444,7 @@ function projectFetchedResource(resource) {
     resource_type: RESOURCE_TYPES.has(resource?.resource_type) ? resource.resource_type : "unknown",
     transferred_bytes: projectedInteger(resource?.transferred_bytes),
     request_count: projectedInteger(resource?.request_count),
+    ...(hasOwn(resource, "declared_bytes") ? { declared_bytes: projectedInteger(resource?.declared_bytes) } : {}),
     matched_source_resource_ids: (Array.isArray(resource?.matched_source_resource_ids)
       ? resource.matched_source_resource_ids
       : []).filter(isSha256).sort(),
@@ -458,13 +484,16 @@ function validMediaProjection(media, ledgerEntries) {
       && kind !== "visibility_collapse")
     || media.hidden_at_load !== (media.hidden_by.length > 0)) return false;
   if (!isNonnegativeInteger(media.fetched_bytes)
+    || (hasOwn(media, "declared_bytes") && !isNonnegativeInteger(media.declared_bytes))
     || !isNonnegativeInteger(media.fetched_request_count)
     || !Array.isArray(media.fetched_resources)
     || media.fetched_resources.some((resource) => !validFetchedResource(resource))) return false;
   const expected = expectedFetchedResources(media, ledgerEntries);
   const projectedFetched = media.fetched_resources.map(projectFetchedResource).sort(resourceLedgerSort);
   if (canonicalJson(projectedFetched) !== canonicalJson(expected)) return false;
+  const expectedDeclaredBytes = expected.reduce((sum, resource) => sum + (resource.declared_bytes || 0), 0);
   return media.fetched_bytes === expected.reduce((sum, resource) => sum + resource.transferred_bytes, 0)
+    && (hasOwn(media, "declared_bytes") ? media.declared_bytes === expectedDeclaredBytes : expectedDeclaredBytes === 0)
     && media.fetched_request_count === expected.reduce((sum, resource) => sum + resource.request_count, 0);
 }
 
@@ -492,6 +521,7 @@ function projectMedia(media) {
     zero_size_at_load: media?.zero_size_at_load === null ? null : projectedBoolean(media?.zero_size_at_load),
     fetched_bytes: projectedInteger(media?.fetched_bytes),
     fetched_request_count: projectedInteger(media?.fetched_request_count),
+    ...(hasOwn(media, "declared_bytes") ? { declared_bytes: projectedInteger(media?.declared_bytes) } : {}),
     fetched_resources: (Array.isArray(media?.fetched_resources) ? media.fetched_resources : [])
       .map(projectFetchedResource)
       .sort(resourceLedgerSort),
@@ -775,8 +805,9 @@ function hiddenEagerMediaFindings(captures) {
   for (const capture of captures) {
     for (const media of (Array.isArray(capture?.media) ? capture.media : [])) {
       if (!media?.hidden_at_load || media?.preload_defers_fetch) continue;
-      if (!Number.isInteger(media.fetched_bytes)
-        || media.fetched_bytes <= HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES) continue;
+      const assessedBytes = Math.max(media?.fetched_bytes || 0, media?.declared_bytes || 0);
+      if (!Number.isInteger(assessedBytes)
+        || assessedBytes <= HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES) continue;
       const allSources = [...new Set((Array.isArray(media.fetched_resources) ? media.fetched_resources : [])
         .map((resource) => resource?.url)
         .filter(Boolean))].sort();
@@ -797,6 +828,8 @@ function hiddenEagerMediaFindings(captures) {
           .update(JSON.stringify(allResourceIds))
           .digest("hex")}`,
         transferred_bytes: media.fetched_bytes,
+        declared_bytes: media.declared_bytes || 0,
+        assessed_bytes: assessedBytes,
         threshold_bytes: HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES,
         preload_attribute: media.preload_attribute,
         hidden_by: [...(Array.isArray(media.hidden_by) ? media.hidden_by : [])].sort(),

@@ -769,6 +769,8 @@ test("CDP response aggregation sums range transfers once and keeps cross-origin 
       status: 206,
       resource_type: "Media",
       encoded_data_length: 524_289,
+      declared_data_length: 40 * 1_024 * 1_024,
+      canceled: true,
       response_encoded_data_length: 700_000,
     },
     {
@@ -799,7 +801,10 @@ test("CDP response aggregation sums range transfers once and keeps cross-origin 
   assert.equal(result.cross_origin_request_count, 2);
   assert.equal(result.resources.length, 2);
   assert.equal(result.resources[0].transferred_bytes, 1_048_577);
+  assert.equal(result.resources[0].declared_bytes, 40 * 1_024 * 1_024);
   assert.equal(result.resources[0].request_count, 2);
+  assert.equal(result.resources[0].canceled_request_count, 1);
+  assert.equal(result.resources[0].declared_request_count, 1);
   assert.equal(result.resources[0].partial_request_count, 2);
   assert.deepEqual(result.resources[0].statuses, [206]);
   assert.equal(result.largest_resource.transferred_bytes, 1_048_577);

@@ -135,18 +135,27 @@ Each `captures[]` entry has this shape:
 | `networkidle.status`, `networkidle.duration_ms` | `settled`, `timeout`, or `invalid`. Measured duration starts immediately before navigation and ends when network-idle settles or times out; synthetic producer failures use `invalid` / `null`, not a fabricated duration. It is evidence timing, not a performance SLA. |
 | `media_collection.status` and count fields | `observed_element_count`, `failed_element_count`, `omitted_element_count`, `source_overflow_element_count`, and `ancestor_overflow_element_count` explain complete, partial, or failed DOM measurement. |
 | `media[]` source fields | `tag_name`, `element_index`, `current_src`, `src_attribute`, `source_src_attributes[]`, `observed_source_urls[]`, and normalized `source_references[]` retain the initial and post-network-idle source history needed for resource attribution. |
-| `media[]` state and transfer fields | `preload_attribute`, `preload_defers_fetch`, `hidden_at_load`, `hidden_by[]`, `zero_size_at_load`, `fetched_bytes`, `fetched_request_count`, and bounded `fetched_resources[]`. Zero-size geometry is evidence only, not hidden-state proof. |
+| `media[]` state and transfer fields | `preload_attribute`, `preload_defers_fetch`, `hidden_at_load`, `hidden_by[]`, `zero_size_at_load`, `fetched_bytes`, `declared_bytes`, `fetched_request_count`, and bounded `fetched_resources[]`. Zero-size geometry is evidence only, not hidden-state proof. |
 | `resource_ledger.limit`, `total_resource_count`, `omitted_resource_count`, `omitted_request_count` | Ledger bound and explicit overflow totals. Any omission makes the capture incomplete. |
-| `resource_ledger.entries[]` | Safe URL/resource identity, type and type status, transferred/request/unmeasured/failed/partial/cross-origin/cache/service-worker counts, HTTP statuses, and match-resource IDs. Queries, fragments, credentials, headers, cookies, bodies, and raw protocol records are excluded. |
+| `resource_ledger.entries[]` | Safe URL/resource identity, type and type status, transferred/declared bytes, request/canceled/declared/unmeasured/failed/partial/cross-origin/cache/service-worker counts, HTTP statuses, and match-resource IDs. Queries, fragments, credentials, headers, cookies, bodies, and raw protocol records are excluded. |
 | `problems[]` | Sorted `{ code, count }` completeness defects. Any entry forces `measurement_status: "incomplete"`. |
 | `integrity.schema_version`, `algorithm`, `association_fingerprint`, `projection_fingerprint` | Versioned SHA-256 tamper-evidence for the deterministic projection and media/resource joins. These checks detect accidental or partial mutation; they are not a keyed signature. |
 
 Transfer accounting retains the greater of the terminal CDP encoded length and
 the cumulative `Network.dataReceived` encoded-byte count. A slow, failed, or
 unfinished transfer can therefore contribute an observed lower bound even when
-the terminal measurement is unavailable. The associated collection/failure
-problem still makes the capture incomplete; findings may remain visible for
-diagnosis, but incomplete measurement cannot pass or be waived.
+the terminal measurement is unavailable. Genuine failures still make the
+capture incomplete. Browser-canceled loads and requests still in flight when
+the bounded capture window closes remain complete when they have a response and
+an observed or declared size; they are recorded as canceled rather than failed.
+
+For canceled responses, the collector also retains the declared body size from
+`Content-Range`'s total when available, falling back to `Content-Length`.
+Observed transferred bytes remain unchanged. The hidden-eager-media checkpoint
+compares the larger of observed and declared bytes, so an early-aborted range
+load cannot make a large hidden video look small. Declared sizes do not add a
+measurement problem and are ignored for visible media and exact `preload="none"`
+or `preload="metadata"` exemptions.
 
 Producer waits are owned and bounded. The built-in browser bounds launch and
 per-cell work at 45 seconds and cleanup at 5 seconds, beneath the orchestration
@@ -165,8 +174,9 @@ counts/sentinels and a problem code, then blocks as incomplete rather than
 silently truncating into a pass.
 
 The owned checkpoint is `polish.hidden_eager_media`. A finding requires one
-computed-hidden `video` or `audio` element whose aggregate transferred bytes are
-strictly greater than `1,048,576`. `display:none`, `visibility:hidden`, or
+computed-hidden `video` or `audio` element whose aggregate assessed bytes are
+strictly greater than `1,048,576`; assessed bytes are the larger of observed
+transfer and canceled-response declared size. `display:none`, `visibility:hidden`, or
 `visibility:collapse` on the element or an ancestor counts as hidden. Zero-size
 geometry is evidence only.
 Exact ASCII-case-insensitive `preload="none"` and `preload="metadata"` defer the

@@ -55,8 +55,37 @@ function boundedCaptureUrl(value) {
   return value.length > MAX_POLISH_CAPTURE_URL_LENGTH ? "[url-too-long]" : value;
 }
 
+function responseHeader(response, name) {
+  if (!response?.headers || typeof response.headers !== "object" || Array.isArray(response.headers)) {
+    return undefined;
+  }
+  const wanted = name.toLowerCase();
+  for (const [key, value] of Object.entries(response.headers)) {
+    if (key.toLowerCase() === wanted) return value;
+  }
+  return undefined;
+}
+
+function decimalHeaderInteger(value) {
+  const token = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^\d+$/.test(token)) return undefined;
+  const parsed = Number(token);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function declaredResponseLength(response) {
+  const contentRange = responseHeader(response, "content-range");
+  if (typeof contentRange === "string") {
+    const match = /^bytes\s+\d+\s*-\s*\d+\s*\/\s*(\d+)\s*$/i.exec(contentRange.trim());
+    const total = decimalHeaderInteger(match?.[1]);
+    if (total !== undefined) return total;
+  }
+  return decimalHeaderInteger(responseHeader(response, "content-length"));
+}
+
 function projectProtocolResponse(value) {
   if (!value || typeof value !== "object") return null;
+  const declaredDataLength = declaredResponseLength(value);
   return {
     ...(typeof value.url === "string" ? { url: boundedCaptureUrl(value.url) } : {}),
     ...(Number.isInteger(value.status) ? { status: value.status } : {}),
@@ -64,6 +93,7 @@ function projectProtocolResponse(value) {
     ...(nonnegativeInteger(value.encodedDataLength) !== undefined
       ? { encodedDataLength: value.encodedDataLength }
       : {}),
+    ...(declaredDataLength !== undefined ? { declaredDataLength } : {}),
     fromDiskCache: Boolean(value.fromDiskCache),
     fromPrefetchCache: Boolean(value.fromPrefetchCache),
     fromServiceWorker: Boolean(value.fromServiceWorker),
@@ -129,6 +159,7 @@ function responseRecord(current, {
   response = current?.response,
   encodedDataLength,
   failed = false,
+  canceled = false,
 } = {}) {
   const url = typeof response?.url === "string" && response.url !== ""
     ? response.url
@@ -138,8 +169,9 @@ function responseRecord(current, {
   const lowerBound = current?.encodedDataObserved
     ? nonnegativeInteger(current.encodedDataLengthLowerBound)
     : undefined;
+  const declaredLength = canceled ? nonnegativeInteger(response?.declaredDataLength) : undefined;
   const retainedLength = measuredLength === undefined
-    ? lowerBound
+    ? lowerBound === undefined && declaredLength !== undefined ? 0 : lowerBound
     : lowerBound === undefined ? measuredLength : Math.max(measuredLength, lowerBound);
   return {
     ...(typeof url === "string" && url !== "" ? { url } : {}),
@@ -153,6 +185,8 @@ function responseRecord(current, {
     ...(retainedLength !== undefined
       ? { encoded_data_length: retainedLength }
       : {}),
+    ...(declaredLength !== undefined ? { declared_data_length: declaredLength } : {}),
+    ...(canceled ? { canceled: true } : {}),
     source_urls: sourceUrls,
     from_disk_cache: Boolean(response?.fromDiskCache),
     from_prefetch_cache: Boolean(response?.fromPrefetchCache),

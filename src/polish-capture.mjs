@@ -432,6 +432,9 @@ export function aggregateCdpResponses(responses, {
       continue;
     }
     const transferredBytes = record?.encoded_data_length;
+    const canceled = record?.canceled === true;
+    const declaredBytes = canceled && Number.isSafeInteger(record?.declared_data_length)
+      && record.declared_data_length >= 0 ? record.declared_data_length : null;
     const resourceType = normalizeResourceType(record?.resource_type);
     const cacheObserved = genericCacheFlag(record);
     const fromServiceWorker = Boolean(record?.from_service_worker);
@@ -467,7 +470,10 @@ export function aggregateCdpResponses(responses, {
       resource_type_status: resourceType.status,
       observed_resource_types: new Set(),
       transferred_bytes: 0,
+      declared_bytes: 0,
       request_count: 0,
+      canceled_request_count: 0,
+      declared_request_count: 0,
       unmeasured_request_count: 0,
       failed_request_count: 0,
       statuses: new Set(),
@@ -481,6 +487,11 @@ export function aggregateCdpResponses(responses, {
     if (resourceType.status === "unknown") group.resource_type_status = "unknown";
     if (transferMeasured) group.transferred_bytes += transferredBytes;
     else group.unmeasured_request_count += 1;
+    if (canceled) group.canceled_request_count += 1;
+    if (declaredBytes !== null) {
+      group.declared_bytes = Math.max(group.declared_bytes, declaredBytes);
+      group.declared_request_count += 1;
+    }
     group.request_count += 1;
     if (failed) group.failed_request_count += 1;
     if (Number.isInteger(record?.status)) group.statuses.add(record.status);
@@ -703,6 +714,7 @@ function mediaFetchedResources(media, resources) {
       url: resource.url,
       resource_type: resource.resource_type,
       transferred_bytes: resource.transferred_bytes,
+      declared_bytes: resource.declared_bytes,
       request_count: resource.request_count,
       matched_source_resource_ids: matchedSourceIds.sort(),
     }];
@@ -812,6 +824,7 @@ export function buildPageLoadCapture({
       media.push({
         ...normalized,
         fetched_bytes: fetchedResources.reduce((sum, resource) => sum + resource.transferred_bytes, 0),
+        declared_bytes: fetchedResources.reduce((sum, resource) => sum + resource.declared_bytes, 0),
         fetched_request_count: fetchedResources.reduce((sum, resource) => sum + resource.request_count, 0),
         fetched_resources: fetchedResources,
       });
