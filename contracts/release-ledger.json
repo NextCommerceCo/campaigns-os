@@ -9,7 +9,7 @@
       "kind": "release",
       "surface_version": "1.14.0",
       "changelog_section": "1.14.0",
-      "changelog_sha256": "fa7ce3767d17a61f9c7a72d265609941c16b7a5803a6c6b278cdb76e8fde02b8",
+      "changelog_sha256": "06cc6f84e2b8afcd805d3c1cb3c4ec900da79ad9ddc702ea6767701c085e46ee",
       "agent_impact": "A consumer may now assemble a campaigns-os-tooling-orientation/v1 envelope from Git objects at a resolved commit, without executing anything from this repository. Nothing existing changed shape; adoption is optional and additive.",
       "compatibility": "additive",
       "migration": "none",
@@ -112,6 +112,18 @@
         },
         {
           "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/docs/example-contract.md",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/docs/example-contract.md",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/docs/example-contract.md, the named entry the fixture manifest declares."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/schemas/example.v0.schema.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/schemas/example.v0.schema.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/schemas/example.v0.schema.json, the hashed entry the fixture manifest records a real digest for."
+        },
+        {
+          "class": "named_surface",
           "path": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
           "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
           "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/hooks/post-checkout."
@@ -150,7 +162,7 @@
           "class": "compatibility_policy",
           "path": "contracts/supported-surface.json",
           "surface_entry": "contracts/supported-surface.json",
-          "summary": "surface_version advanced to 1.14.0; two orientation schemas were added as hashed entries and twenty-five orientation contract, documentation, and fixture paths as named entries."
+          "summary": "surface_version advanced to 1.14.0; two orientation schemas were added as hashed entries and twenty-seven orientation contract, documentation, and fixture paths as named entries."
         },
         {
           "class": "documentation",
@@ -195,7 +207,7 @@
           "summary": "The orientation envelope schema was introduced: ten required semantic groups, eight terminal outcomes, and the stable reason-code enum."
         }
       ],
-      "entry_sha256": "828477876a01cb72280456c86990cbcbbf5de713e802127dfb02d051452aef68"
+      "entry_sha256": "7d5e5752a46129ea7cc43562c5d443ac30d1854dcfb532f08d853745c2751d7a"
     }
   ]
 }

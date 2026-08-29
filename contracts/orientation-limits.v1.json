@@ -1,39 +1,41 @@
 {
-  "_note": "Versioned policy constants for bounded orientation reads. These are the ONLY authority for orientation size bounds — no checker, schema, doc, or test may carry its own literal. Exceeding any limit is a fail-closed refusal with stable reason code orientation_too_large; nothing is ever silently truncated. Raising a limit is a reviewed policy change that advances limits_version and owes a release-ledger entry.",
+  "_note": "Versioned policy constants for bounded orientation reads. These are the ONLY authority for orientation size bounds — no checker, schema, doc, or test may carry its own literal. Exceeding any limit is a fail-closed refusal with stable reason code orientation_too_large; nothing is ever silently truncated. A measurement that is absent or non-finite counts as exceeded for the same reason. Raising a limit is a reviewed policy change that advances limits_version and owes a release-ledger entry.",
   "schema": "campaigns-os-orientation-limits/v1",
   "limits_version": "1.0.0",
   "refusal_reason_code": "orientation_too_large",
   "truncation_allowed": false,
+  "_measurement_note": "Every limit below is a WHOLE-ARTIFACT guardrail, measured over the complete changelog and the complete ledger at the target commit — not over a baseline-to-target window. That is deliberate and it is the conservative direction: a consumer's window is always a subset of the whole, so a whole-artifact read that fits also fits for any window inside it. It also means these bounds must be sized for the repository's whole life, not for one release cycle. scripts/orientation-contract.mjs maps each limit to exactly one measurement (LIMIT_MEASUREMENTS) and the contract-consistency check fails if this file declares a limit that nothing measures, or omits one that something does.",
+  "_growth_note": "Section count and ledger entries grow monotonically and are the two bounds that will eventually be reached. When they are, the answer is baseline rotation, not a quiet raise: archive the changelog sections and ledger entries older than a reviewed baseline into a dated archive file, declare that baseline as the new floor, and record the rotation as its own ledger entry. A consumer that cannot fit the remaining window adopts a newer reviewed baseline. Raising a bound is the fallback, and it advances limits_version.",
   "limits": {
     "max_source_bytes": {
       "value": 1048576,
       "unit": "bytes",
-      "applies_to": "The total bytes of orientation source read from Git objects at the target OID: release ledger, changelog, supported surface, and orientation contract data files.",
-      "rationale": "1 MiB. Measured at surface 1.13.0 the whole set is about 22 KB, so this is roughly 45x current headroom while still bounding a single read to something a consumer can hold in memory and hash without streaming."
+      "applies_to": "The total bytes of orientation source read from Git objects at the target OID: the whole release ledger, the whole changelog, the supported-surface manifest, the orientation contract data files, and both orientation schemas — every mandatory read in the canonical sequence in AGENTS.md.",
+      "rationale": "1 MiB. Measured at surface 1.14.0 the whole set is about 88 KB, so this is roughly 12x current headroom while still bounding a single read to something a consumer can hold in memory and hash without streaming."
     },
     "max_section_count": {
-      "value": 64,
+      "value": 1024,
       "unit": "sections",
-      "applies_to": "The number of changelog sections an orientation window may reference between the reviewed baseline and the target commit.",
-      "rationale": "8 sections existed at surface 1.13.0 across roughly one month of releases. 64 covers several years of the same cadence in one window, while still refusing an unbounded full-history narrative loaded into model context."
+      "applies_to": "The number of sections in CHANGELOG.md at the target commit.",
+      "rationale": "9 sections existed at surface 1.14.0 across roughly one month of releases. Because this bounds the whole file rather than a window, it has to survive years: 1024 is on the order of a decade at that cadence, and reaching it is the signal to rotate the baseline rather than to raise the number again."
     },
     "max_section_bytes": {
       "value": 65536,
       "unit": "bytes",
       "applies_to": "The bytes of any single changelog section body.",
-      "rationale": "64 KiB. The largest section at surface 1.13.0 was 3.9 KB, so this is about 16x headroom. A single section larger than this is a drafting error, not a release worth orienting on in one read."
+      "rationale": "64 KiB. The largest section at surface 1.14.0 was 3.9 KB, so this is about 16x headroom. Unlike the counts this one does not accumulate — a single section larger than this is a drafting error, not a release worth orienting on in one read."
     },
     "max_envelope_bytes": {
       "value": 262144,
       "unit": "bytes",
-      "applies_to": "The serialized orientation envelope handed to the consumer.",
-      "rationale": "256 KiB. Roughly 64k tokens worst case, which keeps a full orientation read inside a model context budget with room for the session's own work. Deliberately smaller than max_source_bytes: the envelope is a selection of source, not a copy of it."
+      "applies_to": "The serialized orientation envelope handed to the consumer. The real envelope is assembled by the consumer and never exists in this repository, so the repository-side check measures the largest assembled example it ships, contracts/fixtures/orientation/envelope/*.json.",
+      "rationale": "256 KiB. Roughly 64k tokens worst case, which keeps a full orientation read inside a model context budget with room for the session's own work. Deliberately smaller than max_source_bytes: the envelope is a selection of source, not a copy of it. The largest shipped example at surface 1.14.0 is about 4.5 KB."
     },
     "max_ledger_entries": {
-      "value": 256,
+      "value": 1024,
       "unit": "entries",
-      "applies_to": "The number of release-ledger entries an orientation window may carry between the reviewed baseline and the target commit.",
-      "rationale": "The ledger holds 1 entry at limits_version 1.0.0. 256 bounds the window without forcing an amendment-heavy history to be re-baselined early; a consumer that exceeds it should adopt a newer reviewed baseline rather than read further back."
+      "applies_to": "The number of entries in contracts/release-ledger.json at the target commit.",
+      "rationale": "The ledger holds 1 entry at limits_version 1.0.0 and is append-only, so like max_section_count this accumulates for the life of the repository. 1024 is on the order of a decade at the observed release cadence; reaching it means rotating the baseline as described in _growth_note."
     }
   }
 }

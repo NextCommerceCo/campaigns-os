@@ -98,6 +98,8 @@
     "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
     "contracts/fixtures/orientation/hostile-target/repo/contracts/release-ledger.json",
     "contracts/fixtures/orientation/hostile-target/repo/contracts/supported-surface.json",
+    "contracts/fixtures/orientation/hostile-target/repo/docs/example-contract.md",
+    "contracts/fixtures/orientation/hostile-target/repo/schemas/example.v0.schema.json",
     "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
     "contracts/fixtures/orientation/hostile-target/repo/hooks/post-merge",
     "contracts/fixtures/orientation/hostile-target/repo/hooks/pre-commit"

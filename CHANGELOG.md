@@ -54,13 +54,22 @@ Notable supported-surface changes are recorded here.
   Consumer fixtures ship too: one validated envelope per terminal outcome under
   `contracts/fixtures/orientation/envelope/`, and a hostile target under
   `contracts/fixtures/orientation/hostile-target/` carrying Git hooks, an
-  executable file, and npm lifecycle scripts. A conforming orientation read of
-  it produces a normal envelope and executes none of them. The hit-counter
-  assertion belongs to the consumer's parser suite; this release ships the
-  fixture it runs against.
+  executable file, and npm lifecycle scripts. Every path the hostile target's
+  own manifest declares exists in its tree, and its hashed entry records that
+  file's real digest, so a conforming read completes rather than refusing on
+  integrity: it produces a normal envelope and executes none of the tripwires.
+  The hit-counter assertion belongs to the consumer's parser suite; this release
+  ships the fixture it runs against.
+
+  One rule is worth stating on its own because it decides how `v1` evolves:
+  **unknown fields fail closed.** Every object in both schemas sets
+  `additionalProperties: false`, so `v1` does not grow in place. An additive
+  change advances the schema version and publishes a new id, which lets a
+  producer find out whether its addition was understood — something "accept and
+  ignore" can never report.
 
   Nothing here changes build, polish, QA, or CLI behavior. The supported surface
-  grew by two schemas and twenty-five named entries; nothing was renamed or
+  grew by two schemas and twenty-seven named entries; nothing was renamed or
   removed.
 
 ## [1.13.0] - 2026-08-26

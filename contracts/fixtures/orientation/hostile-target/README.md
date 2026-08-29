@@ -5,6 +5,15 @@ real checkout can carry: Git hooks, executable scripts, and npm package
 lifecycle scripts. Its orientation data under `repo/` is valid, so a correct
 consumer can read it end to end and produce a normal envelope.
 
+"Valid" includes the fixture's own supported-surface manifest: every path
+`repo/contracts/supported-surface.json` declares exists in the tree, and the
+digest it records for its hashed entry is that file's real sha256. A consumer
+that verifies integrity therefore succeeds here rather than refusing — which is
+the point, because a read that refuses early never reaches the tripwires and so
+proves nothing about whether the parser would have executed them.
+`scripts/check-release-ledger.test.mjs` asserts that correspondence, so the
+fixture cannot quietly rot back into a refusal.
+
 **Nothing in this directory is ever executed by this repository.** The files
 exist so that a consumer's parser can be pointed at a target that *would* run
 code if the parser ever shelled out, checked anything out, or installed

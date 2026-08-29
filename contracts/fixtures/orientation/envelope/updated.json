@@ -120,10 +120,10 @@
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 22024,
       "section_count": 8,

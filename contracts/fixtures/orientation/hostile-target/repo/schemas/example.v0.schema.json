@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/campaigns-os-fixture/example.v0.schema.json",
+  "title": "Hostile-target fixture example schema",
+  "description": "Invented. This schema describes nothing real and is not used by anything in this repository. It exists so the fixture's supported-surface manifest declares a hashed entry that ACTUALLY EXISTS and whose recorded sha256 is the file's real digest — a consumer verifying integrity must be able to succeed here, or the fixture would test refusal instead of the no-execution invariant it claims to test.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["example_id"],
+  "properties": {
+    "example_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

@@ -162,7 +162,12 @@ Fails:
 - An agent-relevant path with no change item — the failure the gate exists for.
 - A change item naming a path that did not change and is not an amendment.
 - A change item claiming an implementation path the policy excludes.
-- A duplicate entry id, or a duplicate `(class, path, surface_entry)` identity.
+- A duplicate entry id, or one entry recording the same `(class, path,
+  surface_entry)` identity twice. Identity is unique WITHIN an entry, not across
+  the ledger: a path is touched by many releases over a repository's life, and
+  each of those is a real change that must be recordable. Recording one change
+  twice inside a single range is caught by the coverage rule instead — a path
+  covered by more than one change item fails.
 - A sequence gap, or a date earlier than the previous entry.
 - A `breaking` entry whose migration is `none`, or a blank `agent_impact`.
 - A missing changelog section, a duplicate section identifier, or a stale
@@ -172,6 +177,17 @@ Fails:
 - A rewritten or deleted historical entry.
 - Two entries claiming the same `surface_version`.
 - A changed path the policy has never seen.
+- A supported-surface bump that no new entry claims.
+- A path-less change item with no classified change of its class in the range.
+- An amendment with no `amends`, an `amends` naming no earlier entry, or no
+  `amendment_reason`; or a non-amendment carrying either field.
+
+Only entries NEW in the comparison range are classified against the current
+policy and supported surface. A historical entry was written under the policy in
+force at the time and the ledger is append-only, so re-judging it under a
+tightened policy would fail a document nobody is permitted to edit. Everything
+else — shape, ordering, sequence, hashes, changelog correspondence — applies to
+every entry.
 
 ## Entries carry no commit
 
@@ -184,11 +200,27 @@ oldest-first over the commits touching the ledger, crediting each entry id to th
 first commit whose ledger blob contains it. Merge commits are handled by that
 walk without a special case.
 
+The walk covers the FULL history ending at the target, with history
+simplification disabled (`git rev-list --full-history --reverse --topo-order
+<oid> -- contracts/release-ledger.json`). A walk that starts at some base loses
+every entry introduced before it; a simplified walk can drop the side-branch
+commit that actually introduced an entry. `AGENTS.md` states both properties for
+consumers.
+
 ## Size bounds
 
 `contracts/orientation-limits.v1.json` bounds what a consumer reads: source
 bytes, section count, section bytes, envelope bytes, ledger entries. Exceeding
-one is a refusal with `orientation_too_large`, never a truncation.
+one is a refusal with `orientation_too_large`, never a truncation. So is a
+measurement that is absent or non-finite: a bound nobody measured is a bound
+nobody enforced.
+
+Every bound is a whole-artifact guardrail — the complete changelog and the
+complete ledger at the target commit, not a baseline-to-target window. That is
+the conservative direction, since a window is always a subset of the whole. Two
+of them (section count, ledger entries) grow monotonically; when one is reached
+the answer is baseline rotation, described in the contract's `_growth_note`, not
+a quiet raise.
 
 Raising a limit is a reviewed policy change: advance `limits_version`, and the
 change owes its own ledger entry like anything else.

@@ -173,11 +173,24 @@ const semverTuple = (version) => {
  * Structural + semantic ledger validation, independent of Git.
  *
  * `knownClasses` comes from the policy file, never from a literal list here.
+ *
+ * `classifiableEntryIds` scopes the one check that is NOT purely structural:
+ * classifying `change.path` against the CURRENT policy and supported surface.
+ * Only entries new in the comparison range may be classified that way. A
+ * historical entry was classified under the policy in force when it was
+ * written, and the ledger is append-only — so re-classifying it under a
+ * tightened policy would fail a document nobody is allowed to edit. Everything
+ * else here (shape, ordering, sequence, hashes, changelog correspondence) does
+ * apply to every entry, historical ones included.
+ *
+ * Pass a Set to scope it; omit it (or pass null) to classify every entry, which
+ * is what a fixture that has no notion of "historical" wants.
  */
-export function validateLedgerStructure(ledger, { policy, surface, sections }) {
+export function validateLedgerStructure(ledger, { policy, surface, sections, classifiableEntryIds = null }) {
   const errors = [];
   const knownClasses = new Set(Object.keys(policy.semantic_classes ?? {}));
   const entries = Array.isArray(ledger?.entries) ? ledger.entries : null;
+  const classifiable = (entry) => classifiableEntryIds === null || classifiableEntryIds.has(entry.id);
 
   if (ledger?.schema_version !== "campaigns-os-release-ledger/v1") {
     errors.push(`${LEDGER_PATH}: schema_version must be "campaigns-os-release-ledger/v1"`);
@@ -185,7 +198,7 @@ export function validateLedgerStructure(ledger, { policy, surface, sections }) {
   if (!entries) return [...errors, `${LEDGER_PATH}: entries must be an array`];
 
   const seenIds = new Set();
-  const seenIdentities = new Map();
+  const seenSurfaceVersions = new Map();
   const seenSections = new Map();
   let previousDate = "";
 
@@ -265,13 +278,22 @@ export function validateLedgerStructure(ledger, { policy, surface, sections }) {
       seenSections.set(entry.changelog_section, entry.id);
     }
 
-    // Surface-version entries: at most one entry per surface version.
+    // Surface-version entries: at most one entry per surface version. This one
+    // IS ledger-wide: a surface version is minted once and can never legitimately
+    // be claimed twice, however far apart the two entries are.
     if (entry.surface_version) {
-      const key = `surface:${entry.surface_version}`;
-      const prior = seenIdentities.get(key);
+      const prior = seenSurfaceVersions.get(entry.surface_version);
       if (prior) errors.push(`${where}: surface_version ${entry.surface_version} is already claimed by ${prior}; a surface change owes exactly one entry`);
-      seenIdentities.set(key, entry.id);
+      seenSurfaceVersions.set(entry.surface_version, entry.id);
     }
+
+    // Change-identity uniqueness is scoped to ONE entry, not to the whole
+    // ledger. A path is touched by many releases over a repository's life, and
+    // a ledger-wide identity set would make the second release that touches a
+    // path unrecordable. Recording the same change twice within one range is
+    // caught by the two-way gate instead ("covered by N ledger change items"),
+    // which is the check that actually knows what changed in the range.
+    const seenIdentitiesInEntry = new Map();
 
     for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
       if (!change || typeof change !== "object") {
@@ -282,20 +304,13 @@ export function validateLedgerStructure(ledger, { policy, surface, sections }) {
         errors.push(`${where}: change class ${JSON.stringify(change.class)} is not defined in ${POLICY_PATH}`);
         continue;
       }
-      // Identity uniqueness applies to releases only. An amendment exists to
-      // re-describe a change an earlier entry already recorded — requiring it to
-      // invent a fresh identity would make corrections indistinguishable from
-      // new work, which is the opposite of what append-only history is for.
-      if (entry.kind !== "amendment") {
-        const identity = `change:${changeIdentity(change)}`;
-        const prior = seenIdentities.get(identity);
-        if (prior) {
-          errors.push(`${where}: change identity ${changeIdentity(change)} is already recorded by ${prior}; each change is recorded once`);
-        }
-        seenIdentities.set(identity, entry.id);
+      const identity = changeIdentity(change);
+      if (seenIdentitiesInEntry.has(identity)) {
+        errors.push(`${where}: change identity ${identity} is already recorded by this entry; each change is recorded once per entry`);
       }
+      seenIdentitiesInEntry.set(identity, entry.id);
 
-      if (change.path) {
+      if (change.path && classifiable(entry)) {
         const verdict = classifyPath(change.path, { policy, surface });
         if (!verdict.relevant) {
           errors.push(
@@ -306,7 +321,11 @@ export function validateLedgerStructure(ledger, { policy, surface, sections }) {
           errors.push(`${where}: change item declares class ${change.class} for ${change.path}, but ${POLICY_PATH} classifies it as ${verdict.class}`);
         }
       }
-      if (change.surface_entry && surface) {
+      // Like path classification, this is a check against the CURRENT manifest,
+      // so it applies only to entries new in the range. A historical entry named
+      // a surface entry that existed when it was written; a later release may
+      // legitimately have removed it.
+      if (change.surface_entry && surface && classifiable(entry)) {
         const known =
           Object.prototype.hasOwnProperty.call(surface.hashed ?? {}, change.surface_entry) ||
           (surface.named ?? []).includes(change.surface_entry) ||
@@ -448,30 +467,49 @@ export const newEntriesSince = (baseEntries, headEntries) => {
 /* ------------------------------------------------------------------ */
 
 /**
+ * The ONE mapping from a declared limit to the measurement that satisfies it.
+ * The measurement names are the same ones the orientation envelope's
+ * `limits.applied` object uses, so a consumer and this repository are talking
+ * about the same five numbers. `validateContractConsistency` asserts that the
+ * limits contract declares exactly these keys and no others, which is what stops
+ * a sixth limit from being added to the contract and then never measured.
+ */
+export const LIMIT_MEASUREMENTS = Object.freeze({
+  max_source_bytes: "source_bytes",
+  max_section_count: "section_count",
+  max_section_bytes: "max_observed_section_bytes",
+  max_envelope_bytes: "envelope_bytes",
+  max_ledger_entries: "ledger_entries",
+});
+
+/**
  * Fail closed against the declared limits. Returns every limit exceeded, not
  * the first, and never truncates or trims the measured input. The caller is
  * expected to refuse with `limits.refusal_reason_code`.
+ *
+ * A measurement that is absent, non-numeric, NaN, or Infinite counts as
+ * EXCEEDED. Skipping it would let a broken measurement pass a bound silently,
+ * which is the one outcome a fail-closed contract may not have.
  */
 export function evaluateLimits(measured, limitsContract) {
   const limits = limitsContract.limits;
   const exceeded = [];
-  const compare = [
-    ["max_source_bytes", measured.source_bytes],
-    ["max_section_count", measured.section_count],
-    ["max_section_bytes", measured.max_observed_section_bytes],
-    ["max_envelope_bytes", measured.envelope_bytes],
-    ["max_ledger_entries", measured.ledger_entries],
-  ];
-  for (const [name, actual] of compare) {
-    if (typeof actual !== "number") continue;
-    if (actual > limits[name].value) exceeded.push(name);
+  const observed = new Map();
+  for (const [name, measurement] of Object.entries(LIMIT_MEASUREMENTS)) {
+    const actual = measured?.[measurement];
+    observed.set(name, actual);
+    if (!Number.isFinite(actual) || actual > limits[name]?.value) exceeded.push(name);
   }
   return {
     exceeded,
     within_limits: exceeded.length === 0,
     reason_code: exceeded.length ? limitsContract.refusal_reason_code : null,
     truncated: false,
-    detail: exceeded.map((name) => `${name}: ${compare.find(([key]) => key === name)[1]} exceeds ${limits[name].value} ${limits[name].unit}`),
+    detail: exceeded.map((name) => {
+      const actual = observed.get(name);
+      const shown = Number.isFinite(actual) ? actual : `${LIMIT_MEASUREMENTS[name]} was not measured (${String(actual)})`;
+      return `${name}: ${shown} exceeds ${limits[name]?.value} ${limits[name]?.unit}`;
+    }),
   };
 }
 
@@ -597,6 +635,17 @@ export function validateContractConsistency({ orientationSchema, ledgerSchema, p
   }
   for (const rule of policy.ignored ?? []) {
     if (!rule.reason?.trim()) errors.push(`${POLICY_PATH}: ignore rule for ${rule.match?.value} has no reason — "no agent impact" must be asserted`);
+  }
+
+  // The limits contract and the implementation must agree on WHICH bounds
+  // exist. A limit declared but never measured is a bound nobody enforces; a
+  // measurement with no declared limit is an unbounded read.
+  same(`${LIMITS_PATH} limits keys (against the measurements scripts/orientation-contract.mjs takes)`, Object.keys(limits.limits ?? {}), Object.keys(LIMIT_MEASUREMENTS));
+  for (const [name, limit] of Object.entries(limits.limits ?? {})) {
+    if (!Number.isInteger(limit?.value) || limit.value < 1) errors.push(`${LIMITS_PATH}: ${name}.value must be a positive integer`);
+    if (!limit?.unit?.trim()) errors.push(`${LIMITS_PATH}: ${name} has no unit`);
+    if (!limit?.applies_to?.trim()) errors.push(`${LIMITS_PATH}: ${name} has no applies_to`);
+    if (!limit?.rationale?.trim()) errors.push(`${LIMITS_PATH}: ${name} has no rationale`);
   }
 
   if (!codes.includes(limits.refusal_reason_code)) {

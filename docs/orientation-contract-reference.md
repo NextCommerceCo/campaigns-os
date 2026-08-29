@@ -87,11 +87,11 @@ release is worse than a refusal, because the consumer cannot tell which part it 
 
 | Limit | Value | Unit | Applies to | Rationale |
 |---|---|---|---|---|
-| `max_source_bytes` | 1048576 | bytes | The total bytes of orientation source read from Git objects at the target OID: release ledger, changelog, supported surface, and orientation contract data files. | 1 MiB. Measured at surface 1.13.0 the whole set is about 22 KB, so this is roughly 45x current headroom while still bounding a single read to something a consumer can hold in memory and hash without streaming. |
-| `max_section_count` | 64 | sections | The number of changelog sections an orientation window may reference between the reviewed baseline and the target commit. | 8 sections existed at surface 1.13.0 across roughly one month of releases. 64 covers several years of the same cadence in one window, while still refusing an unbounded full-history narrative loaded into model context. |
-| `max_section_bytes` | 65536 | bytes | The bytes of any single changelog section body. | 64 KiB. The largest section at surface 1.13.0 was 3.9 KB, so this is about 16x headroom. A single section larger than this is a drafting error, not a release worth orienting on in one read. |
-| `max_envelope_bytes` | 262144 | bytes | The serialized orientation envelope handed to the consumer. | 256 KiB. Roughly 64k tokens worst case, which keeps a full orientation read inside a model context budget with room for the session's own work. Deliberately smaller than max_source_bytes: the envelope is a selection of source, not a copy of it. |
-| `max_ledger_entries` | 256 | entries | The number of release-ledger entries an orientation window may carry between the reviewed baseline and the target commit. | The ledger holds 1 entry at limits_version 1.0.0. 256 bounds the window without forcing an amendment-heavy history to be re-baselined early; a consumer that exceeds it should adopt a newer reviewed baseline rather than read further back. |
+| `max_source_bytes` | 1048576 | bytes | The total bytes of orientation source read from Git objects at the target OID: the whole release ledger, the whole changelog, the supported-surface manifest, the orientation contract data files, and both orientation schemas — every mandatory read in the canonical sequence in AGENTS.md. | 1 MiB. Measured at surface 1.14.0 the whole set is about 88 KB, so this is roughly 12x current headroom while still bounding a single read to something a consumer can hold in memory and hash without streaming. |
+| `max_section_count` | 1024 | sections | The number of sections in CHANGELOG.md at the target commit. | 9 sections existed at surface 1.14.0 across roughly one month of releases. Because this bounds the whole file rather than a window, it has to survive years: 1024 is on the order of a decade at that cadence, and reaching it is the signal to rotate the baseline rather than to raise the number again. |
+| `max_section_bytes` | 65536 | bytes | The bytes of any single changelog section body. | 64 KiB. The largest section at surface 1.14.0 was 3.9 KB, so this is about 16x headroom. Unlike the counts this one does not accumulate — a single section larger than this is a drafting error, not a release worth orienting on in one read. |
+| `max_envelope_bytes` | 262144 | bytes | The serialized orientation envelope handed to the consumer. The real envelope is assembled by the consumer and never exists in this repository, so the repository-side check measures the largest assembled example it ships, contracts/fixtures/orientation/envelope/*.json. | 256 KiB. Roughly 64k tokens worst case, which keeps a full orientation read inside a model context budget with room for the session's own work. Deliberately smaller than max_source_bytes: the envelope is a selection of source, not a copy of it. The largest shipped example at surface 1.14.0 is about 4.5 KB. |
+| `max_ledger_entries` | 1024 | entries | The number of entries in contracts/release-ledger.json at the target commit. | The ledger holds 1 entry at limits_version 1.0.0 and is append-only, so like max_section_count this accumulates for the life of the repository. 1024 is on the order of a decade at the observed release cadence; reaching it means rotating the baseline as described in _growth_note. |
 
 ## Semantic change classes
 
@@ -257,10 +257,10 @@ from the schema it claims to satisfy.
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 22024,
       "section_count": 8,
@@ -398,10 +398,10 @@ from the schema it claims to satisfy.
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 22024,
       "section_count": 8,
@@ -538,10 +538,10 @@ from the schema it claims to satisfy.
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 22024,
       "section_count": 8,
@@ -680,10 +680,10 @@ from the schema it claims to satisfy.
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 22024,
       "section_count": 8,
@@ -821,10 +821,10 @@ from the schema it claims to satisfy.
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 22024,
       "section_count": 8,
@@ -921,10 +921,10 @@ from the schema it claims to satisfy.
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 22024,
       "section_count": 8,
@@ -1023,10 +1023,10 @@ from the schema it claims to satisfy.
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 22024,
       "section_count": 8,
@@ -1125,10 +1125,10 @@ from the schema it claims to satisfy.
   "limits": {
     "limits_version": "1.0.0",
     "max_source_bytes": 1048576,
-    "max_section_count": 64,
+    "max_section_count": 1024,
     "max_section_bytes": 65536,
     "max_envelope_bytes": 262144,
-    "max_ledger_entries": 256,
+    "max_ledger_entries": 1024,
     "applied": {
       "source_bytes": 1048577,
       "section_count": 8,

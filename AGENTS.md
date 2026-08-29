@@ -103,6 +103,18 @@ no special case. If an entry arrived on a side branch, that commit is credited;
 if it was first assembled while resolving a merge, the merge commit is. Both are
 the truthful answer.
 
+Two properties of that walk are load-bearing:
+
+- **Walk the full history ending at the target**, not a slice starting at some
+  base. An entry introduced before your base was introduced outside the slice,
+  and a sliced walk either loses it or credits the slice's first ledger-touching
+  commit with introducing everything that already existed.
+- **Disable history simplification** (`git rev-list --full-history --reverse
+  --topo-order <oid> -- contracts/release-ledger.json`). Git's default walk drops
+  commits that are TREESAME to a parent along the path, which can hide the
+  side-branch commit that actually introduced an entry and shift the credit to
+  the merge.
+
 ## Mixed versions and the legacy boundary
 
 You and this repository are not upgraded at the same moment, so decide
@@ -110,8 +122,15 @@ explicitly rather than optimistically.
 
 - **Unknown orientation schema id** — fail closed. Do not attempt a partial
   parse of a contract you do not understand.
-- **Unknown additive fields inside `campaigns-os-tooling-orientation/v1`** —
-  accept and ignore. `v1` is allowed to grow.
+- **Unknown fields inside `campaigns-os-tooling-orientation/v1`** — fail closed.
+  Every object in the orientation and ledger schemas sets
+  `additionalProperties: false`, so `v1` does not grow: a field that is not in
+  the schema is a field this contract does not define, and accepting it would
+  mean orienting on data whose meaning nobody has agreed. Additive growth is a
+  real need and it has a real mechanism — advance the schema version, publish
+  the new id, and let a consumer decide whether it accepts it. That way a
+  producer can tell whether its addition was understood, which "accept and
+  ignore" can never do.
 - **Unknown enum value in a safety-critical position** (a disposition, a reason
   code, a compatibility result) — fail closed. Silently coercing an unrecognized
   refusal into a success is the worst available outcome.

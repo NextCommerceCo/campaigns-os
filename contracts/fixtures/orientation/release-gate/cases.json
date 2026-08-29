@@ -535,6 +535,182 @@
       ]
     },
     {
+      "id": "surface-bump-with-no-claiming-entry",
+      "description": "The supported surface advanced and no new entry claims the new version. This is the headline case the two-way gate exists for and it had no fixture until now: the release happened, the ledger says nothing about it.",
+      "expect": "fail",
+      "expect_error_matching": "supported_surface moved to 1\\.1\\.0 but 0 new ledger entries claim it",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": null,
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added, but nothing claims the surface bump that shipped with it." }]
+        }
+      ]
+    },
+    {
+      "id": "path-covered-by-two-change-items",
+      "description": "Two entries in the same range both record the same changed path. Coverage is exactly once, not at least once: two records of one change make the history ambiguous about what happened.",
+      "expect": "fail",
+      "expect_error_matching": "docs/build-packet\\.md is covered by 2 ledger change items",
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "changelog": "# Changelog\n\n## [1.0.0+agent.2] - 2026-02-04\n\n### Changed\n\n- The same doc, recorded a second time in the same range.\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- A contract doc changed.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "changed_paths": ["docs/build-packet.md"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-03", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0+agent.1", "agent_impact": "Re-read the doc.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The doc changed." }]
+        },
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-04", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0+agent.2", "agent_impact": "Re-read the doc.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The same doc change, recorded again." }]
+        }
+      ]
+    },
+    {
+      "id": "path-less-item-with-no-classified-change-of-its-class",
+      "description": "A path-less CLI item with nothing of that class in the range. A flag change still moves bytes somewhere; an item that maps to no moved byte is a claim about work that did not ship.",
+      "expect": "fail",
+      "expect_error_matching": "path-less change item of class cli_surface has no classified change of that class",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [
+            { "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." },
+            { "class": "cli_surface", "path": null, "surface_entry": "build", "summary": "Claims a flag change with no CLI bytes in the range." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "amendment-with-no-amends",
+      "expect": "fail",
+      "expect_error_matching": "an amendment must name the entry it amends",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-03", "kind": "amendment",
+          "amendment_reason": "Corrects an earlier entry that this fixture never names.",
+          "surface_version": null, "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "A correction with no subject." }]
+        }
+      ]
+    },
+    {
+      "id": "amendment-amending-an-unknown-entry",
+      "expect": "fail",
+      "expect_error_matching": "amends RL-9999, which is not an earlier entry",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-03", "kind": "amendment",
+          "amends": "RL-9999",
+          "amendment_reason": "Corrects an entry that does not exist.",
+          "surface_version": null, "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "A correction to nothing." }]
+        }
+      ]
+    },
+    {
+      "id": "amendment-with-no-amendment-reason",
+      "description": "An amendment is the only way to correct append-only history, so the reason it was needed is the whole record. Omitting it leaves a silent rewrite wearing an amendment's clothes.",
+      "expect": "fail",
+      "expect_error_matching": "an amendment must carry amendment_reason",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Fixed\n\n- A correction.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "base_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The initial doc." }]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-03", "kind": "amendment",
+          "amends": "RL-0001",
+          "surface_version": null, "changelog_section": "1.0.0+agent.1", "agent_impact": "Treat RL-0001 as breaking.", "compatibility": "breaking", "migration": "Stop relying on the removed guarantee.",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "Corrects RL-0001." }]
+        }
+      ]
+    },
+    {
+      "id": "release-entry-carrying-amends",
+      "description": "A release that quietly wears amendment fields. The amendment exemption from the backward gate is a reviewed escape hatch; a release may not help itself to it.",
+      "expect": "fail",
+      "expect_error_matching": "amends/amendment_reason are only valid on kind \"amendment\"",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "amends": "RL-0000",
+          "amendment_reason": "A release pretending to be a correction.",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "same-path-recorded-again-by-a-later-release",
+      "description": "A path recorded by RL-0001 changes again and RL-0002 records it. Change identity is unique within an entry, not across the ledger — a repository touches the same path many times over its life, and the second time must be recordable.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- The same contract doc changed a second time.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "changed_paths": ["docs/build-packet.md"],
+      "base_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The initial doc." }]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-03", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0+agent.1", "agent_impact": "Re-read the packet doc; it changed again.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The same doc, changed again in a later release." }]
+        }
+      ]
+    },
+    {
+      "id": "policy-tightening-leaves-historical-entries-intact",
+      "description": "The supported surface no longer names docs/build-packet.md, so a path RL-0001 legitimately recorded would not classify today. RL-0001 is historical and append-only forbids editing it, so only entries new in the range are classified against the current policy.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0", "named": ["CHANGELOG.md", "contracts/release-ledger.json", "skills.json"] },
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- A skill changed after the surface narrowed.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "changed_paths": ["skills.json"],
+      "base_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "A doc that was named surface when this entry was written." }]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-03", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0+agent.1", "agent_impact": "Reinstall skills.", "compatibility": "compatible", "migration": "Run the skills installer again.",
+          "changes": [{ "class": "skill", "path": "skills.json", "surface_entry": "skills.json", "summary": "The skill version advanced." }]
+        }
+      ]
+    },
+    {
       "id": "append-only-historical-entry-deleted",
       "expect": "fail",
       "expect_error_matching": "historical entry was deleted",

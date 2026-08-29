@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,7 @@ import {
   SURFACE_PATH,
   LEDGER_SCHEMA_PATH,
   ORIENTATION_SCHEMA_PATH,
+  LIMIT_MEASUREMENTS,
   canonicalJson,
   classifyPath,
   classifyPaths,
@@ -30,6 +32,7 @@ import {
   validateLedgerStructure,
   validateTwoWayGate,
 } from "./orientation-contract.mjs";
+import { unionSurface } from "./check-release-ledger.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const readJson = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -84,11 +87,22 @@ function runGate(testCase) {
   const { caseSurface, sections, baseEntries, headEntries } = materialize(testCase);
   const ledger = { schema_version: "campaigns-os-release-ledger/v1", entries: headEntries };
   const errors = [];
+  const newEntries = newEntriesSince(baseEntries, headEntries);
 
   if (!validateLedgerDocument(ledger)) {
     errors.push(...validateLedgerDocument.errors.map((e) => `${LEDGER_PATH}${e.instancePath}: ${e.message}${e.params?.additionalProperty ? ` (${e.params.additionalProperty})` : ""}`));
   }
-  errors.push(...validateLedgerStructure(ledger, { policy, surface: caseSurface, sections }));
+  errors.push(
+    ...validateLedgerStructure(ledger, {
+      policy,
+      surface: caseSurface,
+      sections,
+      // Same scoping the real checker uses: only entries new in the range are
+      // classified against the current policy and surface. A case with no
+      // base_entries has nothing historical, so every entry is classified.
+      classifiableEntryIds: new Set(newEntries.map((entry) => entry.id)),
+    }),
+  );
   if (testCase.base_entries) errors.push(...validateAppendOnly(baseEntries, headEntries));
 
   const classified = classifyPaths(testCase.changed_paths ?? [], { policy, surface: caseSurface });
@@ -97,7 +111,7 @@ function runGate(testCase) {
   errors.push(
     ...validateTwoWayGate({
       classified,
-      newEntries: newEntriesSince(baseEntries, headEntries),
+      newEntries,
       surfaceBumped,
       surfaceVersion: caseSurface.surface_version,
     }),
@@ -189,17 +203,76 @@ test("the ledger and the changelog are exempt from owing change items, and say w
   }
 });
 
+test("a rename of a supported path arrives as BOTH a delete and an add, so neither half escapes the gate", () => {
+  // Git's default rename detection reports only the destination. Under it,
+  // `git mv AGENTS.md docs/notes-archive.md` looks like one unclassified new
+  // path and the disappearance of a named supported-surface entry is invisible.
+  // The gate passes --no-renames for exactly this reason; this test fails if
+  // that flag is ever dropped from the invocation.
+  const work = mkdtempSync(join(tmpdir(), "campaigns-os-rename-"));
+  try {
+    git(work, "init", "-q", "-b", "main", ".");
+    writeFileSync(join(work, "AGENTS.md"), "# entry point\n");
+    git(work, "add", "AGENTS.md");
+    git(work, "commit", "-qm", "add the agent entry point");
+    const base = git(work, "rev-parse", "HEAD").trim();
+
+    mkdirSync(join(work, "docs"), { recursive: true });
+    git(work, "mv", "AGENTS.md", "docs/notes-archive.md");
+    git(work, "commit", "-qm", "rename it away");
+
+    const withDetection = git(work, "diff", "--name-only", `${base}..HEAD`).split("\n").filter(Boolean);
+    const withoutDetection = git(work, "diff", "-z", "--no-renames", "--name-only", `${base}..HEAD`).split("\0").filter(Boolean);
+
+    assert.deepEqual(withDetection, ["docs/notes-archive.md"], "default detection hides the disappearance");
+    assert.deepEqual(withoutDetection.sort(), ["AGENTS.md", "docs/notes-archive.md"]);
+
+    // And the half default detection hides is the agent-relevant one.
+    const { relevant } = classifyPaths(withoutDetection, { policy, surface });
+    assert.ok(relevant.some((item) => item.path === "AGENTS.md"), "the removed named surface entry must classify as agent-relevant");
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+});
+
+test("a path removed from the supported surface still classifies, because the union of base and head is what gets classified", () => {
+  // Deleting a named path AND its manifest entry in one change would, against
+  // the head manifest alone, fall into a broad ignore prefix — a consumer's
+  // pinned path disappearing in silence. The union classifies the removal as
+  // what it is.
+  const removed = "docs/build-packet.md";
+  const baseSurface = { ...surface, named: [...surface.named, removed] };
+  const headSurface = { ...surface, named: surface.named.filter((path) => path !== removed) };
+
+  const againstHead = classifyPath(removed, { policy, surface: headSurface });
+  assert.equal(againstHead.relevant, false, "the head manifest alone loses the removal");
+
+  const againstUnion = classifyPath(removed, { policy, surface: unionSurface(baseSurface, headSurface) });
+  assert.equal(againstUnion.relevant, true);
+  assert.equal(againstUnion.class, policy.derived_from_supported_surface.named_class);
+});
+
+test("the union keeps every declared surface list, not only the named one", () => {
+  const merged = unionSurface(
+    { hashed: { "schemas/gone.v0.schema.json": { sha256: "a" } }, named: ["docs/gone.md"], cli_commands: ["retired"], package_exports: ["./gone"], bin: ["gone"] },
+    surface,
+  );
+  assert.ok("schemas/gone.v0.schema.json" in merged.hashed);
+  for (const [key, value] of [["named", "docs/gone.md"], ["cli_commands", "retired"], ["package_exports", "./gone"], ["bin", "gone"]]) {
+    assert.ok(merged[key].includes(value), `${key} lost its base-side entry`);
+    assert.ok(merged[key].length > 1, `${key} lost its head-side entries`);
+  }
+  assert.equal(merged.surface_version, surface.surface_version, "the head surface version is the current one");
+});
+
 /* ------------------------------------------------------------------ */
 /* Bounded reads                                                       */
 /* ------------------------------------------------------------------ */
 
-const LIMIT_TO_MEASURE = {
-  max_source_bytes: "source_bytes",
-  max_section_count: "section_count",
-  max_section_bytes: "max_observed_section_bytes",
-  max_envelope_bytes: "envelope_bytes",
-  max_ledger_entries: "ledger_entries",
-};
+// Read from the implementation's single map, never re-typed here: a second copy
+// of the limit-to-measurement correspondence is exactly what the consistency
+// check exists to prevent.
+const LIMIT_TO_MEASURE = LIMIT_MEASUREMENTS;
 
 const withinLimits = () =>
   Object.fromEntries(Object.entries(LIMIT_TO_MEASURE).map(([limit, measure]) => [measure, limits.limits[limit].value]));
@@ -229,6 +302,34 @@ test("every exceeded limit is reported, not just the first", () => {
   );
   const result = evaluateLimits(measured, limits);
   assert.deepEqual(result.exceeded.sort(), Object.keys(LIMIT_TO_MEASURE).sort());
+});
+
+for (const [label, broken] of [
+  ["missing", undefined],
+  ["null", null],
+  ["NaN", Number.NaN],
+  ["Infinity", Number.POSITIVE_INFINITY],
+  ["a string", "12"],
+]) {
+  test(`a measurement that is ${label} counts as exceeded, because a bound nobody measured is a bound nobody enforced`, () => {
+    const measured = { ...withinLimits(), source_bytes: broken };
+    const result = evaluateLimits(measured, limits);
+    assert.ok(result.exceeded.includes("max_source_bytes"), `expected max_source_bytes to fail closed on ${label}`);
+    assert.equal(result.within_limits, false);
+    assert.equal(result.reason_code, limits.refusal_reason_code);
+    assert.equal(result.truncated, false);
+    assert.match(result.detail.join(" "), /was not measured/);
+  });
+}
+
+test("the limits contract declares exactly the bounds the implementation measures", () => {
+  assert.deepEqual(Object.keys(limits.limits).sort(), Object.keys(LIMIT_MEASUREMENTS).sort());
+});
+
+test("a limit declared in the contract but measured by nothing is a consistency failure", () => {
+  const widened = { ...limits, limits: { ...limits.limits, max_invented_bound: { value: 1, unit: "widgets", applies_to: "nothing", rationale: "nothing" } } };
+  const errors = validateContractConsistency({ orientationSchema, ledgerSchema, policy, reasonCodes, limits: widened });
+  assert.ok(errors.some((error) => /limits keys.*unexpected max_invented_bound/s.test(error)), errors.join("\n"));
 });
 
 test("the limit values live only in the contract file, never as literals in the implementation", () => {
@@ -302,7 +403,7 @@ test("introducing commits are derived across ordinary commits AND a merge commit
     git(work, "commit", "-qam", "third entry");
     const third = git(work, "rev-parse", "HEAD").trim();
 
-    const commits = git(work, "rev-list", "--reverse", "--topo-order", "HEAD", "--", "ledger.json").split("\n").filter(Boolean);
+    const commits = git(work, "rev-list", "--reverse", "--topo-order", "--full-history", "HEAD", "--", "ledger.json").split("\n").filter(Boolean);
     const derived = deriveIntroducingCommits(commits, (commit) => {
       try {
         return JSON.parse(git(work, "show", `${commit}:ledger.json`)).entries.map((entry) => entry.id);
@@ -347,7 +448,7 @@ test("an entry first assembled while resolving a merge is credited to the merge 
     }
     const merge = git(work, "rev-parse", "HEAD").trim();
 
-    const commits = git(work, "rev-list", "--reverse", "--topo-order", "HEAD", "--", "ledger.json").split("\n").filter(Boolean);
+    const commits = git(work, "rev-list", "--reverse", "--topo-order", "--full-history", "HEAD", "--", "ledger.json").split("\n").filter(Boolean);
     const derived = deriveIntroducingCommits(commits, (commit) => {
       try {
         return JSON.parse(git(work, "show", `${commit}:ledger.json`)).entries.map((entry) => entry.id);
@@ -370,6 +471,123 @@ test("an entry first assembled while resolving a merge is credited to the merge 
 test("the shipped contract files agree with each other exactly", () => {
   assert.deepEqual(validateContractConsistency({ orientationSchema, ledgerSchema, policy, reasonCodes, limits }), []);
 });
+
+/**
+ * Mutation coverage for the consistency check. A green "everything agrees" test
+ * proves nothing on its own — it also passes if the checker returns [] for a
+ * contract set riddled with defects. Each case clones the SHIPPED contracts,
+ * introduces exactly one defect on one branch of the checker, and asserts that
+ * branch fires.
+ */
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const firstCode = () => Object.keys(reasonCodes.codes)[0];
+
+const CONSISTENCY_MUTATIONS = [
+  {
+    label: "a reason code dropped from the schema's enum",
+    mutate: (c) => {
+      c.orientationSchema.$defs.reason_code.enum = c.orientationSchema.$defs.reason_code.enum.slice(1);
+    },
+    expect: /\$defs\.reason_code\.enum.*does not match its source of truth/,
+  },
+  {
+    label: "a semantic class dropped from the ledger schema's class enum",
+    mutate: (c) => {
+      c.ledgerSchema.$defs.change.properties.class.enum = c.ledgerSchema.$defs.change.properties.class.enum.slice(1);
+    },
+    expect: /\$defs\.change\.properties\.class\.enum.*does not match its source of truth/,
+  },
+  {
+    label: "a reason code with a blanked remedy",
+    mutate: (c) => {
+      c.reasonCodes.codes[firstCode()].remedy = "   ";
+    },
+    expect: /has no remedy/,
+  },
+  {
+    label: "a reason code with a blanked meaning",
+    mutate: (c) => {
+      c.reasonCodes.codes[firstCode()].meaning = "";
+    },
+    expect: /has no meaning/,
+  },
+  {
+    label: "two reason codes sharing one owning test id",
+    mutate: (c) => {
+      const [a, b] = Object.keys(c.reasonCodes.codes);
+      c.reasonCodes.codes[b].test_id = c.reasonCodes.codes[a].test_id;
+    },
+    expect: /duplicate test_id values/,
+  },
+  {
+    label: "a reason code owned by nobody this contract knows",
+    mutate: (c) => {
+      c.reasonCodes.codes[firstCode()].owner = "some-other-repo";
+    },
+    expect: /owner must be campaigns-os or campaigns-agent/,
+  },
+  {
+    label: "a reason code naming an outcome that is not a disposition",
+    mutate: (c) => {
+      c.reasonCodes.codes[firstCode()].outcomes = ["not_a_disposition"];
+    },
+    expect: /which is not a disposition/,
+  },
+  {
+    label: "a policy rule naming an undefined class",
+    mutate: (c) => {
+      c.policy.rules[0].class = "not_a_class";
+    },
+    expect: /names undefined class not_a_class/,
+  },
+  {
+    label: "a derived-surface class that is not defined",
+    mutate: (c) => {
+      c.policy.derived_from_supported_surface.named_class = "not_a_class";
+    },
+    expect: /derived_from_supported_surface\.named_class names undefined class/,
+  },
+  {
+    label: "an ignore rule with no stated reason",
+    mutate: (c) => {
+      c.policy.ignored[0].reason = "";
+    },
+    expect: /has no reason/,
+  },
+  {
+    label: "a refusal reason code outside the vocabulary",
+    mutate: (c) => {
+      c.limits.refusal_reason_code = "not_a_reason_code";
+    },
+    expect: /refusal_reason_code not_a_reason_code is not in the reason-code vocabulary/,
+  },
+  {
+    label: "truncation quietly permitted",
+    mutate: (c) => {
+      c.limits.truncation_allowed = true;
+    },
+    expect: /truncation_allowed must be false/,
+  },
+  {
+    label: "a limit with no rationale",
+    mutate: (c) => {
+      c.limits.limits[Object.keys(c.limits.limits)[0]].rationale = "";
+    },
+    expect: /has no rationale/,
+  },
+];
+
+for (const mutation of CONSISTENCY_MUTATIONS) {
+  test(`validateContractConsistency catches ${mutation.label}`, () => {
+    const contracts = clone({ orientationSchema, ledgerSchema, policy, reasonCodes, limits });
+    mutation.mutate(contracts);
+    const errors = validateContractConsistency(contracts);
+    assert.ok(
+      errors.some((error) => mutation.expect.test(error)),
+      `expected an error matching ${mutation.expect} for "${mutation.label}"; got:\n  ${errors.join("\n  ") || "(none)"}`,
+    );
+  });
+}
 
 test("the shipped release ledger validates, is structurally intact, and links its changelog sections", () => {
   const ledger = readJson(LEDGER_PATH);
@@ -438,6 +656,34 @@ test("the hostile-target fixture ships every tripwire its manifest declares, wit
     ),
     [],
   );
+});
+
+test("every path the hostile fixture's manifest declares exists, and every hashed entry matches its file", () => {
+  // The fixture promises a consumer that a conforming read of it COMPLETES and
+  // produces a normal envelope. A declared path that is not in the tree, or a
+  // recorded digest that does not match, turns that promise inside out: the
+  // conforming behavior becomes refusal on integrity, and the fixture stops
+  // testing the no-execution invariant it exists for. This test is what stops
+  // that from happening again silently.
+  const dir = "contracts/fixtures/orientation/hostile-target/repo";
+  const fixtureSurface = readJson(`${dir}/contracts/supported-surface.json`);
+
+  for (const [path, entry] of Object.entries(fixtureSurface.hashed ?? {})) {
+    const bytes = readFileSync(join(root, dir, path));
+    assert.equal(
+      createHash("sha256").update(bytes).digest("hex"),
+      entry.sha256,
+      `${dir}/${path} does not match the digest the fixture manifest records for it`,
+    );
+  }
+  for (const path of fixtureSurface.named ?? []) {
+    assert.ok(statSync(join(root, dir, path)).isFile(), `${dir}/${path} is declared by the fixture manifest but missing from the tree`);
+  }
+
+  // A file the fixture ships that its own manifest never declares is the same
+  // kind of drift in the other direction.
+  assert.ok(Object.keys(fixtureSurface.hashed ?? {}).length > 0, "the fixture must exercise the hashed-integrity path");
+  assert.ok((fixtureSurface.named ?? []).length > 0, "the fixture must exercise the named-existence path");
 });
 
 test("the hostile fixture's own orientation data parses, so a zero hit count means the read actually completed", () => {
