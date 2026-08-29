@@ -195,6 +195,14 @@ test("canceled hidden media uses declared size without making capture incomplete
   assert.equal(declared.findings[0].declared_bytes, 40 * 1_024 * 1_024);
   assert.equal(declared.findings[0].assessed_bytes, 40 * 1_024 * 1_024);
 
+  const declaredOnly = evidenceForCapture(canceledCapture({
+    bytes: undefined,
+    declaredBytes: 40 * 1_024 * 1_024,
+  }));
+  assert.equal(declaredOnly.measurement.status, "complete");
+  assert.equal(declaredOnly.findings[0].transferred_bytes, 0);
+  assert.equal(declaredOnly.findings[0].declared_bytes, 40 * 1_024 * 1_024);
+
   for (const capture of [
     canceledCapture({ bytes: 300 * 1_024, declaredBytes: 40 * 1_024 * 1_024, hidden: false }),
     canceledCapture({ bytes: 300 * 1_024, declaredBytes: 40 * 1_024 * 1_024, preload: "none" }),

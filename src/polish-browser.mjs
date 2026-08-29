@@ -171,7 +171,7 @@ function responseRecord(current, {
     : undefined;
   const declaredLength = canceled ? nonnegativeInteger(response?.declaredDataLength) : undefined;
   const retainedLength = measuredLength === undefined
-    ? lowerBound === undefined && declaredLength !== undefined ? 0 : lowerBound
+    ? lowerBound
     : lowerBound === undefined ? measuredLength : Math.max(measuredLength, lowerBound);
   return {
     ...(typeof url === "string" && url !== "" ? { url } : {}),
@@ -202,7 +202,8 @@ function completeResponseRecord(record) {
   return typeof record?.url === "string"
     && typeof record?.resource_type === "string"
     && Number.isInteger(record?.status)
-    && nonnegativeInteger(record?.encoded_data_length) !== undefined;
+    && (nonnegativeInteger(record?.encoded_data_length) !== undefined
+      || (record?.canceled === true && nonnegativeInteger(record?.declared_data_length) !== undefined));
 }
 
 function createNetworkCollector() {

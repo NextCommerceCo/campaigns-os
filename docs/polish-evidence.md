@@ -151,7 +151,13 @@ an observed or declared size; they are recorded as canceled rather than failed.
 
 For canceled responses, the collector also retains the declared body size from
 `Content-Range`'s total when available, falling back to `Content-Length`.
-Observed transferred bytes remain unchanged. The hidden-eager-media checkpoint
+Observed transferred bytes remain unchanged; when no transfer bytes were
+observed, the response omits that measurement and the resource ledger retains a
+zero-byte lower bound alongside its non-zero declaration. This accounted
+declaration does not become an unavailable-transfer problem. The resource ledger
+keeps the largest declared total across repeated requests for one URL, avoiding
+range-request double counting; a media element sums those totals only across its
+distinct matched resources. The hidden-eager-media checkpoint
 compares the larger of observed and declared bytes, so an early-aborted range
 load cannot make a large hidden video look small. Declared sizes do not add a
 measurement problem and are ignored for visible media and exact `preload="none"`
