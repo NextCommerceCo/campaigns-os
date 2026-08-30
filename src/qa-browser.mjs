@@ -1741,10 +1741,9 @@ function createFieldTrace() {
 // Incremental evidence for one post-purchase action. The trace is created
 // before the bounded ladder step starts and updated before each operation that
 // can hang. Its synchronous summary survives when the timeout wins the race.
-function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path }) {
+function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path, inspectTimeoutMs = 1000 }) {
   const requestedAction = path === "accept" ? "add" : "skip";
   const selector = `[data-next-upsell-action="${requestedAction}"]`;
-  let actionStartUrl = redactUrlQuery(safePageUrl(page));
   let actionNavigationCount = Array.isArray(events?.navigations) ? events.navigations.length : 0;
   let actionUpsellRequestCount = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url)).length;
   let element = { present: null, visible: null, enabled: null };
@@ -1761,11 +1760,11 @@ function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path }
       visible: count > 0 ? await control.isVisible().catch(() => false) : false,
       enabled: count > 0 ? await control.isEnabled().catch(() => false) : false,
     };
-    sdk = await page.evaluate(() => ({
+    sdk = await settleDiagnosticWithin(page.evaluate(() => ({
       window_next_present: Boolean(window.next),
       display_ready: document.documentElement.classList.contains("next-display-ready"),
       sdk_loading: document.body?.getAttribute("data-next-sdk-loading") ?? null,
-    })).catch(() => sdk);
+    })), inspectTimeoutMs, sdk);
     return summary();
   };
 
@@ -1774,7 +1773,7 @@ function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path }
     const routePage = pageAtUrl(topologyPlan, currentUrl);
     const navigations = Array.isArray(events?.navigations) ? events.navigations : [];
     const upsellRequests = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url));
-    const navigationObserved = navigations.length > actionNavigationCount || Boolean(currentUrl && actionStartUrl && currentUrl !== actionStartUrl);
+    const navigationObserved = navigations.length > actionNavigationCount;
     const apiRequestObserved = upsellRequests.length > actionUpsellRequestCount;
     const basis = [
       ...(navigationObserved ? ["navigation"] : []),
@@ -1844,13 +1843,26 @@ function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path }
     formatError,
     markClickAttempted: () => {
       clickAttempted = true;
-      actionStartUrl = redactUrlQuery(safePageUrl(page));
       actionNavigationCount = Array.isArray(events?.navigations) ? events.navigations.length : 0;
       actionUpsellRequestCount = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url)).length;
     },
     markClickCompleted: () => { clickCompleted = true; },
     markStepCompleted: () => { stepCompleted = true; },
   };
+}
+
+async function settleDiagnosticWithin(promise, timeoutMs, fallback) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise).catch(() => fallback),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // Structured step evidence. Callers pass either an object or a thunk; a thunk

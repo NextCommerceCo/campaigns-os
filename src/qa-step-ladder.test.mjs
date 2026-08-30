@@ -377,6 +377,14 @@ test("a deep upsell timeout names the route, edge, action state, SDK readiness, 
   trace.markClickAttempted();
   trace.markClickCompleted();
 
+  currentUrl = route("receipt/");
+  assert.equal(
+    trace.summary().action_binding.observed,
+    false,
+    "URL drift without a captured main-frame navigation is not binding evidence",
+  );
+  currentUrl = route("upsell-2/");
+
   const ladder = createStepLadder({ emit: () => {} });
   let timeoutError = null;
   try {
