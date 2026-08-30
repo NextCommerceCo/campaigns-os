@@ -371,6 +371,17 @@ export function renderReference({ orientationSchema, ledgerSchema, policy, reaso
   );
 
   push(
+    "## Forward compatibility",
+    "",
+    "A consumer that recognizes these v1 schema IDs accepts and preserves unknown additive",
+    "properties at every object depth without interpreting them. Required fields, declared",
+    "types, and known safety-critical enums still validate exactly; an unknown schema ID or",
+    "enum value fails closed. An additive field cannot grant authority or change the meaning",
+    "of a known field. A change that does either publishes a new schema ID.",
+    "",
+  );
+
+  push(
     "## Terminal outcomes",
     "",
     "Every orientation run ends on exactly one disposition. The eight below are the complete set;",

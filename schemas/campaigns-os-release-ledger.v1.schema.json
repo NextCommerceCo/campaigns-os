@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nextcommerce.com/schemas/campaigns-os-release-ledger.v1.schema.json",
   "title": "Campaigns OS Release Ledger v1",
-  "description": "The append-only, agent-relevant release ledger. One ordered entry per accepted release or reviewed amendment; one change item per agent-relevant semantic change. An entry deliberately carries NO commit identifier: an entry cannot name the commit that contains it without being rewritten after the fact, so a consumer derives the introducing commit from Git history at the immutable target OID instead. Historical entries are never rewritten; a correction ships as a new amendment entry.",
+  "description": "The append-only, agent-relevant release ledger. One ordered entry per accepted release or reviewed amendment; one change item per agent-relevant semantic change. An entry deliberately carries NO commit identifier: an entry cannot name the commit that contains it without being rewritten after the fact, so a consumer derives the introducing commit from Git history at the immutable target OID instead. Historical entries are never rewritten; a correction ships as a new amendment entry. A consumer that recognizes v1 accepts and preserves unknown additive properties without interpreting them; required fields, known types, and safety-critical enums remain strict.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": ["schema_version", "entries"],
   "properties": {
     "schema_version": {
@@ -23,7 +23,7 @@
   "$defs": {
     "entry": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": [
         "id",
         "sequence",
@@ -104,19 +104,21 @@
         "changes": {
           "type": "array",
           "minItems": 1,
-          "description": "One item per agent-relevant semantic change. Change identity is (class, path, surface_entry) and must be unique across the whole ledger.",
+          "description": "One item per agent-relevant semantic change. Change identity is (class, path, surface_entry) and must be unique within this entry; later releases may record a new change to the same path.",
           "items": { "$ref": "#/$defs/change" }
         },
         "entry_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
           "description": "SHA-256 over the canonical JSON of this entry with entry_sha256 removed. Makes an in-place edit of a historical entry detectable even in a squashed history."
-        }
+        },
+        "introducing_commit": false,
+        "containing_commit": false
       }
     },
     "change": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["class", "path", "surface_entry", "summary"],
       "properties": {
         "class": {

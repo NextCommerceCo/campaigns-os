@@ -161,7 +161,11 @@ test("a ledger entry naming its containing commit fails schema validation, not o
   const ledger = { schema_version: "campaigns-os-release-ledger/v1", entries: headEntries };
   assert.equal(validateLedgerDocument(ledger), false);
   assert.ok(
-    validateLedgerDocument.errors.some((error) => error.params?.additionalProperty === "introducing_commit"),
+    validateLedgerDocument.errors.some(
+      (error) =>
+        error.instancePath === "/entries/0/introducing_commit" &&
+        error.keyword === "false schema",
+    ),
     "the schema must reject the commit property outright",
   );
 });

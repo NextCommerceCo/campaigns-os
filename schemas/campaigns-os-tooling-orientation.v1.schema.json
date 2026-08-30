@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nextcommerce.com/schemas/campaigns-os-tooling-orientation.v1.schema.json",
   "title": "Campaigns OS Tooling Orientation v1",
-  "description": "The versioned envelope a Campaigns OS consumer assembles before binding a session to one generation. Campaigns OS declares the facts (supported surface, release ledger, changelog, limits, reason codes); the consumer's own trusted parser reads them from immutable Git objects at a resolved target OID and fills this envelope. Campaigns OS code is never executed to produce it. Ten semantic groups are required; every one is an independent axis, so integrity, freshness, compatibility, runtime readiness, and orientation never collapse into a single boolean.",
+  "description": "The versioned envelope a Campaigns OS consumer assembles before binding a session to one generation. Campaigns OS declares the facts (supported surface, release ledger, changelog, limits, reason codes); the consumer's own trusted parser reads them from immutable Git objects at a resolved target OID and fills this envelope. Campaigns OS code is never executed to produce it. Ten semantic groups are required; every one is an independent axis, so integrity, freshness, compatibility, runtime readiness, and orientation never collapse into a single boolean. A consumer that recognizes v1 accepts and preserves unknown additive properties without interpreting them; required fields, known types, and safety-critical enums remain strict.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "request",
@@ -22,7 +22,7 @@
     "schema_version": { "const": "campaigns-os-tooling-orientation/v1" },
     "request": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": [
         "run_id",
         "checkout_mode",
@@ -61,7 +61,7 @@
     },
     "repository": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "description": "Normalized repository identity and graph relation. Carries no credentials and no operator-specific absolute paths; a path here is repository-relative or an opaque identity.",
       "required": [
         "owner",
@@ -97,7 +97,7 @@
     },
     "freshness": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["state", "observed_at", "fetch_result"],
       "properties": {
         "state": {
@@ -107,7 +107,7 @@
         "observed_at": { "type": "string", "minLength": 1, "description": "RFC 3339 timestamp of the observation." },
         "fetch_result": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "required": ["attempted", "succeeded", "duration_ms"],
           "properties": {
             "attempted": { "type": "boolean" },
@@ -120,7 +120,7 @@
     },
     "surface": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["reviewed_version", "target_version", "current_version", "compatibility_result", "compatibility_rule", "transitions"],
       "properties": {
         "reviewed_version": { "oneOf": [{ "$ref": "#/$defs/semver" }, { "type": "null" }], "description": "null when the reviewed baseline predates supported surfaces. A legacy baseline is never given a fabricated version." },
@@ -133,7 +133,7 @@
           "description": "The actual ordered surface_version transitions between reviewed and target, derived from Git history, not interpolated.",
           "items": {
             "type": "object",
-            "additionalProperties": false,
+            "additionalProperties": true,
             "required": ["from", "to"],
             "properties": {
               "from": { "oneOf": [{ "$ref": "#/$defs/semver" }, { "type": "null" }] },
@@ -145,7 +145,7 @@
     },
     "release_ledger": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "description": "Every agent-relevant semantic change between the reviewed baseline and the target commit, same-surface changes included.",
       "required": ["ledger_schema_version", "entries"],
       "properties": {
@@ -154,7 +154,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "additionalProperties": false,
+            "additionalProperties": true,
             "required": ["id", "sequence", "date", "kind", "surface_version", "changelog_section", "changelog_sha256", "agent_impact", "compatibility", "migration", "changes", "entry_sha256", "introducing_commit"],
             "properties": {
               "id": { "type": "string", "pattern": "^RL-[0-9]{4}$" },
@@ -174,7 +174,7 @@
                 "minItems": 1,
                 "items": {
                   "type": "object",
-                  "additionalProperties": false,
+                  "additionalProperties": true,
                   "required": ["class", "path", "surface_entry", "summary"],
                   "properties": {
                     "class": { "$ref": "#/$defs/change_class" },
@@ -196,7 +196,7 @@
     },
     "changelog": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["sections"],
       "properties": {
         "sections": {
@@ -204,7 +204,7 @@
           "description": "The exact ordered append-only changelog sections the ledger entries reference. Bodies are carried verbatim; nothing is summarized or truncated.",
           "items": {
             "type": "object",
-            "additionalProperties": false,
+            "additionalProperties": true,
             "required": ["section_id", "date", "agent_impact", "migration_action", "body_markdown", "body_sha256"],
             "properties": {
               "section_id": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(\\+agent\\.[0-9]+)?$" },
@@ -220,7 +220,7 @@
     },
     "runtime": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "description": "Generated-runtime readiness as an axis independent of source freshness. The declarative recipe contract itself is owned by a separate change (test-plan A2); this group is the envelope shape that carries its result.",
       "required": ["recipe_id", "source_fingerprint", "generated_state", "emitter_commit", "refresh_action", "ready"],
       "properties": {
@@ -235,7 +235,7 @@
     },
     "transaction": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["state", "commit_before", "commit_target", "commit_observed", "recovered_interrupted_update"],
       "properties": {
         "state": { "type": "string", "enum": ["none", "requested", "intent_recorded", "finalized", "reconciled", "failed"] },
@@ -248,7 +248,7 @@
     },
     "outcome": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["disposition", "reason_code", "active_generation_changed", "fresh_exec_required", "next_actions"],
       "properties": {
         "disposition": { "$ref": "#/$defs/disposition" },
@@ -265,7 +265,7 @@
     },
     "limits": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "description": "The versioned limits actually applied to this run, copied from contracts/orientation-limits.v1.json. Exceeding any of them is a refusal with reason_code orientation_too_large; nothing is truncated.",
       "required": ["limits_version", "max_source_bytes", "max_section_count", "max_section_bytes", "max_envelope_bytes", "max_ledger_entries", "applied"],
       "properties": {
@@ -277,7 +277,7 @@
         "max_ledger_entries": { "type": "integer", "minimum": 1 },
         "applied": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "description": "What this run actually measured, so a near-limit read is visible before it becomes a refusal.",
           "required": ["source_bytes", "section_count", "max_observed_section_bytes", "envelope_bytes", "ledger_entries"],
           "properties": {
@@ -302,7 +302,7 @@
     "semver": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
     "baseline": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["kind", "commit"],
       "properties": {
         "kind": {

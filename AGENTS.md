@@ -122,15 +122,13 @@ explicitly rather than optimistically.
 
 - **Unknown orientation schema id** — fail closed. Do not attempt a partial
   parse of a contract you do not understand.
-- **Unknown fields inside `campaigns-os-tooling-orientation/v1`** — fail closed.
-  Every object in the orientation and ledger schemas sets
-  `additionalProperties: false`, so `v1` does not grow: a field that is not in
-  the schema is a field this contract does not define, and accepting it would
-  mean orienting on data whose meaning nobody has agreed. Additive growth is a
-  real need and it has a real mechanism — advance the schema version, publish
-  the new id, and let a consumer decide whether it accepts it. That way a
-  producer can tell whether its addition was understood, which "accept and
-  ignore" can never do.
+- **Unknown additive fields inside a recognized v1 schema** — accept and
+  preserve them without interpreting them. Every object in the orientation and
+  ledger schemas permits additional properties so an older consumer is not
+  stranded by producer-first rollout. This does not relax known semantics:
+  required fields, their declared types, and known safety-critical enums still
+  validate exactly. Additive data cannot grant authority or change the meaning
+  of a known field merely because it is present.
 - **Unknown enum value in a safety-critical position** (a disposition, a reason
   code, a compatibility result) — fail closed. Silently coercing an unrecognized
   refusal into a success is the worst available outcome.

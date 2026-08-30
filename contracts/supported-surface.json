@@ -44,13 +44,13 @@
       "sha256": "12b57573739357acb2b007d00a737cd86face441c47f2719fc51b041dc8ea4a5"
     },
     "schemas/campaigns-os-release-ledger.v1.schema.json": {
-      "sha256": "e9256bcbbc3a64692a887d9c8b39f57924c505823a3ce86fb536d177dffa3f5b"
+      "sha256": "08ca132134b9e4610370e88082a5e888d09ddec0d5ee4512d84cc57181da722e"
     },
     "schemas/campaigns-os-run-record.v0.schema.json": {
       "sha256": "51c7441e73d693d42d201676e35714d94a749b4174fe678d4f4c68e855eba496"
     },
     "schemas/campaigns-os-tooling-orientation.v1.schema.json": {
-      "sha256": "480ddbc72dc42d09aa7a1a1cd8a1447372a21404b4d42315de51993b3f985133"
+      "sha256": "897b192c7b3965c84909616023879b0a269a2e727e10efdec1b34e4c33ec499f"
     },
     "schemas/campaigns-os-workflow-finding.v0.schema.json": {
       "sha256": "41ff370de4395149781d7e8c4ad6d7d4e2f896eb2030944399d36f1237726a20"

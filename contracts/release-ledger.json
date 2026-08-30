@@ -9,7 +9,7 @@
       "kind": "release",
       "surface_version": "1.14.0",
       "changelog_section": "1.14.0",
-      "changelog_sha256": "06cc6f84e2b8afcd805d3c1cb3c4ec900da79ad9ddc702ea6767701c085e46ee",
+      "changelog_sha256": "16a717cfe8e232986c320456425576e976e9e0b11e2dcc922a57b156f8ca86d8",
       "agent_impact": "A consumer may now assemble a campaigns-os-tooling-orientation/v1 envelope from Git objects at a resolved commit, without executing anything from this repository. Nothing existing changed shape; adoption is optional and additive.",
       "compatibility": "additive",
       "migration": "none",
@@ -198,16 +198,16 @@
           "class": "schema",
           "path": "schemas/campaigns-os-release-ledger.v1.schema.json",
           "surface_entry": "schemas/campaigns-os-release-ledger.v1.schema.json",
-          "summary": "The append-only release-ledger schema was introduced. It rejects any commit-shaped property, because an entry cannot honestly name the commit that contains it."
+          "summary": "The append-only release-ledger schema was introduced. It accepts unknown additive fields for producer-first rollout while required fields, known types, and safety-critical enums remain strict; custom validation still rejects commit-shaped entry properties."
         },
         {
           "class": "schema",
           "path": "schemas/campaigns-os-tooling-orientation.v1.schema.json",
           "surface_entry": "schemas/campaigns-os-tooling-orientation.v1.schema.json",
-          "summary": "The orientation envelope schema was introduced: ten required semantic groups, eight terminal outcomes, and the stable reason-code enum."
+          "summary": "The orientation envelope schema was introduced: ten required semantic groups, eight terminal outcomes, and the stable reason-code enum. It accepts unknown additive fields while keeping schema IDs, required fields, known types, and safety-critical enums strict."
         }
       ],
-      "entry_sha256": "7d5e5752a46129ea7cc43562c5d443ac30d1854dcfb532f08d853745c2751d7a"
+      "entry_sha256": "cc935b73063ae3531db6d2c91ea9992bbc7a5bfb4e497a9548b969b8d5cd1fca"
     }
   ]
 }

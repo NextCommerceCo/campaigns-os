@@ -150,6 +150,44 @@ test("every terminal outcome has a generated example envelope that validates aga
   }
 });
 
+test("recognized v1 contracts accept unknown additive fields at every object depth", () => {
+  const ajv = new Ajv2020({ strict: true, allErrors: true });
+  const validateOrientation = ajv.compile(orientationSchema);
+  const validateLedger = ajv.compile(ledgerSchema);
+
+  const envelope = structuredClone(readJson(`${ENVELOPE_FIXTURE_DIR}/orientation_available.json`));
+  envelope.future_top_level = { introduced_by: "a later compatible producer" };
+  envelope.request.future_request_fact = true;
+  envelope.request.baseline.future_baseline_fact = "preserved but not interpreted";
+  envelope.release_ledger.entries[0].future_entry_fact = 1;
+  envelope.release_ledger.entries[0].changes[0].future_change_fact = ["additive"];
+  assert.ok(validateOrientation(envelope), JSON.stringify(validateOrientation.errors));
+
+  const ledger = structuredClone(readJson("contracts/release-ledger.json"));
+  ledger.future_top_level = { introduced_by: "a later compatible producer" };
+  ledger.entries[0].future_entry_fact = true;
+  ledger.entries[0].changes[0].future_change_fact = "preserved but not interpreted";
+  assert.ok(validateLedger(ledger), JSON.stringify(validateLedger.errors));
+});
+
+test("recognized v1 contracts still reject unknown schema ids, required-field gaps, invalid types, and unknown safety enums", () => {
+  const validate = new Ajv2020({ strict: true, allErrors: true }).compile(orientationSchema);
+  const fixture = readJson(`${ENVELOPE_FIXTURE_DIR}/orientation_available.json`);
+
+  const cases = [
+    ["unknown schema id", (value) => { value.schema_version = "campaigns-os-tooling-orientation/v999"; }],
+    ["missing required group", (value) => { delete value.request; }],
+    ["invalid required type", (value) => { value.request.run_id = 42; }],
+    ["unknown safety-critical enum", (value) => { value.outcome.disposition = "optimistically_ready"; }],
+  ];
+
+  for (const [label, mutate] of cases) {
+    const candidate = structuredClone(fixture);
+    mutate(candidate);
+    assert.equal(validate(candidate), false, `${label} must fail closed`);
+  }
+});
+
 test("the ten required semantic groups are all required by the orientation schema", () => {
   const required = new Set(orientationSchema.required);
   for (const group of [
@@ -179,4 +217,6 @@ test("the reference points at supported paths and never at implementation intern
 test("the reference declares itself generated so nobody hand-edits it", () => {
   assert.match(reference, /GENERATED FILE — do not edit by hand/);
   assert.match(reference, /scripts\/generate-orientation-reference\.mjs/);
+  assert.match(reference, /accepts and preserves unknown additive/);
+  assert.match(reference, /unknown schema ID or/);
 });

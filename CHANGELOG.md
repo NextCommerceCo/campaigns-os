@@ -61,12 +61,12 @@ Notable supported-surface changes are recorded here.
   The hit-counter assertion belongs to the consumer's parser suite; this release
   ships the fixture it runs against.
 
-  One rule is worth stating on its own because it decides how `v1` evolves:
-  **unknown fields fail closed.** Every object in both schemas sets
-  `additionalProperties: false`, so `v1` does not grow in place. An additive
-  change advances the schema version and publishes a new id, which lets a
-  producer find out whether its addition was understood — something "accept and
-  ignore" can never report.
+  One rule is worth stating on its own because producer and consumer do not
+  upgrade atomically: **unknown additive fields inside a recognized v1 schema
+  are accepted and preserved without interpretation.** Required fields, known
+  types, schema IDs, and safety-critical enums still fail closed. An additive
+  field cannot grant authority or change the meaning of a known field; a change
+  that does either requires a new schema ID.
 
   Nothing here changes build, polish, QA, or CLI behavior. The supported surface
   grew by two schemas and twenty-seven named entries; nothing was renamed or
