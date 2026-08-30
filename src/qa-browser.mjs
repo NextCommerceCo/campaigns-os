@@ -1955,7 +1955,11 @@ function formatStepError(error, formatter) {
     return { error, message: originalMessage };
   }
   if (message === originalMessage) return { error, message };
-  const formatted = new Error(message, { cause: error instanceof Error ? error : undefined });
+  if (error instanceof Error) {
+    error.message = message;
+    return { error, message };
+  }
+  const formatted = new Error(message);
   if (error?.code) formatted.code = error.code;
   if (error?.hostedRedirect) formatted.hostedRedirect = error.hostedRedirect;
   return { error: formatted, message };
@@ -3317,10 +3321,15 @@ async function clickUpsellPath(page, path, { trace = null } = {}) {
     : Promise.resolve(null);
   await control.scrollIntoViewIfNeeded().catch(() => {});
   trace?.markClickAttempted();
-  await control.click({ timeout: 10000 }).catch(async () => {
+  let clickCompleted = false;
+  try {
+    await control.click({ timeout: 10000 });
+    clickCompleted = true;
+  } catch {
     await control.click({ force: true });
-  });
-  trace?.markClickCompleted();
+    clickCompleted = true;
+  }
+  if (clickCompleted) trace?.markClickCompleted();
   const mutationResponse = await mutationPromise;
   const mutationBody = mutationResponse ? await readJsonResponseBody(mutationResponse) : null;
   await waitForCheckoutResult(page);

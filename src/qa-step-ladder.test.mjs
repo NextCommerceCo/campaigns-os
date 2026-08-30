@@ -67,6 +67,24 @@ test("ladder records failures with the error and rethrows so the path aborts", a
   assert.match(ladder.steps[0].error, /has been closed/);
 });
 
+test("formatted step failures preserve the original Error object", async () => {
+  const original = new Error("browser action failed");
+  original.code = "browser_action";
+  const ladder = createStepLadder({ emit: () => {} });
+  let thrown = null;
+  try {
+    await ladder.run("upsell_action", () => Promise.reject(original), {
+      timeoutMs: 100,
+      formatError: (error) => `${error.message}; route=https://campaign.example/upsell-2/`,
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.equal(thrown, original);
+  assert.equal(thrown.code, "browser_action");
+  assert.match(thrown.message, /route=https:\/\/campaign\.example\/upsell-2\//);
+});
+
 test("ladder bounds each step: a hung step records timeout instead of hanging forever", async () => {
   const ladder = createStepLadder({ emit: () => {} });
   await assert.rejects(

@@ -35,13 +35,14 @@ export function resolveTestOrderTopology(topology = {}, checkoutPage = null) {
     topology_id: topology?.funnel_id || "default",
     checkout_page_id: checkout?.page_id || null,
     checkout_url: checkout?.url || null,
-    route_pages: pages
-      .filter((page) => canonicalHttpUrl(page?.url))
-      .map((page) => ({
-        page_id: page.page_id || null,
-        page_type: page.page_type || null,
-        url: page.url,
-      })),
+    // Retain every declared page for diagnostics, including malformed rows.
+    // pageAtUrl still matches only canonical HTTP URLs, but the resolved plan
+    // does not silently erase the topology evidence that explains a miss.
+    route_pages: pages.map((page) => ({
+      page_id: page.page_id || null,
+      page_type: page.page_type || null,
+      url: page.url || null,
+    })),
     has_offer_entry: entry?.kind === "offer",
     full_paths: terminalPaths.map((candidate) => candidate.path),
     terminal_paths: terminalPaths,
