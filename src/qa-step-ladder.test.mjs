@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
+import { resolveTestOrderTopology } from "./qa-test-order-topology.mjs";
 
 const {
   TEST_ORDER_STEP_LADDER,
   cartCreationEvidence,
   cartLineCount,
   createFieldTrace,
+  createUpsellActionTrace,
   createStepLadder,
   fillCheckoutFields,
   requiredActionTimeout,
@@ -320,6 +322,143 @@ test("ladder entries carry structured evidence, and a failing step still reports
     throw new Error("evidence blew up");
   });
   assert.equal("evidence" in ladder.steps.at(-1), false);
+});
+
+test("a deep upsell timeout names the route, edge, action state, SDK readiness, and last browser evidence", async () => {
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topologyPlan = resolveTestOrderTopology({
+    funnel_id: "deep-upsell",
+    pages: [
+      { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell-1/") },
+      { page_id: "upsell-1", page_type: "upsell", url: route("upsell-1/"), expected_accept_url: route("upsell-2/"), expected_decline_url: route("receipt/") },
+      { page_id: "upsell-2", page_type: "upsell", url: route("upsell-2/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+      { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+    ],
+  });
+  const selector = '[data-next-upsell-action="add"]';
+  let currentUrl = route("upsell-2/");
+  const control = {
+    count: async () => 1,
+    isVisible: async () => true,
+    isEnabled: async () => true,
+  };
+  const page = {
+    url: () => currentUrl,
+    locator: (value) => {
+      assert.equal(value, selector);
+      return { first: () => control };
+    },
+    evaluate: async () => ({
+      window_next_present: true,
+      display_ready: true,
+      sdk_loading: "false",
+    }),
+  };
+  const events = {
+    requests: [],
+    responses: [],
+    failed: [],
+    console: [],
+    pageErrors: [],
+    navigations: [],
+  };
+  const trace = createUpsellActionTrace({
+    page,
+    events,
+    topologyPlan,
+    stepIndex: 1,
+    path: "accept",
+  });
+  await trace.inspect();
+  // The prior edge can finish settling after this trace is created. It is the
+  // current route, not evidence that this edge's action handler ran.
+  events.navigations.push({ url: route("upsell-2/") });
+  trace.markClickAttempted();
+  trace.markClickCompleted();
+
+  const ladder = createStepLadder({ emit: () => {} });
+  let timeoutError = null;
+  try {
+    await ladder.run("upsell_action", () => new Promise(() => {}), {
+      timeoutMs: 5,
+      evidence: trace.summary,
+      formatError: trace.formatError,
+    });
+  } catch (error) {
+    timeoutError = error;
+  }
+
+  assert.ok(timeoutError);
+  assert.match(timeoutError.message, /page_id=upsell-2/);
+  assert.match(timeoutError.message, /edge=2/);
+  assert.match(timeoutError.message, /action=add/);
+  assert.match(timeoutError.message, /binding_observed=false/);
+  const timedOut = ladder.steps[0];
+  assert.equal(timedOut.status, "timeout");
+  assert.equal(timedOut.error, timeoutError.message);
+  assert.deepEqual(timedOut.evidence.route, {
+    page_id: "upsell-2",
+    page_type: "upsell",
+    url: route("upsell-2/"),
+  });
+  assert.equal(timedOut.evidence.edge_index, 1);
+  assert.equal(timedOut.evidence.edge_number, 2);
+  assert.equal(timedOut.evidence.requested_action, "add");
+  assert.equal(timedOut.evidence.selector, selector);
+  assert.deepEqual(timedOut.evidence.element, { present: true, visible: true, enabled: true });
+  assert.deepEqual(timedOut.evidence.sdk, {
+    window_next_present: true,
+    display_ready: true,
+    sdk_loading: "false",
+  });
+  assert.deepEqual(timedOut.evidence.action_binding, {
+    click_attempted: true,
+    click_completed: true,
+    observed: false,
+    basis: [],
+  });
+  assert.deepEqual(timedOut.evidence.last_navigation, { url: route("upsell-2/") });
+  assert.equal(timedOut.evidence.last_upsell_api_request, null);
+
+  currentUrl = route("receipt/");
+  events.navigations.push({ url: currentUrl });
+  events.requests.push({ method: "POST", url: `${base}api/v1/orders/100/upsells/?token=redacted` });
+  const progressed = trace.summary();
+  assert.deepEqual(progressed.action_binding, {
+    click_attempted: true,
+    click_completed: true,
+    observed: true,
+    basis: ["navigation", "upsell_api_request"],
+  });
+  assert.deepEqual(progressed.last_navigation, { url: route("receipt/") });
+  assert.deepEqual(progressed.last_upsell_api_request, {
+    method: "POST",
+    url: `${base}api/v1/orders/100/upsells/`,
+  });
+
+  trace.markStepCompleted();
+  assert.equal(trace.summary(), null, "successful actions keep the established compact ladder shape");
+
+  const assertion = testOrderAssertion(
+    { page_id: "checkout", page_type: "checkout", url: route("checkout/") },
+    "accept-accept",
+    {
+      ok: false,
+      error: timeoutError.message,
+      order: {
+        path: "accept-accept",
+        ok: false,
+        final_url: route("upsell-2/"),
+        verification: { verified: false, error: timeoutError.message },
+        evidence: { steps: ladder.steps },
+      },
+      events,
+    },
+  );
+  assert.match(assertion.actual, /page_id=upsell-2/);
+  assert.equal(assertion.evidence.steps[0].evidence.action_binding.observed, false);
+  assert.equal(assertion.evidence.steps[0].evidence.last_upsell_api_request, null);
 });
 
 test("a failing customer field names itself in the step evidence", async () => {
