@@ -2,6 +2,48 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.15.0] - 2026-08-31
+
+### Added
+
+- **The QA Verdict and its committed sidecar are schema'd, and trust semantics
+  are documented (#260).** The verdict was the only lifecycle artifact without
+  a schema file: its shape lived in `src/qa-node.mjs` — classified unsupported
+  by the surface contract — while the receiving Worker re-validated the same
+  shape from a hand-maintained copy, so every readback consumer was pinning an
+  unversioned contract.
+
+  - **`schemas/campaigns-os-qa-verdict.v0.schema.json`** — the full verdict
+    `qa run` writes under `qa-output/` and publishes to the QA portal,
+    derived from the emitting code and validated against real emitted
+    verdicts. The emitted `schema_version` field stays the literal `"1.0"`
+    (it predates the slash-versioned naming and the receiver validates the
+    same literal); the contract identity is `campaigns-os-qa-verdict/v0`.
+    Additive tolerance is explicit: consumers must accept unknown fields.
+  - **`schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json`** — the
+    committed `.campaign-runtime/qa-verdict.json` allowlist projection. Same
+    `"1.0"` literal (one contract, never a second lineage); the schema pins
+    what the projection additionally guarantees — `generated_at`, emptied
+    URL-bearing fields, the per-assertion allowlist, and the absence of
+    receiver trust stamps.
+  - **Trust semantics are documented** in `docs/qa-and-test-orders.md`:
+    `trusted`/`trust_level`/`verified_at` are stamped server-side by the QA
+    verdict receiver, never emitted by this CLI; `trusted: false` marks an
+    anonymous submission — shape-valid but unattributed — and every
+    downstream consumer must filter on it or segregate such records. Shape
+    validity is not trust.
+  - **The readback tooling now enforces that segregation** at its two
+    chokepoints: `qa promote` (and any sidecar projection) refuses a source
+    verdict stamped `trusted: false`, and `run-record`'s automatic QA-verdict
+    inference excludes untrusted records. A forged, shape-valid, untrusted
+    verdict rides the test suite as a permanent negative control: it passes
+    schema validation and is still refused/excluded.
+
+  Endpoint authentication and attribution are deliberately untouched — they
+  land with the receiver's connection contract. No endpoint behavior changed.
+  The supported surface grew by the two schemas; nothing was renamed or
+  removed.
+
 ## [1.14.0] - 2026-08-28
 
 ### Added

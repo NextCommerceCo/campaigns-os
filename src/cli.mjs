@@ -8898,12 +8898,20 @@ function inferQaVerdictPath({ packet, report, reportPath = null, targetRepo = nu
     }
   }
 
-  candidates.sort((a, b) => {
+  // Trust segregation: a verdict stamped `trusted: false` by the QA verdict
+  // receiver (an anonymous submission) is shape-valid but unattributed, and
+  // automatic inference must never pick one up as this run's QA evidence.
+  // Locally emitted verdicts never carry the field — it is server-stamped —
+  // so only fetched untrusted records are excluded here. An operator's
+  // explicit --qa-verdict path bypasses inference and is honored as given.
+  // See docs/qa-and-test-orders.md (Verdict schema and trust semantics).
+  const eligible = candidates.filter((candidate) => candidate.verdict?.trusted !== false);
+  eligible.sort((a, b) => {
     const scoreDelta = qaVerdictCandidateScore(b, packet) - qaVerdictCandidateScore(a, packet);
     if (scoreDelta !== 0) return scoreDelta;
     return qaVerdictCandidateTime(b) - qaVerdictCandidateTime(a);
   });
-  return candidates[0]?.path || null;
+  return eligible[0]?.path || null;
 }
 
 function qaVerdictPathHints(report) {

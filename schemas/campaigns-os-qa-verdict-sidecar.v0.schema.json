@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+  "title": "Campaigns OS QA Verdict Sidecar v0",
+  "description": "The committed QA verdict sidecar written to .campaign-runtime/qa-verdict.json beside the Build Packet — the artifact campaigns-agent's readback consumes. It is an allowlist PROJECTION of one full verdict (campaigns-os-qa-verdict.v0.schema.json), never a copy: it keeps the same schema_version literal \"1.0\" (a second version would fork the read end), keeps identity, disposition, per-assertion id/family/page/status/severity/blocked_by, and trimmed exceptions, and empties every URL-bearing field — full verdicts stay gitignored because they carry live storefront URLs, request evidence, and order references. generated_at is stamped at projection/promotion time. Produced only by `qa run` and `qa promote` (never hand-authored), and only from a verdict the projection accepts: a record stamped trusted: false by the QA verdict receiver (an anonymous submission) is refused, so the trust fields can never legitimately appear here. Additions to v0 are expected; consumers must tolerate unknown fields — but the properties this projection deliberately empties or strips are pinned empty/absent below.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "run_id",
+    "campaign_slug",
+    "spec_version",
+    "spec_hash",
+    "started_at",
+    "completed_at",
+    "generated_at",
+    "runtime",
+    "disposition",
+    "entry_urls",
+    "page_urls",
+    "tested_urls",
+    "assertions",
+    "test_orders",
+    "exceptions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "description": "Same literal as the full verdict — the sidecar is the same contract projected, not a second schema lineage."
+    },
+    "run_id": { "type": "string", "minLength": 1 },
+    "campaign_slug": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Carries the Campaign Map ID for schema back-compat, exactly as the source verdict did."
+    },
+    "public_route_slug": {
+      "type": "string",
+      "description": "Present only when the source verdict carried a non-null value."
+    },
+    "campaign_ref_id": {
+      "type": "integer",
+      "description": "Present only when the source verdict carried a non-null value."
+    },
+    "spec_version": { "type": "string", "minLength": 1 },
+    "spec_hash": { "type": "string", "minLength": 1 },
+    "started_at": { "type": "string", "minLength": 1 },
+    "completed_at": { "type": "string", "minLength": 1 },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+      "description": "The projection/promotion instant, strict RFC3339 UTC with a Z suffix — the freshness stamp readback staleness checks read. Distinct from completed_at, which stays the source run's own finalization time."
+    },
+    "runtime": { "type": "string", "minLength": 1 },
+    "disposition": {
+      "type": "string",
+      "enum": ["ready", "ready_with_exceptions", "blocked"],
+      "description": "The source verdict's disposition, blocked included: the sidecar records what QA concluded, it is not a pass mark."
+    },
+    "base_url": {
+      "not": {},
+      "description": "URL-bearing — never present in the projection."
+    },
+    "entry_urls": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "URL-bearing — always emptied ([]) by the projection."
+    },
+    "page_urls": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "URL-bearing — always emptied ([]) by the projection."
+    },
+    "tested_urls": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "URL-bearing — always emptied ([]) by the projection."
+    },
+    "assertions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/projectedAssertion" }
+    },
+    "test_orders": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "Order evidence (URLs, order references, request captures) stays in the full verdict — always emptied ([]) by the projection."
+    },
+    "exceptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/projectedException" },
+      "description": "Re-derived from the PROJECTED assertions, then null-valued keys dropped — so url/expected/actual can never survive into the committed form."
+    },
+    "trusted": {
+      "not": {},
+      "description": "Never present: trust stamps belong to the receiver's stored records, and the projection refuses an untrusted source outright."
+    },
+    "trust_level": {
+      "not": {},
+      "description": "Never present — see trusted."
+    },
+    "verified_at": {
+      "not": {},
+      "description": "Never present — see trusted."
+    }
+  },
+  "$defs": {
+    "projectedAssertion": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "family", "page", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "family": { "type": "string", "minLength": 1 },
+        "page": { "type": "string", "minLength": 1 },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "warn", "skipped", "manual_review"]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warn", "blocker"]
+        },
+        "blocked_by": {
+          "description": "Tolerated allowlist field for gate-blocked assertions; shape follows the source assertion when present."
+        },
+        "url": { "not": {}, "description": "URL-bearing — stripped by the projection." },
+        "expected": { "not": {}, "description": "Stripped by the projection — stays in the full verdict." },
+        "actual": { "not": {}, "description": "Stripped by the projection — stays in the full verdict." },
+        "evidence": { "not": {}, "description": "Stripped by the projection — stays in the full verdict." },
+        "waiver": { "not": {}, "description": "Stripped by the projection — stays in the full verdict." }
+      },
+      "description": "The assertion allowlist: id, family, page, status, severity, blocked_by. Everything else — url, expected, actual, evidence, request/response captures — stays in the full verdict."
+    },
+    "projectedException": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "family", "page", "status", "severity"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "family": { "type": ["string", "null"] },
+        "page": { "type": ["string", "null"] },
+        "status": { "type": ["string", "null"] },
+        "severity": { "type": ["string", "null"] },
+        "url": { "not": {}, "description": "URL-bearing — can only derive null from projected assertions, and null keys are dropped." },
+        "expected": { "not": {}, "description": "Stripped — stays in the full verdict." },
+        "actual": { "not": {}, "description": "Stripped — stays in the full verdict." }
+      }
+    }
+  }
+}
