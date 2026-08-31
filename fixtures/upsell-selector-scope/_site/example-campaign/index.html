@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Example Campaign</title>
+  <meta name="next-page-type" content="product">
+  <script src="https://cdn.example.test/campaign-cart@v0.4.27/dist/loader.js"></script>
+</head>
+<body>
+  <!--
+    Pre-checkout. The cart IS the right basket here, so a bundle selector with
+    no upsell context and the default swap mode is correct: selecting a card
+    swaps the cart. The gate must not fire on this page.
+  -->
+  <div data-next-bundle-selector data-next-selector-id="main">
+    <div role="button" data-next-bundle-card data-next-bundle-id="main-1x"
+         data-next-bundle-items='[{"packageId":11,"quantity":1}]'
+         data-next-selected="true"></div>
+  </div>
+</body>
+</html>

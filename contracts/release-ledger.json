@@ -547,6 +547,51 @@
         }
       ],
       "entry_sha256": "4411e21cce2f99ee437d9470794f6d5f1e9feb808de8fb1a663156e4bbbc2024"
+    },
+    {
+      "id": "RL-0007",
+      "sequence": 7,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.16.0+agent.1",
+      "changelog_sha256": "d4f3a9b5f16629d0a68fbdecfbb9545e0095a540d3fea1e617a8f8b1c0e7f0dc",
+      "agent_impact": "A fourth checkpoint gate is registered, built_output.upsell_selector_scope, and it can block a doctor run that previously passed. It fires when a built page whose funnel role is upsell or downsell carries a data-next-bundle-selector that lacks data-next-upsell-context and is in the default swap selection mode: such a selector writes to the shopper's live cart at init, so loading the page charges them for a package at the next checkout without it appearing in that checkout's rendered order summary. Two consequences a consumer must plan for. First, `doctor --built` can now return blocked; it previously only produced warnings, and a consumer treating that mode as advisory will need to read its exit state. Second, all eight certified template families (apollo, apollo-mv-single-step, demeter, olympus, olympus-mv-single-step, olympus-mv-two-step, shop-single-step, shop-three-step) currently ship a display-only selector with neither attribute across 19 upsell offer includes, so a campaign built from any certified family blocks until the templates are repaired upstream in campaign-cart-starter-templates. The remedy is to add data-next-upsell-context to the named selector, or to record a bounded named-human waiver through `campaigns-os checkpoint waive --gate built_output.upsell_selector_scope`. data-next-selection-mode=\"select\" also clears the blocker and reports a warning instead, because the SDK gates every cart write on swap mode.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "`checkpoint waive --gate` accepts a fourth registered gate, built_output.upsell_selector_scope, and doctor evaluates it in the built-output phase on both the packet path and `doctor --built`. The gate is reported in derived.checkpoint_gates and in the `next` gate summary like the three before it, and `doctor --built` can now return a blocked status rather than only warnings."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "A lifecycle step was added for resolving the upsell selector-scope checkpoint, stating what an unscoped selector does to a shopper, that the gate runs on every doctor invocation rather than only after assembly, and the exact waiver command. Subsequent steps renumbered; version 1.0.6."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os advanced to 1.0.6 for the added checkpoint step."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The `checkpoint` command's registered-gate list now names four gates rather than three. The support boundary is unchanged: registered gates may still grow beneath the listed command without a surface_version advance."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The packet-local checkpoint preflight now lists four registered checkpoints, and the waiver example's --gate alternation includes built_output.upsell_selector_scope."
+        }
+      ],
+      "entry_sha256": "5b76a23ac2857c640ce3d61cfd2e51ac025eeca518223349c84f4099691f31cb"
     }
   ]
 }

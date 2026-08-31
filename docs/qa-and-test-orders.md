@@ -35,9 +35,9 @@ Resolve reads the packet, loads the local CampaignSpec when available, derives d
 ### Packet-local checkpoint preflight
 
 Packet QA reads one local packet, CampaignSpec, target `_data/campaigns.json`
-entry, and Assembly Report snapshot. It evaluates three registered checkpoints
-from those objects: `page_kit.store_profile`, `page_kit.sdk_version`, and
-`polish.hidden_eager_media`. The same packet/spec snapshot supplies runtime
+entry, and Assembly Report snapshot. It evaluates four registered checkpoints
+from those objects: `page_kit.store_profile`, `page_kit.sdk_version`,
+`polish.hidden_eager_media`, and `built_output.upsell_selector_scope`. The same packet/spec snapshot supplies runtime
 identity and topology, while the same Assembly Report supplies checkpoint
 decisions, theme/polish state, package-owned page-load evidence, and QA waiver
 history. QA does not re-read those artifacts after the gates. A packet without
@@ -81,7 +81,7 @@ before QA with the relevant gate ID:
 ```bash
 campaigns-os checkpoint waive \
   --packet campaign-runtime.build.json \
-  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media> \
+  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media|built_output.upsell_selector_scope> \
   --reason "<why>" \
   --waived-by "<named human>" \
   --review-condition "<specific re-evaluation trigger>"
