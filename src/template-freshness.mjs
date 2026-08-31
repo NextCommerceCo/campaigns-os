@@ -149,7 +149,10 @@ function describeVersionDelta(verified, current) {
 // garbage like "(2026-13-45)" in operator output.
 function isoDatePrefix(value) {
   if (typeof value !== "string") return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/.exec(value.trim());
+  // A suffix, when present, must look like an ISO time fragment (T + HH:MM at
+  // minimum); ISO 8601 timestamps never use a space separator, and a garbage
+  // suffix must reject rather than silently normalize to its date prefix.
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.exec(value.trim());
   if (!match) return null;
   const [, year, month, day] = match;
   const parsed = new Date(`${year}-${month}-${day}T00:00:00Z`);

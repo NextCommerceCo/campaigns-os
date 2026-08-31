@@ -149,7 +149,7 @@ test("a malformed verified_at omits the date parenthetical instead of interpolat
     current_sdk_version: "0.4.37",
     delta: null,
   };
-  for (const malformed of ["not-a-date", "2026-13-45", "2026-08", "08/21/2026", ""]) {
+  for (const malformed of ["not-a-date", "2026-13-45", "2026-08", "08/21/2026", "", "2026-08-21Tnotatime", "2026-08-21 garbage", "2026-08-21T15"]) {
     const line = renderTemplateFreshness({ ...base, verified_at: malformed });
     assert.doesNotMatch(line, /\(/, `verified_at ${JSON.stringify(malformed)} must not render a parenthetical`);
     assert.match(line, /last verified against SDK 0\.4\.37/);
