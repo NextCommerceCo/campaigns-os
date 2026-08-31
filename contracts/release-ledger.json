@@ -208,6 +208,33 @@
         }
       ],
       "entry_sha256": "cc935b73063ae3531db6d2c91ea9992bbc7a5bfb4e497a9548b969b8d5cd1fca"
+    },
+    {
+      "id": "RL-0002",
+      "sequence": 2,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.14.0+agent.1",
+      "changelog_sha256": "e01aa9fc036f78d5074ec723d1fc919571203d85bac0db94a5487e4f52d42b17",
+      "agent_impact": "The certified-template gate, doctor, and standardization report now also state each certified family’s last-verified SDK version and its delta from the current SDK, read from new per-family verification blocks on the vendored commerce surface catalog snapshot. Purely additive output: no command, flag, artifact schema, or exit-code behavior changed, and nothing that passed before fails now. A consumer may optionally read the new assembly.template_certification.freshness warning code and the catalog families[].verification blocks.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "start/prepare-build print the accepted certified family’s freshness line; doctor reports current freshness under ready and warns with code assembly.template_certification.freshness when verification is stale or unrecorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Documents the identity block’s new template_certification_freshness field and Certification freshness markdown line, including the vendored-data current-SDK definition."
+        }
+      ],
+      "entry_sha256": "3287cff7945130468c43691c37e4503d5e5696c969b5215b55e87b095920a65e"
     }
   ]
 }

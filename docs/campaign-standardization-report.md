@@ -134,8 +134,14 @@ When no root of either kind is detected, the report carries a single
 Each Page Kit root contains these sections:
 
 - `identity`: repo name, Page Kit root, slug inventory, SDK versions, Page Kit
-  dependency, template family evidence, Campaigns OS artifact presence, and
-  built-site presence.
+  dependency, template family evidence, certification freshness for that
+  family, Campaigns OS artifact presence, and built-site presence.
+  `template_certification_freshness` states the SDK version the family was
+  last verified against and the current SDK recorded by the vendored
+  contracts (the commerce surface catalog snapshot's per-family
+  `verification` blocks plus the SDK support policy) — an older evidence
+  record is not current certification. Families with no verification record
+  on the snapshot report freshness as unknown rather than inventing one.
 - `source_structure`: HTML/page/include/layout counts, Liquid helper counts,
   raw blocks, document wrappers, hardcoded root asset refs, unreadable files,
   and payment-method include detection.

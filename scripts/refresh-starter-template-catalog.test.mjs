@@ -5,6 +5,7 @@ import {
   adaptCatalogForCampaignsOs,
   fetchWithTimeout,
   mergeLocalQaStructure,
+  mergeTemplateVerification,
   preserveLocalOnlyFamilies,
   resolveSnapshotSource,
 } from "./refresh-starter-template-catalog.mjs";
@@ -233,6 +234,63 @@ test("catalog refresh lets upstream qaStructure override matching local pages", 
 
   assert.equal(result.families.olympus.agentContract.qaStructure.checkout.description, "upstream checkout structure");
   assert.equal(result.families.olympus.agentContract.qaStructure.upsell.description, "local upsell structure");
+});
+
+test("catalog refresh stamps per-family verification from the pinned manifest", () => {
+  const adapted = {
+    families: {
+      olympus: { agentContract: {} },
+      demeter: { agentContract: {} },
+    },
+  };
+  const manifest = {
+    schema_version: "template-verification-manifest/v1",
+    evidence: {
+      "sdk-0.4.37-2026-08-21": { sdk_version: "0.4.37", verified_at: "2026-08-21T15:26:00Z" },
+      "sdk-0.4.34-2026-08-12": { sdk_version: "0.4.34", verified_at: "2026-08-12T06:12:06Z" },
+    },
+    families: {
+      olympus: { evidence: "sdk-0.4.37-2026-08-21", campaigns_os_status: "certified" },
+      demeter: { evidence: "sdk-0.4.34-2026-08-12", campaigns_os_status: "certified" },
+      landing: { evidence: "sdk-0.4.37-2026-08-21", campaigns_os_status: "not_applicable" },
+    },
+  };
+  const result = mergeTemplateVerification(adapted, manifest);
+  assert.deepEqual(result.families.olympus.verification, {
+    sdk_version: "0.4.37",
+    verified_at: "2026-08-21T15:26:00Z",
+    evidence: "sdk-0.4.37-2026-08-21",
+    status: "certified",
+    source: "template-verification.json",
+  });
+  assert.equal(result.families.demeter.verification.sdk_version, "0.4.34");
+  assert.equal(result.families.landing, undefined, "manifest-only families are not invented in the catalog");
+});
+
+test("verification merge leaves families alone when the manifest cannot vouch for them", () => {
+  const adapted = {
+    families: {
+      olympus: { agentContract: {} },
+      arjuna: { private: true, agentContract: {} },
+      apollo: { agentContract: {} },
+    },
+  };
+  const manifest = {
+    evidence: { "sdk-0.4.37-2026-08-21": { sdk_version: "0.4.37" } },
+    families: {
+      // apollo points at evidence that does not exist -> no block, not a crash.
+      apollo: { evidence: "sdk-9.9.9-missing", campaigns_os_status: "certified" },
+      olympus: { evidence: "sdk-0.4.37-2026-08-21", campaigns_os_status: "certified" },
+    },
+  };
+  const result = mergeTemplateVerification(adapted, manifest);
+  assert.ok(result.families.olympus.verification);
+  assert.equal(result.families.apollo.verification, undefined, "dangling evidence refs stamp nothing");
+  assert.equal(result.families.arjuna.verification, undefined, "families absent from the manifest stay unstamped");
+
+  // A commit predating template-verification.json refreshes without stamping.
+  const untouched = mergeTemplateVerification({ families: { olympus: {} } }, null);
+  assert.equal(untouched.families.olympus.verification, undefined);
 });
 
 test("fetchWithTimeout reports only its own timer as a timeout", async () => {

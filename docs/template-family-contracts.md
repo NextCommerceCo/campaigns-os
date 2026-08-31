@@ -18,6 +18,39 @@ Every promoted catalog family must declare:
 - bundle picker, order-bump, upsell/downsell, and exit-pop behavior
 - QA selectors and invariants used by browser QA
 
+## Certification freshness
+
+Certified is not the whole story when picking a family: certification evidence
+is captured against a specific Campaign Cart SDK release, and **an older
+evidence record is not current certification.** The catalog snapshot vendors
+each family's last-verified SDK version as a per-family `verification` block —
+copied by `scripts/refresh-starter-template-catalog.mjs` from the starter
+repository's `template-verification.json` at the same pinned
+`_synced_from_sha` commit as the rest of the snapshot, never fetched live.
+
+The surfaces an operator already reads say both halves — which SDK the family
+was last verified against, and which SDK is current:
+
+- the certified-template gate in `start`/`prepare-build` prints the family's
+  freshness line when it accepts a certified family;
+- `doctor` reports current freshness under `ready`, and surfaces a stale or
+  unrecorded verification as an `assembly.template_certification.freshness`
+  warning;
+- the standardization report's identity block carries a
+  `Certification freshness:` line per root.
+
+"Current SDK" here is the newest released SDK the vendored contracts record:
+the semver maximum over the SDK support policy's
+`provenance.latest_known_release`
+(`contracts/campaign-cart-sdk-support-policy.v0.json`) and every family
+verification record on the catalog snapshot. The campaign's own pinned
+`sdk_version` is a separate question, owned by the `page_kit.sdk_version`
+checkpoint. A family whose verification lags the current SDK stays buildable —
+freshness is exposure, not a new gate — but treat it as pending
+re-verification, not as currently certified against the SDK you are shipping.
+Families with no verification record on the snapshot (for example
+privately-sourced families) report freshness as unknown.
+
 ## Page IDs and page types are different namespaces
 
 Two vocabularies in these contracts look identical and are not:

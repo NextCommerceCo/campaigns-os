@@ -91,6 +91,27 @@ test("standardization report inventories a Page Kit root and classifies source/v
   });
 });
 
+test("standardization report surfaces certification freshness for the inferred family (#263)", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "campaign");
+    writeFixtureRoot(root);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [entry] = report.roots;
+    const freshness = entry.identity.template_certification_freshness;
+    assert.ok(freshness, "an inferred family gets a freshness assessment");
+    assert.equal(freshness.family, "olympus-mv-single-step");
+    // The vendored snapshot in this repo records verification for the public
+    // families, so the report must state the last-verified SDK and current SDK
+    // rather than merely saying "certified".
+    assert.match(freshness.summary, /last verified against SDK \d+\.\d+\.\d+/);
+    assert.ok(freshness.current_sdk_version, "the current SDK is stated");
+
+    const markdown = formatStandardizationReportMarkdown(report);
+    assert.match(markdown, /- Certification freshness: /, "the markdown identity block carries the freshness line");
+  });
+});
+
 test("standardization report discovers multiple nested Page Kit roots", () => {
   withTempDir((dir) => {
     writeFixtureRoot(join(dir, "alpha"), { sdkVersion: "0.4.25", pageKitVersion: "^0.1.1" });

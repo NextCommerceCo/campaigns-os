@@ -7,6 +7,12 @@ import {
   discoverCampaignCartAppRoots,
   scanCampaignCartAppRoot,
 } from "./campaign-ecosystem.mjs";
+import { resolveCommerceCatalog } from "./private-template-source.mjs";
+import {
+  assessTemplateFreshness,
+  defaultSdkSupportPolicy,
+  renderTemplateFreshness,
+} from "./template-freshness.mjs";
 
 export const STANDARDIZATION_REPORT_SCHEMA = "campaign-standardization-report/v0";
 
@@ -166,6 +172,9 @@ export function formatStandardizationReportMarkdown(report) {
     lines.push(`- SDK: ${root.identity.sdk_versions.join(", ") || "(unknown)"}`);
     lines.push(`- Page Kit: ${root.identity.page_kit_dependency?.name || "(unknown)"} ${root.identity.page_kit_dependency?.version || "(unknown)"}`);
     lines.push(`- Template family: ${root.identity.template_family.value || "(unknown)"} (${root.identity.template_family.source || "unknown"})`);
+    if (root.identity.template_certification_freshness) {
+      lines.push(`- Certification freshness: ${root.identity.template_certification_freshness.summary}`);
+    }
     lines.push(`- Campaigns OS artifacts: ${root.identity.has_campaign_runtime ? "yes" : "no"}`);
     lines.push(`- Built _site: ${formatBuiltSiteState(root)}`);
     lines.push("");
@@ -326,6 +335,7 @@ function scanPageKitRoot({
       sdk_versions: unique(campaigns.slugs.map((entry) => entry.sdk_version).filter(Boolean)),
       page_kit_dependency: packageInfo.page_kit_dependency,
       template_family: templateFamily,
+      template_certification_freshness: assessRootCertificationFreshness(templateFamily.value),
       has_campaign_runtime: runtime.present,
       has_built_site: builtOutput.present,
     },
@@ -860,6 +870,26 @@ function buildRemediation(root) {
     product_or_merchant_risks: unique(risks),
     proof_commands: proof,
   };
+}
+
+// Certification freshness (#263) for the report's identity block, read from
+// the vendored catalog snapshot only — the report never fetches verification
+// data live. Report generation must never crash on a malformed local catalog,
+// so resolution failures degrade to null (freshness simply not reported).
+function assessRootCertificationFreshness(family) {
+  if (!family) return null;
+  let catalog;
+  try {
+    catalog = resolveCommerceCatalog();
+  } catch {
+    return null;
+  }
+  const assessment = assessTemplateFreshness({
+    family,
+    catalog,
+    sdkSupportPolicy: defaultSdkSupportPolicy(),
+  });
+  return { ...assessment, summary: renderTemplateFreshness(assessment) };
 }
 
 function inferTemplateFamily({ explicitTemplateFamily, runtime, files, rootPath }) {
