@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.15.0+agent.1] - 2026-08-31
+## [1.15.0+agent.2] - 2026-08-31
 
 ### Added
 
@@ -23,6 +23,35 @@ Notable supported-surface changes are recorded here.
   stays owned by the existing `source_asset.*` crawl codes. No CLI argv or
   schema change; doctor issue codes are not surface-pinned, so
   `surface_version` does not move.
+
+## [1.15.0+agent.1] - 2026-08-31
+
+### Added
+
+- **Template certification freshness is now exposed to operators** (#263).
+  Certified never said *when*: a family's certification evidence is captured
+  against a specific Campaign Cart SDK release, and the CLI surfaced only the
+  boolean. Now the vendored commerce surface catalog snapshot carries a
+  per-family `verification` block (last-verified SDK version, timestamp,
+  evidence key) — copied by the refresh script from the starter repository's
+  `template-verification.json` at the same pinned `_synced_from_sha` commit as
+  the rest of the snapshot — and the operator surfaces read it:
+  - the certified-template gate in `start`/`prepare-build` prints the accepted
+    family's last-verified SDK and its delta from the current SDK;
+  - `doctor` reports current freshness under `ready` and raises an
+    `assembly.template_certification.freshness` warning when the verification
+    is stale or unrecorded;
+  - `standardize`/`standardization-report` adds a
+    `Certification freshness:` line (and
+    `identity.template_certification_freshness`) per Page Kit root.
+
+  "Current SDK" is defined from vendored data only: the newest released SDK
+  the contracts record — the semver maximum over the SDK support policy's
+  `provenance.latest_known_release` and every verification record on the
+  catalog snapshot. No live fetches; no new data source. Freshness is
+  exposure, not a new gate: nothing that built before is blocked now. Doctrine
+  stated in `docs/template-family-contracts.md`: an older evidence record is
+  not current certification.
 
 ## [1.15.0] - 2026-08-31
 

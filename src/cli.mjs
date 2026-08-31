@@ -124,6 +124,11 @@ import {
   BRIEF_PAYLOAD_REL_PATH,
 } from "./content-residue.mjs";
 import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
+import {
+  assessTemplateFreshness,
+  defaultSdkSupportPolicy,
+  renderTemplateFreshness,
+} from "./template-freshness.mjs";
 import { isUnresolvedTemplateFamily, resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
 import {
   resolveBuiltSiteScope,
@@ -1746,6 +1751,16 @@ function prepareBuild(args, options = {}) {
       ? { certified: true }
       : { certified: false, waiver: { reason: uncertifiedReason, waived_by: optionalString(args["waived-by"], "operator"), waived_at: new Date().toISOString() } }
     : null;
+  // Certification freshness (#263), from the vendored catalog snapshot only:
+  // say which SDK the family was last verified against and which SDK is
+  // current, right where the gate decides. stderr keeps --json stdout clean.
+  if (familyCertified) {
+    console.warn(`[campaigns-os prepare-build] ${renderTemplateFreshness(assessTemplateFreshness({
+      family: templateFamily,
+      catalog: commerceCatalog,
+      sdkSupportPolicy: defaultSdkSupportPolicy(),
+    }))}`);
+  }
   const templateCandidates = hintedTemplateFamily
     ? [{ family: hintedTemplateFamily, source: "CampaignSpec preferred_template_family", confidence: "hint" }]
     : [];
@@ -3206,6 +3221,22 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   if (isNonEmptyString(decidedFamily) && decidedFamily !== "undecided") {
     if (isCertifiedTemplateFamily(decidedFamily)) {
       ready.push(`Template family "${decidedFamily}" is certified (commerce catalog + brand contract)`);
+      // Certification freshness (#263): certified is not the whole story — an
+      // operator must also see which SDK the certification evidence covers.
+      // Current freshness stays informational (ready); a stale or unrecorded
+      // verification surfaces as a warning, because an older evidence record
+      // is not current certification.
+      const freshness = assessTemplateFreshness({
+        family: decidedFamily,
+        catalog: resolveCommerceCatalog(),
+        sdkSupportPolicy: defaultSdkSupportPolicy(),
+      });
+      const freshnessLine = renderTemplateFreshness(freshness);
+      if (freshness.state === "current") {
+        ready.push(freshnessLine);
+      } else {
+        addIssue(warnings, "assembly.template_certification.freshness", freshnessLine);
+      }
     } else {
       const waiver = packet.assembly?.template_certification?.waiver;
       if (waiver && isNonEmptyString(waiver.reason)) {

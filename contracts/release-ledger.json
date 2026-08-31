@@ -279,7 +279,34 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.15.0+agent.1",
-      "changelog_sha256": "64e6c2ce22befb71c0830e71684e9e4be3df590923cf945bbcc479d08534e655",
+      "changelog_sha256": "0bbc5795dc00da28da20e49b66df03bc5de03ae6face5abb6c9bb890722f7345",
+      "agent_impact": "The certified-template gate, doctor, and standardization report now also state each certified family’s last-verified SDK version and its delta from the current SDK, read from new per-family verification blocks on the vendored commerce surface catalog snapshot. Purely additive output: no command, flag, artifact schema, or exit-code behavior changed, and nothing that passed before fails now. A consumer may optionally read the new assembly.template_certification.freshness warning code and the catalog families[].verification blocks.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "start/prepare-build print the accepted certified family’s freshness line; doctor reports current freshness under ready and warns with code assembly.template_certification.freshness when verification is stale or unrecorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Documents the identity block’s new template_certification_freshness field and Certification freshness markdown line, including the vendored-data current-SDK definition."
+        }
+      ],
+      "entry_sha256": "32b4bd669254153377e269bb7ca9e8cce2705d3f9dcf9d5ba9f3686d06d35956"
+    },
+    {
+      "id": "RL-0004",
+      "sequence": 4,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.15.0+agent.2",
+      "changelog_sha256": "d20166f1be9693142ab87753e269c394dee6fece629ab9fc9f9405b4db765f77",
       "agent_impact": "The doctor command now blocks unprepared source HTML: mapped source pages with unstripped document wrappers or leftover/broken YAML frontmatter fail doctor with source_html.prep.document_wrapper / source_html.prep.frontmatter_residue errors (status blocked, next.stage collect-inputs), and source-file internal links warn as source_html.prep.internal_link_unrooted. Agents feeding raw full-document HTML into start/build must prepare the source per docs/quickstart.md \"Prepare Raw HTML Source\" or record wrapper_policy \"preserve_document_wrappers\" as an explicit adapter decision. Doctor issue codes remain governed by the ops-repo ADR-003 parity baseline, not the supported-surface manifest, so surface_version does not move.",
       "compatibility": "compatible",
       "migration": "Strip <!doctype>/<html>/<head>/<body> from mapped source pages, keep frontmatter as one closed leading block, and rerun campaigns-os doctor; or record wrapper_policy \"preserve_document_wrappers\" in the packet adapter contract for a deliberately full-document source.",
@@ -291,7 +318,7 @@
           "summary": "doctor (and the doctor embedded in start/build) gained the source_html.preparation check: deterministic classification of common unprepared-source failures with actionable source_html.prep.* codes, each carrying a docs pointer; no argv change."
         }
       ],
-      "entry_sha256": "1e476d6758976ef7df04c92ce4594a8f4a8d4fba93a0a2f451d5b14fec431b4e"
+      "entry_sha256": "0b7ace4a5bfe26e63b9ccc16f9525658078e30ae6a18b4aa48f83c104fc22590"
     }
   ]
 }
