@@ -1,0 +1,15 @@
+{
+  "_note": "Fixture only. A miniature DEPENDENCY that declares every lifecycle script npm can run on a dependency. It is packed into a tarball by the test and installed from that tarball, so it is resolved and extracted the way a registry package is rather than symlinked the way a directory dependency is — which matters, because a symlinked directory dependency has its own prepare behaviour and would make the fixture prove something narrower than it claims.",
+  "name": "hostile-dependency-tripwire",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "files": ["tripwire.mjs"],
+  "scripts": {
+    "preinstall": "node ./tripwire.mjs dependency:preinstall",
+    "install": "node ./tripwire.mjs dependency:install",
+    "postinstall": "node ./tripwire.mjs dependency:postinstall",
+    "prepare": "node ./tripwire.mjs dependency:prepare",
+    "prepack": "node ./tripwire.mjs dependency:prepack"
+  }
+}

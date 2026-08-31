@@ -2,6 +2,75 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.16.0] - 2026-08-31
+
+### Added
+
+- **The runtime-readiness recipe is published as an enforced contract** (#248).
+  Orientation answers whether a commit is safe to work against; nothing answered
+  how that commit becomes a runtime you can actually use, so the commands, the
+  accepted tool versions, and the network a preparation is allowed to touch
+  lived in a build plan rather than in anything a consumer could read or a check
+  could enforce. `contracts/runtime-recipe.campaigns-os-node-v1.json` is now the
+  single authority for all of it — the exact argv of both steps, the accepted
+  Node and npm ranges, per-step network policy, the enumerated input set, the
+  seven mandatory output checks, and the enforced bounds — validated by
+  `schemas/campaigns-os-runtime-recipe.v1.schema.json`. This repository publishes
+  the recipe as data; the consumer bootstrap executes it. Nothing here executes a
+  recipe step, and no implementation module became a consumer dependency.
+
+  Enforcement is fail-closed and matches the orientation limits precedent: an
+  unrecognized recipe kind, revision, or safety-critical enum is refused rather
+  than interpreted, and a check that cannot be performed counts as failed rather
+  than skipped. Both the recipe and its schema are registered as **hashed**
+  supported-surface entries, deliberately unlike the orientation policy contracts
+  beside them, which are named. A reason-code vocabulary grows additively and can
+  live behind a named entry; a recipe cannot, because the rule the recipe itself
+  states is that any change to its commands, network policy, tool versions,
+  inputs, or output verification is an agent-relevant release event. Only a
+  hashed entry makes such a change require `surface_version` to advance in the
+  same change.
+
+  Two things the contract records that a plausible reading gets wrong:
+
+  - **The input set is not the compiler config's `include` globs.** Two compiled
+    root modules enter transitively through imports and appear in no glob, so a
+    fingerprint derived from the globs would cover 36 of the 38 compiled sources
+    and still look correct. The contract enumerates all 38 explicitly, and the
+    gate compares them against the compiler's *resolved* file list rather than
+    against a glob string.
+  - **`campaign-spec/dist` is a build output, never a committed artifact.** It is
+    untracked and git-ignored; the copy in a published tarball exists only
+    because packing runs `prepare`. No baseline for its contents can exist here,
+    so verification is self-consistency — inventory, internal hash stability,
+    entry-module import, type entry, and input fingerprint — not comparison
+    against a hash published in this repository.
+
+  Also stated plainly, because "runtime ready" invites the wrong reading:
+  suppressing lifecycle scripts is what makes the install safe, and it is also
+  what suppresses the browser download. A prepared generation can build and
+  type-check but **cannot run browser QA**.
+
+  Bounds ship with the measurement beside them so a number is not mistaken for
+  physics: install 180s against about 3.2s measured, build 90s against about
+  0.8s, the whole preparation transaction 450s against about 4s, and two new
+  output bounds the performance budget did not carry — 16 MiB and 4,096 files
+  against a measured 240,359 bytes across 76 files, so a runaway build is a typed
+  refusal rather than a filled disk. They are deliberately generous: they have to
+  hold on a cold cache, a congested network, and loaded CI, not just on a warm
+  laptop.
+
+  `docs/runtime-readiness.md` and every fixture under
+  `contracts/fixtures/runtime-recipe/` are generated from the contract
+  (`npm run generate:runtime-docs`), so a stale copy fails CI rather than
+  misleading a reader. Each reject fixture is a single-mutation copy of the
+  accepted recipe, so a refusal is always attributable to one change. The
+  existing hostile-target fixture gained a second invariant rather than a
+  parallel tree: preparing it must run the recipe's own two steps and no
+  lifecycle script reachable from them, proved against a real packed dependency,
+  with a control that fails if the tripwires could never have fired in the first
+  place.
+
 ## [1.15.0+agent.3] - 2026-08-31
 
 ### Fixed

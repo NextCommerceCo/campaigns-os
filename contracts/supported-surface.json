@@ -1,6 +1,6 @@
 {
-  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act \u2014 hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here \u2014 src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) \u2014 is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.15.0",
+  "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
+  "surface_version": "1.16.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -25,6 +25,9 @@
     "run"
   ],
   "hashed": {
+    "contracts/runtime-recipe.campaigns-os-node-v1.json": {
+      "sha256": "a6532a0f174311e153c986d596cebb0d116141d2881a5c22b2785b7792fd560c"
+    },
     "schemas/campaign-build-brief.v1.schema.json": {
       "sha256": "d524003184131398dc15fdb84385af1be0de0c69d6c5ede7278689a5b6101b81"
     },
@@ -54,6 +57,9 @@
     },
     "schemas/campaigns-os-run-record.v0.schema.json": {
       "sha256": "51c7441e73d693d42d201676e35714d94a749b4174fe678d4f4c68e855eba496"
+    },
+    "schemas/campaigns-os-runtime-recipe.v1.schema.json": {
+      "sha256": "f8a2ab5eadbb71fb6d5653b670ee71e4471c3df74dd04000d3dbd3d9ae9e71fc"
     },
     "schemas/campaigns-os-tooling-orientation.v1.schema.json": {
       "sha256": "897b192c7b3965c84909616023879b0a269a2e727e10efdec1b34e4c33ec499f"
@@ -108,6 +114,27 @@
     "contracts/fixtures/orientation/hostile-target/repo/schemas/example.v0.schema.json",
     "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
     "contracts/fixtures/orientation/hostile-target/repo/hooks/post-merge",
-    "contracts/fixtures/orientation/hostile-target/repo/hooks/pre-commit"
+    "contracts/fixtures/orientation/hostile-target/repo/hooks/pre-commit",
+    "docs/runtime-readiness.md",
+    "contracts/fixtures/runtime-recipe/manifest.json",
+    "contracts/fixtures/runtime-recipe/dist-states.json",
+    "contracts/fixtures/runtime-recipe/accept/current.json",
+    "contracts/fixtures/runtime-recipe/accept/minimal.json",
+    "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+    "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+    "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+    "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+    "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+    "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+    "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+    "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+    "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+    "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+    "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+    "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+    "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+    "contracts/fixtures/orientation/hostile-target/repo/bin/intended.mjs",
+    "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/package.json",
+    "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/tripwire.mjs"
   ]
 }
