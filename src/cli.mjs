@@ -137,6 +137,7 @@ import {
 import {
   UPSELL_SELECTOR_SCOPE,
   evaluateUpsellSelectorScope,
+  isPostPurchasePageType,
 } from "./upsell-selector-scope.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
@@ -4154,14 +4155,31 @@ function validateUpsellSelectorScope(spec, packet, errors, warnings, ready, deri
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
   const pages = [];
   if (siteRoot && existsSync(siteRoot)) {
+    // Enumerate from the FILESYSTEM, not from the CampaignSpec, so both doctor
+    // paths scan the same set. Walking active spec pages would miss any built
+    // page the spec does not declare — the ordinary state for a page-kit
+    // `campaign-build` campaign, and the state route drift produces — which
+    // would leave the packet path blind to exactly the pages `doctor --built`
+    // catches. A gate whose coverage depends on which flag you passed is not
+    // the gate this was written to be.
+    const declaredByPath = new Map();
     for (const page of activeSpecPages(spec)) {
       const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
-      if (!builtPath || !existsSync(builtPath)) continue;
+      if (builtPath) declaredByPath.set(resolve(builtPath), page);
+    }
+    const scope = resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug });
+    for (const builtPage of (scope.ok ? scope.pages : [])) {
+      const declared = declaredByPath.get(resolve(builtPage.built_path)) || null;
+      // Declared type wins only when it is the post-purchase answer; otherwise
+      // the route-inferred type stands. Same fail-closed rule the evaluator
+      // applies between a declared type and the page's own next-page-type meta:
+      // any signal saying "post-purchase" is enough.
+      const declaredType = declared?.type || null;
       pages.push({
-        page_id: page.id,
-        page_type: page.type || null,
-        file: relFromDir(targetRepo, builtPath),
-        content: readFileSync(builtPath, "utf8"),
+        page_id: declared?.id || builtPage.page_id,
+        page_type: isPostPurchasePageType(declaredType) ? declaredType : builtPage.page_type,
+        file: relFromDir(targetRepo, builtPage.built_path),
+        content: readFileSync(builtPage.built_path, "utf8"),
       });
     }
   }
@@ -4215,6 +4233,9 @@ function recordUpsellSelectorScopeGate({ subject, pages, waivers, errors, warnin
   }
   if (gate.warned.length) {
     addIssue(warnings, gate.code, gate.reason, { checkpoint_gate: gate });
+    // A ready line beside the warning, so "the gate ran and found no cart-writing
+    // selector" and "the gate did not run" are never the same JSON shape.
+    ready.push(`Upsell selector-scope scan found 0 cart-writing selector(s) on ${gate.pages_scanned} built post-purchase page(s), with ${gate.warned.length} select-mode note(s)`);
     return gate;
   }
   ready.push(`Every bundle selector on ${gate.pages_scanned} built post-purchase page(s) is scoped away from the live cart (${gate.selectors_scanned} selector(s) scanned)`);

@@ -205,3 +205,51 @@ test("waiving is refused when the gate is not blocked", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the packet path scans a built page the CampaignSpec does not declare", () => {
+  // Raised in review: the packet path used to walk active spec pages, so a
+  // built page absent from the spec — the ordinary state for a page-kit
+  // campaign-build, and the state route drift produces — was scanned by
+  // `doctor --built` and missed by `--packet`. Both now enumerate the
+  // filesystem, so coverage no longer depends on which flag was passed.
+  const { dir, packetPath, targetRepo } = fixture({
+    upsellHtml: UNSCOPED_UPSELL_PAGE.replace(
+      'data-next-selector-id="upsell-bundle-1x"',
+      'data-next-selector-id="declared-selector"',
+    ),
+  });
+  try {
+    const undeclared = join(targetRepo, "_site", SLUG, "oto-2", "index.html");
+    mkdirSync(dirname(undeclared), { recursive: true });
+    writeFileSync(
+      undeclared,
+      `<html><head><meta name="next-page-type" content="upsell"></head><body>`
+        + `<div data-next-bundle-selector data-next-selector-id="undeclared-selector"></div>`
+        + `</body></html>`,
+    );
+
+    const gate = gateOf(doctorPacket(packetPath));
+    assert.equal(gate.status, "blocked");
+    assert.deepEqual(
+      gate.findings.map((finding) => finding.selector_id).sort(),
+      ["declared-selector", "undeclared-selector"],
+    );
+    assert.equal(gate.pages_scanned, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a built post-purchase page keeps its route-inferred role when the spec calls it generic", () => {
+  const { dir, packetPath, targetRepo } = fixture();
+  try {
+    // Declared "page" in no spec at all, route says downsell: fail closed.
+    const built = join(targetRepo, "_site", SLUG, "downsell-1", "index.html");
+    mkdirSync(dirname(built), { recursive: true });
+    writeFileSync(built, '<html><body><div data-next-bundle-selector data-next-selector-id="ds"></div></body></html>');
+    const gate = gateOf(doctorPacket(packetPath));
+    assert.ok(gate.findings.some((finding) => finding.selector_id === "ds"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

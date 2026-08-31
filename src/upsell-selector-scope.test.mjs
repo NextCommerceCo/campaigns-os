@@ -193,3 +193,54 @@ test("a select-mode warning does not disturb a waiver recorded against the block
   assert.equal(withWarning.status, "waived");
   assert.equal(withWarning.warned.length, 1);
 });
+
+// --- Review follow-ups (#275) -----------------------------------------------
+
+test("the next-page-type meta is read in either attribute order", () => {
+  // Raised in review as a silent miss. It is not: the lookahead's [^>]*
+  // backtracks, so `content` before `name` resolves. Pinned rather than argued.
+  for (const html of [
+    '<meta name="next-page-type" content="upsell">',
+    '<meta content="upsell" name="next-page-type">',
+    "<meta content='upsell' name='next-page-type'>",
+    '<meta data-x="1" content="upsell" data-y="2" name="next-page-type">',
+    '<meta name="description" content="hi"><meta content="downsell" name="next-page-type">',
+  ]) {
+    assert.equal(builtPageIsPostPurchase({ page_type: null, content: html }), true, html);
+  }
+  assert.equal(
+    builtPageIsPostPurchase({ page_type: null, content: '<meta content="checkout" name="next-page-type">' }),
+    false,
+  );
+});
+
+test("hidden is bound to a real display declaration, not a substring of one", () => {
+  const hiddenOf = (style) => collectBundleSelectors(
+    `<div data-next-bundle-selector data-next-selector-id="s" style="${style}"></div>`,
+  )[0].hidden;
+  assert.equal(hiddenOf("display:none"), true);
+  assert.equal(hiddenOf("color:red; display : none ;"), true);
+  assert.equal(hiddenOf("display:none !important"), true);
+  // Substrings that are not a display declaration.
+  assert.equal(hiddenOf("--card-display:none"), false);
+  assert.equal(hiddenOf("my-display:none"), false);
+  assert.equal(hiddenOf("display:block"), false);
+  // The `hidden` attribute still counts, and hidden never changes the verdict.
+  assert.equal(
+    collectBundleSelectors('<div data-next-bundle-selector hidden></div>')[0].hidden,
+    true,
+  );
+  assert.equal(gateFor([upsellPage('<div data-next-bundle-selector data-next-selector-id="s" style="--card-display:none"></div>')]).status, "blocked");
+});
+
+test("a selector inside a <template> is scanned — this SDK clones slot templates into the live DOM", () => {
+  const gate = gateFor([upsellPage(`
+    <div data-next-bundle-selector data-next-upsell-context data-next-selector-id="upsell-bundle"
+         data-next-bundle-slot-template-id="slot-tpl"></div>
+    <template id="slot-tpl">
+      <div data-next-bundle-selector data-next-selector-id="slot-inner"></div>
+    </template>
+  `)]);
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.findings[0].selector_id, "slot-inner");
+});

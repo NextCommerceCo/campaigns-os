@@ -134,3 +134,23 @@ test("the gate is registered as a waivable checkpoint, so `next` can offer the w
     assert.match(waive.command, new RegExp(`--gate ${UPSELL_SELECTOR_SCOPE}`));
   });
 });
+
+test("a warning-only result also emits a ready line, so 'ran clean' and 'did not run' differ", () => {
+  withTempDir((repo) => {
+    writePage(
+      repo,
+      "upsell-2",
+      `<html><head>${UPSELL_HEAD}</head><body>`
+        + '<div data-next-bundle-selector data-next-selector-id="display" data-next-selection-mode="select"></div>'
+        + `${SCOPED}</body></html>`,
+    );
+    const result = doctorBuiltOutput({ built: repo, slug: SLUG });
+    assert.equal(result.ok, true);
+    assert.equal(gateOf(result).status, "pass");
+    assert.ok(codes(result.warnings).includes("built_output.upsell_selector_scope.cart_scoped_select_mode"));
+    assert.ok(
+      result.ready.some((note) => note.includes("Upsell selector-scope scan found 0 cart-writing selector(s)")),
+      "a warning-only result must still confirm the scan ran",
+    );
+  });
+});

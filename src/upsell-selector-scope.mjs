@@ -67,14 +67,40 @@ function attributeValue(attrs, name) {
   return match[1] ?? match[2] ?? match[3] ?? "";
 }
 
+// Bound to a real declaration rather than matched as a substring, so a custom
+// property or a longer property name that merely ends in "display" cannot be
+// read as one (`--card-display:none`, `my-display:none`). Only affects how a
+// finding is described, never whether it blocks.
+function isDisplayNone(style) {
+  return /(?:^|;)\s*display\s*:\s*none\s*(?:!\s*important\s*)?(?:;|$)/i.test(String(style || ""));
+}
+
 /**
  * Every `data-next-bundle-selector` container in a built page, with the two
  * attributes that decide which basket it writes to.
  *
  * HTML comments are stripped first: a commented-out selector is inert, and the
  * certified upsell templates carry long explanatory comments that quote the
- * attribute names verbatim. Nothing else is excluded — `<template>` content and
- * `display:none` containers are scanned, because both reach the live DOM.
+ * attribute names verbatim.
+ *
+ * Nothing else is excluded, and the two inclusions are deliberate:
+ *
+ *   - `display:none` containers, because the cart write happens during the
+ *     enhancer's init sync and never consults visibility.
+ *   - `<template>` content, which is inert in the abstract — it lives in a
+ *     DocumentFragment until something clones it — but is NOT inert here. This
+ *     SDK clones it: a selector declares `data-next-bundle-slot-template-id`
+ *     and the enhancer renders that template's content into the live DOM, one
+ *     slot per configurable unit. `apollo-mv-single-step` ships exactly that
+ *     shape today. So a selector authored inside a template on a post-purchase
+ *     page reaches the live DOM by the SDK's own machinery, and skipping
+ *     templates would be a blind spot precisely where the mechanism is least
+ *     obvious to a reader.
+ *
+ * That is an assumption about THIS SDK, not about HTML in general. If a family
+ * ever ships a template that genuinely nothing clones, the finding is a false
+ * blocker — visible, named, and waivable, which is the direction this gate errs
+ * in on purpose. A false pass is a silent charge.
  */
 export function collectBundleSelectors(html) {
   const source = String(html || "").replace(HTML_COMMENT, "");
@@ -94,7 +120,7 @@ export function collectBundleSelectors(html) {
       selection_mode: selectionMode || "swap",
       // The single property that decides whether loading the page moves money.
       writes_to_cart: !upsellScoped && selectionMode !== "select",
-      hidden: /display\s*:\s*none/i.test(attributeValue(attrs, "style") || "")
+      hidden: isDisplayNone(attributeValue(attrs, "style"))
         || hasBareAttribute(attrs, "hidden"),
     });
   }
