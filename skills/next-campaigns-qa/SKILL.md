@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-qa
-version: 1.0.3
+version: 1.1.0
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
@@ -55,6 +55,8 @@ Rules:
 - Upsell accept/decline routes may be SDK-bound controls rather than static `<a href>` links. Treat rendered `data-next-upsell-action="add"` and `data-next-upsell-action="skip"` controls as valid route evidence, then prove the path in the browser walkthrough.
 - When CampaignSpec declares checkout `exit_intent.enabled`, browser QA should trigger/open the pop, accept the mapped offer, and verify the code is active, totals/order summary reprice through SDK/API state, and `cart.hasCoupon("CODE")` presentation appears only after apply.
 - When CampaignSpec declares checkout `promo_code_input.enabled`, browser QA should enter the mapped `offer_code` and verify active-code state, repricing, discount row rendering, and conditional presentation. Missing promo-code input is a blocker when CampaignSpec, source design, or user instructions declared it.
+- A declared offer surface that the build never shipped is a blocker, not a silent pass. Every `--browser` run emits `browser-exit-intent-surface:<page>` and `browser-promo-code-surface:<page>` for each checkout page whose CampaignSpec declares the surface with `enabled: true`. Absent markup is `FAIL`/`BLOCKER`; a surface that renders but cannot be tied to the declared `offer_code` (or sits behind an unopened disclosure) is `MANUAL_REVIEW`/`WARN`. Exit-intent markup is looked for inside `<template>` content as well as the live document, because a correctly built pop lives nowhere else before it fires.
+- Typed-card runs reconcile the persisted order against what the checkout displayed at submit, and report both halves separately from whether the order was created: `browser-order-display-parity:<plan>` fails as a blocker naming any `is_upsell: false` line whose package the checkout never rendered as selected (and any displayed package that was never charged), and `browser-order-total-parity:<plan>` fails as a blocker when the order's pre-upsell total disagrees with the displayed summary total. Both `SKIP` with a stated reason when the page gives them nothing to compare — a summary whose rows carry no `data-package-id`, or a checkout with no `[data-next-display="cart.total"]` surface. Read a skip as missing coverage, never as a pass.
 - Test orders must exercise the tested campaign through the Campaign Cart SDK, not a hand-built backend API request.
 - Use the canonical Playwright typed-card path: fill customer/shipping fields, type sandbox card data into the active hosted payment iframes, and click the real checkout submit button.
 - Use a shared safe inbox for typed-card test-order customer email when the operator provides one. Reusing one safe inbox keeps customer/user lists clean while still allowing notification delivery.

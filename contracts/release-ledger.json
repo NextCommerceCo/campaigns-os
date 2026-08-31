@@ -547,6 +547,33 @@
         }
       ],
       "entry_sha256": "4411e21cce2f99ee437d9470794f6d5f1e9feb808de8fb1a663156e4bbbc2024"
+    },
+    {
+      "id": "RL-0007",
+      "sequence": 7,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.16.0+agent.1",
+      "changelog_sha256": "0d740fc7a42c30d6069cc9dcd6a0fca484e93896d8e91929569bc31e48b02804",
+      "agent_impact": "Browser QA now emits assertions for two things it previously said nothing about, and both can newly block a verdict that used to pass. A checkout page whose CampaignSpec declares exit_intent or promo_code_input with enabled: true gets browser-exit-intent-surface:<page> / browser-promo-code-surface:<page>: absent markup is FAIL/BLOCKER, markup carrying the declared offer_code is PASS, and markup that cannot be tied to that code (or a coupon input behind an unopened disclosure) is MANUAL_REVIEW/WARN. Typed-card runs additionally emit browser-order-display-parity:<plan> and browser-order-total-parity:<plan>, reconciling the persisted order pre-upsell read-back against what the checkout displayed at submit; a non-upsell line whose package was never rendered as selected, a displayed package that was never charged, or a total that disagrees with the displayed summary total is FAIL/BLOCKER naming the package ids. Both reconciliation assertions report SKIPPED with a stated reason when the page gives them nothing comparable - a summary whose rows do not all carry data-package-id, or a checkout with no [data-next-display=\"cart.total\"] surface - and a consumer must read that as missing coverage, never as a pass. Both sets reuse the existing browser-runtime and browser-test-order families, so the verdict schema, QA_ASSERTION_FAMILY_VOCABULARY, and any allowlist keyed off it are unchanged. A campaign that declares a surface it did not build, or charges a package it never displayed, will now block where it previously reported ready.",
+      "compatibility": "compatible",
+      "migration": "none. A verdict that newly blocks is reporting a defect that was always there; fix the build or drop the undelivered declaration from CampaignSpec.",
+      "changes": [
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "The QA skill records the four new assertion ids, their severity split, and the rule that a SKIPPED reconciliation is missing coverage rather than a pass; version 1.0.3 -> 1.1.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-qa is published at 1.1.0, so an installer can tell a build that asserts declared offer surfaces and order/display parity from one that does not."
+        }
+      ],
+      "entry_sha256": "f707e9997799d27b986695e859a1aebca8fd82cc18867770782e653342248ccd"
     }
   ]
 }
