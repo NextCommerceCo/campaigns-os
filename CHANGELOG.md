@@ -2,6 +2,73 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.16.0+agent.1] - 2026-08-31
+
+### Added
+
+- **A bundle selector that sells into the live cart from an upsell page is now a
+  blocker** (#270). A `data-next-bundle-selector` binds to one of two baskets,
+  and two container attributes decide which. `data-next-upsell-context` binds it
+  to the post-purchase order. Without that attribute the selector belongs to the
+  shopper's live cart, and `data-next-selection-mode` — which defaults to `swap`
+  when absent — decides whether it writes there. On a page whose funnel role is
+  `upsell` or `downsell` the second combination is a charge: the SDK's
+  bundle-selector runs a cart sync at init, that sync picks a default card and
+  applies it in swap mode, and the shopper is billed at the next checkout for a
+  package they never chose and which the checkout's rendered order summary never
+  shows.
+
+  Nothing objected to this before. The SDK binds the selector without complaint
+  because the markup is valid, doctor had no assertion about selector scope, and
+  QA had nothing to compare against. It cost a real test order before anyone
+  noticed, and it was found by reading an order's line items, not by anything the
+  toolkit said.
+
+  `built_output.upsell_selector_scope` is a static check over built HTML —
+  no browser, no test order — reachable from both doctor entry points: the packet
+  path and `doctor --built`, which is how a page-kit `campaign-build` campaign
+  with no hand-authored packet gets inspected. It names the offending
+  `data-next-selector-id` and states what the selector will do, because the
+  defining property of this defect is that nothing else shows it. A page counts
+  as post-purchase from its declared type or from its own `next-page-type` meta;
+  either is enough, since disagreement between them is a reason to look harder
+  rather than to skip.
+
+  Three decisions worth stating, because each one had a plausible alternative:
+
+  - **It runs on every doctor invocation, not at assembly.** The instance that
+    prompted this was introduced by a later human review round, which layered a
+    correctly-scoped selector on top of an existing unscoped one and left both.
+    A gate that fired only at first assembly would have watched the defect arrive
+    and said nothing. For the same reason it blocks whenever the built page
+    exists, rather than softening to a warning until the assembly stage is
+    recorded terminal the way the neighbouring per-page structure checks do:
+    built markup that charges a shopper is not a state that becomes true later.
+  - **It is a blocker with a waiver, not a bare blocker.** Registered as the
+    fourth `campaigns-os checkpoint waive` gate. The alternative to an escape
+    hatch is not a stricter gate; it is a dropped one, the first time a build has
+    a cart-scoped selector on a post-purchase page for a reason nobody
+    anticipated. A waiver keeps that decision named, bounded, and recorded in the
+    assembly report, and it binds to the exact set of offending selectors — a
+    second unscoped selector is a state nobody waived, and the waiver goes inert.
+  - **`data-next-selection-mode="select"` clears the blocker and raises a warning
+    instead.** Every cart write in the SDK's bundle selector is gated on swap
+    mode, at init and on click alike, so such a selector provably cannot produce
+    the charge. Blocking it would make the gate's own message false about the
+    markup it was pointing at. It is not silent either: the selector still prices
+    without upsell pricing, which is worth seeing.
+
+  One finding this immediately produces, recorded here because it is larger than
+  the gate: the certified `apollo-mv-single-step`, `olympus`,
+  `olympus-mv-two-step`, `shop-single-step`, and `shop-three-step` upsell offer
+  includes all ship a hidden display-only bundle selector carrying neither
+  attribute, deliberately placed outside `[data-next-upsell="offer"]` so the
+  accept button resolves the right sibling. That placement is correct and the
+  missing scope is not, so this gate will block campaigns built from those
+  templates until the templates carry `data-next-upsell-context` (or at minimum
+  `data-next-selection-mode="select"`) on the display selector. The repair is
+  upstream in `campaign-cart-starter-templates`, not here.
+
 ## [1.16.0] - 2026-08-31
 
 ### Added
