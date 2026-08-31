@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.15.0+agent.1] - 2026-08-31
+
+### Added
+
+- **Doctor now gates page-kit-ready source with a deterministic preparation
+  check** (#262). The source-preparation steps the docs describe — strip
+  document wrappers, keep frontmatter as one closed leading block, route
+  internal links through CampaignSpec routes — were tacit knowledge that
+  `start` accepted unprepared source past silently. A new
+  `source_html.preparation` slot in the Doctor Check Registry classifies the
+  common failures on every mapped source page: `source_html.prep.document_wrapper`
+  and `source_html.prep.frontmatter_residue` block as doctor errors
+  (status `blocked`, `next.stage: "collect-inputs"`), and
+  `source_html.prep.internal_link_unrooted` warns because CTA rewrites are
+  sanctioned build-stage work recorded under `cta_rewrite_policy`. A recorded
+  `wrapper_policy: "preserve_document_wrappers"` adapter decision downgrades
+  the wrapper finding to a warning. Each code carries a docs pointer
+  (docs/source-adapters.md "Source preparation check"); asset-path rooting
+  stays owned by the existing `source_asset.*` crawl codes. No CLI argv or
+  schema change; doctor issue codes are not surface-pinned, so
+  `surface_version` does not move.
+
 ## [1.15.0] - 2026-08-31
 
 ### Added
