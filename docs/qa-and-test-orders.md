@@ -60,6 +60,15 @@ carries the per-URL results and one of `route_probe.all_resolved`,
 `route_probe.routes_unresolved`, `route_probe.unreachable`,
 `route_probe.disabled`, or `route_probe.no_routes`.
 
+`route_probe.first_failure` is the first result that did not cleanly resolve,
+**in the order the entry URLs were derived** — the order they are printed under
+`Entry URLs:` — not the order the responses happened to land. It is populated on
+every status where something failed, `route_probe.all_resolved` included: a pass
+reached over some unreachable URLs is partial reachability, and both the reason
+line and the printed per-URL rows say which URLs those were rather than leaving
+an operator to infer it from `counts.unreachable`. It is `null` only when every
+probed URL resolved, or when nothing was probed at all.
+
 Resolve appends `campaign.public_route_slug` unconditionally — the packet is
 the authority on where a campaign is served, and no flag overrides it. When
 every derived route is dead, one extra probe of the host without that slug

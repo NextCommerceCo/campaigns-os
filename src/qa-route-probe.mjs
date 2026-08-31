@@ -77,6 +77,13 @@ function transportErrorText(error, timeoutMs) {
   return cause ? `${message} (${cause})` : message;
 }
 
+// Bounded-concurrency probe that preserves INPUT order. Workers pull indices
+// off a shared cursor and complete in whatever order the network allows, but
+// each writes to `results[index]` — its own input slot — so `results` reads back
+// in the order the entry URLs were derived, not the order the responses landed.
+// `first_failure` and the printed "First failure:" line depend on that, so a
+// future refactor to `push()` or `Promise.all(map(...))`-with-append would
+// silently change what "first" means.
 async function probeAll(urls, options) {
   const results = new Array(urls.length);
   let cursor = 0;
@@ -138,7 +145,9 @@ function describeFailure(result) {
  *   code: string,
  *   reason: string,
  *   counts: { resolved: number, unresolved: number, unreachable: number, skipped: number },
- *   first_failure: object|null,
+ *   first_failure: object|null,   // first result that did not cleanly resolve, in the order the
+ *                                 // entry URLs were derived; null only when every probed URL
+ *                                 // resolved, or when nothing was probed at all.
  *   results: object[],
  *   route_root_hint: object|null,
  * }}
@@ -222,14 +231,19 @@ export async function probeRouteUrls({
     };
   }
 
+  // A pass reached over some unreachable URLs is partial reachability, not a
+  // clean sweep. `first_failure` carries the first of them so the structured
+  // field means the same thing on every branch, and the reason names it so an
+  // operator does not have to infer which URL from a bare count.
+  const firstUnreached = results.find((result) => result.outcome === "unreachable") || null;
   return {
     status: "pass",
     code: "route_probe.all_resolved",
-    reason: counts.unreachable
-      ? `${counts.resolved} entry URL(s) resolved; ${counts.unreachable} could not be reached from this machine.`
+    reason: firstUnreached
+      ? `${counts.resolved} entry URL(s) resolved; ${counts.unreachable} could not be reached from this machine. First unreached: ${describeFailure(firstUnreached)}.`
       : `All ${counts.resolved} derived entry URL(s) resolved on this host.`,
     counts,
-    first_failure: null,
+    first_failure: firstUnreached,
     results,
     route_root_hint: null,
   };

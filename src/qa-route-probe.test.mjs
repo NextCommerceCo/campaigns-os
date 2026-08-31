@@ -276,3 +276,64 @@ test("the status ladder orders by how much of the deployment was verified", () =
   // No probe result at all (a caller that never probed) keeps the old ladder.
   assert.equal(at(null), "ready");
 });
+
+test("first_failure is the first URL in DERIVED order, not the first response to land", async () => {
+  // Workers complete out of order on purpose: the last URL answers instantly
+  // and the first answers slowest. `first_failure` must still be the first
+  // entry URL, because that is the one an operator matches against the Entry
+  // URLs list printed a few lines above it.
+  const delayByUrl = { [RENEWALIFT_ROUTES[0]]: 30, [RENEWALIFT_ROUTES[1]]: 15, [RENEWALIFT_ROUTES[2]]: 0 };
+  const completionOrder = [];
+  const probe = await probeRouteUrls({
+    entryUrls: RENEWALIFT_ROUTES,
+    baseUrl: RENEWALIFT_BASE,
+    publicRouteSlug: "renewalift-device",
+    fetchImpl: async (url) => {
+      await new Promise((resolve) => setTimeout(resolve, delayByUrl[url]));
+      completionOrder.push(url);
+      return { status: 404 };
+    },
+  });
+
+  assert.deepEqual(
+    completionOrder.slice(0, RENEWALIFT_ROUTES.length),
+    [...RENEWALIFT_ROUTES].reverse(),
+    "fixture must complete out of order",
+  );
+  assert.deepEqual(probe.results.map((result) => result.url), RENEWALIFT_ROUTES);
+  assert.equal(probe.first_failure.url, RENEWALIFT_ROUTES[0]);
+});
+
+test("a pass reached over unreachable URLs reports which one, not just a count", async () => {
+  const probe = await probeRouteUrls({
+    entryUrls: RENEWALIFT_ROUTES,
+    baseUrl: RENEWALIFT_BASE,
+    publicRouteSlug: "renewalift-device",
+    fetchImpl: async (url) => {
+      if (url === RENEWALIFT_ROUTES[0]) return { status: 200 };
+      throw transportError("ECONNRESET");
+    },
+  });
+
+  assert.equal(probe.status, "pass");
+  assert.equal(probe.counts.resolved, 1);
+  assert.equal(probe.counts.unreachable, 2);
+  // The structured field means the same thing on every branch: the first
+  // result that did not cleanly resolve.
+  assert.equal(probe.first_failure.url, RENEWALIFT_ROUTES[1]);
+  assert.equal(probe.first_failure.outcome, "unreachable");
+  assert.match(probe.reason, /First unreached: .*ECONNRESET/);
+  // Partial reachability is not a route-root question.
+  assert.equal(probe.route_root_hint, null);
+  assert.equal(resolvePayload(resolvedFixture(), { routeProbe: probe }).status, "ready");
+});
+
+test("only --no-probe disables probing; there is no undocumented --probe flag", async () => {
+  const live = fakeFetch(Object.fromEntries(RENEWALIFT_ROUTES.map((url) => [url, 200])));
+  for (const args of [{}, { probe: "false" }, { probe: false }]) {
+    const probe = await resolveRouteProbe(resolvedFixture(), args, { fetchImpl: live });
+    assert.equal(probe.status, "pass", `args ${JSON.stringify(args)} must not disable probing`);
+  }
+  const disabled = await resolveRouteProbe(resolvedFixture(), { "no-probe": true }, { fetchImpl: live });
+  assert.equal(disabled.code, "route_probe.disabled");
+});

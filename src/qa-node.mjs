@@ -1277,7 +1277,7 @@ function resolveStatus({ hasBlockedCheckpoint, hasCheckpointWarning, routeProbe 
 async function resolveRouteProbe(resolved, args, { fetchImpl = fetch } = {}) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const blocked = (resolved.checkpointGates || []).some((gate) => gate?.status === "blocked");
-  const disabled = args["no-probe"] === true || args.probe === false || args.probe === "false";
+  const disabled = args["no-probe"] === true;
   const timeout = Number(args["probe-timeout-ms"]);
   return probeRouteUrls({
     entryUrls,
@@ -2627,14 +2627,21 @@ function printEntryUrlLines(entryUrls) {
 function printRouteProbeLines(routeProbe) {
   if (!routeProbe) return;
   console.log(`Route probe: ${routeProbe.status} (${routeProbe.code}) — ${routeProbe.reason}`);
-  if (routeProbe.status !== "failed") return;
   if (routeProbe.route_root_hint) {
     console.log(`  Diagnosis (${routeProbe.route_root_hint.code}): ${routeProbe.route_root_hint.reason}`);
   }
-  const dead = (routeProbe.results || []).filter((result) => result.outcome === "unresolved");
-  if (dead.length > 1) {
-    console.log("  Dead entry URLs:");
-    for (const result of dead) console.log(`    - ${result.url} (HTTP ${result.http_status})`);
+  // Per-URL evidence for anything that did not cleanly resolve, on EVERY status
+  // rather than only on failure: a `pass` reached over some unreachable URLs is
+  // partial reachability an operator should be able to read, not infer from an
+  // aggregate count. The single-row case is skipped because every reason line
+  // that can produce one already names that URL.
+  const rows = (routeProbe.results || [])
+    .filter((result) => result.outcome === "unresolved" || result.outcome === "unreachable");
+  if (!rows.length) return;
+  if (rows.length === 1 && rows[0].url === routeProbe.first_failure?.url) return;
+  console.log("  Entry URLs that did not resolve:");
+  for (const row of rows) {
+    console.log(`    - ${row.url} (${row.outcome === "unresolved" ? `HTTP ${row.http_status}` : row.error})`);
   }
 }
 
