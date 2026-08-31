@@ -2,76 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.16.0] - 2026-08-31
-
-### Added
-
-- **The runtime-readiness recipe is published as an enforced contract** (#248).
-  Orientation answers whether a commit is safe to work against; nothing answered
-  how that commit becomes a runtime you can actually use, so the commands, the
-  accepted tool versions, and the network a preparation is allowed to touch
-  lived in a build plan rather than in anything a consumer could read or a check
-  could enforce. `contracts/runtime-recipe.campaigns-os-node-v1.json` is now the
-  single authority for all of it — the exact argv of both steps, the accepted
-  Node and npm ranges, per-step network policy, the enumerated input set, the
-  seven mandatory output checks, and the enforced bounds — validated by
-  `schemas/campaigns-os-runtime-recipe.v1.schema.json`. This repository publishes
-  the recipe as data; the consumer bootstrap executes it. Nothing here executes a
-  recipe step, and no implementation module became a consumer dependency.
-
-  Enforcement is fail-closed and matches the orientation limits precedent: an
-  unrecognized recipe kind, revision, or safety-critical enum is refused rather
-  than interpreted, and a check that cannot be performed counts as failed rather
-  than skipped. Both the recipe and its schema are registered as **hashed**
-  supported-surface entries, deliberately unlike the orientation policy contracts
-  beside them, which are named. A reason-code vocabulary grows additively and can
-  live behind a named entry; a recipe cannot, because the rule the recipe itself
-  states is that any change to its commands, network policy, tool versions,
-  inputs, or output verification is an agent-relevant release event. Only a
-  hashed entry makes such a change require `surface_version` to advance in the
-  same change.
-
-  Two things the contract records that a plausible reading gets wrong:
-
-  - **The input set is not the compiler config's `include` globs.** Two compiled
-    root modules enter transitively through imports and appear in no glob, so a
-    fingerprint derived from the globs would cover 36 of the 38 compiled sources
-    and still look correct. The contract enumerates all 38 explicitly, and the
-    gate compares them against the compiler's *resolved* file list rather than
-    against a glob string.
-  - **`campaign-spec/dist` is a build output, never a committed artifact.** It is
-    untracked and git-ignored; the copy in a published tarball exists only
-    because packing runs `prepare`. No baseline for its contents can exist here,
-    so verification is self-consistency — inventory, internal hash stability,
-    entry-module import, type entry, and input fingerprint — not comparison
-    against a hash published in this repository.
-
-  Also stated plainly, because "runtime ready" invites the wrong reading:
-  suppressing lifecycle scripts is what makes the install safe, and it is also
-  what suppresses the browser download. A prepared generation can build and
-  type-check but **cannot run browser QA**.
-
-  Bounds ship with the measurement beside them so a number is not mistaken for
-  physics: install 180s against about 3.2s measured, build 90s against about
-  0.8s, the whole preparation transaction 450s against about 4s, and two new
-  output bounds the performance budget did not carry — 16 MiB and 4,096 files
-  against a measured 240,359 bytes across 76 files, so a runaway build is a typed
-  refusal rather than a filled disk. They are deliberately generous: they have to
-  hold on a cold cache, a congested network, and loaded CI, not just on a warm
-  laptop.
-
-  `docs/runtime-readiness.md` and every fixture under
-  `contracts/fixtures/runtime-recipe/` are generated from the contract
-  (`npm run generate:runtime-docs`), so a stale copy fails CI rather than
-  misleading a reader. Each reject fixture is a single-mutation copy of the
-  accepted recipe, so a refusal is always attributable to one change. The
-  existing hostile-target fixture gained a second invariant rather than a
-  parallel tree: preparing it must run the recipe's own two steps and no
-  lifecycle script reachable from them, proved against a real packed dependency,
-  with a control that fails if the tripwires could never have fired in the first
-  place.
-
-## [1.16.0+agent.1] - 2026-08-31
+## [1.16.0+agent.2] - 2026-08-31
 
 ### Added
 
@@ -147,6 +78,144 @@ Notable supported-surface changes are recorded here.
 
   `next-campaigns-qa` 1.0.3 → 1.1.0 records the new assertion ids and their
   severities.
+
+## [1.16.0+agent.1] - 2026-08-31
+
+### Added
+
+- **A bundle selector that sells into the live cart from an upsell page is now a
+  blocker** (#270). A `data-next-bundle-selector` binds to one of two baskets,
+  and two container attributes decide which. `data-next-upsell-context` binds it
+  to the post-purchase order. Without that attribute the selector belongs to the
+  shopper's live cart, and `data-next-selection-mode` — which defaults to `swap`
+  when absent — decides whether it writes there. On a page whose funnel role is
+  `upsell` or `downsell` the second combination is a charge: the SDK's
+  bundle-selector runs a cart sync at init, that sync picks a default card and
+  applies it in swap mode, and the shopper is billed at the next checkout for a
+  package they never chose and which the checkout's rendered order summary never
+  shows.
+
+  Nothing objected to this before. The SDK binds the selector without complaint
+  because the markup is valid, doctor had no assertion about selector scope, and
+  QA had nothing to compare against. It cost a real test order before anyone
+  noticed, and it was found by reading an order's line items, not by anything the
+  toolkit said.
+
+  `built_output.upsell_selector_scope` is a static check over built HTML —
+  no browser, no test order — reachable from both doctor entry points: the packet
+  path and `doctor --built`, which is how a page-kit `campaign-build` campaign
+  with no hand-authored packet gets inspected. It names the offending
+  `data-next-selector-id` and states what the selector will do, because the
+  defining property of this defect is that nothing else shows it. A page counts
+  as post-purchase from its declared type or from its own `next-page-type` meta;
+  either is enough, since disagreement between them is a reason to look harder
+  rather than to skip.
+
+  Three decisions worth stating, because each one had a plausible alternative:
+
+  - **It runs on every doctor invocation, not at assembly.** The instance that
+    prompted this was introduced by a later human review round, which layered a
+    correctly-scoped selector on top of an existing unscoped one and left both.
+    A gate that fired only at first assembly would have watched the defect arrive
+    and said nothing. For the same reason it blocks whenever the built page
+    exists, rather than softening to a warning until the assembly stage is
+    recorded terminal the way the neighbouring per-page structure checks do:
+    built markup that charges a shopper is not a state that becomes true later.
+  - **It is a blocker with a waiver, not a bare blocker.** Registered as the
+    fourth `campaigns-os checkpoint waive` gate. The alternative to an escape
+    hatch is not a stricter gate; it is a dropped one, the first time a build has
+    a cart-scoped selector on a post-purchase page for a reason nobody
+    anticipated. A waiver keeps that decision named, bounded, and recorded in the
+    assembly report, and it binds to the exact set of offending selectors — a
+    second unscoped selector is a state nobody waived, and the waiver goes inert.
+  - **`data-next-selection-mode="select"` clears the blocker and raises a warning
+    instead.** Every cart write in the SDK's bundle selector is gated on swap
+    mode, at init and on click alike, so such a selector provably cannot produce
+    the charge. Blocking it would make the gate's own message false about the
+    markup it was pointing at. It is not silent either: the selector still prices
+    without upsell pricing, which is worth seeing.
+
+  One finding this immediately produces, recorded here because it is larger than
+  the gate: **every one of the eight certified template families** — `apollo`,
+  `apollo-mv-single-step`, `demeter`, `olympus`, `olympus-mv-single-step`,
+  `olympus-mv-two-step`, `shop-single-step`, `shop-three-step` — ships a hidden
+  display-only bundle selector carrying neither attribute, across 19 upsell
+  offer includes. It is one pattern repeated, not eight separate mistakes: the
+  selector is deliberately placed outside `[data-next-upsell="offer"]` so the
+  accept button resolves the right sibling, and that placement is correct while
+  the missing scope is not. So this gate blocks campaigns built from any
+  certified family until the templates carry `data-next-upsell-context` (or at
+  minimum `data-next-selection-mode="select"`) on the display selector. The
+  repair is upstream in `campaign-cart-starter-templates`, not here.
+
+## [1.16.0] - 2026-08-31
+
+### Added
+
+- **The runtime-readiness recipe is published as an enforced contract** (#248).
+  Orientation answers whether a commit is safe to work against; nothing answered
+  how that commit becomes a runtime you can actually use, so the commands, the
+  accepted tool versions, and the network a preparation is allowed to touch
+  lived in a build plan rather than in anything a consumer could read or a check
+  could enforce. `contracts/runtime-recipe.campaigns-os-node-v1.json` is now the
+  single authority for all of it — the exact argv of both steps, the accepted
+  Node and npm ranges, per-step network policy, the enumerated input set, the
+  seven mandatory output checks, and the enforced bounds — validated by
+  `schemas/campaigns-os-runtime-recipe.v1.schema.json`. This repository publishes
+  the recipe as data; the consumer bootstrap executes it. Nothing here executes a
+  recipe step, and no implementation module became a consumer dependency.
+
+  Enforcement is fail-closed and matches the orientation limits precedent: an
+  unrecognized recipe kind, revision, or safety-critical enum is refused rather
+  than interpreted, and a check that cannot be performed counts as failed rather
+  than skipped. Both the recipe and its schema are registered as **hashed**
+  supported-surface entries, deliberately unlike the orientation policy contracts
+  beside them, which are named. A reason-code vocabulary grows additively and can
+  live behind a named entry; a recipe cannot, because the rule the recipe itself
+  states is that any change to its commands, network policy, tool versions,
+  inputs, or output verification is an agent-relevant release event. Only a
+  hashed entry makes such a change require `surface_version` to advance in the
+  same change.
+
+  Two things the contract records that a plausible reading gets wrong:
+
+  - **The input set is not the compiler config's `include` globs.** Two compiled
+    root modules enter transitively through imports and appear in no glob, so a
+    fingerprint derived from the globs would cover 36 of the 38 compiled sources
+    and still look correct. The contract enumerates all 38 explicitly, and the
+    gate compares them against the compiler's *resolved* file list rather than
+    against a glob string.
+  - **`campaign-spec/dist` is a build output, never a committed artifact.** It is
+    untracked and git-ignored; the copy in a published tarball exists only
+    because packing runs `prepare`. No baseline for its contents can exist here,
+    so verification is self-consistency — inventory, internal hash stability,
+    entry-module import, type entry, and input fingerprint — not comparison
+    against a hash published in this repository.
+
+  Also stated plainly, because "runtime ready" invites the wrong reading:
+  suppressing lifecycle scripts is what makes the install safe, and it is also
+  what suppresses the browser download. A prepared generation can build and
+  type-check but **cannot run browser QA**.
+
+  Bounds ship with the measurement beside them so a number is not mistaken for
+  physics: install 180s against about 3.2s measured, build 90s against about
+  0.8s, the whole preparation transaction 450s against about 4s, and two new
+  output bounds the performance budget did not carry — 16 MiB and 4,096 files
+  against a measured 240,359 bytes across 76 files, so a runaway build is a typed
+  refusal rather than a filled disk. They are deliberately generous: they have to
+  hold on a cold cache, a congested network, and loaded CI, not just on a warm
+  laptop.
+
+  `docs/runtime-readiness.md` and every fixture under
+  `contracts/fixtures/runtime-recipe/` are generated from the contract
+  (`npm run generate:runtime-docs`), so a stale copy fails CI rather than
+  misleading a reader. Each reject fixture is a single-mutation copy of the
+  accepted recipe, so a refusal is always attributable to one change. The
+  existing hostile-target fixture gained a second invariant rather than a
+  parallel tree: preparing it must run the recipe's own two steps and no
+  lifecycle script reachable from them, proved against a real packed dependency,
+  with a control that fails if the tripwires could never have fired in the first
+  place.
 
 ## [1.15.0+agent.3] - 2026-08-31
 

@@ -555,7 +555,52 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.16.0+agent.1",
-      "changelog_sha256": "d94e4abf9218b93c2ce7453a948c22980d4e0585cdc634c0fec4f3e1dd4f5502",
+      "changelog_sha256": "d4f3a9b5f16629d0a68fbdecfbb9545e0095a540d3fea1e617a8f8b1c0e7f0dc",
+      "agent_impact": "A fourth checkpoint gate is registered, built_output.upsell_selector_scope, and it can block a doctor run that previously passed. It fires when a built page whose funnel role is upsell or downsell carries a data-next-bundle-selector that lacks data-next-upsell-context and is in the default swap selection mode: such a selector writes to the shopper's live cart at init, so loading the page charges them for a package at the next checkout without it appearing in that checkout's rendered order summary. Two consequences a consumer must plan for. First, `doctor --built` can now return blocked; it previously only produced warnings, and a consumer treating that mode as advisory will need to read its exit state. Second, all eight certified template families (apollo, apollo-mv-single-step, demeter, olympus, olympus-mv-single-step, olympus-mv-two-step, shop-single-step, shop-three-step) currently ship a display-only selector with neither attribute across 19 upsell offer includes, so a campaign built from any certified family blocks until the templates are repaired upstream in campaign-cart-starter-templates. The remedy is to add data-next-upsell-context to the named selector, or to record a bounded named-human waiver through `campaigns-os checkpoint waive --gate built_output.upsell_selector_scope`. data-next-selection-mode=\"select\" also clears the blocker and reports a warning instead, because the SDK gates every cart write on swap mode.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "`checkpoint waive --gate` accepts a fourth registered gate, built_output.upsell_selector_scope, and doctor evaluates it in the built-output phase on both the packet path and `doctor --built`. The gate is reported in derived.checkpoint_gates and in the `next` gate summary like the three before it, and `doctor --built` can now return a blocked status rather than only warnings."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "A lifecycle step was added for resolving the upsell selector-scope checkpoint, stating what an unscoped selector does to a shopper, that the gate runs on every doctor invocation rather than only after assembly, and the exact waiver command. Subsequent steps renumbered; version 1.0.6."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os advanced to 1.0.6 for the added checkpoint step."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The `checkpoint` command's registered-gate list now names four gates rather than three. The support boundary is unchanged: registered gates may still grow beneath the listed command without a surface_version advance."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The packet-local checkpoint preflight now lists four registered checkpoints, and the waiver example's --gate alternation includes built_output.upsell_selector_scope."
+        }
+      ],
+      "entry_sha256": "5b76a23ac2857c640ce3d61cfd2e51ac025eeca518223349c84f4099691f31cb"
+    },
+    {
+      "id": "RL-0008",
+      "sequence": 8,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.16.0+agent.2",
+      "changelog_sha256": "8a1977d6b84662ddb8e5eb46ec7d350b257224df35d46464580cb8399cde72e2",
       "agent_impact": "Browser QA now emits assertions for two things it previously said nothing about, and both can newly block a verdict that used to pass. A checkout page whose CampaignSpec declares exit_intent or promo_code_input with enabled: true gets browser-exit-intent-surface:<page> / browser-promo-code-surface:<page>: absent markup is FAIL/BLOCKER, markup carrying the declared offer_code is PASS, markup that cannot be tied to that code (or a coupon input behind an unopened disclosure) is MANUAL_REVIEW/WARN, and a browser collector that threw mid-read is SKIPPED with the cause rather than blocking. Typed-card runs additionally emit browser-order-display-parity:<plan> and browser-order-total-parity:<plan>, reconciling the persisted order pre-upsell read-back against what the checkout displayed at submit; a non-upsell line whose package was never rendered as selected, a displayed package that was never charged, or a total that disagrees with the displayed summary total is FAIL/BLOCKER naming the package ids. Both reconciliation assertions report SKIPPED with a stated reason when the page gives them nothing comparable - a summary whose rows do not all carry data-package-id, or a checkout with no [data-next-display=\"cart.total\"] surface - and a consumer must read that as missing coverage, never as a pass. Both sets reuse the existing browser-runtime and browser-test-order families, so the verdict schema, QA_ASSERTION_FAMILY_VOCABULARY, and any allowlist keyed off it are unchanged. A campaign that declares a surface it did not build, or charges a package it never displayed, will now block where it previously reported ready.",
       "compatibility": "compatible",
       "migration": "none. A verdict that newly blocks is reporting a defect that was always there; fix the build or drop the undelivered declaration from CampaignSpec.",
@@ -573,7 +618,7 @@
           "summary": "next-campaigns-qa is published at 1.1.0, so an installer can tell a build that asserts declared offer surfaces and order/display parity from one that does not."
         }
       ],
-      "entry_sha256": "531d2d1d705baa85759f2c5806f7a7e120aaacb944eb5fc9bde227813c5d4c9e"
+      "entry_sha256": "143df9ab7a659c2066097eddbf327d3b8033d4c76a705bb629a59b97886aba9f"
     }
   ]
 }

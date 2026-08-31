@@ -35,6 +35,14 @@ export function resolveTestOrderTopology(topology = {}, checkoutPage = null) {
     topology_id: topology?.funnel_id || "default",
     checkout_page_id: checkout?.page_id || null,
     checkout_url: checkout?.url || null,
+    // Retain every declared page for diagnostics, including malformed rows.
+    // pageAtUrl still matches only canonical HTTP URLs, but the resolved plan
+    // does not silently erase the topology evidence that explains a miss.
+    route_pages: pages.map((page) => ({
+      page_id: page.page_id || null,
+      page_type: page.page_type || null,
+      url: page.url || null,
+    })),
     has_offer_entry: entry?.kind === "offer",
     full_paths: terminalPaths.map((candidate) => candidate.path),
     terminal_paths: terminalPaths,
@@ -47,6 +55,12 @@ export function terminalAtUrl(resolvedTopology, value) {
   const key = canonicalHttpUrl(value);
   if (!key) return null;
   return (resolvedTopology?.recognized_terminals || []).find((terminal) => canonicalHttpUrl(terminal?.url) === key) || null;
+}
+
+export function pageAtUrl(resolvedTopology, value) {
+  const key = canonicalHttpUrl(value);
+  if (!key) return null;
+  return (resolvedTopology?.route_pages || []).find((page) => canonicalHttpUrl(page?.url) === key) || null;
 }
 
 export function remainingActionDisposition(resolvedTopology, value, remainingActions = []) {
