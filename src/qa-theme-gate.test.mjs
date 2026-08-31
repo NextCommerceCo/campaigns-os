@@ -20,6 +20,9 @@ const {
   derivePageUrls,
   deriveTestedUrlsFromAssertions,
   resolvePayload,
+  resolveThemeGate,
+  mergeThemeGateScope,
+  themeGateScopeSource,
   resolveQaInputsFromSite,
   checkpointGateSummary,
   hiddenEagerMediaGateAssertion,
@@ -480,4 +483,121 @@ test("unsupported currency and predictive-address meta hints route to supported 
     "window.nextConfig.addressConfig.enableAutocomplete",
   );
   assert.equal(unsupportedSdkMetaHint("next-page-type"), null);
+});
+
+// #274, at the QA seam. `qa resolve` listed seven commerce routes and then said
+// `theme_gate.no_commerce_pages` in the same command's output. resolveThemeGate
+// preferred the doctor's derived scope outright, so a thin one — a partial
+// build, or a doctor-output.json written before the commerce pages existed —
+// retired the gate on a funnel the spec plainly declares.
+const renewaliftTopologies = [{
+  funnel_id: "default",
+  funnel_name: "Default",
+  pages: [
+    { page_id: "presell", page_type: "presell" },
+    { page_id: "checkout", page_type: "checkout" },
+    { page_id: "upsell", page_type: "upsell" },
+    { page_id: "upsell-2", page_type: "upsell" },
+    { page_id: "upsell-3", page_type: "upsell" },
+    { page_id: "upsell-4", page_type: "upsell" },
+    { page_id: "upsell-5", page_type: "upsell" },
+    { page_id: "receipt", page_type: "thankyou" },
+  ],
+}];
+
+function packetWithDoctorScope(scope) {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-theme-gate-"));
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  writeFileSync(packetPath, JSON.stringify({ campaign: { public_route_slug: "renewalift-device" } }));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  writeFileSync(
+    join(dir, ".campaign-runtime", "doctor-output.json"),
+    JSON.stringify({ derived: { scope } }),
+  );
+  writeFileSync(
+    join(dir, ".campaign-runtime", "build-context.json"),
+    JSON.stringify({ theme: { generated: { can_generate: true } } }),
+  );
+  return { dir, packetPath };
+}
+
+test("#274 regression: a thin doctor scope cannot retire the gate on a declared commerce funnel", () => {
+  const { dir, packetPath } = packetWithDoctorScope({
+    mode: "partial",
+    built_pages: [{ page_id: "presell", type: "presell", role: "content" }],
+    out_of_scope_pages: [],
+  });
+  try {
+    const gate = resolveThemeGate({
+      packetPath,
+      topologies: renewaliftTopologies,
+      waive: null,
+      report: { theme: { status: "needs_review", load_order: "unknown" } },
+    });
+
+    assert.notEqual(gate.code, "theme_gate.no_commerce_pages");
+    assert.notEqual(gate.status, "not_applicable");
+    assert.equal(gate.status, "blocked");
+    // The seven commerce routes the same command lists are the seven the gate sees.
+    assert.deepEqual(gate.commerce_pages, [
+      "checkout", "upsell", "upsell-2", "upsell-3", "upsell-4", "upsell-5", "receipt",
+    ]);
+    // The scope source is recorded rather than left unstated.
+    assert.equal(gate.scope_source, "doctor_derived_scope+spec_topologies");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a doctor scope that already covers the commerce funnel is used unchanged", () => {
+  const built = [
+    { page_id: "checkout", type: "checkout", role: "runtime" },
+    { page_id: "upsell", type: "upsell", role: "runtime" },
+    { page_id: "upsell-2", type: "upsell", role: "runtime" },
+    { page_id: "upsell-3", type: "upsell", role: "runtime" },
+    { page_id: "upsell-4", type: "upsell", role: "runtime" },
+    { page_id: "upsell-5", type: "upsell", role: "runtime" },
+    { page_id: "receipt", type: "thankyou", role: "runtime" },
+  ];
+  const { dir, packetPath } = packetWithDoctorScope({ mode: "full", built_pages: built });
+  try {
+    const gate = resolveThemeGate({
+      packetPath,
+      topologies: renewaliftTopologies,
+      waive: null,
+      report: { theme: { status: "applied", load_order: "after-next-core" } },
+    });
+
+    assert.equal(gate.status, "pass");
+    assert.equal(gate.scope_source, "doctor_derived_scope");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("without doctor output the gate still reads the spec topologies, as before", () => {
+  const gate = resolveThemeGate({
+    packetPath: null,
+    topologies: renewaliftTopologies,
+    waive: null,
+    report: { theme: { status: "applied", load_order: "after-next-core" } },
+  });
+
+  assert.equal(gate.scope_source, "spec_topologies");
+  assert.equal(gate.status, "pass");
+  assert.equal(gate.commerce_pages.length, 7);
+});
+
+test("scope merge is keyed on page identity, and out-of-scope pages already count", () => {
+  const specScope = themeGateScopeFromTopologies(renewaliftTopologies);
+  const doctorScope = {
+    built_pages: [{ page_id: "presell", type: "presell", role: "content" }],
+    out_of_scope_pages: specScope.built_pages,
+  };
+
+  // Every commerce page is already known to the doctor scope, so nothing is added.
+  assert.equal(mergeThemeGateScope(doctorScope, specScope), doctorScope);
+  assert.equal(themeGateScopeSource(doctorScope, specScope), "doctor_derived_scope");
+  assert.equal(mergeThemeGateScope(null, specScope), specScope);
+  assert.equal(themeGateScopeSource(null, specScope), "spec_topologies");
 });

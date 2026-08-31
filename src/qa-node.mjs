@@ -16,6 +16,7 @@ import {
   inapplicableForwardFields,
 } from "../campaign-spec/dist/index.js";
 import { evaluateThemeGate } from "./theme-gate.mjs";
+import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
 import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
@@ -57,7 +58,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 
 Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
-  campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--json]
+  campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
   campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--no-remit] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
@@ -82,6 +83,14 @@ Options:
                                   no commercial sidecar or extra catalog flag is required.
                                   HTML/proxy bodies, parser work, claims, and scenarios are hard-bounded;
                                   unavailable proof is recorded as incomplete rather than a guessed mismatch.
+  --no-probe                      qa resolve: skip the reachability probe of the derived entry URLs.
+                                  resolve probes them by default, because a route set derived from the
+                                  packet is not evidence that the deployment serves it: a dead route set
+                                  reports status routes_unresolved and names the first URL that failed.
+                                  Probing needs no flag to survive an offline run — a transport failure
+                                  degrades to status ready_unprobed rather than failing — so use this only
+                                  for hermetic runs that must make no outbound request at all.
+  --probe-timeout-ms <ms>         qa resolve: per-URL reachability probe timeout. Default: 5000.
   --output-dir <path>             Local verdict directory. Default: qa-output.
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
@@ -161,7 +170,8 @@ export async function runQaCli(args) {
   }
   if (subcommand === "resolve") {
     const resolved = await resolveQaInputs(args);
-    const result = resolvePayload(resolved);
+    const routeProbe = await resolveRouteProbe(resolved, args);
+    const result = resolvePayload(resolved, { routeProbe });
     output(result, args);
     return result;
   }
@@ -601,7 +611,8 @@ function resolveThemeGate({ packetPath, topologies, waive, report: reportOverrid
     : reportOverride;
   const context = loadRuntimeArtifact(packetPath, "build-context.json");
   const doctor = loadRuntimeArtifact(packetPath, "doctor-output.json");
-  const scope = doctor?.derived?.scope || themeGateScopeFromTopologies(topologies);
+  const specScope = themeGateScopeFromTopologies(topologies);
+  const scope = mergeThemeGateScope(doctor?.derived?.scope || null, specScope);
   const gate = evaluateThemeGate({
     reportTheme: report?.theme || null,
     contextTheme: context?.theme || null,
@@ -614,8 +625,37 @@ function resolveThemeGate({ packetPath, topologies, waive, report: reportOverrid
   // topologies rather than the doctor's richer derived scope. Make that
   // visible in the gate (and therefore in the verdict) instead of deciding
   // from an unstated source.
-  gate.scope_source = doctor?.derived?.scope ? "doctor_derived_scope" : "spec_topologies";
+  gate.scope_source = themeGateScopeSource(doctor?.derived?.scope || null, specScope);
   return gate;
+}
+
+// The declared funnel is the authority on WHETHER a campaign ships commerce
+// pages; the doctor's derived scope is the authority on what this build
+// produced. Preferring the doctor's scope outright meant a thin one — a
+// partial build, or a doctor-output.json written before the commerce pages
+// existed — could retire the gate on a funnel whose own route listing, printed
+// two lines above, enumerated a checkout and five upsells (#274). Union the two
+// so a commerce page declared in either source keeps the gate live, and record
+// which sources contributed rather than deciding from an unstated one.
+function mergeThemeGateScope(doctorScope, specScope) {
+  if (!doctorScope) return specScope;
+  const pageKey = (page) => String(page?.page_id || page?.route || page?.type || "");
+  const known = new Set([
+    ...(Array.isArray(doctorScope.built_pages) ? doctorScope.built_pages : []),
+    ...(Array.isArray(doctorScope.out_of_scope_pages) ? doctorScope.out_of_scope_pages : []),
+  ].map(pageKey));
+  const missing = (specScope?.built_pages || []).filter((page) => !known.has(pageKey(page)));
+  if (!missing.length) return doctorScope;
+  return {
+    ...doctorScope,
+    built_pages: [...(Array.isArray(doctorScope.built_pages) ? doctorScope.built_pages : []), ...missing],
+  };
+}
+
+function themeGateScopeSource(doctorScope, specScope) {
+  if (!doctorScope) return "spec_topologies";
+  const merged = mergeThemeGateScope(doctorScope, specScope);
+  return merged === doctorScope ? "doctor_derived_scope" : "doctor_derived_scope+spec_topologies";
 }
 
 function loadRuntimeArtifact(packetPath, name) {
@@ -1172,7 +1212,7 @@ function serializeThrownValue(error) {
   return diagnostic;
 }
 
-function resolvePayload(resolved) {
+function resolvePayload(resolved, { routeProbe = null } = {}) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
   const checkpointGates = Array.isArray(resolved.checkpointGates)
@@ -1180,13 +1220,10 @@ function resolvePayload(resolved) {
     : [];
   const hasBlockedCheckpoint = checkpointGates.some((gate) => gate.status === "blocked");
   const hasCheckpointWarning = checkpointGates.some(checkpointGateHasWarning);
+  const status = resolveStatus({ hasBlockedCheckpoint, hasCheckpointWarning, routeProbe });
   return {
-    ok: !hasBlockedCheckpoint,
-    status: hasBlockedCheckpoint
-      ? "blocked"
-      : hasCheckpointWarning
-        ? "ready_with_exceptions"
-        : "ready",
+    ok: status !== "blocked" && status !== "routes_unresolved",
+    status,
     map_id: resolved.mapId,
     ...(resolved.packetPath ? { packet_path: resolved.packetPath } : {}),
     ...(resolved.proxyBase && resolved.proxyBase !== DEFAULT_PROXY_BASE ? { proxy_base: resolved.proxyBase } : {}),
@@ -1205,8 +1242,52 @@ function resolvePayload(resolved) {
     checkpoint_gates: checkpointGates,
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
+    ...(routeProbe ? { route_probe: routeProbe } : {}),
     funnels: resolved.topologies,
   };
+}
+
+// The resolve status ladder, ordered by how much of the deployment this run
+// actually verified rather than by which axis complained. Before #273 the top
+// two rungs did not exist, so a route set that was 100% dead reported `ready`
+// and printed a next command that could not succeed.
+//
+//   blocked            a checkpoint gate blocks; the routes were not probed.
+//   routes_unresolved  the routes were probed and at least one did not resolve.
+//   ready_unprobed     there were routes to probe and none produced a response.
+//   ready_with_exceptions / ready   as before, now over probed-and-resolved routes.
+//
+// `ready_unprobed` sits above `ready_with_exceptions` on purpose: a checkpoint
+// warning is a known, named exception an operator can read, while an unprobed
+// route set means the deployment half of the run was never checked at all. The
+// checkpoint warnings stay fully visible in checkpoint_gates[] either way.
+function resolveStatus({ hasBlockedCheckpoint, hasCheckpointWarning, routeProbe }) {
+  if (hasBlockedCheckpoint) return "blocked";
+  if (routeProbe?.status === "failed") return "routes_unresolved";
+  if (routeProbe?.status === "not_probed" && routeProbe.code !== "route_probe.no_routes") {
+    return "ready_unprobed";
+  }
+  return hasCheckpointWarning ? "ready_with_exceptions" : "ready";
+}
+
+// Probing is opt-out, not opt-in: the silent `ready` in #273 happened because
+// nothing checked by default. `--no-probe` exists for hermetic runs that must
+// make no outbound request at all; an ordinary offline run needs no flag,
+// because a transport failure already degrades to `ready_unprobed`.
+async function resolveRouteProbe(resolved, args, { fetchImpl = fetch } = {}) {
+  const entryUrls = deriveEntryUrls(resolved.topologies);
+  const blocked = (resolved.checkpointGates || []).some((gate) => gate?.status === "blocked");
+  const disabled = args["no-probe"] === true || args.probe === false || args.probe === "false";
+  const timeout = Number(args["probe-timeout-ms"]);
+  return probeRouteUrls({
+    entryUrls,
+    baseUrl: resolved.baseUrl,
+    publicRouteSlug: resolved.publicRouteSlug,
+    enabled: !disabled && !blocked,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : ROUTE_PROBE_DEFAULT_TIMEOUT_MS,
+    fetchImpl,
+    skippedReason: blocked && !disabled ? "a checkpoint gate blocks this run" : disabled ? "--no-probe" : null,
+  });
 }
 
 function checkpointGateHasWarning(gate) {
@@ -2502,6 +2583,7 @@ function output(value, args) {
   console.log("");
   printCheckpointGateLines(value.checkpoint_gates, value.packet_path);
   printThemeGateLines(value.theme_gate);
+  printRouteProbeLines(value.route_probe);
   const nextProofLines = qaResolveNextProofLines(value);
   if (nextProofLines.length) {
     console.log("");
@@ -2542,6 +2624,20 @@ function printEntryUrlLines(entryUrls) {
   }
 }
 
+function printRouteProbeLines(routeProbe) {
+  if (!routeProbe) return;
+  console.log(`Route probe: ${routeProbe.status} (${routeProbe.code}) — ${routeProbe.reason}`);
+  if (routeProbe.status !== "failed") return;
+  if (routeProbe.route_root_hint) {
+    console.log(`  Diagnosis (${routeProbe.route_root_hint.code}): ${routeProbe.route_root_hint.reason}`);
+  }
+  const dead = (routeProbe.results || []).filter((result) => result.outcome === "unresolved");
+  if (dead.length > 1) {
+    console.log("  Dead entry URLs:");
+    for (const result of dead) console.log(`    - ${result.url} (HTTP ${result.http_status})`);
+  }
+}
+
 function printThemeGateLines(themeGate) {
   if (!themeGate) return;
   console.log(`Theme gate: ${themeGate.status} (${themeGate.code}) — ${themeGate.reason}`);
@@ -2555,6 +2651,23 @@ function printThemeGateLines(themeGate) {
 
 export function qaResolveNextProofLines(value) {
   if (value?.status === "blocked") return [];
+  // #273: the printed next command was the most misleading part of a `ready`
+  // over a dead route set — `qa run` against those URLs cannot succeed. Name
+  // the route set as the thing to fix instead of suggesting the run.
+  if (value?.status === "routes_unresolved") {
+    const failure = value.route_probe?.first_failure;
+    const hint = value.route_probe?.route_root_hint;
+    const remedy = hint?.code === "route_probe.route_root_mismatch"
+      ? "Correct campaign.public_route_slug (or declare campaign.route_root) in the packet so the derived routes match this host, then resolve again."
+      : hint?.code === "route_probe.host_also_dead"
+        ? "Confirm the preview is live, then resolve again."
+        : "Confirm the preview is live and that --base-url names the host serving this packet's campaign, then resolve again.";
+    return [
+      `Next expected proof: none — the derived route set does not resolve on ${value.base_url || "(missing base URL)"}.`,
+      `First failure: ${failure?.url || "(unknown)"}${failure?.http_status ? ` (HTTP ${failure.http_status})` : ""}.`,
+      remedy,
+    ];
+  }
   if (!value?.base_url) {
     return [
       "Next expected proof: provide --base-url with the preview/local campaign URL, then run browser QA + typed-card proof with --browser --test-order common.",
@@ -3067,6 +3180,11 @@ export const __qaNodeTestHooks = Object.freeze({
   derivePageUrls,
   deriveTestedUrlsFromAssertions,
   resolvePayload,
+  resolveThemeGate,
+  resolveStatus,
+  resolveRouteProbe,
+  mergeThemeGateScope,
+  themeGateScopeSource,
   checkpointGateSummary,
   hiddenEagerMediaGateAssertion,
   checkpointBlockedAssertions,

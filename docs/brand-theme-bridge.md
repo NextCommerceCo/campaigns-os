@@ -99,6 +99,17 @@ commerce pages (checkout/upsell/downsell/receipt), the gate **blocks**
   `qa run --theme-waive "<reason>"` for a one-off run, or
 - theme policy is `off` for the run.
 
+"Ships commerce pages" is a question about the campaign, not about one build's
+output. The gate reads the pages this build produced **and** the commerce pages
+the campaign declares but this build left out of scope, so a partial build
+cannot retire the gate on a funnel it simply did not assemble; `commerce_pages`
+carries the union and `commerce_pages_out_of_scope` names the half this build
+did not produce. On the QA path the declared funnel is unioned in the same way,
+so a thin or stale `doctor-output.json` cannot self-retire a gate on a funnel
+whose routes `qa resolve` lists in the same output. `theme_gate.scope_source`
+records which sources contributed: `doctor_derived_scope`, `spec_topologies`,
+or `doctor_derived_scope+spec_topologies`.
+
 The gate result lives at `doctor.derived.theme_gate` and in every `next`
 response's `gates` array, with `required_actions` carrying the exact commands.
 A waiver does not silence QA: template-residue checks still run at warn
