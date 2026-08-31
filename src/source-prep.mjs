@@ -97,7 +97,14 @@ function findEmbeddedFrontmatter(lines, bodyStart) {
     // still open a real leftover block that follows it.
     open = index;
   }
-  return hits;
+  // An opening fence below content whose frontmatter-key-shaped lines run to
+  // EOF without a closing fence is residue too — page-kit would render the
+  // fence and keys literally. A trailing keyless fence stays content.
+  let unterminated = null;
+  if (open !== -1 && lines.slice(open + 1).some((line) => FRONTMATTER_KEY_PATTERN.test(line.trim()))) {
+    unterminated = { line: open + 1 };
+  }
+  return { hits, unterminated };
 }
 
 function cleanHref(raw) {
@@ -150,11 +157,18 @@ function inspectPageContent({ content, sourceRoot, pagePath, mappedPaths }) {
   if (leading.unterminated) {
     findings.push({ code: SOURCE_PREP_FRONTMATTER_RESIDUE, variant: "unterminated_leading_fence" });
   }
-  if (embedded.length) {
+  if (embedded.hits.length) {
     findings.push({
       code: SOURCE_PREP_FRONTMATTER_RESIDUE,
       variant: "embedded_block",
-      lines: embedded.map((hit) => hit.line),
+      lines: embedded.hits.map((hit) => hit.line),
+    });
+  }
+  if (embedded.unterminated) {
+    findings.push({
+      code: SOURCE_PREP_FRONTMATTER_RESIDUE,
+      variant: "unterminated_embedded_block",
+      lines: [embedded.unterminated.line],
     });
   }
 
@@ -191,11 +205,13 @@ function describeFinding(code, pages, { wrapperPolicy }) {
   }
   if (code === SOURCE_PREP_FRONTMATTER_RESIDUE) {
     const listed = sample.map((page) => {
-      const variants = page.variants.map((variant) =>
-        variant.variant === "unterminated_leading_fence"
-          ? "leading --- fence never closes"
-          : `frontmatter block embedded below content at line ${variant.lines.join(", ")}`
-      );
+      const variants = page.variants.map((variant) => {
+        if (variant.variant === "unterminated_leading_fence") return "leading --- fence never closes";
+        if (variant.variant === "unterminated_embedded_block") {
+          return `frontmatter block opened below content at line ${variant.lines.join(", ")} never closes`;
+        }
+        return `frontmatter block embedded below content at line ${variant.lines.join(", ")}`;
+      });
       return `${page.path} (${variants.join("; ")})`;
     }).join("; ");
     return `Mapped source HTML carries leftover or broken YAML frontmatter that page-kit would render literally or misparse: ${listed}${more}. Keep exactly one closed frontmatter block at the very top of the file (or none, when the packet's page_kit.frontmatter projection supplies it). See ${docs}.`;

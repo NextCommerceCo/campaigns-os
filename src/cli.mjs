@@ -1754,12 +1754,20 @@ function prepareBuild(args, options = {}) {
   // Certification freshness (#263), from the vendored catalog snapshot only:
   // say which SDK the family was last verified against and which SDK is
   // current, right where the gate decides. stderr keeps --json stdout clean.
-  if (familyCertified) {
-    console.warn(`[campaigns-os prepare-build] ${renderTemplateFreshness(assessTemplateFreshness({
+  // The line prints for ANY decided family present on the vendored catalog —
+  // including one whose certification was waived via
+  // --allow-uncertified-template: freshness is exposure, and a waiver is an
+  // explicit certification decision, not a reason to hide what the catalog
+  // still records. The waived path is labeled so it can never be mistaken
+  // for the certified-gate line.
+  if (familyDecided && Object.prototype.hasOwnProperty.call(commerceCatalog?.families || {}, templateFamily)) {
+    const freshnessLine = renderTemplateFreshness(assessTemplateFreshness({
       family: templateFamily,
       catalog: commerceCatalog,
       sdkSupportPolicy: defaultSdkSupportPolicy(),
-    }))}`);
+    }));
+    const waivedLabel = familyCertified ? "" : "certification waived — ";
+    console.warn(`[campaigns-os prepare-build] ${waivedLabel}${freshnessLine}`);
   }
   const templateCandidates = hintedTemplateFamily
     ? [{ family: hintedTemplateFamily, source: "CampaignSpec preferred_template_family", confidence: "hint" }]

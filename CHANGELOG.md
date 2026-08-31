@@ -71,6 +71,35 @@ Notable supported-surface changes are recorded here.
   with a control that fails if the tripwires could never have fired in the first
   place.
 
+## [1.15.0+agent.3] - 2026-08-31
+
+### Fixed
+
+- **Post-merge review fixes for the #266/#267 review findings.**
+  - The certified-template gate in `start`/`prepare-build` now prints the
+    certification-freshness line for ANY decided family present on the
+    vendored catalog — including a family whose certification was waived via
+    `--allow-uncertified-template`. The waived path is labeled
+    (`certification waived — `) so it can never be mistaken for the
+    certified-gate line; doctor's freshness warning behavior is unchanged.
+  - The doctor source-preparation check now detects an UNTERMINATED embedded
+    frontmatter block — content followed by an opening `---` fence whose
+    frontmatter-key lines run to EOF with no closing fence — as a third
+    `source_html.prep.frontmatter_residue` variant
+    (`unterminated_embedded_block`, severity error). Previously this exact
+    docs-promised case fell through both the leading-fence and
+    closed-embedded-block detectors.
+  - `renderTemplateFreshness` is now total over any input: a null/undefined
+    assessment (or missing fields) renders the unknown-state line instead of
+    interpolating `undefined`, and a malformed `verified_at` omits the date
+    parenthetical instead of surfacing garbage like `(2026-13-45)` in
+    operator output.
+  - `standardize`/`standardization-report` no longer swallows a
+    commerce-catalog resolution failure silently: freshness still degrades to
+    null (the report keeps generating), but a one-shot
+    `[standardize] freshness suppressed: <reason>` warn per run says why the
+    `template_certification_freshness` field is missing.
+
 ## [1.15.0+agent.2] - 2026-08-31
 
 ### Added
