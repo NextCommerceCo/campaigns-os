@@ -273,7 +273,7 @@ try {
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
   }
 
   const specPath = resolve(specDir, "campaignspec.json");
@@ -463,7 +463,7 @@ try {
   mkdirSync(resolve(targetRepo, "_site", "runtime-packet-demo", "upsell"), { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
   }
 
   const spec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
@@ -485,7 +485,7 @@ try {
       "</head><body>",
       '<a data-next-package-id="PKG_METALESS" href="/runtime-packet-demo/checkout/">Buy</a>',
       "<script>window.next = {};</script>",
-      "</body></html>",
+      "</section>",
     ].join("")
   );
   writeFileSync(
@@ -499,7 +499,7 @@ try {
       '<div data-next-bundle-card data-next-shipping-id="2" data-next-bundle-items=\'[{"packageId":999,"quantity":1}]\'></div>',
       '<div data-next-package-id="PKG_B" data-next-shipping-id="SHIP_B"></div>',
       "<script>window.next = {};</script>",
-      "</body></html>",
+      "</section>",
     ].join("")
   );
   writeFileSync(
@@ -509,7 +509,7 @@ try {
       '<meta name="next-page-type" content="upsell">',
       '<meta name="next-upsell-accept-url" content="/runtime-packet-demo/receipt/">',
       '<meta name="next-upsell-decline-url" content="/runtime-packet-demo/receipt/">',
-      "</head><body><script>window.next = {};</script></body></html>",
+      "</head><body><script>window.next = {};</script></section>",
     ].join("")
   );
 
@@ -738,11 +738,11 @@ try {
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
 
   for (const page of ["checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
   }
   writeFileSync(
     resolve(sourceRoot, "landing.html"),
-    '<html><body>Made in USA and ships from the USA. Save $59.99 today. Call 1-800-555-1234. <span data-next-display="bundle.main.price">$49.99</span><span data-skip-market-lint="true">$999.99 1-800-555-0000 ships from the USA</span></body></html>',
+    '<section>Made in USA and ships from the USA. Save $59.99 today. Call 1-800-555-1234. <span data-next-display="bundle.main.price">$49.99</span><span data-skip-market-lint="true">$999.99 1-800-555-0000 ships from the USA</span></section>',
   );
 
   const marketSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
@@ -813,7 +813,7 @@ try {
   // Source files use non-standard filenames so filesystem matching could NOT
   // produce these mappings — the only way to map them is via the manifest.
   for (const file of ["landing-section-a.html", "checkout-step.html", "upsell-step.html", "receipt-step.html"]) {
-    writeFileSync(resolve(sourceRoot, file), `<html><body>${file}</body></html>`);
+    writeFileSync(resolve(sourceRoot, file), `<section>${file}</section>`);
   }
   mkdirSync(resolve(sourceRoot, "assets/images/landing"), { recursive: true });
   writeFileSync(resolve(sourceRoot, "assets/images/landing/reference.png"), "fixture-png");
@@ -961,7 +961,7 @@ try {
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const file of ["landing-real.html", "landing-shadow.html", "checkout.html", "upsell.html", "receipt.html"]) {
-    writeFileSync(resolve(sourceRoot, file), `<html><body>${file}</body></html>`);
+    writeFileSync(resolve(sourceRoot, file), `<section>${file}</section>`);
   }
   // landing appears twice; the `upsell` spec page is intentionally absent from
   // the manifest so MISSING_SOURCE_PAGE fires with the manifest-specific message.
@@ -1059,7 +1059,7 @@ try {
     mkdirSync(resolve(sourceRoot, producer.dir), { recursive: true });
     writeFileSync(
       resolve(sourceRoot, producer.dir, producer.file),
-      `<html><body>${producer.dir}/${producer.file}</body></html>`,
+      `<section>${producer.dir}/${producer.file}</section>`,
     );
   }
 
@@ -1145,7 +1145,7 @@ try {
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
   }
 
   // Spec is the example v4.2 basic — no design_source on any page.
@@ -1216,7 +1216,7 @@ try {
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   // Intentionally omit landing.html so the coverage check fires.
   for (const page of ["checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
   }
 
   const spec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
@@ -1327,7 +1327,7 @@ try {
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
   }
   const exampleSpec = readJson(resolve(root, "examples/campaignspec.v42.basic.json"));
 
@@ -1488,7 +1488,7 @@ try {
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page}</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page}</section>`);
   }
 
   // Build a spec carrying both hints. Pick the campaign-level family that's
@@ -1683,7 +1683,7 @@ try {
   const manifestPages = [];
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
     const htmlPath = `${page}.html`;
-    const html = `<html><body>${page}</body></html>`;
+    const html = `<section>${page}</section>`;
     writeFileSync(resolve(sourceRoot, htmlPath), html);
     manifestFiles.push({
       path: htmlPath,
@@ -1944,7 +1944,7 @@ try {
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page} (ai-generated)</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page} (ai-generated)</section>`);
   }
 
   // 1. Producer side — run the reference AI producer; the manifest must land
@@ -2060,7 +2060,7 @@ try {
   const sourceRoot = resolve(aiGenNestedTmp, "source-html");
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
     mkdirSync(resolve(sourceRoot, page), { recursive: true });
-    writeFileSync(resolve(sourceRoot, page, "index.html"), `<html><body>${page} nested</body></html>`);
+    writeFileSync(resolve(sourceRoot, page, "index.html"), `<section>${page} nested</section>`);
   }
   execFileSync(
     "node",
@@ -2080,7 +2080,7 @@ try {
     }
   }
 
-  writeFileSync(resolve(sourceRoot, "landing.html"), "<html><body>duplicate landing</body></html>");
+  writeFileSync(resolve(sourceRoot, "landing.html"), "<section>duplicate landing</section>");
   let duplicateFailed = false;
   try {
     execFileSync(
@@ -2119,7 +2119,7 @@ try {
   // Bespoke filenames matching the canonical slugs — filesystem fallback
   // resolves by slug, so these still match the spec pages.
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page} (hand-authored bespoke)</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page} (hand-authored bespoke)</section>`);
   }
 
   // Spec must NOT carry design_source on any page (defining property of the
@@ -2189,7 +2189,7 @@ try {
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page} v1</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page} v1</section>`);
   }
 
   // Producer emits a manifest with source_hash on every entry.
@@ -2226,7 +2226,7 @@ try {
   // 2. Operator edits the landing page (changes its hash) and re-runs
   //    doctor against the existing packet. The drift warning should fire
   //    naming the landing file.
-  writeFileSync(resolve(sourceRoot, "landing.html"), `<html><body>landing v2 (operator edits)</body></html>`);
+  writeFileSync(resolve(sourceRoot, "landing.html"), `<section>landing v2 (operator edits)</section>`);
   const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
   const driftResult = runCliJsonAllowFailure([
     "doctor",
@@ -2268,7 +2268,7 @@ try {
   mkdirSync(targetRepo, { recursive: true });
   writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
   for (const page of ["landing", "checkout", "upsell", "receipt"]) {
-    writeFileSync(resolve(sourceRoot, `${page}.html`), `<html><body>${page} v1</body></html>`);
+    writeFileSync(resolve(sourceRoot, `${page}.html`), `<section>${page} v1</section>`);
   }
 
   // Hand-craft a manifest where landing has source_hash but checkout/upsell/
@@ -2314,7 +2314,7 @@ try {
 
   // Edit checkout.html (which has NO source_hash in the manifest). Doctor
   // should stay silent — there's no hash to compare against.
-  writeFileSync(resolve(sourceRoot, "checkout.html"), `<html><body>checkout v2 (edited)</body></html>`);
+  writeFileSync(resolve(sourceRoot, "checkout.html"), `<section>checkout v2 (edited)</section>`);
   const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
   const mixedDoctorResult = runCliJsonAllowFailure([
     "doctor",
@@ -2332,7 +2332,7 @@ try {
   // Edit landing.html (which DOES have source_hash). Doctor should now fire
   // exactly one warning for landing — proving the mixed-manifest case still
   // works for the hashed entries.
-  writeFileSync(resolve(sourceRoot, "landing.html"), `<html><body>landing v2 (edited)</body></html>`);
+  writeFileSync(resolve(sourceRoot, "landing.html"), `<section>landing v2 (edited)</section>`);
   const mixedDoctorAfterLanding = runCliJsonAllowFailure([
     "doctor",
     "--packet", packetPath,

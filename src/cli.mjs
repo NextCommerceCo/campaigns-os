@@ -57,6 +57,10 @@ import {
   createDoctorCheckRegistry,
   runDoctorCheckRegistry,
 } from "./doctor-check-registry.mjs";
+import {
+  evaluateSourcePreparation,
+  SOURCE_PREP_CODES,
+} from "./source-prep.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
@@ -3077,6 +3081,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ packet, packetPath, spec, errors, warnings, ready, derived }) => validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived),
   },
   {
+    id: "source_html.preparation",
+    phase: "source",
+    run: ({ packet, packetPath, errors, warnings, ready, derived }) => validateSourcePreparation(packet, packetPath, errors, warnings, ready, derived),
+  },
+  {
     id: "spec.package_availability",
     phase: "spec",
     run: ({ spec, warnings, ready }) => validateSpecPackageAvailability(spec, warnings, ready),
@@ -5196,6 +5205,39 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     ready.push(outOfScopePages.length > 0 || specPartialScope
       ? `Partial build previewable routes: ${builtPages.map((page) => routeLabel(page.route)).join(", ")}`
       : "All mapped CampaignSpec pages are build candidates");
+  }
+}
+
+// Source preparation check (#262). Runs at every doctor evaluation — start and
+// build embed doctor, so this is the start preflight the issue asks for while
+// staying re-checkable after source edits. Blocking findings surface as doctor
+// errors, which drive status "blocked" and next.stage "collect-inputs" exactly
+// like other unprepared-input states. Detection and severity policy live in
+// src/source-prep.mjs; the codes and fixes are documented in
+// docs/source-adapters.md "Source preparation check".
+function validateSourcePreparation(packet, packetPath, errors, warnings, ready, derived = {}) {
+  const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
+  if (!sourceRoot || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
+  const pages = Array.isArray(packet.source_html?.pages) ? packet.source_html.pages : [];
+  const result = evaluateSourcePreparation({
+    sourceRoot,
+    pages,
+    wrapperPolicy: packet.source_html?.adapter_contract?.wrapper_policy,
+  });
+  derived.source_preparation = {
+    checked_page_count: result.checked_page_count,
+    finding_codes: result.findings.map((finding) => finding.code),
+  };
+  for (const finding of result.findings) {
+    addIssue(
+      finding.severity === "error" ? errors : warnings,
+      finding.code,
+      finding.message,
+      { pages: finding.pages, docs: finding.docs }
+    );
+  }
+  if (result.checked_page_count > 0 && result.findings.length === 0) {
+    ready.push("Mapped source pages pass the page-kit preparation check (document wrappers stripped, no leftover frontmatter, no source-file internal links)");
   }
 }
 
@@ -7536,6 +7578,9 @@ function buildNextStep(errors, warnings, derived, report = null) {
   }
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");
+  }
+  if (SOURCE_PREP_CODES.some((code) => codes.has(code))) {
+    actions.push("Prepare the mapped source HTML for page-kit ingestion — strip document wrappers, repair leftover frontmatter, and route internal links through campaign_link/CampaignSpec routes (docs/quickstart.md \"Prepare Raw HTML Source\") — then rerun campaigns-os doctor.");
   }
   if (codes.has("scope.runtime_qa_blocked")) {
     actions.push("Keep checkout/order-proof QA blocked until the out-of-scope runtime pages are built or explicitly delegated to an existing downstream URL.");
