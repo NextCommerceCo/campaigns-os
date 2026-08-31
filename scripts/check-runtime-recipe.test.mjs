@@ -96,6 +96,11 @@ test("tool ranges accept what was verified and refuse what is outside them", () 
   assert.equal(versionInRange("12.0.0", recipe.tooling.npm), false, "a major outside accepted_majors");
   assert.equal(versionInRange(undefined, recipe.tooling.node), false, "an unreadable version is not an approved one");
   assert.equal(versionInRange("not-a-version", recipe.tooling.npm), false);
+  // A prerelease must not satisfy a range on the strength of its numeric prefix.
+  // fail_closed means an unparseable version is outside every range, not inside one.
+  assert.equal(versionInRange("22.0.0-rc.1", recipe.tooling.node), false, "a Node prerelease is not an accepted version");
+  assert.equal(versionInRange("11.0.0-next.1", recipe.tooling.npm), false, "an npm prerelease is not an accepted version");
+  assert.equal(versionInRange("v22.23.1", recipe.tooling.node), true, "a leading v is still accepted");
 });
 
 test("network policy is declared per step, with an allowlist on install and denial on build", () => {
@@ -258,6 +263,16 @@ test("changing package scripts, the lockfile policy, or the install-scripted dep
     ["a bumped lockfile version", { packageJson, lockfile: mutate(lockfile, (l) => { l.lockfileVersion = 4; }) }],
     ["an absent lockfile", { packageJson, lockfile: null }],
     ["a lockfile with no integrity digests", { packageJson, lockfile: mutate(lockfile, (l) => { for (const entry of Object.values(l.packages)) delete entry.integrity; }) }],
+    // Partial honouring is the interesting case: a .some() gate passes here while the
+    // lockfile bound is off every package but one.
+    ["a lockfile that pins integrity on only one entry", { packageJson, lockfile: mutate(lockfile, (l) => {
+      const installable = Object.keys(l.packages).filter((k) => k.startsWith("node_modules/"));
+      for (const key of installable.slice(1)) delete l.packages[key].integrity;
+    }) }],
+    ["a lockfile missing integrity on a single entry", { packageJson, lockfile: mutate(lockfile, (l) => {
+      const first = Object.keys(l.packages).find((k) => k.startsWith("node_modules/"));
+      delete l.packages[first].integrity;
+    }) }],
     ["a new dependency that ships an install script", { packageJson, lockfile: mutate(lockfile, (l) => { l.packages["node_modules/newcomer"] = { hasInstallScript: true }; }) }],
   ];
   for (const [label, target] of cases) {
@@ -415,6 +430,24 @@ test("a check that cannot be performed counts as failed, never as skipped", () =
     const outcome = verifyPreparedRuntime(recipe, apply(healthyObservation()));
     assert.equal(outcome.ok, false, `${label} must fail`);
     for (const result of outcome.results) assert.notEqual(result.status, "skipped", `${label}: nothing may report skipped`);
+  }
+});
+
+test("generation agreement requires real containment, not a shared path prefix", () => {
+  // /gen/0001 is a string prefix of /gen/00010, but they are sibling generation roots.
+  // A prefix match without a separator boundary would call this agreement.
+  const sibling = healthyObservation();
+  sibling.generation = { ...sibling.generation, cli_path: "/gen/0001", skills_path: "/gen/00010/skills" };
+  const outcome = verifyPreparedRuntime(recipe, sibling);
+  assert.equal(outcome.ok, false, "a sibling generation root must not satisfy containment");
+  const agreement = outcome.results.find((result) => (result.detected ?? []).includes("mismatched_generation"));
+  assert.ok(agreement, "the failure must be attributed to generation disagreement");
+
+  // The genuine nesting still passes, including an incidental trailing slash.
+  for (const cli_path of ["/gen/0001", "/gen/0001/"]) {
+    const nested = healthyObservation();
+    nested.generation = { ...nested.generation, cli_path, skills_path: "/gen/0001/skills" };
+    assert.equal(verifyPreparedRuntime(recipe, nested).ok, true, `${cli_path} should accept its own child`);
   }
 });
 

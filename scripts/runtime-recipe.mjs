@@ -82,7 +82,14 @@ export function fingerprintInputs(recipe, readFileBytes) {
 /* Version comparison                                                  */
 /* ------------------------------------------------------------------ */
 
-const SEMVER = /^(\d+)\.(\d+)\.(\d+)/;
+/**
+ * Anchored at both ends on purpose. An unanchored pattern parses `22.0.0-rc.1` as
+ * the tuple [22, 0, 0], so a prerelease would satisfy an accepted range on the
+ * strength of its numeric prefix alone. Neither Node nor npm ships prereleases to
+ * consumers by default today, so this costs nothing now and fails closed the day
+ * one appears: an unparseable version is treated as outside every range.
+ */
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
 
 export function versionTuple(version) {
   const match = SEMVER.exec(String(version ?? "").trim().replace(/^v/, ""));
@@ -264,6 +271,18 @@ function checkTypeEntry(check, { recipe, observation }) {
   return result(check, PASSED, [], []);
 }
 
+/**
+ * Containment with a separator boundary. A bare startsWith would accept
+ * `/gen/00010/skills` as living below `/gen/0001`, which is a sibling generation
+ * root, not a child — exactly the mismatch this check exists to catch.
+ */
+function isBelow(child, parent) {
+  const norm = (p) => String(p).replace(/\/+$/, "");
+  const c = norm(child);
+  const p = norm(parent);
+  return c === p || c.startsWith(`${p}/`);
+}
+
 function checkGenerationAgreement(check, { observation }) {
   const generation = observation.generation;
   if (!generation) {
@@ -277,7 +296,7 @@ function checkGenerationAgreement(check, { observation }) {
     if (generation.cli_oid !== generation.skills_oid) {
       messages.push(`the executable and the skills tree resolve to different target OIDs (${generation.cli_oid} vs ${generation.skills_oid})`);
     }
-    if (!generation.skills_path.startsWith(generation.cli_path)) {
+    if (!isBelow(generation.skills_path, generation.cli_path)) {
       messages.push(`the skills tree (${generation.skills_path}) does not resolve below the executable's generation path (${generation.cli_path})`);
     }
   }

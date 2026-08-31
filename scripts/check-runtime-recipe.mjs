@@ -133,9 +133,22 @@ export function validateTargetAgreement(recipe, { packageJson, lockfile }) {
     if (lockfile.lockfileVersion !== expectations.lockfile.lockfile_version) {
       refuse(`the lockfile is version ${lockfile.lockfileVersion}, but the recipe was authored against version ${expectations.lockfile.lockfile_version}`);
     }
-    const integrityPinned = Object.entries(lockfile.packages ?? {}).some(([name, entry]) => name && typeof entry?.integrity === "string");
-    if (expectations.lockfile.integrity_pinned && !integrityPinned) {
-      refuse("the recipe claims the lockfile pins integrity digests, but no package entry carries one");
+    // EVERY installable entry, not just one. The recipe's two bounds are meant to
+    // enforce each other — the allowlist bounds WHERE bytes come from, the lockfile
+    // digests bound WHICH bytes are acceptable — and a lockfile that pinned only one
+    // package would satisfy a .some() check while leaving the second bound off nearly
+    // everything it is supposed to cover. Workspace links carry no integrity by design
+    // and are not fetched from a registry, so they are not installable entries here.
+    const unpinned = Object.entries(lockfile.packages ?? {})
+      .filter(([name, entry]) => name.startsWith("node_modules/") && !entry?.link)
+      .filter(([, entry]) => typeof entry?.integrity !== "string")
+      .map(([name]) => name.replace(/^node_modules\//, ""))
+      .sort();
+    if (expectations.lockfile.integrity_pinned && unpinned.length) {
+      refuse(
+        `the recipe claims the lockfile pins integrity digests, but ${unpinned.length} installable ` +
+          `${unpinned.length === 1 ? "entry carries" : "entries carry"} none [${unpinned.join(", ")}]`,
+      );
     }
     const withInstallScripts = Object.entries(lockfile.packages ?? {})
       .filter(([, entry]) => entry?.hasInstallScript)
