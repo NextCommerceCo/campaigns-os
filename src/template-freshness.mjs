@@ -141,17 +141,54 @@ function describeVersionDelta(verified, current) {
   return `${verified} vs ${current}`;
 }
 
+// Only a well-formed ISO calendar date prefix (YYYY-MM-DD, optionally the
+// start of a full timestamp) is ever interpolated into the operator line. The
+// vendored snapshot carries full "YYYY-MM-DDTHH:MM:SSZ" timestamps, but the
+// same code path runs against whatever the upstream template-verification.json
+// carries — a malformed value omits the parenthetical instead of surfacing
+// garbage like "(2026-13-45)" in operator output.
+function isoDatePrefix(value) {
+  if (typeof value !== "string") return null;
+  // A suffix, when present, must look like an ISO time fragment (T + HH:MM at
+  // minimum); ISO 8601 timestamps never use a space separator, and a garbage
+  // suffix must reject rather than silently normalize to its date prefix.
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.exec(value.trim());
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const parsed = new Date(`${year}-${month}-${day}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  // Date rolls non-calendar values over (2026-13-45 -> 2027-02-14); reject
+  // anything that does not round-trip.
+  if (parsed.getUTCMonth() + 1 !== Number(month) || parsed.getUTCDate() !== Number(day)) return null;
+  return `${year}-${month}-${day}`;
+}
+
 // The single freshness line every operator surface prints, so the gate, the
 // doctor, and the standardization report can never tell different stories.
+// Total over any input: a null/undefined assessment (or one with fields
+// missing) renders the unknown-state line instead of throwing or
+// interpolating "undefined" — freshness reporting must not block a gate.
 export function renderTemplateFreshness(assessment) {
-  const { family, state, verified_sdk_version, verified_at, current_sdk_version, delta } = assessment || {};
-  const verifiedAtSuffix = verified_at ? ` (${verified_at.slice(0, 10)})` : "";
+  const {
+    family = "",
+    state = "unknown",
+    verified_sdk_version = null,
+    verified_at = null,
+    current_sdk_version = null,
+    delta = null,
+  } = assessment || {};
+  const verifiedAtDate = isoDatePrefix(verified_at);
+  const verifiedAtSuffix = verifiedAtDate ? ` (${verifiedAtDate})` : "";
   switch (state) {
     case "current":
       return `Template family "${family}" certification is current: last verified against SDK ${verified_sdk_version}${verifiedAtSuffix}, the current SDK recorded by the vendored contracts.`;
     case "stale":
       return `Template family "${family}" was last verified against SDK ${verified_sdk_version}${verifiedAtSuffix}; the current SDK is ${current_sdk_version}${delta ? ` (${delta})` : ""}. An older evidence record is not current certification — treat the family as pending re-verification against ${current_sdk_version}.`;
     case "ahead":
+      // Deliberately kept so the renderer stays total over the documented
+      // state union, even though assessTemplateFreshness cannot currently
+      // produce "ahead" (the current-SDK max includes the family's own
+      // verification record); injected/external assessments render honestly.
       return `Template family "${family}" was last verified against SDK ${verified_sdk_version}${verifiedAtSuffix}, which is newer than the current SDK ${current_sdk_version} recorded by the vendored contracts; refresh the SDK support policy capture.`;
     default:
       return `Template family "${family}" has no verification record in the vendored catalog snapshot${current_sdk_version ? ` (current SDK: ${current_sdk_version})` : ""}; certification freshness is unknown. An older evidence record is not current certification — confirm the family's last-verified SDK before relying on it.`;

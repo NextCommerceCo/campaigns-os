@@ -74,6 +74,36 @@ test("frontmatter block embedded below content produces the blocking frontmatter
   assert.deepEqual(finding.pages[0].variants.map((variant) => variant.variant), ["embedded_block"]);
 });
 
+test("frontmatter block opened below content that never closes produces the blocking frontmatter-residue code", () => {
+  const result = evaluateSourcePreparation({
+    sourceRoot: UNPREPARED_ROOT,
+    pages: [{ page_id: "upsell", path: "unterminated-embedded-frontmatter.html" }],
+  });
+  const finding = findingsByCode(result).get(SOURCE_PREP_FRONTMATTER_RESIDUE);
+  assert.ok(finding, "expected frontmatter-residue finding");
+  assert.equal(finding.severity, "error");
+  assert.deepEqual(finding.pages[0].variants, [{ variant: "unterminated_embedded_block", lines: [2] }]);
+  assert.match(finding.message, /opened below content at line 2 never closes/);
+});
+
+test("a trailing keyless fence below content is content, not an unterminated embedded block", () => {
+  const dir = mkdtempSync(join(tmpdir(), "source-prep-tail-fence-"));
+  try {
+    writeFileSync(join(dir, "landing.html"), [
+      "<section>copy</section>",
+      "---",
+      "<section>tail after a bare divider</section>",
+    ].join("\n"));
+    const result = evaluateSourcePreparation({
+      sourceRoot: dir,
+      pages: [{ page_id: "landing", path: "landing.html" }],
+    });
+    assert.deepEqual(result.findings, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("internal links that still target source files produce the actionable link code as a warning", () => {
   const result = evaluateSourcePreparation({
     sourceRoot: UNPREPARED_ROOT,
@@ -123,6 +153,29 @@ test("a source-file link to a mapped page fires even when the file is missing on
     });
     const finding = findingsByCode(result).get(SOURCE_PREP_INTERNAL_LINK_UNROOTED);
     assert.ok(finding, "mapped-page link should fire without the target file on disk");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("source-file links differing only by query string or fragment group as one logical target", () => {
+  const dir = mkdtempSync(join(tmpdir(), "source-prep-query-"));
+  try {
+    writeFileSync(join(dir, "landing.html"), [
+      '<a href="checkout.html">buy</a>',
+      '<a href="checkout.html?v=1">buy again</a>',
+      '<a href="checkout.html#top">buy from the top</a>',
+    ].join("\n"));
+    const result = evaluateSourcePreparation({
+      sourceRoot: dir,
+      pages: [
+        { page_id: "landing", path: "landing.html" },
+        { page_id: "checkout", path: "checkout.html" },
+      ],
+    });
+    const finding = findingsByCode(result).get(SOURCE_PREP_INTERNAL_LINK_UNROOTED);
+    assert.ok(finding, "expected internal-link finding");
+    assert.deepEqual(finding.pages[0].hrefs, ["checkout.html"], "query/fragment variants report as one logical target");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
