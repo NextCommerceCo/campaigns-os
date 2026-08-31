@@ -151,6 +151,16 @@ test("prepare-build marks a certified family and doctor reports it ready", () =>
     })();
     const doctor = JSON.parse(out);
     assert.ok(doctor.ready.some((line) => /Template family "olympus" is certified/.test(line)));
+
+    // Certification freshness (#263): the gate/doctor output must say which
+    // SDK the family was last verified against and which SDK is current. The
+    // vendored snapshot records the same verified SDK for olympus as the
+    // newest release the contracts know, so freshness reads as current.
+    const freshnessLines = [...doctor.ready, ...doctor.warnings.map((issue) => issue.message)];
+    assert.ok(
+      freshnessLines.some((line) => /Template family "olympus".*last verified against SDK \d+\.\d+\.\d+/.test(line)),
+      "doctor output surfaces the family's last-verified SDK version",
+    );
   });
 });
 
@@ -184,6 +194,14 @@ test("doctor treats a resolved private-source family as known and certified", ()
       "a family resolved via the private-template-source allowlist must not be rejected by the stale known-family set",
     );
     assert.ok(doctor.ready.some((line) => new RegExp(`Template family "${family}" is certified`).test(line)));
+
+    // A private-source family has no verification record on the vendored
+    // snapshot: freshness must surface as an explicit unknown warning, never
+    // as silence or a fabricated verified version (#263).
+    const freshnessWarning = doctor.warnings.find((issue) => issue.code === "assembly.template_certification.freshness");
+    assert.ok(freshnessWarning, "missing verification data surfaces as a freshness warning");
+    assert.match(freshnessWarning.message, /no verification record/);
+    assert.match(freshnessWarning.message, /An older evidence record is not current certification/);
   });
 });
 

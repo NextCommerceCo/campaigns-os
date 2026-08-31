@@ -9,6 +9,7 @@ const root = resolve(new URL("..", import.meta.url).pathname);
 const DEFAULT_SOURCE_REPO = "NextCommerceCo/campaign-cart-starter-templates";
 const DEFAULT_SOURCE_REF = "main";
 const DEFAULT_SOURCE_CATALOG = "docs/commerce-surface-catalog.json";
+const DEFAULT_SOURCE_VERIFICATION = "template-verification.json";
 const DEFAULT_TARGET_CATALOG = "contracts/commerce-surface-catalog.json";
 const TEMPLATE_FIXTURE_PREFIX = "docs/fixtures/campaign-specs/";
 const SNAPSHOT_FIXTURE_PREFIX = "contracts/fixtures/campaign-specs/";
@@ -124,6 +125,32 @@ export function mergeLocalQaStructure(adaptedCatalog, sourceCatalog, existingCat
     targetContract.qaStructure = {
       ...structuredClone(existingQaStructure),
       ...targetContract.qaStructure,
+    };
+  }
+  return adaptedCatalog;
+}
+
+// Per-family certification freshness (#263): copy each family's last-verified
+// SDK version out of the starter repo's template-verification.json — fetched at
+// the SAME pinned commit as the catalog, so `_synced_from_sha` provenance keeps
+// covering everything on the snapshot — onto the vendored family entries. The
+// gate/doctor/standardization surfaces read only this vendored block; they
+// never fetch verification data live. Pure: mutates and returns adaptedCatalog
+// like its sibling merge steps.
+export function mergeTemplateVerification(adaptedCatalog, verificationManifest) {
+  if (!verificationManifest || typeof verificationManifest !== "object") return adaptedCatalog;
+  const evidence = verificationManifest.evidence || {};
+  const manifestFamilies = verificationManifest.families || {};
+  for (const [family, target] of Object.entries(adaptedCatalog.families || {})) {
+    const declaration = manifestFamilies[family];
+    const record = declaration ? evidence[declaration.evidence] : null;
+    if (!record || typeof record.sdk_version !== "string") continue;
+    target.verification = {
+      sdk_version: record.sdk_version,
+      verified_at: record.verified_at || null,
+      evidence: declaration.evidence,
+      status: declaration.campaigns_os_status || null,
+      source: DEFAULT_SOURCE_VERIFICATION,
     };
   }
   return adaptedCatalog;
@@ -360,9 +387,31 @@ async function main() {
   });
   const sourceCatalog = JSON.parse(rawCatalog);
   const existingCatalog = readExistingCatalog(args.targetCatalog);
-  const adaptedCatalog = preserveLocalOnlyFamilies(
-    mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog),
-    existingCatalog,
+
+  // Same pinned commit as the catalog fetch — verification data older or newer
+  // than the catalog would silently break the `_synced_from_sha` promise. A
+  // commit that predates template-verification.json refreshes without it.
+  let verificationManifest = null;
+  try {
+    verificationManifest = JSON.parse(await fetchRepoFile({
+      repo: args.sourceRepo,
+      ref: contentRef,
+      path: DEFAULT_SOURCE_VERIFICATION,
+      token,
+    }));
+  } catch (error) {
+    console.warn(
+      `[refresh] no readable ${DEFAULT_SOURCE_VERIFICATION} at ${args.sourceRepo}@${contentRef} ` +
+        `(${error.message}); the snapshot will carry no per-family verification blocks.`,
+    );
+  }
+
+  const adaptedCatalog = mergeTemplateVerification(
+    preserveLocalOnlyFamilies(
+      mergeLocalQaStructure(adaptCatalogForCampaignsOs(sourceCatalog), sourceCatalog, existingCatalog),
+      existingCatalog,
+    ),
+    verificationManifest,
   );
 
   const stampedCatalog = stampProvenance(adaptedCatalog, {

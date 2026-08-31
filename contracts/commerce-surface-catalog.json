@@ -491,6 +491,13 @@
             ]
           }
         }
+      },
+      "verification": {
+        "sdk_version": "0.4.37",
+        "verified_at": "2026-08-21T15:26:00Z",
+        "evidence": "sdk-0.4.37-2026-08-21",
+        "status": "certified",
+        "source": "template-verification.json"
       }
     },
     "apollo": {
@@ -823,6 +830,13 @@
             ]
           }
         }
+      },
+      "verification": {
+        "sdk_version": "0.4.37",
+        "verified_at": "2026-08-21T15:26:00Z",
+        "evidence": "sdk-0.4.37-2026-08-21",
+        "status": "certified",
+        "source": "template-verification.json"
       }
     },
     "demeter": {
@@ -1022,6 +1036,13 @@
             ]
           }
         }
+      },
+      "verification": {
+        "sdk_version": "0.4.37",
+        "verified_at": "2026-08-21T15:26:00Z",
+        "evidence": "sdk-0.4.37-2026-08-21",
+        "status": "certified",
+        "source": "template-verification.json"
       }
     },
     "shop-single-step": {
@@ -1212,6 +1233,13 @@
             ]
           }
         }
+      },
+      "verification": {
+        "sdk_version": "0.4.37",
+        "verified_at": "2026-08-21T15:26:00Z",
+        "evidence": "sdk-0.4.37-2026-08-21",
+        "status": "certified",
+        "source": "template-verification.json"
       }
     },
     "olympus-mv-single-step": {
@@ -1439,6 +1467,13 @@
             ]
           }
         }
+      },
+      "verification": {
+        "sdk_version": "0.4.37",
+        "verified_at": "2026-08-21T15:26:00Z",
+        "evidence": "sdk-0.4.37-2026-08-21",
+        "status": "certified",
+        "source": "template-verification.json"
       }
     },
     "apollo-mv-single-step": {
@@ -1765,6 +1800,13 @@
             ]
           }
         }
+      },
+      "verification": {
+        "sdk_version": "0.4.37",
+        "verified_at": "2026-08-21T15:26:00Z",
+        "evidence": "sdk-0.4.37-2026-08-21",
+        "status": "certified",
+        "source": "template-verification.json"
       }
     },
     "olympus-mv-two-step": {
@@ -2008,6 +2050,13 @@
             ]
           }
         }
+      },
+      "verification": {
+        "sdk_version": "0.4.37",
+        "verified_at": "2026-08-21T15:26:00Z",
+        "evidence": "sdk-0.4.37-2026-08-21",
+        "status": "certified",
+        "source": "template-verification.json"
       }
     },
     "shop-three-step": {
@@ -2185,6 +2234,13 @@
             ]
           }
         }
+      },
+      "verification": {
+        "sdk_version": "0.4.37",
+        "verified_at": "2026-08-21T15:26:00Z",
+        "evidence": "sdk-0.4.37-2026-08-21",
+        "status": "certified",
+        "source": "template-verification.json"
       }
     }
   },
