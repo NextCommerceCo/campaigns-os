@@ -2,6 +2,76 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.14.0] - 2026-08-28
+
+### Added
+
+- **An agent can now orient on a commit of this repo without running any of
+  it.** Until now the only machine-readable statement about "what changed" was
+  `surface_version`, and the only narrative was this file — both keyed to the
+  supported surface. That misses the changes a downstream agent actually trips
+  over: a renamed CLI flag, a rewritten contract doc, a reworded skill, a
+  changed generated-runtime input, a widened compatibility statement. None of
+  those need touch a hashed file, so none of them moved the version, so an agent
+  reading only the changelog concluded that nothing happened.
+
+  Four things ship together to close that:
+
+  - **`campaigns-os-tooling-orientation/v1`** — the envelope a consumer
+    assembles from Git objects at one resolved commit. Ten semantic groups,
+    eight terminal outcomes, and a stable reason-code vocabulary with one
+    documented meaning and one deterministic remedy per code. Integrity,
+    freshness, compatibility, runtime readiness, and orientation stay
+    independent axes rather than collapsing into a single boolean.
+  - **An append-only release ledger** (`contracts/release-ledger.json`,
+    `campaigns-os-release-ledger/v1`). One entry per accepted release or
+    reviewed amendment, one change item per agent-relevant semantic change,
+    same-surface changes included. Entries carry no commit identifier — an entry
+    cannot name the commit that contains it without being rewritten afterwards,
+    so a consumer derives the introducing commit from history instead.
+  - **A two-way release gate** (`scripts/check-release-ledger.mjs`). Every
+    agent-relevant changed path has exactly one ledger change item; every ledger
+    change item maps to a classified change or an explicit reviewed amendment; a
+    surface-version change owes exactly one entry and one changelog section; and
+    historical entries are byte-identical to their recorded hashes. The meaning
+    of "agent-relevant" lives in exactly one place,
+    `contracts/agent-relevant-change-policy.v1.json`, which the classifier, the
+    gate, the generated reference, and every test read. The classifier fails
+    closed: a changed path that matches no rule, no supported-surface entry, and
+    no stated ignore is an error.
+  - **Bounded reads** (`contracts/orientation-limits.v1.json`). Source bytes,
+    section count, section bytes, envelope bytes, and ledger entries all have
+    declared limits. Exceeding one is a refusal with `orientation_too_large`.
+    Nothing is ever silently truncated: a partial view of a release is worse
+    than no view, because the reader cannot tell which part is missing.
+
+  `AGENTS.md` is the entry point — canonical reading order, the supported
+  versus internal boundary, mixed-version rules, and the no-execution rule.
+  `docs/orientation-contract-reference.md` is generated from the contract
+  fixtures rather than hand-written, so staleness is a CI failure;
+  `docs/release-ledger-authoring-guide.md` covers authoring.
+
+  Consumer fixtures ship too: one validated envelope per terminal outcome under
+  `contracts/fixtures/orientation/envelope/`, and a hostile target under
+  `contracts/fixtures/orientation/hostile-target/` carrying Git hooks, an
+  executable file, and npm lifecycle scripts. Every path the hostile target's
+  own manifest declares exists in its tree, and its hashed entry records that
+  file's real digest, so a conforming read completes rather than refusing on
+  integrity: it produces a normal envelope and executes none of the tripwires.
+  The hit-counter assertion belongs to the consumer's parser suite; this release
+  ships the fixture it runs against.
+
+  One rule is worth stating on its own because producer and consumer do not
+  upgrade atomically: **unknown additive fields inside a recognized v1 schema
+  are accepted and preserved without interpretation.** Required fields, known
+  types, schema IDs, and safety-critical enums still fail closed. An additive
+  field cannot grant authority or change the meaning of a known field; a change
+  that does either requires a new schema ID.
+
+  Nothing here changes build, polish, QA, or CLI behavior. The supported surface
+  grew by two schemas and twenty-seven named entries; nothing was renamed or
+  removed.
+
 ## [1.13.0] - 2026-08-26
 
 ### Added

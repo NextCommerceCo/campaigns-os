@@ -1,0 +1,730 @@
+{
+  "_note": "The two-way release-gate matrix, as data. scripts/check-release-ledger.test.mjs drives every case through the REAL classifier and the REAL change policy (contracts/agent-relevant-change-policy.v1.json) — only the supported surface and the ledger contents are fixture-supplied. Adding a case here adds a test; nothing is asserted in prose. These cases are this repository's own test data and are deliberately NOT declared supported surface: a consumer depends on contracts/fixtures/orientation/envelope/** and .../hostile-target/**, not on this file.",
+  "schema": "campaigns-os-release-gate-cases/v1",
+  "hash_note": "Unless a case sets \"hash_mode\": \"as_written\", the harness computes entry_sha256 and changelog_sha256 for every entry before validating, so a case can be authored by hand and still exercise the hash gates. A case that WANTS a bad hash sets as_written and writes the wrong one.",
+  "default_surface": {
+    "surface_version": "1.1.0",
+    "package_exports": [],
+    "bin": [],
+    "cli_commands": ["build"],
+    "hashed": {
+      "schemas/fixture-example.v0.schema.json": { "sha256": "0000000000000000000000000000000000000000000000000000000000000000" }
+    },
+    "named": ["CHANGELOG.md", "contracts/release-ledger.json", "docs/build-packet.md", "skills.json"]
+  },
+  "default_base_surface_version": "1.0.0",
+  "default_changelog": "# Changelog\n\n## [1.1.0] - 2026-02-02\n\n### Added\n\n- A fixture release section.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+  "cases": [
+    {
+      "id": "surface-bump-with-matching-entry",
+      "description": "A hashed schema changed, the surface version advanced, and exactly one ledger entry claims it.",
+      "expect": "pass",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-02",
+          "kind": "release",
+          "surface_version": "1.1.0",
+          "changelog_section": "1.1.0",
+          "agent_impact": "Revalidate artifacts against the new schema revision.",
+          "compatibility": "additive",
+          "migration": "none",
+          "changes": [
+            {
+              "class": "schema",
+              "path": "schemas/fixture-example.v0.schema.json",
+              "surface_entry": "schemas/fixture-example.v0.schema.json",
+              "summary": "An optional field was added to the fixture schema."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "same-surface-named-doc-change",
+      "description": "A named contract doc changed with no surface bump. The entry carries surface_version null and links a +agent changelog section.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- A contract doc gained a section a consumer reads.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "surface": { "surface_version": "1.0.0" },
+      "changed_paths": ["docs/build-packet.md"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-03",
+          "kind": "release",
+          "surface_version": null,
+          "changelog_section": "1.0.0+agent.1",
+          "agent_impact": "Re-read the build packet doc; the packet shape did not change but its documented meaning did.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            {
+              "class": "named_surface",
+              "path": "docs/build-packet.md",
+              "surface_entry": "docs/build-packet.md",
+              "summary": "The packet doc now states the skip-reason rule explicitly."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "same-surface-cli-flag-change",
+      "description": "A CLI flag changed. The bytes moved in src/cli.mjs; the ledger records a path-less cli_surface item because the flag has no file of its own.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- A supported command gained a flag.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "surface": { "surface_version": "1.0.0" },
+      "changed_paths": ["src/cli.mjs"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-03",
+          "kind": "release",
+          "surface_version": null,
+          "changelog_section": "1.0.0+agent.1",
+          "agent_impact": "The build command accepts a new flag; existing invocations are unaffected.",
+          "compatibility": "additive",
+          "migration": "none",
+          "changes": [
+            { "class": "cli_surface", "path": null, "surface_entry": "build", "summary": "campaigns-os build gained a flag." },
+            { "class": "cli_surface", "path": "src/cli.mjs", "surface_entry": "build", "summary": "The dispatch table learned the new flag." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "same-surface-skill-change",
+      "description": "A skill package changed with no surface bump.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- A skill changed what it tells an agent to do.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "surface": { "surface_version": "1.0.0" },
+      "changed_paths": ["skills/example-skill/SKILL.md", "skills.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-03",
+          "kind": "release",
+          "surface_version": null,
+          "changelog_section": "1.0.0+agent.1",
+          "agent_impact": "Reinstall skills; the example skill's instructions changed.",
+          "compatibility": "compatible",
+          "migration": "Run the skills installer again.",
+          "changes": [
+            { "class": "skill", "path": "skills/example-skill/SKILL.md", "surface_entry": null, "summary": "The example skill's instructions changed." },
+            { "class": "skill", "path": "skills.json", "surface_entry": "skills.json", "summary": "The example skill's version advanced." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "same-surface-workflow-change",
+      "description": "A repository workflow that produces a supported artifact changed.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- The catalog refresh workflow changed its serialization.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "surface": { "surface_version": "1.0.0" },
+      "changed_paths": [".github/workflows/refresh-example.yml"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-03",
+          "kind": "release",
+          "surface_version": null,
+          "changelog_section": "1.0.0+agent.1",
+          "agent_impact": "None for a consumer reading artifacts; the producing workflow now serializes writers.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            { "class": "workflow", "path": ".github/workflows/refresh-example.yml", "surface_entry": null, "summary": "The refresh workflow serializes concurrent writers." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "same-surface-compatibility-policy-change",
+      "description": "The published compatibility statement changed with no surface bump.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- The compatibility statement widened a supported range.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "surface": { "surface_version": "1.0.0" },
+      "changed_paths": ["compatibility.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-03",
+          "kind": "release",
+          "surface_version": null,
+          "changelog_section": "1.0.0+agent.1",
+          "agent_impact": "A wider CampaignSpec range is accepted; re-read the compatibility statement before pinning.",
+          "compatibility": "additive",
+          "migration": "none",
+          "changes": [
+            { "class": "compatibility_policy", "path": "compatibility.json", "surface_entry": null, "summary": "The accepted CampaignSpec range widened." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "multiple-changes-in-one-entry",
+      "description": "Several agent-relevant changes ship together. One entry, distinct change items, each path covered exactly once.",
+      "expect": "pass",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json", "docs/build-packet.md", "src/cli.mjs"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-02",
+          "kind": "release",
+          "surface_version": "1.1.0",
+          "changelog_section": "1.1.0",
+          "agent_impact": "Revalidate artifacts and re-read the packet doc.",
+          "compatibility": "additive",
+          "migration": "none",
+          "changes": [
+            { "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." },
+            { "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The doc describes the new field." },
+            { "class": "cli_surface", "path": "src/cli.mjs", "surface_entry": "build", "summary": "build emits the new field." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agent-relevant-path-with-no-ledger-item",
+      "description": "A named contract doc changed and nothing recorded it. This is the failure the whole gate exists for.",
+      "expect": "fail",
+      "expect_error_matching": "docs/build-packet\\.md is an agent-relevant change \\(class named_surface\\) with no release-ledger change item",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json", "docs/build-packet.md"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-02",
+          "kind": "release",
+          "surface_version": "1.1.0",
+          "changelog_section": "1.1.0",
+          "agent_impact": "Revalidate artifacts against the new schema revision.",
+          "compatibility": "additive",
+          "migration": "none",
+          "changes": [
+            { "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ledger-item-with-no-classified-path",
+      "description": "A ledger item claims a path that did not change in this range, and the entry is not an amendment.",
+      "expect": "fail",
+      "expect_error_matching": "change item names docs/build-packet\\.md, which did not change in this range",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-02",
+          "kind": "release",
+          "surface_version": "1.1.0",
+          "changelog_section": "1.1.0",
+          "agent_impact": "Revalidate artifacts against the new schema revision.",
+          "compatibility": "additive",
+          "migration": "none",
+          "changes": [
+            { "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." },
+            { "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "Claims a doc change that did not happen." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reviewed-amendment-needs-no-classified-path",
+      "description": "An amendment corrects an earlier entry's meaning. It legitimately maps to no changed path, and rewriting the earlier entry is not an option.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Fixed\n\n- The 1.0.0 entry understated its compatibility impact.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "surface": { "surface_version": "1.0.0" },
+      "changed_paths": [],
+      "base_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-01",
+          "kind": "release",
+          "surface_version": "1.0.0",
+          "changelog_section": "1.0.0",
+          "agent_impact": "None.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            { "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The initial doc." }
+          ]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002",
+          "sequence": 2,
+          "date": "2026-02-03",
+          "kind": "amendment",
+          "amends": "RL-0001",
+          "amendment_reason": "RL-0001 was recorded as compatible; the doc change it described actually removed a documented guarantee.",
+          "surface_version": null,
+          "changelog_section": "1.0.0+agent.1",
+          "agent_impact": "Treat the 1.0.0 packet doc change as breaking, not compatible.",
+          "compatibility": "breaking",
+          "migration": "Re-read docs/build-packet.md and stop relying on the removed guarantee.",
+          "changes": [
+            { "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "Corrects the compatibility classification of RL-0001." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duplicate-entry-id",
+      "expect": "fail",
+      "expect_error_matching": "duplicate entry id",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json", "docs/build-packet.md"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        },
+        {
+          "id": "RL-0001", "sequence": 2, "date": "2026-02-02", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0", "agent_impact": "Re-read the doc.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The doc changed." }]
+        }
+      ]
+    },
+    {
+      "id": "duplicate-change-identity",
+      "expect": "fail",
+      "expect_error_matching": "change identity schema\\|schemas/fixture-example\\.v0\\.schema\\.json\\|schemas/fixture-example\\.v0\\.schema\\.json is already recorded",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [
+            { "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." },
+            { "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "The same change, recorded twice." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unordered-sequence",
+      "expect": "fail",
+      "expect_error_matching": "sequence must be 2 \\(append-only order\\), got 7",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json", "docs/build-packet.md"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        },
+        {
+          "id": "RL-0002", "sequence": 7, "date": "2026-02-02", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0", "agent_impact": "Re-read the doc.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The doc changed." }]
+        }
+      ]
+    },
+    {
+      "id": "unordered-date",
+      "expect": "fail",
+      "expect_error_matching": "date 2026-01-01 is earlier than the previous entry's 2026-02-02",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json", "docs/build-packet.md"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        },
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-01-01", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0", "agent_impact": "Re-read the doc.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The doc changed." }]
+        }
+      ]
+    },
+    {
+      "id": "breaking-entry-with-no-migration",
+      "expect": "fail",
+      "expect_error_matching": "a breaking entry must state a migration action",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "A required field was removed.", "compatibility": "breaking", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A required field was removed." }]
+        }
+      ]
+    },
+    {
+      "id": "missing-agent-impact",
+      "expect": "fail",
+      "expect_error_matching": "agent_impact is required",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "   ", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "missing-changelog-section",
+      "expect": "fail",
+      "expect_error_matching": "changelog_section \"9\\.9\\.9\" has no matching section",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "9.9.9", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "changelog-body-hash-mismatch",
+      "description": "The changelog section was edited after the ledger recorded its hash.",
+      "expect": "fail",
+      "expect_error_matching": "changelog_sha256 does not match the body of CHANGELOG\\.md section \"1\\.1\\.0\"",
+      "hash_mode": "as_written",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0",
+          "changelog_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "entry_sha256": "@computed",
+          "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "entry-hash-mismatch",
+      "description": "A historical entry's body was edited in place without updating its content hash.",
+      "expect": "fail",
+      "expect_error_matching": "entry_sha256 does not match the entry contents",
+      "hash_mode": "as_written",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0",
+          "changelog_sha256": "@computed",
+          "entry_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "duplicate-changelog-section",
+      "expect": "fail",
+      "expect_error_matching": "matches 2 sections in CHANGELOG\\.md",
+      "changelog": "# Changelog\n\n## [1.1.0] - 2026-02-02\n\n### Added\n\n- A fixture release section.\n\n## [1.1.0] - 2026-02-02\n\n### Added\n\n- The same identifier a second time.\n",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "entry-storing-a-containing-commit-oid",
+      "description": "An entry that names the commit containing it. The whole point of deriving the introducing commit from history is that this value cannot exist honestly.",
+      "expect": "fail",
+      "expect_error_matching": "looks like a commit identifier",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "introducing_commit": "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "ledger-item-claiming-an-excluded-path",
+      "description": "A change item names an implementation path the policy excludes. The ledger may not launder an unsupported path into the agent-relevant set.",
+      "expect": "fail",
+      "expect_error_matching": "classifies as not agent-relevant",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json", "src/doctor-check-registry.mjs"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [
+            { "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." },
+            { "class": "named_surface", "path": "src/doctor-check-registry.mjs", "surface_entry": null, "summary": "Claims an implementation file is supported surface." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unclassified-changed-path",
+      "description": "A path the policy has never seen. The classifier fails closed rather than assuming no agent impact.",
+      "expect": "fail",
+      "expect_error_matching": "top-level-mystery\\.txt matches no rule, no supported-surface entry, and no ignore",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json", "top-level-mystery.txt"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "surface-bump-claimed-by-two-entries",
+      "expect": "fail",
+      "expect_error_matching": "surface_version 1\\.1\\.0 is already claimed by RL-0001",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json", "docs/build-packet.md"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        },
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.0.0", "agent_impact": "Re-read the doc.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The doc changed." }]
+        }
+      ]
+    },
+    {
+      "id": "append-only-historical-entry-rewritten",
+      "expect": "fail",
+      "expect_error_matching": "historical entry was rewritten",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "base_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The initial doc." }]
+        }
+      ],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "breaking", "migration": "Rewritten after the fact.",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The initial doc." }]
+        }
+      ]
+    },
+    {
+      "id": "surface-bump-with-no-claiming-entry",
+      "description": "The supported surface advanced and no new entry claims the new version. This is the headline case the two-way gate exists for and it had no fixture until now: the release happened, the ledger says nothing about it.",
+      "expect": "fail",
+      "expect_error_matching": "supported_surface moved to 1\\.1\\.0 but 0 new ledger entries claim it",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": null,
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added, but nothing claims the surface bump that shipped with it." }]
+        }
+      ]
+    },
+    {
+      "id": "path-covered-by-two-change-items",
+      "description": "Two entries in the same range both record the same changed path. Coverage is exactly once, not at least once: two records of one change make the history ambiguous about what happened.",
+      "expect": "fail",
+      "expect_error_matching": "docs/build-packet\\.md is covered by 2 ledger change items",
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "changelog": "# Changelog\n\n## [1.0.0+agent.2] - 2026-02-04\n\n### Changed\n\n- The same doc, recorded a second time in the same range.\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- A contract doc changed.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "changed_paths": ["docs/build-packet.md"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-03", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0+agent.1", "agent_impact": "Re-read the doc.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The doc changed." }]
+        },
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-04", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0+agent.2", "agent_impact": "Re-read the doc.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The same doc change, recorded again." }]
+        }
+      ]
+    },
+    {
+      "id": "path-less-item-with-no-classified-change-of-its-class",
+      "description": "A path-less CLI item with nothing of that class in the range. A flag change still moves bytes somewhere; an item that maps to no moved byte is a claim about work that did not ship.",
+      "expect": "fail",
+      "expect_error_matching": "path-less change item of class cli_surface has no classified change of that class",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [
+            { "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." },
+            { "class": "cli_surface", "path": null, "surface_entry": "build", "summary": "Claims a flag change with no CLI bytes in the range." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "amendment-with-no-amends",
+      "expect": "fail",
+      "expect_error_matching": "an amendment must name the entry it amends",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-03", "kind": "amendment",
+          "amendment_reason": "Corrects an earlier entry that this fixture never names.",
+          "surface_version": null, "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "A correction with no subject." }]
+        }
+      ]
+    },
+    {
+      "id": "amendment-amending-an-unknown-entry",
+      "expect": "fail",
+      "expect_error_matching": "amends RL-9999, which is not an earlier entry",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-03", "kind": "amendment",
+          "amends": "RL-9999",
+          "amendment_reason": "Corrects an entry that does not exist.",
+          "surface_version": null, "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "A correction to nothing." }]
+        }
+      ]
+    },
+    {
+      "id": "amendment-with-no-amendment-reason",
+      "description": "An amendment is the only way to correct append-only history, so the reason it was needed is the whole record. Omitting it leaves a silent rewrite wearing an amendment's clothes.",
+      "expect": "fail",
+      "expect_error_matching": "an amendment must carry amendment_reason",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Fixed\n\n- A correction.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "base_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The initial doc." }]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-03", "kind": "amendment",
+          "amends": "RL-0001",
+          "surface_version": null, "changelog_section": "1.0.0+agent.1", "agent_impact": "Treat RL-0001 as breaking.", "compatibility": "breaking", "migration": "Stop relying on the removed guarantee.",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "Corrects RL-0001." }]
+        }
+      ]
+    },
+    {
+      "id": "release-entry-carrying-amends",
+      "description": "A release that quietly wears amendment fields. The amendment exemption from the backward gate is a reviewed escape hatch; a release may not help itself to it.",
+      "expect": "fail",
+      "expect_error_matching": "amends/amendment_reason are only valid on kind \"amendment\"",
+      "changed_paths": ["schemas/fixture-example.v0.schema.json"],
+      "head_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-02", "kind": "release", "surface_version": "1.1.0",
+          "amends": "RL-0000",
+          "amendment_reason": "A release pretending to be a correction.",
+          "changelog_section": "1.1.0", "agent_impact": "Revalidate.", "compatibility": "additive", "migration": "none",
+          "changes": [{ "class": "schema", "path": "schemas/fixture-example.v0.schema.json", "surface_entry": "schemas/fixture-example.v0.schema.json", "summary": "A field was added." }]
+        }
+      ]
+    },
+    {
+      "id": "same-path-recorded-again-by-a-later-release",
+      "description": "A path recorded by RL-0001 changes again and RL-0002 records it. Change identity is unique within an entry, not across the ledger — a repository touches the same path many times over its life, and the second time must be recordable.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- The same contract doc changed a second time.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "changed_paths": ["docs/build-packet.md"],
+      "base_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The initial doc." }]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-03", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0+agent.1", "agent_impact": "Re-read the packet doc; it changed again.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The same doc, changed again in a later release." }]
+        }
+      ]
+    },
+    {
+      "id": "policy-tightening-leaves-historical-entries-intact",
+      "description": "The supported surface no longer names docs/build-packet.md, so a path RL-0001 legitimately recorded would not classify today. RL-0001 is historical and append-only forbids editing it, so only entries new in the range are classified against the current policy.",
+      "expect": "pass",
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0", "named": ["CHANGELOG.md", "contracts/release-ledger.json", "skills.json"] },
+      "changelog": "# Changelog\n\n## [1.0.0+agent.1] - 2026-02-03\n\n### Changed\n\n- A skill changed after the surface narrowed.\n\n## [1.0.0] - 2026-02-01\n\n### Added\n\n- The initial fixture surface.\n",
+      "changed_paths": ["skills.json"],
+      "base_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "A doc that was named surface when this entry was written." }]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002", "sequence": 2, "date": "2026-02-03", "kind": "release", "surface_version": null,
+          "changelog_section": "1.0.0+agent.1", "agent_impact": "Reinstall skills.", "compatibility": "compatible", "migration": "Run the skills installer again.",
+          "changes": [{ "class": "skill", "path": "skills.json", "surface_entry": "skills.json", "summary": "The skill version advanced." }]
+        }
+      ]
+    },
+    {
+      "id": "append-only-historical-entry-deleted",
+      "expect": "fail",
+      "expect_error_matching": "historical entry was deleted",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": { "surface_version": "1.0.0" },
+      "base_entries": [
+        {
+          "id": "RL-0001", "sequence": 1, "date": "2026-02-01", "kind": "release", "surface_version": "1.0.0",
+          "changelog_section": "1.0.0", "agent_impact": "None.", "compatibility": "compatible", "migration": "none",
+          "changes": [{ "class": "named_surface", "path": "docs/build-packet.md", "surface_entry": "docs/build-packet.md", "summary": "The initial doc." }]
+        }
+      ],
+      "head_entries": []
+    }
+  ]
+}

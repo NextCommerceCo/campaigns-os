@@ -1,0 +1,14 @@
+{
+  "_note": "Fixture only. Never installed, never packed, never a workspace of the surrounding repository. Every lifecycle script below is a tripwire: it records a hit and exits 0. A consumer that installs or packs a target it is only supposed to READ will trip them.",
+  "name": "hostile-orientation-target-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "preinstall": "node ./bin/tripwire.mjs",
+    "install": "node ./bin/tripwire.mjs",
+    "postinstall": "node ./bin/tripwire.mjs",
+    "prepare": "node ./bin/tripwire.mjs",
+    "prepack": "node ./bin/tripwire.mjs"
+  }
+}
