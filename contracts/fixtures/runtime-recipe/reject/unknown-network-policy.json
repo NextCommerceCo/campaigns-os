@@ -1,0 +1,299 @@
+{
+  "_note": "The single authority for how a checkout of this repository at one commit becomes a usable installed runtime. No checker, schema, document, or test may carry its own copy of a command, a version bound, a timeout, an input path, or an output rule stated here — every one of them is read from this file. It is data, never code: a consumer executes exactly the argv enumerated in steps[] and never a command assembled from repository data. Registered as a HASHED supported-surface entry rather than a named one, deliberately departing from the policy contracts introduced alongside it: a reason-code vocabulary grows additively and can safely live behind a named entry, but any change to the commands, network policy, accepted tool versions, inputs, or output verification here is an agent-relevant release event by the recipe's own rule. Only a hashed entry makes such a change require surface_version to advance in the same change (scripts/check-supported-surface.mjs --base). A recipe whose commands can change without a version bump is not a contract. Changing this file also owes a release-ledger entry.",
+  "_growth_note": "When a bound below is genuinely reached, the answer is to find out why before raising it. A dependency install that exceeds its bound on a warm machine is a supply-chain change, not a slow morning; an output inventory that exceeds its file or byte bound is a build that went wrong, not a package that grew 50x overnight. Raising a bound is the fallback, it advances recipe_revision, and it owes a release-ledger entry. Widening the accepted npm range follows the same path, and its trigger is external and checkable: widen when a Node release line ships that npm major by default, not when a particular machine happens to have it installed.",
+  "schema": "campaigns-os-runtime-recipe/v1",
+  "recipe_kind": "campaigns-os-node-v1",
+  "recipe_revision": "1.0.0",
+  "refusal_reason_code": "runtime_recipe_refused",
+  "fail_closed": true,
+  "unperformable_check_disposition": "failed",
+  "_kind_versus_revision_note": "The line is consumer comprehension, not semantic significance. A NEW KIND is anything an installed consumer would have to newly understand in order to execute the document correctly: a different command or package manager, a changed network policy shape, a new KIND of output check, or a new required field. An older consumer must fail closed on it, and a consumer release comes first. A REVISION re-parameterises fields the consumer already understands: accepted version bounds, timeout values, the enumerated input set, the expected output inventory. An older consumer executes a revision correctly, with different numbers. Both owe a release-ledger entry; only a new kind gates on a consumer release. The test for which one applies is answerable in a fixture — does a consumer built against this schema parse and execute the document? — rather than by judgement about how big the change feels.",
+  "preconditions": {
+    "_note": "All four must already hold before any step runs. They are fixed booleans because a precondition a document could switch off is not a precondition.",
+    "target_oid_resolved": true,
+    "lockfile_present": true,
+    "clean_staging_generation": true,
+    "input_fingerprint_recorded": true
+  },
+  "tooling": {
+    "node": {
+      "range": ">=20.19.0 <25",
+      "min_inclusive": "20.19.0",
+      "max_exclusive": "25.0.0",
+      "verified": [
+        "22.23.1"
+      ],
+      "applies_to": "The Node runtime executing both steps and, afterwards, the prepared generation.",
+      "rationale": "The lower bound is the target's own declared minimum. The upper bound is the recipe's, not the target's: the target declares an open-ended minimum, and an open-ended range is not a bound. Delegating the ceiling to the checkout under evaluation would let that checkout widen the accepted runtime of the consumer evaluating it. Qualifying a new Node major is a one-line revision plus a ledger entry, which is the intended cost."
+    },
+    "npm": {
+      "range": "10 || 11",
+      "min_inclusive": "10.0.0",
+      "max_exclusive": "12.0.0",
+      "accepted_majors": [
+        10,
+        11
+      ],
+      "verified": [
+        "10.9.8",
+        "11.19.1"
+      ],
+      "applies_to": "The package manager executing the install and build steps.",
+      "rationale": "Both majors were run end to end against this recipe and produced byte-identical output, and together they are exactly the set that supported Node release lines ship by default. Later majors are opt-in installs rather than what the ecosystem is running, so they stay outside the range until a Node line bundles one; that trigger is an external fact rather than a taste call."
+    },
+    "target_engines": {
+      "field": "engines.node",
+      "observed": ">=20.19.0",
+      "_note": "The exact value this revision was authored against. A consumer compares the target's live value to this string and refuses on any difference, per on_disagreement. That is deliberately strict: a widened engines range in the target is precisely the silent widening this contract exists to catch, and re-agreeing is a one-line revision."
+    },
+    "on_disagreement": "refuse"
+  },
+  "network": {
+    "_note": "Two independent bounds that must both hold. The per-step policy bounds WHERE bytes may come from; the lockfile's recorded integrity digests bound WHICH bytes are acceptable. Neither substitutes for the other.",
+    "cache_ownership": "consumer_profile",
+    "inherit_proxy": false,
+    "inherit_credentials": false,
+    "inherit_npmrc": false,
+    "per_step": {
+      "install": {
+        "policy": "allow_all",
+        "hosts": [
+          "registry.npmjs.org"
+        ],
+        "integrity_source": "package-lock.json (lockfileVersion 3, per-package integrity digests)",
+        "rationale": "The install step is the only step that needs bytes it does not already have, and it needs them from exactly one place. Measured cold-cache install is a few seconds, so the network window is small. The cache is an optimisation and never a correctness input: an offline-after-warm policy would make a stale or poisoned cache silently change what gets built, with no fetch left to catch it."
+      },
+      "build": {
+        "policy": "deny",
+        "hosts": [],
+        "rationale": "The build step is a local type-directed compile and needs no network at all. Declaring that turns an assumption into a check."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "install",
+      "executable": "npm",
+      "args": [
+        "ci",
+        "--ignore-scripts",
+        "--no-audit",
+        "--fund=false"
+      ],
+      "cwd": "target_root",
+      "stdin": "closed",
+      "lifecycle_scripts": "disabled",
+      "timeout_bound": "install_seconds",
+      "rationale": "ci rather than install, so the lockfile is authoritative and the tree is reproducible. --ignore-scripts is the load-bearing flag: it suppresses every dependency lifecycle script and the target's own prepare. Exactly one dependency in the resolved tree declares an install script, and it ships a prebuilt binary in its published tarball, so nothing in the tree needs its scripts to function. --no-audit and --fund=false remove two network- and output-side effects that are not part of preparing a runtime."
+    },
+    {
+      "id": "build",
+      "executable": "npm",
+      "args": [
+        "run",
+        "--ignore-scripts",
+        "build:spec"
+      ],
+      "cwd": "target_root",
+      "stdin": "closed",
+      "lifecycle_scripts": "disabled",
+      "timeout_bound": "build_seconds",
+      "rationale": "Not redundant with the install step. Because install runs with lifecycle scripts disabled, the target's prepare script does not fire and the output directory is absent afterwards; this step is the only thing that builds the runtime under the recipe's own flags. --ignore-scripts here means the named script runs while its pre and post siblings do not, so the build is exactly one contracted command rather than an open-ended chain the target can extend."
+    }
+  ],
+  "inputs": {
+    "_note": "The complete input set, enumerated explicitly rather than globbed. The compiler's configured include globs are NOT the input set: two root modules enter the compilation transitively through imports from the entry module and are emitted, so a fingerprint derived from the globs would cover 36 of the 38 compiled sources and miss one of the larger emitted surfaces. Test fixtures and the package's own tests are not inputs; nothing under them is emitted. A checker resolves the compiler's actual file list and asserts it equals this enumeration, so this list cannot rot silently.",
+    "fingerprint_algorithm": "sha256",
+    "files": [
+      "campaign-spec/analytics-vocabulary.ts",
+      "campaign-spec/index.ts",
+      "campaign-spec/normalize.ts",
+      "campaign-spec/package.json",
+      "campaign-spec/routing.ts",
+      "campaign-spec/rules/analytics-contract-shape.ts",
+      "campaign-spec/rules/assembly-hints-shape.ts",
+      "campaign-spec/rules/campaign-metadata.ts",
+      "campaign-spec/rules/checkout-has-success-url.ts",
+      "campaign-spec/rules/cycle-detection.ts",
+      "campaign-spec/rules/design-source-shape.ts",
+      "campaign-spec/rules/downsell-without-upsell.ts",
+      "campaign-spec/rules/exit-intent-validation.ts",
+      "campaign-spec/rules/funnel-count.ts",
+      "campaign-spec/rules/funnel-hypothesis-length.ts",
+      "campaign-spec/rules/funnel-identity.ts",
+      "campaign-spec/rules/funnel-weight-sum.ts",
+      "campaign-spec/rules/index.ts",
+      "campaign-spec/rules/offer-ref-integrity.ts",
+      "campaign-spec/rules/package-pricing-sanity.ts",
+      "campaign-spec/rules/page-count.ts",
+      "campaign-spec/rules/page-id-uniqueness.ts",
+      "campaign-spec/rules/promo-code-input-validation.ts",
+      "campaign-spec/rules/promo-codes-shape.ts",
+      "campaign-spec/rules/route-field-ignored-for-page-type.ts",
+      "campaign-spec/rules/route-target-resolves.ts",
+      "campaign-spec/rules/schema-version.ts",
+      "campaign-spec/rules/sdk-version.ts",
+      "campaign-spec/rules/shipping-countries-shape.ts",
+      "campaign-spec/rules/shipping-methods-present.ts",
+      "campaign-spec/rules/store-profile-shape.ts",
+      "campaign-spec/rules/thank-you-requirement.ts",
+      "campaign-spec/rules/unknown-top-level-fields.ts",
+      "campaign-spec/rules/upsell-has-packages.ts",
+      "campaign-spec/rules/upsell-routing-complete.ts",
+      "campaign-spec/rules/upsell-without-checkout.ts",
+      "campaign-spec/rules/variant-labels-shape.ts",
+      "campaign-spec/sdk-version-parse.ts",
+      "campaign-spec/tsconfig.build.json",
+      "campaign-spec/types.ts",
+      "package-lock.json",
+      "package.json"
+    ]
+  },
+  "outputs": {
+    "_note": "The output directory is a build product. It is untracked and git-ignored, no committed copy exists, and the copy in a published tarball exists only because packing runs the prepare script. There is therefore no baseline hash for its CONTENTS that this repository could publish, and any acceptance criterion phrased as 'output matches expected hashes' is not implementable as written. Verification is self-consistency instead: the inventory is complete and has nothing extra, the recorded hashes still hold, the entry module imports, the type entry is present, and the inputs that produced the output still match the inputs at the target commit. The build is deterministic — independent clean checkouts at one commit produce byte-identical output, and the compiler config emits neither source maps nor declaration maps, so no absolute paths or timestamps are embedded — which is what makes content hashing a sound strategy rather than a hopeful one.",
+    "directory": "campaign-spec/dist",
+    "committed": false,
+    "module_source_root": "campaign-spec/",
+    "expected_module_derivation": {
+      "rule": "For every enumerated input under module_source_root whose path ends in .ts, the build is expected to emit campaign-spec/dist/<path relative to module_source_root, with .ts replaced> once per entry in emitted_extensions. The expected inventory is exactly that set: nothing missing, nothing extra.",
+      "emitted_extensions": [
+        ".js",
+        ".d.ts"
+      ]
+    },
+    "type_entry": "campaign-spec/dist/index.d.ts",
+    "checks": [
+      {
+        "id": "dist_inventory",
+        "kind": "dist_inventory",
+        "mandatory": true,
+        "detects": [
+          "absent",
+          "extra"
+        ],
+        "applies_to": "The set of files present under outputs.directory after the build step.",
+        "rationale": "Catches both directions. A missing module is an incomplete emit; an unexpected file is as much a signal as a missing one, because it means something other than the declared build wrote into the output directory."
+      },
+      {
+        "id": "content_hash_stability",
+        "kind": "content_hash_stability",
+        "mandatory": true,
+        "detects": [
+          "corrupt"
+        ],
+        "applies_to": "The bytes of every file under outputs.directory, hashed with the inputs.fingerprint_algorithm digest and recorded in the generation manifest.",
+        "rationale": "Detects any post-build modification of the prepared runtime. Costs single-digit milliseconds against an output measured in hundreds of kilobytes. It is a self-consistency check, not a comparison against a hash published here: no such hash can exist, because the output is not committed."
+      },
+      {
+        "id": "module_import_smoke",
+        "kind": "module_import_smoke",
+        "mandatory": true,
+        "depth": "shallow",
+        "detects": [
+          "corrupt"
+        ],
+        "applies_to": "Importing the emitted package entry module once.",
+        "rationale": "A file can hash cleanly and still be unloadable. Shallow for this revision: importing the entry module transitively loads most of the emitted graph for one import's cost. A per-module deep import is a revision, warranted if a partial emit is ever actually observed rather than in anticipation of one."
+      },
+      {
+        "id": "type_entry_presence",
+        "kind": "type_entry_presence",
+        "mandatory": true,
+        "detects": [
+          "absent"
+        ],
+        "applies_to": "outputs.type_entry.",
+        "rationale": "Consumers resolve types for the package export through this file, and the pack check already asserts its presence in the published tarball. Cheap, and it guards a real declared contract rather than an internal detail."
+      },
+      {
+        "id": "cli_skill_commit_agreement",
+        "kind": "cli_skill_commit_agreement",
+        "mandatory": true,
+        "detects": [
+          "mismatched_generation"
+        ],
+        "applies_to": "The executable and the skills tree resolved by the running session.",
+        "rationale": "Asserts that the executable a session runs and the skills tree it loads resolve below the same generation path and the same target OID. Two halves of a session drawn from different generations is the failure this catches, and neither hashes nor imports would notice it."
+      },
+      {
+        "id": "tool_versions",
+        "kind": "tool_versions",
+        "mandatory": true,
+        "detects": [
+          "unsupported_tooling"
+        ],
+        "applies_to": "The Node and npm versions that actually executed the steps, against tooling.node and tooling.npm.",
+        "rationale": "Recorded after the fact as well as checked before, so a generation carries evidence of what built it rather than only of what was permitted to."
+      },
+      {
+        "id": "input_fingerprint",
+        "kind": "input_fingerprint",
+        "mandatory": true,
+        "detects": [
+          "stale"
+        ],
+        "applies_to": "The digest over the enumerated inputs.files recorded at build time, compared against the same digest computed at the target commit.",
+        "rationale": "The one check that cannot be dropped. Stale output is internally consistent — its hashes are correct, it imports, its types are present — so it is invisible to every output-side check. Only comparing the inputs that produced it against the inputs at the target commit catches it."
+      }
+    ]
+  },
+  "bounds": {
+    "install_seconds": {
+      "value": 180,
+      "unit": "seconds",
+      "measured_baseline": "about 3.2 seconds on a cold cache, about 0.3 seconds warm",
+      "applies_to": "Wall-clock duration of the install step.",
+      "rationale": "Roughly 57x the measured cold-cache cost, and deliberately generous. The measurement is a fast local connection, which is the best case rather than the typical one; this bound has to hold on a cold cache, a congested network, a loaded machine, and in CI. A timeout that trips on a slow morning produces a refusal the operator cannot act on."
+    },
+    "build_seconds": {
+      "value": 90,
+      "unit": "seconds",
+      "measured_baseline": "about 0.8 seconds",
+      "applies_to": "Wall-clock duration of the build step and the output checks that follow it.",
+      "rationale": "Roughly 115x the measured cost. The whole mandatory check set adds well under a second on top, so nothing here is deferred for cost. Generous for the same reason as the install bound."
+    },
+    "transaction_seconds": {
+      "value": 450,
+      "unit": "seconds",
+      "measured_baseline": "about 4 seconds end to end",
+      "applies_to": "Wall-clock duration of the whole preparation transaction: preconditions, both steps, and every output check.",
+      "rationale": "Roughly 110x measured. It bounds the transaction as a whole rather than being the sum of its parts, so a phase that stalls short of its own bound still cannot hold a preparation open indefinitely."
+    },
+    "max_output_bytes": {
+      "value": 16777216,
+      "unit": "bytes",
+      "measured_baseline": "240,359 bytes",
+      "applies_to": "Total bytes of all files under outputs.directory after the build step.",
+      "rationale": "16 MiB, roughly 70x the measured output. This bound does not exist in the performance budget it otherwise mirrors; it is added so that a build which goes haywire is a typed refusal rather than a filled disk."
+    },
+    "max_output_files": {
+      "value": 4096,
+      "unit": "files",
+      "measured_baseline": "76 files",
+      "applies_to": "Count of files under outputs.directory after the build step.",
+      "rationale": "Roughly 54x the measured count. Paired with max_output_bytes because the two catch different runaway shapes: many small files, and few enormous ones."
+    }
+  },
+  "target_expectations": {
+    "_note": "What this revision assumes about the target, stated as values a checker can compare rather than as prose a reader has to trust. Each one is a thing that, if it changed without the recipe changing, would silently alter what preparation does: a widened engine range, a rewritten build script, a lockfile format the install step reads differently, or a new dependency that would execute code the moment the suppressing flag was dropped.",
+    "package_json": "package.json",
+    "lockfile": {
+      "path": "package-lock.json",
+      "lockfile_version": 3,
+      "integrity_pinned": true
+    },
+    "scripts": {
+      "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
+      "prepare": "npm run build:spec"
+    },
+    "install_script_dependencies": [
+      "fsevents"
+    ]
+  },
+  "capabilities": {
+    "_note": "What a generation prepared by this recipe can and cannot do. Stated explicitly because 'runtime ready' invites the wrong reading: the same flag that makes the install safe also means the prepared generation has no browser to drive. Preparing a runtime and being able to run browser QA are different readiness questions, and this recipe answers only the first.",
+    "type_check": true,
+    "build_spec": true,
+    "browser_qa": false
+  }
+}

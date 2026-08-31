@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-runtime-recipe.v1.schema.json",
+  "title": "Campaigns OS Runtime Recipe v1",
+  "description": "Validates a runtime-readiness recipe document: the small, fixed, declarative description of how a checkout of this repository at one commit becomes a usable installed runtime. It is data, never code — a consumer executes only the commands enumerated here, never a free-form command assembled from repository data. A consumer that recognizes v1 accepts and preserves unknown additive properties without interpreting them, while required fields, known types, and safety-critical enums stay strict: an unrecognized recipe_kind, recipe_revision, network policy, output-check kind, or disagreement disposition is a fail-closed refusal, not a value to guess at. recipe_kind names what an installed consumer must already understand in order to execute the document at all, so a new kind requires a consumer release before the recipe is publishable; recipe_revision re-parameterises fields an existing consumer already understands, so a consumer accepts any revision inside the major line its kind declares.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "recipe_kind",
+    "recipe_revision",
+    "refusal_reason_code",
+    "fail_closed",
+    "unperformable_check_disposition",
+    "preconditions",
+    "tooling",
+    "network",
+    "steps",
+    "inputs",
+    "outputs",
+    "bounds",
+    "capabilities",
+    "target_expectations"
+  ],
+  "properties": {
+    "schema": { "const": "campaigns-os-runtime-recipe/v1" },
+    "_note": { "type": "string", "description": "Free-text authoring note. Not consumed." },
+    "_growth_note": { "type": "string", "description": "Free-text note on what to do when a declared bound is genuinely reached. Not consumed." },
+    "recipe_kind": {
+      "description": "Safety-critical. The enumerated set of recipe kinds this schema version defines. A document naming any other kind fails closed: an installed consumer cannot execute a kind it was not released knowing.",
+      "enum": ["campaigns-os-node-v1"]
+    },
+    "recipe_revision": {
+      "type": "string",
+      "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Safety-critical. Semver, and its major MUST be 1 for every kind this schema version defines. A revision re-parameterises fields the consumer already understands — accepted version bounds, timeout values, the enumerated input set, the expected output inventory. A major other than 1 is a shape change wearing a revision's clothes and fails closed."
+    },
+    "refusal_reason_code": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The single stable reason code a consumer emits when this recipe refuses. One code, so a refusal is always attributable to the recipe rather than to whatever step happened to notice."
+    },
+    "fail_closed": {
+      "const": true,
+      "description": "Safety-critical. Every field in this document is normative and enforced. There is no advisory mode: a bound not worth enforcing is dropped, never demoted."
+    },
+    "unperformable_check_disposition": {
+      "enum": ["failed"],
+      "description": "Safety-critical. A declared check that cannot be performed — the measurement is absent, non-finite, or the check itself errored — counts as FAILED, never as skipped. Carried over from contracts/orientation-limits.v1.json, where an absent measurement counts as exceeded for the same reason."
+    },
+    "preconditions": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["target_oid_resolved", "lockfile_present", "clean_staging_generation", "input_fingerprint_recorded"],
+      "properties": {
+        "target_oid_resolved": { "const": true },
+        "lockfile_present": { "const": true },
+        "clean_staging_generation": { "const": true },
+        "input_fingerprint_recorded": { "const": true }
+      },
+      "description": "Conditions that must already hold before any step runs. All are booleans fixed to true: a precondition a document could switch off is not a precondition."
+    },
+    "tooling": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["node", "npm", "target_engines", "on_disagreement"],
+      "properties": {
+        "node": { "$ref": "#/$defs/tool_range" },
+        "npm": { "$ref": "#/$defs/tool_range" },
+        "target_engines": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["field", "observed", "_note"],
+          "properties": {
+            "field": { "type": "string", "minLength": 1, "description": "The dotted path in the target's package.json whose declared value this recipe was written against." },
+            "observed": { "type": "string", "minLength": 1, "description": "The exact value of that field at the commit this revision was authored against. A checker compares the target's live value to this string; any difference is a disagreement." },
+            "_note": { "type": "string", "minLength": 1 }
+          }
+        },
+        "on_disagreement": {
+          "enum": ["refuse"],
+          "description": "Safety-critical. What happens when the contract's declared range and the target's declared engines disagree. Only refuse is defined: an accept-with-warning path produces a build made under conditions nobody approved plus a log line nobody reads."
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["cache_ownership", "inherit_proxy", "inherit_credentials", "inherit_npmrc", "per_step"],
+      "properties": {
+        "cache_ownership": {
+          "enum": ["consumer_profile"],
+          "description": "Safety-critical. Who owns the package cache. The cache is an optimisation and never a correctness input, so it belongs to the consumer profile rather than to the operator's ambient environment."
+        },
+        "inherit_proxy": { "const": false },
+        "inherit_credentials": { "const": false },
+        "inherit_npmrc": { "const": false },
+        "per_step": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/network_policy" },
+          "minProperties": 1,
+          "description": "Network policy keyed by step id. Every step in steps[] must appear here; a step with no declared policy is unbounded network access nobody approved."
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" },
+      "description": "The ordered, exhaustive command set. A consumer executes these and nothing else."
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["_note", "fingerprint_algorithm", "files"],
+      "properties": {
+        "_note": { "type": "string", "minLength": 1 },
+        "fingerprint_algorithm": { "enum": ["sha256"] },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[^/][^\\0]*$" },
+          "description": "The complete, explicitly enumerated input set, repository-root-relative. Enumerated rather than globbed on purpose: the compiler's resolved file set is not the config's include globs, and a fingerprint derived from the globs would silently cover a subset."
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["_note", "directory", "committed", "module_source_root", "expected_module_derivation", "type_entry", "checks"],
+      "properties": {
+        "_note": { "type": "string", "minLength": 1 },
+        "directory": { "type": "string", "minLength": 1 },
+        "committed": {
+          "const": false,
+          "description": "Safety-critical. The output directory is a build product, never a committed artifact, so no baseline hash for its contents can exist in this repository. Verification is self-consistency, not comparison against a published expectation."
+        },
+        "module_source_root": { "type": "string", "minLength": 1, "description": "The input prefix that output paths are derived relative to." },
+        "expected_module_derivation": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["rule", "emitted_extensions"],
+          "properties": {
+            "rule": { "type": "string", "minLength": 1 },
+            "emitted_extensions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^\\." } }
+          },
+          "description": "How the expected output inventory is derived from the enumerated input set. A derivation, not a second list: a duplicated inventory is a literal that can rot out of step with the inputs that produce it."
+        },
+        "type_entry": { "type": "string", "minLength": 1 },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/output_check" },
+          "description": "Every declared check is mandatory. There is no optional check: an optional check is an advisory bound under another name."
+        }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/bound" },
+      "description": "Enforced resource bounds. Each carries its unit, what it applies to, and a rationale stating the measured baseline and the resulting headroom, so a number is never mistaken for physics."
+    },
+    "target_expectations": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["_note", "package_json", "lockfile", "scripts", "install_script_dependencies"],
+      "properties": {
+        "_note": { "type": "string", "minLength": 1 },
+        "package_json": { "type": "string", "minLength": 1 },
+        "lockfile": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["path", "lockfile_version", "integrity_pinned"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "lockfile_version": { "type": "integer", "minimum": 1 },
+            "integrity_pinned": { "const": true }
+          }
+        },
+        "scripts": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" },
+          "description": "The exact text of every package script this recipe depends on, at the commit the revision was authored against. A consumer-side checker compares the target's live script text to these strings; any difference is a change to what the recipe would execute, and it fails until the recipe is revised."
+        },
+        "install_script_dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Every resolved dependency that declares an install script, as recorded in the lockfile. Enumerated so a newly introduced install script is a gate failure rather than a silent addition to what would run if the suppressing flag were ever dropped."
+        }
+      },
+      "description": "What the recipe assumes about the target at the commit this revision was authored against. Machine-comparable on purpose: the assumptions a recipe makes about its target are the part most likely to rot, and prose cannot be diffed."
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["_note", "type_check", "build_spec", "browser_qa"],
+      "properties": {
+        "_note": { "type": "string", "minLength": 1 },
+        "type_check": { "type": "boolean" },
+        "build_spec": { "type": "boolean" },
+        "browser_qa": {
+          "type": "boolean",
+          "description": "Whether a generation prepared by this recipe can run browser QA. False for every v1 recipe: running install with lifecycle scripts disabled also suppresses the browser-download step of the browser automation dependency, so a prepared generation can build and type-check but cannot drive a browser. \"Runtime ready\" must not be read as \"can run QA\"."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "tool_range": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["range", "min_inclusive", "applies_to", "rationale"],
+      "properties": {
+        "range": { "type": "string", "minLength": 1, "description": "Human-readable range, for documentation. The machine comparison uses min_inclusive / max_exclusive / accepted_majors, never this string." },
+        "min_inclusive": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
+        "max_exclusive": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
+        "accepted_majors": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 0 } },
+        "verified": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 }, "description": "Exact versions this range was measured against." },
+        "applies_to": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "network_policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["policy", "rationale"],
+      "properties": {
+        "policy": {
+          "enum": ["allowlist", "deny"],
+          "description": "Safety-critical. allowlist permits exactly the hosts in hosts[]; deny permits none. There is no allow-all value, and an unrecognized value fails closed."
+        },
+        "hosts": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "integrity_source": { "type": "string", "minLength": 1, "description": "What bounds WHICH bytes are acceptable, as distinct from where they may come from." },
+        "rationale": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "policy": { "const": "allowlist" } }, "required": ["policy"] },
+          "then": { "required": ["hosts"], "properties": { "hosts": { "type": "array", "minItems": 1 } } }
+        },
+        {
+          "if": { "properties": { "policy": { "const": "deny" } }, "required": ["policy"] },
+          "then": { "properties": { "hosts": { "type": "array", "maxItems": 0 } } }
+        }
+      ]
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "executable", "args", "cwd", "stdin", "lifecycle_scripts", "timeout_bound", "rationale"],
+      "properties": {
+        "id": { "enum": ["install", "build"], "description": "Safety-critical. The enumerated step identities a v1 consumer understands." },
+        "executable": { "enum": ["npm"], "description": "Safety-critical. The only package manager a v1 recipe may name. A different one is a new kind, because the consumer would have to understand new argv." },
+        "args": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "The exact argv, in order. A consumer executes this verbatim and never assembles or interpolates arguments." },
+        "cwd": { "enum": ["target_root"] },
+        "stdin": { "enum": ["closed"] },
+        "lifecycle_scripts": {
+          "enum": ["disabled"],
+          "description": "Safety-critical. Dependency and pre/post lifecycle scripts do not run in any v1 step. This is why the build is an explicit contracted step rather than a side effect of installing."
+        },
+        "timeout_bound": { "type": "string", "minLength": 1, "description": "The key in bounds{} that bounds this step." },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "output_check": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "kind", "mandatory", "detects", "applies_to", "rationale"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "dist_inventory",
+            "content_hash_stability",
+            "module_import_smoke",
+            "type_entry_presence",
+            "cli_skill_commit_agreement",
+            "tool_versions",
+            "input_fingerprint"
+          ],
+          "description": "Safety-critical. The enumerated check kinds a v1 consumer can perform. A new kind of check is a new recipe kind: an installed consumer cannot perform a check it was not released knowing how to perform, and per unperformable_check_disposition it must then report FAILED rather than skip."
+        },
+        "mandatory": { "const": true },
+        "depth": { "enum": ["shallow", "deep"], "description": "Only meaningful for module_import_smoke. shallow imports the package entry module and lets it load its own graph; deep imports every emitted module individually." },
+        "detects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["absent", "stale", "extra", "corrupt", "unsupported_tooling", "mismatched_generation"] },
+          "description": "The failure modes this check is responsible for catching. Together the checks must cover absent, stale, extra, and corrupt output; staleness in particular is invisible to every output-side check, because stale output is internally consistent."
+        },
+        "applies_to": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "bound": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["value", "unit", "applies_to", "rationale"],
+      "properties": {
+        "value": { "type": "integer", "minimum": 1 },
+        "unit": { "type": "string", "minLength": 1 },
+        "measured_baseline": { "type": "string", "minLength": 1 },
+        "applies_to": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

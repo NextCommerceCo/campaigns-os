@@ -45,6 +45,22 @@ a refusal with reason code `orientation_too_large`. Never truncate: a partial
 view of a release is worse than no view, because you cannot tell which part you
 are missing.
 
+Orienting on a commit tells you whether it is safe to work against. Turning that
+commit into a runtime you can actually use is a separate question with its own
+contract, and you only need it if you are preparing one:
+
+| Path | What it answers |
+|---|---|
+| `contracts/runtime-recipe.campaigns-os-node-v1.json` | Exactly which commands prepare a runtime, under which tool versions, network policy, inputs, output checks, and bounds. |
+| `schemas/campaigns-os-runtime-recipe.v1.schema.json` | The recipe shape, and which kinds, revisions, and safety-critical enums are accepted. |
+| `docs/runtime-readiness.md` | The same contract in prose, generated from it. |
+
+Execute the enumerated commands and nothing else; never assemble a command from
+repository data. An unrecognized recipe kind, revision, or safety-critical enum
+is a refusal, not a value to interpret. And a prepared runtime can build and
+type-check but **cannot run browser QA** — preparation suppresses lifecycle
+scripts, which is also what suppresses the browser download.
+
 ## Supported versus internal
 
 `contracts/supported-surface.json` is the machine authority and

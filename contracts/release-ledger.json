@@ -319,6 +319,213 @@
         }
       ],
       "entry_sha256": "0b7ace4a5bfe26e63b9ccc16f9525658078e30ae6a18b4aa48f83c104fc22590"
+    },
+    {
+      "id": "RL-0005",
+      "sequence": 5,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": "1.16.0",
+      "changelog_section": "1.16.0",
+      "changelog_sha256": "42429db2ff137080828ea4ef8ca7e31d7e2b7c9fcbb06d61360c57e313520430",
+      "agent_impact": "A consumer may now read a declarative, schema-validated description of how a checkout at a resolved commit becomes a usable installed runtime, and enforce it: exact commands, accepted Node and npm ranges, per-step network policy, the enumerated input set, seven mandatory output checks, and five bounds. It is data only — this repository publishes the recipe and executes no step of it. Enforcement is fail-closed: an unrecognized recipe kind, revision, or safety-critical enum is refused, and a check that cannot be performed counts as failed rather than skipped. Two readings a consumer must not take: the input set is the compiler's resolved file list rather than its configured globs, and campaign-spec/dist is a build output with no committed baseline, so output verification is self-consistency rather than comparison against a hash published here. A prepared generation can build and type-check but cannot run browser QA. Nothing existing changed shape; adoption is optional and additive.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "The entry point now points at the runtime recipe as a separate contract from orientation, with the rules that come with it: execute only the enumerated commands, refuse an unrecognized kind or safety-critical enum, and do not read \"runtime ready\" as \"can run browser QA\"."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-runtime-recipe.v1.schema.json",
+          "surface_entry": "schemas/campaigns-os-runtime-recipe.v1.schema.json",
+          "summary": "The runtime-recipe schema was introduced (contract identity campaigns-os-runtime-recipe/v1). It accepts unknown additive fields while keeping required fields, known types, and safety-critical enums strict: recipe kind, revision major, step id, package manager, lifecycle-script disposition, network policy, output-check kind, engines-disagreement disposition, and the unperformable-check disposition all fail closed."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "surface_entry": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "summary": "The accepted recipe instance was introduced, kind campaigns-os-node-v1 revision 1.0.0: the exact argv of both steps, Node >=20.19.0 <25 and npm major 10 or 11 with refusal on disagreement with the target's engines, a registry allowlist on install and denial on build, 42 enumerated inputs, seven mandatory output checks, and five enforced bounds each carrying its measured baseline."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "The runtime readiness guide was introduced, generated from the recipe rather than hand-written, so a stale copy fails CI instead of misleading a reader."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advanced to 1.16.0; the runtime-recipe schema and the recipe instance were added as hashed entries, and the readiness guide, seventeen runtime-recipe fixtures, and three hostile-target fixture paths as named entries."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The compatibility promise now covers the runtime recipe and its fixtures, and records why the recipe is hashed while the orientation policy contracts beside it are named."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "The runtime-recipe schema, kind, and revision version lines were declared, along with the rule separating a new kind (which gates on a consumer release) from a revision (which does not)."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "The runtime-recipe contract gate, its test suite, and the generated-documentation staleness check were added to npm run check, with check:runtime-recipe, check:runtime-docs, and generate:runtime-docs as their own scripts. No export, bin, engine, or dependency changed."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated for the 1.16.0 surface: the supported-surface-at-generation-time line advanced. No contract content changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/manifest.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/manifest.json",
+          "summary": "The runtime-recipe fixture manifest was introduced, enumerating every accept and reject fixture with the outcome it must produce, so a consumer's parser test asserts an exact expected set rather than a hand-copied list."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "summary": "The prepared-runtime state fixture was introduced: the healthy control plus the absent, extra, corrupt, and stale states an output-check implementation must distinguish, described declaratively so a test derives them from the recipe rather than from written-down paths."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "summary": "An accepted runtime-recipe fixture a consumer's parser validates against: accept/current.json. The accepted recipe as published. A consumer's parser must accept exactly these bytes."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "summary": "An accepted runtime-recipe fixture a consumer's parser validates against: accept/minimal.json. Required fields only, every optional field and authoring note stripped. Proves the required set is genuinely sufficient rather than accidentally propped up by optional content."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-kind.json. recipe_kind names a kind this schema version does not define. An installed consumer was not released knowing how to execute it, so it fails closed rather than guessing that a v2 is a v1 with extras."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-revision.json. recipe_revision leaves the major line the kind defines. A revision may only re-parameterise fields the consumer already understands; a different major is a shape change wearing a revision's clothes."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-network-policy.json. A safety-critical enum: the install step declares a network policy outside the defined set. There is no allow-all value, and an unrecognized one is refused rather than treated as permissive."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/allowlist-without-hosts.json. An allowlist with no hosts is not a bound, it is an empty declaration that reads like one. The schema requires a non-empty host list whenever the policy is an allowlist."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-output-check.json. A safety-critical enum: an output check names a kind the consumer cannot perform. A new KIND of check is a new recipe kind, because an installed consumer cannot perform a check it was not released knowing."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-step-id.json. A safety-critical enum: a step identity outside the defined set. Steps are identified rather than positional, so an unrecognized id is a command the consumer has no contract for."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/lifecycle-scripts-enabled.json. A safety-critical enum: a step that permits lifecycle scripts. Enabling them would let the target run arbitrary code during preparation, which is the single thing the recipe's flags exist to prevent."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/engines-disagreement-warns.json. A safety-critical enum: disagreement between the contract's tool range and the target's declared engines resolved as a warning. An accept-with-warning path produces a build made under conditions nobody approved."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/advisory-enforcement.json. fail_closed switched off. Advisory bounds record the right numbers and enforce nothing, so the first time a bound matters you discover it was decorative."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unperformable-check-skipped.json. A safety-critical enum: a check that cannot be performed treated as skipped. A skipped check reports success it never established."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/committed-output-claim.json. The recipe claims its output directory is a committed artifact. It is not: the directory is git-ignored and untracked, so no baseline for its contents can exist here and verification must be self-consistency."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unpinned-lockfile.json. The recipe claims its lockfile is not integrity-pinned. The network allowlist bounds where bytes may come from and the lockfile's digests bound which bytes are acceptable; dropping the second leaves the first standing alone, which it was never meant to do."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/missing-required-field.json. The enumerated input set is absent. Without it there is nothing to fingerprint, and staleness — the one failure mode no output-side check can see — becomes undetectable."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/manifest.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/manifest.json",
+          "summary": "A second invariant was added beside the orientation one: recipe_execution declares that preparing this target runs the recipe's two steps and no lifecycle script reachable from them, names the intended-script log and the control, and enumerates the new dependency-side tripwires. The orientation tripwire set and its expected hit count of zero are unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/package.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/package.json",
+          "summary": "Pre and post siblings of the build script were added as tripwires, the build script itself as the one intended script, and a dependency on the packed tripwire package, so a preparation run exercises dependency and pre/post lifecycle scripts for real."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
+          "summary": "The tripwire now takes an optional label so a hit says which script fired; called with no argument it emits the original line verbatim, so an existing counter matching that text keeps working."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/bin/intended.mjs",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/bin/intended.mjs",
+          "summary": "The one script a recipe build step is meant to run. Not a tripwire: it logs to its own file so \"the intended script ran\" and \"nothing else ran\" stay separable, and a fixture that only proved emptiness cannot pass by never building at all."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/package.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/package.json",
+          "summary": "A miniature dependency declaring every lifecycle script npm can run on a dependency. It is packed into a tarball and installed from it, so it is extracted the way a registry package is rather than symlinked the way a directory dependency is."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/tripwire.mjs",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/tripwire.mjs",
+          "summary": "The dependency-side tripwire, self-contained because once packed it is extracted into node_modules where nothing else in the fixture is reachable."
+        }
+      ],
+      "entry_sha256": "c48f69048ca34a5b608c2f758f5a6e7434c93f785dabb19f61fbeef413d22efb"
     }
   ]
 }

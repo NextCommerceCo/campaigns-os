@@ -1,0 +1,85 @@
+{
+  "_note": "Enumerates every runtime-recipe fixture with the outcome it must produce, so a consumer's parser test asserts an exact expected set instead of hand-copying a list that rots when a fixture is added. Generated from the accepted recipe: every reject case is a single-mutation copy of it, so a fixture cannot drift into asserting something the contract no longer says.",
+  "schema": "campaigns-os-runtime-recipe-fixtures/v1",
+  "fixture_version": "1.0.0",
+  "validates_against": "schemas/campaigns-os-runtime-recipe.v1.schema.json",
+  "source": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+  "accept": [
+    {
+      "path": "accept/current.json",
+      "why": "The accepted recipe as published. A consumer's parser must accept exactly these bytes."
+    },
+    {
+      "path": "accept/minimal.json",
+      "why": "Required fields only, every optional field and authoring note stripped. Proves the required set is genuinely sufficient rather than accidentally propped up by optional content."
+    }
+  ],
+  "reject": [
+    {
+      "path": "reject/unknown-kind.json",
+      "mutation": "unknown-kind",
+      "why": "recipe_kind names a kind this schema version does not define. An installed consumer was not released knowing how to execute it, so it fails closed rather than guessing that a v2 is a v1 with extras."
+    },
+    {
+      "path": "reject/unknown-revision.json",
+      "mutation": "unknown-revision",
+      "why": "recipe_revision leaves the major line the kind defines. A revision may only re-parameterise fields the consumer already understands; a different major is a shape change wearing a revision's clothes."
+    },
+    {
+      "path": "reject/unknown-network-policy.json",
+      "mutation": "unknown-network-policy",
+      "why": "A safety-critical enum: the install step declares a network policy outside the defined set. There is no allow-all value, and an unrecognized one is refused rather than treated as permissive."
+    },
+    {
+      "path": "reject/allowlist-without-hosts.json",
+      "mutation": "allowlist-without-hosts",
+      "why": "An allowlist with no hosts is not a bound, it is an empty declaration that reads like one. The schema requires a non-empty host list whenever the policy is an allowlist."
+    },
+    {
+      "path": "reject/unknown-output-check.json",
+      "mutation": "unknown-output-check",
+      "why": "A safety-critical enum: an output check names a kind the consumer cannot perform. A new KIND of check is a new recipe kind, because an installed consumer cannot perform a check it was not released knowing."
+    },
+    {
+      "path": "reject/unknown-step-id.json",
+      "mutation": "unknown-step-id",
+      "why": "A safety-critical enum: a step identity outside the defined set. Steps are identified rather than positional, so an unrecognized id is a command the consumer has no contract for."
+    },
+    {
+      "path": "reject/lifecycle-scripts-enabled.json",
+      "mutation": "lifecycle-scripts-enabled",
+      "why": "A safety-critical enum: a step that permits lifecycle scripts. Enabling them would let the target run arbitrary code during preparation, which is the single thing the recipe's flags exist to prevent."
+    },
+    {
+      "path": "reject/engines-disagreement-warns.json",
+      "mutation": "engines-disagreement-warns",
+      "why": "A safety-critical enum: disagreement between the contract's tool range and the target's declared engines resolved as a warning. An accept-with-warning path produces a build made under conditions nobody approved."
+    },
+    {
+      "path": "reject/advisory-enforcement.json",
+      "mutation": "advisory-enforcement",
+      "why": "fail_closed switched off. Advisory bounds record the right numbers and enforce nothing, so the first time a bound matters you discover it was decorative."
+    },
+    {
+      "path": "reject/unperformable-check-skipped.json",
+      "mutation": "unperformable-check-skipped",
+      "why": "A safety-critical enum: a check that cannot be performed treated as skipped. A skipped check reports success it never established."
+    },
+    {
+      "path": "reject/committed-output-claim.json",
+      "mutation": "committed-output-claim",
+      "why": "The recipe claims its output directory is a committed artifact. It is not: the directory is git-ignored and untracked, so no baseline for its contents can exist here and verification must be self-consistency."
+    },
+    {
+      "path": "reject/unpinned-lockfile.json",
+      "mutation": "unpinned-lockfile",
+      "why": "The recipe claims its lockfile is not integrity-pinned. The network allowlist bounds where bytes may come from and the lockfile's digests bound which bytes are acceptable; dropping the second leaves the first standing alone, which it was never meant to do."
+    },
+    {
+      "path": "reject/missing-required-field.json",
+      "mutation": "missing-required-field",
+      "why": "The enumerated input set is absent. Without it there is nothing to fingerprint, and staleness — the one failure mode no output-side check can see — becomes undetectable."
+    }
+  ],
+  "prepared_runtime_states": "dist-states.json"
+}

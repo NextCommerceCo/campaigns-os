@@ -7,15 +7,76 @@
   "tripwire_log_env": "CAMPAIGNS_OS_TRIPWIRE_LOG",
   "expected_hit_count": 0,
   "tripwires": [
-    { "path": "repo/hooks/post-checkout", "kind": "git_hook", "mode": "755", "fires_on": "git checkout / git worktree add against a repository with these hooks installed" },
-    { "path": "repo/hooks/post-merge", "kind": "git_hook", "mode": "755", "fires_on": "git merge or git pull" },
-    { "path": "repo/hooks/pre-commit", "kind": "git_hook", "mode": "755", "fires_on": "git commit" },
-    { "path": "repo/bin/tripwire.mjs", "kind": "executable_file", "mode": "755", "fires_on": "direct execution of a target-supplied binary" },
-    { "path": "repo/package.json", "kind": "package_lifecycle_script", "mode": "644", "fires_on": "npm install / npm ci / npm pack without --ignore-scripts (preinstall, install, postinstall, prepare, prepack)" }
+    {
+      "path": "repo/hooks/post-checkout",
+      "kind": "git_hook",
+      "mode": "755",
+      "fires_on": "git checkout / git worktree add against a repository with these hooks installed"
+    },
+    {
+      "path": "repo/hooks/post-merge",
+      "kind": "git_hook",
+      "mode": "755",
+      "fires_on": "git merge or git pull"
+    },
+    {
+      "path": "repo/hooks/pre-commit",
+      "kind": "git_hook",
+      "mode": "755",
+      "fires_on": "git commit"
+    },
+    {
+      "path": "repo/bin/tripwire.mjs",
+      "kind": "executable_file",
+      "mode": "755",
+      "fires_on": "direct execution of a target-supplied binary"
+    },
+    {
+      "path": "repo/package.json",
+      "kind": "package_lifecycle_script",
+      "mode": "644",
+      "fires_on": "npm install / npm ci / npm pack without --ignore-scripts (preinstall, install, postinstall, prepare, prepack), or npm run build:spec without --ignore-scripts (prebuild:spec, postbuild:spec)"
+    },
+    {
+      "path": "repo/hostile-dependency-tripwire/package.json",
+      "kind": "dependency_lifecycle_script",
+      "mode": "644",
+      "fires_on": "installation of this package as a DEPENDENCY of repo/ without --ignore-scripts (preinstall, install, postinstall), or packing it without --ignore-scripts (prepare, prepack)"
+    },
+    {
+      "path": "repo/hostile-dependency-tripwire/tripwire.mjs",
+      "kind": "executable_file",
+      "mode": "755",
+      "fires_on": "direct execution of a dependency-supplied file, or any of that package's lifecycle scripts"
+    }
   ],
   "orientation_data": {
     "changelog": "repo/CHANGELOG.md",
     "release_ledger": "repo/contracts/release-ledger.json",
     "supported_surface": "repo/contracts/supported-surface.json"
+  },
+  "intended_script_log_env": "CAMPAIGNS_OS_INTENDED_LOG",
+  "intended_scripts": [
+    {
+      "path": "repo/bin/intended.mjs",
+      "invoked_by": "repo/package.json scripts.build:spec",
+      "_note": "NOT a tripwire. The one script an accepted runtime-recipe build step is meant to run. It logs to intended_script_log_env so 'the intended script ran' and 'nothing else ran' stay separable assertions — a fixture that only proved the tripwire log was empty would also pass if the build never ran at all."
+    }
+  ],
+  "recipe_execution": {
+    "_note": "The second invariant this fixture carries, added for the runtime-readiness contract. Orientation must execute NOTHING here; runtime-recipe preparation must execute exactly the recipe's two steps and no lifecycle script reachable from them. The tree is shared because the tripwires are the same tripwires — a target that can ambush a reader can ambush an installer.",
+    "invariant": "Running the accepted recipe's install step and then its build step against target_root leaves the tripwire log empty and the intended-script log holding exactly one line. The same two commands WITHOUT their script-suppressing flag must fire tripwires, or the fixture proves nothing.",
+    "recipe": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+    "expected_lifecycle_hit_count": 0,
+    "expected_intended_hit_count": 1,
+    "dependency_package": "repo/hostile-dependency-tripwire",
+    "packed_dependency": "hostile-dependency-tripwire-0.0.0.tgz",
+    "setup": [
+      "Copy repo/ to a scratch directory; never install inside this repository's tree.",
+      "Pack dependency_package into packed_dependency with lifecycle scripts suppressed, so the packing step is outside the measured window.",
+      "Materialize a lockfile for the copied tree with lifecycle scripts suppressed. The single dependency resolves from the local tarball, so no network is involved.",
+      "Truncate both logs, then run the recipe steps with the argv the recipe declares."
+    ],
+    "control": "Repeat both steps with the script-suppressing flag removed and assert the tripwire log is NOT empty. Without this control the fixture cannot distinguish a working suppression from a dependency whose scripts never fire in the first place."
   }
 }
