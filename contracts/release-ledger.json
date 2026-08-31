@@ -555,7 +555,52 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.16.0+agent.1",
-      "changelog_sha256": "5c00dc8b42db6e5ec0efdc8f5331a70546527651bf584ad6087b7cd884e75a57",
+      "changelog_sha256": "d4f3a9b5f16629d0a68fbdecfbb9545e0095a540d3fea1e617a8f8b1c0e7f0dc",
+      "agent_impact": "A fourth checkpoint gate is registered, built_output.upsell_selector_scope, and it can block a doctor run that previously passed. It fires when a built page whose funnel role is upsell or downsell carries a data-next-bundle-selector that lacks data-next-upsell-context and is in the default swap selection mode: such a selector writes to the shopper's live cart at init, so loading the page charges them for a package at the next checkout without it appearing in that checkout's rendered order summary. Two consequences a consumer must plan for. First, `doctor --built` can now return blocked; it previously only produced warnings, and a consumer treating that mode as advisory will need to read its exit state. Second, all eight certified template families (apollo, apollo-mv-single-step, demeter, olympus, olympus-mv-single-step, olympus-mv-two-step, shop-single-step, shop-three-step) currently ship a display-only selector with neither attribute across 19 upsell offer includes, so a campaign built from any certified family blocks until the templates are repaired upstream in campaign-cart-starter-templates. The remedy is to add data-next-upsell-context to the named selector, or to record a bounded named-human waiver through `campaigns-os checkpoint waive --gate built_output.upsell_selector_scope`. data-next-selection-mode=\"select\" also clears the blocker and reports a warning instead, because the SDK gates every cart write on swap mode.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "`checkpoint waive --gate` accepts a fourth registered gate, built_output.upsell_selector_scope, and doctor evaluates it in the built-output phase on both the packet path and `doctor --built`. The gate is reported in derived.checkpoint_gates and in the `next` gate summary like the three before it, and `doctor --built` can now return a blocked status rather than only warnings."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "A lifecycle step was added for resolving the upsell selector-scope checkpoint, stating what an unscoped selector does to a shopper, that the gate runs on every doctor invocation rather than only after assembly, and the exact waiver command. Subsequent steps renumbered; version 1.0.6."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os advanced to 1.0.6 for the added checkpoint step."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The `checkpoint` command's registered-gate list now names four gates rather than three. The support boundary is unchanged: registered gates may still grow beneath the listed command without a surface_version advance."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The packet-local checkpoint preflight now lists four registered checkpoints, and the waiver example's --gate alternation includes built_output.upsell_selector_scope."
+        }
+      ],
+      "entry_sha256": "5b76a23ac2857c640ce3d61cfd2e51ac025eeca518223349c84f4099691f31cb"
+    },
+    {
+      "id": "RL-0008",
+      "sequence": 8,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.16.0+agent.2",
+      "changelog_sha256": "b2090937621127af2880bf64c378dd9eeb16d8e9a0fb95e80735264eb19a6c36",
       "agent_impact": "Two `qa resolve` outputs that could be believed no longer can be. First, `status: ready` now asserts that the derived entry URLs were probed AND resolved; it previously asserted only that they were derived from the packet, so a route set that was 100% dead reported ready with a next command that could not succeed. A consumer reading resolve status must handle two new terminal values: `routes_unresolved` (probed, at least one route dead, `ok: false`, first failing URL named, `qa run` suggestion suppressed) and `ready_unprobed` (routes existed but none produced a response, `ok: true`). Both are additive; the existing three values keep their meaning over probed-and-resolved routes. The status ladder is ordered by verification coverage, so `ready_unprobed` outranks `ready_with_exceptions` — read `checkpoint_gates[]` for warnings rather than inferring them from status. Offline and CI runs need no flag: a transport error degrades to `ready_unprobed` rather than failing, because a 404 is evidence about the deployment while a transport error is evidence about the caller network. `--no-probe` is for hermetic runs that must make no outbound request. Second, `theme_gate.no_commerce_pages` no longer fires on a campaign whose declared funnel includes commerce pages that this build left out of scope, so a consumer that treated that code as proof of a content-only campaign was reading a build-scope artifact. Theme gate results gain `commerce_pages_out_of_scope`, and `scope_source` gains `doctor_derived_scope+spec_topologies`. Resolve remains a diagnostic command and still exits 0 on every status.",
       "compatibility": "additive",
       "migration": "none",
@@ -579,7 +624,7 @@
           "summary": "The Theme Gate section now states that \"ships commerce pages\" is a property of the campaign rather than of one build: the gate reads built pages plus declared commerce pages this build left out of scope, the QA path unions the declared funnel into the doctor-derived scope, and commerce_pages_out_of_scope and the scope_source values are named."
         }
       ],
-      "entry_sha256": "3e18d73e9ceec78d188e165c8f3a6d2f7a21168798469be8d966a2b899d4fc2a"
+      "entry_sha256": "b2fe651ecdee53d1dea3966d6c5fb6849f3634b628964fd33957df7da0093165"
     }
   ]
 }

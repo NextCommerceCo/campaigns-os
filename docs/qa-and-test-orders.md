@@ -94,9 +94,9 @@ status.
 ### Packet-local checkpoint preflight
 
 Packet QA reads one local packet, CampaignSpec, target `_data/campaigns.json`
-entry, and Assembly Report snapshot. It evaluates three registered checkpoints
-from those objects: `page_kit.store_profile`, `page_kit.sdk_version`, and
-`polish.hidden_eager_media`. The same packet/spec snapshot supplies runtime
+entry, and Assembly Report snapshot. It evaluates four registered checkpoints
+from those objects: `page_kit.store_profile`, `page_kit.sdk_version`,
+`polish.hidden_eager_media`, and `built_output.upsell_selector_scope`. The same packet/spec snapshot supplies runtime
 identity and topology, while the same Assembly Report supplies checkpoint
 decisions, theme/polish state, package-owned page-load evidence, and QA waiver
 history. QA does not re-read those artifacts after the gates. A packet without
@@ -111,7 +111,7 @@ never suppresses another. Store Profile and SDK use the `api-metadata` family;
 the hidden eager-media assertion uses `polish_gate`.
 
 `qa resolve` remains a diagnostic command and always exits 0: it reports
-`ok: false` and `status: blocked`, prints all three gates and their safe
+`ok: false` and `status: blocked`, prints all four gates and their safe
 repair/waiver projections, and suppresses the runtime
 `qa run --browser --test-order common` suggestion until every checkpoint
 blocker is clear. `routes_unresolved` behaves the same way — `ok: false`,
@@ -142,7 +142,7 @@ before QA with the relevant gate ID:
 ```bash
 campaigns-os checkpoint waive \
   --packet campaign-runtime.build.json \
-  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media> \
+  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media|built_output.upsell_selector_scope> \
   --reason "<why>" \
   --waived-by "<named human>" \
   --review-condition "<specific re-evaluation trigger>"

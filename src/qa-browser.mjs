@@ -9,6 +9,7 @@ import { redactUrlQuery } from "./qa-url-privacy.mjs";
 import {
   commonTestOrderPaths,
   fullTestOrderPaths,
+  pageAtUrl,
   remainingActionDisposition,
   resolveTestOrderTopology,
   terminalAtUrl,
@@ -1737,6 +1738,133 @@ function createFieldTrace() {
   };
 }
 
+// Incremental evidence for one post-purchase action. The trace is created
+// before the bounded ladder step starts and updated before each operation that
+// can hang. Its synchronous summary survives when the timeout wins the race.
+function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path, inspectTimeoutMs = 1000 }) {
+  const requestedAction = path === "accept" ? "add" : "skip";
+  const selector = `[data-next-upsell-action="${requestedAction}"]`;
+  let actionNavigationCount = Array.isArray(events?.navigations) ? events.navigations.length : 0;
+  let actionUpsellRequestCount = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url)).length;
+  let element = { present: null, visible: null, enabled: null };
+  let sdk = { window_next_present: null, display_ready: null, sdk_loading: null };
+  let clickAttempted = false;
+  let clickCompleted = false;
+  let stepCompleted = false;
+
+  const inspect = async () => {
+    const control = page.locator(selector).first();
+    const count = await control.count().catch(() => 0);
+    element = {
+      present: count > 0,
+      visible: count > 0 ? await control.isVisible().catch(() => false) : false,
+      enabled: count > 0 ? await control.isEnabled().catch(() => false) : false,
+    };
+    sdk = await settleDiagnosticWithin(page.evaluate(() => ({
+      window_next_present: Boolean(window.next),
+      display_ready: document.documentElement.classList.contains("next-display-ready"),
+      sdk_loading: document.body?.getAttribute("data-next-sdk-loading") ?? null,
+    })), inspectTimeoutMs, sdk);
+    return summary();
+  };
+
+  const snapshot = () => {
+    const currentUrl = redactUrlQuery(safePageUrl(page));
+    const routePage = pageAtUrl(topologyPlan, currentUrl);
+    const navigations = Array.isArray(events?.navigations) ? events.navigations : [];
+    const upsellRequests = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url));
+    const navigationObserved = navigations.length > actionNavigationCount;
+    const apiRequestObserved = upsellRequests.length > actionUpsellRequestCount;
+    const basis = [
+      ...(navigationObserved ? ["navigation"] : []),
+      ...(apiRequestObserved ? ["upsell_api_request"] : []),
+    ];
+    const lastNavigation = navigations.at(-1);
+    const lastUpsellRequest = upsellRequests.at(-1);
+    return {
+      route: {
+        page_id: routePage?.page_id || null,
+        page_type: routePage?.page_type || null,
+        url: currentUrl,
+      },
+      edge_index: stepIndex,
+      edge_number: stepIndex + 1,
+      requested_action: requestedAction,
+      selector,
+      element: { ...element },
+      sdk: { ...sdk },
+      action_binding: {
+        click_attempted: clickAttempted,
+        click_completed: clickCompleted,
+        observed: basis.length > 0,
+        basis,
+      },
+      last_navigation: lastNavigation?.url
+        ? { url: redactUrlQuery(lastNavigation.url) }
+        : currentUrl
+          ? { url: currentUrl }
+          : null,
+      last_upsell_api_request: lastUpsellRequest
+        ? { method: lastUpsellRequest.method || null, url: redactUrlQuery(lastUpsellRequest.url) }
+        : null,
+    };
+  };
+
+  // Successful actions keep the established compact ladder shape. The trace
+  // is failure evidence, not routine verdict noise.
+  const summary = () => stepCompleted ? null : snapshot();
+
+  const formatError = (error) => {
+    const evidence = snapshot();
+    const state = evidence.element;
+    const sdkState = evidence.sdk;
+    const lastNavigation = evidence.last_navigation?.url || "none";
+    const lastRequest = evidence.last_upsell_api_request
+      ? `${evidence.last_upsell_api_request.method || "(method unknown)"} ${evidence.last_upsell_api_request.url}`
+      : "none";
+    return [
+      error instanceof Error ? error.message : String(error),
+      `route=${evidence.route.url || "unknown"}`,
+      `page_id=${evidence.route.page_id || "unknown"}`,
+      `edge=${evidence.edge_number}`,
+      `action=${evidence.requested_action}`,
+      `selector=${evidence.selector}`,
+      `element=present:${state.present},visible:${state.visible},enabled:${state.enabled}`,
+      `sdk=window_next:${sdkState.window_next_present},display_ready:${sdkState.display_ready},loading:${sdkState.sdk_loading}`,
+      `binding_observed=${evidence.action_binding.observed}`,
+      `last_navigation=${lastNavigation}`,
+      `last_upsell_api_request=${lastRequest}`,
+    ].join("; ");
+  };
+
+  return {
+    inspect,
+    summary,
+    formatError,
+    markClickAttempted: () => {
+      clickAttempted = true;
+      actionNavigationCount = Array.isArray(events?.navigations) ? events.navigations.length : 0;
+      actionUpsellRequestCount = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url)).length;
+    },
+    markClickCompleted: () => { clickCompleted = true; },
+    markStepCompleted: () => { stepCompleted = true; },
+  };
+}
+
+async function settleDiagnosticWithin(promise, timeoutMs, fallback) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise).catch(() => fallback),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // Structured step evidence. Callers pass either an object or a thunk; a thunk
 // is resolved at record time so a step that fails or times out still reports
 // what it had gathered up to the failure (that is the whole point — the field
@@ -1780,7 +1908,7 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
     skip: (step, reason, evidence = null) => record(step, "skipped", { detail: reason, evidence }),
     // Run a step with a bounded timeout. A resolved string becomes the step
     // detail; a resolved { skip } object records the step as skipped.
-    async run(step, fn, { timeoutMs, detail = null, evidence = null } = {}) {
+    async run(step, fn, { timeoutMs, detail = null, evidence = null, formatError = null } = {}) {
       const startedMs = now();
       const startedAt = new Date(startedMs).toISOString();
       try {
@@ -1801,18 +1929,40 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
         });
         return value;
       } catch (error) {
-        const timedOut = error?.code === "step_timeout";
+        const formatted = formatStepError(error, formatError);
+        const timedOut = formatted.error?.code === "step_timeout";
         record(step, timedOut ? "timeout" : "failed", {
           startedAt,
           durationMs: now() - startedMs,
           detail,
           evidence,
-          error: error instanceof Error ? error.message : String(error),
+          error: formatted.message,
         });
-        throw error;
+        throw formatted.error;
       }
     },
   };
+}
+
+function formatStepError(error, formatter) {
+  const originalMessage = error instanceof Error ? error.message : String(error);
+  if (typeof formatter !== "function") return { error, message: originalMessage };
+  let message = originalMessage;
+  try {
+    const candidate = formatter(error);
+    if (typeof candidate === "string" && candidate.trim()) message = candidate.trim();
+  } catch {
+    return { error, message: originalMessage };
+  }
+  if (message === originalMessage) return { error, message };
+  if (error instanceof Error) {
+    error.message = message;
+    return { error, message };
+  }
+  const formatted = new Error(message);
+  if (error?.code) formatted.code = error.code;
+  if (error?.hostedRedirect) formatted.hostedRedirect = error.hostedRedirect;
+  return { error: formatted, message };
 }
 
 function recordTestOrderTerminalEvidence({ ladder, topologyPlan, finalUrl }) {
@@ -2168,11 +2318,14 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       break;
     }
     const step = upsellSteps[stepIndex];
+    const actionTrace = createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path: step });
     await ladder.run("upsell_action", async () => {
       const initialLineItems = order.receipt_line_items.slice();
       const initialUpsellMutationCount = upsellMutationCount(events);
+      await actionTrace.inspect();
       await waitForUpsellPageReady(page, args);
-      const upsell = await clickUpsellPath(page, step, { events, stepIndex });
+      await actionTrace.inspect();
+      const upsell = await clickUpsellPath(page, step, { events, stepIndex, trace: actionTrace });
       const preferredOrderBody = upsell.api_response_order_body || null;
       delete upsell.api_response_order_body;
       order.upsell = upsell;
@@ -2207,8 +2360,13 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
         upsell.verification = proof;
         stepFailures.push(...upsellActionStepFailures(stepIndex, step, upsell, proof));
       }
+      actionTrace.markStepCompleted();
       return `step ${stepIndex + 1}: ${step}`;
-    }, { timeoutMs: budget() });
+    }, {
+      timeoutMs: budget(),
+      evidence: actionTrace.summary,
+      formatError: actionTrace.formatError,
+    });
   }
 
   const finalUrl = safePageUrl(page) || "";
@@ -3146,7 +3304,7 @@ async function waitForLateOrderEvidence(page, events, { timeoutMs = 4000, interv
   }
 }
 
-async function clickUpsellPath(page, path, _options = {}) {
+async function clickUpsellPath(page, path, { trace = null } = {}) {
   const offerUrl = safePageUrl(page);
   const action = path === "accept" ? "add" : "skip";
   const selector = `[data-next-upsell-action="${action}"]`;
@@ -3162,9 +3320,16 @@ async function clickUpsellPath(page, path, _options = {}) {
       ), { timeout: 20000 }).catch(() => null)
     : Promise.resolve(null);
   await control.scrollIntoViewIfNeeded().catch(() => {});
-  await control.click({ timeout: 10000 }).catch(async () => {
+  trace?.markClickAttempted();
+  let clickCompleted = false;
+  try {
+    await control.click({ timeout: 10000 });
+    clickCompleted = true;
+  } catch {
     await control.click({ force: true });
-  });
+    clickCompleted = true;
+  }
+  if (clickCompleted) trace?.markClickCompleted();
   const mutationResponse = await mutationPromise;
   const mutationBody = mutationResponse ? await readJsonResponseBody(mutationResponse) : null;
   await waitForCheckoutResult(page);
@@ -3272,7 +3437,7 @@ function testOrderAssertion(page, plan, result) {
 }
 
 function captureCheckoutEvents(page) {
-  const events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
+  const events = { requests: [], responses: [], failed: [], console: [], pageErrors: [], navigations: [] };
   const interesting = /\/api\/v1\/(?:orders|upsells|carts)\/?|\/transactions|spreedly|campaigns\.apps/i;
   page.on("request", (request) => {
     if (!interesting.test(request.url())) return;
@@ -3293,6 +3458,14 @@ function captureCheckoutEvents(page) {
   page.on("requestfailed", (request) => {
     if (!interesting.test(request.url())) return;
     events.failed.push({ url: request.url(), failure: request.failure()?.errorText || "request failed" });
+  });
+  page.on("framenavigated", (frame) => {
+    try {
+      if (typeof page.mainFrame === "function" && frame !== page.mainFrame()) return;
+      events.navigations.push({ url: redactUrlQuery(frame.url()) });
+    } catch {
+      // Navigation evidence is diagnostic only; never break the order path.
+    }
   });
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) events.console.push({ type: message.type(), text: trim(message.text()) });
@@ -3325,6 +3498,9 @@ function sanitizedEvents(events) {
     failed: events.failed.slice(-20),
     console: events.console.slice(-20),
     pageErrors: events.pageErrors.slice(-20),
+    navigations: (events.navigations || []).slice(-20).map((navigation) => ({
+      url: redactUrlQuery(navigation.url),
+    })),
   };
 }
 
@@ -4154,6 +4330,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   TEST_ORDER_STEP_LADDER,
   createStepLadder,
   createFieldTrace,
+  createUpsellActionTrace,
   fillCheckoutFields,
   cartCreationEvidence,
   cartLineCount,
