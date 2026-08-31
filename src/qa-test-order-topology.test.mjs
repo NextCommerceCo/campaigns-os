@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   commonTestOrderPaths,
   fullTestOrderPaths,
+  pageAtUrl,
   remainingActionDisposition,
   resolveTestOrderTopology,
   terminalAtUrl,
@@ -110,6 +111,22 @@ test("full path resolution reports cycles and unresolved terminals without inven
     { path: "decline", reason: "unresolved_target" },
     { path: "accept", reason: "cycle" },
   ]);
+});
+
+test("resolved route diagnostics retain malformed topology rows without matching them", () => {
+  const plan = resolveTestOrderTopology({
+    funnel_id: "diagnostic-rows",
+    pages: [
+      page("checkout", "checkout", "checkout/"),
+      { page_id: "missing-url", page_type: "upsell" },
+      { page_id: "bad-url", page_type: "upsell", url: "not a URL" },
+    ],
+  });
+  assert.deepEqual(plan.route_pages.slice(1), [
+    { page_id: "missing-url", page_type: "upsell", url: null },
+    { page_id: "bad-url", page_type: "upsell", url: "not a URL" },
+  ]);
+  assert.equal(pageAtUrl(plan, "not a URL"), null);
 });
 
 test("runtime safety stops only at recognized terminals, never for a missing offer control", () => {
