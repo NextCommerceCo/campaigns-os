@@ -555,8 +555,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.16.0+agent.1",
-      "changelog_sha256": "60f64b7eb77894e5af03c967bc51afc74f83325a1f961789fd4d00f0205d31fe",
-      "agent_impact": "A fourth checkpoint gate is registered, built_output.upsell_selector_scope, and it can block a doctor run that previously passed. It fires when a built page whose funnel role is upsell or downsell carries a data-next-bundle-selector that lacks data-next-upsell-context and is in the default swap selection mode: such a selector writes to the shopper's live cart at init, so loading the page charges them for a package at the next checkout without it appearing in that checkout's rendered order summary. Two consequences a consumer must plan for. First, `doctor --built` can now return blocked; it previously only produced warnings, and a consumer treating that mode as advisory will need to read its exit state. Second, the certified apollo-mv-single-step, olympus, olympus-mv-two-step, shop-single-step, and shop-three-step upsell offer includes currently ship a display-only selector with neither attribute, so campaigns built from them block until the templates are repaired upstream. The remedy is to add data-next-upsell-context to the named selector, or to record a bounded named-human waiver through `campaigns-os checkpoint waive --gate built_output.upsell_selector_scope`. data-next-selection-mode=\"select\" also clears the blocker and reports a warning instead, because the SDK gates every cart write on swap mode.",
+      "changelog_sha256": "d4f3a9b5f16629d0a68fbdecfbb9545e0095a540d3fea1e617a8f8b1c0e7f0dc",
+      "agent_impact": "A fourth checkpoint gate is registered, built_output.upsell_selector_scope, and it can block a doctor run that previously passed. It fires when a built page whose funnel role is upsell or downsell carries a data-next-bundle-selector that lacks data-next-upsell-context and is in the default swap selection mode: such a selector writes to the shopper's live cart at init, so loading the page charges them for a package at the next checkout without it appearing in that checkout's rendered order summary. Two consequences a consumer must plan for. First, `doctor --built` can now return blocked; it previously only produced warnings, and a consumer treating that mode as advisory will need to read its exit state. Second, all eight certified template families (apollo, apollo-mv-single-step, demeter, olympus, olympus-mv-single-step, olympus-mv-two-step, shop-single-step, shop-three-step) currently ship a display-only selector with neither attribute across 19 upsell offer includes, so a campaign built from any certified family blocks until the templates are repaired upstream in campaign-cart-starter-templates. The remedy is to add data-next-upsell-context to the named selector, or to record a bounded named-human waiver through `campaigns-os checkpoint waive --gate built_output.upsell_selector_scope`. data-next-selection-mode=\"select\" also clears the blocker and reports a warning instead, because the SDK gates every cart write on swap mode.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -591,7 +591,7 @@
           "summary": "The packet-local checkpoint preflight now lists four registered checkpoints, and the waiver example's --gate alternation includes built_output.upsell_selector_scope."
         }
       ],
-      "entry_sha256": "4e1ee75eccd081ea10ff908f6140754130735b94d939a00d9b975f0ca2004064"
+      "entry_sha256": "5b76a23ac2857c640ce3d61cfd2e51ac025eeca518223349c84f4099691f31cb"
     }
   ]
 }

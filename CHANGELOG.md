@@ -59,15 +59,17 @@ Notable supported-surface changes are recorded here.
     without upsell pricing, which is worth seeing.
 
   One finding this immediately produces, recorded here because it is larger than
-  the gate: the certified `apollo-mv-single-step`, `olympus`,
-  `olympus-mv-two-step`, `shop-single-step`, and `shop-three-step` upsell offer
-  includes all ship a hidden display-only bundle selector carrying neither
-  attribute, deliberately placed outside `[data-next-upsell="offer"]` so the
-  accept button resolves the right sibling. That placement is correct and the
-  missing scope is not, so this gate will block campaigns built from those
-  templates until the templates carry `data-next-upsell-context` (or at minimum
-  `data-next-selection-mode="select"`) on the display selector. The repair is
-  upstream in `campaign-cart-starter-templates`, not here.
+  the gate: **every one of the eight certified template families** — `apollo`,
+  `apollo-mv-single-step`, `demeter`, `olympus`, `olympus-mv-single-step`,
+  `olympus-mv-two-step`, `shop-single-step`, `shop-three-step` — ships a hidden
+  display-only bundle selector carrying neither attribute, across 19 upsell
+  offer includes. It is one pattern repeated, not eight separate mistakes: the
+  selector is deliberately placed outside `[data-next-upsell="offer"]` so the
+  accept button resolves the right sibling, and that placement is correct while
+  the missing scope is not. So this gate blocks campaigns built from any
+  certified family until the templates carry `data-next-upsell-context` (or at
+  minimum `data-next-selection-mode="select"`) on the display selector. The
+  repair is upstream in `campaign-cart-starter-templates`, not here.
 
 ## [1.16.0] - 2026-08-31
 
