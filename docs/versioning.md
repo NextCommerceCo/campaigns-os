@@ -8,6 +8,14 @@ This repo uses independent compatibility versions:
 - Assembly Report: `campaign-runtime-assembly-report/v0`
 - Design Source Package: `campaign-design-source-package/v0`
 - Workflow Finding: `campaigns-os-workflow-finding/v0`
+- QA Verdict: `campaigns-os-qa-verdict/v0` (JSON Schema:
+  `schemas/campaigns-os-qa-verdict.v0.schema.json`; the emitted
+  `schema_version` field is the literal `"1.0"` — it predates the
+  slash-versioned naming and the portal receiver validates that same literal,
+  so the emitted value cannot change without a breaking shape change)
+- QA Verdict sidecar projection: same `"1.0"` literal, projection guarantees in
+  `schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json` (one contract, two
+  schema files — the sidecar is an allowlist projection, never a second lineage)
 - CampaignSpec: `4.2`–`4.3` (JSON Schema: `schemas/campaign-spec.v4.schema.json`)
 - starter-template agent contract: `1`
 - commerce surface catalog: `2`

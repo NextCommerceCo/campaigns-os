@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-qa-verdict.v0.schema.json",
+  "title": "Campaigns OS QA Verdict v0",
+  "description": "The full QA verdict `campaigns-os qa run` writes under qa-output/<map-id>/<run-id>.json and publishes to the QA portal receiver. Contract identity is campaigns-os-qa-verdict/v0; the emitted schema_version FIELD is the literal \"1.0\" (it predates the slash-versioned naming convention, and the receiving Worker validates that same literal — changing the emitted value is a breaking shape change). Additions to v0 are expected; consumers must tolerate unknown fields, so additionalProperties stays true. Full verdicts carry live storefront URLs, request evidence, and order references and are gitignored — the committed form is the allowlist projection described by campaigns-os-qa-verdict-sidecar.v0.schema.json. Trust semantics: the CLI never emits trusted/trust_level/verified_at; the QA verdict receiver stamps them server-side at ingest, so they appear only on records read back from the portal. Schema-validity is NOT trust — a forged record can be shape-valid. Every downstream consumer MUST filter or segregate records carrying trusted: false. See docs/qa-and-test-orders.md (Verdict schema and trust semantics).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "run_id",
+    "campaign_slug",
+    "spec_version",
+    "spec_hash",
+    "started_at",
+    "completed_at",
+    "runtime",
+    "disposition",
+    "assertions",
+    "test_orders",
+    "exceptions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "description": "The emitted schema-version literal. \"1.0\" is the campaigns-os-qa-verdict/v0 shape; both src/qa-verdict.mjs validateVerdict and the portal receiver reject any other value."
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The QA run identity, also the verdict filename under qa-output/<map-id>/. The portal receiver additionally restricts it to [A-Za-z0-9_-]{1,64}."
+    },
+    "campaign_slug": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Carries the Campaign Map ID for schema back-compat; the true public route slug rides alongside as public_route_slug so consumers stop conflating the two."
+    },
+    "public_route_slug": {
+      "type": ["string", "null"],
+      "description": "The campaign's public route slug. null (or absent on verdicts emitted before the field existed) when no slug was resolved."
+    },
+    "campaign_ref_id": {
+      "type": ["integer", "null"],
+      "description": "The platform campaign ref id from the CampaignSpec, when available."
+    },
+    "spec_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "CampaignSpec schema version the run validated against (e.g. \"4.3\"), or a runner-scoped marker such as \"parity-fixture-<version>\" for fixture-driven parity runs."
+    },
+    "spec_hash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Hash of the CampaignSpec the run used, prefixed with the algorithm (e.g. \"sha256:<hex>\")."
+    },
+    "started_at": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO 8601 timestamp the QA run started."
+    },
+    "completed_at": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO 8601 timestamp the verdict was finalized."
+    },
+    "runtime": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The producing runtime identity, e.g. \"campaigns-os-node-qa@0.1.0-alpha.0\"."
+    },
+    "operator": {
+      "type": "string",
+      "description": "Best-effort local operator identity (e.g. \"<user>@local\"). Empty string when unresolvable. NOT verified attribution — see the trust fields."
+    },
+    "base_url": {
+      "type": "string",
+      "description": "The --base-url or packet deploy URL the run resolved pages against. Omitted when the run had none. URL-bearing: emptied from the committed sidecar projection."
+    },
+    "entry_urls": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pageUrlRef" },
+      "description": "One entry-page reference per funnel topology. URL-bearing: emptied ([]) in the committed sidecar projection."
+    },
+    "page_urls": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pageUrlRef" },
+      "description": "Every resolved page URL across the run's funnel topologies, deduplicated by URL. URL-bearing: emptied ([]) in the committed sidecar projection."
+    },
+    "tested_urls": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pageUrlRef" },
+      "description": "Pages that produced an http:<page_id> assertion, joined back to the known page references. URL-bearing: emptied ([]) in the committed sidecar projection."
+    },
+    "disposition": {
+      "type": "string",
+      "enum": ["ready", "ready_with_exceptions", "blocked"],
+      "description": "Derived from the assertions (and the commercial section's status): any unwaived failing blocker => blocked; any warn/manual_review/waived assertion or a proven commercial mismatch => ready_with_exceptions; otherwise ready. Waived is never clean. ready_with_waivers is the doctor/next checkpoint term, never a verdict disposition."
+    },
+    "assertions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/assertion" },
+      "description": "The flat assertion list every QA leg serializes into. The portal receiver caps validation at 500 entries."
+    },
+    "test_orders": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/testOrder" },
+      "description": "One entry per typed-card browser test order the run drove, with persisted-order verification and sanitized request evidence."
+    },
+    "exceptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/exception" },
+      "description": "Derived projection of every assertion that failed, warned, needs manual review, or carries warn/blocker severity — the quick exception read without re-scanning assertions."
+    },
+    "commercial": {
+      "$ref": "#/$defs/commercial",
+      "description": "The commercial parity section, present on runs where calculate scenarios were planned (or explicitly recorded as unavailable). Absent on verdicts emitted before the leg existed."
+    },
+    "trusted": {
+      "type": "boolean",
+      "description": "SERVER-STAMPED, never CLI-emitted: the QA verdict receiver classifies each submission at ingest and stamps the stored record. false means the record arrived without the ingest credential (an anonymous submission) — shape-valid but unattributed. Present only on records read back from the receiver. Every downstream consumer MUST filter or segregate records with trusted: false; campaigns-os itself refuses to promote such a record into the committed sidecar and excludes it from run-record verdict inference."
+    },
+    "trust_level": {
+      "type": "string",
+      "enum": ["anonymous", "shared_secret"],
+      "description": "SERVER-STAMPED companion to trusted: how the submission authenticated. anonymous pairs with trusted: false; shared_secret pairs with trusted: true."
+    },
+    "verified_at": {
+      "type": ["string", "null"],
+      "description": "SERVER-STAMPED companion to trusted: ISO 8601 instant the receiver verified the ingest credential. null on untrusted records."
+    }
+  },
+  "$defs": {
+    "pageUrlRef": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["url"],
+      "properties": {
+        "funnel_id": { "type": ["string", "null"] },
+        "funnel_name": { "type": ["string", "null"] },
+        "page_id": { "type": ["string", "null"] },
+        "page_type": { "type": ["string", "null"] },
+        "label": { "type": ["string", "null"] },
+        "url": { "type": "string", "minLength": 1 }
+      },
+      "description": "A funnel-topology page reference: identity fields plus the resolved live URL."
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "family", "page", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable assertion identity, e.g. \"http:checkout\", \"theme_gate.nothing_generatable\", \"analytics-correctness:purchase-fires\"."
+        },
+        "family": {
+          "type": "string",
+          "enum": [
+            "theme_gate",
+            "polish_gate",
+            "funnel-flow",
+            "meta-tags",
+            "api-metadata",
+            "browser-runtime",
+            "template_residue",
+            "pricing",
+            "browser-test-order",
+            "browser-receipt-rendering",
+            "analytics-correctness",
+            "analytics-parity",
+            "parity-capture"
+          ],
+          "description": "The canonical assertion-family vocabulary (QA_ASSERTION_FAMILY_VOCABULARY in src/qa-verdict.mjs; a drift test asserts set equality against the emitters). Append-only: a new emitter family is an additive schema change."
+        },
+        "page": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The page_id or label the assertion is about, or the reserved value \"campaign\" for campaign-level assertions."
+        },
+        "url": {
+          "type": "string",
+          "description": "The live page URL the assertion ran against, when page-scoped. URL-bearing: stripped from the committed sidecar projection."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "warn", "skipped", "manual_review"]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warn", "blocker"],
+          "description": "Present on issue-bearing assertions. The portal receiver requires it when status is fail or warn."
+        },
+        "expected": { "type": "string" },
+        "actual": { "type": "string" },
+        "evidence": {
+          "type": "object",
+          "description": "Free-form structured evidence for this assertion (gate codes, capture summaries, blocked_by references, step ladders). Shape varies by family and is not individually contracted here. Stripped from the committed sidecar projection."
+        },
+        "waiver": { "$ref": "#/$defs/waiver" }
+      }
+    },
+    "waiver": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["reason", "waived_by", "waived_at"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1 },
+        "waived_by": { "type": "string", "minLength": 1 },
+        "waived_at": { "type": "string", "minLength": 1 }
+      },
+      "description": "A bounded named-human waiver riding an assertion. Any assertion carrying one keeps the disposition at ready_with_exceptions — waived is never clean."
+    },
+    "exception": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "family", "page", "status", "severity"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "family": { "type": ["string", "null"] },
+        "page": { "type": ["string", "null"] },
+        "url": {
+          "type": ["string", "null"],
+          "description": "URL-bearing: null/absent in the committed sidecar projection."
+        },
+        "status": { "type": ["string", "null"] },
+        "severity": { "type": ["string", "null"] },
+        "expected": { "type": "string" },
+        "actual": { "type": "string" }
+      },
+      "description": "deriveExceptions output: the source assertion's identity fields. Values are nullable because the projection copies whatever the assertion carried."
+    },
+    "testOrder": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["path", "ok", "verification", "evidence"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The planned order path, e.g. \"checkout\", \"accept\", \"accept-decline-accept\", or a tier/coupon plan label such as \"checkout@tier:8\"."
+        },
+        "ok": { "type": "boolean" },
+        "plan_id": { "type": "string" },
+        "plan": {
+          "type": "object",
+          "description": "Summary of a spec-derived tier/coupon plan (--test-order tiers), when the order ran under one."
+        },
+        "next_order_id": { "type": ["string", "null"] },
+        "ref_id": { "type": ["string", "null"] },
+        "qa_email": {
+          "type": ["string", "null"],
+          "description": "Always the redaction marker (\"[redacted-qa-email]\") — the generated QA email itself never enters the verdict."
+        },
+        "is_test": { "type": ["boolean", "null"] },
+        "payment_method": { "type": ["string", "null"] },
+        "card": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "last4": { "type": "string" } },
+          "description": "Card last4 only; full test-card numbers never enter the verdict."
+        },
+        "checkout_url": { "type": "string" },
+        "final_url": { "type": ["string", "null"] },
+        "cart_state": { "type": ["object", "null"] },
+        "receipt_line_items": { "type": "array" },
+        "final_receipt_line_items": { "type": "array" },
+        "vouchers": { "type": "array" },
+        "discount_total": { "type": ["number", "null"] },
+        "upsell": { "type": "object" },
+        "upsell_steps": { "type": "array" },
+        "receipt_rendering": { "type": "object" },
+        "verification": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "verified": { "type": "boolean" },
+            "order_create_status": { "type": ["integer", "null"] },
+            "order_read_status": { "type": ["integer", "null"] },
+            "total_incl_tax": { "type": ["string", "null"] },
+            "currency": { "type": ["string", "null"] },
+            "order_create_observation": { "type": "string" },
+            "error": { "type": ["string", "null"] }
+          },
+          "description": "Persisted-order read-back verification — the authoritative proof path."
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "steps": {
+              "type": "array",
+              "description": "The step-ladder: ordered, individually timed named steps ({step, status, started_at, duration_ms, detail?, evidence?, error?}), appended as each finishes so a crash still leaves the ladder up to the failure point."
+            },
+            "events": {
+              "type": "object",
+              "description": "Sanitized network/console event capture. Checkout request bodies and generated QA emails are redacted before serialization."
+            },
+            "order_request_seen": { "type": "boolean" },
+            "spreedly_tokenized": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "commercial": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "status"],
+      "properties": {
+        "schema_version": { "const": "campaigns-os-commercial-parity/v0" },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "mismatch", "incomplete", "not_applicable", "not_run"],
+          "description": "mismatch keeps the verdict at ready_with_exceptions; incomplete preserves the disposition derived from ordinary assertions and never invents an exception."
+        },
+        "coverage_complete": { "type": "boolean" },
+        "findings": {
+          "type": "array",
+          "description": "Proven contract-governed claim mismatches, serialized deterministically into the flat assertions array as warn-severity pricing assertions."
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["code"],
+            "properties": {
+              "code": { "type": "string", "minLength": 1 },
+              "count": { "type": "integer" }
+            }
+          },
+          "description": "Sanitized capture/proxy/limit issue codes with counts. An issue records incomplete evidence; it never invents a mismatch."
+        }
+      },
+      "description": "The compact commercial-parity report: counters over checked pages, scenarios, and claims, plus findings and issues. Counter fields are additive and not individually contracted here."
+    }
+  }
+}

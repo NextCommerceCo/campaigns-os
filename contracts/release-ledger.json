@@ -214,9 +214,72 @@
       "sequence": 2,
       "date": "2026-08-31",
       "kind": "release",
+      "surface_version": "1.15.0",
+      "changelog_section": "1.15.0",
+      "changelog_sha256": "1e11ec7ead6d65937d6f43da3c1b6fd8be97d816d03911ae26c15f327599a293",
+      "agent_impact": "The QA Verdict and its committed sidecar projection now have hashed schema files a consumer can validate against, and the trust semantics of readback records are documented: trusted/trust_level/verified_at are receiver-stamped, trusted: false marks an anonymous submission, and every readback consumer must filter or segregate untrusted records. run-record verdict inference and sidecar promotion now enforce that segregation. Nothing existing changed shape; adoption is optional and additive.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "summary": "The full QA verdict schema was introduced (contract identity campaigns-os-qa-verdict/v0; emitted schema_version literal \"1.0\"), derived from the emitting code and validated against real emitted verdicts. It documents the receiver-stamped trust fields and requires consumers to tolerate unknown additive fields."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+          "summary": "The committed qa-verdict.json sidecar projection schema was introduced: same \"1.0\" schema_version literal as the full verdict, with the projection guarantees pinned — generated_at, emptied URL-bearing fields, the per-assertion allowlist, and the impossibility of receiver trust stamps."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advanced to 1.15.0; the QA verdict and sidecar-projection schemas were added as hashed entries."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The schema catalog enumeration now names the QA Verdict and its sidecar projection."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "The QA Verdict and sidecar-projection version lines were declared, including the rule that the emitted schema_version literal stays \"1.0\" and cannot change without a breaking shape change."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "A Verdict schema and trust semantics section was added: what trusted: false means (an anonymous, unattributed submission), that shape validity is not trust, and that every downstream readback consumer must filter on trusted or segregate untrusted records."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "run-record automatic QA-verdict inference now excludes records stamped trusted: false, and qa promote refuses to project an untrusted source verdict into the committed sidecar; an operator-explicit --qa-verdict path is still honored as given. No command, subcommand, or flag was added, renamed, or removed."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated for the 1.15.0 surface: the supported-surface-at-generation-time line advanced. No contract content changed."
+        }
+      ],
+      "entry_sha256": "a3bdbc5750ceaca928edd2c799c68a00a33ad20d0b5dc178cdca5d0f45accb58"
+    },
+    {
+      "id": "RL-0003",
+      "sequence": 3,
+      "date": "2026-08-31",
+      "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.14.0+agent.1",
-      "changelog_sha256": "e01aa9fc036f78d5074ec723d1fc919571203d85bac0db94a5487e4f52d42b17",
+      "changelog_section": "1.15.0+agent.1",
+      "changelog_sha256": "0bbc5795dc00da28da20e49b66df03bc5de03ae6face5abb6c9bb890722f7345",
       "agent_impact": "The certified-template gate, doctor, and standardization report now also state each certified family’s last-verified SDK version and its delta from the current SDK, read from new per-family verification blocks on the vendored commerce surface catalog snapshot. Purely additive output: no command, flag, artifact schema, or exit-code behavior changed, and nothing that passed before fails now. A consumer may optionally read the new assembly.template_certification.freshness warning code and the catalog families[].verification blocks.",
       "compatibility": "additive",
       "migration": "none",
@@ -234,7 +297,7 @@
           "summary": "Documents the identity block’s new template_certification_freshness field and Certification freshness markdown line, including the vendored-data current-SDK definition."
         }
       ],
-      "entry_sha256": "3287cff7945130468c43691c37e4503d5e5696c969b5215b55e87b095920a65e"
+      "entry_sha256": "32b4bd669254153377e269bb7ca9e8cce2705d3f9dcf9d5ba9f3686d06d35956"
     }
   ]
 }

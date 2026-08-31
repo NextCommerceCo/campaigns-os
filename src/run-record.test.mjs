@@ -515,6 +515,63 @@ test("CLI: run-record infers the latest local QA verdict and records optional ag
   });
 });
 
+test("CLI: run-record QA-verdict inference excludes records stamped untrusted", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+    const targetRepo = join(dir, packet.assembly.target_repo);
+    const verdictDir = join(targetRepo, "qa-output", packet.spec.map_id);
+    mkdirSync(verdictDir, { recursive: true });
+    const baseVerdict = {
+      schema_version: "1.0",
+      campaign_slug: packet.spec.map_id,
+      assertions: [],
+      exceptions: [],
+    };
+    // The forged control (campaigns-os#260): shape-valid, newer, stamped
+    // trusted: false by the readback receiver — it would win the recency
+    // tiebreak if trust did not segregate it.
+    writeFileSync(join(verdictDir, "qa_run_forged.json"), JSON.stringify({
+      ...baseVerdict,
+      run_id: "qa_run_forged",
+      completed_at: "2026-08-30T00:00:00.000Z",
+      disposition: "ready",
+      trusted: false,
+      trust_level: "anonymous",
+      verified_at: null,
+    }, null, 2));
+    writeFileSync(join(verdictDir, "qa_run_genuine.json"), JSON.stringify({
+      ...baseVerdict,
+      run_id: "qa_run_genuine",
+      completed_at: "2026-08-01T00:00:00.000Z",
+      disposition: "blocked",
+    }, null, 2));
+
+    const out = JSON.parse(execFileSync("node", [
+      CLI, "run-record",
+      "--packet", packetPath,
+      "--run-id", "run_untrusted_excluded",
+      "--no-write", "--json",
+    ], { encoding: "utf8" }));
+
+    const qaRef = out.record.artifacts.find((ref) => ref.kind === "qa_verdict");
+    assert.ok(qaRef, "a genuine verdict should still be inferred");
+    assert.match(qaRef.path, /qa_run_genuine\.json$/);
+    assert.equal(out.record.observations.qa.disposition, "blocked");
+
+    // With only the forged untrusted record present, inference finds nothing.
+    rmSync(join(verdictDir, "qa_run_genuine.json"));
+    const outForgedOnly = JSON.parse(execFileSync("node", [
+      CLI, "run-record",
+      "--packet", packetPath,
+      "--run-id", "run_untrusted_only",
+      "--no-write", "--json",
+    ], { encoding: "utf8" }));
+    assert.equal(outForgedOnly.record.artifacts.some((ref) => ref.kind === "qa_verdict"), false);
+  });
+});
+
 test("CLI: run-record writes the manifest to .campaign-runtime/run-records by default", () => {
   withTempDir((dir) => {
     // Copy the packet into the tmp dir so the record (baseDir = packet dir)
