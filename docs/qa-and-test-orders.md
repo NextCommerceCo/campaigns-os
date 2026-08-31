@@ -209,6 +209,48 @@ campaigns-os qa promote \
 atomically, refuses the destination sidecar as its own source, and leaves the
 source verdict byte-identical.
 
+### Verdict schema and trust semantics
+
+The verdict shape is contracted as `campaigns-os-qa-verdict/v0`
+([`schemas/campaigns-os-qa-verdict.v0.schema.json`](../schemas/campaigns-os-qa-verdict.v0.schema.json)),
+with the committed sidecar projection's guarantees pinned separately in
+[`schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json`](../schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json).
+Both describe the same emitted `schema_version` literal `"1.0"` — one contract,
+projected two ways, never a second lineage. The emitted literal predates the
+slash-versioned naming convention and the portal receiver validates the same
+literal, so changing it is a breaking shape change. Additions to v0 are
+expected; consumers must tolerate unknown fields.
+
+**Trust is stamped by the receiver, never by this CLI.** The QA portal
+receiver accepts verdict posts publicly (after shape/size/rate checks) and
+classifies each submission at ingest: a post carrying the ingest credential is
+stored with `trusted: true` / `trust_level: "shared_secret"` / a `verified_at`
+instant; a post without it — an **anonymous submission** — is stored with
+`trusted: false` / `trust_level: "anonymous"` / `verified_at: null`. Those
+three fields therefore appear only on records read back from the receiver;
+verdicts this runner writes locally never carry them.
+
+`trusted: false` means exactly this: **the record is shape-valid but
+unattributed — anyone on the internet could have submitted it.** Schema
+validity is not trust; a forged verdict passes every shape check by design.
+Consequently:
+
+- **Every downstream consumer of verdict readback MUST filter on `trusted` or
+  segregate untrusted records** (render them in a visibly separate, untrusted
+  lane — never mixed into launch evidence, QA history, or agent readback as
+  peers of verified runs).
+- Campaigns OS itself enforces this at its own readback chokepoints:
+  `qa promote` (and any sidecar projection) refuses a source verdict stamped
+  `trusted: false` — an untrusted record can never be laundered into the
+  committed `.campaign-runtime/qa-verdict.json` — and `run-record`'s automatic
+  QA-verdict inference excludes untrusted records from the run's QA evidence.
+  The test suite carries a forged, shape-valid, untrusted verdict as a
+  negative control for both.
+
+Endpoint authentication and attribution hardening are deliberately separate
+work that lands with the receiver's connection contract. This section
+documents the semantics of the stamps the receiver already applies.
+
 Add `--browser --test-order common` for the normal proof pass: first-party
 Playwright browser checks plus the default typed-card order sample. If the
 browser binary is missing, the CLI will prompt you to run
