@@ -2,6 +2,83 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.16.0+agent.3] - 2026-08-31
+
+### Added
+
+- **QA asserts declared checkout offer surfaces, and reconciles a typed-card
+  order against what the checkout displayed** (#271, #272). Two real defects on
+  one proof build collected a 130-pass verdict between them, for the same
+  reason: neither had a check, and the absence of a check reads as a pass.
+
+  That build declared `exit_intent` with a mapped offer code, shipped no
+  exit-intent markup at all — only a dangling stylesheet link for the component
+  it never included — and no assertion of any kind was emitted about it. The QA
+  contract already said browser QA drives that surface; nothing did. Browser QA
+  now emits `browser-exit-intent-surface:<page>` and
+  `browser-promo-code-surface:<page>` for every checkout page whose CampaignSpec
+  declares the surface with `enabled: true`:
+
+  - declared and absent is `FAIL`/`BLOCKER` — the spec promises the shopper an
+    offer the built page cannot deliver;
+  - declared, present, and carrying the declared `offer_code` is `PASS`;
+  - declared and present but not provably wired to that code — or a coupon input
+    sitting behind an unopened "Have a coupon?" disclosure — is
+    `MANUAL_REVIEW`/`WARN`, because a static page read cannot call it broken;
+  - and a browser collector that threw mid-read is `SKIPPED` with the cause, not
+    a blocker. The collector did not find nothing, it could not look, and
+    reporting that as an absent surface would reintroduce one level up the exact
+    silent failure these assertions exist to remove.
+
+  Presence is a DOM-tree question, not a visibility one: the collector walks
+  `<template>` content as well as the live document, since a correctly built
+  exit-intent pop lives nowhere else until it fires. Scanning only the document
+  would report a wired pop as missing.
+
+  The same build also charged a package that appeared nowhere on the checkout: a
+  cold visit to a later offer page left it in the cart, the rendered summary
+  showed one line, and the persisted order carried two `is_upsell: false` lines.
+  The `pricing` family read price surfaces and `browser-test-order` proved the
+  journey completed; nothing joined them, so nothing could see a package the page
+  never advertised. Typed-card runs now reconcile the two:
+
+  - `browser-order-display-parity:<plan>` fails as a blocker naming any
+    `is_upsell: false` line whose package the checkout never rendered as
+    selected, and any displayed package that was never charged;
+  - `browser-order-total-parity:<plan>` fails as a blocker when the order's
+    pre-upsell total disagrees with the displayed summary total.
+
+  Both read the order-create response the accepted-upsell proof already fetches,
+  so this is a comparison rather than a new fetch, and both run against the
+  pre-upsell read-back — after an accept the persisted lines legitimately carry
+  product the checkout never displayed.
+
+  Three deliberate limits, so the new blockers cannot manufacture false ones.
+  The rendered order summary is the display authority, and it counts only when
+  **every** row exposes its package id: partial `data-package-id` coverage
+  reports `SKIPPED` with the reason rather than calling legitimately displayed
+  packages stray. Selected bundle cards and active toggles widen only the
+  charged-but-not-displayed direction, never the reverse. And an order line with
+  no campaign-package equivalent — bonus, gift, trial — is reported as
+  unresolved rather than counted as a stray charge, the same tolerance the
+  line-price delta already applies.
+
+  A `SKIPPED` here is missing coverage with a stated cause, not a pass. That is
+  the whole point of the change, so read it that way: a checkout that exposes no
+  `[data-next-display="cart.total"]` surface says so in the verdict instead of
+  quietly proving nothing.
+
+  Both assertion sets reuse the existing `browser-runtime` and
+  `browser-test-order` families, so the verdict schema, the family vocabulary,
+  and the portal allowlist are untouched. Reconciliation failures are their own
+  named assertions rather than extra reasons for `browser-test-order` to fail —
+  the order was created, and collapsing "created" with "matches what was shown"
+  is how a mismatch ends up described as a checkout failure. Both carry blocker
+  severity, so an affected verdict still blocks.
+
+  `next-campaigns-qa` 1.0.3 → 1.1.0 records the new assertion ids and their
+  severities.
+
 ## [1.16.0+agent.2] - 2026-08-31
 
 ### Fixed

@@ -1,0 +1,82 @@
+{
+  "_note": "Regression fixture for #271. A checkout page declares exit_intent with a mapped offer code and promo_code_input in the same breath, and the built page ships neither surface: no exit-intent partial was included (only a dangling stylesheet link for it) and no coupon input renders. Before #271 this build collected a clean verdict, because no assertion of any kind was emitted for either declared surface. browser_evidence is the shape offerSurfaceEvidence() returns from the live page.",
+  "page": {
+    "page_id": "checkout",
+    "page_type": "checkout",
+    "url": "https://campaign.example.test/device/checkout/",
+    "exit_intent": {
+      "enabled": true,
+      "offer_ref_id": "10",
+      "offer_code": "EXIT10"
+    },
+    "promo_code_input": {
+      "enabled": true,
+      "offer_ref_id": "10",
+      "offer_code": "EXIT10"
+    }
+  },
+  "browser_evidence": {
+    "exit_intent": {
+      "match_count": 0,
+      "visible_count": 0,
+      "matched_selectors": [],
+      "offer_codes": []
+    },
+    "promo_code_input": {
+      "match_count": 0,
+      "visible_count": 0,
+      "matched_selectors": [],
+      "offer_codes": []
+    }
+  },
+  "built_variants": {
+    "_note": "The same declaration against pages that DID build the surface, so the fixture covers the pass and manual_review arms too.",
+    "exit_intent_wired": {
+      "match_count": 3,
+      "visible_count": 0,
+      "matched_selectors": [
+        "template[data-template=\"exit-intent\"]",
+        "[data-exit-intent-action]",
+        ".exit-intent-popup"
+      ],
+      "offer_codes": [
+        "EXIT10"
+      ]
+    },
+    "exit_intent_present_unwired": {
+      "match_count": 2,
+      "visible_count": 0,
+      "matched_selectors": [
+        "template[data-template=\"exit-intent\"]",
+        ".exit-intent-popup"
+      ],
+      "offer_codes": [
+        "SAVE5"
+      ]
+    },
+    "promo_code_input_visible": {
+      "match_count": 1,
+      "visible_count": 1,
+      "matched_selectors": [
+        "[data-next-checkout-field=\"coupon\"]"
+      ],
+      "offer_codes": []
+    },
+    "promo_code_input_behind_disclosure": {
+      "match_count": 1,
+      "visible_count": 0,
+      "matched_selectors": [
+        "[data-next-checkout-field=\"coupon\"]"
+      ],
+      "offer_codes": []
+    },
+    "collector_failed": {
+      "_note": "The browser collector threw mid-evaluate (a destroyed execution context, a navigation under the read). Nothing was looked at, so nothing may be concluded about the surface.",
+      "match_count": 0,
+      "visible_count": 0,
+      "matched_selectors": [],
+      "offer_codes": [],
+      "collector_error": "Execution context was destroyed, most likely because of a navigation"
+    }
+  }
+}
