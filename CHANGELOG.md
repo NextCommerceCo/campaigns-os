@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.16.0+agent.2] - 2026-08-31
+## [1.16.0+agent.3] - 2026-08-31
 
 ### Added
 
@@ -78,6 +78,78 @@ Notable supported-surface changes are recorded here.
 
   `next-campaigns-qa` 1.0.3 → 1.1.0 records the new assertion ids and their
   severities.
+
+## [1.16.0+agent.2] - 2026-08-31
+
+### Fixed
+
+- **`qa resolve` now probes the routes it derives, and reports what it
+  verified rather than what it derived** (#273). Resolve composed every entry
+  URL from the packet's `campaign.public_route_slug` and reported `Status:
+  ready` without ever asking the deployment whether those URLs existed. Pointed
+  at a host serving the same campaign under a different route root it printed
+  nine entry URLs and `ready`; all nine were 404. The three checkpoints below
+  the route list also said `pass`, because they read the packet rather than the
+  deployment, and the printed next command — `qa run --browser --test-order
+  common` — could not have succeeded. The existing operator guidance ("empty
+  Entry URLs mean a dead preview or a wrong `--base-url`") did not cover it,
+  because the URLs were non-empty and all wrong.
+
+  Resolve now sends one `HEAD` per derived entry URL (retried as `GET` only
+  when a host answers `405`/`501` about the method) and gains two terminal
+  statuses. `routes_unresolved` reports `ok: false`, names the first URL that
+  failed, and suppresses the `qa run` suggestion. `ready_unprobed` is the
+  degraded state for a run that could not probe at all. The status ladder —
+  `blocked`, `routes_unresolved`, `ready_unprobed`, `ready_with_exceptions`,
+  `ready` — is ordered by how much of the deployment the run actually verified,
+  which is why an unprobed route set outranks a named checkpoint warning; the
+  warnings stay fully visible in `checkpoint_gates[]` at every rung. A
+  `route_probe` block carries per-URL results and one of
+  `route_probe.all_resolved`, `route_probe.routes_unresolved`,
+  `route_probe.unreachable`, `route_probe.disabled`, or
+  `route_probe.no_routes`.
+
+  Adding a network probe to a command that was pure means deciding what offline
+  means. An HTTP response saying `404` is evidence about the deployment; a
+  transport error is evidence about this machine's network. Only the first
+  fails the probe. A run with no outbound network degrades to `ready_unprobed`
+  and stays usable with no flag, so resolve remains runnable offline and in CI;
+  `--no-probe` exists for hermetic runs that must make no outbound request at
+  all, and `--probe-timeout-ms` (default `5000`) bounds each probe. Probing is
+  capped at 25 entry URLs, with the remainder reported as `skipped` rather than
+  silently dropped, and a blocked checkpoint spends no network at all. Resolve
+  stays a diagnostic command and still exits 0 on every status.
+
+  Resolve still appends `public_route_slug` unconditionally — the packet is the
+  authority on where a campaign is served, and that is deliberate — so the fix
+  is to make the failure legible rather than to add an override. When every
+  derived route is dead, one extra probe of the host without that slug
+  distinguishes `route_probe.route_root_mismatch` (correct
+  `campaign.public_route_slug`, or declare `campaign.route_root`, in the
+  packet) from `route_probe.host_also_dead` (the preview itself is down).
+
+- **The theme gate no longer retires itself on a campaign that ships commerce
+  pages** (#274). The same `qa resolve` invocation listed a checkout, five
+  upsells, and a thank-you page and then reported `not_applicable
+  (theme_gate.no_commerce_pages) — Campaign ships no commerce pages`, two
+  outputs an operator cannot reconcile. The gate classified from
+  `scope.built_pages` alone, so a partial build — which parks declared pages in
+  `out_of_scope_pages` — emptied the commerce scope and made the gate's answer
+  depend on build scope, the one input it must not key off. A silently
+  self-retiring gate is worse than a failing one, and this is the case the gate
+  exists for.
+
+  "Ships commerce pages" is now a question about the campaign, not about one
+  build's output. `commercePagesFromScope` reads the built pages and the
+  declared-but-out-of-scope commerce pages, and the gate result gains
+  `commerce_pages_out_of_scope` so an operator can still see which half this
+  build did not produce. On the QA path the declared funnel from the spec
+  topologies is unioned into the doctor-derived scope rather than being
+  discarded whenever any doctor output exists, so a thin or stale
+  `doctor-output.json` cannot retire a gate on a funnel whose routes the same
+  command lists; `theme_gate.scope_source` now also reports
+  `doctor_derived_scope+spec_topologies`. A campaign that genuinely ships no
+  commerce page still reports `theme_gate.no_commerce_pages`.
 
 ## [1.16.0+agent.1] - 2026-08-31
 

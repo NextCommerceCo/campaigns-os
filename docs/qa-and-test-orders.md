@@ -30,7 +30,66 @@ Use resolve before a full run:
 npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 ```
 
-Resolve reads the packet, loads the local CampaignSpec when available, derives deployed page URLs from the packet deploy URL or `--base-url`, and prints the funnel topology. It does not create a verdict.
+Resolve reads the packet, loads the local CampaignSpec when available, derives deployed page URLs from the packet deploy URL or `--base-url`, probes the entry URLs it derived, and prints the funnel topology. It does not create a verdict.
+
+### Route reachability
+
+A route set derived from the packet is not evidence that the deployment serves
+it. Resolve therefore probes the entry URLs it just printed — one `HEAD` per
+entry URL, retried as `GET` only when a host answers `405`/`501` about the
+method — and its status reports what was verified rather than what was derived:
+
+| Status | Meaning |
+| --- | --- |
+| `blocked` | A checkpoint gate blocks. The routes are not probed. |
+| `routes_unresolved` | The routes were probed and at least one did not resolve. `ok: false`. |
+| `ready_unprobed` | There were routes to probe and none produced a response. `ok: true`. |
+| `ready_with_exceptions` | Checkpoint warnings, over routes that resolved. |
+| `ready` | Clean, over routes that resolved. |
+
+The ladder is ordered by how much of the deployment the run actually verified,
+which is why `ready_unprobed` outranks `ready_with_exceptions`: a checkpoint
+warning is a named exception an operator can read, while an unprobed route set
+means the deployment half was never checked. Checkpoint warnings stay fully
+visible in `checkpoint_gates[]` at every rung.
+
+`routes_unresolved` names the first URL that failed and suppresses the
+`qa run --browser --test-order common` suggestion, because that command cannot
+succeed against a route set that does not resolve. The `route_probe` block
+carries the per-URL results and one of `route_probe.all_resolved`,
+`route_probe.routes_unresolved`, `route_probe.unreachable`,
+`route_probe.disabled`, or `route_probe.no_routes`.
+
+`route_probe.first_failure` is the first result that did not cleanly resolve,
+**in the order the entry URLs were derived** — the order they are printed under
+`Entry URLs:` — not the order the responses happened to land. It is populated on
+every status where something failed, `route_probe.all_resolved` included: a pass
+reached over some unreachable URLs is partial reachability, and both the reason
+line and the printed per-URL rows say which URLs those were rather than leaving
+an operator to infer it from `counts.unreachable`. It is `null` only when every
+probed URL resolved, or when nothing was probed at all.
+
+Resolve appends `campaign.public_route_slug` unconditionally — the packet is
+the authority on where a campaign is served, and no flag overrides it. When
+every derived route is dead, one extra probe of the host without that slug
+separates the two causes and says which it found:
+`route_probe.route_root_mismatch` (the host serves the campaign under a
+different route root, so correct `campaign.public_route_slug` or declare
+`campaign.route_root` in the packet) or `route_probe.host_also_dead` (the
+preview itself is down).
+
+**Offline and CI.** An HTTP response saying `404` is evidence about the
+deployment; a transport error is evidence about this machine's network. Only
+the first fails the probe. A run with no outbound network degrades to
+`ready_unprobed` and stays usable — no flag required. `--no-probe` exists for
+hermetic runs that must make no outbound request at all, and
+`--probe-timeout-ms` (default `5000`) bounds each probe. Probing is capped at
+25 entry URLs; anything past the cap is reported as `skipped` rather than
+silently dropped.
+
+An empty Entry URL list keeps its own pre-existing guidance — a dead preview or
+a missing `--base-url` — and reports `route_probe.no_routes` without moving the
+status.
 
 ### Packet-local checkpoint preflight
 
@@ -51,10 +110,12 @@ assertions remain visible when gates disagree, so waiving or correcting one
 never suppresses another. Store Profile and SDK use the `api-metadata` family;
 the hidden eager-media assertion uses `polish_gate`.
 
-`qa resolve` remains a diagnostic command: it reports `ok: false` and
-`status: blocked`, prints all three gates and their safe repair/waiver
-projections, and suppresses the runtime `qa run --browser --test-order common`
-suggestion until every checkpoint blocker is clear.
+`qa resolve` remains a diagnostic command and always exits 0: it reports
+`ok: false` and `status: blocked`, prints all four gates and their safe
+repair/waiver projections, and suppresses the runtime
+`qa run --browser --test-order common` suggestion until every checkpoint
+blocker is clear. `routes_unresolved` behaves the same way — `ok: false`,
+suggestion suppressed, exit 0.
 
 The SDK gate reads the canonical `global_config.sdk_version` first and accepts
 `runtime.sdk_version` as an alias. Pins must be released,
