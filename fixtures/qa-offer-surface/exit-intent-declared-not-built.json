@@ -34,26 +34,49 @@
     "exit_intent_wired": {
       "match_count": 3,
       "visible_count": 0,
-      "matched_selectors": ["template[data-template=\"exit-intent\"]", "[data-exit-intent-action]", ".exit-intent-popup"],
-      "offer_codes": ["EXIT10"]
+      "matched_selectors": [
+        "template[data-template=\"exit-intent\"]",
+        "[data-exit-intent-action]",
+        ".exit-intent-popup"
+      ],
+      "offer_codes": [
+        "EXIT10"
+      ]
     },
     "exit_intent_present_unwired": {
       "match_count": 2,
       "visible_count": 0,
-      "matched_selectors": ["template[data-template=\"exit-intent\"]", ".exit-intent-popup"],
-      "offer_codes": ["SAVE5"]
+      "matched_selectors": [
+        "template[data-template=\"exit-intent\"]",
+        ".exit-intent-popup"
+      ],
+      "offer_codes": [
+        "SAVE5"
+      ]
     },
     "promo_code_input_visible": {
       "match_count": 1,
       "visible_count": 1,
-      "matched_selectors": ["[data-next-checkout-field=\"coupon\"]"],
+      "matched_selectors": [
+        "[data-next-checkout-field=\"coupon\"]"
+      ],
       "offer_codes": []
     },
     "promo_code_input_behind_disclosure": {
       "match_count": 1,
       "visible_count": 0,
-      "matched_selectors": ["[data-next-checkout-field=\"coupon\"]"],
+      "matched_selectors": [
+        "[data-next-checkout-field=\"coupon\"]"
+      ],
       "offer_codes": []
+    },
+    "collector_failed": {
+      "_note": "The browser collector threw mid-evaluate (a destroyed execution context, a navigation under the read). Nothing was looked at, so nothing may be concluded about the surface.",
+      "match_count": 0,
+      "visible_count": 0,
+      "matched_selectors": [],
+      "offer_codes": [],
+      "collector_error": "Execution context was destroyed, most likely because of a navigation"
     }
   }
 }

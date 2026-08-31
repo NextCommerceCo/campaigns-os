@@ -93,7 +93,11 @@ Notable supported-surface changes are recorded here.
   - declared, present, and carrying the declared `offer_code` is `PASS`;
   - declared and present but not provably wired to that code — or a coupon input
     sitting behind an unopened "Have a coupon?" disclosure — is
-    `MANUAL_REVIEW`/`WARN`, because a static page read cannot call it broken.
+    `MANUAL_REVIEW`/`WARN`, because a static page read cannot call it broken;
+  - and a browser collector that threw mid-read is `SKIPPED` with the cause, not
+    a blocker. The collector did not find nothing, it could not look, and
+    reporting that as an absent surface would reintroduce one level up the exact
+    silent failure these assertions exist to remove.
 
   Presence is a DOM-tree question, not a visibility one: the collector walks
   `<template>` content as well as the live document, since a correctly built

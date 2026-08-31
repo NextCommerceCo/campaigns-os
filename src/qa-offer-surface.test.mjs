@@ -109,3 +109,29 @@ test("exit-intent selectors cover the starter-family template shape and hand-rol
   assert.ok(EXIT_INTENT_SURFACE_SELECTORS.includes("[data-exit-intent-action]"));
   assert.ok(EXIT_INTENT_SURFACE_SELECTORS.includes("#exit-intent-popup"));
 });
+
+test("a collector failure is SKIPPED with its cause, never reported as an absent surface", () => {
+  const { declaredOfferSurface, exitIntentSurfaceAssertion, promoCodeSurfaceAssertion } = __qaBrowserTestHooks;
+  const evidence = fixture.built_variants.collector_failed;
+
+  // The collector did not find nothing; it could not look. Calling that a
+  // missing surface would reintroduce, one level up, the exact silent-failure
+  // shape these assertions exist to remove.
+  const exit = exitIntentSurfaceAssertion({
+    page: fixture.page,
+    declaration: declaredOfferSurface(fixture.page, "exit_intent"),
+    evidence,
+  });
+  assert.equal(exit.status, "skipped");
+  assert.equal(exit.severity, undefined);
+  assert.match(exit.actual, /exit-intent surface could not be read: Execution context was destroyed/);
+
+  const promo = promoCodeSurfaceAssertion({
+    page: fixture.page,
+    declaration: declaredOfferSurface(fixture.page, "promo_code_input"),
+    evidence,
+  });
+  assert.equal(promo.status, "skipped");
+  assert.equal(promo.severity, undefined);
+  assert.match(promo.actual, /promo\/coupon code surface could not be read/);
+});

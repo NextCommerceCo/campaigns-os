@@ -1344,6 +1344,17 @@ function exitIntentSurfaceAssertion({ page, declaration, evidence }) {
     ...evidence,
     next_step: "Include the family's exit-intent partial on the checkout page and wire it to the mapped offer code through the SDK coupon path, or drop exit_intent from CampaignSpec.",
   };
+  if (evidence.collector_error) {
+    // The collector did not find nothing; it could not look. Reporting that as
+    // an absent surface would be the exact silent-failure shape these
+    // assertions exist to remove, one level up.
+    return assertion({
+      ...base,
+      status: STATUS.SKIPPED,
+      actual: `exit-intent surface could not be read: ${evidence.collector_error}`,
+      evidence: evidenceBlock,
+    });
+  }
   if (!evidence.match_count) {
     // Declared and absent. The spec promises the shopper an offer that the
     // built page cannot deliver, so this blocks rather than warns.
@@ -1390,6 +1401,17 @@ function promoCodeSurfaceAssertion({ page, declaration, evidence }) {
     ...evidence,
     next_step: "Render a coupon/promo input on checkout and apply the mapped offer code through the SDK coupon path, or drop promo_code_input from CampaignSpec.",
   };
+  if (evidence.collector_error) {
+    // The collector did not find nothing; it could not look. Reporting that as
+    // an absent surface would be the exact silent-failure shape these
+    // assertions exist to remove, one level up.
+    return assertion({
+      ...base,
+      status: STATUS.SKIPPED,
+      actual: `promo/coupon code surface could not be read: ${evidence.collector_error}`,
+      evidence: evidenceBlock,
+    });
+  }
   if (!evidence.match_count) {
     return assertion({
       ...base,
@@ -3479,12 +3501,25 @@ function receiptRenderingAssertion(page, path, order) {
 async function checkoutDisplayEvidence(browserPage) {
   return browserPage.evaluate(() => {
     const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
-    const idOf = (element) => {
-      for (const attribute of ["data-package-id", "data-next-package-id", "data-next-bundle-id"]) {
+    const ID_ATTRIBUTES = ["data-package-id", "data-next-package-id", "data-next-bundle-id"];
+    const readId = (element) => {
+      for (const attribute of ID_ATTRIBUTES) {
         const value = element.getAttribute(attribute);
         if (value && value.trim()) return value.trim();
       }
       return null;
+    };
+    const idOf = (element) => {
+      const own = readId(element);
+      if (own) return own;
+      // Hand-rolled cards, toggles and rows hang the id on an inner node rather
+      // than the root the selector matched. Dropping it there would push a
+      // legitimately displayed package into `extra` — the false stray charge
+      // this check exists to avoid. The root still wins when it carries one,
+      // and querySelector does not descend into <template> content, so a row's
+      // discount sub-template cannot supply an id.
+      const nested = element.querySelector(ID_ATTRIBUTES.map((attribute) => `[${attribute}]`).join(","));
+      return nested ? readId(nested) : null;
     };
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
