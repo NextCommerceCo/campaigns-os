@@ -47,6 +47,9 @@ export function createStandardizationReport({
   sdkSupportPolicy = null,
 } = {}) {
   if (!targetRepo) throw new Error("createStandardizationReport requires targetRepo");
+  // One-shot per report run: a catalog-resolution failure warns once, however
+  // many Page Kit roots the target repository contains.
+  resetFreshnessSuppressionWarning();
   const target = resolve(targetRepo);
   const pageKitRootPaths = discoverPageKitRoots(target);
   const roots = pageKitRootPaths.map((rootPath) => scanPageKitRoot({
@@ -875,13 +878,25 @@ function buildRemediation(root) {
 // Certification freshness (#263) for the report's identity block, read from
 // the vendored catalog snapshot only — the report never fetches verification
 // data live. Report generation must never crash on a malformed local catalog,
-// so resolution failures degrade to null (freshness simply not reported).
+// so resolution failures degrade to null (freshness simply not reported) —
+// but not silently: the operator staring at a missing freshness field gets
+// one warn per run saying why (one-shot, not repeated per root).
+let freshnessSuppressionWarned = false;
+
+export function resetFreshnessSuppressionWarning() {
+  freshnessSuppressionWarned = false;
+}
+
 function assessRootCertificationFreshness(family) {
   if (!family) return null;
   let catalog;
   try {
     catalog = resolveCommerceCatalog();
-  } catch {
+  } catch (error) {
+    if (!freshnessSuppressionWarned) {
+      freshnessSuppressionWarned = true;
+      console.warn(`[standardize] freshness suppressed: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return null;
   }
   const assessment = assessTemplateFreshness({

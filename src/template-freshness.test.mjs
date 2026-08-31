@@ -132,6 +132,33 @@ test("ahead (injected inputs only): rendered honestly as a policy-capture proble
   assert.match(line, /newer than the current SDK/);
 });
 
+test("renderTemplateFreshness is total: null/undefined assessments render the unknown-state line", () => {
+  for (const assessment of [null, undefined]) {
+    const line = renderTemplateFreshness(assessment);
+    assert.match(line, /no verification record/);
+    assert.match(line, /freshness is unknown/);
+    assert.doesNotMatch(line, /undefined/, "missing fields never interpolate as \"undefined\"");
+  }
+});
+
+test("a malformed verified_at omits the date parenthetical instead of interpolating garbage", () => {
+  const base = {
+    family: "olympus",
+    state: "current",
+    verified_sdk_version: "0.4.37",
+    current_sdk_version: "0.4.37",
+    delta: null,
+  };
+  for (const malformed of ["not-a-date", "2026-13-45", "2026-08", "08/21/2026", ""]) {
+    const line = renderTemplateFreshness({ ...base, verified_at: malformed });
+    assert.doesNotMatch(line, /\(/, `verified_at ${JSON.stringify(malformed)} must not render a parenthetical`);
+    assert.match(line, /last verified against SDK 0\.4\.37/);
+  }
+  // Well-formed values keep the date parenthetical — full timestamp or bare date.
+  assert.match(renderTemplateFreshness({ ...base, verified_at: "2026-08-21T15:26:00Z" }), /\(2026-08-21\)/);
+  assert.match(renderTemplateFreshness({ ...base, verified_at: "2026-08-21" }), /\(2026-08-21\)/);
+});
+
 test("familyVerification only accepts a well-formed vendored record", () => {
   assert.equal(familyVerification(catalogWith({ olympus: null }), "olympus"), null);
   assert.equal(familyVerification(catalogWith({ olympus: { sdk_version: "not-a-version" } }), "olympus"), null);

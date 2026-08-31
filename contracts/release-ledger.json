@@ -319,6 +319,27 @@
         }
       ],
       "entry_sha256": "0b7ace4a5bfe26e63b9ccc16f9525658078e30ae6a18b4aa48f83c104fc22590"
+    },
+    {
+      "id": "RL-0005",
+      "sequence": 5,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.15.0+agent.3",
+      "changelog_sha256": "784246358aa7f4ae107287b9f15bf29059a0dca45706057a20e3e32891bbae09",
+      "agent_impact": "The prepare-build/start certified-template gate now prints the certification-freshness stderr line for any decided family present on the vendored catalog, including a family whose certification was waived via --allow-uncertified-template; the waived line is prefixed \"certification waived — \" so agents parsing gate output can distinguish it from the certified-gate line. The doctor source-preparation check gained a third source_html.prep.frontmatter_residue variant, unterminated_embedded_block (severity error), for an embedded frontmatter block that never closes before EOF — source that previously passed doctor with this residue now blocks. Freshness rendering is hardened (null-safe, malformed verified_at omitted) and standardization reports warn once per run when catalog resolution fails instead of hiding the missing freshness field silently. No argv or schema change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "prepare-build (and the start intake alias) emits the certification-freshness line for any catalog-present family — labeled \"certification waived — \" when certification was waived — instead of only for certified families; no argv change."
+        }
+      ],
+      "entry_sha256": "bf041577c5099df3562afa261d1bfbdb3b0a35d91162c421d3818b152f97223e"
     }
   ]
 }

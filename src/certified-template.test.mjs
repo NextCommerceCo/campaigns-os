@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -127,6 +127,47 @@ test("prepare-build records a certification waiver for an uncertified family", (
     const doctor = JSON.parse(out);
     assert.ok(!doctor.errors.some((issue) => issue.code === "assembly.template_certification"));
     assert.ok(doctor.warnings.some((issue) => issue.code === "assembly.template_certification"));
+  });
+});
+
+test("prepare-build prints a labeled freshness line for a waived family still present on the vendored catalog (#266 review)", () => {
+  withTempDir((dir) => {
+    // A catalog family with a verification record but no brand contract:
+    // present on the (test-supplied) vendored catalog, yet not certified —
+    // so the gate requires a waiver, and the waived path must still expose
+    // freshness, labeled as distinct from the certified-gate line.
+    const catalogPath = join(dir, "commerce-surface-catalog.json");
+    writeFileSync(catalogPath, JSON.stringify({
+      families: {
+        "fixture-waived-family": {
+          description: "Catalog-listed family without a brand contract.",
+          verification: { sdk_version: "0.4.34", verified_at: "2026-08-12T06:12:06Z", evidence: "sdk-0.4.34-2026-08-12", status: "certified" },
+        },
+      },
+    }, null, 2));
+
+    const target = join(dir, "target");
+    cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
+    const result = spawnSync("node", [
+      CLI, "prepare-build",
+      "--spec", resolve(ROOT, "examples/campaignspec.v42.basic.json"),
+      "--source", resolve(ROOT, "examples/source-html"),
+      "--target", target,
+      "--template-family", "fixture-waived-family",
+      "--allow-uncertified-template", "family lost its brand contract; agency ships its own",
+      "--commerce-catalog", catalogPath,
+      "--no-run-session",
+      "--json",
+    ], { encoding: "utf8", cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+
+    const packet = readJson(join(target, "campaign-runtime.build.json"));
+    assert.equal(packet.assembly.template_certification.certified, false, "the waiver is still recorded");
+
+    const waivedLines = result.stderr.split("\n").filter((line) => line.includes("certification waived — "));
+    assert.equal(waivedLines.length, 1, `expected exactly one labeled waived freshness line, stderr was:\n${result.stderr}`);
+    assert.match(waivedLines[0], /^\[campaigns-os prepare-build\] certification waived — Template family "fixture-waived-family"/);
+    assert.match(waivedLines[0], /last verified against SDK 0\.4\.34/, "the waived line still states the last-verified SDK");
   });
 });
 
