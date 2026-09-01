@@ -694,9 +694,21 @@
           "path": "docs/supported-surface.md",
           "surface_entry": "docs/supported-surface.md",
           "summary": "The compatibility promise now covers the reconciliation matrix, report schema and module exports."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated for the 1.17.0 surface: the supported-surface-at-generation-time line advanced and the new ledger entry is listed. No contract content changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated for the 1.17.0 surface. The recipe itself is unchanged; only the generated surface version it reports moved."
         }
       ],
-      "entry_sha256": "22d44559bac72a127097df2419e35dfde7d6c94f64230d3f5f021554b5542e82"
+      "entry_sha256": "ff8b2d16696b648398636cb83402ab357aed0fd555d888fab96bac9661629a19"
     }
   ]
 }
