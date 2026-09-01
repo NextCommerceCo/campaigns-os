@@ -64,6 +64,11 @@ const forbidden = [
   /\bsellmore\b/,
   /nc-campaigns-proxy/,
   /QA Supervisor/,
+  // Internal issue-tracker IDs must not leak into the public package. The words
+  // "Linear" / "dogfood" stay allowed — boundary docs reference them
+  // (e.g. "does not require Linear access") — so only the opaque IDs are forbidden.
+  /\bSELL-\d+\b/,
+  /\bNEXTON-\d+\b/,
 ];
 
 const hits = [];
