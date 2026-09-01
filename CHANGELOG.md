@@ -2,6 +2,29 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.17.0] - 2026-09-01
+
+### Changed
+
+- **The runtime recipe's network policy says precisely what it enforces.** No field
+  changed: the install step is still `policy: allowlist` against
+  `registry.npmjs.org`, the build step is still `policy: deny`, the cache is still
+  consumer-owned, and inherited proxy, credential, and npmrc configuration are still
+  refused. What changed is the description around them. "Allowlist" was reasonably
+  read as a host-level network sandbox; it is a package-manager configuration bound,
+  honoured by pinning the registry a package manager resolves from and owning its
+  configuration, and it cannot stop a process from opening a socket elsewhere. What
+  bounds that is the other half of the recipe — `--ignore-scripts` on both steps means
+  no third-party dependency code runs during preparation at all, so the only programs
+  executing are the package manager and the compiler.
+
+  The contract now states the guarantee it actually makes, notes that the lockfile
+  integrity digests remain the independent second bound, and records that a consumer
+  adding a real network sandbox strengthens the policy without changing a field — while
+  a consumer treating the declared hosts as advisory violates it. `recipe_revision`
+  advances to `1.0.1`; a v1 consumer executes any `1.x` revision, so nothing needs to
+  change to keep accepting this document.
+
 ## [1.16.0+agent.4] - 2026-09-01
 
 ### Added

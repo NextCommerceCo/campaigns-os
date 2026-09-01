@@ -1,7 +1,7 @@
 {
   "schema": "campaigns-os-runtime-recipe/v1",
   "recipe_kind": "campaigns-os-node-v1",
-  "recipe_revision": "1.0.0",
+  "recipe_revision": "1.0.1",
   "refusal_reason_code": "runtime_recipe_refused",
   "fail_closed": true,
   "unperformable_check_disposition": "failed",
@@ -56,12 +56,12 @@
           "registry.npmjs.org"
         ],
         "integrity_source": "package-lock.json (lockfileVersion 3, per-package integrity digests)",
-        "rationale": "The install step is the only step that needs bytes it does not already have, and it needs them from exactly one place. Measured cold-cache install is a few seconds, so the network window is small. The cache is an optimisation and never a correctness input: an offline-after-warm policy would make a stale or poisoned cache silently change what gets built, with no fetch left to catch it."
+        "rationale": "The install step is the only step that needs bytes it does not already have, and it needs them from exactly one place. Measured cold-cache install is a few seconds, so the network window is small. The cache is an optimisation and never a correctness input: an offline-after-warm policy would make a stale or poisoned cache silently change what gets built, with no fetch left to catch it. Enforced by pinning the package manager's registry to exactly this host and refusing any inherited npmrc, proxy, or credential configuration that could redirect it; combined with `--ignore-scripts`, nothing that runs during install is third-party code that could ignore the pin. The integrity digests remain the independent second bound, which is what makes a redirected or substituted byte stream fail even if the first bound were somehow evaded."
       },
       "build": {
         "policy": "deny",
         "hosts": [],
-        "rationale": "The build step is a local type-directed compile and needs no network at all. Declaring that turns an assumption into a check."
+        "rationale": "The build step is a local type-directed compile and needs no network at all. Declaring that turns an assumption into a check. Enforced by running the step with the package manager in offline mode; `tsc` opens no sockets of its own, and `--ignore-scripts` keeps pre/post hooks from introducing any."
       }
     }
   },

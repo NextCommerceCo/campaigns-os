@@ -8,7 +8,7 @@
 
 How a checkout of this repository at one commit becomes a usable installed runtime, and how a consumer decides whether a prepared one is still trustworthy. Everything below is generated from `contracts/runtime-recipe.campaigns-os-node-v1.json`, which is the only authority for these values.
 
-Recipe kind `campaigns-os-node-v1`, revision `1.0.0`, validated by `schemas/campaigns-os-runtime-recipe.v1.schema.json` (`Campaigns OS Runtime Recipe v1`). Supported surface at generation time: `1.16.0`.
+Recipe kind `campaigns-os-node-v1`, revision `1.0.1`, validated by `schemas/campaigns-os-runtime-recipe.v1.schema.json` (`Campaigns OS Runtime Recipe v1`). Supported surface at generation time: `1.17.0`.
 
 ## What this is
 
@@ -46,12 +46,12 @@ The contract declares its own ranges rather than inheriting the target's. It rec
 
 ## Network
 
-Two independent bounds that must both hold. The per-step policy bounds WHERE bytes may come from; the lockfile's recorded integrity digests bound WHICH bytes are acceptable. Neither substitutes for the other.
+Two independent bounds that must both hold. The per-step policy bounds WHERE bytes may come from; the lockfile's recorded integrity digests bound WHICH bytes are acceptable. Neither substitutes for the other. WHAT 'allowlist' MEANS HERE, PRECISELY: this is a package-manager configuration bound, not a host-level network sandbox. A consumer honours it by pinning the registry its package manager resolves from, owning the cache and both npmrc paths, and refusing inherited proxy, credential, and npmrc configuration — all of which this contract declares as fields above. It does not, and cannot from here, prevent a process from opening a socket to some other address. What bounds that is the other half of the recipe: `--ignore-scripts` on both steps means no third-party dependency code executes during preparation at all, so the only programs that run are the package manager and the compiler. Read this policy as 'every process this recipe starts is configured to reach exactly these hosts, and no third-party code runs that could disregard that', which is true and checkable — not as 'the host is prevented from reaching anything else', which would require a sandbox this contract does not specify. A consumer that adds a real network sandbox strengthens this bound without changing any field below, and is encouraged to; a consumer that treats the declared hosts as advisory violates it.
 
 | Step | Policy | Hosts | Rationale |
 |---|---|---|---|
-| `install` | `allowlist` | `registry.npmjs.org` | The install step is the only step that needs bytes it does not already have, and it needs them from exactly one place. Measured cold-cache install is a few seconds, so the network window is small. The cache is an optimisation and never a correctness input: an offline-after-warm policy would make a stale or poisoned cache silently change what gets built, with no fetch left to catch it. |
-| `build` | `deny` | none | The build step is a local type-directed compile and needs no network at all. Declaring that turns an assumption into a check. |
+| `install` | `allowlist` | `registry.npmjs.org` | The install step is the only step that needs bytes it does not already have, and it needs them from exactly one place. Measured cold-cache install is a few seconds, so the network window is small. The cache is an optimisation and never a correctness input: an offline-after-warm policy would make a stale or poisoned cache silently change what gets built, with no fetch left to catch it. Enforced by pinning the package manager's registry to exactly this host and refusing any inherited npmrc, proxy, or credential configuration that could redirect it; combined with `--ignore-scripts`, nothing that runs during install is third-party code that could ignore the pin. The integrity digests remain the independent second bound, which is what makes a redirected or substituted byte stream fail even if the first bound were somehow evaded. |
+| `build` | `deny` | none | The build step is a local type-directed compile and needs no network at all. Declaring that turns an assumption into a check. Enforced by running the step with the package manager in offline mode; `tsc` opens no sockets of its own, and `--ignore-scripts` keeps pre/post hooks from introducing any. |
 
 Cache ownership is `consumer_profile`. Inherited proxy configuration: `false`. Inherited credentials: `false`. Inherited npm configuration file: `false`.
 
