@@ -64,6 +64,15 @@ const forbidden = [
   /\bsellmore\b/,
   /nc-campaigns-proxy/,
   /QA Supervisor/,
+  // Internal issue-tracker IDs must not leak into the public package. The words
+  // "Linear" / "dogfood" stay allowed — boundary docs reference them
+  // (e.g. "does not require Linear access") — so only the opaque IDs are forbidden.
+  // No trailing \b: an ID with a suffix (SELL-362a) must still trip. Kept as
+  // \d+ rather than [A-Za-z0-9]+ so SELL-abc, which is not an ID shape, does not
+  // match, and case-sensitive because /i would flag legitimate commerce terms —
+  // "down-sell-2" is a real page-type fixture in src/built-site-scope.test.mjs.
+  /\bSELL-\d+/,
+  /\bNEXTON-\d+/,
 ];
 
 const hits = [];

@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.16.0+agent.4] - 2026-09-01
+
+### Added
+
+- **The private-string guard forbids internal issue-tracker IDs** (`SELL-<n>`,
+  `NEXTON-<n>`). `scripts/check-private-strings.mjs` already scanned the shipped
+  package for internal names and hosts, but opaque tracker IDs were not on the
+  list, so they could reach a public consumer through code comments and help
+  text. The words "Linear" and "dogfood" stay allowed — the boundary docs
+  reference them deliberately ("does not require Linear access") — and only the
+  IDs themselves are forbidden.
+
+  Adding the pattern immediately surfaced seven pre-existing leaks: an internal
+  tracker-ID prefix on defect-slot comments in `src/cli.mjs` (six) and
+  `src/doctor-demo-ref.test.mjs` (one). The prefix is removed and the `R2-Bx`
+  slot label kept, so each comment still records which Round 2 defect it came
+  from without carrying the internal ID.
+
+  No behavior change: every edit outside the guard list is a code comment. No
+  command, flag, output, or exit code moves.
+
 ## [1.16.0+agent.3] - 2026-08-31
 
 ### Added

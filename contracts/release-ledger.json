@@ -652,6 +652,27 @@
         }
       ],
       "entry_sha256": "5f58b47cf286f7e859c1dfe444d487b9f3bfdf8ef20bf3e464131ddda2db6b00"
+    },
+    {
+      "id": "RL-0010",
+      "sequence": 10,
+      "date": "2026-09-01",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.16.0+agent.4",
+      "changelog_sha256": "c2b565f9aabf9a061d2a39072405e389589ef05019ce49805914234c3f32568f",
+      "agent_impact": "No runtime behavior changes. The repository guard that scans the shipped package for private strings (scripts/check-private-strings.mjs) now also forbids internal issue-tracker IDs matching SELL-<n> and NEXTON-<n>, so a future change that carries one into public-facing text fails the check instead of shipping. Enforcing it required scrubbing seven pre-existing leaks that were already published: an internal tracker-ID prefix on R2-Bx defect-slot comments in src/cli.mjs (six occurrences) and src/doctor-demo-ref.test.mjs (one). Those edits are code comments only; the R2-Bx slot labels are kept. No CLI command, subcommand, flag, output field, or exit code changes, and no consumer needs to re-pin anything.",
+      "compatibility": "compatible",
+      "migration": "none.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Comment-only scrub: an internal tracker-ID prefix is removed from six R2-Bx defect-slot comments. No command, flag, output, or exit code is affected."
+        }
+      ],
+      "entry_sha256": "8f5a823e1885ea4be24cbba474b0ebbad4e846cefeaa49328a03f4668dd9f90e"
     }
   ]
 }
