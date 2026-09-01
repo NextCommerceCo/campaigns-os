@@ -24,7 +24,7 @@ Ledger schema id: `campaigns-os-release-ledger/v1`
 Change policy version: `1.0.0`  
 Reason-code vocabulary version: `1.0.0`  
 Limits version: `1.0.0`  
-Supported surface at generation time: `1.16.0`
+Supported surface at generation time: `1.17.0`
 
 ## Forward compatibility
 
