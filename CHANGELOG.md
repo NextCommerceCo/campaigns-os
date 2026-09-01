@@ -25,6 +25,15 @@ Notable supported-surface changes are recorded here.
   advances to `1.0.1`; a v1 consumer executes any `1.x` revision, so nothing needs to
   change to keep accepting this document.
 
+  **No argv changed.** `steps[].args` is byte-identical to 1.16.0 — still
+  `ci --ignore-scripts --no-audit --fund=false` and `run --ignore-scripts build:spec`.
+  The network policy was always something the consumer enforces through the process
+  environment it constructs for each step, not something the enumerated commands carry,
+  and the corrected prose now says so at `network._note` and in both per-step
+  rationales. Carrying the registry pin in argv instead would change the recipe's
+  commands, which is a new recipe *kind* rather than a revision — a legitimate future
+  design, not something this release does quietly.
+
 ## [1.16.0+agent.4] - 2026-09-01
 
 ### Added

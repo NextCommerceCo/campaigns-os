@@ -681,7 +681,7 @@
       "kind": "release",
       "surface_version": "1.17.0",
       "changelog_section": "1.17.0",
-      "changelog_sha256": "506fa3898d3d90aa18d3634b033248692806ae2391fdf38a99128912c8d6af19",
+      "changelog_sha256": "4b74945a63722e69fb789951c0359381eb0076a514fa45eb65cc08f4563960f9",
       "agent_impact": "The runtime recipe now states the guarantee its network policy actually makes. No declared field changed — install remains allowlist against registry.npmjs.org, build remains deny, the cache remains consumer-owned, and inherited proxy/credential/npmrc configuration is still refused — so an existing consumer's behaviour is unchanged and no action is required. The prose previously invited reading 'allowlist' as a host-level network sandbox; it is a package-manager configuration bound, and what prevents third-party code from disregarding it is --ignore-scripts on both steps, not the network layer. A consumer that added a real sandbox on the strength of the old wording remains correct and is now explicitly encouraged; a consumer that treated the hosts as advisory was already in violation and still is.",
       "compatibility": "additive",
       "migration": "none",
@@ -801,7 +801,7 @@
           "summary": "Regenerated from the contract: the fixture embeds the recipe document, whose network prose and recipe_revision changed."
         }
       ],
-      "entry_sha256": "087beeddb38114122c8c58f9d743a2c6d1ed501d007e770bad374c0c8e1c98cb"
+      "entry_sha256": "2de3b88146129fb852a5cad3dd189eb3e5de18334fa02d3d676e0c4398de2e69"
     }
   ]
 }
