@@ -652,6 +652,51 @@
         }
       ],
       "entry_sha256": "5f58b47cf286f7e859c1dfe444d487b9f3bfdf8ef20bf3e464131ddda2db6b00"
+    },
+    {
+      "id": "RL-0010",
+      "sequence": 10,
+      "date": "2026-09-01",
+      "kind": "release",
+      "surface_version": "1.17.0",
+      "changelog_section": "1.17.0",
+      "changelog_sha256": "8e3f624fcdbaaf616016ef3fea42e32a5e3a210b6720df2605f01dac672263de",
+      "agent_impact": "Additive: a campaign reconciliation surface a consumer may now depend on. contracts/reconcile-comparison-matrix.v0.json fixes, per evaluated field, the desired-state path, whether the CampaignSpec genuinely asserts it, the verified observed path, the normalization rule, the matching rule, and the verdict when a field is unasserted or unobservable; docs/reconcile-comparison-matrix-v0.md is its prose twin. Three pure modules are exported as ./reconcile-normalize, ./reconcile-diff and ./reconcile-plan, and schemas/campaign-reconcile-report.v0.schema.json is the report shape they produce. There is no network code, no credential handling and no transport in any of it: every module is a pure function over data the caller supplies, and fixtures/reconcile/ is a recorded contract run that includes the 401, 404 and 429 error shapes. scripts/check-reconcile-matrix.mjs joins the check chain so the matrix and the modules cannot drift apart. Nothing existing changes shape, so no consumer must re-pin. IMPORTANT: the comparison matrix requires approval before any output of these modules is treated as a verdict. Coding against the recorded fixtures is allowed while that approval is outstanding; consuming a reconciliation result as a pass/fail judgement is not.",
+      "compatibility": "additive",
+      "migration": "none. Existing consumers are unaffected; a consumer that wants reconciliation opts in through the new exports, and must not treat a result as a verdict until the comparison matrix is approved.",
+      "changes": [
+        {
+          "class": "hashed_surface",
+          "path": "contracts/reconcile-comparison-matrix.v0.json",
+          "surface_entry": "contracts/reconcile-comparison-matrix.v0.json",
+          "summary": "The versioned comparison matrix was introduced: per evaluated field, the desired and verified-observed paths, the normalization and matching rules, and the verdict when a field is unasserted or unobservable."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-reconcile-report.v0.schema.json",
+          "surface_entry": "schemas/campaign-reconcile-report.v0.schema.json",
+          "summary": "The reconciliation report shape a consumer validates against was introduced."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "./reconcile-normalize, ./reconcile-diff and ./reconcile-plan are exported, and check:reconcile-matrix joins the check chain so the matrix and the modules cannot drift apart."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advanced to 1.17.0 for the two new hashed entries and the three new package exports."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The compatibility promise now covers the reconciliation matrix, report schema and module exports."
+        }
+      ],
+      "entry_sha256": "22d44559bac72a127097df2419e35dfde7d6c94f64230d3f5f021554b5542e82"
     }
   ]
 }

@@ -2,6 +2,40 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.17.0] - 2026-09-01
+
+### Added
+
+- **Campaign reconciliation: a versioned comparison matrix, three pure modules,
+  and a report schema.** Nothing in the package could answer "does the live
+  campaign still match the CampaignSpec that built it?" — a drifted campaign was
+  only discoverable by reading both sides by hand. This adds the surface that
+  makes the comparison a contract rather than an opinion.
+
+  `contracts/reconcile-comparison-matrix.v0.json` is the deliverable that
+  matters, with `docs/reconcile-comparison-matrix-v0.md` as its prose twin. Per
+  evaluated field it fixes: the desired-state path, whether the spec genuinely
+  asserts it, the verified observed path, the normalization rule, the matching
+  rule, and the verdict when a field is unasserted or unobservable. Observed
+  paths come from a recorded contract run, never from documentation — deriving
+  fixtures from provisional shapes is the inversion this lane exists to correct.
+
+  Three pure modules ship behind it, exported as `./reconcile-normalize`,
+  `./reconcile-diff`, and `./reconcile-plan`, with
+  `schemas/campaign-reconcile-report.v0.schema.json` as the report shape. There
+  is no network code, no credential handling, and no transport anywhere in this
+  change: every module is a pure function over data the caller supplies, and the
+  fixture pack under `fixtures/reconcile/` is a recorded contract run including
+  the 401, 404, and 429 error shapes.
+
+  `scripts/check-reconcile-matrix.mjs` joins the `check` chain so the matrix and
+  the modules cannot drift apart.
+
+  **The matrix requires approval before any output of these modules is called a
+  verdict.** Coding against the recorded fixtures was explicitly allowed to
+  proceed while that approval is outstanding; consuming a reconciliation result
+  as a pass/fail judgement is not, until the matrix is signed off.
+
 ## [1.16.0+agent.3] - 2026-08-31
 
 ### Added

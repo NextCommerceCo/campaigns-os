@@ -8,7 +8,7 @@
 
 How a checkout of this repository at one commit becomes a usable installed runtime, and how a consumer decides whether a prepared one is still trustworthy. Everything below is generated from `contracts/runtime-recipe.campaigns-os-node-v1.json`, which is the only authority for these values.
 
-Recipe kind `campaigns-os-node-v1`, revision `1.0.0`, validated by `schemas/campaigns-os-runtime-recipe.v1.schema.json` (`Campaigns OS Runtime Recipe v1`). Supported surface at generation time: `1.16.0`.
+Recipe kind `campaigns-os-node-v1`, revision `1.0.0`, validated by `schemas/campaigns-os-runtime-recipe.v1.schema.json` (`Campaigns OS Runtime Recipe v1`). Supported surface at generation time: `1.17.0`.
 
 ## What this is
 
