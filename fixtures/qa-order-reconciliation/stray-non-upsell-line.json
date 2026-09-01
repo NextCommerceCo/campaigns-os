@@ -1,0 +1,100 @@
+{
+  "_note": "Regression fixture for #272. A cold visit to a later offer page left a second package in the cart before checkout. The rendered order summary shows ONE line (the bundle), and the persisted order carries TWO is_upsell:false lines totalling $168.00. The stray package announced itself only in the [data-next-discounts] rows while being invisible everywhere else on the page. Before #272 the pricing family read price surfaces, browser-test-order proved the journey completed, and nothing joined them — the verdict passed.",
+  "checkout_display": {
+    "summary_present": true,
+    "summary_rows": [
+      { "package_id": "2", "text": "1x Device + Gifts $556.00 $139.00" }
+    ],
+    "selected_bundle_package_ids": ["2"],
+    "active_toggle_package_ids": [],
+    "discount_rows": [
+      { "scope": "offer", "text": "Device + Gifts - 75% off - Save 75% −$417.00" },
+      { "scope": "offer", "text": "Retinol Serum x1 - 50% off - Save 50% −$30.00" }
+    ],
+    "total_text": "$139.00"
+  },
+  "order_pre_upsell_total": 168.0,
+  "order_lines": [
+    {
+      "title": "Device + Gifts",
+      "quantity": 1,
+      "is_upsell": false,
+      "price_incl_tax": "139.00",
+      "price": "139.00",
+      "sku": "DEV-BUNDLE",
+      "product_id": 501,
+      "variant_id": 9001
+    },
+    {
+      "title": "Retinol Serum",
+      "quantity": 1,
+      "is_upsell": false,
+      "price_incl_tax": "29.00",
+      "price": "29.00",
+      "sku": "RET-1PK",
+      "product_id": 502,
+      "variant_id": 9002
+    }
+  ],
+  "events": {
+    "responses": [
+      {
+        "url": "https://campaigns.example.test/api/v1/campaigns/",
+        "status": 200,
+        "body": {
+          "packages": [
+            {
+              "ref_id": 2,
+              "name": "Device + Gifts",
+              "qty": 1,
+              "price": "139.00",
+              "price_total": "556.00",
+              "product_sku": "DEV-BUNDLE",
+              "product_id": 501,
+              "product_variant_id": 9001
+            },
+            {
+              "ref_id": 7,
+              "name": "Retinol Serum 1x",
+              "qty": 1,
+              "price": "29.00",
+              "price_total": "59.00",
+              "product_sku": "RET-1PK",
+              "product_id": 502,
+              "product_variant_id": 9002
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "clean_variant": {
+    "_note": "Same build, same order, without the stray cart line — the reconciliation must pass here or it is unusable on real campaigns.",
+    "checkout_display": {
+      "summary_present": true,
+      "summary_rows": [
+        { "package_id": "2", "text": "1x Device + Gifts $556.00 $139.00" }
+      ],
+      "selected_bundle_package_ids": ["2"],
+      "active_toggle_package_ids": [],
+      "discount_rows": [
+        { "scope": "offer", "text": "Device + Gifts - 75% off - Save 75% −$417.00" }
+      ],
+      "total_text": "$139.00"
+    },
+    "order_pre_upsell_total": 139.0
+  },
+  "unidentified_summary_variant": {
+    "_note": "A template whose summary rows carry no data-package-id. Not comparable, and must report that instead of calling every charged line stray.",
+    "checkout_display": {
+      "summary_present": true,
+      "summary_rows": [
+        { "package_id": null, "text": "1x Device + Gifts $556.00 $139.00" }
+      ],
+      "selected_bundle_package_ids": ["2"],
+      "active_toggle_package_ids": [],
+      "discount_rows": [],
+      "total_text": "$139.00"
+    }
+  }
+}

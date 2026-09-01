@@ -432,6 +432,9 @@ export function aggregateCdpResponses(responses, {
       continue;
     }
     const transferredBytes = record?.encoded_data_length;
+    const canceled = record?.canceled === true;
+    const declaredBytes = canceled && Number.isSafeInteger(record?.declared_data_length)
+      && record.declared_data_length >= 0 ? record.declared_data_length : null;
     const resourceType = normalizeResourceType(record?.resource_type);
     const cacheObserved = genericCacheFlag(record);
     const fromServiceWorker = Boolean(record?.from_service_worker);
@@ -458,7 +461,8 @@ export function aggregateCdpResponses(responses, {
     if (fromServiceWorker) addProblemCount(problemCounts, "service_worker_observed");
     if (failed) addProblemCount(problemCounts, "request_failed");
     const transferMeasured = Number.isInteger(transferredBytes) && transferredBytes >= 0;
-    if (!transferMeasured) addProblemCount(problemCounts, "transfer_size_unavailable");
+    const sizeAccounted = transferMeasured || declaredBytes !== null;
+    if (!sizeAccounted) addProblemCount(problemCounts, "transfer_size_unavailable");
 
     const group = groups.get(resolved.resource_id) || {
       resource_id: resolved.resource_id,
@@ -467,7 +471,10 @@ export function aggregateCdpResponses(responses, {
       resource_type_status: resourceType.status,
       observed_resource_types: new Set(),
       transferred_bytes: 0,
+      declared_bytes: 0,
       request_count: 0,
+      canceled_request_count: 0,
+      declared_request_count: 0,
       unmeasured_request_count: 0,
       failed_request_count: 0,
       statuses: new Set(),
@@ -480,7 +487,12 @@ export function aggregateCdpResponses(responses, {
     group.observed_resource_types.add(resourceType.value);
     if (resourceType.status === "unknown") group.resource_type_status = "unknown";
     if (transferMeasured) group.transferred_bytes += transferredBytes;
-    else group.unmeasured_request_count += 1;
+    else if (!sizeAccounted) group.unmeasured_request_count += 1;
+    if (canceled) group.canceled_request_count += 1;
+    if (declaredBytes !== null) {
+      group.declared_bytes = Math.max(group.declared_bytes, declaredBytes);
+      group.declared_request_count += 1;
+    }
     group.request_count += 1;
     if (failed) group.failed_request_count += 1;
     if (Number.isInteger(record?.status)) group.statuses.add(record.status);
@@ -704,6 +716,7 @@ function mediaFetchedResources(media, resources) {
       resource_type: resource.resource_type,
       transferred_bytes: resource.transferred_bytes,
       request_count: resource.request_count,
+      ...(Object.hasOwn(resource, "declared_bytes") ? { declared_bytes: resource.declared_bytes } : {}),
       matched_source_resource_ids: matchedSourceIds.sort(),
     }];
   }).sort((a, b) => a.url.localeCompare(b.url) || a.resource_id.localeCompare(b.resource_id));
@@ -809,10 +822,14 @@ export function buildPageLoadCapture({
         addCaptureProblem("media_source_unresolvable");
       }
       const fetchedResources = mediaFetchedResources(normalized, network.resources);
+      const hasDeclaredShape = network.resources.some((resource) => Object.hasOwn(resource, "declared_bytes"));
       media.push({
         ...normalized,
         fetched_bytes: fetchedResources.reduce((sum, resource) => sum + resource.transferred_bytes, 0),
         fetched_request_count: fetchedResources.reduce((sum, resource) => sum + resource.request_count, 0),
+        ...(hasDeclaredShape ? {
+          declared_bytes: fetchedResources.reduce((sum, resource) => sum + (resource.declared_bytes || 0), 0),
+        } : {}),
         fetched_resources: fetchedResources,
       });
     } catch {

@@ -57,6 +57,10 @@ import {
   createDoctorCheckRegistry,
   runDoctorCheckRegistry,
 } from "./doctor-check-registry.mjs";
+import {
+  evaluateSourcePreparation,
+  SOURCE_PREP_CODES,
+} from "./source-prep.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
@@ -120,11 +124,21 @@ import {
   BRIEF_PAYLOAD_REL_PATH,
 } from "./content-residue.mjs";
 import { defaultCommerceCatalogPath, resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-template-source.mjs";
+import {
+  assessTemplateFreshness,
+  defaultSdkSupportPolicy,
+  renderTemplateFreshness,
+} from "./template-freshness.mjs";
 import { isUnresolvedTemplateFamily, resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
 import {
   resolveBuiltSiteScope,
   synthesizeMinimalBuildPacket,
 } from "./built-site-scope.mjs";
+import {
+  UPSELL_SELECTOR_SCOPE,
+  evaluateUpsellSelectorScope,
+  isPostPurchasePageType,
+} from "./upsell-selector-scope.mjs";
 import {
   BUILD_BRIEF_NORMALIZED_REL_PATH,
   BUILD_BRIEF_SCHEMA,
@@ -315,7 +329,7 @@ Usage:
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
-  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media
+  campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
   campaigns-os install-skills [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--dry-run] [--json]
@@ -327,7 +341,7 @@ Usage:
   campaigns-os next polish --packet <json> --report <json> [--json]
   campaigns-os next deploy --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
-  campaigns-os qa resolve --packet <json> [--base-url <url>] [--json]
+  campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir qa-output] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
@@ -1742,6 +1756,24 @@ function prepareBuild(args, options = {}) {
       ? { certified: true }
       : { certified: false, waiver: { reason: uncertifiedReason, waived_by: optionalString(args["waived-by"], "operator"), waived_at: new Date().toISOString() } }
     : null;
+  // Certification freshness (#263), from the vendored catalog snapshot only:
+  // say which SDK the family was last verified against and which SDK is
+  // current, right where the gate decides. stderr keeps --json stdout clean.
+  // The line prints for ANY decided family present on the vendored catalog —
+  // including one whose certification was waived via
+  // --allow-uncertified-template: freshness is exposure, and a waiver is an
+  // explicit certification decision, not a reason to hide what the catalog
+  // still records. The waived path is labeled so it can never be mistaken
+  // for the certified-gate line.
+  if (familyDecided && Object.prototype.hasOwnProperty.call(commerceCatalog?.families || {}, templateFamily)) {
+    const freshnessLine = renderTemplateFreshness(assessTemplateFreshness({
+      family: templateFamily,
+      catalog: commerceCatalog,
+      sdkSupportPolicy: defaultSdkSupportPolicy(),
+    }));
+    const waivedLabel = familyCertified ? "" : "certification waived — ";
+    console.warn(`[campaigns-os prepare-build] ${waivedLabel}${freshnessLine}`);
+  }
   const templateCandidates = hintedTemplateFamily
     ? [{ family: hintedTemplateFamily, source: "CampaignSpec preferred_template_family", confidence: "hint" }]
     : [];
@@ -2386,6 +2418,7 @@ export function doctorBuiltOutput(args) {
     site_root: scope.site_root,
     built_pages: scope.pages.map((page) => ({ page_id: page.page_id, type: page.page_type, route: page.route })),
     doctor_checks: [],
+    checkpoint_gates: [],
   };
   ready.push(`Resolved ${scope.html_count} built page(s) from ${relFromDir(targetRepo, scope.campaign_dir)} (slug "${scope.slug || "(site root)"}")`);
 
@@ -2423,6 +2456,32 @@ export function doctorBuiltOutput(args) {
   } else {
     ready.push("Built output has no generic starter placeholder or promo-code residue");
   }
+
+  // Upsell selector scope (#270). Deliberately outside the family/brand-contract
+  // branch above: the defect is family-independent, and this mode is reached
+  // without --family more often than with it. Page roles come from the built
+  // route (resolveBuiltSiteScope infers them) and from each page's own
+  // next-page-type meta, so no packet or spec is needed. No assembly report
+  // exists on this path, so there are no waivers to assess — a blocker here is
+  // repaired in the source, or waived through the packet path.
+  recordUpsellSelectorScopeGate({
+    subject: {
+      public_route_slug: scope.slug || null,
+      site_root: relFromDir(targetRepo, scope.campaign_dir),
+    },
+    pages: scope.pages.map((page) => ({
+      page_id: page.page_id,
+      page_type: page.page_type,
+      file: relFromDir(targetRepo, page.built_path),
+      content: readFileSync(page.built_path, "utf8"),
+    })),
+    waivers: null,
+    errors,
+    warnings,
+    ready,
+    derived,
+  });
+  derived.doctor_checks.push(UPSELL_SELECTOR_SCOPE);
 
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
@@ -2747,6 +2806,12 @@ const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
       : null),
   },
   {
+    id: UPSELL_SELECTOR_SCOPE,
+    evaluate: ({ doctor }) => (Array.isArray(doctor?.derived?.checkpoint_gates)
+      ? doctor.derived.checkpoint_gates.find((gate) => gate?.id === UPSELL_SELECTOR_SCOPE) || null
+      : null),
+  },
+  {
     id: HIDDEN_EAGER_MEDIA_SCOPE,
     evaluate: ({ packet, report }) => evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
   },
@@ -2755,7 +2820,7 @@ const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
-    throw new Error('Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media.');
+    throw new Error('Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope.');
   }
   return checkpointWaive(args);
 }
@@ -3062,6 +3127,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ packet, packetPath, spec, errors, warnings, ready, derived }) => validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived),
   },
   {
+    id: "source_html.preparation",
+    phase: "source",
+    run: ({ packet, packetPath, errors, warnings, ready, derived }) => validateSourcePreparation(packet, packetPath, errors, warnings, ready, derived),
+  },
+  {
     id: "spec.package_availability",
     phase: "spec",
     run: ({ spec, warnings, ready }) => validateSpecPackageAvailability(spec, warnings, ready),
@@ -3075,6 +3145,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "built_output.pages",
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: UPSELL_SELECTOR_SCOPE,
+    phase: "built-output",
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateUpsellSelectorScope(spec, packet, errors, warnings, ready, derived, buildState),
   },
   {
     id: "built_output.sdk_meta_tags",
@@ -3197,6 +3272,22 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   if (isNonEmptyString(decidedFamily) && decidedFamily !== "undecided") {
     if (isCertifiedTemplateFamily(decidedFamily)) {
       ready.push(`Template family "${decidedFamily}" is certified (commerce catalog + brand contract)`);
+      // Certification freshness (#263): certified is not the whole story — an
+      // operator must also see which SDK the certification evidence covers.
+      // Current freshness stays informational (ready); a stale or unrecorded
+      // verification surfaces as a warning, because an older evidence record
+      // is not current certification.
+      const freshness = assessTemplateFreshness({
+        family: decidedFamily,
+        catalog: resolveCommerceCatalog(),
+        sdkSupportPolicy: defaultSdkSupportPolicy(),
+      });
+      const freshnessLine = renderTemplateFreshness(freshness);
+      if (freshness.state === "current") {
+        ready.push(freshnessLine);
+      } else {
+        addIssue(warnings, "assembly.template_certification.freshness", freshnessLine);
+      }
     } else {
       const waiver = packet.assembly?.template_certification?.waiver;
       if (waiver && isNonEmptyString(waiver.reason)) {
@@ -4048,6 +4139,107 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
   }
 
   if (checked > 0) ready.push(`Built HTML structure and commerce refs checked in _site/${publicRouteSlug}/ for ${checked} page(s)`);
+}
+
+// Upsell selector scope (#270). Every doctor invocation, deliberately — not
+// only the one that follows assembly. The real-world instance was introduced by
+// a LATER human review round that layered a correctly-scoped selector on top of
+// an existing unscoped one and left both in place, so a gate that fired only at
+// first assembly would have watched the defect arrive and said nothing. It also
+// stays blocking regardless of stage status, unlike the per-page structure
+// checks that soften to warnings before assembly completes: built markup that
+// charges a shopper is not a work-in-progress state that becomes true later.
+function validateUpsellSelectorScope(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const pages = [];
+  if (siteRoot && existsSync(siteRoot)) {
+    // Enumerate from the FILESYSTEM, not from the CampaignSpec, so both doctor
+    // paths scan the same set. Walking active spec pages would miss any built
+    // page the spec does not declare — the ordinary state for a page-kit
+    // `campaign-build` campaign, and the state route drift produces — which
+    // would leave the packet path blind to exactly the pages `doctor --built`
+    // catches. A gate whose coverage depends on which flag you passed is not
+    // the gate this was written to be.
+    const declaredByPath = new Map();
+    for (const page of activeSpecPages(spec)) {
+      const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
+      if (builtPath) declaredByPath.set(resolve(builtPath), page);
+    }
+    const scope = resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug });
+    for (const builtPage of (scope.ok ? scope.pages : [])) {
+      const declared = declaredByPath.get(resolve(builtPage.built_path)) || null;
+      // Declared type wins only when it is the post-purchase answer; otherwise
+      // the route-inferred type stands. Same fail-closed rule the evaluator
+      // applies between a declared type and the page's own next-page-type meta:
+      // any signal saying "post-purchase" is enough.
+      const declaredType = declared?.type || null;
+      pages.push({
+        page_id: declared?.id || builtPage.page_id,
+        page_type: isPostPurchasePageType(declaredType) ? declaredType : builtPage.page_type,
+        file: relFromDir(targetRepo, builtPage.built_path),
+        content: readFileSync(builtPage.built_path, "utf8"),
+      });
+    }
+  }
+  recordUpsellSelectorScopeGate({
+    subject: {
+      public_route_slug: publicRouteSlug || null,
+      site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
+    },
+    pages,
+    waivers: buildState?.report?.waivers,
+    errors,
+    warnings,
+    ready,
+    derived,
+  });
+}
+
+// Shared by both doctor entry points: the packet path above and the
+// built-site-only path (`doctor --built`), which is how a page-kit
+// `campaign-build` campaign with no hand-authored packet gets inspected — and
+// therefore the invocation that most needs this gate.
+function recordUpsellSelectorScopeGate({ subject, pages, waivers, errors, warnings, ready, derived }) {
+  const gate = evaluateUpsellSelectorScope({ subject, pages, waivers });
+  if (Array.isArray(derived?.checkpoint_gates)) derived.checkpoint_gates.push(gate);
+
+  const inertCounts = Object.fromEntries(
+    ["stale", "foreign", "malformed", "expired"].map((kind) => [kind, gate.waiver_assessment?.inert_counts?.[kind] || 0]),
+  );
+  const inertTotal = Object.values(inertCounts).reduce((sum, count) => sum + count, 0);
+  if (inertTotal > 0) {
+    addIssue(
+      warnings,
+      "built_output.upsell_selector_scope.waiver_inert",
+      `Upsell selector-scope waiver history contains ${inertTotal} inert record(s); stale, foreign, malformed, and expired decisions never satisfy the current checkpoint.`,
+      { counts: inertCounts },
+    );
+  }
+
+  if (gate.status === "blocked") {
+    addIssue(errors, gate.code, gate.reason, { checkpoint_gate: gate });
+    return gate;
+  }
+  if (gate.status === "waived") {
+    addIssue(warnings, gate.code, `${gate.reason} Waived by ${gate.waiver.waived_by}: ${gate.waiver.reason}`, { checkpoint_gate: gate });
+    ready.push(`Upsell selector-scope checkpoint accepted under named-human exception (${gate.waiver.waived_by}).`);
+    return gate;
+  }
+  if (gate.status === "not_applicable") {
+    ready.push("Upsell selector-scope checkpoint not applicable: no built upsell/downsell page to scan yet.");
+    return gate;
+  }
+  if (gate.warned.length) {
+    addIssue(warnings, gate.code, gate.reason, { checkpoint_gate: gate });
+    // A ready line beside the warning, so "the gate ran and found no cart-writing
+    // selector" and "the gate did not run" are never the same JSON shape.
+    ready.push(`Upsell selector-scope scan found 0 cart-writing selector(s) on ${gate.pages_scanned} built post-purchase page(s), with ${gate.warned.length} select-mode note(s)`);
+    return gate;
+  }
+  ready.push(`Every bundle selector on ${gate.pages_scanned} built post-purchase page(s) is scoped away from the live cart (${gate.selectors_scanned} selector(s) scanned)`);
+  return gate;
 }
 
 // Route drift: a CampaignSpec page whose declared route has no built page at
@@ -5165,6 +5357,39 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     ready.push(outOfScopePages.length > 0 || specPartialScope
       ? `Partial build previewable routes: ${builtPages.map((page) => routeLabel(page.route)).join(", ")}`
       : "All mapped CampaignSpec pages are build candidates");
+  }
+}
+
+// Source preparation check (#262). Runs at every doctor evaluation — start and
+// build embed doctor, so this is the start preflight the issue asks for while
+// staying re-checkable after source edits. Blocking findings surface as doctor
+// errors, which drive status "blocked" and next.stage "collect-inputs" exactly
+// like other unprepared-input states. Detection and severity policy live in
+// src/source-prep.mjs; the codes and fixes are documented in
+// docs/source-adapters.md "Source preparation check".
+function validateSourcePreparation(packet, packetPath, errors, warnings, ready, derived = {}) {
+  const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
+  if (!sourceRoot || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
+  const pages = Array.isArray(packet.source_html?.pages) ? packet.source_html.pages : [];
+  const result = evaluateSourcePreparation({
+    sourceRoot,
+    pages,
+    wrapperPolicy: packet.source_html?.adapter_contract?.wrapper_policy,
+  });
+  derived.source_preparation = {
+    checked_page_count: result.checked_page_count,
+    finding_codes: result.findings.map((finding) => finding.code),
+  };
+  for (const finding of result.findings) {
+    addIssue(
+      finding.severity === "error" ? errors : warnings,
+      finding.code,
+      finding.message,
+      { pages: finding.pages, docs: finding.docs }
+    );
+  }
+  if (result.checked_page_count > 0 && result.findings.length === 0) {
+    ready.push("Mapped source pages pass the page-kit preparation check (document wrappers stripped, no leftover frontmatter, no source-file internal links)");
   }
 }
 
@@ -7506,6 +7731,9 @@ function buildNextStep(errors, warnings, derived, report = null) {
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");
   }
+  if (SOURCE_PREP_CODES.some((code) => codes.has(code))) {
+    actions.push("Prepare the mapped source HTML for page-kit ingestion — strip document wrappers, repair leftover frontmatter, and route internal links through campaign_link/CampaignSpec routes (docs/quickstart.md \"Prepare Raw HTML Source\") — then rerun campaigns-os doctor.");
+  }
   if (codes.has("scope.runtime_qa_blocked")) {
     actions.push("Keep checkout/order-proof QA blocked until the out-of-scope runtime pages are built or explicitly delegated to an existing downstream URL.");
   }
@@ -8898,12 +9126,20 @@ function inferQaVerdictPath({ packet, report, reportPath = null, targetRepo = nu
     }
   }
 
-  candidates.sort((a, b) => {
+  // Trust segregation: a verdict stamped `trusted: false` by the QA verdict
+  // receiver (an anonymous submission) is shape-valid but unattributed, and
+  // automatic inference must never pick one up as this run's QA evidence.
+  // Locally emitted verdicts never carry the field — it is server-stamped —
+  // so only fetched untrusted records are excluded here. An operator's
+  // explicit --qa-verdict path bypasses inference and is honored as given.
+  // See docs/qa-and-test-orders.md (Verdict schema and trust semantics).
+  const eligible = candidates.filter((candidate) => candidate.verdict?.trusted !== false);
+  eligible.sort((a, b) => {
     const scoreDelta = qaVerdictCandidateScore(b, packet) - qaVerdictCandidateScore(a, packet);
     if (scoreDelta !== 0) return scoreDelta;
     return qaVerdictCandidateTime(b) - qaVerdictCandidateTime(a);
   });
-  return candidates[0]?.path || null;
+  return eligible[0]?.path || null;
 }
 
 function qaVerdictPathHints(report) {

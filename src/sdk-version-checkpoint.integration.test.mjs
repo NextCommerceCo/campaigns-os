@@ -331,9 +331,13 @@ test("a valid packet-local spec runs the full doctor registry and each checkpoin
     assert.ok(doctor.derived.doctor_checks.includes("campaign-spec.rule-registry"));
     assert.equal(doctor.derived.doctor_checks.filter((id) => id === "page_kit.sdk_version").length, 1);
     assert.equal(doctor.derived.doctor_checks.filter((id) => id === "page_kit.store_profile").length, 1);
+    assert.equal(doctor.derived.doctor_checks.filter((id) => id === "built_output.upsell_selector_scope").length, 1);
     assert.deepEqual(doctor.derived.checkpoint_gates.map(({ id, status }) => ({ id, status })), [
       { id: "page_kit.sdk_version", status: "pass" },
       { id: "page_kit.store_profile", status: "pass" },
+      // No built _site/ in this fixture, so there is no built upsell page to
+      // scan. The gate still runs and still reports, rather than being absent.
+      { id: "built_output.upsell_selector_scope", status: "not_applicable" },
     ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -1,0 +1,20 @@
+{
+  "_note": "Fixture only. Never installed by this repository, never packed, never a workspace of the surrounding repository. Every lifecycle script below is a tripwire: it records a hit and exits 0. A consumer that installs or packs a target it is only supposed to READ will trip them, and a consumer that prepares this target with the accepted runtime recipe's flags will not. build:spec is the exception and is NOT a tripwire — it is the one script the recipe's build step is meant to run, and its pre/post siblings beside it are tripwires again, so the fixture can tell 'ran the intended script' apart from 'ran the intended script and its chain'.",
+  "name": "hostile-orientation-target-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "preinstall": "node ./bin/tripwire.mjs root:preinstall",
+    "install": "node ./bin/tripwire.mjs root:install",
+    "postinstall": "node ./bin/tripwire.mjs root:postinstall",
+    "prepare": "node ./bin/tripwire.mjs root:prepare",
+    "prepack": "node ./bin/tripwire.mjs root:prepack",
+    "prebuild:spec": "node ./bin/tripwire.mjs root:prebuild:spec",
+    "build:spec": "node ./bin/intended.mjs build:spec",
+    "postbuild:spec": "node ./bin/tripwire.mjs root:postbuild:spec"
+  },
+  "dependencies": {
+    "hostile-dependency-tripwire": "file:hostile-dependency-tripwire-0.0.0.tgz"
+  }
+}

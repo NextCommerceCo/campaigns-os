@@ -172,9 +172,11 @@ function fixture(baseUrl, { specVersion = "0.4.18", targetVersion = specVersion,
 
 function armFetchSentinel() {
   let hits = 0;
+  const requests = [];
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
+  globalThis.fetch = async (input, init) => {
     hits += 1;
+    requests.push({ method: String(init?.method || "GET"), url: String(input) });
     const path = new URL(String(input)).pathname;
     const meta = path.includes("/checkout/")
       ? '<meta name="next-page-type" content="checkout"><meta name="next-success-url" content="/runtime-packet-demo/upsell/">'
@@ -196,8 +198,31 @@ function armFetchSentinel() {
   return {
     baseUrl: "https://runtime-sentinel.invalid/runtime-packet-demo/",
     hits: () => hits,
+    requests: () => requests.slice(),
     restore: () => { globalThis.fetch = originalFetch; },
   };
+}
+
+// `qa resolve` used to make zero requests, and three tests below asserted it.
+// #273 retired that invariant deliberately: resolve reported `ready` over a
+// route set that was 100% dead because nothing ever asked the deployment
+// whether the URLs it derived existed. What survives is the narrower claim the
+// old assertion was really protecting — resolve does no RUNTIME work. It sends
+// one bounded HEAD per derived entry URL and nothing else: no page bodies, no
+// parsing, no proxy calls, no repeat visits.
+function assertResolveProbedOnly(sentinel, resolved, message) {
+  const requests = sentinel.requests();
+  assert.deepEqual(
+    requests.map((request) => request.method),
+    requests.map(() => "HEAD"),
+    `${message}: resolve may only send HEAD probes`,
+  );
+  assert.deepEqual(
+    requests.map((request) => request.url).sort(),
+    resolved.entry_urls.map((entry) => entry.url).sort(),
+    `${message}: resolve may only probe the entry URLs it derived, exactly once each`,
+  );
+  assert.equal(resolved.route_probe.status, "pass", `${message}: the probed routes resolved`);
 }
 
 test("packet QA rejects an alternate --spec before reading artifacts or starting runtime work", async () => {
@@ -321,7 +346,7 @@ test("qa resolve reports an exact SDK waiver with attribution, bounds, and inert
     assert.match(readback, /Next expected proof: campaigns-os qa run/);
     assert.doesNotMatch(readback, /sdk-waiver-private-sentinel/);
     assert.doesNotMatch(JSON.stringify(resolved), /sdk-waiver-private-sentinel/);
-    assert.equal(sentinel.hits(), 0);
+    assertResolveProbedOnly(sentinel, resolved, "waived SDK checkpoint");
   } finally {
     console.log = originalLog;
     sentinel.restore();
@@ -355,7 +380,7 @@ test("qa resolve reports ready only when all packet checkpoints pass", async () 
     assert.match(readback, /Checkpoint page_kit\.store_profile: pass/);
     assert.match(readback, /Checkpoint page_kit\.sdk_version: pass/);
     assert.match(readback, /Next expected proof: campaigns-os qa run/);
-    assert.equal(sentinel.hits(), 0, "qa resolve remains artifact-only even when runtime proof is ready");
+    assertResolveProbedOnly(sentinel, resolved, "all checkpoints ready");
   } finally {
     console.log = originalLog;
     sentinel.restore();
@@ -389,7 +414,7 @@ test("qa resolve and run agree that target-only Store Profile values are ready w
     assert.match(readback, /Status: ready_with_exceptions/);
     assert.match(readback, /Target Store Profile has target-only value\(s\): store_phone/);
     assert.match(readback, /Next expected proof: campaigns-os qa run/);
-    assert.equal(sentinel.hits(), 0, "resolve must remain artifact-only");
+    assertResolveProbedOnly(sentinel, resolved, "target-only Store Profile");
 
     const result = await runQaCli({
       _: ["qa", "run"],
@@ -1090,6 +1115,139 @@ test("packet QA consumes packet, spec, campaign entry, and Assembly Report once 
     assert.ok(resolved.topologies.every((topology) => topology.pages.every((page) => page.url.includes("/runtime-packet-demo/"))));
   } finally {
     sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A sentinel that answers 404 for everything under the campaign's slug root and
+// 200 at the host root — the #273 reproduction as a served fixture: the host is
+// alive, and the packet's public_route_slug is not what it serves.
+function armDeadSlugRootSentinel() {
+  const requests = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    requests.push({ method: String(init?.method || "GET"), url: url.toString() });
+    const alive = url.pathname === "/";
+    return new Response(alive ? "<!doctype html><html><body>host</body></html>" : "not found", {
+      status: alive ? 200 : 404,
+      headers: { "content-type": "text/html" },
+    });
+  };
+  return {
+    baseUrl: "https://runtime-sentinel.invalid/",
+    requests: () => requests.slice(),
+    restore: () => { globalThis.fetch = originalFetch; },
+  };
+}
+
+test("#273 regression: qa resolve never reports ready over a route set that is 100% dead", async () => {
+  const sentinel = armDeadSlugRootSentinel();
+  const { dir, packetPath } = fixture("https://runtime-sentinel.invalid/", { storeMismatch: false });
+  const originalLog = console.log;
+  const lines = [];
+  console.log = (...parts) => lines.push(parts.join(" "));
+  try {
+    const resolved = await runQaCli({
+      _: ["qa", "resolve"],
+      packet: packetPath,
+      "base-url": "https://runtime-sentinel.invalid/",
+    });
+    const readback = lines.join("\n");
+
+    // Every checkpoint passes and every entry URL is non-empty — the exact
+    // shape that used to print `Status: ready`.
+    assert.deepEqual(
+      resolved.checkpoint_gates.map((gate) => gate.status),
+      resolved.checkpoint_gates.map(() => "pass"),
+    );
+    assert.ok(resolved.entry_urls.length > 0);
+    assert.notEqual(resolved.status, "ready");
+    assert.equal(resolved.status, "routes_unresolved");
+    assert.equal(resolved.ok, false);
+    assert.equal(resolved.route_probe.code, "route_probe.routes_unresolved");
+    assert.equal(resolved.route_probe.counts.resolved, 0);
+    assert.equal(resolved.route_probe.first_failure.http_status, 404);
+
+    assert.match(readback, /Status: routes_unresolved/);
+    assert.match(readback, /Route probe: failed \(route_probe\.routes_unresolved\)/);
+    assert.match(readback, /First failure: https:\/\/runtime-sentinel\.invalid\/[^ ]* \(HTTP 404\)/);
+    // The printed next command was the most misleading part of the old output.
+    assert.doesNotMatch(readback, /Next expected proof: campaigns-os qa run/);
+
+    // The host answers at its root, so the diagnosis names the packet's slug.
+    assert.equal(resolved.route_probe.route_root_hint.code, "route_probe.route_root_mismatch");
+    assert.match(readback, /Correct campaign\.public_route_slug/);
+
+    // Still probe-only: HEAD requests, no page bodies parsed.
+    assert.deepEqual(
+      sentinel.requests().map((request) => request.method),
+      sentinel.requests().map(() => "HEAD"),
+    );
+  } finally {
+    console.log = originalLog;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#273 regression: an offline qa resolve degrades to ready_unprobed and stays usable", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const error = new Error("fetch failed");
+    error.cause = { code: "ENOTFOUND" };
+    throw error;
+  };
+  const { dir, packetPath } = fixture("https://runtime-sentinel.invalid/runtime-packet-demo/", { storeMismatch: false });
+  const originalLog = console.log;
+  const lines = [];
+  console.log = (...parts) => lines.push(parts.join(" "));
+  try {
+    const resolved = await runQaCli({
+      _: ["qa", "resolve"],
+      packet: packetPath,
+      "base-url": "https://runtime-sentinel.invalid/runtime-packet-demo/",
+    });
+    const readback = lines.join("\n");
+
+    assert.equal(resolved.status, "ready_unprobed");
+    // Usable offline: a transport failure is evidence about this machine's
+    // network, not about the deployment, so it must not fail the command.
+    assert.equal(resolved.ok, true);
+    assert.equal(resolved.route_probe.code, "route_probe.unreachable");
+    assert.match(readback, /Status: ready_unprobed/);
+    assert.match(readback, /Route probe: not_probed \(route_probe\.unreachable\)/);
+    assert.match(readback, /Next expected proof: campaigns-os qa run/);
+  } finally {
+    console.log = originalLog;
+    globalThis.fetch = originalFetch;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--no-probe keeps qa resolve fully offline and makes no request at all", async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => { requests += 1; throw new Error("must not be called"); };
+  const { dir, packetPath } = fixture("https://runtime-sentinel.invalid/runtime-packet-demo/", { storeMismatch: false });
+  const originalLog = console.log;
+  const lines = [];
+  console.log = (...parts) => lines.push(parts.join(" "));
+  try {
+    const resolved = await runQaCli({
+      _: ["qa", "resolve"],
+      packet: packetPath,
+      "base-url": "https://runtime-sentinel.invalid/runtime-packet-demo/",
+      "no-probe": true,
+    });
+
+    assert.equal(requests, 0);
+    assert.equal(resolved.status, "ready_unprobed");
+    assert.equal(resolved.route_probe.code, "route_probe.disabled");
+    assert.match(lines.join("\n"), /Route probe: not_probed \(route_probe\.disabled\)/);
+  } finally {
+    console.log = originalLog;
+    globalThis.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });
   }
 });

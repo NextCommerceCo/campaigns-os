@@ -49,7 +49,7 @@
     "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
     "prepare": "npm run build:spec",
     "check:spec": "node --test \"campaign-spec/test/**/*.test.ts\"",
-    "check": "node ./scripts/check-catalog-provenance.mjs && node ./scripts/check-workflow-contracts.mjs && npm run build:spec && node --test ./src/*.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs ./scripts/check-catalog-provenance.test.mjs ./scripts/check-workflow-contracts.test.mjs ./scripts/check-slot-manifest.test.mjs ./scripts/check-skill-versions.test.mjs ./scripts/check-supported-surface.test.mjs ./scripts/check-campaign-spec-conformance.test.mjs && npm run check:spec && node ./scripts/check-fixtures.mjs && node ./scripts/check-campaign-spec-conformance.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs && node ./scripts/check-slot-manifest.mjs && node ./scripts/check-skill-versions.mjs && node ./scripts/check-cart-readiness-contract.mjs && node ./scripts/check-supported-surface.mjs && node ./scripts/check-reconcile-matrix.mjs && npm run check:pack",
+    "check": "node ./scripts/check-catalog-provenance.mjs && node ./scripts/check-workflow-contracts.mjs && npm run build:spec && node --test ./src/*.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs ./scripts/check-catalog-provenance.test.mjs ./scripts/check-workflow-contracts.test.mjs ./scripts/check-slot-manifest.test.mjs ./scripts/check-skill-versions.test.mjs ./scripts/check-supported-surface.test.mjs ./scripts/check-campaign-spec-conformance.test.mjs ./scripts/check-release-ledger.test.mjs ./scripts/generate-orientation-reference.test.mjs ./scripts/check-runtime-recipe.test.mjs && npm run check:spec && node ./scripts/check-fixtures.mjs && node ./scripts/check-campaign-spec-conformance.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs && node ./scripts/check-slot-manifest.mjs && node ./scripts/check-skill-versions.mjs && node ./scripts/check-cart-readiness-contract.mjs && node ./scripts/check-supported-surface.mjs && node ./scripts/check-reconcile-matrix.mjs && node ./scripts/check-release-ledger.mjs && node ./scripts/check-runtime-recipe.mjs && npm run check:orientation-docs && npm run check:runtime-docs && npm run check:pack",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
     "check:spec-conformance": "node ./scripts/check-campaign-spec-conformance.mjs",
     "check:pack": "node ./scripts/check-pack.mjs",
@@ -59,7 +59,13 @@
     "check:provenance": "node ./scripts/check-catalog-provenance.mjs",
     "check:workflows": "node ./scripts/check-workflow-contracts.mjs",
     "check:skill-versions": "node ./scripts/check-skill-versions.mjs",
-    "check:reconcile-matrix": "node ./scripts/check-reconcile-matrix.mjs"
+    "check:reconcile-matrix": "node ./scripts/check-reconcile-matrix.mjs",
+    "check:release-ledger": "node ./scripts/check-release-ledger.mjs",
+    "check:orientation-docs": "node ./scripts/generate-orientation-reference.mjs --check",
+    "generate:orientation-docs": "node ./scripts/generate-orientation-reference.mjs --write",
+    "check:runtime-recipe": "node ./scripts/check-runtime-recipe.mjs",
+    "check:runtime-docs": "node ./scripts/generate-runtime-readiness.mjs --check",
+    "generate:runtime-docs": "node ./scripts/generate-runtime-readiness.mjs --write"
   },
   "engines": {
     "node": ">=20.19.0"
@@ -88,6 +94,8 @@
     "src",
     "README.md",
     "CONTEXT.md",
-    "compatibility.json"
+    "compatibility.json",
+    "AGENTS.md",
+    "CHANGELOG.md"
   ]
 }

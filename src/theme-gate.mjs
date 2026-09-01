@@ -11,11 +11,35 @@ const COMMERCE_PAGE_TYPES = new Set(["checkout", "upsell", "downsell", "receipt"
 
 export const THEME_GATE_STATUSES = new Set(["pass", "blocked", "waived", "not_applicable"]);
 
+function isCommercePage(page) {
+  return COMMERCE_PAGE_TYPES.has(String(page?.type || "")) || String(page?.role || "") === "runtime";
+}
+
+function pageKey(page) {
+  return String(page?.page_id || page?.route || page?.type || "");
+}
+
+/**
+ * The campaign's commerce surface, split by whether this build produced it.
+ *
+ * "Does this campaign ship commerce pages?" is a question about the campaign,
+ * not about one build's output. A partial build parks declared checkout/upsell
+ * pages in `out_of_scope_pages`, which used to leave `built_pages` with no
+ * commerce page and retire the gate on a nine-page commerce funnel (#274).
+ * Reading only the built half made the gate's answer depend on build scope,
+ * which is the one input it must not key off.
+ */
+export function commerceScopeFromScope(scope) {
+  const built = (Array.isArray(scope?.built_pages) ? scope.built_pages : []).filter(isCommercePage);
+  const builtKeys = new Set(built.map(pageKey));
+  const outOfScope = (Array.isArray(scope?.out_of_scope_pages) ? scope.out_of_scope_pages : [])
+    .filter(isCommercePage)
+    .filter((page) => !builtKeys.has(pageKey(page)));
+  return { built, out_of_scope: outOfScope, all: [...built, ...outOfScope] };
+}
+
 export function commercePagesFromScope(scope) {
-  const pages = Array.isArray(scope?.built_pages) ? scope.built_pages : [];
-  return pages.filter(
-    (page) => COMMERCE_PAGE_TYPES.has(String(page?.type || "")) || String(page?.role || "") === "runtime",
-  );
+  return commerceScopeFromScope(scope).all;
 }
 
 export function themeWaiverFrom(reportTheme, ephemeralWaiver = null) {
@@ -44,18 +68,23 @@ export function themeWaiverFrom(reportTheme, ephemeralWaiver = null) {
  *   code: string,
  *   reason: string,
  *   commerce_pages: string[],
+ *   commerce_pages_out_of_scope: string[],
  *   waiver: object|null,
  *   required_actions: Array<{ id: string, kind: "command"|"manual", command: string|null, description: string }>,
  * }}
  */
 export function evaluateThemeGate({ reportTheme = null, contextTheme = null, scope = null, packetPath = null, waive = null } = {}) {
   const packetArg = packetPath || "<campaign-runtime.build.json>";
-  const commercePages = commercePagesFromScope(scope).map((page) => page.page_id || page.route || page.type);
+  const commerceScope = commerceScopeFromScope(scope);
+  const pageLabel = (page) => page.page_id || page.route || page.type;
+  const commercePages = commerceScope.all.map(pageLabel);
+  const commercePagesOutOfScope = commerceScope.out_of_scope.map(pageLabel);
   const result = (status, code, reason, requiredActions = [], waiver = null) => ({
     status,
     code,
     reason,
     commerce_pages: commercePages,
+    commerce_pages_out_of_scope: commercePagesOutOfScope,
     waiver,
     required_actions: requiredActions,
   });

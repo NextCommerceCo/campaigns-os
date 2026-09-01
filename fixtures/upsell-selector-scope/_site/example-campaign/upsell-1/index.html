@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Example Campaign — Offer 1</title>
+  <meta name="next-page-type" content="upsell">
+  <meta name="next-upsell-accept-url" content="/example-campaign/upsell-2/">
+  <meta name="next-upsell-decline-url" content="/example-campaign/upsell-2/">
+  <script src="https://cdn.example.test/campaign-cart@v0.4.27/dist/loader.js"></script>
+</head>
+<body>
+  <!-- The clean control: one selector, and it is scoped to the upsell. -->
+  <div class="upsell-wrapper" data-next-upsell="offer">
+    <div data-next-bundle-selector data-next-upsell-context data-next-selector-id="upsell-bundle">
+      <div role="button" data-next-bundle-card data-next-bundle-id="upsell-1x"
+           data-next-bundle-items='[{"packageId":22,"quantity":1}]'
+           data-next-selected="true"></div>
+    </div>
+    <button data-next-upsell-action="accept">Yes, add it</button>
+  </div>
+</body>
+</html>

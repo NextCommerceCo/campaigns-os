@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
-import { buildPageLoadCapture } from "./polish-capture.mjs";
+import { buildPageLoadCapture, buildPolishCaptureIntegrity } from "./polish-capture.mjs";
 import {
   buildPolishPageLoadEvidence,
   evaluateHiddenEagerMediaCheckpoint,
@@ -126,6 +126,8 @@ test("page-load evidence blocks only hidden eager media strictly above 1,048,576
     resource_id_count: 1,
     resource_identity_fingerprint: "sha256:8fe0a19a002099ded939f96496afbc65934bdae32e34cc879580e24657b40ab7",
     transferred_bytes: 1_048_577,
+    declared_bytes: 0,
+    assessed_bytes: 1_048_577,
     threshold_bytes: 1_048_576,
     preload_attribute: "missing",
     hidden_by: ["display_none"],
@@ -163,6 +165,91 @@ test("aborted-transfer lower-bound bytes still reach the hidden-eager-media thre
   const boundary = evidenceForCapture(abortedCapture(HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES));
   assert.equal(boundary.measurement.status, "complete");
   assert.deepEqual(boundary.findings, []);
+});
+
+test("canceled hidden media uses declared size without making capture incomplete", () => {
+  const canceledCapture = ({ bytes, declaredBytes, hidden = true, preload = null }) => pageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_200 },
+    mediaElements: [mediaElement("declared-aborted.mp4", { hidden, preload })],
+    responses: [{
+      ...mediaResponse("declared-aborted", "declared-aborted.mp4", bytes),
+      status: 206,
+      canceled: true,
+      ...(declaredBytes === undefined ? {} : { declared_data_length: declaredBytes }),
+    }],
+  });
+
+  const declared = evidenceForCapture(canceledCapture({
+    bytes: 300 * 1_024,
+    declaredBytes: 40 * 1_024 * 1_024,
+  }));
+  assert.equal(declared.measurement.status, "complete");
+  assert.equal(declared.findings.length, 1);
+  assert.equal(declared.findings[0].transferred_bytes, 300 * 1_024);
+  assert.equal(declared.findings[0].declared_bytes, 40 * 1_024 * 1_024);
+  assert.equal(declared.findings[0].assessed_bytes, 40 * 1_024 * 1_024);
+
+  const declaredOnly = evidenceForCapture(canceledCapture({
+    bytes: undefined,
+    declaredBytes: 40 * 1_024 * 1_024,
+  }));
+  assert.equal(declaredOnly.measurement.status, "complete");
+  assert.equal(declaredOnly.findings[0].transferred_bytes, 0);
+  assert.equal(declaredOnly.findings[0].declared_bytes, 40 * 1_024 * 1_024);
+
+  for (const capture of [
+    canceledCapture({ bytes: 300 * 1_024, declaredBytes: 40 * 1_024 * 1_024, hidden: false }),
+    canceledCapture({ bytes: 300 * 1_024, declaredBytes: 40 * 1_024 * 1_024, preload: "none" }),
+    canceledCapture({ bytes: 300 * 1_024, declaredBytes: 40 * 1_024 * 1_024, preload: "metadata" }),
+    canceledCapture({ bytes: 300 * 1_024 }),
+    canceledCapture({ bytes: 300 * 1_024, declaredBytes: HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES }),
+  ]) {
+    const evidence = evidenceForCapture(capture);
+    assert.equal(evidence.measurement.status, "complete");
+    assert.deepEqual(evidence.findings, []);
+  }
+
+  const lowerBoundOnly = evidenceForCapture(canceledCapture({
+    bytes: HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES + 1,
+  }));
+  assert.equal(lowerBoundOnly.measurement.status, "complete");
+  assert.equal(lowerBoundOnly.findings[0].assessed_bytes, HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES + 1);
+});
+
+test("historical v0 captures without declared-size fields remain valid", () => {
+  const capture = pageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_200 },
+    mediaElements: [mediaElement("historical.mp4")],
+    responses: [mediaResponse("historical", "historical.mp4", HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES + 1)],
+  });
+  for (const resource of capture.resource_ledger.entries) {
+    delete resource.declared_bytes;
+    delete resource.canceled_request_count;
+    delete resource.declared_request_count;
+  }
+  for (const media of capture.media) {
+    delete media.declared_bytes;
+    for (const resource of media.fetched_resources) delete resource.declared_bytes;
+  }
+  capture.integrity = buildPolishCaptureIntegrity(capture);
+
+  const evidence = evidenceForCapture(capture);
+  assert.equal(evidence.measurement.status, "complete");
+  assert.equal(evidence.findings.length, 1);
+  assert.equal(evidence.findings[0].declared_bytes, 0);
+  assert.equal(evidence.findings[0].assessed_bytes, HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES + 1);
 });
 
 test("preload exemptions accept only exact ASCII-case-insensitive none and metadata tokens", () => {
@@ -275,6 +362,8 @@ test("the threshold applies to aggregate fetched bytes per media element, includ
     resource_id_count: 2,
     resource_identity_fingerprint: "sha256:d004056fc7098c6e67daa9155a38d2777f0796d206d237ecdfb861ab2a101463",
     transferred_bytes: 1_228_800,
+    declared_bytes: 0,
+    assessed_bytes: 1_228_800,
     threshold_bytes: 1_048_576,
     preload_attribute: "missing",
     hidden_by: ["display_none"],

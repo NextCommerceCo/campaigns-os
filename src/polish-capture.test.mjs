@@ -769,6 +769,8 @@ test("CDP response aggregation sums range transfers once and keeps cross-origin 
       status: 206,
       resource_type: "Media",
       encoded_data_length: 524_289,
+      declared_data_length: 40 * 1_024 * 1_024,
+      canceled: true,
       response_encoded_data_length: 700_000,
     },
     {
@@ -799,11 +801,32 @@ test("CDP response aggregation sums range transfers once and keeps cross-origin 
   assert.equal(result.cross_origin_request_count, 2);
   assert.equal(result.resources.length, 2);
   assert.equal(result.resources[0].transferred_bytes, 1_048_577);
+  assert.equal(result.resources[0].declared_bytes, 40 * 1_024 * 1_024);
   assert.equal(result.resources[0].request_count, 2);
+  assert.equal(result.resources[0].canceled_request_count, 1);
+  assert.equal(result.resources[0].declared_request_count, 1);
   assert.equal(result.resources[0].partial_request_count, 2);
   assert.deepEqual(result.resources[0].statuses, [206]);
   assert.equal(result.largest_resource.transferred_bytes, 1_048_577);
   assert.equal(JSON.stringify(result).includes("signature"), false);
+});
+
+test("canceled declared-only responses are complete without fabricating observed transfer bytes", () => {
+  const result = aggregateCdpResponses([{
+    request_id: "declared-only",
+    url: "https://cdn.example.test/media/declared.mp4?signature=private",
+    status: 206,
+    resource_type: "Media",
+    declared_data_length: 8 * 1_024 * 1_024,
+    canceled: true,
+  }], { documentUrl: "https://shop.example.test/landing/" });
+
+  assert.equal(result.measurement_status, "complete");
+  assert.equal(result.total_transferred_bytes, 0);
+  assert.equal(result.resources[0].transferred_bytes, 0);
+  assert.equal(result.resources[0].declared_bytes, 8 * 1_024 * 1_024);
+  assert.equal(result.resources[0].unmeasured_request_count, 0);
+  assert.deepEqual(result.problems, []);
 });
 
 test("cached, service-worker, failed, and unfinished CDP responses make measurement explicitly incomplete", () => {

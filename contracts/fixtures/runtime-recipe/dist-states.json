@@ -1,0 +1,51 @@
+{
+  "_note": "Declarative descriptions of the prepared-runtime states an output-check implementation must distinguish. A test builds each state from the accepted recipe rather than from paths written down here, so adding a module to the input set cannot leave a fixture describing an inventory that no longer exists.",
+  "schema": "campaigns-os-runtime-recipe-dist-states/v1",
+  "directory": "campaign-spec/dist",
+  "expected_file_count": 76,
+  "states": [
+    {
+      "id": "healthy",
+      "mutation": "none",
+      "expect": "pass",
+      "detects": [],
+      "why": "The control. Without it the four failure fixtures prove only that the checker fails, not that it discriminates."
+    },
+    {
+      "id": "absent",
+      "mutation": "remove_all_outputs",
+      "expect": "fail",
+      "detects": [
+        "absent"
+      ],
+      "why": "Nothing was built, or the output directory was removed after the build. The inventory check is the only one that can report this cleanly; every other check would report a cascade."
+    },
+    {
+      "id": "extra",
+      "mutation": "add_unexpected_output",
+      "expect": "fail",
+      "detects": [
+        "extra"
+      ],
+      "why": "Something other than the declared build wrote into the output directory. An unexpected file is as much a signal as a missing one."
+    },
+    {
+      "id": "corrupt",
+      "mutation": "alter_output_bytes",
+      "expect": "fail",
+      "detects": [
+        "corrupt"
+      ],
+      "why": "A file was modified after the build recorded its digest. Caught by hash stability; the import smoke is the second line for the case where the alteration also makes the module unloadable."
+    },
+    {
+      "id": "stale",
+      "mutation": "advance_input_fingerprint",
+      "expect": "fail",
+      "detects": [
+        "stale"
+      ],
+      "why": "The output is internally consistent — complete inventory, correct hashes, imports fine — but was produced from inputs that no longer match the target commit. Only the input fingerprint sees this."
+    }
+  ]
+}

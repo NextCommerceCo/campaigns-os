@@ -9,6 +9,7 @@ import { redactUrlQuery } from "./qa-url-privacy.mjs";
 import {
   commonTestOrderPaths,
   fullTestOrderPaths,
+  pageAtUrl,
   remainingActionDisposition,
   resolveTestOrderTopology,
   terminalAtUrl,
@@ -141,6 +142,15 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       receiptAnalytics.attempts.push(receiptAnalyticsAttempt(plan, result));
       if (options.captureAnalytics) journeyAnalytics.attempts.push(journeyAnalyticsAttempt(plan, result));
       assertions.push(testOrderAssertion(pageForPlan, plan, result));
+      // Reconciliation and total parity are their own named assertions rather
+      // than extra reasons for browser-test-order to fail: the order WAS
+      // created, and collapsing "created" with "matches what was shown" is how
+      // a mismatch ends up described as a checkout failure. Both carry blocker
+      // severity, so the verdict still blocks.
+      const displayParity = orderDisplayParityAssertion(pageForPlan, planId(plan), result.order);
+      if (displayParity) assertions.push(displayParity);
+      const totalParity = orderTotalParityAssertion(pageForPlan, planId(plan), result.order);
+      if (totalParity) assertions.push(totalParity);
       const renderedReceiptAssertion = receiptRenderingAssertion(pageForPlan, planId(plan), result.order);
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
     }
@@ -452,6 +462,7 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
     }
     if (page.page_type === "checkout") {
       assertions.push(...await checkoutPaymentSurfaceAssertions(browserPage, page));
+      assertions.push(...await checkoutOfferSurfaceAssertions(browserPage, page));
     }
     assertions.push(...await templateResidueAssertions(browserPage, page, options));
     assertions.push(...await templatePlaceholderTextAssertions(browserPage, page, options));
@@ -1185,6 +1196,252 @@ async function checkoutOrderBumpEvidence(browserPage) {
   })).catch(() => ({ toggles: [] }));
 }
 
+// --- Declared checkout offer surfaces (exit_intent / promo_code_input) ---
+// CampaignSpec declares these on the checkout page and the QA contract says
+// browser QA drives them. Until #271 nothing asserted them at all, so a
+// campaign could declare `exit_intent` with an offer code, ship no exit-intent
+// markup whatsoever, and collect a clean verdict: the absence of a check read
+// as a pass. These assertions exist so a declared surface that was never built
+// is a blocker, and a surface that is built but cannot be proven wired to the
+// declared code is visible rather than silent.
+
+// Exit-intent markup lives inside a <template> until the pop is triggered, so
+// presence is a DOM-tree question, not a visibility one. The starter families
+// ship `<template data-template="exit-intent">` wrapping `.exit-intent-popup`
+// with a `[data-exit-intent-action="apply-coupon"][data-coupon-code]` CTA;
+// the looser class/id selectors catch hand-rolled equivalents.
+const EXIT_INTENT_SURFACE_SELECTORS = Object.freeze([
+  'template[data-template="exit-intent"]',
+  "[data-exit-intent-action]",
+  "[data-next-exit-intent]",
+  "#exit-intent-popup",
+  ".exit-intent-popup",
+  '[class*="exit-intent"]',
+]);
+
+// Where a built surface exposes the offer code it will apply. Reading it is
+// what separates "the pop exists" from "the pop applies the declared offer".
+const OFFER_CODE_ATTRIBUTES = Object.freeze([
+  "data-coupon-code",
+  "data-next-coupon-code",
+  "data-offer-code",
+  "data-next-offer-code",
+]);
+
+function declaredOfferSurface(page, surface) {
+  const block = page?.[surface];
+  if (!block || typeof block !== "object" || block.enabled !== true) return null;
+  return { surface, offer_code: stringArg(block.offer_code) || null };
+}
+
+async function checkoutOfferSurfaceAssertions(browserPage, page) {
+  const assertions = [];
+  const exitIntent = declaredOfferSurface(page, "exit_intent");
+  if (exitIntent) {
+    const evidence = await offerSurfaceEvidence(browserPage, EXIT_INTENT_SURFACE_SELECTORS);
+    assertions.push(exitIntentSurfaceAssertion({ page, declaration: exitIntent, evidence }));
+  }
+  const promoCodeInput = declaredOfferSurface(page, "promo_code_input");
+  if (promoCodeInput) {
+    const evidence = await offerSurfaceEvidence(browserPage, COUPON_INPUT_SELECTORS);
+    assertions.push(promoCodeSurfaceAssertion({ page, declaration: promoCodeInput, evidence }));
+  }
+  return assertions;
+}
+
+// Counts matches in the live document AND inside every <template> content
+// fragment. `document.querySelectorAll` does not descend into template content,
+// and correctly built exit-intent markup lives nowhere else before the pop
+// fires — scanning the document alone would report a wired pop as missing.
+async function offerSurfaceEvidence(browserPage, selectors) {
+  return browserPage.evaluate((input) => {
+    const isVisible = (element) => {
+      if (!element.getBoundingClientRect) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== "none"
+        && style.visibility !== "hidden";
+    };
+    const roots = [document, ...Array.from(document.querySelectorAll("template")).map((node) => node.content)];
+    const matched = new Set();
+    const matchedSelectors = [];
+    let visibleCount = 0;
+    for (const selector of input.selectors) {
+      let selectorHits = 0;
+      for (const root of roots) {
+        let found = [];
+        try {
+          found = Array.from(root.querySelectorAll(selector));
+        } catch {
+          // An invalid selector is a bug in this list, not in the campaign.
+          continue;
+        }
+        for (const element of found) {
+          if (matched.has(element)) continue;
+          matched.add(element);
+          selectorHits += 1;
+          // Elements inside template content are not laid out, so they are
+          // never "visible" — that is the expected state for exit intent.
+          if (root === document && isVisible(element)) visibleCount += 1;
+        }
+      }
+      if (selectorHits) matchedSelectors.push(selector);
+    }
+    const codes = new Set();
+    for (const element of matched) {
+      for (const attribute of input.codeAttributes) {
+        const value = element.getAttribute?.(attribute);
+        if (value && value.trim()) codes.add(value.trim());
+      }
+      for (const attribute of input.codeAttributes) {
+        let carriers = [];
+        try {
+          carriers = Array.from(element.querySelectorAll?.(`[${attribute}]`) || []);
+        } catch {
+          carriers = [];
+        }
+        for (const carrier of carriers) {
+          const value = carrier.getAttribute(attribute);
+          if (value && value.trim()) codes.add(value.trim());
+        }
+      }
+    }
+    return {
+      match_count: matched.size,
+      visible_count: visibleCount,
+      matched_selectors: matchedSelectors,
+      offer_codes: [...codes].slice(0, 10),
+    };
+  }, { selectors: [...selectors], codeAttributes: [...OFFER_CODE_ATTRIBUTES] })
+    .catch((error) => ({
+      match_count: 0,
+      visible_count: 0,
+      matched_selectors: [],
+      offer_codes: [],
+      collector_error: error instanceof Error ? error.message : String(error),
+    }));
+}
+
+function offerCodeWired(declaredCode, foundCodes) {
+  if (!declaredCode) return false;
+  return (foundCodes || []).some((code) => normalizeLabel(code) === normalizeLabel(declaredCode));
+}
+
+function exitIntentSurfaceAssertion({ page, declaration, evidence }) {
+  const selectors = [...EXIT_INTENT_SURFACE_SELECTORS];
+  const base = {
+    id: `browser-exit-intent-surface:${page.page_id}`,
+    family: "browser-runtime",
+    page,
+    expected: declaration.offer_code
+      ? `rendered exit-intent surface wired to declared offer code ${declaration.offer_code}`
+      : "rendered exit-intent surface for the declared checkout exit_intent",
+  };
+  const evidenceBlock = {
+    declared: declaration,
+    selectors,
+    ...evidence,
+    next_step: "Include the family's exit-intent partial on the checkout page and wire it to the mapped offer code through the SDK coupon path, or drop exit_intent from CampaignSpec.",
+  };
+  if (evidence.collector_error) {
+    // The collector did not find nothing; it could not look. Reporting that as
+    // an absent surface would be the exact silent-failure shape these
+    // assertions exist to remove, one level up.
+    return assertion({
+      ...base,
+      status: STATUS.SKIPPED,
+      actual: `exit-intent surface could not be read: ${evidence.collector_error}`,
+      evidence: evidenceBlock,
+    });
+  }
+  if (!evidence.match_count) {
+    // Declared and absent. The spec promises the shopper an offer that the
+    // built page cannot deliver, so this blocks rather than warns.
+    return assertion({
+      ...base,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      actual: "no exit-intent markup found in the rendered document or any <template> content",
+      evidence: evidenceBlock,
+    });
+  }
+  if (offerCodeWired(declaration.offer_code, evidence.offer_codes)) {
+    return assertion({
+      ...base,
+      status: STATUS.PASS,
+      actual: `exit-intent markup present (${evidence.match_count} node(s)) carrying offer code ${declaration.offer_code}`,
+      evidence: evidenceBlock,
+    });
+  }
+  // Present but the mapped code cannot be read off the markup: the pop may
+  // still apply it from page JS. Real enough to surface, not proven broken.
+  return assertion({
+    ...base,
+    status: STATUS.MANUAL_REVIEW,
+    severity: SEVERITY.WARN,
+    actual: declaration.offer_code
+      ? `exit-intent markup present (${evidence.match_count} node(s)) but no offer-code hook matching ${declaration.offer_code}${evidence.offer_codes.length ? ` (found ${evidence.offer_codes.join(", ")})` : ""}`
+      : `exit-intent markup present (${evidence.match_count} node(s)); CampaignSpec declares no offer_code to verify against`,
+    evidence: evidenceBlock,
+  });
+}
+
+function promoCodeSurfaceAssertion({ page, declaration, evidence }) {
+  const selectors = [...COUPON_INPUT_SELECTORS];
+  const base = {
+    id: `browser-promo-code-surface:${page.page_id}`,
+    family: "browser-runtime",
+    page,
+    expected: "rendered promo/coupon code input on the checkout page for the declared promo_code_input",
+  };
+  const evidenceBlock = {
+    declared: declaration,
+    selectors,
+    ...evidence,
+    next_step: "Render a coupon/promo input on checkout and apply the mapped offer code through the SDK coupon path, or drop promo_code_input from CampaignSpec.",
+  };
+  if (evidence.collector_error) {
+    // The collector did not find nothing; it could not look. Reporting that as
+    // an absent surface would be the exact silent-failure shape these
+    // assertions exist to remove, one level up.
+    return assertion({
+      ...base,
+      status: STATUS.SKIPPED,
+      actual: `promo/coupon code surface could not be read: ${evidence.collector_error}`,
+      evidence: evidenceBlock,
+    });
+  }
+  if (!evidence.match_count) {
+    return assertion({
+      ...base,
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      actual: "no coupon/promo code input found on the checkout page",
+      evidence: evidenceBlock,
+    });
+  }
+  if (evidence.visible_count > 0) {
+    return assertion({
+      ...base,
+      status: STATUS.PASS,
+      actual: `${evidence.visible_count} visible coupon/promo input(s) (${evidence.matched_selectors.join(", ")})`,
+      evidence: evidenceBlock,
+    });
+  }
+  // A collapsed "Have a coupon?" disclosure is the common shape here, and the
+  // typed-card runner reveals it before typing. Present-but-hidden is not
+  // provably broken from a static page read.
+  return assertion({
+    ...base,
+    status: STATUS.MANUAL_REVIEW,
+    severity: SEVERITY.WARN,
+    actual: `${evidence.match_count} coupon/promo input(s) present but none visible; the surface may sit behind a disclosure control`,
+    evidence: evidenceBlock,
+  });
+}
+
 // --- Template brand residue + pricing visibility (template-brand-contract driven) ---
 // Browser collectors gather raw computed-style/visibility evidence; pure
 // functions below turn that evidence into assertions so the decisions are
@@ -1737,6 +1994,133 @@ function createFieldTrace() {
   };
 }
 
+// Incremental evidence for one post-purchase action. The trace is created
+// before the bounded ladder step starts and updated before each operation that
+// can hang. Its synchronous summary survives when the timeout wins the race.
+function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path, inspectTimeoutMs = 1000 }) {
+  const requestedAction = path === "accept" ? "add" : "skip";
+  const selector = `[data-next-upsell-action="${requestedAction}"]`;
+  let actionNavigationCount = Array.isArray(events?.navigations) ? events.navigations.length : 0;
+  let actionUpsellRequestCount = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url)).length;
+  let element = { present: null, visible: null, enabled: null };
+  let sdk = { window_next_present: null, display_ready: null, sdk_loading: null };
+  let clickAttempted = false;
+  let clickCompleted = false;
+  let stepCompleted = false;
+
+  const inspect = async () => {
+    const control = page.locator(selector).first();
+    const count = await control.count().catch(() => 0);
+    element = {
+      present: count > 0,
+      visible: count > 0 ? await control.isVisible().catch(() => false) : false,
+      enabled: count > 0 ? await control.isEnabled().catch(() => false) : false,
+    };
+    sdk = await settleDiagnosticWithin(page.evaluate(() => ({
+      window_next_present: Boolean(window.next),
+      display_ready: document.documentElement.classList.contains("next-display-ready"),
+      sdk_loading: document.body?.getAttribute("data-next-sdk-loading") ?? null,
+    })), inspectTimeoutMs, sdk);
+    return summary();
+  };
+
+  const snapshot = () => {
+    const currentUrl = redactUrlQuery(safePageUrl(page));
+    const routePage = pageAtUrl(topologyPlan, currentUrl);
+    const navigations = Array.isArray(events?.navigations) ? events.navigations : [];
+    const upsellRequests = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url));
+    const navigationObserved = navigations.length > actionNavigationCount;
+    const apiRequestObserved = upsellRequests.length > actionUpsellRequestCount;
+    const basis = [
+      ...(navigationObserved ? ["navigation"] : []),
+      ...(apiRequestObserved ? ["upsell_api_request"] : []),
+    ];
+    const lastNavigation = navigations.at(-1);
+    const lastUpsellRequest = upsellRequests.at(-1);
+    return {
+      route: {
+        page_id: routePage?.page_id || null,
+        page_type: routePage?.page_type || null,
+        url: currentUrl,
+      },
+      edge_index: stepIndex,
+      edge_number: stepIndex + 1,
+      requested_action: requestedAction,
+      selector,
+      element: { ...element },
+      sdk: { ...sdk },
+      action_binding: {
+        click_attempted: clickAttempted,
+        click_completed: clickCompleted,
+        observed: basis.length > 0,
+        basis,
+      },
+      last_navigation: lastNavigation?.url
+        ? { url: redactUrlQuery(lastNavigation.url) }
+        : currentUrl
+          ? { url: currentUrl }
+          : null,
+      last_upsell_api_request: lastUpsellRequest
+        ? { method: lastUpsellRequest.method || null, url: redactUrlQuery(lastUpsellRequest.url) }
+        : null,
+    };
+  };
+
+  // Successful actions keep the established compact ladder shape. The trace
+  // is failure evidence, not routine verdict noise.
+  const summary = () => stepCompleted ? null : snapshot();
+
+  const formatError = (error) => {
+    const evidence = snapshot();
+    const state = evidence.element;
+    const sdkState = evidence.sdk;
+    const lastNavigation = evidence.last_navigation?.url || "none";
+    const lastRequest = evidence.last_upsell_api_request
+      ? `${evidence.last_upsell_api_request.method || "(method unknown)"} ${evidence.last_upsell_api_request.url}`
+      : "none";
+    return [
+      error instanceof Error ? error.message : String(error),
+      `route=${evidence.route.url || "unknown"}`,
+      `page_id=${evidence.route.page_id || "unknown"}`,
+      `edge=${evidence.edge_number}`,
+      `action=${evidence.requested_action}`,
+      `selector=${evidence.selector}`,
+      `element=present:${state.present},visible:${state.visible},enabled:${state.enabled}`,
+      `sdk=window_next:${sdkState.window_next_present},display_ready:${sdkState.display_ready},loading:${sdkState.sdk_loading}`,
+      `binding_observed=${evidence.action_binding.observed}`,
+      `last_navigation=${lastNavigation}`,
+      `last_upsell_api_request=${lastRequest}`,
+    ].join("; ");
+  };
+
+  return {
+    inspect,
+    summary,
+    formatError,
+    markClickAttempted: () => {
+      clickAttempted = true;
+      actionNavigationCount = Array.isArray(events?.navigations) ? events.navigations.length : 0;
+      actionUpsellRequestCount = (events?.requests || []).filter((request) => isOrderUpsellsUrl(request?.url)).length;
+    },
+    markClickCompleted: () => { clickCompleted = true; },
+    markStepCompleted: () => { stepCompleted = true; },
+  };
+}
+
+async function settleDiagnosticWithin(promise, timeoutMs, fallback) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise).catch(() => fallback),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // Structured step evidence. Callers pass either an object or a thunk; a thunk
 // is resolved at record time so a step that fails or times out still reports
 // what it had gathered up to the failure (that is the whole point — the field
@@ -1780,7 +2164,7 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
     skip: (step, reason, evidence = null) => record(step, "skipped", { detail: reason, evidence }),
     // Run a step with a bounded timeout. A resolved string becomes the step
     // detail; a resolved { skip } object records the step as skipped.
-    async run(step, fn, { timeoutMs, detail = null, evidence = null } = {}) {
+    async run(step, fn, { timeoutMs, detail = null, evidence = null, formatError = null } = {}) {
       const startedMs = now();
       const startedAt = new Date(startedMs).toISOString();
       try {
@@ -1801,18 +2185,40 @@ function createStepLadder({ emit = (line) => process.stderr.write(`${line}\n`), 
         });
         return value;
       } catch (error) {
-        const timedOut = error?.code === "step_timeout";
+        const formatted = formatStepError(error, formatError);
+        const timedOut = formatted.error?.code === "step_timeout";
         record(step, timedOut ? "timeout" : "failed", {
           startedAt,
           durationMs: now() - startedMs,
           detail,
           evidence,
-          error: error instanceof Error ? error.message : String(error),
+          error: formatted.message,
         });
-        throw error;
+        throw formatted.error;
       }
     },
   };
+}
+
+function formatStepError(error, formatter) {
+  const originalMessage = error instanceof Error ? error.message : String(error);
+  if (typeof formatter !== "function") return { error, message: originalMessage };
+  let message = originalMessage;
+  try {
+    const candidate = formatter(error);
+    if (typeof candidate === "string" && candidate.trim()) message = candidate.trim();
+  } catch {
+    return { error, message: originalMessage };
+  }
+  if (message === originalMessage) return { error, message };
+  if (error instanceof Error) {
+    error.message = message;
+    return { error, message };
+  }
+  const formatted = new Error(message);
+  if (error?.code) formatted.code = error.code;
+  if (error?.hostedRedirect) formatted.hostedRedirect = error.hostedRedirect;
+  return { error: formatted, message };
 }
 
 function recordTestOrderTerminalEvidence({ ladder, topologyPlan, finalUrl }) {
@@ -2090,6 +2496,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
+  let checkoutDisplay = null;
 
   await ladder.run("opened_checkout", () => gotoAndSettle(page, checkoutPage.url, args), { timeoutMs: budget() });
   await ladder.run("selected_bundle", async () => {
@@ -2129,6 +2536,10 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     }, { timeoutMs: budget() });
     await ladder.run("order_submitted", async () => {
       ensurePageFillable(page, checkoutPage.url);
+      // What the checkout displayed at the moment of submit. Captured here and
+      // not as its own ladder step so the step contract is unchanged; the
+      // collector never throws, so it cannot cost the one canonical order.
+      checkoutDisplay = await checkoutDisplayEvidence(page);
       await submitCheckout(page);
       await waitForCheckoutResult(page, events);
     }, { timeoutMs: budget() });
@@ -2146,6 +2557,19 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
 
   const order = await buildOrderEvidence({ page, events, path, email, checkoutPage, args });
   order.evidence.steps = ladder.steps;
+  // Reconcile BEFORE any upsell step: after an accept the persisted lines carry
+  // upsell product the checkout never displayed, by design. The pre-upsell
+  // read-back is the only moment the two describe the same cart.
+  if (checkoutDisplay) order.checkout_display = checkoutDisplay;
+  order.verification.display_reconciliation = reconcileOrderAgainstDisplay({
+    lines: order.receipt_line_items,
+    display: checkoutDisplay,
+    events,
+  });
+  order.verification.total_parity = assessOrderTotalParity({
+    display: checkoutDisplay,
+    preUpsellTotal: order.verification.total_incl_tax,
+  });
   const stepFailures = [];
   const receiptFailures = [];
   const upsellSteps = testOrderSteps(path);
@@ -2168,11 +2592,14 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       break;
     }
     const step = upsellSteps[stepIndex];
+    const actionTrace = createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path: step });
     await ladder.run("upsell_action", async () => {
       const initialLineItems = order.receipt_line_items.slice();
       const initialUpsellMutationCount = upsellMutationCount(events);
+      await actionTrace.inspect();
       await waitForUpsellPageReady(page, args);
-      const upsell = await clickUpsellPath(page, step, { events, stepIndex });
+      await actionTrace.inspect();
+      const upsell = await clickUpsellPath(page, step, { events, stepIndex, trace: actionTrace });
       const preferredOrderBody = upsell.api_response_order_body || null;
       delete upsell.api_response_order_body;
       order.upsell = upsell;
@@ -2207,8 +2634,13 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
         upsell.verification = proof;
         stepFailures.push(...upsellActionStepFailures(stepIndex, step, upsell, proof));
       }
+      actionTrace.markStepCompleted();
       return `step ${stepIndex + 1}: ${step}`;
-    }, { timeoutMs: budget() });
+    }, {
+      timeoutMs: budget(),
+      evidence: actionTrace.summary,
+      formatError: actionTrace.formatError,
+    });
   }
 
   const finalUrl = safePageUrl(page) || "";
@@ -3146,7 +3578,7 @@ async function waitForLateOrderEvidence(page, events, { timeoutMs = 4000, interv
   }
 }
 
-async function clickUpsellPath(page, path, _options = {}) {
+async function clickUpsellPath(page, path, { trace = null } = {}) {
   const offerUrl = safePageUrl(page);
   const action = path === "accept" ? "add" : "skip";
   const selector = `[data-next-upsell-action="${action}"]`;
@@ -3162,9 +3594,16 @@ async function clickUpsellPath(page, path, _options = {}) {
       ), { timeout: 20000 }).catch(() => null)
     : Promise.resolve(null);
   await control.scrollIntoViewIfNeeded().catch(() => {});
-  await control.click({ timeout: 10000 }).catch(async () => {
+  trace?.markClickAttempted();
+  let clickCompleted = false;
+  try {
+    await control.click({ timeout: 10000 });
+    clickCompleted = true;
+  } catch {
     await control.click({ force: true });
-  });
+    clickCompleted = true;
+  }
+  if (clickCompleted) trace?.markClickCompleted();
   const mutationResponse = await mutationPromise;
   const mutationBody = mutationResponse ? await readJsonResponseBody(mutationResponse) : null;
   await waitForCheckoutResult(page);
@@ -3210,6 +3649,312 @@ function receiptRenderingAssertion(page, path, order) {
     expected: "persisted order lines and a visible, populated [data-next-order-items] receipt surface",
     actual: assessment.reason,
     evidence: proof,
+  });
+}
+
+// --- Checkout display vs persisted order reconciliation ---
+// QA proved the checkout rendered the right prices, and it proved a typed-card
+// order completed. Nothing joined the two, so a package could be in the cart,
+// charged on the order, and absent from every price surface the assertions read
+// (#272). The order read-back already happens for accepted-upsell proof, so
+// this is a comparison, not a new fetch: capture what the checkout displayed at
+// submit, then reconcile the persisted order's non-upsell lines against it.
+
+// The rendered order summary is the display authority: `[data-summary-lines]`
+// rows are what the shopper is told they are buying, and the SDK stamps each
+// row's package ref id into `data-package-id` from `{item.packageId}`.
+async function checkoutDisplayEvidence(browserPage) {
+  return browserPage.evaluate(() => {
+    const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const ID_ATTRIBUTES = ["data-package-id", "data-next-package-id", "data-next-bundle-id"];
+    const readId = (element) => {
+      for (const attribute of ID_ATTRIBUTES) {
+        const value = element.getAttribute(attribute);
+        if (value && value.trim()) return value.trim();
+      }
+      return null;
+    };
+    const idOf = (element) => {
+      const own = readId(element);
+      if (own) return own;
+      // Hand-rolled cards, toggles and rows hang the id on an inner node rather
+      // than the root the selector matched. Dropping it there would push a
+      // legitimately displayed package into `extra` — the false stray charge
+      // this check exists to avoid. The root still wins when it carries one,
+      // and querySelector does not descend into <template> content, so a row's
+      // discount sub-template cannot supply an id.
+      const nested = element.querySelector(ID_ATTRIBUTES.map((attribute) => `[${attribute}]`).join(","));
+      return nested ? readId(nested) : null;
+    };
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+
+    // The SDK's list renderers clear rendered children but deliberately leave
+    // the row `<template>` in place, so it is a sibling of every rendered row.
+    // Counting it as a row would leave one id-less entry in every summary and
+    // make an otherwise comparable checkout look uncomparable.
+    const renderedChildren = (root, selector) => Array.from(root.querySelectorAll(selector))
+      .flatMap((container) => Array.from(container.children))
+      .filter((child) => child.tagName.toLowerCase() !== "template");
+
+    const summaries = Array.from(document.querySelectorAll("[data-next-cart-summary]"));
+    const rows = summaries.flatMap((summary) => renderedChildren(summary, "[data-summary-lines]"));
+    const summaryRows = rows.map((row) => ({
+      package_id: idOf(row),
+      text: clean(row.textContent).slice(0, 160),
+    }));
+
+    const selectedBundles = Array.from(document.querySelectorAll("[data-next-bundle-card]"))
+      .filter((card) => (
+        card.classList.contains("next-selected")
+        || card.getAttribute("data-next-selected") === "true"
+        || card.getAttribute("aria-checked") === "true"
+        || card.querySelector('input[type="radio"], input[type="checkbox"]')?.checked === true
+      ))
+      .map(idOf)
+      .filter(Boolean);
+
+    const activeToggles = Array.from(document.querySelectorAll("[data-next-package-toggle], [data-next-toggle-card], [data-next-bump]"))
+      .filter((toggle) => (
+        toggle.classList.contains("next-active")
+        || toggle.classList.contains("next-in-cart")
+        || toggle.classList.contains("next-selected")
+        || toggle.getAttribute("aria-pressed") === "true"
+        || toggle.querySelector('input[type="checkbox"]')?.checked === true
+      ))
+      .map(idOf)
+      .filter(Boolean);
+
+    const discountRows = summaries.flatMap((summary) => (
+      renderedChildren(summary, "[data-next-discounts]")
+        .filter(isVisible)
+        .map((row) => ({
+          scope: row.closest("[data-next-discounts]")?.getAttribute("data-next-discounts") || "",
+          text: clean(row.textContent).slice(0, 160),
+        }))
+    ));
+
+    const totalNode = document.querySelector('[data-next-display="cart.total"]');
+    return {
+      summary_present: summaries.length > 0,
+      summary_rows: summaryRows.slice(0, 40),
+      selected_bundle_package_ids: [...new Set(selectedBundles)],
+      active_toggle_package_ids: [...new Set(activeToggles)],
+      discount_rows: discountRows.slice(0, 20),
+      total_text: totalNode ? clean(totalNode.textContent) : null,
+    };
+  }).catch((error) => ({
+    summary_present: false,
+    summary_rows: [],
+    selected_bundle_package_ids: [],
+    active_toggle_package_ids: [],
+    discount_rows: [],
+    total_text: null,
+    collector_error: error instanceof Error ? error.message : String(error),
+  }));
+}
+
+function parseDisplayedMoney(text) {
+  const raw = String(text || "").replace(/[\s ]/g, "");
+  if (!raw) return null;
+  // Take the last number in the string: totals render as "USD $139.00" or
+  // "$139.00" and the currency code must not be read as a value.
+  const matches = raw.match(/\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?/g);
+  if (!matches) return null;
+  const value = Number(matches[matches.length - 1].replace(/,/g, ""));
+  return Number.isFinite(value) ? value : null;
+}
+
+// The summary is machine-comparable only when EVERY rendered row exposes its
+// package id. A template that renders rows without `data-package-id` would
+// otherwise make legitimately-displayed packages look like stray charges, so
+// partial id coverage is reported as not-comparable rather than guessed at.
+function displayedPackageIds(display) {
+  const rows = Array.isArray(display?.summary_rows) ? display.summary_rows : [];
+  const rowIds = rows.map((row) => (row?.package_id == null ? null : String(row.package_id)));
+  const comparable = Boolean(display?.summary_present) && rows.length > 0 && rowIds.every(Boolean);
+  const corroborating = [
+    ...(display?.selected_bundle_package_ids || []),
+    ...(display?.active_toggle_package_ids || []),
+  ].map(String);
+  return {
+    comparable,
+    row_count: rows.length,
+    summary_package_ids: comparable ? [...new Set(rowIds)] : [],
+    // Widens only the "charged but never displayed" direction, never the
+    // "displayed but never charged" one.
+    displayed_package_ids: comparable
+      ? [...new Set([...rowIds, ...corroborating])]
+      : [],
+  };
+}
+
+function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null } = {}) {
+  if (!display) {
+    return { comparable: false, reason: "checkout display evidence was not captured for this order" };
+  }
+  if (display.collector_error) {
+    return { comparable: false, reason: `checkout display evidence could not be read: ${display.collector_error}` };
+  }
+  const resolved = displayedPackageIds(display);
+  if (!resolved.comparable) {
+    return {
+      comparable: false,
+      reason: display.summary_present
+        ? (resolved.row_count
+            ? `rendered order summary exposes a package id on only some of its ${resolved.row_count} row(s); per-row data-package-id is required to reconcile`
+            : "rendered order summary contains no line rows to reconcile against")
+        : "checkout renders no [data-next-cart-summary] order summary to reconcile against",
+      row_count: resolved.row_count,
+      discount_rows: display.discount_rows || [],
+    };
+  }
+
+  const nonUpsellLines = (lines || []).filter((line) => !line?.is_upsell);
+  const displayed = new Set(resolved.displayed_package_ids);
+  const summaryIds = new Set(resolved.summary_package_ids);
+  const matchedSummaryIds = new Set();
+  const extra = [];
+  const unresolved = [];
+
+  for (const line of nonUpsellLines) {
+    const meta = events ? campaignPackageMetaForLine(events, line) : null;
+    const ref = meta?.ref_id == null ? null : String(meta.ref_id);
+    if (!ref) {
+      // Bonus, gift and trial lines carry no campaign-package equivalent (the
+      // same tolerance linePriceDeltaEvidence applies). An unresolvable line
+      // cannot prove a stray charge, so it is reported, never counted as one.
+      unresolved.push({ title: line.title, quantity: line.quantity });
+      continue;
+    }
+    if (displayed.has(ref)) {
+      if (summaryIds.has(ref)) matchedSummaryIds.add(ref);
+      continue;
+    }
+    extra.push({
+      package_ref_id: ref,
+      title: line.title,
+      quantity: line.quantity,
+      price: line.price,
+    });
+  }
+
+  const missing = [...summaryIds].filter((id) => !matchedSummaryIds.has(id));
+  return {
+    comparable: true,
+    ok: extra.length === 0 && missing.length === 0,
+    displayed_package_ids: [...displayed],
+    summary_package_ids: [...summaryIds],
+    non_upsell_line_count: nonUpsellLines.length,
+    extra,
+    missing,
+    ...(unresolved.length ? { unresolved_lines: unresolved } : {}),
+    ...(display.discount_rows?.length ? { discount_rows: display.discount_rows } : {}),
+  };
+}
+
+function orderDisplayParityAssertion(page, planIdentifier, order) {
+  const reconciliation = order?.verification?.display_reconciliation;
+  const base = {
+    id: `browser-order-display-parity:${planIdentifier}`,
+    family: "browser-test-order",
+    page,
+    expected: "every non-upsell line on the persisted order corresponds to a package the checkout rendered as selected",
+  };
+  if (!reconciliation) {
+    return null;
+  }
+  if (!reconciliation.comparable) {
+    // Named absence rather than silence: a run that could not compare says so
+    // in the verdict instead of reading as a clean pass.
+    return assertion({
+      ...base,
+      status: STATUS.SKIPPED,
+      actual: reconciliation.reason,
+      evidence: reconciliation,
+    });
+  }
+  if (reconciliation.ok) {
+    return assertion({
+      ...base,
+      status: STATUS.PASS,
+      actual: `${reconciliation.non_upsell_line_count} non-upsell line(s) reconciled against ${reconciliation.summary_package_ids.length} displayed package(s)`,
+      evidence: reconciliation,
+    });
+  }
+  const parts = [];
+  if (reconciliation.extra.length) {
+    parts.push(`charged but never displayed: ${reconciliation.extra.map((entry) => `${entry.package_ref_id}${entry.title ? ` (${entry.title})` : ""}`).join(", ")}`);
+  }
+  if (reconciliation.missing.length) {
+    parts.push(`displayed but never charged: ${reconciliation.missing.join(", ")}`);
+  }
+  return assertion({
+    ...base,
+    status: STATUS.FAIL,
+    severity: SEVERITY.BLOCKER,
+    actual: parts.join("; "),
+    evidence: reconciliation,
+  });
+}
+
+function assessOrderTotalParity({ display, preUpsellTotal }) {
+  if (!display) {
+    return { comparable: false, reason: "checkout display evidence was not captured for this order" };
+  }
+  if (display.collector_error) {
+    return { comparable: false, reason: `checkout display evidence could not be read: ${display.collector_error}` };
+  }
+  const displayedTotal = parseDisplayedMoney(display.total_text);
+  if (displayedTotal == null) {
+    return {
+      comparable: false,
+      reason: display.total_text
+        ? `checkout total surface rendered "${display.total_text}", which carries no readable amount`
+        : 'checkout renders no [data-next-display="cart.total"] surface to compare the order total against',
+    };
+  }
+  // Number(null) is 0 and Number("") is 0: an absent total must not read as a
+  // free order that then "mismatches" every displayed amount.
+  const rawOrderTotal = typeof preUpsellTotal === "string" ? preUpsellTotal.trim() : preUpsellTotal;
+  const orderTotal = rawOrderTotal === null || rawOrderTotal === undefined || rawOrderTotal === ""
+    ? NaN
+    : Number(rawOrderTotal);
+  if (!Number.isFinite(orderTotal)) {
+    return { comparable: false, reason: "persisted order carried no readable pre-upsell total" };
+  }
+  const delta = round2(orderTotal - displayedTotal);
+  return {
+    comparable: true,
+    ok: Math.abs(delta) <= 0.01,
+    displayed_total: displayedTotal,
+    displayed_total_text: display.total_text,
+    order_pre_upsell_total: round2(orderTotal),
+    delta,
+  };
+}
+
+function orderTotalParityAssertion(page, planIdentifier, order) {
+  const parity = order?.verification?.total_parity;
+  if (!parity) return null;
+  const base = {
+    id: `browser-order-total-parity:${planIdentifier}`,
+    family: "browser-test-order",
+    page,
+    expected: "the persisted order's pre-upsell total matches the summary total the checkout displayed at submit",
+  };
+  if (!parity.comparable) {
+    return assertion({ ...base, status: STATUS.SKIPPED, actual: parity.reason, evidence: parity });
+  }
+  return assertion({
+    ...base,
+    status: parity.ok ? STATUS.PASS : STATUS.FAIL,
+    severity: parity.ok ? undefined : SEVERITY.BLOCKER,
+    actual: `displayed ${parity.displayed_total}; order ${parity.order_pre_upsell_total}; delta ${parity.delta}`,
+    evidence: parity,
   });
 }
 
@@ -3272,7 +4017,7 @@ function testOrderAssertion(page, plan, result) {
 }
 
 function captureCheckoutEvents(page) {
-  const events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
+  const events = { requests: [], responses: [], failed: [], console: [], pageErrors: [], navigations: [] };
   const interesting = /\/api\/v1\/(?:orders|upsells|carts)\/?|\/transactions|spreedly|campaigns\.apps/i;
   page.on("request", (request) => {
     if (!interesting.test(request.url())) return;
@@ -3293,6 +4038,14 @@ function captureCheckoutEvents(page) {
   page.on("requestfailed", (request) => {
     if (!interesting.test(request.url())) return;
     events.failed.push({ url: request.url(), failure: request.failure()?.errorText || "request failed" });
+  });
+  page.on("framenavigated", (frame) => {
+    try {
+      if (typeof page.mainFrame === "function" && frame !== page.mainFrame()) return;
+      events.navigations.push({ url: redactUrlQuery(frame.url()) });
+    } catch {
+      // Navigation evidence is diagnostic only; never break the order path.
+    }
   });
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) events.console.push({ type: message.type(), text: trim(message.text()) });
@@ -3325,6 +4078,9 @@ function sanitizedEvents(events) {
     failed: events.failed.slice(-20),
     console: events.console.slice(-20),
     pageErrors: events.pageErrors.slice(-20),
+    navigations: (events.navigations || []).slice(-20).map((navigation) => ({
+      url: redactUrlQuery(navigation.url),
+    })),
   };
 }
 
@@ -4154,6 +4910,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   TEST_ORDER_STEP_LADDER,
   createStepLadder,
   createFieldTrace,
+  createUpsellActionTrace,
   fillCheckoutFields,
   cartCreationEvidence,
   cartLineCount,
@@ -4180,4 +4937,17 @@ export const __qaBrowserTestHooks = Object.freeze({
   demoAssetResidueAssertion,
   testOrderAssertion,
   extractReceiptLines,
+  EXIT_INTENT_SURFACE_SELECTORS,
+  COUPON_INPUT_SELECTORS,
+  declaredOfferSurface,
+  offerSurfaceEvidence,
+  checkoutDisplayEvidence,
+  exitIntentSurfaceAssertion,
+  promoCodeSurfaceAssertion,
+  displayedPackageIds,
+  reconcileOrderAgainstDisplay,
+  orderDisplayParityAssertion,
+  assessOrderTotalParity,
+  orderTotalParityAssertion,
+  parseDisplayedMoney,
 });

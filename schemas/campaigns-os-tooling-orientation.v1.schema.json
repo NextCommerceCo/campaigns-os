@@ -1,0 +1,381 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-tooling-orientation.v1.schema.json",
+  "title": "Campaigns OS Tooling Orientation v1",
+  "description": "The versioned envelope a Campaigns OS consumer assembles before binding a session to one generation. Campaigns OS declares the facts (supported surface, release ledger, changelog, limits, reason codes); the consumer's own trusted parser reads them from immutable Git objects at a resolved target OID and fills this envelope. Campaigns OS code is never executed to produce it. Ten semantic groups are required; every one is an independent axis, so integrity, freshness, compatibility, runtime readiness, and orientation never collapse into a single boolean. A consumer that recognizes v1 accepts and preserves unknown additive properties without interpreting them; required fields, known types, and safety-critical enums remain strict.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "request",
+    "repository",
+    "freshness",
+    "surface",
+    "release_ledger",
+    "changelog",
+    "runtime",
+    "transaction",
+    "outcome",
+    "limits"
+  ],
+  "properties": {
+    "schema_version": { "const": "campaigns-os-tooling-orientation/v1" },
+    "request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "run_id",
+        "checkout_mode",
+        "mutation_policy",
+        "baseline",
+        "accepted_orientation_schemas",
+        "accepted_surface_range",
+        "manifest_sha256"
+      ],
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1, "description": "Opaque identity for this orientation run." },
+        "checkout_mode": {
+          "type": "string",
+          "enum": ["managed", "operator_supplied"],
+          "description": "managed: a consumer-owned generation that policy may later promote. operator_supplied: always inspect-only."
+        },
+        "mutation_policy": {
+          "type": "string",
+          "enum": ["observe_only", "managed_update"],
+          "description": "The authority this run was granted. observe_only never changes an active generation."
+        },
+        "baseline": { "$ref": "#/$defs/baseline" },
+        "accepted_orientation_schemas": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Orientation schema IDs this consumer accepts. An unknown ID fails closed."
+        },
+        "accepted_surface_range": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The supported_surface range this consumer accepts, as a range expression it owns."
+        },
+        "manifest_sha256": { "$ref": "#/$defs/sha256", "description": "Digest of the consumer manifest that produced this request." }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Normalized repository identity and graph relation. Carries no credentials and no operator-specific absolute paths; a path here is repository-relative or an opaque identity.",
+      "required": [
+        "owner",
+        "repository",
+        "branch",
+        "upstream",
+        "clean",
+        "shallow",
+        "graph_relation",
+        "common_git_identity",
+        "worktree_identity",
+        "commit_before",
+        "commit_fetched",
+        "commit_after"
+      ],
+      "properties": {
+        "owner": { "type": "string", "minLength": 1 },
+        "repository": { "type": "string", "minLength": 1 },
+        "branch": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }], "description": "null when HEAD is detached." },
+        "upstream": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "clean": { "type": "boolean" },
+        "shallow": { "type": "boolean" },
+        "graph_relation": {
+          "type": "string",
+          "enum": ["identical", "behind", "ahead", "diverged", "unknown"]
+        },
+        "common_git_identity": { "type": "string", "minLength": 1, "description": "Opaque identity of the common Git directory, used to serialize shared-metadata access." },
+        "worktree_identity": { "type": "string", "minLength": 1, "description": "Opaque identity of the worktree this run observed." },
+        "commit_before": { "oneOf": [{ "$ref": "#/$defs/oid" }, { "type": "null" }] },
+        "commit_fetched": { "oneOf": [{ "$ref": "#/$defs/oid" }, { "type": "null" }] },
+        "commit_after": { "oneOf": [{ "$ref": "#/$defs/oid" }, { "type": "null" }] }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["state", "observed_at", "fetch_result"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["current", "available", "updated", "unknown", "refused"]
+        },
+        "observed_at": { "type": "string", "minLength": 1, "description": "RFC 3339 timestamp of the observation." },
+        "fetch_result": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["attempted", "succeeded", "duration_ms"],
+          "properties": {
+            "attempted": { "type": "boolean" },
+            "succeeded": { "type": "boolean" },
+            "duration_ms": { "type": "integer", "minimum": 0 },
+            "reason_code": { "$ref": "#/$defs/reason_code" }
+          }
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["reviewed_version", "target_version", "current_version", "compatibility_result", "compatibility_rule", "transitions"],
+      "properties": {
+        "reviewed_version": { "oneOf": [{ "$ref": "#/$defs/semver" }, { "type": "null" }], "description": "null when the reviewed baseline predates supported surfaces. A legacy baseline is never given a fabricated version." },
+        "target_version": { "oneOf": [{ "$ref": "#/$defs/semver" }, { "type": "null" }] },
+        "current_version": { "oneOf": [{ "$ref": "#/$defs/semver" }, { "type": "null" }] },
+        "compatibility_result": { "type": "string", "enum": ["compatible", "incompatible", "unknown"] },
+        "compatibility_rule": { "type": "string", "minLength": 1, "description": "The rule that produced compatibility_result, stated so the verdict is auditable." },
+        "transitions": {
+          "type": "array",
+          "description": "The actual ordered surface_version transitions between reviewed and target, derived from Git history, not interpolated.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "oneOf": [{ "$ref": "#/$defs/semver" }, { "type": "null" }] },
+              "to": { "$ref": "#/$defs/semver" }
+            }
+          }
+        }
+      }
+    },
+    "release_ledger": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Every agent-relevant semantic change between the reviewed baseline and the target commit, same-surface changes included.",
+      "required": ["ledger_schema_version", "entries"],
+      "properties": {
+        "ledger_schema_version": { "const": "campaigns-os-release-ledger/v1" },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["id", "sequence", "date", "kind", "surface_version", "changelog_section", "changelog_sha256", "agent_impact", "compatibility", "migration", "changes", "entry_sha256", "introducing_commit"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^RL-[0-9]{4}$" },
+              "sequence": { "type": "integer", "minimum": 1 },
+              "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+              "kind": { "type": "string", "enum": ["release", "amendment"] },
+              "amends": { "type": "string", "pattern": "^RL-[0-9]{4}$" },
+              "surface_version": { "oneOf": [{ "$ref": "#/$defs/semver" }, { "type": "null" }] },
+              "changelog_section": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(\\+agent\\.[0-9]+)?$" },
+              "changelog_sha256": { "$ref": "#/$defs/sha256" },
+              "agent_impact": { "type": "string", "minLength": 1 },
+              "compatibility": { "type": "string", "enum": ["compatible", "additive", "breaking"] },
+              "migration": { "type": "string", "minLength": 1 },
+              "affected_surface_entries": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "changes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": ["class", "path", "surface_entry", "summary"],
+                  "properties": {
+                    "class": { "$ref": "#/$defs/change_class" },
+                    "path": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+                    "surface_entry": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+                    "summary": { "type": "string", "minLength": 1 }
+                  }
+                }
+              },
+              "entry_sha256": { "$ref": "#/$defs/sha256" },
+              "introducing_commit": {
+                "$ref": "#/$defs/oid",
+                "description": "DERIVED by the consumer from Git history at the immutable target OID. The stored ledger entry in contracts/release-ledger.json must NOT carry any commit identifier; that file's schema rejects one."
+              }
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sections"],
+      "properties": {
+        "sections": {
+          "type": "array",
+          "description": "The exact ordered append-only changelog sections the ledger entries reference. Bodies are carried verbatim; nothing is summarized or truncated.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["section_id", "date", "agent_impact", "migration_action", "body_markdown", "body_sha256"],
+            "properties": {
+              "section_id": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(\\+agent\\.[0-9]+)?$" },
+              "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+              "agent_impact": { "type": "string", "minLength": 1 },
+              "migration_action": { "type": "string", "minLength": 1 },
+              "body_markdown": { "type": "string" },
+              "body_sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Generated-runtime readiness as an axis independent of source freshness. The declarative recipe contract itself is owned by a separate change (test-plan A2); this group is the envelope shape that carries its result.",
+      "required": ["recipe_id", "source_fingerprint", "generated_state", "emitter_commit", "refresh_action", "ready"],
+      "properties": {
+        "recipe_id": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "source_fingerprint": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "generated_state": { "type": "string", "enum": ["absent", "stale", "fresh", "corrupt", "unknown"] },
+        "emitter_commit": { "oneOf": [{ "$ref": "#/$defs/oid" }, { "type": "null" }], "description": "The exact commit whose bytes produced the CLI in the observed generation." },
+        "refresh_action": { "type": "string", "enum": ["none", "prepare_new_generation", "refused"] },
+        "ready": { "type": "boolean" },
+        "reason_code": { "$ref": "#/$defs/reason_code" }
+      }
+    },
+    "transaction": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["state", "commit_before", "commit_target", "commit_observed", "recovered_interrupted_update"],
+      "properties": {
+        "state": { "type": "string", "enum": ["none", "requested", "intent_recorded", "finalized", "reconciled", "failed"] },
+        "commit_before": { "oneOf": [{ "$ref": "#/$defs/oid" }, { "type": "null" }] },
+        "commit_target": { "oneOf": [{ "$ref": "#/$defs/oid" }, { "type": "null" }] },
+        "commit_observed": { "oneOf": [{ "$ref": "#/$defs/oid" }, { "type": "null" }] },
+        "recovered_interrupted_update": { "type": "boolean" },
+        "reason_code": { "$ref": "#/$defs/reason_code" }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["disposition", "reason_code", "active_generation_changed", "fresh_exec_required", "next_actions"],
+      "properties": {
+        "disposition": { "$ref": "#/$defs/disposition" },
+        "reason_code": { "$ref": "#/$defs/reason_code" },
+        "active_generation_changed": { "type": "boolean" },
+        "fresh_exec_required": { "type": "boolean" },
+        "next_actions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Safe actions only. A refusal's remedy comes from contracts/orientation-reason-codes.v1.json and is deterministic for the code."
+        },
+        "refusal_remedy": { "type": "string", "minLength": 1, "description": "Required in practice on disposition: refused; the deterministic remedy for reason_code." }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The versioned limits actually applied to this run, copied from contracts/orientation-limits.v1.json. Exceeding any of them is a refusal with reason_code orientation_too_large; nothing is truncated.",
+      "required": ["limits_version", "max_source_bytes", "max_section_count", "max_section_bytes", "max_envelope_bytes", "max_ledger_entries", "applied"],
+      "properties": {
+        "limits_version": { "$ref": "#/$defs/semver" },
+        "max_source_bytes": { "type": "integer", "minimum": 1 },
+        "max_section_count": { "type": "integer", "minimum": 1 },
+        "max_section_bytes": { "type": "integer", "minimum": 1 },
+        "max_envelope_bytes": { "type": "integer", "minimum": 1 },
+        "max_ledger_entries": { "type": "integer", "minimum": 1 },
+        "applied": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "What this run actually measured, so a near-limit read is visible before it becomes a refusal.",
+          "required": ["source_bytes", "section_count", "max_observed_section_bytes", "envelope_bytes", "ledger_entries"],
+          "properties": {
+            "source_bytes": { "type": "integer", "minimum": 0 },
+            "section_count": { "type": "integer", "minimum": 0 },
+            "max_observed_section_bytes": { "type": "integer", "minimum": 0 },
+            "envelope_bytes": { "type": "integer", "minimum": 0 },
+            "ledger_entries": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "exceeded": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["max_source_bytes", "max_section_count", "max_section_bytes", "max_envelope_bytes", "max_ledger_entries"] },
+          "description": "Non-empty only alongside reason_code orientation_too_large. Names every limit that was exceeded, not just the first."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "oid": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "semver": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "commit"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["legacy_commit", "supported_surface"],
+          "description": "legacy_commit: a reviewed baseline predating supported surfaces. It never receives a fabricated surface_version."
+        },
+        "commit": { "$ref": "#/$defs/oid" },
+        "surface_version": { "$ref": "#/$defs/semver", "description": "Present only on kind: supported_surface." }
+      }
+    },
+    "change_class": {
+      "type": "string",
+      "description": "Defined once in contracts/agent-relevant-change-policy.v1.json; this enum is checked against that file.",
+      "enum": [
+        "schema",
+        "hashed_surface",
+        "named_surface",
+        "cli_surface",
+        "skill",
+        "package_export",
+        "compatibility_policy",
+        "documentation",
+        "workflow",
+        "generated_runtime"
+      ]
+    },
+    "disposition": {
+      "type": "string",
+      "description": "The eight minimum terminal outcomes. Every orientation run ends on exactly one.",
+      "enum": [
+        "current",
+        "orientation_available",
+        "updated",
+        "restart_required",
+        "recovered_interrupted_update",
+        "legacy_baseline",
+        "freshness_unknown",
+        "refused"
+      ]
+    },
+    "reason_code": {
+      "type": "string",
+      "description": "The stable reason-code vocabulary. Meanings, deterministic remedies, and owning test IDs live in contracts/orientation-reason-codes.v1.json; this enum is checked against that file's keys exactly.",
+      "enum": [
+        "already_current",
+        "ahead_of_upstream",
+        "checkout_acquisition_failed",
+        "checkout_already_exists",
+        "checkout_missing",
+        "checkout_mutation_not_authorized",
+        "detached_head",
+        "dirty_checkout",
+        "diverged_history",
+        "evidence_budget_exceeded",
+        "fetch_failed",
+        "git_environment_unsafe",
+        "history_incomplete",
+        "missing_upstream",
+        "orientation_contract_missing",
+        "orientation_in_progress",
+        "orientation_incomplete",
+        "orientation_rendered",
+        "orientation_too_large",
+        "pointer_race",
+        "runtime_commit_mismatch",
+        "runtime_refresh_failed",
+        "runtime_refresh_required",
+        "surface_incompatible",
+        "transaction_incomplete",
+        "transaction_reconciled",
+        "wrong_remote"
+      ]
+    }
+  }
+}

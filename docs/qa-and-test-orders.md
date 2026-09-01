@@ -30,14 +30,73 @@ Use resolve before a full run:
 npm run campaigns-os -- qa resolve --packet campaign-runtime.build.json
 ```
 
-Resolve reads the packet, loads the local CampaignSpec when available, derives deployed page URLs from the packet deploy URL or `--base-url`, and prints the funnel topology. It does not create a verdict.
+Resolve reads the packet, loads the local CampaignSpec when available, derives deployed page URLs from the packet deploy URL or `--base-url`, probes the entry URLs it derived, and prints the funnel topology. It does not create a verdict.
+
+### Route reachability
+
+A route set derived from the packet is not evidence that the deployment serves
+it. Resolve therefore probes the entry URLs it just printed — one `HEAD` per
+entry URL, retried as `GET` only when a host answers `405`/`501` about the
+method — and its status reports what was verified rather than what was derived:
+
+| Status | Meaning |
+| --- | --- |
+| `blocked` | A checkpoint gate blocks. The routes are not probed. |
+| `routes_unresolved` | The routes were probed and at least one did not resolve. `ok: false`. |
+| `ready_unprobed` | There were routes to probe and none produced a response. `ok: true`. |
+| `ready_with_exceptions` | Checkpoint warnings, over routes that resolved. |
+| `ready` | Clean, over routes that resolved. |
+
+The ladder is ordered by how much of the deployment the run actually verified,
+which is why `ready_unprobed` outranks `ready_with_exceptions`: a checkpoint
+warning is a named exception an operator can read, while an unprobed route set
+means the deployment half was never checked. Checkpoint warnings stay fully
+visible in `checkpoint_gates[]` at every rung.
+
+`routes_unresolved` names the first URL that failed and suppresses the
+`qa run --browser --test-order common` suggestion, because that command cannot
+succeed against a route set that does not resolve. The `route_probe` block
+carries the per-URL results and one of `route_probe.all_resolved`,
+`route_probe.routes_unresolved`, `route_probe.unreachable`,
+`route_probe.disabled`, or `route_probe.no_routes`.
+
+`route_probe.first_failure` is the first result that did not cleanly resolve,
+**in the order the entry URLs were derived** — the order they are printed under
+`Entry URLs:` — not the order the responses happened to land. It is populated on
+every status where something failed, `route_probe.all_resolved` included: a pass
+reached over some unreachable URLs is partial reachability, and both the reason
+line and the printed per-URL rows say which URLs those were rather than leaving
+an operator to infer it from `counts.unreachable`. It is `null` only when every
+probed URL resolved, or when nothing was probed at all.
+
+Resolve appends `campaign.public_route_slug` unconditionally — the packet is
+the authority on where a campaign is served, and no flag overrides it. When
+every derived route is dead, one extra probe of the host without that slug
+separates the two causes and says which it found:
+`route_probe.route_root_mismatch` (the host serves the campaign under a
+different route root, so correct `campaign.public_route_slug` or declare
+`campaign.route_root` in the packet) or `route_probe.host_also_dead` (the
+preview itself is down).
+
+**Offline and CI.** An HTTP response saying `404` is evidence about the
+deployment; a transport error is evidence about this machine's network. Only
+the first fails the probe. A run with no outbound network degrades to
+`ready_unprobed` and stays usable — no flag required. `--no-probe` exists for
+hermetic runs that must make no outbound request at all, and
+`--probe-timeout-ms` (default `5000`) bounds each probe. Probing is capped at
+25 entry URLs; anything past the cap is reported as `skipped` rather than
+silently dropped.
+
+An empty Entry URL list keeps its own pre-existing guidance — a dead preview or
+a missing `--base-url` — and reports `route_probe.no_routes` without moving the
+status.
 
 ### Packet-local checkpoint preflight
 
 Packet QA reads one local packet, CampaignSpec, target `_data/campaigns.json`
-entry, and Assembly Report snapshot. It evaluates three registered checkpoints
-from those objects: `page_kit.store_profile`, `page_kit.sdk_version`, and
-`polish.hidden_eager_media`. The same packet/spec snapshot supplies runtime
+entry, and Assembly Report snapshot. It evaluates four registered checkpoints
+from those objects: `page_kit.store_profile`, `page_kit.sdk_version`,
+`polish.hidden_eager_media`, and `built_output.upsell_selector_scope`. The same packet/spec snapshot supplies runtime
 identity and topology, while the same Assembly Report supplies checkpoint
 decisions, theme/polish state, package-owned page-load evidence, and QA waiver
 history. QA does not re-read those artifacts after the gates. A packet without
@@ -51,10 +110,12 @@ assertions remain visible when gates disagree, so waiving or correcting one
 never suppresses another. Store Profile and SDK use the `api-metadata` family;
 the hidden eager-media assertion uses `polish_gate`.
 
-`qa resolve` remains a diagnostic command: it reports `ok: false` and
-`status: blocked`, prints all three gates and their safe repair/waiver
-projections, and suppresses the runtime `qa run --browser --test-order common`
-suggestion until every checkpoint blocker is clear.
+`qa resolve` remains a diagnostic command and always exits 0: it reports
+`ok: false` and `status: blocked`, prints all four gates and their safe
+repair/waiver projections, and suppresses the runtime
+`qa run --browser --test-order common` suggestion until every checkpoint
+blocker is clear. `routes_unresolved` behaves the same way — `ok: false`,
+suggestion suppressed, exit 0.
 
 The SDK gate reads the canonical `global_config.sdk_version` first and accepts
 `runtime.sdk_version` as an alias. Pins must be released,
@@ -81,7 +142,7 @@ before QA with the relevant gate ID:
 ```bash
 campaigns-os checkpoint waive \
   --packet campaign-runtime.build.json \
-  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media> \
+  --gate <page_kit.store_profile|page_kit.sdk_version|polish.hidden_eager_media|built_output.upsell_selector_scope> \
   --reason "<why>" \
   --waived-by "<named human>" \
   --review-condition "<specific re-evaluation trigger>"
@@ -208,6 +269,48 @@ campaigns-os qa promote \
 `qa promote` validates the source before writing, replaces the sidecar
 atomically, refuses the destination sidecar as its own source, and leaves the
 source verdict byte-identical.
+
+### Verdict schema and trust semantics
+
+The verdict shape is contracted as `campaigns-os-qa-verdict/v0`
+([`schemas/campaigns-os-qa-verdict.v0.schema.json`](../schemas/campaigns-os-qa-verdict.v0.schema.json)),
+with the committed sidecar projection's guarantees pinned separately in
+[`schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json`](../schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json).
+Both describe the same emitted `schema_version` literal `"1.0"` — one contract,
+projected two ways, never a second lineage. The emitted literal predates the
+slash-versioned naming convention and the portal receiver validates the same
+literal, so changing it is a breaking shape change. Additions to v0 are
+expected; consumers must tolerate unknown fields.
+
+**Trust is stamped by the receiver, never by this CLI.** The QA portal
+receiver accepts verdict posts publicly (after shape/size/rate checks) and
+classifies each submission at ingest: a post carrying the ingest credential is
+stored with `trusted: true` / `trust_level: "shared_secret"` / a `verified_at`
+instant; a post without it — an **anonymous submission** — is stored with
+`trusted: false` / `trust_level: "anonymous"` / `verified_at: null`. Those
+three fields therefore appear only on records read back from the receiver;
+verdicts this runner writes locally never carry them.
+
+`trusted: false` means exactly this: **the record is shape-valid but
+unattributed — anyone on the internet could have submitted it.** Schema
+validity is not trust; a forged verdict passes every shape check by design.
+Consequently:
+
+- **Every downstream consumer of verdict readback MUST filter on `trusted` or
+  segregate untrusted records** (render them in a visibly separate, untrusted
+  lane — never mixed into launch evidence, QA history, or agent readback as
+  peers of verified runs).
+- Campaigns OS itself enforces this at its own readback chokepoints:
+  `qa promote` (and any sidecar projection) refuses a source verdict stamped
+  `trusted: false` — an untrusted record can never be laundered into the
+  committed `.campaign-runtime/qa-verdict.json` — and `run-record`'s automatic
+  QA-verdict inference excludes untrusted records from the run's QA evidence.
+  The test suite carries a forged, shape-valid, untrusted verdict as a
+  negative control for both.
+
+Endpoint authentication and attribution hardening are deliberately separate
+work that lands with the receiver's connection contract. This section
+documents the semantics of the stamps the receiver already applies.
 
 Add `--browser --test-order common` for the normal proof pass: first-party
 Playwright browser checks plus the default typed-card order sample. If the

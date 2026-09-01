@@ -73,3 +73,13 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node ./scripts/check-supported-surface.mjs --base "${{ github.event.pull_request.base.sha }}"
         working-directory: campaigns-os
+      # And the half of the release contract that needs git history: every
+      # agent-relevant changed path in this PR has exactly one release-ledger
+      # change item, every new change item maps to a classified change or a
+      # reviewed amendment, and historical entries are byte-identical to base.
+      # `npm run check` runs only the structural half; completeness needs a
+      # comparison point.
+      - name: Agent-relevant changes advance the release ledger
+        if: github.event_name == 'pull_request'
+        run: node ./scripts/check-release-ledger.mjs --base "${{ github.event.pull_request.base.sha }}"
+        working-directory: campaigns-os

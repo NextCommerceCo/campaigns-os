@@ -97,6 +97,37 @@ Raw AI-generated HTML normally needs this conversion pass before build:
 A single-file static landing page is a good source artifact, but it is not
 automatically a complete page-kit page.
 
+## Source preparation check
+
+The preparation steps above used to be tacit knowledge; the doctor now checks
+them deterministically (#262). The check runs as the `source_html.preparation`
+slot in the Doctor Check Registry (phase `source`) on every mapped
+`source_html.pages[].path` file, so `start` and `build` — which embed doctor —
+gate on it before assembly, and a plain `campaigns-os doctor` re-checks the
+current files after source edits. Blocking findings are doctor **errors**: they
+set status `blocked` and `next.stage: "collect-inputs"` like any other
+unprepared input. The check is scoped to the certified template families'
+page-kit ingestion expectations; it is not a general HTML linter.
+
+| Code | Severity | Meaning and fix |
+| --- | --- | --- |
+| `source_html.prep.document_wrapper` | error (warning under a recorded `wrapper_policy: "preserve_document_wrappers"`) | A mapped source page is still a full browser document. Strip `<!doctype>`, `<html>`, `<head>`, and `<body>` so the campaign layout can wrap the page (conversion step 2; [docs/quickstart.md](./quickstart.md) "Prepare Raw HTML Source"), or record `preserve_document_wrappers` as an explicit adapter decision. |
+| `source_html.prep.frontmatter_residue` | error | Leftover or broken YAML frontmatter: a leading `---` fence that never closes, or a frontmatter block (page-kit keys such as `page_type:`, `next_url:`) embedded below content where page-kit would render it literally. Keep exactly one closed frontmatter block at the very top of the file, or none when the packet's `page_kit.frontmatter` projection supplies it (conversion step 3). |
+| `source_html.prep.internal_link_unrooted` | warning | An internal link/CTA still targets a source file (`checkout.html`) instead of a CampaignSpec-derived route. Replace it, usually via `campaign_link` (conversion step 6). Warning rather than error because CTA rewrites are sanctioned build-stage work recorded under `cta_rewrite_policy`; the adapter gates own the completed-assembly block. |
+
+Asset-path rooting (raw `/assets/...` references, missing or out-of-root
+files) stays owned by the prepare-build source asset crawl and its
+`source_asset.*` codes (conversion step 5); the preparation check does not
+duplicate them.
+
+Known-unprepared and prepared reference fixtures live at
+`fixtures/source-prep/`; `src/source-prep.test.mjs` and
+`src/doctor-source-prep.test.mjs` pin each code and the pass path.
+
+Wedge relevance: the Stage 0 wedge run protocol (#259) includes this check —
+wedge runs treat a `source_html.prep.*` blocker as a classified workflow
+signal at the source-preparation handoff, not founder-interpretation territory.
+
 Checkout, cart, upsell, receipt, payment, totals, and submit behavior should remain governed by starter-template contracts and SDK wiring. Source files can carry page design, but live commerce behavior comes from the campaign setup and runtime surfaces.
 
 If a source page marks a region as SDK-owned, for example with

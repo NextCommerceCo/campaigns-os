@@ -38,6 +38,22 @@ export function projectVerdictForSidecar(verdict, { generatedAt }) {
   if (errors.length) {
     throw new Error(`QA verdict failed validation before sidecar projection:\n- ${errors.join("\n- ")}`);
   }
+  // Trust segregation (the readback chokepoint): the QA verdict receiver
+  // stamps `trusted: false` onto records that arrived without the ingest
+  // credential — anonymous submissions. Shape validity is NOT trust: a forged
+  // verdict passes validateVerdict by design. A record carrying that stamp
+  // must never be laundered into the committed sidecar campaigns-agent's
+  // readback consumes, so the projection refuses it outright instead of
+  // silently stripping the stamp. Fresh `qa run` verdicts never carry the
+  // field (it is server-stamped, not CLI-emitted), so this only ever fires on
+  // an explicit `qa promote` of a fetched, untrusted record. See
+  // docs/qa-and-test-orders.md (Verdict schema and trust semantics).
+  if (verdict.trusted === false) {
+    throw new Error(
+      "QA verdict is stamped trusted: false (an anonymous submission classified by the QA verdict receiver); "
+      + "refusing to project it into the committed sidecar. Promote a verdict this runner produced, or re-run QA.",
+    );
+  }
   // Strict RFC3339 UTC with a Z suffix, not bare Date.parse: downstream
   // freshness (readback staleness) documents the Z-suffixed form, and
   // Date.parse would admit zone-less or locale strings that consumers can

@@ -1,0 +1,657 @@
+{
+  "_note": "Append-only. One entry per accepted release or reviewed amendment; one change item per agent-relevant semantic change. Entries carry NO commit identifier — a consumer derives the introducing commit from Git history at the target OID. Historical entries are never rewritten; a correction ships as a new amendment entry. Authoring rules: docs/release-ledger-authoring-guide.md.",
+  "schema_version": "campaigns-os-release-ledger/v1",
+  "entries": [
+    {
+      "id": "RL-0001",
+      "sequence": 1,
+      "date": "2026-08-28",
+      "kind": "release",
+      "surface_version": "1.14.0",
+      "changelog_section": "1.14.0",
+      "changelog_sha256": "16a717cfe8e232986c320456425576e976e9e0b11e2dcc922a57b156f8ca86d8",
+      "agent_impact": "A consumer may now assemble a campaigns-os-tooling-orientation/v1 envelope from Git objects at a resolved commit, without executing anything from this repository. Nothing existing changed shape; adoption is optional and additive.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "CI now runs the release-ledger completeness gate with --base on every pull request; npm run check runs only the structural half, because completeness needs a comparison point."
+        },
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "The agent entry point was introduced: canonical reading order, the supported-versus-internal boundary, mixed-version rules, and the rule that a consumer never executes target code to decide whether to trust the target."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/agent-relevant-change-policy.v1.json",
+          "surface_entry": "contracts/agent-relevant-change-policy.v1.json",
+          "summary": "The single machine-readable definition of an agent-relevant change was introduced: ten semantic classes, an ordered total classifier, and a stated reason for every exclusion."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/current.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/current.json",
+          "summary": "A validated example orientation envelope for the current terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/freshness_unknown.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/freshness_unknown.json",
+          "summary": "A validated example orientation envelope for the freshness_unknown terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/legacy_baseline.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/legacy_baseline.json",
+          "summary": "A validated example orientation envelope for the legacy_baseline terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/orientation_available.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/orientation_available.json",
+          "summary": "A validated example orientation envelope for the orientation_available terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/recovered_interrupted_update.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/recovered_interrupted_update.json",
+          "summary": "A validated example orientation envelope for the recovered_interrupted_update terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/refused.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/refused.json",
+          "summary": "A validated example orientation envelope for the refused terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/restart_required.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/restart_required.json",
+          "summary": "A validated example orientation envelope for the restart_required terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/envelope/updated.json",
+          "surface_entry": "contracts/fixtures/orientation/envelope/updated.json",
+          "summary": "A validated example orientation envelope for the updated terminal outcome was introduced, generated from the contract rather than hand-written."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/manifest.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/manifest.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: manifest.json."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/bin/tripwire.mjs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/CHANGELOG.md",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/CHANGELOG.md",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/CHANGELOG.md."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/contracts/release-ledger.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/contracts/release-ledger.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/contracts/release-ledger.json."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/contracts/supported-surface.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/contracts/supported-surface.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/contracts/supported-surface.json."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/docs/example-contract.md",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/docs/example-contract.md",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/docs/example-contract.md, the named entry the fixture manifest declares."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/schemas/example.v0.schema.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/schemas/example.v0.schema.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/schemas/example.v0.schema.json, the hashed entry the fixture manifest records a real digest for."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/hooks/post-checkout."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-merge",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hooks/post-merge",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/hooks/post-merge."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hooks/pre-commit",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hooks/pre-commit",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/hooks/pre-commit."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/package.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/package.json",
+          "summary": "Part of the hostile-target orientation fixture a consumer runs its no-execution proof against: repo/package.json."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/orientation-limits.v1.json",
+          "surface_entry": "contracts/orientation-limits.v1.json",
+          "summary": "Versioned bounds on an orientation read were introduced: source bytes, section count, section bytes, envelope bytes, and ledger entries. Exceeding one refuses with orientation_too_large; nothing is truncated."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/orientation-reason-codes.v1.json",
+          "surface_entry": "contracts/orientation-reason-codes.v1.json",
+          "summary": "The stable reason-code vocabulary was introduced, with one meaning, one deterministic remedy, one owning test id, and the terminal outcomes it may accompany per code."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advanced to 1.14.0; two orientation schemas were added as hashed entries and twenty-seven orientation contract, documentation, and fixture paths as named entries."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "The normative orientation reference was introduced. It is generated from the contract files and fixtures, so a stale copy fails CI rather than misleading a reader."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/release-ledger-authoring-guide.md",
+          "surface_entry": "docs/release-ledger-authoring-guide.md",
+          "summary": "The release-ledger authoring guide was introduced: what counts as agent-relevant, how a same-surface change is recorded, how an amendment works, and the full pass/fail matrix."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The compatibility promise now covers the orientation contract and its fixtures, and the change procedure now requires a release-ledger entry."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "The orientation, ledger, change-policy, reason-code, and limits version lines were declared alongside the existing contract versions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "AGENTS.md and CHANGELOG.md were added to files[] so the new named surface actually ships, and the release-ledger and generated-documentation gates were added to npm run check."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-release-ledger.v1.schema.json",
+          "surface_entry": "schemas/campaigns-os-release-ledger.v1.schema.json",
+          "summary": "The append-only release-ledger schema was introduced. It accepts unknown additive fields for producer-first rollout while required fields, known types, and safety-critical enums remain strict; custom validation still rejects commit-shaped entry properties."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-tooling-orientation.v1.schema.json",
+          "surface_entry": "schemas/campaigns-os-tooling-orientation.v1.schema.json",
+          "summary": "The orientation envelope schema was introduced: ten required semantic groups, eight terminal outcomes, and the stable reason-code enum. It accepts unknown additive fields while keeping schema IDs, required fields, known types, and safety-critical enums strict."
+        }
+      ],
+      "entry_sha256": "cc935b73063ae3531db6d2c91ea9992bbc7a5bfb4e497a9548b969b8d5cd1fca"
+    },
+    {
+      "id": "RL-0002",
+      "sequence": 2,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": "1.15.0",
+      "changelog_section": "1.15.0",
+      "changelog_sha256": "1e11ec7ead6d65937d6f43da3c1b6fd8be97d816d03911ae26c15f327599a293",
+      "agent_impact": "The QA Verdict and its committed sidecar projection now have hashed schema files a consumer can validate against, and the trust semantics of readback records are documented: trusted/trust_level/verified_at are receiver-stamped, trusted: false marks an anonymous submission, and every readback consumer must filter or segregate untrusted records. run-record verdict inference and sidecar promotion now enforce that segregation. Nothing existing changed shape; adoption is optional and additive.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "summary": "The full QA verdict schema was introduced (contract identity campaigns-os-qa-verdict/v0; emitted schema_version literal \"1.0\"), derived from the emitting code and validated against real emitted verdicts. It documents the receiver-stamped trust fields and requires consumers to tolerate unknown additive fields."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+          "summary": "The committed qa-verdict.json sidecar projection schema was introduced: same \"1.0\" schema_version literal as the full verdict, with the projection guarantees pinned — generated_at, emptied URL-bearing fields, the per-assertion allowlist, and the impossibility of receiver trust stamps."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advanced to 1.15.0; the QA verdict and sidecar-projection schemas were added as hashed entries."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The schema catalog enumeration now names the QA Verdict and its sidecar projection."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "The QA Verdict and sidecar-projection version lines were declared, including the rule that the emitted schema_version literal stays \"1.0\" and cannot change without a breaking shape change."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "A Verdict schema and trust semantics section was added: what trusted: false means (an anonymous, unattributed submission), that shape validity is not trust, and that every downstream readback consumer must filter on trusted or segregate untrusted records."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "run-record automatic QA-verdict inference now excludes records stamped trusted: false, and qa promote refuses to project an untrusted source verdict into the committed sidecar; an operator-explicit --qa-verdict path is still honored as given. No command, subcommand, or flag was added, renamed, or removed."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated for the 1.15.0 surface: the supported-surface-at-generation-time line advanced. No contract content changed."
+        }
+      ],
+      "entry_sha256": "a3bdbc5750ceaca928edd2c799c68a00a33ad20d0b5dc178cdca5d0f45accb58"
+    },
+    {
+      "id": "RL-0003",
+      "sequence": 3,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.15.0+agent.1",
+      "changelog_sha256": "0bbc5795dc00da28da20e49b66df03bc5de03ae6face5abb6c9bb890722f7345",
+      "agent_impact": "The certified-template gate, doctor, and standardization report now also state each certified family’s last-verified SDK version and its delta from the current SDK, read from new per-family verification blocks on the vendored commerce surface catalog snapshot. Purely additive output: no command, flag, artifact schema, or exit-code behavior changed, and nothing that passed before fails now. A consumer may optionally read the new assembly.template_certification.freshness warning code and the catalog families[].verification blocks.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "start/prepare-build print the accepted certified family’s freshness line; doctor reports current freshness under ready and warns with code assembly.template_certification.freshness when verification is stale or unrecorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Documents the identity block’s new template_certification_freshness field and Certification freshness markdown line, including the vendored-data current-SDK definition."
+        }
+      ],
+      "entry_sha256": "32b4bd669254153377e269bb7ca9e8cce2705d3f9dcf9d5ba9f3686d06d35956"
+    },
+    {
+      "id": "RL-0004",
+      "sequence": 4,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.15.0+agent.2",
+      "changelog_sha256": "d20166f1be9693142ab87753e269c394dee6fece629ab9fc9f9405b4db765f77",
+      "agent_impact": "The doctor command now blocks unprepared source HTML: mapped source pages with unstripped document wrappers or leftover/broken YAML frontmatter fail doctor with source_html.prep.document_wrapper / source_html.prep.frontmatter_residue errors (status blocked, next.stage collect-inputs), and source-file internal links warn as source_html.prep.internal_link_unrooted. Agents feeding raw full-document HTML into start/build must prepare the source per docs/quickstart.md \"Prepare Raw HTML Source\" or record wrapper_policy \"preserve_document_wrappers\" as an explicit adapter decision. Doctor issue codes remain governed by the ops-repo ADR-003 parity baseline, not the supported-surface manifest, so surface_version does not move.",
+      "compatibility": "compatible",
+      "migration": "Strip <!doctype>/<html>/<head>/<body> from mapped source pages, keep frontmatter as one closed leading block, and rerun campaigns-os doctor; or record wrapper_policy \"preserve_document_wrappers\" in the packet adapter contract for a deliberately full-document source.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor (and the doctor embedded in start/build) gained the source_html.preparation check: deterministic classification of common unprepared-source failures with actionable source_html.prep.* codes, each carrying a docs pointer; no argv change."
+        }
+      ],
+      "entry_sha256": "0b7ace4a5bfe26e63b9ccc16f9525658078e30ae6a18b4aa48f83c104fc22590"
+    },
+    {
+      "id": "RL-0005",
+      "sequence": 5,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.15.0+agent.3",
+      "changelog_sha256": "784246358aa7f4ae107287b9f15bf29059a0dca45706057a20e3e32891bbae09",
+      "agent_impact": "The prepare-build/start certified-template gate now prints the certification-freshness stderr line for any decided family present on the vendored catalog, including a family whose certification was waived via --allow-uncertified-template; the waived line is prefixed \"certification waived — \" so agents parsing gate output can distinguish it from the certified-gate line. The doctor source-preparation check gained a third source_html.prep.frontmatter_residue variant, unterminated_embedded_block (severity error), for an embedded frontmatter block that never closes before EOF — source that previously passed doctor with this residue now blocks. Freshness rendering is hardened (null-safe, malformed verified_at omitted) and standardization reports warn once per run when catalog resolution fails instead of hiding the missing freshness field silently. No argv or schema change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "prepare-build (and the start intake alias) emits the certification-freshness line for any catalog-present family — labeled \"certification waived — \" when certification was waived — instead of only for certified families; no argv change."
+        }
+      ],
+      "entry_sha256": "bf041577c5099df3562afa261d1bfbdb3b0a35d91162c421d3818b152f97223e"
+    },
+    {
+      "id": "RL-0006",
+      "sequence": 6,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": "1.16.0",
+      "changelog_section": "1.16.0",
+      "changelog_sha256": "42429db2ff137080828ea4ef8ca7e31d7e2b7c9fcbb06d61360c57e313520430",
+      "agent_impact": "A consumer may now read a declarative, schema-validated description of how a checkout at a resolved commit becomes a usable installed runtime, and enforce it: exact commands, accepted Node and npm ranges, per-step network policy, the enumerated input set, seven mandatory output checks, and five bounds. It is data only — this repository publishes the recipe and executes no step of it. Enforcement is fail-closed: an unrecognized recipe kind, revision, or safety-critical enum is refused, and a check that cannot be performed counts as failed rather than skipped. Two readings a consumer must not take: the input set is the compiler's resolved file list rather than its configured globs, and campaign-spec/dist is a build output with no committed baseline, so output verification is self-consistency rather than comparison against a hash published here. A prepared generation can build and type-check but cannot run browser QA. Nothing existing changed shape; adoption is optional and additive.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "The entry point now points at the runtime recipe as a separate contract from orientation, with the rules that come with it: execute only the enumerated commands, refuse an unrecognized kind or safety-critical enum, and do not read \"runtime ready\" as \"can run browser QA\"."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-runtime-recipe.v1.schema.json",
+          "surface_entry": "schemas/campaigns-os-runtime-recipe.v1.schema.json",
+          "summary": "The runtime-recipe schema was introduced (contract identity campaigns-os-runtime-recipe/v1). It accepts unknown additive fields while keeping required fields, known types, and safety-critical enums strict: recipe kind, revision major, step id, package manager, lifecycle-script disposition, network policy, output-check kind, engines-disagreement disposition, and the unperformable-check disposition all fail closed."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "surface_entry": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "summary": "The accepted recipe instance was introduced, kind campaigns-os-node-v1 revision 1.0.0: the exact argv of both steps, Node >=20.19.0 <25 and npm major 10 or 11 with refusal on disagreement with the target's engines, a registry allowlist on install and denial on build, 42 enumerated inputs, seven mandatory output checks, and five enforced bounds each carrying its measured baseline."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "The runtime readiness guide was introduced, generated from the recipe rather than hand-written, so a stale copy fails CI instead of misleading a reader."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advanced to 1.16.0; the runtime-recipe schema and the recipe instance were added as hashed entries, and the readiness guide, seventeen runtime-recipe fixtures, and three hostile-target fixture paths as named entries."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The compatibility promise now covers the runtime recipe and its fixtures, and records why the recipe is hashed while the orientation policy contracts beside it are named."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "The runtime-recipe schema, kind, and revision version lines were declared, along with the rule separating a new kind (which gates on a consumer release) from a revision (which does not)."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "The runtime-recipe contract gate, its test suite, and the generated-documentation staleness check were added to npm run check, with check:runtime-recipe, check:runtime-docs, and generate:runtime-docs as their own scripts. No export, bin, engine, or dependency changed."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated for the 1.16.0 surface: the supported-surface-at-generation-time line advanced. No contract content changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/manifest.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/manifest.json",
+          "summary": "The runtime-recipe fixture manifest was introduced, enumerating every accept and reject fixture with the outcome it must produce, so a consumer's parser test asserts an exact expected set rather than a hand-copied list."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "summary": "The prepared-runtime state fixture was introduced: the healthy control plus the absent, extra, corrupt, and stale states an output-check implementation must distinguish, described declaratively so a test derives them from the recipe rather than from written-down paths."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "summary": "An accepted runtime-recipe fixture a consumer's parser validates against: accept/current.json. The accepted recipe as published. A consumer's parser must accept exactly these bytes."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "summary": "An accepted runtime-recipe fixture a consumer's parser validates against: accept/minimal.json. Required fields only, every optional field and authoring note stripped. Proves the required set is genuinely sufficient rather than accidentally propped up by optional content."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-kind.json. recipe_kind names a kind this schema version does not define. An installed consumer was not released knowing how to execute it, so it fails closed rather than guessing that a v2 is a v1 with extras."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-revision.json. recipe_revision leaves the major line the kind defines. A revision may only re-parameterise fields the consumer already understands; a different major is a shape change wearing a revision's clothes."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-network-policy.json. A safety-critical enum: the install step declares a network policy outside the defined set. There is no allow-all value, and an unrecognized one is refused rather than treated as permissive."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/allowlist-without-hosts.json. An allowlist with no hosts is not a bound, it is an empty declaration that reads like one. The schema requires a non-empty host list whenever the policy is an allowlist."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-output-check.json. A safety-critical enum: an output check names a kind the consumer cannot perform. A new KIND of check is a new recipe kind, because an installed consumer cannot perform a check it was not released knowing."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unknown-step-id.json. A safety-critical enum: a step identity outside the defined set. Steps are identified rather than positional, so an unrecognized id is a command the consumer has no contract for."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/lifecycle-scripts-enabled.json. A safety-critical enum: a step that permits lifecycle scripts. Enabling them would let the target run arbitrary code during preparation, which is the single thing the recipe's flags exist to prevent."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/engines-disagreement-warns.json. A safety-critical enum: disagreement between the contract's tool range and the target's declared engines resolved as a warning. An accept-with-warning path produces a build made under conditions nobody approved."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/advisory-enforcement.json. fail_closed switched off. Advisory bounds record the right numbers and enforce nothing, so the first time a bound matters you discover it was decorative."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unperformable-check-skipped.json. A safety-critical enum: a check that cannot be performed treated as skipped. A skipped check reports success it never established."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/committed-output-claim.json. The recipe claims its output directory is a committed artifact. It is not: the directory is git-ignored and untracked, so no baseline for its contents can exist here and verification must be self-consistency."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/unpinned-lockfile.json. The recipe claims its lockfile is not integrity-pinned. The network allowlist bounds where bytes may come from and the lockfile's digests bound which bytes are acceptable; dropping the second leaves the first standing alone, which it was never meant to do."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+          "summary": "A refused runtime-recipe fixture, one mutation of the accepted recipe: reject/missing-required-field.json. The enumerated input set is absent. Without it there is nothing to fingerprint, and staleness — the one failure mode no output-side check can see — becomes undetectable."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/manifest.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/manifest.json",
+          "summary": "A second invariant was added beside the orientation one: recipe_execution declares that preparing this target runs the recipe's two steps and no lifecycle script reachable from them, names the intended-script log and the control, and enumerates the new dependency-side tripwires. The orientation tripwire set and its expected hit count of zero are unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/package.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/package.json",
+          "summary": "Pre and post siblings of the build script were added as tripwires, the build script itself as the one intended script, and a dependency on the packed tripwire package, so a preparation run exercises dependency and pre/post lifecycle scripts for real."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/bin/tripwire.mjs",
+          "summary": "The tripwire now takes an optional label so a hit says which script fired; called with no argument it emits the original line verbatim, so an existing counter matching that text keeps working."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/bin/intended.mjs",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/bin/intended.mjs",
+          "summary": "The one script a recipe build step is meant to run. Not a tripwire: it logs to its own file so \"the intended script ran\" and \"nothing else ran\" stay separable, and a fixture that only proved emptiness cannot pass by never building at all."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/package.json",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/package.json",
+          "summary": "A miniature dependency declaring every lifecycle script npm can run on a dependency. It is packed into a tarball and installed from it, so it is extracted the way a registry package is rather than symlinked the way a directory dependency is."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/tripwire.mjs",
+          "surface_entry": "contracts/fixtures/orientation/hostile-target/repo/hostile-dependency-tripwire/tripwire.mjs",
+          "summary": "The dependency-side tripwire, self-contained because once packed it is extracted into node_modules where nothing else in the fixture is reachable."
+        }
+      ],
+      "entry_sha256": "4411e21cce2f99ee437d9470794f6d5f1e9feb808de8fb1a663156e4bbbc2024"
+    },
+    {
+      "id": "RL-0007",
+      "sequence": 7,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.16.0+agent.1",
+      "changelog_sha256": "d4f3a9b5f16629d0a68fbdecfbb9545e0095a540d3fea1e617a8f8b1c0e7f0dc",
+      "agent_impact": "A fourth checkpoint gate is registered, built_output.upsell_selector_scope, and it can block a doctor run that previously passed. It fires when a built page whose funnel role is upsell or downsell carries a data-next-bundle-selector that lacks data-next-upsell-context and is in the default swap selection mode: such a selector writes to the shopper's live cart at init, so loading the page charges them for a package at the next checkout without it appearing in that checkout's rendered order summary. Two consequences a consumer must plan for. First, `doctor --built` can now return blocked; it previously only produced warnings, and a consumer treating that mode as advisory will need to read its exit state. Second, all eight certified template families (apollo, apollo-mv-single-step, demeter, olympus, olympus-mv-single-step, olympus-mv-two-step, shop-single-step, shop-three-step) currently ship a display-only selector with neither attribute across 19 upsell offer includes, so a campaign built from any certified family blocks until the templates are repaired upstream in campaign-cart-starter-templates. The remedy is to add data-next-upsell-context to the named selector, or to record a bounded named-human waiver through `campaigns-os checkpoint waive --gate built_output.upsell_selector_scope`. data-next-selection-mode=\"select\" also clears the blocker and reports a warning instead, because the SDK gates every cart write on swap mode.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "`checkpoint waive --gate` accepts a fourth registered gate, built_output.upsell_selector_scope, and doctor evaluates it in the built-output phase on both the packet path and `doctor --built`. The gate is reported in derived.checkpoint_gates and in the `next` gate summary like the three before it, and `doctor --built` can now return a blocked status rather than only warnings."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "A lifecycle step was added for resolving the upsell selector-scope checkpoint, stating what an unscoped selector does to a shopper, that the gate runs on every doctor invocation rather than only after assembly, and the exact waiver command. Subsequent steps renumbered; version 1.0.6."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os advanced to 1.0.6 for the added checkpoint step."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The `checkpoint` command's registered-gate list now names four gates rather than three. The support boundary is unchanged: registered gates may still grow beneath the listed command without a surface_version advance."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The packet-local checkpoint preflight now lists four registered checkpoints, and the waiver example's --gate alternation includes built_output.upsell_selector_scope."
+        }
+      ],
+      "entry_sha256": "5b76a23ac2857c640ce3d61cfd2e51ac025eeca518223349c84f4099691f31cb"
+    },
+    {
+      "id": "RL-0008",
+      "sequence": 8,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.16.0+agent.2",
+      "changelog_sha256": "b2090937621127af2880bf64c378dd9eeb16d8e9a0fb95e80735264eb19a6c36",
+      "agent_impact": "Two `qa resolve` outputs that could be believed no longer can be. First, `status: ready` now asserts that the derived entry URLs were probed AND resolved; it previously asserted only that they were derived from the packet, so a route set that was 100% dead reported ready with a next command that could not succeed. A consumer reading resolve status must handle two new terminal values: `routes_unresolved` (probed, at least one route dead, `ok: false`, first failing URL named, `qa run` suggestion suppressed) and `ready_unprobed` (routes existed but none produced a response, `ok: true`). Both are additive; the existing three values keep their meaning over probed-and-resolved routes. The status ladder is ordered by verification coverage, so `ready_unprobed` outranks `ready_with_exceptions` — read `checkpoint_gates[]` for warnings rather than inferring them from status. Offline and CI runs need no flag: a transport error degrades to `ready_unprobed` rather than failing, because a 404 is evidence about the deployment while a transport error is evidence about the caller network. `--no-probe` is for hermetic runs that must make no outbound request. Second, `theme_gate.no_commerce_pages` no longer fires on a campaign whose declared funnel includes commerce pages that this build left out of scope, so a consumer that treated that code as proof of a content-only campaign was reading a build-scope artifact. Theme gate results gain `commerce_pages_out_of_scope`, and `scope_source` gains `doctor_derived_scope+spec_topologies`. Resolve remains a diagnostic command and still exits 0 on every status.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "`qa resolve` gained --no-probe and --probe-timeout-ms, and two terminal statuses, routes_unresolved and ready_unprobed, alongside the existing ready / ready_with_exceptions / blocked. Probing the derived entry URLs is the default; --no-probe is for hermetic runs that must make no outbound request, since an offline run already degrades to ready_unprobed without it."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The Resolve section now documents route reachability: the full status ladder and why it is ordered by verification coverage, the five route_probe reason codes, the offline/CI degradation rule that separates an HTTP 404 from a transport error, the 25-URL probe cap, and the two route-root diagnoses emitted when every derived route is dead. It also records that resolve exits 0 on every status, routes_unresolved included."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "The Theme Gate section now states that \"ships commerce pages\" is a property of the campaign rather than of one build: the gate reads built pages plus declared commerce pages this build left out of scope, the QA path unions the declared funnel into the doctor-derived scope, and commerce_pages_out_of_scope and the scope_source values are named."
+        }
+      ],
+      "entry_sha256": "b2fe651ecdee53d1dea3966d6c5fb6849f3634b628964fd33957df7da0093165"
+    },
+    {
+      "id": "RL-0009",
+      "sequence": 9,
+      "date": "2026-08-31",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.16.0+agent.3",
+      "changelog_sha256": "f9e7c8dbc7056a4dfbfde457842df1e3cc6dfde5e80bf8c1ab598aac98e2d32a",
+      "agent_impact": "Browser QA now emits assertions for two things it previously said nothing about, and both can newly block a verdict that used to pass. A checkout page whose CampaignSpec declares exit_intent or promo_code_input with enabled: true gets browser-exit-intent-surface:<page> / browser-promo-code-surface:<page>: absent markup is FAIL/BLOCKER, markup carrying the declared offer_code is PASS, markup that cannot be tied to that code (or a coupon input behind an unopened disclosure) is MANUAL_REVIEW/WARN, and a browser collector that threw mid-read is SKIPPED with the cause rather than blocking. Typed-card runs additionally emit browser-order-display-parity:<plan> and browser-order-total-parity:<plan>, reconciling the persisted order pre-upsell read-back against what the checkout displayed at submit; a non-upsell line whose package was never rendered as selected, a displayed package that was never charged, or a total that disagrees with the displayed summary total is FAIL/BLOCKER naming the package ids. Both reconciliation assertions report SKIPPED with a stated reason when the page gives them nothing comparable - a summary whose rows do not all carry data-package-id, or a checkout with no [data-next-display=\"cart.total\"] surface - and a consumer must read that as missing coverage, never as a pass. Both sets reuse the existing browser-runtime and browser-test-order families, so the verdict schema, QA_ASSERTION_FAMILY_VOCABULARY, and any allowlist keyed off it are unchanged. A campaign that declares a surface it did not build, or charges a package it never displayed, will now block where it previously reported ready.",
+      "compatibility": "compatible",
+      "migration": "none. A verdict that newly blocks is reporting a defect that was always there; fix the build or drop the undelivered declaration from CampaignSpec.",
+      "changes": [
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "The QA skill records the four new assertion ids, their severity split, and the rule that a SKIPPED reconciliation is missing coverage rather than a pass; version 1.0.3 -> 1.1.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-qa is published at 1.1.0, so an installer can tell a build that asserts declared offer surfaces and order/display parity from one that does not."
+        }
+      ],
+      "entry_sha256": "5f58b47cf286f7e859c1dfe444d487b9f3bfdf8ef20bf3e464131ddda2db6b00"
+    }
+  ]
+}

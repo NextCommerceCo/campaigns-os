@@ -1,0 +1,109 @@
+{
+  "_note": "The SINGLE definition of 'agent-relevant change' for this repository. The changed-path classifier (scripts/orientation-contract.mjs), the two-way release gate (scripts/check-release-ledger.mjs), the generated reference (docs/orientation-contract-reference.md), and every contract test read this file. Do not hand-maintain a second copy anywhere. Authoring rules and worked pass/fail examples: docs/release-ledger-authoring-guide.md.",
+  "schema": "campaigns-os-agent-relevant-change-policy/v1",
+  "policy_version": "1.0.0",
+  "definition": "A change is agent-relevant when it alters something a downstream agent orients on: hashed or named supported-surface paths, CLI commands/subcommands/flags, skills, schemas, package exports, compatibility policy, agent-facing documentation, repository workflows that produce those artifacts, or the generated runtime a consumer must rebuild. This is the union of the release-gate list and the same-surface list in the harness upgrade build plan; neither list alone is normative.",
+  "semantic_classes": {
+    "schema": {
+      "description": "A JSON Schema in schemas/ that a consumer validates artifacts against.",
+      "requires_change_item": true
+    },
+    "hashed_surface": {
+      "description": "A path recorded in contracts/supported-surface.json hashed{}; its bytes are pinned and a change owes a surface_version advance.",
+      "requires_change_item": true
+    },
+    "named_surface": {
+      "description": "A path recorded in contracts/supported-surface.json named[]; content may evolve but the path must keep existing.",
+      "requires_change_item": true
+    },
+    "cli_surface": {
+      "description": "A CLI command, subcommand, or flag reachable from the supported argv surface.",
+      "requires_change_item": true
+    },
+    "skill": {
+      "description": "A versioned skill package or its installer.",
+      "requires_change_item": true
+    },
+    "package_export": {
+      "description": "package.json exports, bin, files, engines, or the dependency/script set a consumer installs.",
+      "requires_change_item": true
+    },
+    "compatibility_policy": {
+      "description": "The published compatibility statement, the supported-surface manifest, or the documents that define surface discipline.",
+      "requires_change_item": true
+    },
+    "documentation": {
+      "description": "Agent-facing documentation of record: the agent entry point, contract references, and authoring guides.",
+      "requires_change_item": true
+    },
+    "workflow": {
+      "description": "A repository workflow or workflow contract that produces or gates a supported artifact.",
+      "requires_change_item": true
+    },
+    "generated_runtime": {
+      "description": "Sources or lockfiles for the generated runtime a consumer must prepare before use.",
+      "requires_change_item": true
+    }
+  },
+  "_evaluation_note": "Evaluation order is fixed and total: self_referential_exemptions -> rules -> derived_from_supported_surface -> ignored -> unclassified (an error). First match wins within each ordered list. match.kind is one of exact | prefix. A rule may carry match_suffix (the path must also end with it) and exclude[] (matches that make the rule NOT apply, so a narrower path falls through to a later rule or to ignored). The derived pass runs BEFORE ignored so that a path newly added to the supported surface can never be swallowed by a broad ignore prefix; that is the fail-closed direction.",
+  "self_referential_exemptions": [
+    { "match": { "kind": "exact", "value": "contracts/release-ledger.json" }, "reason": "The ledger records changes; recording a change in it is not itself a recorded change." },
+    { "match": { "kind": "exact", "value": "CHANGELOG.md" }, "reason": "Changelog sections are linked one-to-one from ledger entries and are enforced by the changelog correspondence gate, not by a separate change item." }
+  ],
+  "rules": [
+    { "match": { "kind": "prefix", "value": "schemas/" }, "match_suffix": ".schema.json", "class": "schema" },
+    { "match": { "kind": "exact", "value": "compatibility.json" }, "class": "compatibility_policy" },
+    { "match": { "kind": "exact", "value": "contracts/supported-surface.json" }, "class": "compatibility_policy" },
+    { "match": { "kind": "exact", "value": "docs/supported-surface.md" }, "class": "compatibility_policy" },
+    { "match": { "kind": "exact", "value": "docs/versioning.md" }, "class": "compatibility_policy" },
+    { "match": { "kind": "exact", "value": "contracts/agent-relevant-change-policy.v1.json" }, "class": "compatibility_policy" },
+    { "match": { "kind": "exact", "value": "contracts/orientation-limits.v1.json" }, "class": "compatibility_policy" },
+    { "match": { "kind": "exact", "value": "contracts/orientation-reason-codes.v1.json" }, "class": "compatibility_policy" },
+    { "match": { "kind": "exact", "value": "bin/campaigns-os.mjs" }, "class": "cli_surface" },
+    { "match": { "kind": "exact", "value": "src/cli.mjs" }, "class": "cli_surface" },
+    { "match": { "kind": "exact", "value": "skills.json" }, "class": "skill" },
+    { "match": { "kind": "exact", "value": "skills.sh" }, "class": "skill" },
+    { "match": { "kind": "prefix", "value": "skills/" }, "class": "skill" },
+    { "match": { "kind": "exact", "value": "package.json" }, "class": "package_export" },
+    { "match": { "kind": "exact", "value": "package-lock.json" }, "class": "generated_runtime" },
+    {
+      "match": { "kind": "prefix", "value": "campaign-spec/" },
+      "exclude": [
+        { "kind": "prefix", "value": "campaign-spec/test/" },
+        { "kind": "prefix", "value": "campaign-spec/fixtures/" },
+        { "kind": "exact", "value": "campaign-spec/README.md" },
+        { "kind": "exact", "value": "campaign-spec/.npmignore" }
+      ],
+      "class": "generated_runtime"
+    },
+    { "match": { "kind": "prefix", "value": ".github/workflows/" }, "class": "workflow" },
+    { "match": { "kind": "exact", "value": "AGENTS.md" }, "class": "documentation" },
+    { "match": { "kind": "exact", "value": "CONTEXT.md" }, "class": "documentation" },
+    { "match": { "kind": "exact", "value": "docs/orientation-contract-reference.md" }, "class": "documentation" },
+    { "match": { "kind": "exact", "value": "docs/release-ledger-authoring-guide.md" }, "class": "documentation" }
+  ],
+  "_ignored_note": "Explicitly NOT agent-relevant. Every ignore carries a reason so 'no agent impact' is an asserted classification, not an omission. A changed path that matches no exemption, rule, derived surface entry, or ignore is an error (unclassified_path) — the classifier fails closed.",
+  "ignored": [
+    { "match": { "kind": "prefix", "value": "contracts/fixtures/" }, "reason": "Test fixtures. Consumer-facing fixtures reach the supported surface through contracts/supported-surface.json named[], which the derived pass classifies first." },
+    { "match": { "kind": "prefix", "value": "fixtures/" }, "reason": "Test fixtures." },
+    { "match": { "kind": "prefix", "value": "scripts/" }, "reason": "Repository checkers. Explicitly unsupported implementation (docs/supported-surface.md)." },
+    { "match": { "kind": "prefix", "value": "src/" }, "reason": "Implementation. Explicitly unsupported except through declared package exports, which package.json changes classify." },
+    { "match": { "kind": "prefix", "value": "campaign-spec/" }, "reason": "Tests, fixtures, and packaging metadata for the generated runtime. The runtime sources a consumer must rebuild are classified by the generated_runtime rule first; only that rule's exclusions reach here." },
+    { "match": { "kind": "prefix", "value": "examples/" }, "reason": "Illustrative, regenerated at will (docs/supported-surface.md)." },
+    { "match": { "kind": "prefix", "value": "prompts/" }, "reason": "Illustrative, regenerated at will (docs/supported-surface.md)." },
+    { "match": { "kind": "prefix", "value": "agents/" }, "reason": "Illustrative, regenerated at will (docs/supported-surface.md)." },
+    { "match": { "kind": "prefix", "value": "docs/adr/" }, "reason": "Architecture decision records: rationale, not a consumed contract." },
+    { "match": { "kind": "prefix", "value": "docs/" }, "reason": "Documentation that is not on the named supported surface and not an agent document of record. Named docs are classified by the derived pass first." },
+    { "match": { "kind": "exact", "value": "README.md" }, "reason": "Repository front page; the agent entry point is AGENTS.md." },
+    { "match": { "kind": "prefix", "value": "contracts/" }, "reason": "Internal build/QA contract data. Supported contract files are classified by explicit rules or the derived pass first." },
+    { "match": { "kind": "prefix", "value": ".github/" }, "reason": "Repository metadata other than workflows, which an explicit rule classifies first." },
+    { "match": { "kind": "exact", "value": ".gitignore" }, "reason": "Repository metadata." },
+    { "match": { "kind": "prefix", "value": "." }, "reason": "Dotfile repository metadata." }
+  ],
+  "derived_from_supported_surface": {
+    "manifest": "contracts/supported-surface.json",
+    "hashed_class": "hashed_surface",
+    "named_class": "named_surface",
+    "_note": "Every path in hashed{} and named[] is agent-relevant by construction. Deriving this instead of copying the list is what keeps a newly declared surface entry from being born unclassified."
+  }
+}

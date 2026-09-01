@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { commercePagesFromScope, evaluateThemeGate, themeWaiverFrom } from "./theme-gate.mjs";
+import { commercePagesFromScope, commerceScopeFromScope, evaluateThemeGate, themeWaiverFrom } from "./theme-gate.mjs";
 
 const COMMERCE_SCOPE = {
   built_pages: [
@@ -123,4 +123,85 @@ test("themeWaiverFrom prefers the ephemeral flag and validates shape", () => {
   assert.equal(themeWaiverFrom(null), null);
   assert.equal(themeWaiverFrom({ waiver: { reason: "ok" } }).reason, "ok");
   assert.equal(themeWaiverFrom({ waiver: { reason: "ok" } }, "flag wins").waived_by, "cli_flag");
+});
+
+// #274: a nine-page commerce funnel reported theme_gate.no_commerce_pages and
+// retired itself. The gate read only `built_pages`, so a partial build — which
+// parks declared pages in `out_of_scope_pages` — emptied the commerce scope and
+// made the gate's answer depend on build scope, the one input it must not key
+// off. The command's own route listing enumerated a checkout and five upsells
+// two lines above the contradiction.
+const RENEWALIFT_COMMERCE_PAGES = [
+  { page_id: "checkout", type: "checkout", role: "runtime" },
+  { page_id: "upsell", type: "upsell", role: "runtime" },
+  { page_id: "upsell-2", type: "upsell", role: "runtime" },
+  { page_id: "upsell-3", type: "upsell", role: "runtime" },
+  { page_id: "upsell-4", type: "upsell", role: "runtime" },
+  { page_id: "upsell-5", type: "upsell", role: "runtime" },
+  { page_id: "receipt", type: "thankyou", role: "runtime" },
+];
+
+test("#274 regression: a partial build's out-of-scope commerce pages still count as shipped commerce", () => {
+  const partialScope = {
+    mode: "partial",
+    built_pages: [{ page_id: "presell", type: "presell", role: "content" }],
+    out_of_scope_pages: RENEWALIFT_COMMERCE_PAGES,
+  };
+
+  const scope = commerceScopeFromScope(partialScope);
+  assert.deepEqual(scope.built.map((page) => page.page_id), []);
+  assert.deepEqual(scope.all.map((page) => page.page_id), RENEWALIFT_COMMERCE_PAGES.map((page) => page.page_id));
+
+  const gate = evaluateThemeGate({
+    reportTheme: { status: "needs_review", load_order: "unknown" },
+    contextTheme: { generated: { can_generate: true } },
+    scope: partialScope,
+  });
+
+  assert.notEqual(gate.code, "theme_gate.no_commerce_pages");
+  assert.notEqual(gate.status, "not_applicable");
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.code, "theme_gate.generatable_not_applied");
+  assert.equal(gate.commerce_pages.length, 7);
+  // The operator can still see which of them this build did not produce.
+  assert.equal(gate.commerce_pages_out_of_scope.length, 7);
+});
+
+test("#274 regression: a built commerce page is never double-counted by its out-of-scope twin", () => {
+  const scope = commerceScopeFromScope({
+    built_pages: [{ page_id: "checkout", type: "checkout", role: "runtime" }],
+    out_of_scope_pages: [
+      { page_id: "checkout", type: "checkout", role: "runtime" },
+      { page_id: "upsell", type: "upsell", role: "runtime" },
+    ],
+  });
+
+  assert.deepEqual(scope.all.map((page) => page.page_id), ["checkout", "upsell"]);
+  assert.deepEqual(scope.out_of_scope.map((page) => page.page_id), ["upsell"]);
+});
+
+test("a campaign that genuinely ships no commerce page still retires the gate", () => {
+  const gate = evaluateThemeGate({
+    contextTheme: { generated: { can_generate: true } },
+    scope: {
+      mode: "partial",
+      built_pages: [{ page_id: "presell", type: "presell", role: "content" }],
+      out_of_scope_pages: [{ page_id: "advertorial", type: "presell", role: "content" }],
+    },
+  });
+
+  assert.equal(gate.status, "not_applicable");
+  assert.equal(gate.code, "theme_gate.no_commerce_pages");
+  assert.deepEqual(gate.commerce_pages, []);
+  assert.deepEqual(gate.commerce_pages_out_of_scope, []);
+});
+
+test("commercePagesFromScope stays the flat union its callers already read", () => {
+  assert.deepEqual(
+    commercePagesFromScope({ built_pages: [RENEWALIFT_COMMERCE_PAGES[0]], out_of_scope_pages: [RENEWALIFT_COMMERCE_PAGES[1]] })
+      .map((page) => page.page_id),
+    ["checkout", "upsell"],
+  );
+  assert.deepEqual(commercePagesFromScope(null), []);
+  assert.deepEqual(commercePagesFromScope({}), []);
 });

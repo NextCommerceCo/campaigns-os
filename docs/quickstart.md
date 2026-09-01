@@ -118,6 +118,11 @@ The conversion process used in prior builds is:
 - Use starter-template SDK contracts for checkout, upsell, downsell, receipt, payment, totals, and submit controls.
 - Run page-kit build and inspect `_site/<slug>/` before handing off to polish.
 
+Doctor checks this preparation deterministically: unstripped document wrappers
+and leftover/broken frontmatter block with `source_html.prep.*` error codes,
+and source-file internal links warn. See the "Source preparation check" section
+in [docs/source-adapters.md](./source-adapters.md) for each code and its fix.
+
 ## Create The Packet
 
 ```bash

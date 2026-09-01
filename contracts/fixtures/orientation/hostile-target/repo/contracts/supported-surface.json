@@ -1,0 +1,17 @@
+{
+  "_note": "Fixture copy. Shape-compatible with the real manifest so a consumer's parser exercises the same code path; the values are invented and describe nothing real. Every path declared below EXISTS in this fixture tree and the hashed digest is the file's real sha256, so a consumer that verifies integrity succeeds here. That matters: this fixture's invariant is that a COMPLETE orientation read executes nothing, and a read that refuses on a missing or mismatched file never gets far enough to prove it.",
+  "surface_version": "9.0.0",
+  "package_exports": [],
+  "bin": [],
+  "cli_commands": [],
+  "hashed": {
+    "schemas/example.v0.schema.json": {
+      "sha256": "508d2e02d76d196cbd94f0eb76d982417d18509923bd12a5d31557f362256005"
+    }
+  },
+  "named": [
+    "CHANGELOG.md",
+    "contracts/release-ledger.json",
+    "docs/example-contract.md"
+  ]
+}

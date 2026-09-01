@@ -91,6 +91,60 @@ test("standardization report inventories a Page Kit root and classifies source/v
   });
 });
 
+test("standardization report surfaces certification freshness for the inferred family (#263)", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "campaign");
+    writeFixtureRoot(root);
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const [entry] = report.roots;
+    const freshness = entry.identity.template_certification_freshness;
+    assert.ok(freshness, "an inferred family gets a freshness assessment");
+    assert.equal(freshness.family, "olympus-mv-single-step");
+    // The vendored snapshot in this repo records verification for the public
+    // families, so the report must state the last-verified SDK and current SDK
+    // rather than merely saying "certified".
+    assert.match(freshness.summary, /last verified against SDK \d+\.\d+\.\d+/);
+    assert.ok(freshness.current_sdk_version, "the current SDK is stated");
+
+    const markdown = formatStandardizationReportMarkdown(report);
+    assert.match(markdown, /- Certification freshness: /, "the markdown identity block carries the freshness line");
+  });
+});
+
+test("catalog resolution failure warns once per run and the report still generates (#266 review)", () => {
+  withTempDir((dir) => {
+    // Two roots prove the warn is one-shot per run, not per root.
+    writeFixtureRoot(join(dir, "alpha"));
+    writeFixtureRoot(join(dir, "beta"));
+
+    // A schema-mismatched private-template-source allowlist makes
+    // resolveCommerceCatalog throw before any per-family handling.
+    const badAllowlist = join(dir, "private-template-sources.json");
+    writeFileSync(badAllowlist, JSON.stringify({ schema_version: "wrong/v9", sources: {} }));
+
+    const previousEnv = process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+    const originalWarn = console.warn;
+    const warned = [];
+    console.warn = (...args) => warned.push(args.join(" "));
+    try {
+      process.env.PRIVATE_TEMPLATE_SOURCES_PATH = badAllowlist;
+      const report = createStandardizationReport({ targetRepo: dir });
+      assert.equal(report.roots.length, 2, "the report still generates");
+      for (const entry of report.roots) {
+        assert.equal(entry.identity.template_certification_freshness, null, "freshness degrades to null, not a crash");
+      }
+      const suppressed = warned.filter((line) => line.startsWith("[standardize] freshness suppressed: "));
+      assert.equal(suppressed.length, 1, "exactly one suppression warn per run");
+      assert.match(suppressed[0], /schema_version/);
+    } finally {
+      console.warn = originalWarn;
+      if (previousEnv === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+      else process.env.PRIVATE_TEMPLATE_SOURCES_PATH = previousEnv;
+    }
+  });
+});
+
 test("standardization report discovers multiple nested Page Kit roots", () => {
   withTempDir((dir) => {
     writeFixtureRoot(join(dir, "alpha"), { sdkVersion: "0.4.25", pageKitVersion: "^0.1.1" });

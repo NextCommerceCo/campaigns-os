@@ -643,6 +643,8 @@ test("genuine network failures fail the collection; in-flight transfers at captu
 test("canceled loads keep complete records and drop incomplete ones without failing the collection", async () => {
   const pageUrl = "https://shop.example.test/landing/";
   const abortedUrl = "https://cdn.example.test/aborted.mp4?token=private";
+  const lengthUrl = "https://cdn.example.test/length.mp4?token=private";
+  const declaredOnlyUrl = "https://cdn.example.test/declared-only.mp4?token=private";
   const emptyUrl = "https://cdn.example.test/empty.mp4?token=private";
   const fake = fakeChromium([
     {
@@ -656,7 +658,15 @@ test("canceled loads keep complete records and drop incomplete ones without fail
         emit("Network.responseReceived", {
           requestId: "aborted-media",
           type: "Media",
-          response: { url: abortedUrl, status: 206, mimeType: "video/mp4" },
+          response: {
+            url: abortedUrl,
+            status: 206,
+            mimeType: "video/mp4",
+            headers: {
+              "Content-Range": "bytes 0-921599/41943040",
+              "Content-Length": "921600",
+            },
+          },
         });
         emit("Network.dataReceived", {
           requestId: "aborted-media",
@@ -664,6 +674,50 @@ test("canceled loads keep complete records and drop incomplete ones without fail
         });
         emit("Network.loadingFailed", {
           requestId: "aborted-media",
+          errorText: "net::ERR_ABORTED",
+          canceled: true,
+        });
+        emit("Network.requestWillBeSent", {
+          requestId: "length-media",
+          type: "Media",
+          request: { url: lengthUrl },
+        });
+        emit("Network.responseReceived", {
+          requestId: "length-media",
+          type: "Media",
+          response: {
+            url: lengthUrl,
+            status: 200,
+            mimeType: "video/mp4",
+            headers: { "content-length": "2097152" },
+          },
+        });
+        emit("Network.dataReceived", {
+          requestId: "length-media",
+          encodedDataLength: 128 * 1_024,
+        });
+        emit("Network.loadingFailed", {
+          requestId: "length-media",
+          errorText: "net::ERR_ABORTED",
+          canceled: true,
+        });
+        emit("Network.requestWillBeSent", {
+          requestId: "declared-only-media",
+          type: "Media",
+          request: { url: declaredOnlyUrl },
+        });
+        emit("Network.responseReceived", {
+          requestId: "declared-only-media",
+          type: "Media",
+          response: {
+            url: declaredOnlyUrl,
+            status: 206,
+            mimeType: "video/mp4",
+            headers: { "content-range": "bytes 0-0/8388608" },
+          },
+        });
+        emit("Network.loadingFailed", {
+          requestId: "declared-only-media",
           errorText: "net::ERR_ABORTED",
           canceled: true,
         });
@@ -704,6 +758,16 @@ test("canceled loads keep complete records and drop incomplete ones without fail
   assert.equal(record.failed, false);
   assert.equal(record.status, 206);
   assert.equal(record.encoded_data_length, 900 * 1_024);
+  assert.equal(record.declared_data_length, 40 * 1_024 * 1_024);
+  assert.equal(record.canceled, true);
+  const lengthRecord = aborted.responses.find((response) => response.request_id === "length-media");
+  assert.equal(lengthRecord.encoded_data_length, 128 * 1_024);
+  assert.equal(lengthRecord.declared_data_length, 2 * 1_024 * 1_024);
+  assert.equal(lengthRecord.canceled, true);
+  const declaredOnlyRecord = aborted.responses.find((response) => response.request_id === "declared-only-media");
+  assert.equal(Object.hasOwn(declaredOnlyRecord, "encoded_data_length"), false);
+  assert.equal(declaredOnlyRecord.declared_data_length, 8 * 1_024 * 1_024);
+  assert.equal(declaredOnlyRecord.canceled, true);
 
   // A canceled request that never produced a response leaves nothing behind.
   assert.equal(empty.responseCollectionStatus, "complete");

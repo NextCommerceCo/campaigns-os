@@ -1,0 +1,95 @@
+{
+  "schema_version": "campaigns-os-tooling-orientation/v1",
+  "request": {
+    "run_id": "run-example-0001",
+    "checkout_mode": "operator_supplied",
+    "mutation_policy": "observe_only",
+    "baseline": {
+      "kind": "legacy_commit",
+      "commit": "1111111111111111111111111111111111111111"
+    },
+    "accepted_orientation_schemas": [
+      "campaigns-os-tooling-orientation/v1"
+    ],
+    "accepted_surface_range": ">=1.13.0 <2.0.0",
+    "manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "repository": {
+    "owner": "NextCommerceCo",
+    "repository": "campaigns-os",
+    "branch": "main",
+    "upstream": "origin/main",
+    "clean": true,
+    "shallow": false,
+    "graph_relation": "identical",
+    "common_git_identity": "managed-store-0001",
+    "worktree_identity": "generation-0001",
+    "commit_before": "1111111111111111111111111111111111111111",
+    "commit_fetched": "1111111111111111111111111111111111111111",
+    "commit_after": "1111111111111111111111111111111111111111"
+  },
+  "freshness": {
+    "state": "current",
+    "observed_at": "2026-08-28T00:00:00Z",
+    "fetch_result": {
+      "attempted": true,
+      "succeeded": true,
+      "duration_ms": 420
+    }
+  },
+  "surface": {
+    "reviewed_version": null,
+    "target_version": null,
+    "current_version": null,
+    "compatibility_result": "unknown",
+    "compatibility_rule": "the reviewed baseline predates supported surfaces; no version is fabricated for it",
+    "transitions": []
+  },
+  "release_ledger": {
+    "ledger_schema_version": "campaigns-os-release-ledger/v1",
+    "entries": []
+  },
+  "changelog": {
+    "sections": []
+  },
+  "runtime": {
+    "recipe_id": null,
+    "source_fingerprint": null,
+    "generated_state": "unknown",
+    "emitter_commit": null,
+    "refresh_action": "none",
+    "ready": false
+  },
+  "transaction": {
+    "state": "none",
+    "commit_before": "1111111111111111111111111111111111111111",
+    "commit_target": "1111111111111111111111111111111111111111",
+    "commit_observed": "1111111111111111111111111111111111111111",
+    "recovered_interrupted_update": false
+  },
+  "outcome": {
+    "disposition": "legacy_baseline",
+    "reason_code": "orientation_rendered",
+    "active_generation_changed": false,
+    "fresh_exec_required": false,
+    "next_actions": [
+      "launch only the already verified operator-supplied checkout",
+      "adopt a supported-surface baseline"
+    ]
+  },
+  "limits": {
+    "limits_version": "1.0.0",
+    "max_source_bytes": 1048576,
+    "max_section_count": 1024,
+    "max_section_bytes": 65536,
+    "max_envelope_bytes": 262144,
+    "max_ledger_entries": 1024,
+    "applied": {
+      "source_bytes": 22024,
+      "section_count": 8,
+      "max_observed_section_bytes": 3903,
+      "envelope_bytes": 4096,
+      "ledger_entries": 1
+    }
+  }
+}
