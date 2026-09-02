@@ -47,10 +47,12 @@ export function canonicalJson(value) {
   return JSON.stringify(value === undefined ? null : value);
 }
 
-export function entryHash(entry) {
+export function canonicalEntryJson(entry) {
   const { entry_sha256: _ignored, ...rest } = entry;
-  return sha256Hex(canonicalJson(rest));
+  return canonicalJson(rest);
 }
+
+export const entryHash = (entry) => sha256Hex(canonicalEntryJson(entry));
 
 export const changeIdentity = (change) =>
   `${change.class}|${change.path ?? ""}|${change.surface_entry ?? ""}`;

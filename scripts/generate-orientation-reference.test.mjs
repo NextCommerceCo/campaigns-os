@@ -8,12 +8,20 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { knownCommands } from "../src/cli.mjs";
 import {
+  canonicalEntryJson,
+  entryHash,
   LEDGER_SCHEMA_PATH,
   ORIENTATION_SCHEMA_PATH,
+  parseChangelogSections,
   REASON_CODES_PATH,
   SURFACE_PATH,
 } from "./orientation-contract.mjs";
-import { ENVELOPE_FIXTURE_DIR, REFERENCE_PATH, generate } from "./generate-orientation-reference.mjs";
+import {
+  CANONICALIZATION_FIXTURE_PATH,
+  ENVELOPE_FIXTURE_DIR,
+  REFERENCE_PATH,
+  generate,
+} from "./generate-orientation-reference.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const readJson = (path) => JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -59,6 +67,29 @@ test("the generated reference and envelope fixtures are current", () => {
     if (readText(path) !== expected) stale.push(path);
   }
   assert.deepEqual(stale, [], "run `node ./scripts/generate-orientation-reference.mjs --write` and commit the result");
+});
+
+test("the supported canonicalization vector reproduces both ledger digests", () => {
+  const fixture = readJson(CANONICALIZATION_FIXTURE_PATH);
+  assert.equal(fixture.schema_version, "campaigns-os-release-ledger-canonicalization-example/v1");
+  const validateLedger = new Ajv2020({ strict: true, allErrors: true }).compile(ledgerSchema);
+  assert.ok(
+    validateLedger({ schema_version: "campaigns-os-release-ledger/v1", entries: [fixture.entry_sha256.input_entry] }),
+    JSON.stringify(validateLedger.errors),
+  );
+  assert.equal(canonicalEntryJson(fixture.entry_sha256.input_entry), fixture.entry_sha256.canonical_utf8);
+  assert.equal(entryHash(fixture.entry_sha256.input_entry), fixture.entry_sha256.digest);
+  assert.equal(fixture.entry_sha256.input_entry.entry_sha256, fixture.entry_sha256.digest);
+
+  const sections = parseChangelogSections(fixture.changelog_sha256.input_utf8);
+  const section = sections.find((candidate) => candidate.section_id === fixture.changelog_sha256.section_id);
+  assert.ok(section, "worked changelog section must parse");
+  assert.equal(section.body, fixture.changelog_sha256.section_body_utf8);
+  assert.equal(section.body_sha256, fixture.changelog_sha256.digest);
+  assert.ok(reference.includes(fixture.entry_sha256.canonical_utf8));
+  assert.ok(reference.includes(fixture.entry_sha256.digest));
+  assert.ok(reference.includes(fixture.changelog_sha256.section_body_utf8));
+  assert.ok(reference.includes(fixture.changelog_sha256.digest));
 });
 
 test("every schema enum appears exactly once in the generated inventory, with every one of its values", () => {

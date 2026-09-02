@@ -2,6 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.18.0] - 2026-09-02
+
+### Added
+
+- **Release-ledger digests are now independently reproducible from the
+  supported surface** (#264). The generated orientation reference normatively
+  specifies the exact `entry_sha256` canonical JSON bytes and the precise
+  `changelog_sha256` section boundary, whitespace, and UTF-8 rules. Consumers
+  no longer need to reverse-engineer those rules from unsupported `scripts/**`
+  implementation.
+
+  A supported generated self-check vector ships the input entry and changelog,
+  their canonical byte strings, and both expected SHA-256 digests. The same
+  generator and contract test reproduce the vector and the reference together,
+  so either artifact drifting from the validator fails CI.
+
 ## [1.17.0+agent.1] - 2026-09-02
 
 ### Fixed
