@@ -87,10 +87,12 @@ test("the supported canonicalization vector reproduces both ledger digests", () 
   assert.ok(section, "worked changelog section must parse");
   assert.equal(section.body, fixture.changelog_sha256.section_body_utf8);
   assert.equal(section.body_sha256, fixture.changelog_sha256.digest);
+  assert.match(fixture.changelog_sha256.input_utf8, /Canonicalization example\. {2}\n/);
   assert.ok(reference.includes(fixture.entry_sha256.canonical_utf8));
   assert.ok(reference.includes(fixture.entry_sha256.digest));
   assert.ok(reference.includes(fixture.changelog_sha256.section_body_utf8));
   assert.ok(reference.includes(fixture.changelog_sha256.digest));
+  assert.ok(reference.includes("\\u0020\\u0020"));
 });
 
 test("the documented non-JSON scalar fallbacks match canonicalization", () => {

@@ -49,6 +49,10 @@ const OID_A = "1".repeat(40);
 const OID_B = "2".repeat(40);
 const DIGEST = "3".repeat(64);
 
+function jsonStringWithVisibleTrailingSpaces(value) {
+  return JSON.stringify(value).replace(/ +(?=\\n)/g, (spaces) => "\\u0020".repeat(spaces.length));
+}
+
 function buildCanonicalizationFixture() {
   const example = {
     sequence: 9001,
@@ -497,7 +501,7 @@ export function renderReference({ orientationSchema, ledgerSchema, policy, reaso
     "Worked source input as a JSON string (`\\u0020\\u0020` makes the two trailing spaces exercised by rule 3 visible):",
     "",
     "```json",
-    JSON.stringify(canonicalizationFixture.changelog_sha256.input_utf8).replace("  \\n", "\\u0020\\u0020\\n"),
+    jsonStringWithVisibleTrailingSpaces(canonicalizationFixture.changelog_sha256.input_utf8),
     "```",
     "",
     "Worked section body after applying the boundary and trailing-whitespace rules:",
