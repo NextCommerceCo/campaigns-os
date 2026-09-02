@@ -39,18 +39,10 @@
  * one is a contract change worth a coordinated PR.
  */
 
+import { KNOWN_TEMPLATE_FAMILY_HINTS } from '../types.ts'
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
 
-const KNOWN_TEMPLATE_FAMILIES = new Set([
-  'olympus',
-  'limos',
-  'demeter',
-  'arjuna',
-  'olympus-mv-single-step',
-  'olympus-mv-two-step',
-  'shop-single-step',
-  'shop-three-step',
-])
+const KNOWN_TEMPLATE_FAMILIES = new Set<string>(KNOWN_TEMPLATE_FAMILY_HINTS)
 
 const KNOWN_UPSELL_PATTERNS = new Set([
   'mv',

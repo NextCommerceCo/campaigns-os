@@ -2,6 +2,24 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.17.0+agent.1] - 2026-09-02
+
+### Fixed
+
+- **CampaignSpec validation no longer warns that a certified Apollo template
+  family is unknown** (#280). The authoring-hint rule had a hand-maintained
+  family set that predated `apollo` and `apollo-mv-single-step`, while still
+  carrying the private-source `limos` and `arjuna` names. A correct Apollo
+  CampaignSpec therefore produced a `spec.validation` warning immediately
+  beside doctor's certification-ready messages.
+
+  The rule and `TemplateFamilyHint` type now consume one shared list matching
+  the eight families in the vendored commerce-surface catalog. Apollo hints
+  pass without warning, private-source names no longer masquerade as catalog
+  families, and a synchronization test fails if a future catalog refresh adds
+  or removes a certified family without updating the hint vocabulary. Unknown
+  strings remain valid hints and still warn rather than block.
+
 ## [1.17.0] - 2026-09-01
 
 ### Changed

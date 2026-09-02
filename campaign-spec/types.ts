@@ -490,18 +490,26 @@ export interface Offer {
  * Operators / agents always retain veto power via `--template-family`;
  * the hint never silently locks the build.
  *
- * Known families track the Campaigns OS starter-template catalog —
- * keep these in sync if the catalog grows.
+ * Known families track the certified Campaigns OS commerce-surface catalog.
+ * The AssemblyHintsShape test pins this list to the vendored catalog so a
+ * newly certified family cannot start producing a false unknown-family
+ * warning.
  */
+export const KNOWN_TEMPLATE_FAMILY_HINTS = [
+  'apollo',
+  'apollo-mv-single-step',
+  'demeter',
+  'olympus',
+  'olympus-mv-single-step',
+  'olympus-mv-two-step',
+  'shop-single-step',
+  'shop-three-step',
+] as const
+
+export type KnownTemplateFamilyHint = typeof KNOWN_TEMPLATE_FAMILY_HINTS[number]
+
 export type TemplateFamilyHint =
-  | 'olympus'
-  | 'limos'
-  | 'demeter'
-  | 'arjuna'
-  | 'olympus-mv-single-step'
-  | 'olympus-mv-two-step'
-  | 'shop-single-step'
-  | 'shop-three-step'
+  | KnownTemplateFamilyHint
   | (string & {}) // accept future families without TS errors
 
 /**

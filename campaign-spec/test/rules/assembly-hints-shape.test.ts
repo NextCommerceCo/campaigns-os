@@ -2,6 +2,8 @@ import { describe, expect, test } from '../harness.ts'
 import { AssemblyHintsShape } from '../../rules/assembly-hints-shape.ts'
 import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'
+import commerceSurfaceCatalog from '../../../contracts/commerce-surface-catalog.json' with { type: 'json' }
+import { KNOWN_TEMPLATE_FAMILY_HINTS } from '../../types.ts'
 import type { CampaignSpec } from '../../types.ts'
 
 function baseSpec(overrides: Partial<CampaignSpec> = {}): CampaignSpec {
@@ -90,21 +92,17 @@ describe('AssemblyHintsShape rule', () => {
   })
 
   test('all known template families pass without violation', () => {
-    const known = [
-      'olympus',
-      'limos',
-      'demeter',
-      'arjuna',
-      'olympus-mv-single-step',
-      'olympus-mv-two-step',
-      'shop-single-step',
-      'shop-three-step',
-    ]
-    for (const family of known) {
+    for (const family of KNOWN_TEMPLATE_FAMILY_HINTS) {
       const spec = baseSpec()
       spec.campaign!.preferred_template_family = family
       expect(AssemblyHintsShape.check(normalize(spec))).toEqual([])
     }
+  })
+
+  test('known template families stay aligned with the certified commerce catalog', () => {
+    expect([...KNOWN_TEMPLATE_FAMILY_HINTS].sort()).toEqual(
+      Object.keys(commerceSurfaceCatalog.families).sort(),
+    )
   })
 
   test('all known upsell patterns pass without violation', () => {
