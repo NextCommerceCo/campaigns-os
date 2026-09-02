@@ -802,6 +802,33 @@
         }
       ],
       "entry_sha256": "2de3b88146129fb852a5cad3dd189eb3e5de18334fa02d3d676e0c4398de2e69"
+    },
+    {
+      "id": "RL-0012",
+      "sequence": 12,
+      "date": "2026-09-02",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.17.0+agent.1",
+      "changelog_sha256": "bf1100f37c639daca55a7ac0636517a0f782ebc9caec5df15f83bbae0e83ae3c",
+      "agent_impact": "CampaignSpec validation no longer emits a template-family-unknown warning for the certified apollo and apollo-mv-single-step families. The hint vocabulary now matches the vendored commerce-surface catalog; private-source limos and arjuna hints remain accepted strings but correctly warn as outside the known catalog set.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "TemplateFamilyHint now derives its known autocomplete vocabulary from one exported constant matching the eight certified commerce-catalog families."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/assembly-hints-shape.ts",
+          "surface_entry": null,
+          "summary": "AssemblyHintsShape now consumes the shared certified-family hint list, so Apollo families pass and private-only family names no longer bypass the unknown-family warning."
+        }
+      ],
+      "entry_sha256": "f314c7dbd9a41db9009762b1b43fa678b54f4118cf164e3d71c2ad2b91a4f5c3"
     }
   ]
 }

@@ -39,18 +39,10 @@
  * one is a contract change worth a coordinated PR.
  */
 
+import { KNOWN_TEMPLATE_FAMILY_HINTS } from '../types.ts'
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
 
-const KNOWN_TEMPLATE_FAMILIES = new Set([
-  'olympus',
-  'limos',
-  'demeter',
-  'arjuna',
-  'olympus-mv-single-step',
-  'olympus-mv-two-step',
-  'shop-single-step',
-  'shop-three-step',
-])
+const KNOWN_TEMPLATE_FAMILIES = new Set<string>(KNOWN_TEMPLATE_FAMILY_HINTS)
 
 const KNOWN_UPSELL_PATTERNS = new Set([
   'mv',
@@ -90,7 +82,7 @@ export const AssemblyHintsShape: Rule = {
         violations.push({
           ruleId: 'AssemblyHintsShape',
           severity: 'warning',
-          message: `campaign.preferred_template_family "${templateFamily}" is not in the known set (${[...KNOWN_TEMPLATE_FAMILIES].join(', ')}). The build agent will still try to use it as a hint, but consider correcting the value if this is a typo.`,
+          message: `campaign.preferred_template_family "${templateFamily}" is not in the known set (${[...KNOWN_TEMPLATE_FAMILIES].sort().join(', ')}). The build agent will still try to use it as a hint, but consider correcting the value if this is a typo.`,
           path: '/campaign/preferred_template_family',
           data: { check: 'template-family-unknown', value: templateFamily },
         })
