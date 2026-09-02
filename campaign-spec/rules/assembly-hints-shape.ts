@@ -82,7 +82,7 @@ export const AssemblyHintsShape: Rule = {
         violations.push({
           ruleId: 'AssemblyHintsShape',
           severity: 'warning',
-          message: `campaign.preferred_template_family "${templateFamily}" is not in the known set (${[...KNOWN_TEMPLATE_FAMILIES].join(', ')}). The build agent will still try to use it as a hint, but consider correcting the value if this is a typo.`,
+          message: `campaign.preferred_template_family "${templateFamily}" is not in the known set (${[...KNOWN_TEMPLATE_FAMILIES].sort().join(', ')}). The build agent will still try to use it as a hint, but consider correcting the value if this is a typo.`,
           path: '/campaign/preferred_template_family',
           data: { check: 'template-family-unknown', value: templateFamily },
         })

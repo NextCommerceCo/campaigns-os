@@ -506,10 +506,8 @@ export const KNOWN_TEMPLATE_FAMILY_HINTS = [
   'shop-three-step',
 ] as const
 
-export type KnownTemplateFamilyHint = typeof KNOWN_TEMPLATE_FAMILY_HINTS[number]
-
 export type TemplateFamilyHint =
-  | KnownTemplateFamilyHint
+  | typeof KNOWN_TEMPLATE_FAMILY_HINTS[number]
   | (string & {}) // accept future families without TS errors
 
 /**
