@@ -8,6 +8,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { knownCommands } from "../src/cli.mjs";
 import {
+  canonicalJson,
   canonicalEntryJson,
   entryHash,
   LEDGER_SCHEMA_PATH,
@@ -71,7 +72,7 @@ test("the generated reference and envelope fixtures are current", () => {
 
 test("the supported canonicalization vector reproduces both ledger digests", () => {
   const fixture = readJson(CANONICALIZATION_FIXTURE_PATH);
-  assert.equal(fixture.schema_version, "campaigns-os-release-ledger-canonicalization-example/v1");
+  assert.equal(fixture.fixture_version, "campaigns-os-release-ledger-canonicalization-example/v1");
   const validateLedger = new Ajv2020({ strict: true, allErrors: true }).compile(ledgerSchema);
   assert.ok(
     validateLedger({ schema_version: "campaigns-os-release-ledger/v1", entries: [fixture.entry_sha256.input_entry] }),
@@ -90,6 +91,13 @@ test("the supported canonicalization vector reproduces both ledger digests", () 
   assert.ok(reference.includes(fixture.entry_sha256.digest));
   assert.ok(reference.includes(fixture.changelog_sha256.section_body_utf8));
   assert.ok(reference.includes(fixture.changelog_sha256.digest));
+});
+
+test("the documented non-JSON scalar fallbacks match canonicalization", () => {
+  assert.equal(
+    canonicalJson({ negativeZero: -0, notANumber: Number.NaN, positiveInfinity: Number.POSITIVE_INFINITY, presentUndefined: undefined }),
+    '{"negativeZero":0,"notANumber":null,"positiveInfinity":null,"presentUndefined":null}',
+  );
 });
 
 test("every schema enum appears exactly once in the generated inventory, with every one of its values", () => {

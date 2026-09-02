@@ -15,8 +15,11 @@ Notable supported-surface changes are recorded here.
 
   A supported generated self-check vector ships the input entry and changelog,
   their canonical byte strings, and both expected SHA-256 digests. The same
-  generator and contract test reproduce the vector and the reference together,
-  so either artifact drifting from the validator fails CI.
+  generator now validates the synthetic input entry against the ledger schema,
+  and the contract test reproduces the vector and reference together, so either
+  artifact drifting from the validator fails CI. The vector uses a reserved
+  example identity, labels its shape with `fixture_version`, and makes numeric
+  edge behavior and the changelog input's trailing spaces explicit.
 
 ## [1.17.0+agent.1] - 2026-09-02
 
