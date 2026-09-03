@@ -41,6 +41,7 @@ The command writes these target-repo artifacts:
 - `.campaign-runtime/assembly-report.json`
 - `.campaign-runtime/doctor-output.json`
 - `.campaign-runtime/qa-verdict.json` (after QA)
+- `.campaign-runtime/agent-context/*`
 
 Validate the standardized CI/readback set with:
 
@@ -50,7 +51,6 @@ npm run campaigns-os -- bundle check --packet <page-kit-repo>/campaign-runtime.b
 
 Use `--require-qa` when the campaign claims QA is complete. See
 [Migration sidecar bundle v0](docs/migration-sidecar-bundle.md).
-- `.campaign-runtime/agent-context/*`
 
 Then ask your AI tool to continue from the emitted handoff. Fresh target repos usually start with `next-campaigns-os-setup`; existing campaign directories can move directly to `next-campaigns-build`.
 

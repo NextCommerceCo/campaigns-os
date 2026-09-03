@@ -29,18 +29,20 @@ contract. A packet found only at
 remedy; conformance does not silently widen discovery.
 
 The checker validates canonical paths, declared schema versions, strict UTC
-timestamps, cross-artifact Map ID/public slug/spec-hash identity, doctor
-freshness, and the URL/order-free QA projection. A blocked doctor or QA verdict
-is still valid evidence: conformance says the evidence is readable and
-coherent, not that the campaign is ready.
+timestamps, cross-artifact Map ID, public slug, campaign directory, live URL
+path, template family, and spec-hash identity, doctor freshness, and the
+URL/order-free QA projection. A blocked doctor or QA verdict is still valid
+evidence: conformance says the evidence is readable and coherent, not that the
+campaign is ready.
 
 ## Headless CI producer
 
 Resolve and check out one commit before producing anything. The initial
-`campaigns-os start` or `prepare-build` run writes the packet, context, report,
-and doctor output from explicit CampaignSpec/source/template inputs. Later CI
-runs must preserve the authored packet, context, and Assembly Report rather
-than recreating them with `--force` and erasing stage decisions.
+`campaigns-os start` run writes the packet, context, report, and doctor output
+from explicit CampaignSpec/source/template inputs. `prepare-build` writes the
+packet, context, and report; refresh Doctor output with the command below.
+Later CI runs must preserve the authored packet, context, and Assembly Report
+rather than recreating them with `--force` and erasing stage decisions.
 
 Refresh generated evidence at that commit:
 

@@ -6,22 +6,22 @@
   "identity": {
     "map_id": "runtime-packet-demo-k9x2",
     "public_route_slug": "runtime-packet-demo",
-    "campaign_directory": "example-campaign",
-    "live_url_path": "/example-campaign/",
+    "campaign_directory": "runtime-packet-demo",
+    "live_url_path": "/runtime-packet-demo/",
     "spec_hash": "example-spec-sha256"
   },
   "inputs": {
     "packet_path": "campaign-runtime.build.json",
     "context_path": ".campaign-runtime/build-context.json",
-    "spec_path": "campaign-spec.json",
-    "source": { "kind": "html_funnel", "root": "design-export/example-campaign" },
+    "spec_path": "campaignspec.v42.basic.json",
+    "source": { "kind": "html_funnel", "root": "source-html" },
     "target_repo": "."
   },
   "template_family": {
-    "value": "undecided",
-    "locked": false,
-    "locked_by": null,
-    "commerce_catalog_version": null,
+    "value": "olympus",
+    "locked": true,
+    "locked_by": "fixture",
+    "commerce_catalog_version": "2",
     "candidates": []
   },
   "stages": {
@@ -69,7 +69,7 @@
       "status": "verified_existing_slice",
       "required_groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
       "groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
-      "paths": ["src/example-campaign", "src/example-campaign/_includes", "src/example-campaign/_layouts", "src/example-campaign/assets/css", "src/example-campaign/assets/js"]
+      "paths": ["src/runtime-packet-demo", "src/runtime-packet-demo/_includes", "src/runtime-packet-demo/_layouts", "src/runtime-packet-demo/assets/css", "src/runtime-packet-demo/assets/js"]
     }
   },
   "proof_policy": {

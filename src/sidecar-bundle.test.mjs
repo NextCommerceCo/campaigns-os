@@ -110,6 +110,41 @@ test("cross-artifact identity drift is a conformance failure", () => withFixture
   assert.ok(result.errors.some((finding) => finding.code === "bundle.identity.map_id_mismatch"));
 }));
 
+test("every producer-owned campaign identity fails conformance independently when it drifts", () => {
+  const cases = [
+    {
+      name: "campaign_directory",
+      relativePath: ".campaign-runtime/assembly-report.json",
+      mutate: (report) => { report.identity.campaign_directory = "some-other-directory"; },
+    },
+    {
+      name: "live_url_path",
+      relativePath: ".campaign-runtime/assembly-report.json",
+      mutate: (report) => { report.identity.live_url_path = "/some-other-path/"; },
+    },
+    {
+      name: "template_family",
+      relativePath: ".campaign-runtime/build-context.json",
+      mutate: (context) => { context.template.family = "demeter"; },
+    },
+  ];
+
+  for (const identityCase of cases) {
+    withFixture((root) => {
+      const path = join(root, identityCase.relativePath);
+      const artifact = readJson(path);
+      identityCase.mutate(artifact);
+      writeJson(path, artifact);
+      const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+      assert.equal(result.ok, false, identityCase.name);
+      assert.ok(
+        result.errors.some((finding) => finding.code === `bundle.identity.${identityCase.name}_mismatch`),
+        `${identityCase.name}: ${JSON.stringify(result.errors, null, 2)}`,
+      );
+    });
+  }
+});
+
 test("published artifact schemas and required bundle identities are enforced", () => withFixture((root) => {
   const path = join(root, ".campaign-runtime/build-context.json");
   const context = readJson(path);
@@ -182,6 +217,23 @@ test("the CLI exposes bundle check as JSON and honors --require-qa", () => {
 test("the machine contract forbids mtime selection and requires explicit historical QA promotion", () => {
   assert.equal(SIDECAR_BUNDLE_CONTRACT.packet_discovery.selection_authority, "campaign-runtime.build.json#generated_at");
   assert.equal(SIDECAR_BUNDLE_CONTRACT.packet_discovery.forbidden_selection_authority, "filesystem_mtime");
+  const identities = Object.fromEntries(
+    SIDECAR_BUNDLE_CONTRACT.identity_fields.map((identity) => [identity.name, identity.artifact_paths]),
+  );
+  assert.deepEqual(identities.campaign_directory, {
+    build_packet: "campaign.campaign_directory",
+    assembly_report: "identity.campaign_directory",
+  });
+  assert.deepEqual(identities.live_url_path, {
+    build_packet: "campaign.live_url_path",
+    assembly_report: "identity.live_url_path",
+  });
+  assert.deepEqual(identities.template_family, {
+    build_packet: "assembly.template_family",
+    build_context: "template.family",
+    assembly_report: "template_family.value",
+    doctor_output: "derived.template_family",
+  });
   assert.match(SIDECAR_BUNDLE_CONTRACT.ci_producer.promote_historical_qa, /--verdict <explicit-full-verdict\.json>/);
   assert.deepEqual(SIDECAR_BUNDLE_CONTRACT.ci_producer.never_select_qa_by, [
     "filesystem_mtime",

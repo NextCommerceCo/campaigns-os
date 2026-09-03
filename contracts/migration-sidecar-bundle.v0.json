@@ -75,6 +75,29 @@
       }
     },
     {
+      "name": "campaign_directory",
+      "artifact_paths": {
+        "build_packet": "campaign.campaign_directory",
+        "assembly_report": "identity.campaign_directory"
+      }
+    },
+    {
+      "name": "live_url_path",
+      "artifact_paths": {
+        "build_packet": "campaign.live_url_path",
+        "assembly_report": "identity.live_url_path"
+      }
+    },
+    {
+      "name": "template_family",
+      "artifact_paths": {
+        "build_packet": "assembly.template_family",
+        "build_context": "template.family",
+        "assembly_report": "template_family.value",
+        "doctor_output": "derived.template_family"
+      }
+    },
+    {
       "name": "spec_hash",
       "artifact_paths": {
         "build_context": "spec.hash",

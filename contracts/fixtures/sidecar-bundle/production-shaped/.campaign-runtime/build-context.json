@@ -6,7 +6,7 @@
   "packet_path": "campaign-runtime.build.json",
   "report_path": ".campaign-runtime/assembly-report.json",
   "spec": {
-    "path": "campaign-spec.json",
+    "path": "campaignspec.v42.basic.json",
     "hash": "example-spec-sha256",
     "active_pages": [
       { "id": "landing", "type": "landing", "label": "Landing", "page_url": "landing/" },
@@ -14,7 +14,7 @@
     ]
   },
   "source": {
-    "root": "design-export/example-campaign",
+    "root": "source-html",
     "html_files": [
       { "path": "landing.html", "name": "landing.html", "basename": "landing", "bytes": 1000, "sha256": "example-html-sha256" },
       { "path": "checkout.html", "name": "checkout.html", "basename": "checkout", "bytes": 2000, "sha256": "example-html-sha256" }
@@ -25,17 +25,17 @@
       "page_id": "landing",
       "source_path": "landing.html",
       "skip_reason": null,
-      "output_path": "src/example-campaign/landing.html",
+      "output_path": "src/runtime-packet-demo/landing.html",
       "page_kit": {
         "target_path": "landing.html",
-        "output_path": "src/example-campaign/landing.html",
-        "public_route": "/example-campaign/landing/",
+        "output_path": "src/runtime-packet-demo/landing.html",
+        "public_route": "/runtime-packet-demo/landing/",
         "spec_route": "landing/",
         "page_type": "product",
         "permalink_required": false,
         "frontmatter": {
           "page_type": "product",
-          "next_url": "/example-campaign/checkout/"
+          "next_url": "/runtime-packet-demo/checkout/"
         }
       }
     },
@@ -43,11 +43,11 @@
       "page_id": "checkout",
       "source_path": "checkout.html",
       "skip_reason": null,
-      "output_path": "src/example-campaign/checkout.html",
+      "output_path": "src/runtime-packet-demo/checkout.html",
       "page_kit": {
         "target_path": "checkout.html",
-        "output_path": "src/example-campaign/checkout.html",
-        "public_route": "/example-campaign/checkout/",
+        "output_path": "src/runtime-packet-demo/checkout.html",
+        "public_route": "/runtime-packet-demo/checkout/",
         "spec_route": "checkout/",
         "page_type": "checkout",
         "permalink_required": false,
@@ -61,15 +61,15 @@
     "mode": "fresh",
     "required": true,
     "target_repo": ".",
-    "output_dir": "src/example-campaign",
+    "output_dir": "src/runtime-packet-demo",
     "handoff_skill": "next-campaigns-os-setup",
     "handoff_artifact": ".campaign-runtime/setup-handoff.json",
     "reason": "Target campaign output directory is missing; run Page Kit scaffold before build."
   },
   "template": {
-    "family": "undecided",
-    "locked": false,
-    "lock": { "locked": false, "locked_by": null, "confidence": "none", "evidence": [] },
+    "family": "olympus",
+    "locked": true,
+    "lock": { "locked": true, "locked_by": "fixture", "confidence": "high", "evidence": ["contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json"] },
     "candidates": []
   },
   "adapter_decisions": {

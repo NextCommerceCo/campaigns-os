@@ -102,7 +102,7 @@
   },
   "assembly": {
     "implementation": "next-campaigns-build",
-    "target_repo": "target-page-kit",
+    "target_repo": ".",
     "output_dir": "src/runtime-packet-demo",
     "template_family": "olympus",
     "template_decision_notes": "Golden-path fixture locks Olympus for the default prepared-HTML flow; builders may choose Demeter or shop-single-step when those families better match the campaign.",

@@ -27,7 +27,7 @@
   ],
   "hashed": {
     "contracts/migration-sidecar-bundle.v0.json": {
-      "sha256": "2612433b44130c322a626863d993ae799f22ae59bfaf8e73eac894e9139c9a7a"
+      "sha256": "af8046efca2909ae88009e0eb5cb4eb0f2f0642ef614b367f35bf0069b88c305"
     },
     "contracts/runtime-recipe.campaigns-os-node-v1.json": {
       "sha256": "f06944b37ddbcfc6353ebc01dbc1eaf9ee5ebe3dbc91609214e25252905915ff"
