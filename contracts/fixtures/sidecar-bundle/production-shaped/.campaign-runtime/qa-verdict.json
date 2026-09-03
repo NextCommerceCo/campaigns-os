@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "run_id": "MSRBUNDLEFIXTURE000000000000",
+  "campaign_slug": "runtime-packet-demo-k9x2",
+  "public_route_slug": "runtime-packet-demo",
+  "spec_version": "4.2",
+  "spec_hash": "example-spec-sha256",
+  "started_at": "2026-08-24T00:02:00.000Z",
+  "completed_at": "2026-08-24T00:03:00.000Z",
+  "generated_at": "2026-08-24T00:04:00.000Z",
+  "runtime": "campaigns-os-node-qa@0.1.0-alpha.0",
+  "disposition": "ready",
+  "entry_urls": [],
+  "page_urls": [],
+  "tested_urls": [],
+  "assertions": [
+    {
+      "id": "http:checkout",
+      "family": "funnel-flow",
+      "page": "checkout",
+      "status": "pass",
+      "severity": "info"
+    }
+  ],
+  "test_orders": [],
+  "exceptions": []
+}

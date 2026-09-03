@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-doctor-output.v0.schema.json",
+  "title": "Campaigns OS Doctor Output v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "ok",
+    "status",
+    "errors",
+    "warnings",
+    "ready",
+    "derived",
+    "next"
+  ],
+  "properties": {
+    "schema_version": { "const": "campaigns-os-doctor-output/v0" },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "ok": { "type": "boolean" },
+    "status": {
+      "enum": ["ready", "ready_with_warnings", "ready_with_waivers", "blocked"]
+    },
+    "errors": { "type": "array" },
+    "warnings": { "type": "array" },
+    "ready": { "type": "array" },
+    "derived": { "type": "object" },
+    "next": { "type": ["object", "null"] },
+    "stale": { "type": "boolean" },
+    "stale_marked_by": { "type": ["string", "null"] },
+    "stale_marked_at": { "type": "string" },
+    "stale_reason": { "type": "string" }
+  }
+}

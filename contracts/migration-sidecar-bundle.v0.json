@@ -1,0 +1,127 @@
+{
+  "schema_version": "campaigns-os-migration-sidecar-bundle-contract/v0",
+  "bundle_id": "campaigns-os-migration-sidecar-bundle/v0",
+  "packet_discovery": {
+    "canonical_path": "campaign-runtime.build.json",
+    "legacy_path": ".campaign-runtime/campaign-runtime.build.json",
+    "selection_authority": "campaign-runtime.build.json#generated_at",
+    "forbidden_selection_authority": "filesystem_mtime",
+    "legacy_remedy": "Regenerate or move the Build Packet to repository-root campaign-runtime.build.json, then refresh the canonical sidecars.",
+    "noncanonical_remedy": "Run bundle check against the repository-root campaign-runtime.build.json. If this packet is authoritative, move or regenerate it there, then refresh the canonical sidecars."
+  },
+  "artifacts": [
+    {
+      "kind": "build_packet",
+      "path": "campaign-runtime.build.json",
+      "requirement": "required",
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "schema_path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+      "freshness_field": "generated_at",
+      "volatile_fields": ["generated_at"]
+    },
+    {
+      "kind": "build_context",
+      "path": ".campaign-runtime/build-context.json",
+      "requirement": "required",
+      "schema_version": "campaign-runtime-build-context/v0",
+      "schema_path": "schemas/campaign-runtime-build-context.v0.schema.json",
+      "freshness_field": "generated_at",
+      "volatile_fields": ["generated_at"]
+    },
+    {
+      "kind": "assembly_report",
+      "path": ".campaign-runtime/assembly-report.json",
+      "requirement": "required",
+      "schema_version": "campaign-runtime-assembly-report/v0",
+      "schema_path": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+      "freshness_field": "generated_at",
+      "volatile_fields": ["generated_at", "run_id"]
+    },
+    {
+      "kind": "doctor_output",
+      "path": ".campaign-runtime/doctor-output.json",
+      "requirement": "required",
+      "schema_version": "campaigns-os-doctor-output/v0",
+      "schema_path": "schemas/campaigns-os-doctor-output.v0.schema.json",
+      "freshness_field": "generated_at",
+      "volatile_fields": ["generated_at", "stale_marked_at"]
+    },
+    {
+      "kind": "qa_verdict",
+      "path": ".campaign-runtime/qa-verdict.json",
+      "requirement": "required_after_qa",
+      "schema_version": "1.0",
+      "schema_path": "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json",
+      "freshness_field": "generated_at",
+      "volatile_fields": ["generated_at", "started_at", "completed_at", "run_id"]
+    }
+  ],
+  "identity_fields": [
+    {
+      "name": "map_id",
+      "artifact_paths": {
+        "build_packet": "spec.map_id",
+        "assembly_report": "identity.map_id",
+        "doctor_output": "derived.map_id",
+        "qa_verdict": "campaign_slug"
+      }
+    },
+    {
+      "name": "public_route_slug",
+      "artifact_paths": {
+        "build_packet": "campaign.public_route_slug",
+        "assembly_report": "identity.public_route_slug",
+        "doctor_output": "derived.public_route_slug",
+        "qa_verdict": "public_route_slug"
+      }
+    },
+    {
+      "name": "campaign_directory",
+      "artifact_paths": {
+        "build_packet": "campaign.campaign_directory",
+        "assembly_report": "identity.campaign_directory"
+      }
+    },
+    {
+      "name": "live_url_path",
+      "artifact_paths": {
+        "build_packet": "campaign.live_url_path",
+        "assembly_report": "identity.live_url_path"
+      }
+    },
+    {
+      "name": "template_family",
+      "artifact_paths": {
+        "build_packet": "assembly.template_family",
+        "build_context": "template.family",
+        "assembly_report": "template_family.value",
+        "doctor_output": "derived.template_family"
+      }
+    },
+    {
+      "name": "spec_hash",
+      "artifact_paths": {
+        "build_context": "spec.hash",
+        "assembly_report": "identity.spec_hash",
+        "qa_verdict": "spec_hash"
+      }
+    }
+  ],
+  "ci_producer": {
+    "refresh_doctor": "campaigns-os doctor --packet campaign-runtime.build.json --strip-paths --json",
+    "promote_historical_qa": "campaigns-os qa promote --packet campaign-runtime.build.json --verdict <explicit-full-verdict.json> --json",
+    "check_base_bundle": "campaigns-os bundle check --packet campaign-runtime.build.json --json",
+    "check_qa_complete_bundle": "campaigns-os bundle check --packet campaign-runtime.build.json --require-qa --json",
+    "preserve_authored": [
+      "campaign-runtime.build.json",
+      ".campaign-runtime/build-context.json",
+      ".campaign-runtime/assembly-report.json"
+    ],
+    "never_select_qa_by": ["filesystem_mtime", "filename_sort", "directory_latest"]
+  },
+  "compatibility": {
+    "markdown_may_coexist": true,
+    "markdown_is_readback_truth": false,
+    "migration_specific_scripts_are_contract": false
+  }
+}

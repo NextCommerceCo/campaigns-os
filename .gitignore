@@ -2,6 +2,8 @@ node_modules/
 node_modules
 .DS_Store
 .campaign-runtime/
+!contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/
+!contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/*.json
 coverage/
 dist/
 npm-debug.log*

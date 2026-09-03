@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-sidecar-bundle-conformance.v0.schema.json",
+  "title": "Campaigns OS Sidecar Bundle Conformance v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "ok",
+    "status",
+    "root",
+    "packet_generated_at",
+    "material_digest",
+    "artifacts",
+    "errors",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": { "const": "campaigns-os-sidecar-bundle-conformance/v0" },
+    "bundle_id": { "const": "campaigns-os-migration-sidecar-bundle/v0" },
+    "ok": { "type": "boolean" },
+    "status": { "enum": ["conformant", "nonconformant"] },
+    "root": { "type": "string", "minLength": 1 },
+    "packet_generated_at": { "type": ["string", "null"] },
+    "material_digest": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "path",
+          "requirement",
+          "present",
+          "schema_version",
+          "generated_at",
+          "sha256",
+          "material_sha256"
+        ],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "requirement": { "enum": ["required", "required_after_qa"] },
+          "present": { "type": "boolean" },
+          "schema_version": { "type": ["string", "null"] },
+          "generated_at": { "type": ["string", "null"] },
+          "sha256": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+          "material_sha256": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/finding" } }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "artifact", "message", "remedy"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "artifact": { "type": ["string", "null"] },
+        "message": { "type": "string", "minLength": 1 },
+        "remedy": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

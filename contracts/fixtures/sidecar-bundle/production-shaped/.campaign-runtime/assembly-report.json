@@ -1,0 +1,180 @@
+{
+  "schema_version": "campaign-runtime-assembly-report/v0",
+  "run_id": "asm_example",
+  "generated_at": "2026-08-24T00:00:00.000Z",
+  "status": "prepared",
+  "identity": {
+    "map_id": "runtime-packet-demo-k9x2",
+    "public_route_slug": "runtime-packet-demo",
+    "campaign_directory": "runtime-packet-demo",
+    "live_url_path": "/runtime-packet-demo/",
+    "spec_hash": "example-spec-sha256"
+  },
+  "inputs": {
+    "packet_path": "campaign-runtime.build.json",
+    "context_path": ".campaign-runtime/build-context.json",
+    "spec_path": "campaignspec.v42.basic.json",
+    "source": { "kind": "html_funnel", "root": "source-html" },
+    "target_repo": "."
+  },
+  "template_family": {
+    "value": "olympus",
+    "locked": true,
+    "locked_by": "fixture",
+    "commerce_catalog_version": "2",
+    "candidates": []
+  },
+  "stages": {
+    "prepare_build": {
+      "stage": "prepare_build",
+      "status": "completed",
+      "inputs": [],
+      "outputs": ["campaign-runtime.build.json", ".campaign-runtime/build-context.json", ".campaign-runtime/assembly-report.json"],
+      "commands": [],
+      "blockers": [],
+      "warnings": []
+    },
+    "doctor": { "stage": "doctor", "status": "pending", "inputs": [], "outputs": [], "commands": [], "blockers": [], "warnings": [] },
+    "setup": { "stage": "setup", "status": "pending", "inputs": [], "outputs": [], "commands": [], "blockers": [], "warnings": [] },
+    "assembly": { "stage": "assembly", "status": "pending", "inputs": [], "outputs": [], "commands": [], "blockers": [], "warnings": [] },
+    "polish": { "stage": "polish", "status": "pending", "inputs": [], "outputs": [], "commands": [], "blockers": [], "warnings": [] },
+    "deploy": { "stage": "deploy", "status": "pending", "inputs": [], "outputs": [], "commands": [], "blockers": [], "warnings": [] },
+    "qa": { "stage": "qa", "status": "pending", "inputs": [], "outputs": [], "commands": [], "blockers": [], "warnings": [] }
+  },
+  "decisions": [
+    {
+      "id": "dec_page_map_checkout",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"checkout\" to source file \"checkout.html\"",
+      "evidence_ids": [],
+      "confidence": "high",
+      "blast_radius": "routing",
+      "requires_ack": false,
+      "acknowledged_by": null
+    }
+  ],
+  "adapter_decisions": {
+    "raw_html_conversion_status": "completed",
+    "source_asset_strategy": "pagekit_campaign_asset_root",
+    "route_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "config_script_strategy": "campaign_asset",
+    "commerce_shell_adoption": "template_clone_first_verified",
+    "wrapper_policy": "strip_document_wrappers",
+    "frontmatter_policy": "pagekit_yaml_frontmatter",
+    "script_style_reference_policy": "frontmatter_or_campaign_asset",
+    "cta_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "layout_choice": "campaign_layout",
+    "template_files_copied": {
+      "status": "verified_existing_slice",
+      "required_groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+      "groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+      "paths": ["src/runtime-packet-demo", "src/runtime-packet-demo/_includes", "src/runtime-packet-demo/_layouts", "src/runtime-packet-demo/assets/css", "src/runtime-packet-demo/assets/js"]
+    }
+  },
+  "proof_policy": {
+    "browser_qa_required": true,
+    "typed_card_depth": "common",
+    "localhost_development_domain_allowed": true,
+    "non_localhost_origin_allowlist_required": true,
+    "order_path_depth": "common",
+    "operator_approval_state": "not_required_global_test_cards",
+    "qa_portal_publish_default": true
+  },
+  "evidence": [],
+  "blockers": [],
+  "warnings": [
+    {
+      "code": "SOURCE_COMMERCE_REVIEW",
+      "stage": "assembly",
+      "message": "Source HTML contains possible commerce zones. Build must preserve catalog-owned runtime surfaces."
+    }
+  ],
+  "checklists": {
+    "polish": {
+      "anchor_screenshots": [
+        {
+          "page_type": "checkout",
+          "anchor": "bundle_selector",
+          "viewports": ["desktop", "mobile"],
+          "evidence": ["screenshots/checkout-bundle-desktop.png", "screenshots/checkout-bundle-mobile.png"]
+        },
+        {
+          "page_type": "checkout",
+          "anchor": "customer_info",
+          "viewports": ["desktop", "mobile"],
+          "evidence": ["screenshots/checkout-customer-desktop.png", "screenshots/checkout-customer-mobile.png"]
+        },
+        {
+          "page_type": "checkout",
+          "anchor": "shipping_address",
+          "viewports": ["desktop", "mobile"],
+          "evidence": ["screenshots/checkout-shipping-desktop.png", "screenshots/checkout-shipping-mobile.png"]
+        },
+        {
+          "page_type": "checkout",
+          "anchor": "payment_method",
+          "viewports": ["desktop", "mobile"],
+          "evidence": ["screenshots/checkout-payment-desktop.png", "screenshots/checkout-payment-mobile.png"]
+        },
+        {
+          "page_type": "checkout",
+          "anchor": "submit_order_summary",
+          "viewports": ["desktop", "mobile"],
+          "evidence": ["screenshots/checkout-submit-desktop.png", "screenshots/checkout-submit-mobile.png"]
+        }
+      ],
+      "state_screenshots": [
+        {
+          "page_type": "checkout",
+          "state": "selected_bundle_tier",
+          "viewports": ["desktop", "mobile"],
+          "evidence": ["screenshots/checkout-selected-bundle-desktop.png", "screenshots/checkout-selected-bundle-mobile.png"]
+        }
+      ],
+      "runtime_smoke": [
+        {
+          "page_type": "checkout",
+          "state": "console_clean",
+          "viewports": ["desktop", "mobile"],
+          "evidence": ["logs/checkout-console.txt"]
+        }
+      ]
+    },
+    "template_family": {
+      "family": "olympus",
+      "invariants": [
+        {
+          "id": "olympus.mobile_bundle_horizontal_order",
+          "status": "passed",
+          "evidence": ["screenshots/checkout-selected-bundle-mobile.png"]
+        },
+        {
+          "id": "olympus.checkout_fields_full_width",
+          "status": "passed",
+          "evidence": ["screenshots/checkout-shipping-mobile.png"]
+        },
+        {
+          "id": "olympus.spreedly_no_duplicate_fallback_text",
+          "status": "passed",
+          "evidence": ["screenshots/checkout-payment-mobile.png"]
+        },
+        {
+          "id": "olympus.payment_metadata_no_overlap",
+          "status": "passed",
+          "evidence": ["screenshots/checkout-payment-desktop.png", "screenshots/checkout-payment-mobile.png"]
+        },
+        {
+          "id": "olympus.selected_state_shape_stable",
+          "status": "passed",
+          "evidence": ["screenshots/checkout-selected-bundle-desktop.png", "screenshots/checkout-selected-bundle-mobile.png"]
+        }
+      ]
+    }
+  },
+  "next": {
+    "stage": "setup",
+    "owner": "next-campaigns-os-setup",
+    "action": "Run Page Kit scaffold using the doctor-cleared packet, then hand setup output to build."
+  }
+}

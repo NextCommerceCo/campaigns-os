@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.18.0",
+  "surface_version": "1.19.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -17,6 +17,7 @@
     "polish",
     "checkpoint",
     "doctor",
+    "bundle",
     "standardize",
     "standardization-report",
     "qa",
@@ -25,6 +26,9 @@
     "run"
   ],
   "hashed": {
+    "contracts/migration-sidecar-bundle.v0.json": {
+      "sha256": "267798ff04384406f06dbcdcdef897e72c1a4b68030dff72c0240600bb0fabcc"
+    },
     "contracts/runtime-recipe.campaigns-os-node-v1.json": {
       "sha256": "f06944b37ddbcfc6353ebc01dbc1eaf9ee5ebe3dbc91609214e25252905915ff"
     },
@@ -51,6 +55,12 @@
     },
     "schemas/campaigns-os-qa-verdict.v0.schema.json": {
       "sha256": "f74b2fe743c9914c0273a57b7b09e227931dfc28d0300cb38f20d9720cceaea6"
+    },
+    "schemas/campaigns-os-doctor-output.v0.schema.json": {
+      "sha256": "0b39390dd9e51c473d04b8d7eb010da1e050e9a0f645ace0e2f891a8bc1b0a42"
+    },
+    "schemas/campaigns-os-sidecar-bundle-conformance.v0.schema.json": {
+      "sha256": "07ae43d81583a11ad0ebdcc7704fdd4f286235627f974876b7204b0626db5efa"
     },
     "schemas/campaigns-os-release-ledger.v1.schema.json": {
       "sha256": "08ca132134b9e4610370e88082a5e888d09ddec0d5ee4512d84cc57181da722e"
@@ -81,6 +91,7 @@
     "docs/supported-surface.md",
     "docs/campaigns-os-build-flow.md",
     "docs/build-packet.md",
+    "docs/migration-sidecar-bundle.md",
     "docs/design-source-package.md",
     "docs/campaign-build-brief.md",
     "docs/campaign-standardization-report.md",
@@ -116,6 +127,11 @@
     "contracts/fixtures/orientation/hostile-target/repo/hooks/post-checkout",
     "contracts/fixtures/orientation/hostile-target/repo/hooks/post-merge",
     "contracts/fixtures/orientation/hostile-target/repo/hooks/pre-commit",
+    "contracts/fixtures/sidecar-bundle/production-shaped/campaign-runtime.build.json",
+    "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/build-context.json",
+    "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json",
+    "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/doctor-output.json",
+    "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/qa-verdict.json",
     "docs/runtime-readiness.md",
     "contracts/fixtures/runtime-recipe/manifest.json",
     "contracts/fixtures/runtime-recipe/dist-states.json",

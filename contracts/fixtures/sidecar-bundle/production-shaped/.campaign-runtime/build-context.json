@@ -1,0 +1,115 @@
+{
+  "schema_version": "campaign-runtime-build-context/v0",
+  "generated_at": "2026-08-24T00:00:00.000Z",
+  "source_adapter": "html_funnel",
+  "status": "prepared",
+  "packet_path": "campaign-runtime.build.json",
+  "report_path": ".campaign-runtime/assembly-report.json",
+  "spec": {
+    "path": "campaignspec.v42.basic.json",
+    "hash": "example-spec-sha256",
+    "active_pages": [
+      { "id": "landing", "type": "landing", "label": "Landing", "page_url": "landing/" },
+      { "id": "checkout", "type": "checkout", "label": "Checkout", "page_url": "checkout/" }
+    ]
+  },
+  "source": {
+    "root": "source-html",
+    "html_files": [
+      { "path": "landing.html", "name": "landing.html", "basename": "landing", "bytes": 1000, "sha256": "example-html-sha256" },
+      { "path": "checkout.html", "name": "checkout.html", "basename": "checkout", "bytes": 2000, "sha256": "example-html-sha256" }
+    ]
+  },
+  "page_map": [
+    {
+      "page_id": "landing",
+      "source_path": "landing.html",
+      "skip_reason": null,
+      "output_path": "src/runtime-packet-demo/landing.html",
+      "page_kit": {
+        "target_path": "landing.html",
+        "output_path": "src/runtime-packet-demo/landing.html",
+        "public_route": "/runtime-packet-demo/landing/",
+        "spec_route": "landing/",
+        "page_type": "product",
+        "permalink_required": false,
+        "frontmatter": {
+          "page_type": "product",
+          "next_url": "/runtime-packet-demo/checkout/"
+        }
+      }
+    },
+    {
+      "page_id": "checkout",
+      "source_path": "checkout.html",
+      "skip_reason": null,
+      "output_path": "src/runtime-packet-demo/checkout.html",
+      "page_kit": {
+        "target_path": "checkout.html",
+        "output_path": "src/runtime-packet-demo/checkout.html",
+        "public_route": "/runtime-packet-demo/checkout/",
+        "spec_route": "checkout/",
+        "page_type": "checkout",
+        "permalink_required": false,
+        "frontmatter": {
+          "page_type": "checkout"
+        }
+      }
+    }
+  ],
+  "scaffold": {
+    "mode": "fresh",
+    "required": true,
+    "target_repo": ".",
+    "output_dir": "src/runtime-packet-demo",
+    "handoff_skill": "next-campaigns-os-setup",
+    "handoff_artifact": ".campaign-runtime/setup-handoff.json",
+    "reason": "Target campaign output directory is missing; run Page Kit scaffold before build."
+  },
+  "template": {
+    "family": "olympus",
+    "locked": true,
+    "lock": { "locked": true, "locked_by": "fixture", "confidence": "high", "evidence": ["contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json"] },
+    "candidates": []
+  },
+  "adapter_decisions": {
+    "raw_html_conversion_status": "pending",
+    "source_asset_strategy": "pagekit_campaign_asset_root",
+    "route_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "config_script_strategy": "campaign_asset",
+    "commerce_shell_adoption": "template_clone_first_required",
+    "wrapper_policy": "strip_document_wrappers",
+    "frontmatter_policy": "pagekit_yaml_frontmatter",
+    "script_style_reference_policy": "frontmatter_or_campaign_asset",
+    "cta_rewrite_policy": "campaignspec_routes_via_campaign_link",
+    "layout_choice": "campaign_layout",
+    "template_files_copied": {
+      "status": "pending",
+      "required_groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+      "groups": [],
+      "paths": []
+    }
+  },
+  "commerce_zone_findings": [
+    {
+      "path": "checkout.html",
+      "zones": ["checkout", "payment"],
+      "sdk_attributes": [],
+      "action": "review_and_preserve_catalog_surfaces",
+      "note": "HTML source may express visual intent here, but catalog-owned runtime shapes must remain authoritative."
+    }
+  ],
+  "prompts_required": [],
+  "decisions": [
+    {
+      "id": "dec_page_map_checkout",
+      "stage": "prepare_build",
+      "decision_type": "deterministic_derivation",
+      "decision": "mapped CampaignSpec page \"checkout\" to source file \"checkout.html\"",
+      "confidence": "high",
+      "blast_radius": "routing",
+      "requires_ack": false,
+      "evidence": ["matched source filename against page keys: checkout"]
+    }
+  ]
+}
