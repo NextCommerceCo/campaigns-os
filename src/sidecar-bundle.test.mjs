@@ -100,6 +100,17 @@ test("the legacy sidecar packet path gets the explicit root-path remedy", () => 
   assert.match(finding.remedy, /repository-root campaign-runtime\.build\.json/);
 }));
 
+test("an arbitrary packet path gets the noncanonical-path remedy", () => withFixture((root) => {
+  const packetPath = join(root, "elsewhere", "packet.json");
+  mkdirSync(dirname(packetPath), { recursive: true });
+  cpSync(join(root, "campaign-runtime.build.json"), packetPath);
+  const result = inspectSidecarBundle({ packetPath, requireQa: true });
+  const finding = result.errors.find((entry) => entry.code === "bundle.packet.noncanonical_path");
+  assert.ok(finding);
+  assert.equal(finding.remedy, SIDECAR_BUNDLE_CONTRACT.packet_discovery.noncanonical_remedy);
+  assert.match(finding.remedy, /Run bundle check against the repository-root/);
+}));
+
 test("cross-artifact identity drift is a conformance failure", () => withFixture((root) => {
   const path = join(root, ".campaign-runtime/assembly-report.json");
   const report = readJson(path);
@@ -144,6 +155,18 @@ test("every producer-owned campaign identity fails conformance independently whe
     });
   }
 });
+
+test("nullable packet compatibility does not make null bundle identity conformant", () => withFixture((root) => {
+  const packetPath = join(root, "campaign-runtime.build.json");
+  const packet = readJson(packetPath);
+  packet.campaign.campaign_directory = null;
+  packet.campaign.live_url_path = null;
+  writeJson(packetPath, packet);
+  const result = inspectSidecarBundle({ packetPath, requireQa: true });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((finding) => finding.code === "bundle.identity.campaign_directory_missing"));
+  assert.ok(result.errors.some((finding) => finding.code === "bundle.identity.live_url_path_missing"));
+}));
 
 test("published artifact schemas and required bundle identities are enforced", () => withFixture((root) => {
   const path = join(root, ".campaign-runtime/build-context.json");

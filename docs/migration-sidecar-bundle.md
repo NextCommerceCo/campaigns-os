@@ -35,6 +35,13 @@ URL/order-free QA projection. A blocked doctor or QA verdict is still valid
 evidence: conformance says the evidence is readable and coherent, not that the
 campaign is ready.
 
+The Build Packet schema keeps `campaign_directory` and `live_url_path`
+nullable for older or partial packet compatibility. Bundle conformance is
+deliberately stricter: both identities must be non-empty so equality with the
+Assembly Report can be proved. Regenerate the packet with `start` or
+`prepare-build` before checking a bundle whose packet carries either value as
+`null`.
+
 ## Headless CI producer
 
 Resolve and check out one commit before producing anything. The initial

@@ -124,7 +124,9 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       legacy
         ? `Build Packet is at the legacy sidecar path ${SIDECAR_BUNDLE_CONTRACT.packet_discovery.legacy_path}; default discovery reads only the repository root.`
         : `Build Packet must be at repository-root ${SIDECAR_BUNDLE_CONTRACT.packet_discovery.canonical_path}.`,
-      SIDECAR_BUNDLE_CONTRACT.packet_discovery.legacy_remedy,
+      legacy
+        ? SIDECAR_BUNDLE_CONTRACT.packet_discovery.legacy_remedy
+        : SIDECAR_BUNDLE_CONTRACT.packet_discovery.noncanonical_remedy,
     ));
   }
 

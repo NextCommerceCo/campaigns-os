@@ -6,7 +6,8 @@
     "legacy_path": ".campaign-runtime/campaign-runtime.build.json",
     "selection_authority": "campaign-runtime.build.json#generated_at",
     "forbidden_selection_authority": "filesystem_mtime",
-    "legacy_remedy": "Regenerate or move the Build Packet to repository-root campaign-runtime.build.json, then refresh the canonical sidecars."
+    "legacy_remedy": "Regenerate or move the Build Packet to repository-root campaign-runtime.build.json, then refresh the canonical sidecars.",
+    "noncanonical_remedy": "Run bundle check against the repository-root campaign-runtime.build.json. If this packet is authoritative, move or regenerate it there, then refresh the canonical sidecars."
   },
   "artifacts": [
     {
