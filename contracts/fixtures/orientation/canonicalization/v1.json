@@ -1,0 +1,34 @@
+{
+  "fixture_version": "campaigns-os-release-ledger-canonicalization-example/v1",
+  "entry_sha256": {
+    "input_entry": {
+      "sequence": 9001,
+      "id": "RL-9001",
+      "date": "2026-09-02",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "0.0.0+agent.9001",
+      "changelog_sha256": "32370066aa254ac6328875ea43c031773686df7f94702d8ad3e970f655776685",
+      "agent_impact": "A consumer can reproduce ledger digests independently.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "summary": "Publish the digest rule and a self-check vector.",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "path": "docs/orientation-contract-reference.md",
+          "class": "documentation"
+        }
+      ],
+      "entry_sha256": "55a7a77821ed4ef034683d0c5d36c897ee53e9cc2e1e42021a88e1be5bdfae54"
+    },
+    "canonical_utf8": "{\"agent_impact\":\"A consumer can reproduce ledger digests independently.\",\"changelog_section\":\"0.0.0+agent.9001\",\"changelog_sha256\":\"32370066aa254ac6328875ea43c031773686df7f94702d8ad3e970f655776685\",\"changes\":[{\"class\":\"documentation\",\"path\":\"docs/orientation-contract-reference.md\",\"summary\":\"Publish the digest rule and a self-check vector.\",\"surface_entry\":\"docs/orientation-contract-reference.md\"}],\"compatibility\":\"compatible\",\"date\":\"2026-09-02\",\"id\":\"RL-9001\",\"kind\":\"release\",\"migration\":\"none\",\"sequence\":9001,\"surface_version\":null}",
+    "digest": "55a7a77821ed4ef034683d0c5d36c897ee53e9cc2e1e42021a88e1be5bdfae54"
+  },
+  "changelog_sha256": {
+    "input_utf8": "# Changelog\n\n## [0.0.0+agent.9001] - 2026-09-02\n\n### Added\n\n- Canonicalization example.  \n\n## [1.17.0+agent.1] - 2026-09-02\n\n### Fixed\n\n- Earlier entry.\n",
+    "section_id": "0.0.0+agent.9001",
+    "section_body_utf8": "## [0.0.0+agent.9001] - 2026-09-02\n\n### Added\n\n- Canonicalization example.",
+    "digest": "32370066aa254ac6328875ea43c031773686df7f94702d8ad3e970f655776685"
+  }
+}

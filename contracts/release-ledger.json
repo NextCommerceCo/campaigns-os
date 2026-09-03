@@ -829,6 +829,51 @@
         }
       ],
       "entry_sha256": "f314c7dbd9a41db9009762b1b43fa678b54f4118cf164e3d71c2ad2b91a4f5c3"
+    },
+    {
+      "id": "RL-0013",
+      "sequence": 13,
+      "date": "2026-09-02",
+      "kind": "release",
+      "surface_version": "1.18.0",
+      "changelog_section": "1.18.0",
+      "changelog_sha256": "e84197c72cd5da974aa626bd066ec7870eea4280a10180ab0771d38471a89c36",
+      "agent_impact": "Consumers can reproduce entry_sha256 and changelog_sha256 without reading unsupported implementation. The generated normative reference defines the byte-level rules, and a supported self-check vector supplies exact inputs, canonical bytes, and expected digests.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/orientation/canonicalization/v1.json",
+          "surface_entry": "contracts/fixtures/orientation/canonicalization/v1.json",
+          "summary": "A generated supported self-check vector now publishes a synthetic ledger entry, changelog source, their canonical byte strings, and both expected SHA-256 digests; fixture_version identifies the vector shape without claiming a payload schema."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advanced to 1.18.0 and the canonicalization self-check vector became a named supported-surface entry."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "The normative orientation reference now specifies key ordering, separators, scalar, numeric-edge and undefined handling, excluded fields, changelog heading and section boundaries, visible trailing whitespace, UTF-8 encoding, and worked digests."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "The generated runtime-readiness guide now reports supported surface 1.18.0; its runtime recipe content is otherwise unchanged."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The supported-surface guide now identifies the canonicalization vector and its generated-staleness guarantee."
+        }
+      ],
+      "entry_sha256": "b846b4900b07800700e9b4529227acd02d8effd5a544956b8963fe3977e3893f"
     }
   ]
 }
