@@ -1,0 +1,28 @@
+{
+  "schema_version": "campaigns-os-doctor-output/v0",
+  "generated_at": "2026-08-24T00:01:00.000Z",
+  "ok": true,
+  "status": "ready_with_warnings",
+  "errors": [],
+  "warnings": [
+    {
+      "code": "deploy.preview_url",
+      "message": "Preview URL is not recorded yet."
+    }
+  ],
+  "ready": [
+    "Build Packet schema campaign-runtime-build-packet/v0",
+    "Build context schema campaign-runtime-build-context/v0"
+  ],
+  "derived": {
+    "packet_path": "campaign-runtime.build.json",
+    "map_id": "runtime-packet-demo-k9x2",
+    "public_route_slug": "runtime-packet-demo",
+    "template_family": "olympus"
+  },
+  "next": {
+    "stage": "deploy",
+    "owner": "campaign-operator",
+    "action": "Record the preview deployment before QA."
+  }
+}

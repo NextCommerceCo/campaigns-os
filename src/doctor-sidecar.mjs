@@ -3,6 +3,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const DOCTOR_SIDECAR_REL_PATH = ".campaign-runtime/doctor-output.json";
+export const DOCTOR_SIDECAR_SCHEMA = "campaigns-os-doctor-output/v0";
 
 export function doctorSidecarPath(targetBaseDir) {
   return join(targetBaseDir, DOCTOR_SIDECAR_REL_PATH);

@@ -61,7 +61,8 @@ import {
   evaluateSourcePreparation,
   SOURCE_PREP_CODES,
 } from "./source-prep.mjs";
-import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
+import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
+import { inspectSidecarBundle } from "./sidecar-bundle.mjs";
 import { remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
@@ -324,6 +325,7 @@ Usage:
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
+  campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
   campaigns-os standardization-report --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]   # alias for standardize
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
@@ -684,6 +686,17 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     const result = doctorCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
+    return;
+  }
+
+  if (command === "bundle") {
+    const subcommand = args._[1] || "check";
+    if (subcommand !== "check") throw new Error('Unknown bundle subcommand. Use: campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json].');
+    const result = inspectSidecarBundle({
+      packetPath: requireArg(args, "packet"),
+      requireQa: args["require-qa"] === true,
+    });
+    writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
@@ -2986,7 +2999,17 @@ export function doctorPacket(packetPath, { contextPath = undefined, reportPath =
       : warnings.length
         ? "ready_with_warnings"
         : "ready";
-  const result = { ok: errors.length === 0, status, errors, warnings, ready, derived, next };
+  const result = {
+    schema_version: DOCTOR_SIDECAR_SCHEMA,
+    generated_at: new Date().toISOString(),
+    ok: errors.length === 0,
+    status,
+    errors,
+    warnings,
+    ready,
+    derived,
+    next,
+  };
   return outputBaseDir ? relativizeDoctorOutput(result, outputBaseDir) : result;
 }
 

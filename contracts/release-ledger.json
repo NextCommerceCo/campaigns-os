@@ -874,6 +874,117 @@
         }
       ],
       "entry_sha256": "b846b4900b07800700e9b4529227acd02d8effd5a544956b8963fe3977e3893f"
+    },
+    {
+      "id": "RL-0014",
+      "sequence": 14,
+      "date": "2026-09-03",
+      "kind": "release",
+      "surface_version": "1.19.0",
+      "changelog_section": "1.19.0",
+      "changelog_sha256": "5dc6d6e7d10d6402435edf691bb87347f577419991cf58e83d3f0921f38df77e",
+      "agent_impact": "Campaigns Agent and migration CI can now consume one strict, portable five-artifact sidecar bundle without depending on Campaigns OS internals. The root build packet selects the bundle by its generated_at value, canonical sidecars carry explicit schema identities and cross-artifact campaign identity, doctor evidence must be refreshed at the checked-out state, and historical QA may enter the bundle only through an explicitly selected full verdict. The new bundle check emits exact file hashes plus a material digest whose exclusions are contract-declared timestamps and run identifiers; markdown and filesystem mtimes are never substitutes for JSON evidence.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "hashed_surface",
+          "path": "contracts/migration-sidecar-bundle.v0.json",
+          "surface_entry": "contracts/migration-sidecar-bundle.v0.json",
+          "summary": "Publishes the canonical five-artifact layout, lifecycle requirements, freshness fields, volatile-field allowlist, explicit QA-selection rule, and headless producer commands."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-doctor-output.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-doctor-output.v0.schema.json",
+          "summary": "Defines the retained packet-mode doctor evidence, including schema identity, producer timestamp, derived campaign identity, result state, and next action."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-sidecar-bundle-conformance.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-sidecar-bundle-conformance.v0.schema.json",
+          "summary": "Defines the machine-readable result from bundle check, including per-artifact exact hashes and the cross-run material digest."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "bundle",
+          "summary": "Adds bundle check and makes newly emitted doctor sidecars self-identifying and timestamped."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Adds the sidecar-bundle conformance suite to the repository check pipeline and promotes AJV to a runtime dependency so the CLI validates every artifact against its published schema; the new public contract, schemas, guide, and fixture remain covered by the existing packed files directories."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Records AJV and its transitive packages as production dependencies required by bundle check's runtime schema validation."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances surface_version to 1.19.0, registers bundle CLI, pins the contract and schemas, and names the guide and production-shaped fixture."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Documents the supported bundle contract, schemas, CLI command, fixture, and additive compatibility boundary."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "Provides the operator and consumer recipe for producing, refreshing, validating, and consuming the bundle without overwriting authored evidence."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/sidecar-bundle/production-shaped/campaign-runtime.build.json",
+          "surface_entry": "contracts/fixtures/sidecar-bundle/production-shaped/campaign-runtime.build.json",
+          "summary": "Supplies the canonical root build packet for the portable production-shaped conformance fixture."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/build-context.json",
+          "surface_entry": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/build-context.json",
+          "summary": "Supplies the fixture's canonical build context with campaign identity and source spec hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json",
+          "surface_entry": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json",
+          "summary": "Supplies the fixture's canonical assembly report at an intentionally non-ready lifecycle state."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/doctor-output.json",
+          "surface_entry": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/doctor-output.json",
+          "summary": "Supplies fresh, schema-identified doctor evidence for the fixture without claiming readiness."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/qa-verdict.json",
+          "surface_entry": "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/qa-verdict.json",
+          "summary": "Supplies an explicitly projected historical QA verdict for QA-complete conformance testing."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated to report supported surface 1.19.0 and the new release-ledger entry."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated to report supported surface 1.19.0; the runtime recipe itself is unchanged."
+        }
+      ],
+      "entry_sha256": "f7a1b208444faa144c09c77f158f960e76ce7645684e98bf5af07d0aa45f0ba9"
     }
   ]
 }

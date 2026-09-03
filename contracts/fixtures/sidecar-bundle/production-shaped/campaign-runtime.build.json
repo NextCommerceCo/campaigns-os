@@ -1,0 +1,143 @@
+{
+  "schema_version": "campaign-runtime-build-packet/v0",
+  "generated_at": "2026-08-24T00:00:00.000Z",
+  "campaign": {
+    "public_route_slug": "runtime-packet-demo",
+    "campaign_directory": "runtime-packet-demo",
+    "live_url_path": "/runtime-packet-demo/",
+    "campaigns_app_url": null,
+    "api_key_source": "env:CAMPAIGNS_API_KEY",
+    "allowed_domains_confirmed": true
+  },
+  "spec": {
+    "map_id": "runtime-packet-demo-k9x2",
+    "spec_url": "https://campaign-map.nextcommerce.com/api/spec/runtime-packet-demo-k9x2",
+    "local_path": "campaignspec.v42.basic.json"
+  },
+  "source_html": {
+    "root": "source-html",
+    "pages": [
+      {
+        "page_id": "landing",
+        "path": "landing.html",
+        "page_kit": {
+          "target_path": "landing.html",
+          "output_path": "src/runtime-packet-demo/landing.html",
+          "public_route": "/runtime-packet-demo/landing/",
+          "spec_route": "landing/",
+          "page_type": "product",
+          "permalink_required": false,
+          "frontmatter": {
+            "page_type": "product",
+            "next_url": "/runtime-packet-demo/checkout/"
+          }
+        }
+      },
+      {
+        "page_id": "checkout",
+        "path": "checkout.html",
+        "page_kit": {
+          "target_path": "checkout.html",
+          "output_path": "src/runtime-packet-demo/checkout.html",
+          "public_route": "/runtime-packet-demo/checkout/",
+          "spec_route": "checkout/",
+          "page_type": "checkout",
+          "permalink_required": false,
+          "frontmatter": {
+            "page_type": "checkout",
+            "next_url": "/runtime-packet-demo/upsell/"
+          }
+        }
+      },
+      {
+        "page_id": "upsell",
+        "path": "upsell.html",
+        "page_kit": {
+          "target_path": "upsell.html",
+          "output_path": "src/runtime-packet-demo/upsell.html",
+          "public_route": "/runtime-packet-demo/upsell/",
+          "spec_route": "upsell/",
+          "page_type": "upsell",
+          "permalink_required": false,
+          "frontmatter": {
+            "page_type": "upsell",
+            "next_url": "/runtime-packet-demo/receipt/"
+          }
+        }
+      },
+      {
+        "page_id": "receipt",
+        "path": "receipt.html",
+        "page_kit": {
+          "target_path": "receipt.html",
+          "output_path": "src/runtime-packet-demo/receipt.html",
+          "public_route": "/runtime-packet-demo/receipt/",
+          "spec_route": "receipt/",
+          "page_type": "receipt",
+          "permalink_required": false,
+          "frontmatter": {
+            "page_type": "receipt"
+          }
+        }
+      }
+    ],
+    "adapter_contract": {
+      "raw_html_conversion_status": "pending",
+      "source_asset_strategy": "pagekit_campaign_asset_root",
+      "route_rewrite_policy": "campaignspec_routes_via_campaign_link",
+      "config_script_strategy": "campaign_asset",
+      "commerce_shell_adoption": "template_clone_first_required",
+      "wrapper_policy": "strip_document_wrappers",
+      "frontmatter_policy": "pagekit_yaml_frontmatter",
+      "script_style_reference_policy": "frontmatter_or_campaign_asset",
+      "cta_rewrite_policy": "campaignspec_routes_via_campaign_link",
+      "layout_choice": "campaign_layout",
+      "template_files_copied": {
+        "status": "pending",
+        "required_groups": ["pages", "_includes", "_layouts", "assets/css", "assets/js", "frontmatter_vocabulary"],
+        "groups": [],
+        "paths": []
+      }
+    }
+  },
+  "assembly": {
+    "implementation": "next-campaigns-build",
+    "target_repo": "target-page-kit",
+    "output_dir": "src/runtime-packet-demo",
+    "template_family": "olympus",
+    "template_decision_notes": "Golden-path fixture locks Olympus for the default prepared-HTML flow; builders may choose Demeter or shop-single-step when those families better match the campaign.",
+    "template_lock": {
+      "locked": true,
+      "locked_by": "fixture",
+      "confidence": "high",
+      "evidence": ["contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json"]
+    },
+    "commerce_catalog": {
+      "required": true,
+      "family": "olympus",
+      "version": "2",
+      "path": "../contracts/commerce-surface-catalog.json"
+    },
+    "compatible_outputs": ["static-html", "campaign-cart-sdk"]
+  },
+  "deploy": {
+    "target": "netlify",
+    "preview_url": null,
+    "production_url": null
+  },
+  "qa": {
+    "test_orders_allowed": false,
+    "sandbox_test_card_confirmed": false,
+    "proof_policy": {
+      "browser_qa_required": true,
+      "typed_card_depth": "common",
+      "localhost_development_domain_allowed": true,
+      "non_localhost_origin_allowlist_required": true,
+      "order_path_depth": "common",
+      "operator_approval_state": "not_required_global_test_cards",
+      "qa_portal_publish_default": true
+    },
+    "test_order_policy_notes": "Test Orders use global test cards that bypass the gateway and create no transactions. Run them with `qa run --test-order common` by default; use `full` only for exhaustive proof. Localhost on any port is a Development domain for SDK QA; non-localhost preview/production origins still need SDK origin allowlist confirmation. These flags are informational, not a permission gate."
+  },
+  "notes": "Synthetic v0 example. Values must be replaced with actual CampaignSpec/API values for a real campaign."
+}

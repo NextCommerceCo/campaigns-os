@@ -2,6 +2,32 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.19.0] - 2026-09-03
+
+### Added
+
+- **Migration CI and Campaigns Agent now share one strict JSON sidecar-bundle
+  contract** (#249). The root `campaign-runtime.build.json`, Build Context,
+  Assembly Report, Doctor Output, and projected QA Verdict have canonical paths,
+  required/lifecycle-required status, schema identities, freshness fields, and
+  cross-artifact identity checks. Packet selection remains based on the root
+  packet's `generated_at`, never filesystem mtime.
+
+  `campaigns-os bundle check` validates the base bundle; `--require-qa` makes
+  the committed QA projection mandatory after QA. It emits exact file digests
+  plus a material digest that ignores only contract-declared timestamps and run
+  IDs, so a headless rerun over the same substantive evidence is byte-stable at
+  the material layer. Markdown reports and migration-specific scripts may
+  coexist but never substitute for missing JSON truth.
+
+  Doctor Output now carries the explicit
+  `campaigns-os-doctor-output/v0` schema identity and a producer timestamp. The
+  CI recipe preserves authored packet/context/report state, refreshes doctor at
+  one checked-out commit, and promotes historical QA only from one explicitly
+  named full verdict. A supported production-shaped fixture lets Campaigns
+  Agent prove deterministic and real-checkout consumption without a private
+  dependency in this repository.
+
 ## [1.18.0] - 2026-09-02
 
 ### Added
