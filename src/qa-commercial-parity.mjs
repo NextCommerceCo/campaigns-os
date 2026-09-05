@@ -254,7 +254,7 @@ export function createPageSourceLoader({
     } catch (error) {
       return {
         ok: false,
-        error_code: error?.code || (error?.name === "AbortError" ? "page_fetch_timeout" : "page_fetch_error"),
+        error_code: error?.name === "AbortError" ? "page_fetch_timeout" : (error?.code || "page_fetch_error"),
         error: errorMessage(error),
       };
     }
@@ -350,7 +350,7 @@ async function previewDescriptor(descriptor, { proxyBase, apiKey, fetchImpl, lim
         request: { url, body: descriptor.body },
       },
       ok: false,
-      error_code: error?.code || (error?.name === "AbortError" ? "price_preview_timeout" : "price_preview_fetch_error"),
+      error_code: error?.name === "AbortError" ? "price_preview_timeout" : (error?.code || "price_preview_fetch_error"),
       error: errorMessage(error),
     };
   }
