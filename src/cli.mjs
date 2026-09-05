@@ -1,3 +1,4 @@
+import { withHtmlScanSnapshot, readHtmlScanText, htmlScanDigest } from "./html-scan.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
@@ -982,7 +983,7 @@ async function resolveSpecPath(args, opts = {}) {
 }
 
 function sha256File(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+  return htmlScanDigest(path);
 }
 
 function relFromFile(filePath, targetPath) {
@@ -2882,7 +2883,11 @@ export function checkpointWaive(args) {
   };
 }
 
-export function doctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
+export function doctorPacket(packetPath, options = {}) {
+  return withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
+}
+
+function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
   const packet = readJson(packetPath);
   const sidecars = inferredBuildSidecarPaths(packet, packetPath);
   const resolvedContextPath = contextPath === undefined ? sidecars.contextPath : contextPath;
@@ -4857,6 +4862,10 @@ function isRuntimeRootedRoutingMeta(value, publicRouteSlug, routeRoot = null) {
 }
 
 export function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
+  return withHtmlScanSnapshot(() => scanMarketSensitiveCopy(spec, warnings, ready, derived), { reuse: true });
+}
+
+function scanMarketSensitiveCopy(spec, warnings, ready, derived) {
   const scope = deriveMarketScope(spec);
   const currencyScope = deriveCurrencyCopyScope(spec);
   const storePhone = firstNonEmptyString(spec?.campaign?.store_phone, spec?.campaign?.phone);
@@ -4981,7 +4990,7 @@ function collectMarketCopyMatches(scanRoots) {
   const matches = [];
   for (const { label: surface, root } of scanRoots) {
     for (const file of collectHtmlFiles(root)) {
-      const content = maskMarketLintIgnoredRegions(readFileSync(join(root, file.path), "utf8"));
+      const content = maskMarketLintIgnoredRegions(readHtmlScanText(join(root, file.path)));
       for (const pattern of US_MARKET_COPY_PATTERNS) {
         const match = content.match(pattern.regex);
         if (match) {
@@ -5003,7 +5012,7 @@ function collectHardcodedCurrencyMatches(scanRoots) {
   const matches = [];
   for (const { label: surface, root } of scanRoots) {
     for (const file of collectHtmlFiles(root)) {
-      const content = maskMarketLintIgnoredRegions(readFileSync(join(root, file.path), "utf8"));
+      const content = maskMarketLintIgnoredRegions(readHtmlScanText(join(root, file.path)));
       for (const match of content.matchAll(HARDCODED_CURRENCY_REGEX)) {
         matches.push({
           surface,
@@ -5025,7 +5034,7 @@ function collectHardcodedPhoneMatches(scanRoots, storePhone) {
   const matches = [];
   for (const { label: surface, root } of scanRoots) {
     for (const file of collectHtmlFiles(root)) {
-      const content = maskMarketLintIgnoredRegions(readFileSync(join(root, file.path), "utf8"));
+      const content = maskMarketLintIgnoredRegions(readHtmlScanText(join(root, file.path)));
       for (const match of content.matchAll(HARDCODED_PHONE_REGEX)) {
         const found = normalizePhoneNumber(match[0]);
         if (!found || found === expected) continue;
@@ -5908,7 +5917,7 @@ function collectPlaceholderTextResidueMatches(root, terms) {
   const matches = [];
   for (const file of collectHtmlFiles(root)) {
     if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
-    const content = readFileSync(join(root, file.path), "utf8");
+    const content = readHtmlScanText(join(root, file.path));
     for (const match of placeholderTextResidueMatches(content, terms)) {
       matches.push({
         surface: "target",
@@ -6106,7 +6115,7 @@ function collectLiteralMatches(root, values) {
   const matches = [];
   for (const file of collectHtmlFiles(root)) {
     if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
-    const content = readFileSync(join(root, file.path), "utf8");
+    const content = readHtmlScanText(join(root, file.path));
     for (const match of content.matchAll(regex)) {
       matches.push({
         surface: "target",
@@ -6140,7 +6149,7 @@ function collectPatternMatches(root, patterns) {
     return { ...entry, regex: new RegExp(entry.pattern.source, flags) };
   });
   for (const file of collectBuiltTextFiles(root)) {
-    const content = readFileSync(join(root, file.path), "utf8");
+    const content = readHtmlScanText(join(root, file.path));
     for (const entry of compiledPatterns) {
       entry.regex.lastIndex = 0;
       for (const match of content.matchAll(entry.regex)) {
@@ -6216,7 +6225,7 @@ function collectDiscountClaimMatches(root) {
   const claimPattern = /\b(?:save(?:\s+up\s+to)?\s+(\d{1,3}(?:\.\d+)?)\s*(?:%|\bpercent\b)|(\d{1,3}(?:\.\d+)?)\s*(?:%|\bpercent\b)\s*(?:off|discount)\b)/gi;
   const matches = [];
   for (const file of collectBuiltTextFiles(root)) {
-    const content = readFileSync(join(root, file.path), "utf8");
+    const content = readHtmlScanText(join(root, file.path));
     for (const match of content.matchAll(claimPattern)) {
       const claimed = Number.parseFloat(match[1] || match[2]);
       if (!Number.isFinite(claimed)) continue;

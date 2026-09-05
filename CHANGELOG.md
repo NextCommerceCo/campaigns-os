@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.19.0+agent.1] - 2026-09-05
+
+### Changed
+
+- Doctor and standalone market-copy scans reuse HTML bytes and SHA-256 digests within one invocation. Each new doctor starts a fresh snapshot; failed reads are retried normally. Check ordering and findings remain unchanged.
+
 ## [1.19.0] - 2026-09-03
 
 ### Added

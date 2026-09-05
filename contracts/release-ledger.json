@@ -985,6 +985,27 @@
         }
       ],
       "entry_sha256": "f7a1b208444faa144c09c77f158f960e76ce7645684e98bf5af07d0aa45f0ba9"
+    },
+    {
+      "id": "RL-0015",
+      "sequence": 15,
+      "date": "2026-09-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.19.0+agent.1",
+      "changelog_sha256": "ca53be170b159ed4be0d4e4da90283b9f67b570b9915c1fbb9096fd7ad19475d",
+      "agent_impact": "None. Doctor reads repeated HTML content once per invocation while preserving CLI output and freshness between invocations.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Scopes repeated HTML copy/residue reads and digests to the current doctor invocation."
+        }
+      ],
+      "entry_sha256": "40e5ba2465d47fd040b513300ec890c0baa956680b5cf9cc0fe2b3bde86a6dbf"
     }
   ]
 }
