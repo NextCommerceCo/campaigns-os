@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.19.0+agent.4] - 2026-09-05
+
+### Changed
+
+- CI installs without lifecycle scripts and lets the check pipeline compile the working tree once. The final pack check reuses that build; standalone check:pack still runs prepare and compiles fresh output. Missing generated output remains a packing failure.
+
 ## [1.19.0+agent.3] - 2026-09-05
 
 ### Changed

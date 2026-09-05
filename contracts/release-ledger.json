@@ -1048,6 +1048,33 @@
         }
       ],
       "entry_sha256": "9a173bab4f5401a0ac7131e65bed30eb3d84d07b4748279fee332fb7a224e5c8"
+    },
+    {
+      "id": "RL-0018",
+      "sequence": 18,
+      "date": "2026-09-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.19.0+agent.4",
+      "changelog_sha256": "59ab6da0b6370751118dd5ffaf1965f601a394cca8fc19857c2c8da6e9f4da5c",
+      "agent_impact": "None for consumers. Standalone install and packaging lifecycle behavior remains unchanged; repository CI avoids redundant compilation.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "Suppresses install-time prepare so the check pipeline owns compilation."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Reuses the check pipeline build for final package validation while preserving standalone prepare."
+        }
+      ],
+      "entry_sha256": "af820efe90bd7028b48ed2470af9a50305b9c174d801182cd9893fb4487ae306"
     }
   ]
 }
