@@ -107,3 +107,20 @@ if the rejected readiness shortcut is reintroduced.
 Before optimizing these waits, define independent runtime-error observation
 windows and their evidence requirements. A faster readiness check alone is not
 sufficient proof that browser QA coverage has been preserved.
+
+## CI build ownership
+
+CI installs with lifecycle scripts disabled. `npm run check` builds the working
+tree once and its final `check-pack.mjs --skip-prepare` validates that output.
+Standalone `npm run check:pack` still runs npm prepare and compiles fresh output.
+The internal skip flag assumes the caller just built; it does not certify source
+freshness by itself. Missing output fails validation and cleans its temporary pack.
+
+Run `node --test scripts/check-pack.test.mjs` when changing this boundary. It
+verifies standalone preparation, prepared-output reuse, missing-output failure,
+and cleanup using an isolated copy and the real compiler/package manager. This
+expensive packaging regression is an explicit check rather than part of every
+CI run; including a second compilation and three extra packs in every run would
+erase the small optimization it verifies. The normal CI still validates the real
+packed artifact on every run. The optimization removes two redundant working-tree
+compilations; no total hosted-CI speedup is claimed.
