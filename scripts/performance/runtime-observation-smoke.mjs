@@ -60,6 +60,8 @@ try {
       assert.ok(mainTiming.failed_requests_sampled_after_ms >= mainTiming.console_errors_sampled_after_ms);
       assert.ok(Object.values(mainTiming).filter(value => typeof value === 'number').every(value => Number.isFinite(value) && value >= 0));
       if (['late-errors', 'delayed-debugger'].includes(name)) {
+        assert.ok(mainTiming.page_errors_sampled_after_ms >= 1800, 'Main observation timing must cover the late error');
+        assert.ok(debugTiming.errors_sampled_after_ms >= 1250, 'Debugger observation timing must cover the late error');
         const mainErrors = assertions.find(item => item.id === 'browser-page-errors:receipt');
         const consoleErrors = assertions.find(item => item.id === 'browser-console-errors:receipt');
         const failures = assertions.find(item => item.id === 'browser-request-failures:receipt');
