@@ -28,7 +28,7 @@ node scripts/performance/runtime-observation-smoke.mjs
 
 It requires the repository's Playwright Chromium and tests late main/debugger
 errors, console errors, request failures, delayed debugger navigation, persistent
-background traffic, missing readiness, and navigation failure. It preserves the
+background traffic, missing readiness, and main/debugger navigation failures. It preserves the
 five-second network-idle timeout and debugger's extra one-second wait. No browser
 launch is added to default CI.
 

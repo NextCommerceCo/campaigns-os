@@ -7,7 +7,8 @@ import { runBrowserChecks } from '../../src/qa-browser.mjs';
 const ids = ['next-debug-overlay-host', 'debug-selectors-container', 'debug-currency-selector', 'debug-country-selector', 'debug-locale-selector'];
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  if (url.pathname === '/failed' || url.pathname === '/navigation-failure') {
+  if (url.pathname === '/failed' || url.pathname === '/navigation-failure'
+      || (url.pathname === '/debugger-failure' && url.searchParams.has('debugger'))) {
     req.socket.destroy();
     return;
   }
@@ -30,7 +31,7 @@ const server = createServer(async (req, res) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 try {
   const results = [];
-  for (const name of ['late-errors', 'delayed-debugger', 'pending-traffic', 'missing-readiness', 'navigation-failure']) {
+  for (const name of ['late-errors', 'delayed-debugger', 'pending-traffic', 'missing-readiness', 'navigation-failure', 'debugger-failure']) {
     const started = performance.now();
     const assertions = await runBrowserChecks([{ pages: [{
       page_id: 'receipt', page_type: 'receipt',
@@ -43,6 +44,12 @@ try {
       assert.equal(load.status, 'fail');
       assert.ok(Number.isFinite(load.evidence.observation.failed_after_ms));
       assert.equal(debuggerResult, undefined);
+    } else if (name === 'debugger-failure') {
+      assert.equal(load.status, 'pass');
+      assert.ok(Number.isFinite(load.evidence.observation.page_errors_sampled_after_ms));
+      assert.equal(debuggerResult?.status, 'warn');
+      assert.equal(debuggerResult?.actual, 'debugger navigation failed');
+      assert.ok(Number.isFinite(debuggerResult.evidence.observation.failed_after_ms));
     } else {
       const mainTiming = load.evidence.observation;
       const debugTiming = debuggerResult?.evidence.observation;
