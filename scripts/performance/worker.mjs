@@ -5,13 +5,16 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const root = resolve(import.meta.dirname, '../..');
 const dir = fs.mkdtempSync(join(tmpdir(), 'campaigns-os-perf-'));
 const workload = process.argv[2];
 const originalFetch = globalThis.fetch;
-globalThis.fetch = async () => { throw new Error('Network disabled in performance workload'); };
+globalThis.fetch = async (url) => {
+  throw new Error(`Unexpected fetch during performance workload setup: ${url}`);
+};
 let reads = 0;
 let bytes = 0;
 let requests = 0;
@@ -59,7 +62,9 @@ try {
   fs.readFileSync = function (...args) {
     const result = readFile.apply(this, args);
     // Count workload reads, not dependencies or module loader reads.
-    if (String(args[0]).startsWith(dir + '/')) {
+    const path = args[0] instanceof URL ? fileURLToPath(args[0]) :
+      Buffer.isBuffer(args[0]) ? args[0].toString() : args[0];
+    if (typeof path === 'string' && path.startsWith(dir + '/')) {
       reads++;
       bytes += Buffer.byteLength(result);
     }
@@ -93,6 +98,7 @@ try {
       templateFamily: null, commerceStructureContract: null,
       topologies: [{ funnel_id: 'default', funnel_name: 'Default', weight: 100, pages }],
     });
+    // A changed request count changes the workload: require an explicit new baseline.
     assert.equal(requests, pages.length);
     output = result.verdict.assertions;
   } else if (workload === 'cycle-chain') {
