@@ -105,6 +105,9 @@ describe('FunnelHypothesisLength rule', () => {
     expect(short).toHaveLength(1)
     expect(short[0].data?.length).toBe(5)
     expect(FunnelHypothesisLength.check(padded('  ' + 'x'.repeat(500) + '  '))).toEqual([])
+    const long = FunnelHypothesisLength.check(padded('  ' + 'x'.repeat(501) + '  '))
+    expect(long).toHaveLength(1)
+    expect(long[0].data?.length).toBe(501)
   })
 
   test('single-funnel spec with a present but short hypothesis still fails', () => {
