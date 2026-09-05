@@ -45,6 +45,8 @@ import {
 } from "./page-kit-sdk-version.mjs";
 import {
   captureCommercialClaims,
+  COMMERCIAL_QA_LIMITS,
+  mapConcurrent,
   createPageSourceLoader,
   planCommercialParity,
   runCommercialParity,
@@ -1723,14 +1725,14 @@ async function runResolvedQa(args, resolved) {
     .filter((page) => page?.id !== undefined && page?.id !== null)
     .map((page) => String(page.id)));
   const capturesByPageId = new Map();
-  for (const topology of resolved.topologies) {
-    for (const page of topology.pages) {
-      const captureCommercial = commercialIds.has(String(page.page_id));
-      const pageResult = await runPageChecks(page, args, { sourceLoader, captureCommercial });
-      assertions.push(...pageResult.assertions);
-      if (captureCommercial && pageResult.commercialCapture && !capturesByPageId.has(String(page.page_id))) {
-        capturesByPageId.set(String(page.page_id), pageResult.commercialCapture);
-      }
+  const pages = resolved.topologies.flatMap(topology => topology.pages);
+  const pageResults = await mapConcurrent(pages, COMMERCIAL_QA_LIMITS.concurrency, page =>
+    runPageChecks(page, args, { sourceLoader, captureCommercial: commercialIds.has(String(page.page_id)) }));
+  for (const [index, page] of pages.entries()) {
+    const pageResult = pageResults[index];
+    assertions.push(...pageResult.assertions);
+    if (commercialIds.has(String(page.page_id)) && pageResult.commercialCapture && !capturesByPageId.has(String(page.page_id))) {
+      capturesByPageId.set(String(page.page_id), pageResult.commercialCapture);
     }
   }
   if (args.browser === true) {

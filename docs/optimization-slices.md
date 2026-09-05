@@ -58,3 +58,14 @@ comparison of the current doctor paths, not total system I/O accounting.
 For hosted CI savings, compare Actions step durations on equivalent runners; this
 local compiler baseline cannot establish them. Browser changes require separate
 readiness regression tests and live/local fixture evidence in slice 5.
+
+## Static QA concurrency
+
+The static page loop uses the existing commercial-QA concurrency bound (four).
+Unique URL responses may finish out of order, but retained-HTML admission and
+assertions retain input order, including which page crosses the aggregate budget.
+Already-started requests may complete after that budget is reached; no new request
+starts after the limit is known. Transient in-flight bodies are additional to the
+retained HTML budget and bounded by concurrency times the per-response limit.
+Browser checks, analytics inventory, typed-card orders, and receipt assessment keep
+their existing sequential stage order.

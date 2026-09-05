@@ -213,8 +213,9 @@ export function createPageSourceLoader({
   const cache = new Map();
   let retainedBytes = 0;
   let aggregateLimitReached = false;
+  let previousAdmission = Promise.resolve();
 
-  const load = async (page) => {
+  const fetchPage = async (page) => {
     if (!present(page?.url)) {
       return { ok: false, error_code: "missing_url", error: "No page URL was resolved." };
     }
@@ -243,16 +244,6 @@ export function createPageSourceLoader({
           };
         }
         const html = await readBoundedResponseText(response, { maxBytes, kind: "page_html" });
-        const htmlBytes = new TextEncoder().encode(html).byteLength;
-        if (retainedBytes + htmlBytes > maxAggregateBytes) {
-          aggregateLimitReached = true;
-          return {
-            ok: false,
-            error_code: "page_html_aggregate_limit",
-            error: `Retained page HTML would exceed the ${maxAggregateBytes}-byte run limit.`,
-          };
-        }
-        retainedBytes += htmlBytes;
         return {
           ok: true,
           status: response.status,
@@ -266,6 +257,35 @@ export function createPageSourceLoader({
         error_code: error?.code || (error?.name === "AbortError" ? "page_fetch_timeout" : "page_fetch_error"),
         error: errorMessage(error),
       };
+    }
+  };
+
+  // Requests may finish in any order. Admit their retained bodies in invocation
+  // order so aggregate-budget decisions match the sequential runner exactly.
+  const load = async (page) => {
+    const turn = previousAdmission;
+    let release;
+    previousAdmission = new Promise(resolve => { release = resolve; });
+    try {
+      const source = await fetchPage(page);
+      await turn;
+      if (!present(page?.url) || typeof fetchImpl !== "function") return source;
+      if (aggregateLimitReached || retainedBytes >= maxAggregateBytes) {
+        return { ok: false, error_code: "page_html_aggregate_limit",
+          error: `Retained page HTML reached the ${maxAggregateBytes}-byte run limit.` };
+      }
+      if (!source.ok) return source;
+      const htmlBytes = new TextEncoder().encode(source.html).byteLength;
+      if (retainedBytes + htmlBytes > maxAggregateBytes) {
+        aggregateLimitReached = true;
+        return { ok: false, error_code: "page_html_aggregate_limit",
+          error: `Retained page HTML would exceed the ${maxAggregateBytes}-byte run limit.` };
+      }
+      retainedBytes += htmlBytes;
+      return source;
+    } finally {
+      await turn;
+      release();
     }
   };
 
@@ -336,7 +356,7 @@ async function previewDescriptor(descriptor, { proxyBase, apiKey, fetchImpl, lim
   }
 }
 
-async function mapConcurrent(values, limit, operation) {
+export async function mapConcurrent(values, limit, operation) {
   const results = new Array(values.length);
   let cursor = 0;
   const worker = async () => {
