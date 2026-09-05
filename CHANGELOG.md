@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.19.0+agent.3] - 2026-09-05
+
+### Changed
+
+- CampaignSpec cycle detection reuses fully explored acyclic nodes across starting pages within one check. It preserves cyclic-path traversal, routing precedence, diagnostic order, and freshness between checks.
+
 ## [1.19.0+agent.2] - 2026-09-05
 
 ### Changed

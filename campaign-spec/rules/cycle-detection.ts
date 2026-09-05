@@ -72,10 +72,10 @@ function buildPageMap(refs: PageRef[]): Map<string, PageRef> {
 function findCycleFrom(
   startId: string,
   pageMap: Map<string, PageRef>,
+  fullyExplored: Set<string>,
 ): string[] | null {
   const inPath: string[] = []
   const inPathSet = new Set<string>()
-  const fullyExplored = new Set<string>()
 
   function dfs(id: string): string[] | null {
     if (inPathSet.has(id)) {
@@ -114,6 +114,10 @@ export const CycleDetection: Rule = {
     const refs = collectPages(spec)
     const pageMap = buildPageMap(refs)
     const violations: Violation[] = []
+    // Only nodes whose entire traversal completed without finding a cycle are
+    // memoized. Share these across roots within this check, never across specs.
+    // Cyclic paths keep the existing first-cycle and diagnostic ordering policy.
+    const fullyExplored = new Set<string>()
 
     // Two-level dedup: a cycle reached from different starting positions
     // produces different "entries" (the rotation depends on the starting node)
@@ -126,7 +130,7 @@ export const CycleDetection: Rule = {
       if (!ref.page.id) continue
       if (inReportedCycle.has(ref.page.id)) continue
 
-      const cycle = findCycleFrom(ref.page.id, pageMap)
+      const cycle = findCycleFrom(ref.page.id, pageMap, fullyExplored)
       if (!cycle || cycle.length === 0) continue
 
       // cycle is [entry, ...path, entry] — drop the trailing duplicate for the signature.
