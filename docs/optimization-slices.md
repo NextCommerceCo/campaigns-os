@@ -15,7 +15,9 @@ freshness between invocations. Review findings and measurements belong in each P
 ## Baseline procedure
 
 Use an isolated worktree, prepare dependencies and campaign-spec/dist using the
-repository's runtime recipe, and use the same Node runtime on both revisions.
+repository's [runtime recipe](../contracts/runtime-recipe.campaigns-os-node-v1.json),
+including installing development dependencies (TypeScript) with the recipe's
+`npm ci --ignore-scripts` step. Use the same Node runtime on both revisions.
 Do not run this script as part of trust orientation: it executes toolkit code.
 
 ```
@@ -58,3 +60,18 @@ comparison of the current doctor paths, not total system I/O accounting.
 For hosted CI savings, compare Actions step durations on equivalent runners; this
 local compiler baseline cannot establish them. Browser changes require separate
 readiness regression tests and live/local fixture evidence in slice 5.
+
+## Slice 1 remote review disposition
+
+Kilobot reviewed commit `7b44417` on PR #285. Compiler lookup now resolves the
+installed TypeScript package; missing dependencies and failed builds remain fatal.
+Fixture read counters now handle file URLs as well as string and Buffer paths;
+file descriptors remain outside the counter. Setup fetch failures now include the URL.
+
+The environment-inheritance finding was rejected: an explicit child-process `env`
+replaces the parent environment; it does not merge it. Only PATH is inherited.
+The fixed 16-request assertion and URL allowlist are retained intentionally: extra
+requests change the benchmark workload and require a deliberate new baseline.
+The duplicate duration samples are retained for the existing v1 JSON shape:
+`duration_ms.samples` is the convenient timing series, while `evidence` pairs each
+timing with counters and fingerprints. Dependency preparation is now linked explicitly.
