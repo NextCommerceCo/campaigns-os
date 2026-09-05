@@ -85,3 +85,35 @@ test('the public copy scanner refreshes files between repeated calls', async t =
   validateMarketSensitiveCopy(spec, second, [], derived);
   assert.deepEqual(second, []);
 });
+
+
+test('async continuations cannot retain or reuse an expired snapshot', async t => {
+  const path = fixture(t);
+  writeFileSync(path, 'before');
+  const pending = withHtmlScanSnapshot(async () => {
+    assert.equal(readHtmlScanText(path), 'before');
+    await Promise.resolve();
+    assert.equal(readHtmlScanText(path), 'after');
+    withHtmlScanSnapshot(() => {
+      assert.equal(readHtmlScanText(path), 'after');
+      writeFileSync(path, 'next');
+      assert.equal(readHtmlScanText(path), 'after');
+    }, { reuse: true });
+    assert.equal(readHtmlScanText(path), 'next');
+  });
+  writeFileSync(path, 'after');
+  await pending;
+});
+
+test('queued reads after a throwing invocation observe fresh bytes', async t => {
+  const path = fixture(t);
+  writeFileSync(path, 'before');
+  let pending;
+  assert.throws(() => withHtmlScanSnapshot(() => {
+    assert.equal(readHtmlScanText(path), 'before');
+    pending = Promise.resolve().then(() => readHtmlScanText(path));
+    throw new Error('abort');
+  }), /abort/);
+  writeFileSync(path, 'after');
+  assert.equal(await pending, 'after');
+});
