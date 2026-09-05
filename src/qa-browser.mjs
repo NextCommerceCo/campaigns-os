@@ -436,10 +436,16 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
     });
   });
 
+  // Measurements describe the existing sequence; readiness never shortens it.
+  const observationStarted = performance.now();
+  const observation = { policy: "legacy-sequential-v1" };
   try {
     const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
     const response = await browserPage.goto(page.url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    observation.navigation_ms = elapsedMilliseconds(observationStarted);
+    const settleStarted = performance.now();
     await browserPage.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+    observation.settle_ms = elapsedMilliseconds(settleStarted);
     const status = response?.status() ?? null;
     const title = await browserPage.title().catch(() => "");
     const bodyPresent = await browserPage.locator("body").count().then((count) => count > 0).catch(() => false);
@@ -452,9 +458,10 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
       severity: status && status >= 400 ? SEVERITY.BLOCKER : undefined,
       expected: "browser-rendered page",
       actual: status ? `HTTP ${status}` : "loaded",
-      evidence: { title, body_present: bodyPresent },
+      evidence: { title, body_present: bodyPresent, observation },
     }));
 
+    const inspectionStarted = performance.now();
     assertions.push(...await primaryCtaVisualAssertions(browserPage, page));
 
     if (page.page_type === "upsell") {
@@ -468,15 +475,21 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
     assertions.push(...await templatePlaceholderTextAssertions(browserPage, page, options));
     assertions.push(...await templateDemoAssetAssertions(browserPage, page, options));
     assertions.push(...await pricingVisibilityAssertions(browserPage, page, options));
+    observation.inspection_ms = elapsedMilliseconds(inspectionStarted);
+    const debuggerStarted = performance.now();
     assertions.push(...await sdkDebuggerAssertions(context, page, args));
+    observation.debugger_ms = elapsedMilliseconds(debuggerStarted);
+    observation.page_errors_sampled_after_ms = elapsedMilliseconds(observationStarted);
 
     if (pageErrors.length) {
       assertions.push(runtimeIssueAssertion(page, "browser-page-errors", pageErrors));
     }
     const actionableConsoleErrors = await actionableRuntimeConsoleErrors(browserPage, consoleErrors);
+    observation.console_errors_sampled_after_ms = elapsedMilliseconds(observationStarted);
     if (actionableConsoleErrors.length) {
       assertions.push(runtimeIssueAssertion(page, "browser-console-errors", actionableConsoleErrors));
     }
+    observation.failed_requests_sampled_after_ms = elapsedMilliseconds(observationStarted);
     if (failedRequests.length) {
       assertions.push(assertion({
         id: `browser-request-failures:${page.page_id}`,
@@ -498,7 +511,7 @@ async function runPageBrowserChecks(context, page, args, options = {}) {
       severity: SEVERITY.BLOCKER,
       expected: "browser-rendered page",
       actual: null,
-      evidence: { transport_error: { code: "browser_error", message: error instanceof Error ? error.message : String(error) } },
+      evidence: { transport_error: { code: "browser_error", message: error instanceof Error ? error.message : String(error) }, observation: { ...observation, failed_after_ms: elapsedMilliseconds(observationStarted) } },
     }));
   } finally {
     await browserPage.close().catch(() => {});
@@ -546,12 +559,19 @@ async function sdkDebuggerAssertions(context, page, args) {
   });
   debugPage.on("pageerror", (error) => pageErrors.push(trim(error.message)));
 
+  const observationStarted = performance.now();
+  const observation = { policy: "networkidle-plus-1000ms-v1" };
   try {
     const timeoutMs = numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS);
     const url = withQueryParam(page.url, "debugger", "true");
     const response = await debugPage.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    observation.navigation_ms = elapsedMilliseconds(observationStarted);
+    const settleStarted = performance.now();
     await debugPage.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+    observation.settle_ms = elapsedMilliseconds(settleStarted);
+    const postSettleStarted = performance.now();
     await debugPage.waitForTimeout(1000).catch(() => {});
+    observation.post_settle_ms = elapsedMilliseconds(postSettleStarted);
     const evidence = await debugPage.evaluate(() => ({
       url: location.href,
       displayReady: document.documentElement.classList.contains("next-display-ready"),
@@ -580,6 +600,7 @@ async function sdkDebuggerAssertions(context, page, args) {
       && evidence.countrySelector
       && evidence.localeSelector;
 
+    observation.errors_sampled_after_ms = elapsedMilliseconds(observationStarted);
     return [assertion({
       id: `browser-sdk-debugger:${page.page_id}`,
       family: "browser-runtime",
@@ -590,6 +611,7 @@ async function sdkDebuggerAssertions(context, page, args) {
       actual: ok ? "debugger overlay and selector controls mounted" : "debugger overlay incomplete",
       evidence: {
         ...evidence,
+        observation,
         http_status: status,
         console_errors: consoleErrors.slice(0, 10),
         page_errors: pageErrors.slice(0, 10),
@@ -604,11 +626,15 @@ async function sdkDebuggerAssertions(context, page, args) {
       severity: SEVERITY.WARN,
       expected: "Campaign Cart SDK debugger mode mounts on SDK-owned runtime pages",
       actual: "debugger navigation failed",
-      evidence: { transport_error: { code: "browser_error", message: error instanceof Error ? error.message : String(error) } },
+      evidence: { transport_error: { code: "browser_error", message: error instanceof Error ? error.message : String(error) }, observation: { ...observation, failed_after_ms: elapsedMilliseconds(observationStarted) } },
     })];
   } finally {
     await debugPage.close().catch(() => {});
   }
+}
+
+function elapsedMilliseconds(start) {
+  return Math.round(performance.now() - start);
 }
 
 function sdkDebuggerEligible(page) {
