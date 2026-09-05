@@ -1027,6 +1027,27 @@
         }
       ],
       "entry_sha256": "43cdba902a1168a206c2e6c3a86f12085ec4a8b28efc283d8b12cbac8f41015a"
+    },
+    {
+      "id": "RL-0017",
+      "sequence": 17,
+      "date": "2026-09-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.19.0+agent.3",
+      "changelog_sha256": "528eb94fa0548ab144e5cc6f5f3082b9d9108db67abe3aa290a6c58dfd848e66",
+      "agent_impact": "Consumers rebuild the generated CampaignSpec runtime to receive reduced work on acyclic graphs. Validation semantics are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/cycle-detection.ts",
+          "surface_entry": null,
+          "summary": "Memoizes completed acyclic traversal within each validation call while retaining cycle diagnostics."
+        }
+      ],
+      "entry_sha256": "9a173bab4f5401a0ac7131e65bed30eb3d84d07b4748279fee332fb7a224e5c8"
     }
   ]
 }

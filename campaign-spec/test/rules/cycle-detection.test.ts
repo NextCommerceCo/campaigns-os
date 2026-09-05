@@ -228,4 +228,42 @@ describe('CycleDetection rule', () => {
     const violations = CycleDetection.check(normalize(spec))
     expect(violations).toEqual([])
   })
+
+  test('acyclic chain traversal grows linearly and cache does not survive a check', () => {
+    function chain(count: number) {
+      let reads = 0
+      const pages = Array.from({ length: count }, (_, index) => ({
+        id: `p${index}`, type: 'landing' as const,
+        get next_page() { reads++; return index + 1 < count ? `p${index + 1}` : undefined },
+      }))
+      const spec: CampaignSpec = { schema_version: '4.3', funnels: [{ id: 'f', pages }] }
+      expect(CycleDetection.check(spec)).toEqual([])
+      return reads
+    }
+    const small = chain(100)
+    const large = chain(200)
+    // Doubling the chain must not more than double routing reads.
+    expect(large <= small * 2).toBe(true)
+
+    const spec: CampaignSpec = { schema_version: '4.3', funnels: [{ id: 'f', pages: [
+      { id: 'a', type: 'landing', next_page: 'b' },
+      { id: 'b', type: 'landing' },
+    ] }] }
+    expect(CycleDetection.check(spec)).toEqual([])
+    spec.funnels[0].pages![1].next_page = 'a'
+    expect(CycleDetection.check(spec)[0].data?.cycle).toEqual(['a', 'b', 'a'])
+  })
+
+  test('an explored acyclic branch cannot hide a later decline cycle', () => {
+    const spec: CampaignSpec = { schema_version: '4.3', funnels: [{ id: 'f', pages: [
+      { id: 'safe', type: 'landing', next_page: 'receipt' },
+      { id: 'receipt', type: 'thankyou' },
+      { id: 'offer', type: 'upsell', on_accept: 'safe', on_decline: 'loop' },
+      { id: 'loop', type: 'landing', next_page: 'offer' },
+    ] }] }
+    const violations = CycleDetection.check(spec)
+    expect(violations).toHaveLength(1)
+    expect(violations[0].data?.cycle).toEqual(['offer', 'loop', 'offer'])
+    expect(violations[0].path).toBe('/funnels/0/pages/2')
+  })
 })
