@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.19.0+agent.6] - 2026-09-05
+
+### Changed
+
+- FunnelHypothesisLength measures both bounds on the trimmed hypothesis, so padding can neither rescue a short value nor sink a long one. Absence detection already trimmed; this aligns the length the rule reports with the value the Map Builder saves (campaigns-os#294 follow-up).
+
 ## [1.19.0+agent.5] - 2026-09-05
 
 ### Changed
