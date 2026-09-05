@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.19.0+agent.5] - 2026-09-05
+
+### Changed
+
+- CampaignSpec `funnels[].hypothesis` is required only when a spec has two or more funnels. A single-funnel spec may omit it; when the field is present the 10 to 500 character bound still applies at any funnel count. The schema already typed the field as optional, so only the FunnelHypothesisLength rule moves. A one-path map no longer needs placeholder text to pass the doctor (#294).
+
 ## [1.19.0+agent.4] - 2026-09-05
 
 ### Changed

@@ -1075,6 +1075,27 @@
         }
       ],
       "entry_sha256": "af820efe90bd7028b48ed2470af9a50305b9c174d801182cd9893fb4487ae306"
+    },
+    {
+      "id": "RL-0019",
+      "sequence": 19,
+      "date": "2026-09-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.19.0+agent.5",
+      "changelog_sha256": "b6558001aa5dcdb44e1d9241221e228c49c3db4950e73768709006f2b8edb547",
+      "agent_impact": "Rebuild the generated runtime. A single-funnel CampaignSpec without a hypothesis now passes validateSpec and the doctor; specs that passed before still pass. Consumers that mirror the rule (the Map Builder validator) may drop their own single-funnel hypothesis requirement.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/funnel-hypothesis-length.ts",
+          "surface_entry": null,
+          "summary": "Requires a funnel hypothesis only when the spec has two or more funnels; a present hypothesis keeps the 10 to 500 character bound at any funnel count."
+        }
+      ],
+      "entry_sha256": "fcd83a14463f92ffb6d1e3b507dfb60670972b3df600d0415ddcdbbd04acae2c"
     }
   ]
 }

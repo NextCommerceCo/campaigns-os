@@ -1,0 +1,48 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-single-funnel-no-hypothesis-map",
+    "source": "campaigns-os agent fixture: a one-path map owes no hypothesis (#294)"
+  },
+  "campaign": {
+    "ref_id": 294,
+    "id": "fixture-single-funnel-no-hypothesis",
+    "name": "Fixture Single Funnel No Hypothesis",
+    "slug": "fixture-single-funnel-no-hypothesis",
+    "currency": "USD",
+    "language": "en",
+    "payment_env_key": "fixture_payment_env_key",
+    "tracking": {
+      "status": "not_configured"
+    }
+  },
+  "global_config": {
+    "sdk_version": "0.4.37"
+  },
+  "shipping_methods": [
+    {
+      "key": "standard",
+      "ref_id": 20,
+      "name": "Standard Shipping",
+      "price": "4.95"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "default",
+      "name": "Default",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "landing",
+          "type": "landing",
+          "next_page": "thankyou"
+        },
+        {
+          "id": "thankyou",
+          "type": "thankyou"
+        }
+      ]
+    }
+  ]
+}
