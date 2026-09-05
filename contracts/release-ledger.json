@@ -1006,6 +1006,27 @@
         }
       ],
       "entry_sha256": "40e5ba2465d47fd040b513300ec890c0baa956680b5cf9cc0fe2b3bde86a6dbf"
+    },
+    {
+      "id": "RL-0016",
+      "sequence": 16,
+      "date": "2026-09-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.19.0+agent.2",
+      "changelog_sha256": "070c8a9a05bcbf587764463fdaf2756f15e744033bfc60744784ba5f09dd3e37",
+      "agent_impact": "None. Command behavior and quoting remain unchanged; non-QA commands load less code at startup.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "Loads the QA handler on demand instead of during every CLI startup."
+        }
+      ],
+      "entry_sha256": "43cdba902a1168a206c2e6c3a86f12085ec4a8b28efc283d8b12cbac8f41015a"
     }
   ]
 }
