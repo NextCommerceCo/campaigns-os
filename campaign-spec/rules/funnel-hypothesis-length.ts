@@ -6,9 +6,12 @@
  *
  * A hypothesis states what one path is testing against another, so it is
  * required only when the spec has two or more funnels. A single-funnel spec
- * may omit it (#294); when the field is present the length bound still
- * applies regardless of funnel count. The schema already types the field as
- * optional; this rule owns the conditional requirement.
+ * may omit it (#294). Absent means null, undefined, or a string that is
+ * empty after trimming: editors clear a text field to "", not to null, and
+ * an optional field should not fail on the way an editor spells "nothing".
+ * When a real value is present the length bound still applies regardless of
+ * funnel count. The schema already types the field as optional; this rule
+ * owns the conditional requirement.
  *
  * Message text inherited verbatim from the pre-#110 validator at migration
  * time — substrings ("at least 10 chars", "at most 500 chars") are matched
@@ -33,8 +36,10 @@ export const FunnelHypothesisLength: Rule = {
 
     spec.funnels.forEach((funnel, idx) => {
       const fid = funnel.id || '(unnamed)'
-      if (funnel.hypothesis == null && !hypothesisRequired) return
-      const hyp = funnel.hypothesis == null ? '' : String(funnel.hypothesis)
+      const raw = funnel.hypothesis == null ? '' : String(funnel.hypothesis)
+      const absent = raw.trim() === ''
+      if (absent && !hypothesisRequired) return
+      const hyp = absent ? '' : raw
       const path = `/funnels/${idx}/hypothesis`
 
       if (hyp.length < MIN_LENGTH) {

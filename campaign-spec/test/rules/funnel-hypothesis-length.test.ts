@@ -78,6 +78,24 @@ describe('FunnelHypothesisLength rule', () => {
     expect(FunnelHypothesisLength.check(normalize(spec))).toEqual([])
   })
 
+  test('single-funnel spec treats an empty or whitespace hypothesis as absent', () => {
+    for (const hypothesis of ['', '   ']) {
+      const spec: CampaignSpec = {
+        schema_version: '4.3',
+        funnels: [
+          {
+            id: 'cleared',
+            name: 'Cleared',
+            hypothesis,
+            weight: 100,
+            pages: [{ id: 'p', type: 'thankyou' }],
+          },
+        ],
+      }
+      expect(FunnelHypothesisLength.check(normalize(spec))).toEqual([])
+    }
+  })
+
   test('single-funnel spec with a present but short hypothesis still fails', () => {
     const fixture = fixtureByName('hypothesis-too-short')
     expect(normalize(fixture.spec).funnels).toHaveLength(1)
