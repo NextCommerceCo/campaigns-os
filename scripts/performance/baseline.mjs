@@ -5,12 +5,15 @@ import { createHash } from 'node:crypto';
 import { cpus, platform, arch, tmpdir } from 'node:os';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 
 const root = resolve(import.meta.dirname, '../..');
+const compiler = createRequire(import.meta.url).resolve('typescript/bin/tsc');
 const samples = Number(process.argv[2] ?? 5);
 assert.ok(Number.isInteger(samples) && samples >= 1 && samples <= 30, 'samples must be 1..30');
 const sandbox = mkdtempSync(join(tmpdir(), 'campaigns-os-perf-env-'));
-// Do not inherit ambient campaigns credentials, sessions, or telemetry settings.
+// execFileSync replaces (does not merge) the parent environment with this allowlist.
+// Only PATH is inherited; campaign credentials, sessions, and Node/npm settings are absent.
 const env = {
   PATH: process.env.PATH, HOME: sandbox, TMPDIR: sandbox,
   CAMPAIGNS_OS_TELEMETRY: 'off', CI: 'true',
@@ -25,7 +28,7 @@ function summarize(values) {
 }
 try {
   // Rebuild before any import-based workload so results cannot use stale dist.
-  run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'campaign-spec/tsconfig.build.json']);
+  run(process.execPath, [compiler, '-p', 'campaign-spec/tsconfig.build.json']);
   const result = {
     schema: 'campaigns-os-performance-baseline/v1',
     measured_at: new Date().toISOString(),
@@ -44,7 +47,7 @@ try {
         assert.match(output, /campaigns-os/);
         rows.push({ duration_ms: performance.now() - start });
       } else if (name === 'build-spec') {
-        run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'campaign-spec/tsconfig.build.json']);
+        run(process.execPath, [compiler, '-p', 'campaign-spec/tsconfig.build.json']);
         rows.push({ duration_ms: performance.now() - start });
       } else {
         rows.push(JSON.parse(run(process.execPath, ['scripts/performance/worker.mjs', name])));
