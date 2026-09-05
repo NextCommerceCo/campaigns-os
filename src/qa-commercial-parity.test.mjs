@@ -738,3 +738,78 @@ test("preflight overflow issues keep the aggregate-before-scenario order", async
   ]);
   assert.equal(result.commercial.status, "incomplete");
 });
+
+test('concurrent HTML admission preserves page-order budget and duplicate URL identity', async () => {
+  const releases = new Map();
+  const calls = [];
+  const loader = createPageSourceLoader({
+    limits: { max_html_bytes: 8, max_aggregate_html_bytes: 5 },
+    fetchImpl: url => {
+      calls.push(url);
+      return new Promise(resolve => releases.set(url, () => resolve(new Response(url.endsWith('/three') ? 'x' : 'abc'))));
+    },
+  });
+  const first = loader({ url: 'https://example.test/one' });
+  const second = loader({ url: 'https://example.test/two' });
+  const third = loader({ url: 'https://example.test/three' });
+  assert.equal(loader({ url: 'https://example.test/one' }), first);
+  releases.get('https://example.test/three')();
+  releases.get('https://example.test/two')();
+  releases.get('https://example.test/one')();
+  const results = await Promise.all([first, second, third]);
+  assert.equal(results[0].html, 'abc');
+  assert.equal(results[1].error_code, 'page_html_aggregate_limit');
+  assert.equal(results[2].error_code, 'page_html_aggregate_limit');
+  assert.equal(calls.length, 3);
+  assert.equal((await loader({ url: 'https://example.test/four' })).error_code, 'page_html_aggregate_limit');
+  assert.equal(calls.length, 3);
+});
+
+test('a failed earlier request releases ordered admission for later pages', async () => {
+  const loader = createPageSourceLoader({ fetchImpl: async url => {
+    if (url.endsWith('/one')) throw new Error('unavailable');
+    return new Response('ok');
+  } });
+  const [first, second] = await Promise.all([
+    loader({ url: 'https://example.test/one' }), loader({ url: 'https://example.test/two' }),
+  ]);
+  assert.equal(first.error_code, 'page_fetch_error');
+  assert.equal(second.html, 'ok');
+});
+
+test('bounded mapper retains input order and caps in-flight operations', { timeout: 2000 }, async () => {
+  const { mapConcurrent } = await import('./qa-commercial-parity.mjs');
+  let active = 0, peak = 0;
+  const output = await mapConcurrent([0, 1, 2, 3, 4, 5, 6], 4, async value => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, (7 - value) * 2));
+    active--;
+    return value;
+  });
+  assert.deepEqual(output, [0, 1, 2, 3, 4, 5, 6]);
+  assert.equal(peak, 4);
+});
+
+test('timed-out predecessor releases admission and cannot stall later HTML', { timeout: 2000 }, async () => {
+  const loader = createPageSourceLoader({
+    limits: { request_timeout_ms: 10 },
+    fetchImpl: (url, { signal }) => url.endsWith('/one')
+      ? new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Timed out', 'AbortError')), { once: true }))
+      : Promise.resolve(new Response('ok')),
+  });
+  const results = await Promise.all([loader({ url: 'https://example.test/one' }), loader({ url: 'https://example.test/two' })]);
+  // Timeout classification is unchanged here; this regression proves queue release.
+  assert.equal(results[0].ok, false);
+  assert.equal(results[1].html, 'ok');
+});
+
+test('exact-budget admission masks a later HTTP failure just as sequential loading does', async () => {
+  const loader = createPageSourceLoader({
+    limits: { max_aggregate_html_bytes: 3 },
+    fetchImpl: async url => url.endsWith('/one') ? new Response('abc') : new Response('failure', { status: 500 }),
+  });
+  const results = await Promise.all([loader({ url: 'https://example.test/one' }), loader({ url: 'https://example.test/two' })]);
+  assert.equal(results[0].html, 'abc');
+  assert.equal(results[1].error_code, 'page_html_aggregate_limit');
+});

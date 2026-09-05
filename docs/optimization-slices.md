@@ -75,3 +75,14 @@ requests change the benchmark workload and require a deliberate new baseline.
 The duplicate duration samples are retained for the existing v1 JSON shape:
 `duration_ms.samples` is the convenient timing series, while `evidence` pairs each
 timing with counters and fingerprints. Dependency preparation is now linked explicitly.
+
+## Static QA concurrency
+
+The static page loop uses the existing commercial-QA concurrency bound (four).
+Unique URL responses may finish out of order, but retained-HTML admission and
+assertions retain input order, including which page crosses the aggregate budget.
+Already-started requests may complete after that budget is reached; no new request
+starts after the limit is known. Transient in-flight bodies are additional to the
+retained HTML budget and bounded by concurrency times the per-response limit.
+Browser checks, analytics inventory, typed-card orders, and receipt assessment keep
+their existing sequential stage order.
