@@ -86,3 +86,24 @@ starts after the limit is known. Transient in-flight bodies are additional to th
 retained HTML budget and bounded by concurrency times the per-response limit.
 Browser checks, analytics inventory, typed-card orders, and receipt assessment keep
 their existing sequential stage order.
+
+## Browser settling: optimization held after adversarial review
+
+The attempted debugger-only readiness shortcut reduced local run time but also
+removed late main-page errors from the verdict. Main-page listeners remain active
+while `runPageBrowserChecks` awaits `sdkDebuggerAssertions`; debugger settling is
+therefore part of the runtime-error observation window, not only UI readiness.
+
+A local receipt page with an immediate ready debugger and a main-page error after
+one second reproduced the regression: the existing runner reported the error in
+about 2.27 seconds, while the candidate returned in about 0.75 seconds without it.
+The candidate was withdrawn. Checkout and analytics waits are also unchanged.
+
+Run `node scripts/performance/runtime-observation-smoke.mjs` with the repository's
+Playwright Chromium installed. This loopback-only regression requires delayed
+errors from both the main and debugger pages to remain in QA evidence. It fails
+if the rejected readiness shortcut is reintroduced.
+
+Before optimizing these waits, define independent runtime-error observation
+windows and their evidence requirements. A faster readiness check alone is not
+sufficient proof that browser QA coverage has been preserved.
