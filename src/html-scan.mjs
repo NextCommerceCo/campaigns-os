@@ -9,13 +9,24 @@ const snapshots = new AsyncLocalStorage();
 const MAX_RETAINED_BYTES = 16 * 1024 * 1024;
 const MAX_RETAINED_FILES = 4096;
 export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
-  if (reuse && snapshots.getStore()) return operation();
-  return snapshots.run({ files: new Map(), retainedBytes: 0 }, operation);
+  if (reuse && snapshots.getStore()?.active) return operation();
+  const snapshot = { files: new Map(), retainedBytes: 0, active: true };
+  return snapshots.run(snapshot, () => {
+    try {
+      return operation();
+    } finally {
+      // AsyncLocalStorage propagates to queued callbacks too. Expire the store
+      // at synchronous return, even if a future caller returns a Promise.
+      snapshot.active = false;
+      snapshot.files.clear();
+      snapshot.retainedBytes = 0;
+    }
+  });
 }
 
 function file(path) {
   const snapshot = snapshots.getStore();
-  if (!snapshot) return { bytes: readFileSync(path) };
+  if (!snapshot?.active) return { bytes: readFileSync(path) };
   const key = resolve(path);
   if (snapshot.files.has(key)) return snapshot.files.get(key);
   const entry = { bytes: readFileSync(path) };
@@ -34,6 +45,8 @@ export function readHtmlScanText(path) {
   return entry.text ??= entry.bytes.toString('utf8');
 }
 
+// Byte-preserving generic digest; only an active read-only scan scope caches it.
+// Callers that write artifacts must hash outside that scope to observe new bytes.
 export function htmlScanDigest(path) {
   const entry = file(path);
   return entry.digest ??= createHash('sha256').update(entry.bytes).digest('hex');
