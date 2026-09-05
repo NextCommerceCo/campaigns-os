@@ -799,8 +799,7 @@ test('timed-out predecessor releases admission and cannot stall later HTML', { t
       : Promise.resolve(new Response('ok')),
   });
   const results = await Promise.all([loader({ url: 'https://example.test/one' }), loader({ url: 'https://example.test/two' })]);
-  // Timeout classification is unchanged here; this regression proves queue release.
-  assert.equal(results[0].ok, false);
+  assert.equal(results[0].error_code, 'page_fetch_timeout');
   assert.equal(results[1].html, 'ok');
 });
 
@@ -812,4 +811,28 @@ test('exact-budget admission masks a later HTTP failure just as sequential loadi
   const results = await Promise.all([loader({ url: 'https://example.test/one' }), loader({ url: 'https://example.test/two' })]);
   assert.equal(results[0].html, 'abc');
   assert.equal(results[1].error_code, 'page_html_aggregate_limit');
+});
+
+
+test('price preview aborts use a stable timeout code in commercial evidence', { timeout: 2000 }, async () => {
+  const spec = rawRecurringSpec();
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: 'https://proxy.example.test' },
+    captures: [captureCommercialClaims({ page_id: 'page_mt104ehn_11' }, '<main></main>')],
+    limits: { request_timeout_ms: 10 },
+    fetchImpl: (url, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }),
+  });
+  assert.equal(result.commercial.status, 'incomplete');
+  assert.deepEqual(result.commercial.issues.map(issue => issue.code), ['price_preview_timeout']);
+});
+
+test('page aborts during body streaming use timeout codes, while size errors retain their code', async () => {
+  const loader = createPageSourceLoader({ fetchImpl: async () => new Response(new ReadableStream({
+    start(controller) { controller.error(new DOMException('Aborted body', 'AbortError')); },
+  })) });
+  assert.equal((await loader({ url: 'https://example.test/body' })).error_code, 'page_fetch_timeout');
+  const oversized = createPageSourceLoader({ limits: { max_html_bytes: 1 }, fetchImpl: async () => new Response('large') });
+  assert.equal((await oversized({ url: 'https://example.test/large' })).error_code, 'page_html_response_too_large');
 });
