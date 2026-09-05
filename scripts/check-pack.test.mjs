@@ -1,3 +1,5 @@
+// Opt-in integration test: copies tracked files and invokes real npm pack/tsc.
+// Keep outside default check/CI; run explicitly when changing packaging boundaries.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -36,6 +38,17 @@ test('standalone packing rebuilds, pipeline packing reuses, and missing dist fai
   const pipeline = run(['--skip-prepare']);
   assert.equal(pipeline.status, 0, pipeline.stderr);
   assert.equal(readFileSync(join(dir, 'build-count.txt'), 'utf8'), recorded);
+  for (const hook of ['prepack', 'postpack']) {
+    pkg.scripts[hook] = 'node ./record-build.mjs';
+    writeFileSync(pkgPath, JSON.stringify(pkg));
+    const guarded = run(['--skip-prepare']);
+    assert.notEqual(guarded.status, 0);
+    assert.match(guarded.stderr, /cannot omit packaging hooks/);
+    assert.ok(guarded.stderr.includes(hook));
+    assert.equal(readFileSync(join(dir, 'build-count.txt'), 'utf8'), recorded);
+    delete pkg.scripts[hook];
+  }
+  writeFileSync(pkgPath, JSON.stringify(pkg));
   rmSync(join(dir, 'campaign-spec/dist'), { recursive: true });
   const missing = run(['--skip-prepare']);
   assert.notEqual(missing.status, 0);

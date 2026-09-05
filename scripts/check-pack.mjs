@@ -26,6 +26,13 @@ if (args.length && (args.length !== 1 || args[0] !== "--skip-prepare")) {
 // The full check pipeline already compiled once. Standalone check:pack keeps
 // npm's prepare lifecycle, so it still verifies a fresh build from source.
 const skipPrepare = args[0] === "--skip-prepare";
+if (skipPrepare) {
+  // --ignore-scripts suppresses all pack hooks, not just prepare. Fail closed
+  // if future packaging starts depending on a hook this fast path would omit.
+  const scripts = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts ?? {};
+  const omittedHooks = ["prepack", "postpack"].filter(name => scripts[name]);
+  if (omittedHooks.length) fail(`--skip-prepare cannot omit packaging hooks: ${omittedHooks.join(", ")}; use standalone check:pack`);
+}
 
 const work = mkdtempSync(join(tmpdir(), "campaigns-os-pack-"));
 let tarball;
