@@ -1,3 +1,5 @@
+import { shellToken } from "./shell-token.mjs";
+export { shellToken } from "./shell-token.mjs";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
@@ -2710,11 +2712,6 @@ function isLocalFilePath(value) {
   return typeof value === "string" && value.trim() && !isAbsoluteHttpUrl(value);
 }
 
-export function shellToken(value) {
-  const text = String(value || "");
-  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(text)) return text;
-  return `'${text.replace(/'/g, "'\\''")}'`;
-}
 
 function countAssertions(assertions) {
   const counts = {};

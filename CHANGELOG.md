@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.19.0+agent.2] - 2026-09-05
+
+### Changed
+
+- CLI dispatch loads the QA implementation only for QA commands. Shell argument quoting remains shared, with the existing QA-module export preserved. Help, doctor, and other commands avoid loading the QA browser stack.
+
 ## [1.19.0+agent.1] - 2026-09-05
 
 ### Changed

@@ -20,7 +20,7 @@ import {
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runQaCli, shellToken } from "./qa-node.mjs";
+import { shellToken } from "./shell-token.mjs";
 import {
   appendFinding,
   buildFinding,
@@ -771,6 +771,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "qa") {
+    const { runQaCli } = await import("./qa-node.mjs");
     const result = await runQaCli(args);
     if (sessionHolder) sessionHolder.qaResult = result;
     return;
