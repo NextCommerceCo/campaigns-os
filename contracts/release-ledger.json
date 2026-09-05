@@ -1096,6 +1096,27 @@
         }
       ],
       "entry_sha256": "fcd83a14463f92ffb6d1e3b507dfb60670972b3df600d0415ddcdbbd04acae2c"
+    },
+    {
+      "id": "RL-0020",
+      "sequence": 20,
+      "date": "2026-09-05",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.19.0+agent.6",
+      "changelog_sha256": "20bbf190b1e4ebafebcd3f56f75058bd1dd498014b0af2287d0ab783e128449b",
+      "agent_impact": "Rebuild the generated runtime. A whitespace-padded hypothesis is now measured after trimming for both bounds; a padded short value that passed before now fails, and a padded long one that failed now passes.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/funnel-hypothesis-length.ts",
+          "surface_entry": null,
+          "summary": "Measures the 10 to 500 character bound on the trimmed hypothesis value."
+        }
+      ],
+      "entry_sha256": "45204d66424b119b9c44a034981d4ce559c202965fc7bca12a7e23d42c573123"
     }
   ]
 }

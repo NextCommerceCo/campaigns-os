@@ -96,6 +96,20 @@ describe('FunnelHypothesisLength rule', () => {
     }
   })
 
+  test('both bounds measure the trimmed value', () => {
+    const padded = (hypothesis: string) => normalize({
+      schema_version: '4.3',
+      funnels: [{ id: 'p', name: 'P', hypothesis, weight: 100, pages: [{ id: 'p', type: 'thankyou' }] }],
+    } as CampaignSpec)
+    const short = FunnelHypothesisLength.check(padded('   short   '))
+    expect(short).toHaveLength(1)
+    expect(short[0].data?.length).toBe(5)
+    expect(FunnelHypothesisLength.check(padded('  ' + 'x'.repeat(500) + '  '))).toEqual([])
+    const long = FunnelHypothesisLength.check(padded('  ' + 'x'.repeat(501) + '  '))
+    expect(long).toHaveLength(1)
+    expect(long[0].data?.length).toBe(501)
+  })
+
   test('single-funnel spec with a present but short hypothesis still fails', () => {
     const fixture = fixtureByName('hypothesis-too-short')
     expect(normalize(fixture.spec).funnels).toHaveLength(1)
