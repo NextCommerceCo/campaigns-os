@@ -62,21 +62,51 @@ describe('FunnelHypothesisLength rule', () => {
     expect(FunnelHypothesisLength.check(normalize(spec))).toEqual([])
   })
 
-  test('treats null hypothesis as length 0', () => {
+  test('single-funnel spec may omit the hypothesis (#294)', () => {
     const spec: CampaignSpec = {
       schema_version: '4.3',
       funnels: [
         {
-          id: 'empty',
-          name: 'Empty',
-          // hypothesis omitted
+          id: 'only',
+          name: 'Only',
+          // hypothesis omitted: one path has nothing to compare against
           weight: 100,
           pages: [{ id: 'p', type: 'thankyou' }],
         },
       ],
     }
+    expect(FunnelHypothesisLength.check(normalize(spec))).toEqual([])
+  })
+
+  test('single-funnel spec with a present but short hypothesis still fails', () => {
+    const fixture = fixtureByName('hypothesis-too-short')
+    expect(normalize(fixture.spec).funnels).toHaveLength(1)
+    expect(FunnelHypothesisLength.check(normalize(fixture.spec))).toHaveLength(1)
+  })
+
+  test('treats null hypothesis as length 0 once a spec has two funnels', () => {
+    const spec: CampaignSpec = {
+      schema_version: '4.3',
+      funnels: [
+        {
+          id: 'control',
+          name: 'Control',
+          hypothesis: 'Baseline path with the current landing page.',
+          weight: 50,
+          pages: [{ id: 'p', type: 'thankyou' }],
+        },
+        {
+          id: 'empty',
+          name: 'Empty',
+          // hypothesis omitted
+          weight: 50,
+          pages: [{ id: 'q', type: 'thankyou' }],
+        },
+      ],
+    }
     const violations = FunnelHypothesisLength.check(normalize(spec))
     expect(violations).toHaveLength(1)
+    expect(violations[0].path).toBe('/funnels/1/hypothesis')
     expect(violations[0].data?.length).toBe(0)
   })
 })

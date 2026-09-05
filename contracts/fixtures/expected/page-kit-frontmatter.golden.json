@@ -156,5 +156,12 @@
   },
   "shop-three-step-dynamic-shipping.json::default::receipt": {
     "page_type": "receipt"
+  },
+  "single-funnel-no-hypothesis.json::default::landing": {
+    "page_type": "product",
+    "next_url": "/campaign/receipt/"
+  },
+  "single-funnel-no-hypothesis.json::default::thankyou": {
+    "page_type": "receipt"
   }
 }
