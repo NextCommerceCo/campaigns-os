@@ -153,7 +153,7 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       // store, so it is bounded by construction — one per path, never a loop.
       let result = firstAttempt;
       let retried = false;
-      if (!firstAttempt.ok && !firstAttempt.manual_review) {
+      if (!firstAttempt.ok) {
         retried = true;
         const retryAttempt = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
         orders.push(retryAttempt.order);
