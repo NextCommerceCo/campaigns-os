@@ -34,6 +34,13 @@ npm run campaigns-os -- start \
   --template-family olympus
 ```
 
+If that first run stops at intake with `DESIGN_SOURCE_PACKAGE_NOT_READY`, the
+source material arrived without desktop/mobile screenshot proof. Supply it
+through `pages[].screenshots[]` in
+`<source-root>/.campaigns-os/source-html-manifest.json` and follow
+[Clearing `DESIGN_SOURCE_PACKAGE_NOT_READY`](docs/design-source-package.md#clearing-design_source_package_not_ready),
+which also gives the recovery sequence for the package a blocked run left behind.
+
 The command writes these target-repo artifacts:
 
 - `campaign-runtime.build.json`

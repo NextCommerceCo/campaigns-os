@@ -158,8 +158,89 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "description": "Optional sha256 of the source HTML file at manifest generation time."
+          },
+          "screenshots": {
+            "$ref": "#/$defs/sourceScreenshotList",
+            "description": "Operator-authored source screenshot proof for this page, consumed by prepare-build when it synthesizes the Design Source Package. A renderable primary-design page clears DESIGN_SOURCE_PACKAGE_NOT_READY with one available desktop source_screenshot record and one available mobile source_screenshot record, unless an accepted screenshot-absence Source Gap or an approved waiver recorded in the package covers it. The runtime manifest validator does not read this key; the producer normalizes it and is more tolerant than this declaration (it lowercases viewport and drops or nulls malformed values rather than failing). See docs/design-source-package.md, section 'Clearing DESIGN_SOURCE_PACKAGE_NOT_READY'."
+          },
+          "screenshot_refs": {
+            "$ref": "#/$defs/sourceScreenshotList",
+            "description": "Alias for screenshots; read by the same producer channel."
+          },
+          "source_screenshot_refs": {
+            "$ref": "#/$defs/sourceScreenshotList",
+            "description": "Alias for screenshots; read by the same producer channel."
           }
         }
+      }
+    }
+  },
+  "$defs": {
+    "sourceScreenshotList": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "description": "Id of a visual record already registered for this package. An unresolved id contributes no proof."
+          },
+          { "$ref": "#/$defs/sourceScreenshot" }
+        ]
+      }
+    },
+    "sourceScreenshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "One source screenshot record. Only an available source_screenshot record with a recognized viewport counts toward readiness. A record without a recognized viewport, or with a kind outside the enum, is dropped by the producer and counts as nothing; an unavailable record is retained as evidence of an absence and satisfies no viewport. Field aliases the producer also accepts: viewport_key for viewport; artifact_path or file_path for path; canonical_url for url; artifact_hash or hash for sha256; a nested dimensions object for width/height; capture_timestamp for captured_at; reason for unavailable_reason.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional stable record id. When omitted the producer derives one from the page surface, viewport, and a content digest."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["source_screenshot", "unavailable_render"],
+          "description": "Defaults to source_screenshot, the only kind that counts as proof. unavailable_render is accepted and retained but never satisfies a viewport. Any other kind is dropped for this channel rather than promoted to source proof."
+        },
+        "viewport": {
+          "type": "string",
+          "enum": ["desktop", "mobile", "tablet"],
+          "description": "Required for the record to count as proof; desktop and mobile are the readiness-required viewports and tablet is optional in v0."
+        },
+        "availability": {
+          "type": "string",
+          "enum": ["available", "unavailable"],
+          "description": "Defaults to available when path or url is present. An unavailable record requires unavailable_reason."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Screenshot file path relative to the source HTML root, not to the .campaigns-os directory. The producer records this path; it does not open the file."
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Screenshot URL, when the capture is hosted rather than local."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^(sha256:)?[0-9a-f]{64}$",
+          "description": "Optional sha256 of the screenshot bytes, bare or sha256:-prefixed. The producer records it; it does not recompute or verify it."
+        },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "device_profile": { "type": "string", "minLength": 1 },
+        "scale_factor": { "type": "number", "exclusiveMinimum": 0 },
+        "browser": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": "string", "minLength": 1 },
+        "unavailable_reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why no capture exists. Required when availability is unavailable."
+        },
+        "notes": { "type": ["string", "null"] }
       }
     }
   }

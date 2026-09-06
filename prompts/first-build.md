@@ -17,10 +17,11 @@ Then:
 4. Use `sharedFrontmatterVocabulary`.
 5. Replace demo package, shipping, voucher, payment, tracking, footer, and SEO values from CampaignSpec/API.
 6. If source HTML is AI-generated/exported standalone HTML, convert it to page-kit-ready markup first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes.
-7. Preserve landing/presell source design when it is real source intent.
-8. For checkout/upsell/downsell/receipt, use starter-template commerce surfaces as SDK contract references while preserving required runtime controls.
-9. Copy starter-template families atomically with dependent pages, `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/`; do not copy only checkout/receipt pages.
-10. Run build and SDK/template lint checks.
-11. Record evidence and hand off to polish.
+7. If intake blocked with `DESIGN_SOURCE_PACKAGE_NOT_READY`, supply desktop and mobile source screenshot proof through `pages[].screenshots[]` in `<source-root>/.campaigns-os/source-html-manifest.json`, then follow the recovery in [Clearing `DESIGN_SOURCE_PACKAGE_NOT_READY`](../docs/design-source-package.md#clearing-design_source_package_not_ready).
+8. Preserve landing/presell source design when it is real source intent.
+9. For checkout/upsell/downsell/receipt, use starter-template commerce surfaces as SDK contract references while preserving required runtime controls.
+10. Copy starter-template families atomically with dependent pages, `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/`; do not copy only checkout/receipt pages.
+11. Run build and SDK/template lint checks.
+12. Record evidence and hand off to polish.
 
 Do not say this is full automated readiness. Build is only one gate before polish, deploy, and QA.

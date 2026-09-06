@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.19.0",
+  "surface_version": "1.20.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -78,7 +78,7 @@
       "sha256": "41ff370de4395149781d7e8c4ad6d7d4e2f896eb2030944399d36f1237726a20"
     },
     "schemas/source-html-manifest.v0.schema.json": {
-      "sha256": "b5afa4772715c1ea553ba94ab2008b23838876cc6b05e831da7d4a13f55c66b6"
+      "sha256": "c3f9ebd521f45b0406d7769c0c652cdfc7b2be8f0551d3bdd2027ce2f5d1aa2c"
     }
   },
   "named": [
