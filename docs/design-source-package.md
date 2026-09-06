@@ -348,6 +348,193 @@ This behavior is the implemented v0 compatibility boundary. It does not promise
 that a separate future workflow command will generate, repair, approve, or
 silently refresh the package.
 
+## Clearing `DESIGN_SOURCE_PACKAGE_NOT_READY`
+
+`prepare-build` and `start` block at intake when a renderable page has no
+qualifying primary-design claim with linked `desktop` and `mobile`
+`source_screenshot` proof. Doctor reports one
+`DESIGN_SOURCE_PACKAGE_NOT_READY` error per blocking reason; the blocked
+`capture-<surface>-<viewport>` Source TODOs are themselves blocking reasons, so a
+four-page funnel with no proof reports twelve. `next` routes back to
+`collect-inputs`. Nothing is wrong with the run: the package is coherent and
+durable, and it is telling you that the source material arrived without visual
+proof.
+
+The input channel that supplies that proof is the source-html manifest at
+`<source-root>/.campaigns-os/source-html-manifest.json`. Each `pages[]` entry may
+carry a `screenshots[]` array; `prepare-build` reads it, alongside the
+equivalent `screenshot_refs` and `source_screenshot_refs` keys, and normalizes
+each record into the html_funnel contribution's `screenshot_refs`. This is the
+only operator-authored channel that seeds source-screenshot proof (a producer's
+`section_exports[].images` is the other, producer-authored path); the package
+itself is not hand-edited, and there is no capture command.
+
+The manifest is read only when the whole file is a valid `source-html-manifest/v0`
+document: `schema_version` set to `"source-html-manifest/v0"` and a `pages[]`
+array whose entries carry the active CampaignSpec `page_id` and exactly one of
+the source-root-relative `path` or a `skip_reason` for a page that has no source
+HTML by design (schema: `schemas/source-html-manifest.v0.schema.json`;
+consumer mechanics: [Source HTML Manifest Auto-Population](build-packet.md#source-html-manifest-auto-population)).
+A manifest that fails validation is reported as a doctor *warning*, not an error:
+`prepare-build` falls back to filesystem matching and never reads `screenshots[]`,
+so the run blocks again with nothing else changed. `node scripts/reference-ai-producer.mjs`
+emits a valid envelope (page ids, paths, `source_hash`) from a folder of HTML
+files; add the `screenshots[]` records to its output, or start from the complete
+example below. (`context.source.manifest_draft` in the build context is populated
+only when filename matching was ambiguous, and is `null` otherwise.)
+
+### The record shape
+
+One manifest page entry with its proof, inside the envelope the validator requires
+(the mobile record is elided):
+
+```json
+{
+  "schema_version": "source-html-manifest/v0",
+  "pages": [
+    {
+      "page_id": "landing",
+      "path": "landing.html",
+      "source_hash": "<64 lowercase hex>",
+      "screenshots": [
+        {
+          "id": "source-landing-desktop",
+          "kind": "source_screenshot",
+          "viewport": "desktop",
+          "availability": "available",
+          "path": ".campaigns-os/screenshots/landing-desktop.png",
+          "sha256": "<64 lowercase hex>",
+          "width": 1440,
+          "height": 900,
+          "device_profile": "desktop-1440x900",
+          "browser": "playwright-chromium/151.0.7922.34",
+          "captured_at": "2026-09-06T01:39:57.250Z"
+        },
+        { "viewport": "mobile", "path": ".campaigns-os/screenshots/landing-mobile.png" }
+      ]
+    }
+  ]
+}
+```
+
+Three fields decide whether a record counts toward the gate:
+
+- `viewport` must be `desktop`, `mobile`, or `tablet`. A record without a
+  recognized viewport is an asset, not proof, and is dropped.
+- `availability` must be `available`, which means the record carries a `path` or
+  a `url`. An `unavailable` record needs an `unavailable_reason`; it documents
+  an absence and never satisfies a viewport.
+- `kind` must be `source_screenshot`, which is the default when the field is
+  omitted and the only kind that counts as proof. `unavailable_render` is
+  accepted by the channel and retained, but it records an absence and never
+  satisfies a viewport. Any other kind — `render_reference`, `export_reference` —
+  is dropped for this channel rather than promoted.
+
+You need one qualifying `desktop` record and one qualifying `mobile` record per
+renderable page. `tablet` is optional in v0. A record that fails any of the three
+tests produces no diagnostic: it is registered (or dropped) silently and the page
+stays blocked, so check the three fields first when a rerun blocks again.
+
+Everything else in the record is metadata that is retained but not required:
+`id` (otherwise derived from the page surface, viewport, and a content digest),
+`sha256` (64 lowercase hex, bare or `sha256:`-prefixed), `width`/`height` (positive integers, or a nested `dimensions` object),
+`device_profile`, `scale_factor`, `browser`, `captured_at`, and `notes`. The
+`source_ref_id` link that readiness requires is back-filled for you from the
+page's own HTML source reference; you do not write it in the manifest.
+
+Paths follow the manifest's own convention: relative to the source root passed
+to `prepare-build`, not to the `.campaigns-os` directory. Keeping the PNGs
+inside the source root — `.campaigns-os/screenshots/` is a good home — keeps the
+manifest portable.
+
+Editing the manifest changes its byte hash, which is part of the package's
+provenance. Expect the recovery below to be required whenever you add or change
+`screenshots[]`.
+
+### What counts as source proof
+
+A `source_screenshot` attests what the merchant's design actually looks like.
+That means a **standalone HTML document**: a complete page that renders on its
+own in a browser — its own `<html>`, its own stylesheets and assets, no build
+step. Render it at a desktop and a mobile viewport and the capture is honest
+evidence of the design you are asked to preserve.
+
+A **prepared page-kit fragment** is not that. A file that carries page-kit
+frontmatter and a bare body fragment (the shape of the quick-start fixtures
+under `examples/source-html/`) has no standalone appearance; screenshotting it
+captures frontmatter text and an unstyled fragment. It is a faithful capture of
+a file and it is not proof of a design.
+
+The gate cannot tell the two apart — see the negative controls below — so this
+distinction is yours to hold. When the source is fragments, or when the design
+exists only inside a tool you cannot render, the honest record is an
+`unavailable_render` with an `unavailable_reason`, which documents the absence
+in the package but **does not clear the gate**. What would clear it honestly is
+an accepted screenshot-absence Source Gap or an approved waiver, described under
+[Gaps, TODOs, waivers, and readiness](#gaps-todos-waivers-and-readiness); in
+v0 neither has an operator-authored input channel (the manifest carries no gap
+key, `checkpoint waive` registers no design-source gate, and the package is not
+hand-edited). A source that cannot be captured honestly therefore stays blocked
+at intake in v0. Hold there and escalate; do not attest a capture of something
+that was never a page.
+
+### Recovery after a blocked first run
+
+A blocked run still emits the package, and `prepare-build` never refreshes a
+package it did not just create. So a first run that blocked leaves a package
+whose provenance names the *old* manifest, and simply rerunning with a new
+manifest fails closed:
+
+```
+campaigns-os: Design Source Package at <target>/.campaign-runtime/input/design-source-package.json
+is invalid, stale, or contradictory: [design_source_package.current_html_funnel_material_stale] … ;
+[design_source_package.current_source_material_stale] … "…/source-html-manifest.json" is missing or
+has stale kind, role, or byte hash. …
+```
+
+That refusal is the explicit reconciliation the ownership boundary requires. The
+sanctioned sequence, from the source-preparation side:
+
+```bash
+# 1. capture the proof and write it into the manifest
+#    <source-root>/.campaigns-os/source-html-manifest.json  →  pages[].screenshots[]
+
+# 2. remove the package the blocked run emitted, so prepare-build re-synthesizes it
+rm <page-kit-repository>/.campaign-runtime/input/design-source-package.json
+
+# 3. rerun intake, from the Campaigns OS checkout (npm run resolves package.json
+#    from the current directory; run from the source directory it fails with a
+#    bare npm ENOENT)
+npm run campaigns-os -- start \
+  --spec <campaign-spec.json> \
+  --source <prepared-html-directory> \
+  --target <page-kit-repository> \
+  --template-family <family>
+```
+
+Step 2 is only ever correct for a package emitted by a blocked run that no
+downstream stage has consumed. Once Build or Polish has bound its evidence to a
+package fingerprint, deleting it invalidates that evidence; reconcile through
+the stage-freshness lanes instead.
+
+After the rerun, `readiness.status` is `ready` (or `ready_with_gaps` /
+`ready_with_waivers` when accepted gaps or active waivers exist), `blocking_reasons`
+is empty, the `capture-*` TODOs are gone, and doctor advances to assembly.
+
+### Negative controls: what the gate does not check
+
+The package producer reads no files. It never opens the PNG at `path` and never
+recomputes `sha256`; `sha256` is only checked for its spelling (64 lowercase hex,
+bare or `sha256:`-prefixed) when present. A record pointing at a file that does not exist, and a record whose
+`sha256` does not match its file, both clear the gate exactly as a real capture
+does.
+
+`screenshots[]` is therefore an **attestation**, not a verified artifact. The
+toolkit takes your word that the capture is real, current, and of the thing it
+names. Treat a wrong or absent file as what it is — a false claim about the
+merchant's design that will surface as a mismatch during Polish, when there is
+no honest evidence to compare against.
+
 ## Lifecycle ownership and freshness
 
 Prepare owns source normalization and the three package references. It records

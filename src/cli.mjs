@@ -89,6 +89,7 @@ import {
 import {
   readSourceHtmlManifestFile,
   SOURCE_HASH_PATTERN,
+  SOURCE_HTML_MANIFEST_REL_PATH,
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "./source-html-manifest.mjs";
 import { crawlSourceAssetPaths } from "./source-asset-crawl.mjs";
@@ -1684,12 +1685,30 @@ function prepareDesignSourcePackage({
   };
 }
 
+// The readiness rule states what is missing; the operator also needs the input
+// channel that supplies it. Source screenshot proof is seeded only by the
+// source-html manifest's pages[].screenshots[], which is documented nowhere in
+// the blocking reason itself.
+const DESIGN_SOURCE_PACKAGE_REMEDY = [
+  `Supply the missing source proof through pages[].screenshots[] in ${SOURCE_HTML_MANIFEST_REL_PATH}`,
+  "under the source root (one available desktop record and one available mobile record per renderable page);",
+  `then, if no downstream stage has consumed it, remove the Design Source Package this blocked run emitted at ${DESIGN_SOURCE_PACKAGE_REL_PATH}`,
+  "and rerun prepare-build/start.",
+  'See "Clearing DESIGN_SOURCE_PACKAGE_NOT_READY" in docs/design-source-package.md.',
+].join(" ");
+// Only the two reason shapes that screenshot proof resolves get the remedy:
+// the missing-proof claim and its blocked source capture TODOs
+// (capture-<surface>-<viewport>). The template-reference capture TODO
+// (capture-<surface>-template-<viewport>), coverage, gap, divergence, and
+// exception reasons keep their own wording.
+const DESIGN_SOURCE_PACKAGE_REMEDY_REASON = /source_screenshot proof\.$|^Source TODO "capture-(?![^"]*-template-)[^"]*" is /;
+
 function designSourcePackageBlockers(prepared) {
   if (!["blocked", "pending"].includes(prepared.value?.readiness?.status)) return [];
   return (prepared.value.readiness.blocking_reasons || []).map((message, index) => ({
     code: "DESIGN_SOURCE_PACKAGE_NOT_READY",
     stage: "prepare_build",
-    message,
+    message: DESIGN_SOURCE_PACKAGE_REMEDY_REASON.test(message) ? `${message} ${DESIGN_SOURCE_PACKAGE_REMEDY}` : message,
     detail: {
       blocker_index: index,
       readiness_status: prepared.value.readiness.status,

@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.20.0] - 2026-09-06
+
+### Added
+
+- The source-html manifest schema declares `pages[].screenshots[]` (with the `screenshot_refs` and `source_screenshot_refs` aliases), the operator channel that supplies desktop and mobile source-screenshot proof to the Design Source Package and clears `DESIGN_SOURCE_PACKAGE_NOT_READY`. `prepare-build` already read it; no schema, doc, README, prompt, skill, or CLI message named it, so a first run that blocked at intake had no documented way forward. `docs/design-source-package.md` gains the operator section "Clearing `DESIGN_SOURCE_PACKAGE_NOT_READY`" (manifest envelope, record shape and the fields the gate reads, what counts as source proof, recovery after a blocked first run, and what the gate does not verify), and the README Quick Start, `prompts/first-build.md`, and the `next-campaigns-os` skill point at it from the intake step. The runtime manifest validator does not read `screenshots[]`, so no manifest is newly refused at runtime; against the published schema the record fields are now typed, and the producer stays more tolerant than the schema (it drops or nulls malformed values instead of failing).
+
+### Changed
+
+- The doctor `DESIGN_SOURCE_PACKAGE_NOT_READY` blocker names the remedy on the two reasons screenshot proof resolves (the missing-proof claim and its blocked `capture-*` TODOs): the manifest `pages[].screenshots[]` channel, the package to remove before rerunning when no downstream stage has consumed it, and the documentation section. Gate evaluation, readiness rules, waiver semantics, and the source matcher are unchanged.
+
 ## [1.19.0+agent.6] - 2026-09-05
 
 ### Changed

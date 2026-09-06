@@ -1117,6 +1117,69 @@
         }
       ],
       "entry_sha256": "45204d66424b119b9c44a034981d4ce559c202965fc7bca12a7e23d42c573123"
+    },
+    {
+      "id": "RL-0021",
+      "sequence": 21,
+      "date": "2026-09-06",
+      "kind": "release",
+      "surface_version": "1.20.0",
+      "changelog_section": "1.20.0",
+      "changelog_sha256": "79b7168793bff684d0b2a2a47694cfbc86da3dc16d72df69c5fada33ed872587",
+      "agent_impact": "Re-pin schemas/source-html-manifest.v0.schema.json. A producer may now declare pages[].screenshots[] against a published schema instead of an undocumented convention, and an operator blocked at intake by DESIGN_SOURCE_PACKAGE_NOT_READY has a documented input channel and recovery. The runtime manifest validator does not read the key, so no manifest is newly refused at runtime; against the published schema the screenshot record fields are now typed. The gate itself is unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/source-html-manifest.v0.schema.json",
+          "surface_entry": "schemas/source-html-manifest.v0.schema.json",
+          "summary": "Declares the already-consumed pages[].screenshots[] source-screenshot records, plus the screenshot_refs and source_screenshot_refs aliases. The runtime manifest validator does not read the key, so no manifest is newly refused at runtime; the producer stays more tolerant than the typed declaration."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Adds the operator section \"Clearing DESIGN_SOURCE_PACKAGE_NOT_READY\": the screenshot record shape, what counts as source proof, the recovery for a package a blocked run left behind, and the fact that the producer verifies neither the screenshot file nor its hash."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "The DESIGN_SOURCE_PACKAGE_NOT_READY blocker message names the manifest screenshots channel, the package to remove before rerunning, and the documentation section on the two reason shapes screenshot proof resolves; readiness evaluation is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "The intake step points at the documented source-screenshot channel and recovery for a blocked first run; version 1.0.6 to 1.0.7."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Records next-campaigns-os version 1.0.7."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances surface_version to 1.20.0 and re-pins the source-html manifest schema hash."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: records the supported surface at generation time as 1.20.0. No contract value changed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: records the supported surface at generation time as 1.20.0. The runtime recipe kind, revision, and every generated value are unchanged."
+        }
+      ],
+      "entry_sha256": "f5a16cd59feff3da1ceb0e13eedf6cc8fdbd6f4fe1ef27b7666e25bce10f112a"
     }
   ]
 }
