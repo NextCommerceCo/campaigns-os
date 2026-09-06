@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-qa
-version: 1.1.0
+version: 1.2.0
 description: Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
@@ -44,6 +44,7 @@ Rules:
 - Pricing visibility is a blocker: an upsell/downsell offer with zero visible price rows fails QA. Pricing surfaces render via template pricing modes (`full_price`, `compare_at_current`, `unit_price_plus_total`, `savings_badge_amount`, `code_discounted_post_checkout`), never via campaign CSS `display:none` on price wrappers.
 - Exit-pop widgets are governed offer surfaces. If the selected family ships or copies a default exit-pop and CampaignSpec has no checkout `exit_intent` or `promo_code_input`, QA/doctor must report it as residue; strip it or wire the mapped offer/code through the SDK coupon path.
 - Typed-card runs emit a per-step ladder (`[qa:test-order] step=... status=...`) with bounded per-step and per-path timeouts, and always produce a verdict — a hung or crashed path is a blocked verdict with the step ladder as evidence, not a silent exit. Read the last completed step before re-running.
+- A typed-card path that fails is **re-run once** before it is recorded, so a transient miss is not reported as a defect in the build. This places a second real order on the store: the `--max-test-orders` cap bounds planned paths, so the worst case is twice that many orders, and both attempts appear in `test_orders[]`. The assertion's `evidence.retry` names the first attempt's error and ref id whichever way the retry went — a path that passed on retry is never indistinguishable from one that passed first time. A failure that reproduces still blocks.
 - Analytics correctness is two-phase in the same run: the campaign-root visit inventories declared providers/tags only, then the one canonical typed-card run proves Purchase from signals emitted by each topology-recognized final receipt document after the full `--analytics-settle` window. It never places a second analytics order, and checkout/upsell Purchase signals cannot satisfy a silent receipt.
 - A missing or topology-unrecognized receipt is `MANUAL_REVIEW`/`WARN`; a recognized receipt with no dataLayer, outbound Meta, or outbound GA4 Purchase is `FAIL`/`BLOCKER`. Capture, unreadable-page, and settle-deadline errors on a recognized receipt are explicit non-waivable blockers. The `analytics-correctness:purchase-fires` waiver applies only to a genuine recognized-receipt/no-signal failure.
 - Keep QA in a tight sequence: install the Playwright browser, resolve topology, run browser QA plus typed-card proof with `--test-order common` by default. Test orders need no permission step. Pause only for missing inputs, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty.

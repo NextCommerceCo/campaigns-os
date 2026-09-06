@@ -259,7 +259,25 @@ recording `false`. The policy flag lives at
 `report.build_brief.artifact.template_residue_policy.block_template_favicon`;
 when it is absent or false, only the leak-text scan applies.
 
-### 3.2 `template_residue_review.starter_favicon`
+### 3.2 Payment-chrome assets: remove or rename, never edit in place
+
+The assets listed under `default_residue.payment_chrome.assets` in the family's
+brand contract are keyed by QA on the **referenced basename**. Editing one in
+place — stripping the PayPal or Klarna marks from inside a shared strip such as
+`upsell-payment-logos.svg` — leaves the basename referenced, so the page still
+reads as carrying chrome it no longer has.
+
+Delete the asset, or author a replacement under a new name and repoint the
+reference. Recording the edit in polish evidence does not change how QA keys it.
+
+QA fetches a referenced `.svg` and, when the served bytes no longer mention the
+method, downgrades that assertion from a blocker to `manual_review` — the
+verdict lands on `ready_with_exceptions` and no autonomous repair is dispatched.
+That is a safety net for a mistake already made, not a supported workflow: the
+downgrade only applies to assets it can fetch and read, so a raster, an
+unreachable URL, or a mark carried as bare path data still blocks.
+
+### 3.3 `template_residue_review.starter_favicon`
 
 Same certification shape and same leak scan as §3.1: a certifying record
 (`byte_match: true` / accepted `status`) is authoritative; otherwise the text
