@@ -320,11 +320,18 @@ test("anything we cannot read into stays residue", async () => {
   assert.deepEqual(unfetchable.residue, ["upsell-payment-logos.svg"]);
 
   // A raster tells us nothing by its bytes, so it is never cleared by this path.
-  const raster = await partitionReferencedAssets(fakePage({}), {
-    html: '<img src="images/paypal.png">',
-    pageUrl, referencedAssets: ["paypal.png"], method: "paypal",
-  });
+  // The fake serves a readable body that does not mention the method: without
+  // the textual-asset guard this would be cleared, so the guard is what the
+  // assertion is actually testing.
+  const raster = await partitionReferencedAssets(
+    fakePage({ "https://example.test/c/upsell/images/paypal.png": "\u0089PNG not-really-binary" }),
+    {
+      html: '<img src="images/paypal.png">',
+      pageUrl, referencedAssets: ["paypal.png"], method: "paypal",
+    }
+  );
   assert.deepEqual(raster.residue, ["paypal.png"]);
+  assert.deepEqual(raster.edited, []);
 
   // Named in prose rather than in a src: the basename still resolves to a URL,
   // the fetch then finds nothing there, and the fail-safe answer is residue.
