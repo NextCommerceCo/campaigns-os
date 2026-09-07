@@ -1930,7 +1930,7 @@ function referencedAssetUrl(html, basename, pageUrl) {
 // the ones that no longer do. Anything we could not read — not textual, no
 // resolvable URL, a failed or non-OK fetch — stays residue: an asset we cannot
 // see into must never be cleared by our inability to see into it.
-async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method, cache }) {
+async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method, cache, assetBounds }) {
   const residue = [];
   const edited = [];
   for (const basename of referencedAssets) {
@@ -1950,7 +1950,7 @@ async function partitionReferencedAssets(browserPage, { html, pageUrl, reference
     // a cache may overlap, and a value cache would let both miss and both fetch.
     let pending = cache instanceof Map ? cache.get(url) : undefined;
     if (pending === undefined) {
-      pending = fetchAssetText(browserPage, url);
+      pending = fetchAssetText(browserPage, url, assetBounds);
       if (cache instanceof Map) cache.set(url, pending);
     }
     const text = await pending;
@@ -1964,16 +1964,82 @@ async function partitionReferencedAssets(browserPage, { html, pageUrl, reference
   return { residue, edited };
 }
 
-async function fetchAssetText(browserPage, url) {
-  return browserPage.evaluate(async (target) => {
-    try {
-      const response = await fetch(target);
-      if (!response.ok) return null;
-      return await response.text();
-    } catch {
-      return null;
+// Bounds on one referenced-asset read. The assets this reads are payment-logo
+// strips and similar text assets (SVG, CSS, JS) named by the template brand
+// contract; anything past a couple of MiB is not one of those, and an asset
+// that takes longer than the page's own navigation budget to arrive is not
+// something QA should wait on. Neither bound makes an asset pass: a read that
+// hits one returns null, and null is residue (see partitionReferencedAssets).
+const ASSET_FETCH_TIMEOUT_MS = 10000;
+const ASSET_FETCH_MAX_BYTES = 2 * 1024 * 1024;
+
+// Runs INSIDE the page: Playwright serialises this function's source, so it may
+// use only browser globals and its one argument — no module-scope references.
+// Node has the same globals (fetch, AbortController, ReadableStream readers,
+// TextDecoder), which is how qa-template-residue.test.mjs runs it against a
+// stubbed fetch without a browser.
+//
+// One deadline covers headers AND body: the abort signal is on the fetch, and
+// every body read is raced against the same signal, so a server that answers
+// the headers and then stalls the body cannot hold the read open. The byte
+// ceiling is enforced on what actually arrives, chunk by chunk — Content-Length
+// is honoured when it already exceeds the cap, but a missing or understated
+// header changes nothing. Reader and timer are released on every exit.
+async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const aborted = new Promise((_, reject) => {
+    controller.signal.addEventListener("abort", () => reject(new Error("asset read timed out")), { once: true });
+  });
+  // Nothing awaits `aborted` unless a read is in flight; keep the rejection from
+  // surfacing as unhandled when the fetch finishes first.
+  aborted.catch(() => {});
+  let reader = null;
+  try {
+    const response = await Promise.race([fetch(target, { signal: controller.signal }), aborted]);
+    if (!response || !response.ok) return null;
+    const declared = Number(response.headers?.get?.("content-length"));
+    if (Number.isFinite(declared) && declared > maxBytes) return null;
+    // A body that cannot be streamed cannot be bounded: Response.text() takes
+    // no signal and allocates the whole response before the cap could be
+    // checked. Refuse it; unreadable is residue, never a pass.
+    if (!response.body || typeof response.body.getReader !== "function") return null;
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let received = 0;
+    let text = "";
+    for (;;) {
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      if (done) break;
+      received += value?.byteLength || 0;
+      if (received > maxBytes) return null;
+      text += decoder.decode(value, { stream: true });
     }
-  }, url).catch(() => null);
+    return text + decoder.decode();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    // Not awaited: the read is over, and a slow or misbehaving cancel() must
+    // not hold this function past the deadline. The lock releases when the
+    // cancel settles.
+    if (reader) {
+      try { reader.cancel().catch(() => {}); } catch { /* already errored or closed */ }
+    }
+  }
+}
+
+// The page-side read above is bounded, but the evaluate() round-trip that
+// carries it is not the page's to bound: a page that is hung, closed, or
+// navigating can leave evaluate() pending past any in-page timer. So the
+// whole call is raced once more, with a little headroom for the in-page
+// deadline to fire first and report normally.
+async function fetchAssetText(browserPage, url, { timeoutMs = ASSET_FETCH_TIMEOUT_MS, maxBytes = ASSET_FETCH_MAX_BYTES } = {}) {
+  const inPage = Promise.resolve()
+    .then(() => browserPage.evaluate(readBoundedAssetText, { target: url, timeoutMs, maxBytes }))
+    .then((text) => (typeof text === "string" ? text : null))
+    .catch(() => null);
+  return settleDiagnosticWithin(inPage, timeoutMs + 1000, null);
 }
 
 function paymentChromeResidueAssertion({
@@ -5166,6 +5232,10 @@ export const __qaBrowserTestHooks = Object.freeze({
   referencedAssetUrl,
   assetTextCarriesMethod,
   partitionReferencedAssets,
+  fetchAssetText,
+  readBoundedAssetText,
+  ASSET_FETCH_TIMEOUT_MS,
+  ASSET_FETCH_MAX_BYTES,
   paymentChromeResidueAssertion,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,

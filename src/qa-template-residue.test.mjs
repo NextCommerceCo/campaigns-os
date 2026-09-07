@@ -11,6 +11,10 @@ const {
   referencedAssetUrl,
   assetTextCarriesMethod,
   partitionReferencedAssets,
+  fetchAssetText,
+  readBoundedAssetText,
+  ASSET_FETCH_TIMEOUT_MS,
+  ASSET_FETCH_MAX_BYTES,
   paymentChromeResidueAssertion,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
@@ -263,10 +267,11 @@ test("demo-asset residue passes when no demo assets survive", () => {
 const UNTOUCHED_STRIP = '<svg><g id="paypal-logo"><path d="M0 0"/></g><g id="visa"><path d="M1 1"/></g></svg>';
 const EDITED_STRIP = '<svg><g id="visa"><path d="M1 1"/></g><g id="mastercard"><path d="M2 2"/></g></svg>';
 
+// evaluate() receives the bounded-read argument object; the URL is its target.
 function fakePage(bodyByUrl) {
   return {
-    evaluate: async (fn, url) => {
-      const body = bodyByUrl[url];
+    evaluate: async (fn, arg) => {
+      const body = bodyByUrl[arg.target];
       if (body === undefined) return null;
       if (body instanceof Error) throw body;
       return body;
@@ -321,9 +326,9 @@ test("one fetch per URL per page, not one per method", () => {
   const assetUrl = "https://example.test/c/upsell/images/upsell-payment-logos.svg";
   let fetches = 0;
   const counting = {
-    evaluate: async (fn, url) => {
+    evaluate: async (fn, arg) => {
       fetches += 1;
-      return url === assetUrl ? EDITED_STRIP : null;
+      return arg.target === assetUrl ? EDITED_STRIP : null;
     },
   };
   const cache = new Map();
@@ -452,4 +457,160 @@ test("an unedited template strip still blocks, and visible chrome outranks an ed
     severity: "blocker",
   });
   assert.equal(visible.status, "fail");
+});
+
+// --- Bounded asset reads (review finding A3, 2026-09-07) ---
+// fetchAssetText ran fetch()+text() in the page with no deadline and no size
+// ceiling of its own; the browser navigation timeout does not cover it. Every
+// case below runs the same page-side function under Node with fetch stubbed.
+
+function withFetch(stub, run) {
+  const original = globalThis.fetch;
+  globalThis.fetch = stub;
+  return Promise.resolve().then(run).finally(() => { globalThis.fetch = original; });
+}
+
+function streamOf(chunks, { stall = false } = {}) {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    pull(controller) {
+      if (chunks.length > 0) {
+        const chunk = chunks.shift();
+        controller.enqueue(chunk instanceof Uint8Array ? chunk : encoder.encode(chunk));
+        return undefined;
+      }
+      if (stall) return new Promise(() => {});
+      controller.close();
+      return undefined;
+    },
+  });
+}
+
+function responseWith(body, { ok = true, contentLength } = {}) {
+  const headers = new Headers();
+  if (contentLength !== undefined) headers.set("content-length", String(contentLength));
+  return { ok, headers, body, text: async () => "unused" };
+}
+
+const bounded = (overrides = {}) => readBoundedAssetText({ target: "https://example.test/a.svg", timeoutMs: 50, maxBytes: 64, ...overrides });
+
+test("bounded read: a normal small asset comes back whole, edited or unedited", async () => {
+  await withFetch(async () => responseWith(streamOf([EDITED_STRIP.slice(0, 20), EDITED_STRIP.slice(20)])), async () => {
+    assert.equal(await bounded({ maxBytes: 1024 }), EDITED_STRIP);
+  });
+  await withFetch(async () => responseWith(streamOf([UNTOUCHED_STRIP])), async () => {
+    assert.equal(await bounded({ maxBytes: 1024 }), UNTOUCHED_STRIP);
+  });
+});
+
+test("bounded read: headers that never arrive time out to null and release the timer", async () => {
+  let abortedSignal = null;
+  const stub = (_url, { signal }) => new Promise((_, reject) => {
+    abortedSignal = signal;
+    signal.addEventListener("abort", () => reject(new Error("aborted")));
+  });
+  const started = Date.now();
+  await withFetch(stub, async () => {
+    assert.equal(await bounded(), null);
+  });
+  assert.ok(abortedSignal?.aborted, "the fetch was aborted by the deadline");
+  assert.ok(Date.now() - started < 1000, "returned on the deadline, not much later");
+});
+
+test("bounded read: a body that stalls after the first chunk times out to null", async () => {
+  await withFetch(async () => responseWith(streamOf(["<svg>"], { stall: true })), async () => {
+    const started = Date.now();
+    assert.equal(await bounded(), null);
+    assert.ok(Date.now() - started < 1000);
+  });
+});
+
+test("bounded read: a fetch that does not honour abort is still bounded by the raced read", async () => {
+  // A fetch stub that ignores the signal entirely and never settles.
+  await withFetch(() => new Promise(() => {}), async () => {
+    assert.equal(await bounded(), null);
+  });
+});
+
+test("bounded read: Content-Length past the cap is refused without reading the body", async () => {
+  let readerTaken = false;
+  const body = { getReader() { readerTaken = true; return { read: () => new Promise(() => {}), cancel: async () => {} }; } };
+  await withFetch(async () => responseWith(body, { contentLength: 65 }), async () => {
+    assert.equal(await bounded(), null);
+  });
+  assert.equal(readerTaken, false);
+});
+
+test("bounded read: a missing or understated Content-Length does not let an oversized body through", async () => {
+  const big = "x".repeat(65);
+  await withFetch(async () => responseWith(streamOf([big.slice(0, 30), big.slice(30)])), async () => {
+    assert.equal(await bounded(), null);
+  });
+  await withFetch(async () => responseWith(streamOf([big.slice(0, 30), big.slice(30)]), { contentLength: 10 }), async () => {
+    assert.equal(await bounded(), null);
+  });
+});
+
+test("bounded read: one oversized chunk is refused on arrival", async () => {
+  await withFetch(async () => responseWith(streamOf([new Uint8Array(65)])), async () => {
+    assert.equal(await bounded(), null);
+  });
+});
+
+test("bounded read: a non-OK response and a network error are both null", async () => {
+  await withFetch(async () => responseWith(streamOf(["<svg/>"]), { ok: false }), async () => {
+    assert.equal(await bounded(), null);
+  });
+  await withFetch(async () => { throw new TypeError("network down"); }, async () => {
+    assert.equal(await bounded(), null);
+  });
+});
+
+test("bounded read: a response without a streamable body is refused, never read through text()", async () => {
+  // Response.text() takes no signal and allocates the whole body before any cap
+  // could be checked, so a body that cannot be streamed cannot be bounded.
+  let textCalled = false;
+  await withFetch(async () => ({ ok: true, headers: new Headers(), body: null, text: async () => { textCalled = true; return "<svg/>"; } }), async () => {
+    assert.equal(await bounded(), null);
+  });
+  assert.equal(textCalled, false);
+});
+
+test("bounded read: a slow reader.cancel() does not hold the read past the deadline", async () => {
+  const body = { getReader() { return { read: () => new Promise(() => {}), cancel: () => new Promise(() => {}) }; } };
+  const started = Date.now();
+  await withFetch(async () => responseWith(body), async () => {
+    assert.equal(await bounded(), null);
+  });
+  assert.ok(Date.now() - started < 1000, "settled on the deadline even though cancel() never settles");
+});
+
+test("fetchAssetText: an evaluate() that never settles cannot hold the QA call open", async () => {
+  const hung = { evaluate: () => new Promise(() => {}) };
+  const started = Date.now();
+  assert.equal(await fetchAssetText(hung, "https://example.test/a.svg", { timeoutMs: 20 }), null);
+  // The outer race is the in-page deadline plus one second of headroom.
+  assert.ok(Date.now() - started < 3000);
+});
+
+test("fetchAssetText: passes the bounds into the page and treats a non-string result as unreadable", async () => {
+  let seen = null;
+  const page = { evaluate: async (fn, arg) => { seen = { fn, arg }; return 42; } };
+  assert.equal(await fetchAssetText(page, "https://example.test/a.svg"), null);
+  assert.equal(seen.fn, readBoundedAssetText);
+  assert.deepEqual(seen.arg, { target: "https://example.test/a.svg", timeoutMs: ASSET_FETCH_TIMEOUT_MS, maxBytes: ASSET_FETCH_MAX_BYTES });
+});
+
+test("a timed-out asset stays residue, and the cache still dedupes the URL across methods", async () => {
+  const html = '<img src="images/upsell-payment-logos.svg">';
+  const pageUrl = "https://example.test/c/upsell/";
+  let calls = 0;
+  const hung = { evaluate: () => { calls += 1; return new Promise(() => {}); } };
+  const cache = new Map();
+  const results = await Promise.all(["paypal", "klarna"].map((method) =>
+    partitionReferencedAssets(hung, { html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method, cache, assetBounds: { timeoutMs: 20 } })
+  ));
+  // The hung page is cut by the outer race, and the cut read is residue, not a pass.
+  for (const result of results) assert.deepEqual(result, { residue: ["upsell-payment-logos.svg"], edited: [] });
+  assert.equal(calls, 1);
 });
