@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.20.0+agent.1] - 2026-09-06
+
+### Changed
+
+- A payment-chrome asset edited in place no longer reads as residue. The brand contract keys `default_residue.payment_chrome` on the referenced asset basename, so stripping the unsupported marks from inside a shared strip such as `upsell-payment-logos.svg` left the reference in place and the page still reported chrome it no longer carried. On 2026-09-06 that produced four blockers against two cleaned assets and the repair loop's remedy deleted a cards-only trust strip that was correct. The runner now fetches a referenced `.svg` and, when the served bytes no longer mention the method, records `manual_review` instead of a blocker — the verdict lands on `ready_with_exceptions` and no autonomous repair is dispatched. Anything it cannot read into stays residue: a raster, an asset with no resolvable URL, a failed or non-OK fetch, and any page where the chrome is still visibly rendered. The polish skill and `docs/polish-evidence.md` now state the rule the check is a safety net for — remove or rename a contract-listed chrome asset, never edit one in place.
+- A typed-card test-order path that fails is re-run once before it is recorded. On 2026-09-06 `browser-test-order:accept` failed in 2 of 5 browser runs, each time on a build whose adjacent run passed the same path, and the supervisor counted the miss as a new issue and reported no progress after a repair that had worked. The retry is bounded by construction — one per path per run, never for a pass or a `manual_review` — and the retry decides the assertion. Both attempts are recorded in `test_orders[]`, and `evidence.retry` names the first attempt's error and ref id whichever way the retry went, so a path that passed on retry is never indistinguishable from one that passed first time and a failure that reproduces still blocks. This places a second real order on the store for a failing path: `--max-test-orders` bounds planned paths, so the worst case is twice that many real orders, and the cap's own error message now says so.
+
 ## [1.20.0] - 2026-09-06
 
 ### Added

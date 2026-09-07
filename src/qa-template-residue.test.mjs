@@ -8,6 +8,9 @@ const {
   logoResidueAssertion,
   methodPaymentArtifacts,
   referencedAssetBasenames,
+  referencedAssetUrl,
+  assetTextCarriesMethod,
+  partitionReferencedAssets,
   paymentChromeResidueAssertion,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
@@ -249,4 +252,204 @@ test("demo-asset residue passes when no demo assets survive", () => {
   const clean = demoAssetResidueAssertion({ page: checkoutPage, namedHits: [], repeatedIcons: [] });
   assert.equal(clean.status, "pass");
   assert.equal(clean.severity, undefined);
+});
+
+// ── Card 10: an edited-in-place chrome asset must not read as residue ────────
+// 2026-09-06: the polish operator removed the PayPal and Klarna marks from
+// upsell-payment-logos.svg and credit-card-flags.svg in place. The basenames
+// stayed referenced, four blockers fired against assets carrying no chrome, and
+// the repair loop deleted a cards-only trust strip that was fine.
+
+const UNTOUCHED_STRIP = '<svg><g id="paypal-logo"><path d="M0 0"/></g><g id="visa"><path d="M1 1"/></g></svg>';
+const EDITED_STRIP = '<svg><g id="visa"><path d="M1 1"/></g><g id="mastercard"><path d="M2 2"/></g></svg>';
+
+function fakePage(bodyByUrl) {
+  return {
+    evaluate: async (fn, url) => {
+      const body = bodyByUrl[url];
+      if (body === undefined) return null;
+      if (body instanceof Error) throw body;
+      return body;
+    },
+  };
+}
+
+test("asset text carries the method only when the mark is still in the bytes", () => {
+  assert.equal(assetTextCarriesMethod(UNTOUCHED_STRIP, "paypal"), true);
+  assert.equal(assetTextCarriesMethod(EDITED_STRIP, "paypal"), false);
+  // Token compaction matches the contract's own: separators do not hide a mark.
+  assert.equal(assetTextCarriesMethod('<svg id="pay_pal-mark"/>', "paypal"), true);
+});
+
+test("referenced asset URL resolves against the page, or is null when absent", () => {
+  const page = "https://example.test/c/upsell/";
+  const resolve = (html) => referencedAssetUrl(html, "upsell-payment-logos.svg", page);
+
+  assert.equal(
+    resolve('<img src="../images/upsell-payment-logos.svg" alt="payments">'),
+    "https://example.test/c/images/upsell-payment-logos.svg"
+  );
+  assert.equal(resolve("<main>clean</main>"), null);
+});
+
+test("every reference form a deployed page actually uses resolves to the asset", () => {
+  // The first cut scooped up whatever non-quote text preceded the basename, so a
+  // reference could resolve to something like <page>/src=name.svg — a 404, then
+  // residue, then a blocker on a page with no chrome. Each form is anchored on
+  // the delimiters it really has, and each keeps any ?query#fragment it carries.
+  const page = "https://example.test/c/upsell/";
+  const resolve = (html) => referencedAssetUrl(html, "upsell-payment-logos.svg", page);
+  const asset = "https://example.test/c/upsell/images/upsell-payment-logos.svg";
+
+  assert.equal(resolve('<img src="images/upsell-payment-logos.svg">'), asset);
+  // Cache-busted: the suffix has to survive, or we fetch a URL the site never served.
+  assert.equal(resolve('<img src="images/upsell-payment-logos.svg?v=4">'), `${asset}?v=4`);
+  // A style attribute is itself a quoted value, so url() has to win first or the
+  // whole `background:url(...)` declaration gets resolved as a path.
+  assert.equal(resolve('<div style="background:url(images/upsell-payment-logos.svg)">'), asset);
+  assert.equal(resolve(`<div style="background:url('images/upsell-payment-logos.svg')">`), asset);
+  assert.equal(resolve("<img src=images/upsell-payment-logos.svg>"), asset);
+  assert.equal(resolve('<svg><use href="images/upsell-payment-logos.svg#paypal"/></svg>'), `${asset}#paypal`);
+});
+
+test("one fetch per URL per page, not one per method", () => {
+  // The contract attributes an asset matching no method token to EVERY
+  // unsupported method, so the same strip is asked about once per method. Without
+  // the shared cache that is N round-trips against the deployed site for one file.
+  const html = '<img src="images/upsell-payment-logos.svg">';
+  const pageUrl = "https://example.test/c/upsell/";
+  const assetUrl = "https://example.test/c/upsell/images/upsell-payment-logos.svg";
+  let fetches = 0;
+  const counting = {
+    evaluate: async (fn, url) => {
+      fetches += 1;
+      return url === assetUrl ? EDITED_STRIP : null;
+    },
+  };
+  const cache = new Map();
+
+  return Promise.all(["paypal", "klarna"].map((method) =>
+    partitionReferencedAssets(counting, {
+      html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method, cache,
+    })
+  )).then((results) => {
+    assert.equal(fetches, 1);
+    for (const result of results) assert.deepEqual(result.edited, ["upsell-payment-logos.svg"]);
+  });
+});
+
+test("an edited strip is partitioned as edited; an untouched one stays residue", async () => {
+  const html = '<img src="images/upsell-payment-logos.svg">';
+  const pageUrl = "https://example.test/c/upsell/";
+  const assetUrl = "https://example.test/c/upsell/images/upsell-payment-logos.svg";
+
+  const edited = await partitionReferencedAssets(fakePage({ [assetUrl]: EDITED_STRIP }), {
+    html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method: "paypal",
+  });
+  assert.deepEqual(edited, { residue: [], edited: ["upsell-payment-logos.svg"] });
+
+  const untouched = await partitionReferencedAssets(fakePage({ [assetUrl]: UNTOUCHED_STRIP }), {
+    html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method: "paypal",
+  });
+  assert.deepEqual(untouched, { residue: ["upsell-payment-logos.svg"], edited: [] });
+});
+
+test("anything we cannot read into stays residue", async () => {
+  const pageUrl = "https://example.test/c/upsell/";
+
+  // A fetch that fails, or a non-OK response the helper turns into null.
+  const unfetchable = await partitionReferencedAssets(
+    fakePage({ "https://example.test/c/upsell/images/upsell-payment-logos.svg": new Error("network") }),
+    {
+      html: '<img src="images/upsell-payment-logos.svg">',
+      pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method: "paypal",
+    }
+  );
+  assert.deepEqual(unfetchable.residue, ["upsell-payment-logos.svg"]);
+
+  // A raster tells us nothing by its bytes, so it is never cleared by this path.
+  // The fake serves a readable body that does not mention the method: without
+  // the textual-asset guard this would be cleared, so the guard is what the
+  // assertion is actually testing.
+  const raster = await partitionReferencedAssets(
+    fakePage({ "https://example.test/c/upsell/images/paypal.png": "\u0089PNG not-really-binary" }),
+    {
+      html: '<img src="images/paypal.png">',
+      pageUrl, referencedAssets: ["paypal.png"], method: "paypal",
+    }
+  );
+  assert.deepEqual(raster.residue, ["paypal.png"]);
+  assert.deepEqual(raster.edited, []);
+
+  // Named in prose rather than in a src: the basename still resolves to a URL,
+  // the fetch then finds nothing there, and the fail-safe answer is residue.
+  const prose = await partitionReferencedAssets(fakePage({}), {
+    html: "<main>mentions upsell-payment-logos.svg in prose only</main>",
+    pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method: "paypal",
+  });
+  assert.deepEqual(prose.residue, ["upsell-payment-logos.svg"]);
+  assert.deepEqual(prose.edited, []);
+});
+
+test("the roadflare shape: an edited asset is manual_review, not a blocker", () => {
+  const artifacts = methodPaymentArtifacts(demeter.default_residue.payment_chrome, "paypal");
+  const result = paymentChromeResidueAssertion({
+    page: upsellPage,
+    method: "paypal",
+    artifacts,
+    visibleMatches: [],
+    referencedAssets: [],
+    editedAssets: ["upsell-payment-logos.svg"],
+    severity: "blocker",
+  });
+
+  assert.equal(result.status, "manual_review");
+  // No severity: manual_review lands the verdict on ready_with_exceptions, and a
+  // blocker severity here is what dispatched the repair that deleted the strip.
+  assert.equal(result.severity, undefined);
+  assert.match(result.actual, /edited in place/);
+  assert.match(result.actual, /remove or rename/);
+  assert.deepEqual(result.evidence.edited_assets, ["upsell-payment-logos.svg"]);
+});
+
+test("an unedited template strip still blocks, and visible chrome outranks an edit", () => {
+  const artifacts = methodPaymentArtifacts(demeter.default_residue.payment_chrome, "paypal");
+
+  const stillResidue = paymentChromeResidueAssertion({
+    page: upsellPage,
+    method: "paypal",
+    artifacts,
+    visibleMatches: [],
+    referencedAssets: ["upsell-payment-logos.svg"],
+    editedAssets: [],
+    severity: "blocker",
+  });
+  assert.equal(stillResidue.status, "fail");
+  assert.equal(stillResidue.severity, "blocker");
+
+  // One asset edited, another still carrying the mark: the blocker wins. The
+  // downgrade is for a page with nothing left to remove, not a partial cleanup.
+  const mixed = paymentChromeResidueAssertion({
+    page: upsellPage,
+    method: "paypal",
+    artifacts,
+    visibleMatches: [],
+    referencedAssets: ["paypal-logo.svg"],
+    editedAssets: ["upsell-payment-logos.svg"],
+    severity: "blocker",
+  });
+  assert.equal(mixed.status, "fail");
+  assert.equal(mixed.severity, "blocker");
+
+  // Rendered chrome is never downgraded by what the file says.
+  const visible = paymentChromeResidueAssertion({
+    page: checkoutPage,
+    method: "klarna",
+    artifacts: methodPaymentArtifacts(demeter.default_residue.payment_chrome, "klarna"),
+    visibleMatches: [{ selector: ".payment-method__icon--klarna-logo", visible_count: 1 }],
+    referencedAssets: [],
+    editedAssets: ["upsell-payment-logos.svg"],
+    severity: "blocker",
+  });
+  assert.equal(visible.status, "fail");
 });

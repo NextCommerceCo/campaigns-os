@@ -39,7 +39,7 @@
     {
       "id": "next-campaigns-polish",
       "name": "Campaign Polish",
-      "version": "1.0.1",
+      "version": "1.1.0",
       "path": "skills/next-campaigns-polish/SKILL.md",
       "domain": "campaigns",
       "description": "Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign."
@@ -47,7 +47,7 @@
     {
       "id": "next-campaigns-qa",
       "name": "Campaign QA",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "path": "skills/next-campaigns-qa/SKILL.md",
       "domain": "campaigns",
       "description": "Run spec-aware QA from a Campaign Map ID and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof."

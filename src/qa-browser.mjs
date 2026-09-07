@@ -137,11 +137,48 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       // Spec-driven plans name the checkout page that declares their tier or
       // coupon (multi-funnel specs); operator-mode plans drive the primary.
       const pageForPlan = (typeof plan === "object" && plan?.checkout_page?.url) ? plan.checkout_page : checkoutPage;
-      const result = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
-      orders.push(result.order);
+      const firstAttempt = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
+      orders.push(firstAttempt.order);
+
+      // One retry per path per run, and only for a hard failure. On 2026-09-06
+      // `browser-test-order:accept` failed in 2 of 5 browser runs, each time on a
+      // build whose adjacent run passed the same path — so the supervisor counted
+      // a transient miss as a new issue and reported no progress after a repair
+      // that had worked. Re-running the path is the honest answer to "was that
+      // real?"; making the supervisor guess from the outside is not.
+      //
+      // Not retried: a pass, and a manual_review (a hosted-checkout redirect is a
+      // platform-owned flow, not a flake, and re-running it just places another
+      // order nobody will read). The retry places a SECOND REAL ORDER on the
+      // store, so it is bounded by construction — one per path, never a loop.
+      let result = firstAttempt;
+      let retried = false;
+      if (shouldRetryTestOrder(firstAttempt)) {
+        retried = true;
+        try {
+          const retryAttempt = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
+          if (retryAttempt.order) orders.push(retryAttempt.order);
+          // The retry decides the assertion. A first failure that does not
+          // reproduce was not a defect in this build; one that does, still is.
+          result = retryAttempt;
+        } catch (error) {
+          // A retry that throws must not escape the loop: this plan would lose
+          // its assertion and its analytics entry, and `attempts` is keyed
+          // one-to-one against `plannedPlanIds`. Record it as the failure it is.
+          result = {
+            ok: false,
+            error: `retry threw: ${error instanceof Error ? error.message : String(error)}`,
+            order: firstAttempt.order,
+          };
+        }
+      }
+
+      // Analytics carry the deciding attempt only: `attempts` is keyed one-to-one
+      // against `plannedPlanIds`, and a second entry for one plan would read as a
+      // plan nobody planned.
       receiptAnalytics.attempts.push(receiptAnalyticsAttempt(plan, result));
       if (options.captureAnalytics) journeyAnalytics.attempts.push(journeyAnalyticsAttempt(plan, result));
-      assertions.push(testOrderAssertion(pageForPlan, plan, result));
+      assertions.push(testOrderAssertion(pageForPlan, plan, result, retried ? firstAttempt : null));
       // Reconciliation and total parity are their own named assertions rather
       // than extra reasons for browser-test-order to fail: the order WAS
       // created, and collapsing "created" with "matches what was shown" is how
@@ -1514,17 +1551,28 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
       // One evaluate for ALL unsupported methods' selectors; partition the
       // visibility results per method in JS to keep browser round-trips flat.
       const artifactsByMethod = new Map(unsupported.map((method) => [method, methodPaymentArtifacts(chrome, method)]));
+      // Shared across every method on this page: the same strip is commonly
+      // attributed to all of them.
+      const assetTextCache = new Map();
       const allSelectors = [...new Set([...artifactsByMethod.values()].flatMap((artifacts) => artifacts.selectors))];
       const allVisibleMatches = await collectVisibleSelectorMatches(browserPage, allSelectors);
       for (const method of unsupported) {
         const artifacts = artifactsByMethod.get(method);
         const visibleMatches = allVisibleMatches.filter((match) => artifacts.selectors.includes(match.selector));
+        const { residue, edited } = await partitionReferencedAssets(browserPage, {
+          html,
+          pageUrl: page.url,
+          referencedAssets: referencedAssetBasenames(html, artifacts.assets),
+          method,
+          cache: assetTextCache,
+        });
         assertions.push(paymentChromeResidueAssertion({
           page,
           method,
           artifacts,
           visibleMatches,
-          referencedAssets: referencedAssetBasenames(html, artifacts.assets),
+          referencedAssets: residue,
+          editedAssets: edited,
           severity,
         }));
       }
@@ -1823,24 +1871,148 @@ function referencedAssetBasenames(html, assets) {
   return basenames.filter((basename) => text.includes(basename));
 }
 
-function paymentChromeResidueAssertion({ page, method, artifacts, visibleMatches, referencedAssets, severity }) {
+// Does the asset's own text still carry this method's chrome? The contract keys
+// residue on the referenced BASENAME, which is right for a template strip left
+// in place and wrong for one edited in place: on 2026-09-06 a polish operator
+// removed the PayPal and Klarna marks from inside upsell-payment-logos.svg, the
+// basename stayed referenced, four blockers fired against an asset that no
+// longer carried any chrome, and the repair loop's remedy then deleted a
+// cards-only trust strip that was fine.
+//
+// Token match, not byte comparison against the template's shipped asset: this
+// runner reads a deployed page and has no checkout of the template to compare
+// against. What it can ask is whether the bytes actually served still mention
+// the method — which is the question the assertion is really asking.
+function assetTextCarriesMethod(text, method) {
+  const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+  return compact(text).includes(compact(method));
+}
+
+// SVG only, and deliberately. A raster or a font tells us nothing by its bytes,
+// so it keeps today's behaviour rather than being cleared by a check that cannot
+// see into it.
+function isTextualAsset(basename) {
+  return /\.svg(?:[?#]|$)/i.test(String(basename || ""));
+}
+
+// The first reference to this basename in the page HTML, resolved against the
+// page. Assets are referenced from img/src, <use href>, CSS url() and inline
+// styles in roughly equal measure here, so this matches the reference wherever it
+// sits rather than enumerating element types — but it anchors on the delimiters
+// a reference actually has, rather than scooping up whatever non-quote text
+// precedes the name. Each pattern keeps any ?query#fragment the reference
+// carries, so a cache-busted URL is fetched as deployed rather than bare.
+function referencedAssetUrl(html, basename, pageUrl) {
+  const escaped = basename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    // CSS url(), quoted or bare. FIRST, because a style attribute is itself a
+    // quoted value: matching the attribute pattern first would capture the whole
+    // `background:url(...)` declaration and resolve it as a path.
+    new RegExp(`url\\(\\s*["']?([^"')\\s]*${escaped}[^"')\\s]*)["']?\\s*\\)`, "i"),
+    // A quoted attribute value: src="../images/name.svg?v=4"
+    new RegExp(`["']([^"']*${escaped}[^"']*)["']`),
+    // An unquoted attribute value: src=name.svg
+    new RegExp(`=\\s*([^"'\\s>]*${escaped}[^"'\\s>]*)`),
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(String(html || ""));
+    if (!match || !match[1]) continue;
+    try {
+      return new URL(match[1], pageUrl).toString();
+    } catch {
+      // A reference we cannot resolve is not a reference we can clear.
+    }
+  }
+  return null;
+}
+
+// Splits the referenced basenames into the ones that still carry the method and
+// the ones that no longer do. Anything we could not read — not textual, no
+// resolvable URL, a failed or non-OK fetch — stays residue: an asset we cannot
+// see into must never be cleared by our inability to see into it.
+async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method, cache }) {
+  const residue = [];
+  const edited = [];
+  for (const basename of referencedAssets) {
+    if (!isTextualAsset(basename)) {
+      residue.push(basename);
+      continue;
+    }
+    const url = referencedAssetUrl(html, basename, pageUrl);
+    if (!url) {
+      residue.push(basename);
+      continue;
+    }
+    // An asset the contract does not name per method is attributed to every
+    // unsupported method, so without this the same strip is fetched once per
+    // method. One round-trip per URL per page.
+    // The in-flight promise is cached, not the resolved text: callers that share
+    // a cache may overlap, and a value cache would let both miss and both fetch.
+    let pending = cache instanceof Map ? cache.get(url) : undefined;
+    if (pending === undefined) {
+      pending = fetchAssetText(browserPage, url);
+      if (cache instanceof Map) cache.set(url, pending);
+    }
+    const text = await pending;
+    if (text === null) {
+      residue.push(basename);
+      continue;
+    }
+    if (assetTextCarriesMethod(text, method)) residue.push(basename);
+    else edited.push(basename);
+  }
+  return { residue, edited };
+}
+
+async function fetchAssetText(browserPage, url) {
+  return browserPage.evaluate(async (target) => {
+    try {
+      const response = await fetch(target);
+      if (!response.ok) return null;
+      return await response.text();
+    } catch {
+      return null;
+    }
+  }, url).catch(() => null);
+}
+
+function paymentChromeResidueAssertion({
+  page,
+  method,
+  artifacts,
+  visibleMatches,
+  referencedAssets,
+  severity,
+  editedAssets = [],
+}) {
   const offending = visibleMatches.length > 0 || referencedAssets.length > 0;
+  // No residue, but an asset the contract names is still referenced and no
+  // longer carries the chrome. That is not a pass — we matched on a token, and a
+  // strip could carry the mark as bare path data — and not a blocker either.
+  // manual_review lands the verdict on ready_with_exceptions: a human confirms
+  // the removal was intended, and no autonomous repair is dispatched to delete
+  // an asset that has already been dealt with.
+  const editedOnly = !offending && editedAssets.length > 0;
+  const status = offending ? STATUS.FAIL : editedOnly ? STATUS.MANUAL_REVIEW : STATUS.PASS;
   return assertion({
     id: `template-residue:${page.page_id}:payment-chrome:${method}`,
     family: "template_residue",
     page,
-    status: offending ? STATUS.FAIL : STATUS.PASS,
+    status,
     severity: offending ? severity : undefined,
     expected: `no ${method} chrome: method is not in CampaignSpec available_payment_methods/available_express_payment_methods`,
     actual: offending
       ? `residue found: ${[...visibleMatches.map((match) => match.selector), ...referencedAssets].join(", ")}`
-      : `no ${method} chrome rendered or referenced`,
+      : editedOnly
+        ? `edited in place: ${editedAssets.join(", ")} still referenced but no longer carries ${method} chrome — confirm the removal was intended, and remove or rename the asset so QA stops keying on the basename`
+        : `no ${method} chrome rendered or referenced`,
     evidence: {
       method,
       selectors: artifacts.selectors,
       assets: artifacts.assets,
       visible_matches: visibleMatches,
       referenced_assets: referencedAssets,
+      edited_assets: editedAssets,
       page_url: page.url,
     },
   });
@@ -3984,11 +4156,44 @@ function orderTotalParityAssertion(page, planIdentifier, order) {
   });
 }
 
-function testOrderAssertion(page, plan, result) {
+// Whether a first attempt earns a retry. Extracted from the dispatch loop and
+// exported because this predicate IS the safety property: it decides whether a
+// second real order is placed on a live store. It lived inline in an untested
+// browser loop, and a stray edit dropped the manual_review clause without a
+// single test objecting while four documents still described the old behaviour.
+//
+//   ok            — nothing to re-run.
+//   manual_review — a hosted-checkout redirect is a platform-owned flow, not a
+//                   flake. Re-running it places another real order nobody reads.
+function shouldRetryTestOrder(attempt) {
+  if (!attempt || attempt.ok) return false;
+  if (attempt.manual_review) return false;
+  return true;
+}
+
+// A first attempt that failed and was re-run. Recorded on the assertion whichever
+// way the retry went: a path that passed on retry must never be indistinguishable
+// from one that passed first time, and a path that failed twice should say so.
+function retryEvidence(firstAttempt) {
+  if (!firstAttempt) return {};
+  return {
+    retry: {
+      attempts: 2,
+      first_attempt_status: firstAttempt.manual_review ? "manual_review" : "failed",
+      first_attempt_error:
+        firstAttempt.error || firstAttempt.order?.verification?.error || "order not created",
+      first_attempt_ref_id: firstAttempt.order?.ref_id || null,
+      note: "One retry per path per run. Both orders are in test_orders[].",
+    },
+  };
+}
+
+function testOrderAssertion(page, plan, result, firstAttempt = null) {
   // Accepts a plan object or (legacy) a bare path string.
   const id = planId(plan);
   const path = typeof plan === "string" ? plan : plan.path;
   const planEvidence = typeof plan === "object" && plan?.source ? { plan: summarizeTestOrderPlan(plan) } : {};
+  const retry = retryEvidence(firstAttempt);
   if (result.manual_review) {
     return assertion({
       id: `browser-test-order:${id}`,
@@ -4000,6 +4205,7 @@ function testOrderAssertion(page, plan, result) {
       actual: `hosted checkout redirect observed: ${result.order?.hosted_checkout_url || "(unknown)"}`,
       evidence: {
         ...planEvidence,
+        ...retry,
         hosted_checkout_url: result.order?.hosted_checkout_url || null,
         final_url: result.order?.final_url,
         steps: result.order?.evidence?.steps,
@@ -4018,6 +4224,7 @@ function testOrderAssertion(page, plan, result) {
     evidence: result.ok
       ? {
           ...planEvidence,
+          ...retry,
           ref_id: result.order.ref_id,
           order_number: result.order.next_order_id,
           final_url: result.order.final_url,
@@ -4033,6 +4240,7 @@ function testOrderAssertion(page, plan, result) {
         }
       : {
           ...planEvidence,
+          ...retry,
           final_url: result.order?.final_url,
           steps: result.order?.evidence?.steps,
           ...(receiptProofEvidence(result.order) ? { receipt_proof: receiptProofEvidence(result.order) } : {}),
@@ -4530,6 +4738,7 @@ function enforceTestOrderLimit(plans, args) {
     `--test-order ${args["test-order"]} expands to ${plans.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
     `Planned paths: ${preview}${suffix}.`,
     `This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with --max-test-orders ${plans.length} for this exhaustive proof.`,
+    "The cap bounds planned paths. A failed path is re-run once before it is recorded, so the worst case is twice this many real orders.",
   ].join(" "));
 }
 
@@ -4954,6 +5163,9 @@ export const __qaBrowserTestHooks = Object.freeze({
   logoResidueAssertion,
   methodPaymentArtifacts,
   referencedAssetBasenames,
+  referencedAssetUrl,
+  assetTextCarriesMethod,
+  partitionReferencedAssets,
   paymentChromeResidueAssertion,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
@@ -4962,6 +5174,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   placeholderTextResidueAssertion,
   demoAssetResidueAssertion,
   testOrderAssertion,
+  retryEvidence,
+  shouldRetryTestOrder,
   extractReceiptLines,
   EXIT_INTENT_SURFACE_SELECTORS,
   COUPON_INPUT_SELECTORS,
