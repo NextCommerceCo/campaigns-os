@@ -282,12 +282,60 @@ test("asset text carries the method only when the mark is still in the bytes", (
 });
 
 test("referenced asset URL resolves against the page, or is null when absent", () => {
-  const html = '<img src="../images/upsell-payment-logos.svg" alt="payments">';
+  const page = "https://example.test/c/upsell/";
+  const resolve = (html) => referencedAssetUrl(html, "upsell-payment-logos.svg", page);
+
   assert.equal(
-    referencedAssetUrl(html, "upsell-payment-logos.svg", "https://example.test/c/upsell/"),
+    resolve('<img src="../images/upsell-payment-logos.svg" alt="payments">'),
     "https://example.test/c/images/upsell-payment-logos.svg"
   );
-  assert.equal(referencedAssetUrl("<main>clean</main>", "upsell-payment-logos.svg", "https://example.test/c/upsell/"), null);
+  assert.equal(resolve("<main>clean</main>"), null);
+});
+
+test("every reference form a deployed page actually uses resolves to the asset", () => {
+  // The first cut scooped up whatever non-quote text preceded the basename, so a
+  // reference could resolve to something like <page>/src=name.svg — a 404, then
+  // residue, then a blocker on a page with no chrome. Each form is anchored on
+  // the delimiters it really has, and each keeps any ?query#fragment it carries.
+  const page = "https://example.test/c/upsell/";
+  const resolve = (html) => referencedAssetUrl(html, "upsell-payment-logos.svg", page);
+  const asset = "https://example.test/c/upsell/images/upsell-payment-logos.svg";
+
+  assert.equal(resolve('<img src="images/upsell-payment-logos.svg">'), asset);
+  // Cache-busted: the suffix has to survive, or we fetch a URL the site never served.
+  assert.equal(resolve('<img src="images/upsell-payment-logos.svg?v=4">'), `${asset}?v=4`);
+  // A style attribute is itself a quoted value, so url() has to win first or the
+  // whole `background:url(...)` declaration gets resolved as a path.
+  assert.equal(resolve('<div style="background:url(images/upsell-payment-logos.svg)">'), asset);
+  assert.equal(resolve(`<div style="background:url('images/upsell-payment-logos.svg')">`), asset);
+  assert.equal(resolve("<img src=images/upsell-payment-logos.svg>"), asset);
+  assert.equal(resolve('<svg><use href="images/upsell-payment-logos.svg#paypal"/></svg>'), `${asset}#paypal`);
+});
+
+test("one fetch per URL per page, not one per method", () => {
+  // The contract attributes an asset matching no method token to EVERY
+  // unsupported method, so the same strip is asked about once per method. Without
+  // the shared cache that is N round-trips against the deployed site for one file.
+  const html = '<img src="images/upsell-payment-logos.svg">';
+  const pageUrl = "https://example.test/c/upsell/";
+  const assetUrl = "https://example.test/c/upsell/images/upsell-payment-logos.svg";
+  let fetches = 0;
+  const counting = {
+    evaluate: async (fn, url) => {
+      fetches += 1;
+      return url === assetUrl ? EDITED_STRIP : null;
+    },
+  };
+  const cache = new Map();
+
+  return Promise.all(["paypal", "klarna"].map((method) =>
+    partitionReferencedAssets(counting, {
+      html, pageUrl, referencedAssets: ["upsell-payment-logos.svg"], method, cache,
+    })
+  )).then((results) => {
+    assert.equal(fetches, 1);
+    for (const result of results) assert.deepEqual(result.edited, ["upsell-payment-logos.svg"]);
+  });
 });
 
 test("an edited strip is partitioned as edited; an untouched one stays residue", async () => {

@@ -153,13 +153,24 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       // store, so it is bounded by construction — one per path, never a loop.
       let result = firstAttempt;
       let retried = false;
-      if (!firstAttempt.ok) {
+      if (shouldRetryTestOrder(firstAttempt)) {
         retried = true;
-        const retryAttempt = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
-        orders.push(retryAttempt.order);
-        // The retry decides the assertion. A first failure that does not
-        // reproduce was not a defect in this build; one that does, still is.
-        result = retryAttempt;
+        try {
+          const retryAttempt = await runSingleBrowserTestOrder(context, pageForPlan, plan, args, runId, options);
+          if (retryAttempt.order) orders.push(retryAttempt.order);
+          // The retry decides the assertion. A first failure that does not
+          // reproduce was not a defect in this build; one that does, still is.
+          result = retryAttempt;
+        } catch (error) {
+          // A retry that throws must not escape the loop: this plan would lose
+          // its assertion and its analytics entry, and `attempts` is keyed
+          // one-to-one against `plannedPlanIds`. Record it as the failure it is.
+          result = {
+            ok: false,
+            error: `retry threw: ${error instanceof Error ? error.message : String(error)}`,
+            order: firstAttempt.order,
+          };
+        }
       }
 
       // Analytics carry the deciding attempt only: `attempts` is keyed one-to-one
@@ -1540,6 +1551,9 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
       // One evaluate for ALL unsupported methods' selectors; partition the
       // visibility results per method in JS to keep browser round-trips flat.
       const artifactsByMethod = new Map(unsupported.map((method) => [method, methodPaymentArtifacts(chrome, method)]));
+      // Shared across every method on this page: the same strip is commonly
+      // attributed to all of them.
+      const assetTextCache = new Map();
       const allSelectors = [...new Set([...artifactsByMethod.values()].flatMap((artifacts) => artifacts.selectors))];
       const allVisibleMatches = await collectVisibleSelectorMatches(browserPage, allSelectors);
       for (const method of unsupported) {
@@ -1550,6 +1564,7 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
           pageUrl: page.url,
           referencedAssets: referencedAssetBasenames(html, artifacts.assets),
           method,
+          cache: assetTextCache,
         });
         assertions.push(paymentChromeResidueAssertion({
           page,
@@ -1877,29 +1892,45 @@ function assetTextCarriesMethod(text, method) {
 // so it keeps today's behaviour rather than being cleared by a check that cannot
 // see into it.
 function isTextualAsset(basename) {
-  return /\.svg$/i.test(String(basename || ""));
+  return /\.svg(?:[?#]|$)/i.test(String(basename || ""));
 }
 
-// The first URL in the page HTML whose basename matches, resolved against the
+// The first reference to this basename in the page HTML, resolved against the
 // page. Assets are referenced from img/src, <use href>, CSS url() and inline
-// styles in roughly equal measure here, so this matches the reference wherever
-// it sits rather than enumerating element types.
+// styles in roughly equal measure here, so this matches the reference wherever it
+// sits rather than enumerating element types — but it anchors on the delimiters
+// a reference actually has, rather than scooping up whatever non-quote text
+// precedes the name. Each pattern keeps any ?query#fragment the reference
+// carries, so a cache-busted URL is fetched as deployed rather than bare.
 function referencedAssetUrl(html, basename, pageUrl) {
   const escaped = basename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`[^"'\\s()<>]*${escaped}`).exec(String(html || ""));
-  if (!match) return null;
-  try {
-    return new URL(match[0], pageUrl).toString();
-  } catch {
-    return null;
+  const patterns = [
+    // CSS url(), quoted or bare. FIRST, because a style attribute is itself a
+    // quoted value: matching the attribute pattern first would capture the whole
+    // `background:url(...)` declaration and resolve it as a path.
+    new RegExp(`url\\(\\s*["']?([^"')\\s]*${escaped}[^"')\\s]*)["']?\\s*\\)`, "i"),
+    // A quoted attribute value: src="../images/name.svg?v=4"
+    new RegExp(`["']([^"']*${escaped}[^"']*)["']`),
+    // An unquoted attribute value: src=name.svg
+    new RegExp(`=\\s*([^"'\\s>]*${escaped}[^"'\\s>]*)`),
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(String(html || ""));
+    if (!match || !match[1]) continue;
+    try {
+      return new URL(match[1], pageUrl).toString();
+    } catch {
+      // A reference we cannot resolve is not a reference we can clear.
+    }
   }
+  return null;
 }
 
 // Splits the referenced basenames into the ones that still carry the method and
 // the ones that no longer do. Anything we could not read — not textual, no
 // resolvable URL, a failed or non-OK fetch — stays residue: an asset we cannot
 // see into must never be cleared by our inability to see into it.
-async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method }) {
+async function partitionReferencedAssets(browserPage, { html, pageUrl, referencedAssets, method, cache }) {
   const residue = [];
   const edited = [];
   for (const basename of referencedAssets) {
@@ -1912,7 +1943,17 @@ async function partitionReferencedAssets(browserPage, { html, pageUrl, reference
       residue.push(basename);
       continue;
     }
-    const text = await fetchAssetText(browserPage, url);
+    // An asset the contract does not name per method is attributed to every
+    // unsupported method, so without this the same strip is fetched once per
+    // method. One round-trip per URL per page.
+    // The in-flight promise is cached, not the resolved text: callers that share
+    // a cache may overlap, and a value cache would let both miss and both fetch.
+    let pending = cache instanceof Map ? cache.get(url) : undefined;
+    if (pending === undefined) {
+      pending = fetchAssetText(browserPage, url);
+      if (cache instanceof Map) cache.set(url, pending);
+    }
+    const text = await pending;
     if (text === null) {
       residue.push(basename);
       continue;
@@ -4115,6 +4156,21 @@ function orderTotalParityAssertion(page, planIdentifier, order) {
   });
 }
 
+// Whether a first attempt earns a retry. Extracted from the dispatch loop and
+// exported because this predicate IS the safety property: it decides whether a
+// second real order is placed on a live store. It lived inline in an untested
+// browser loop, and a stray edit dropped the manual_review clause without a
+// single test objecting while four documents still described the old behaviour.
+//
+//   ok            — nothing to re-run.
+//   manual_review — a hosted-checkout redirect is a platform-owned flow, not a
+//                   flake. Re-running it places another real order nobody reads.
+function shouldRetryTestOrder(attempt) {
+  if (!attempt || attempt.ok) return false;
+  if (attempt.manual_review) return false;
+  return true;
+}
+
 // A first attempt that failed and was re-run. Recorded on the assertion whichever
 // way the retry went: a path that passed on retry must never be indistinguishable
 // from one that passed first time, and a path that failed twice should say so.
@@ -4123,7 +4179,7 @@ function retryEvidence(firstAttempt) {
   return {
     retry: {
       attempts: 2,
-      first_attempt_status: "failed",
+      first_attempt_status: firstAttempt.manual_review ? "manual_review" : "failed",
       first_attempt_error:
         firstAttempt.error || firstAttempt.order?.verification?.error || "order not created",
       first_attempt_ref_id: firstAttempt.order?.ref_id || null,
@@ -5119,6 +5175,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   demoAssetResidueAssertion,
   testOrderAssertion,
   retryEvidence,
+  shouldRetryTestOrder,
   extractReceiptLines,
   EXIT_INTENT_SURFACE_SELECTORS,
   COUPON_INPUT_SELECTORS,

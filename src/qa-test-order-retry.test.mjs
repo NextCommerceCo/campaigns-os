@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { computeDisposition } from "./qa-verdict.mjs";
 
-const { testOrderAssertion, retryEvidence } = __qaBrowserTestHooks;
+const { testOrderAssertion, retryEvidence, shouldRetryTestOrder } = __qaBrowserTestHooks;
 
 // Card 11. On 2026-09-06 `browser-test-order:accept` failed in 2 of 5 browser
 // runs, each time on a build whose adjacent run passed the same path. The
@@ -83,4 +83,38 @@ test("a first attempt with no error string still records why it was retried", ()
 
   const verified = { ok: false, order: { ref_id: "ref-v", verification: { error: "card declined" } } };
   assert.equal(retryEvidence(verified).retry.first_attempt_error, "card declined");
+});
+
+// The retry decision decides whether a second REAL order is placed on a live
+// store, and it lived inline in a browser loop no test could reach. A stray edit
+// dropped the manual_review clause and nothing objected, while the changelog,
+// the skill, the in-code comment and the PR all still described the old rule.
+// It is a named predicate now, and these are its cases.
+
+test("only a hard failure earns a retry", () => {
+  assert.equal(shouldRetryTestOrder({ ok: true }), false);
+  assert.equal(shouldRetryTestOrder({ ok: false }), true);
+  assert.equal(shouldRetryTestOrder({ ok: false, error: "boom" }), true);
+});
+
+test("a manual_review is never retried", () => {
+  // A hosted-checkout redirect is a platform-owned flow, not a flake. Re-running
+  // it places another real order on the store and proves nothing.
+  assert.equal(shouldRetryTestOrder({ ok: false, manual_review: true }), false);
+  assert.equal(shouldRetryTestOrder({ ok: false, manual_review: true, order: { hosted_checkout_url: "https://pay.example/x" } }), false);
+});
+
+test("a missing attempt is not a retry candidate", () => {
+  assert.equal(shouldRetryTestOrder(null), false);
+  assert.equal(shouldRetryTestOrder(undefined), false);
+});
+
+test("recorded first-attempt status is computed, not asserted", () => {
+  // Defence in depth: if the guard is ever loosened again, the ledger must not
+  // describe a hosted-checkout redirect as a failure.
+  assert.equal(retryEvidence({ ok: false, order: {} }).retry.first_attempt_status, "failed");
+  assert.equal(
+    retryEvidence({ ok: false, manual_review: true, order: {} }).retry.first_attempt_status,
+    "manual_review"
+  );
 });
