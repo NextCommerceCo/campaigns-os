@@ -566,13 +566,23 @@ test("bounded read: a non-OK response and a network error are both null", async 
   });
 });
 
-test("bounded read: a response without a readable body falls back to text() under the same cap", async () => {
-  await withFetch(async () => ({ ok: true, headers: new Headers(), body: null, text: async () => "<svg/>" }), async () => {
-    assert.equal(await bounded(), "<svg/>");
-  });
-  await withFetch(async () => ({ ok: true, headers: new Headers(), body: null, text: async () => "x".repeat(65) }), async () => {
+test("bounded read: a response without a streamable body is refused, never read through text()", async () => {
+  // Response.text() takes no signal and allocates the whole body before any cap
+  // could be checked, so a body that cannot be streamed cannot be bounded.
+  let textCalled = false;
+  await withFetch(async () => ({ ok: true, headers: new Headers(), body: null, text: async () => { textCalled = true; return "<svg/>"; } }), async () => {
     assert.equal(await bounded(), null);
   });
+  assert.equal(textCalled, false);
+});
+
+test("bounded read: a slow reader.cancel() does not hold the read past the deadline", async () => {
+  const body = { getReader() { return { read: () => new Promise(() => {}), cancel: () => new Promise(() => {}) }; } };
+  const started = Date.now();
+  await withFetch(async () => responseWith(body), async () => {
+    assert.equal(await bounded(), null);
+  });
+  assert.ok(Date.now() - started < 1000, "settled on the deadline even though cancel() never settles");
 });
 
 test("fetchAssetText: an evaluate() that never settles cannot hold the QA call open", async () => {

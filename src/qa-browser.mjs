@@ -2000,10 +2000,10 @@ async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
     if (!response || !response.ok) return null;
     const declared = Number(response.headers?.get?.("content-length"));
     if (Number.isFinite(declared) && declared > maxBytes) return null;
-    if (!response.body || typeof response.body.getReader !== "function") {
-      const text = await Promise.race([response.text(), aborted]);
-      return typeof text === "string" && text.length <= maxBytes ? text : null;
-    }
+    // A body that cannot be streamed cannot be bounded: Response.text() takes
+    // no signal and allocates the whole response before the cap could be
+    // checked. Refuse it; unreadable is residue, never a pass.
+    if (!response.body || typeof response.body.getReader !== "function") return null;
     reader = response.body.getReader();
     const decoder = new TextDecoder();
     let received = 0;
@@ -2020,8 +2020,11 @@ async function readBoundedAssetText({ target, timeoutMs, maxBytes }) {
     return null;
   } finally {
     clearTimeout(timer);
+    // Not awaited: the read is over, and a slow or misbehaving cancel() must
+    // not hold this function past the deadline. The lock releases when the
+    // cancel settles.
     if (reader) {
-      try { await reader.cancel(); } catch { /* already errored or closed */ }
+      try { reader.cancel().catch(() => {}); } catch { /* already errored or closed */ }
     }
   }
 }
