@@ -2059,7 +2059,9 @@ async function runPageChecks(page, args, {
   const expectedMeta = page.expected_meta_tags || {};
   const actualMeta = extractMetaTags(html);
   for (const [name, expected] of Object.entries(expectedMeta)) {
-    if (["next-api-key", "next-campaign-api-key"].includes(name)) continue; // credential evidence is value-free
+    // Redact both credential-shaped hints from this generic serializer. The legacy
+    // next-campaign-api-key alias can be authored here, but is not SDK binding evidence.
+    if (["next-api-key", "next-campaign-api-key"].includes(name)) continue;
     const actual = actualMeta[name] || null;
     const unsupportedHint = unsupportedSdkMetaHint(name);
     if (unsupportedHint) {

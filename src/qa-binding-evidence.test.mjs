@@ -62,9 +62,9 @@ test('config loader enforces scope, redirect refusal, deduplication, byte and co
     if (url.includes('error')) throw new Error(key + url);
     return new Response('window.nextConfig = {apiKey:"x"}');
   } });
-  for (const src of ['https://other.test/config.js', 'https://user:password@fixture.example.test/x', 'file:///tmp/config.js']) assert.equal((await load(src, page.url)).ok, false);
+  for (const src of ['https://other.test/config.js', 'https://user:password@fixture.example.test/x', 'file:///tmp/config.js', '/config.js#fragment', 'https://fixture.example.test/config.js#fragment']) assert.equal((await load(src, page.url)).ok, false);
   assert.equal(calls, 0);
-  await Promise.all([load('/config.js', page.url), load('/config.js', page.url)]);
+  await Promise.all([load('/config.js', page.url), load('/config.js', page.url + '#page-fragment')]);
   assert.equal(calls, 1);
   for (const src of ['/redirect', '/large', '/error?credential=' + key]) assert.deepEqual(await load(src, page.url), { ok: false });
   for (let i = calls; i < BINDING_LIMITS.scripts_per_run; i++) await load('/c' + i, page.url);
@@ -110,14 +110,33 @@ test('page script count and request deadline failures are unknown and discard ex
   assert.deepEqual(await load('/timeout.js', page.url), {ok:false});
 });
 
-test('credential meta hints are never duplicated into ordinary assertions', async () => {
-  const { assertions } = await __qaNodeTestHooks.runPageChecks({ ...page, expected_meta_tags: {'next-api-key': key} }, {}, {
-    sourceLoader: async () => ({ok:true,status:200,status_text:'OK',html:`<meta name="next-api-key" content="${key}">`}),
-    bindingExpected: {value:key},
+test('supported and legacy credential meta hints are never duplicated into ordinary assertions', async () => {
+  for (const name of ['next-api-key', 'next-campaign-api-key']) {
+    const { assertions } = await __qaNodeTestHooks.runPageChecks({ ...page, expected_meta_tags: {[name]: key} }, {}, {
+      sourceLoader: async () => ({ok:true,status:200,status_text:'OK',html:`<meta name="${name}" content="${key}">`}),
+      bindingExpected: {value:key},
+    });
+    const binding = assertions.find(a => a.id === 'page-binding:checkout');
+    assert.equal(binding.status, name === 'next-api-key' ? 'pass' : 'manual_review');
+    if (name === 'next-campaign-api-key') assert.equal(binding.evidence.reason, 'no_source');
+    assert.equal(assertions.some(a => a.id.startsWith('meta:')), false);
+    assert.equal(JSON.stringify(assertions).includes(key), false);
+    assert.equal(JSON.stringify(assertions).includes(key.slice(-8)), false);
+  }
+});
+
+test('data-block scripts are not fetched and do not exhaust the config request budget', async () => {
+  let calls = 0;
+  const dataBlocks = '<script type="application/ld+json" src="/data.json">{"apiKey":"irrelevant"}</script>'.repeat(BINDING_LIMITS.scripts_per_page + 1);
+  const evidence = await observe(dataBlocks + '<script src="/config.js"></script>', {
+    scriptLoader: async src => {
+      calls++;
+      assert.equal(src, '/config.js');
+      return {ok:true,html:`window.nextConfig={apiKey:'${key}'}`};
+    },
   });
-  assert.equal(assertions.find(a => a.id === 'page-binding:checkout').status, 'pass');
-  assert.equal(JSON.stringify(assertions).includes(key), false);
-  assert.equal(JSON.stringify(assertions).includes(key.slice(-8)), false);
+  assert.equal(evidence.outcome, 'match');
+  assert.equal(calls, 1);
 });
 
 test('event handlers and redirected pages cannot silently certify the wrong source', async () => {

@@ -32,6 +32,7 @@ export function createBindingScriptLoader({ fetchImpl = globalThis.fetch } = {})
     try {
       const base = new URL(pageUrl);
       url = new URL(src, base);
+      // URL resolution preserves a fragment supplied by src; refuse it before fetch/cache.
       if (!['http:', 'https:'].includes(url.protocol) || url.origin !== base.origin || url.username || url.password || url.hash) return { ok: false };
     } catch { return { ok: false }; }
     const key = url.href;
@@ -104,6 +105,7 @@ export async function observeBinding({ source, page, expected, scriptLoader }) {
   let count = 0, unavailable = false;
   for (const script of scripts) {
     const { attrs } = script;
+    // Data-block types (e.g. JSON-LD) are not fetched and consume no config-request budget.
     if (attrs.type && !['text/javascript', 'application/javascript', 'module'].includes(attrs.type.toLowerCase())) continue;
     if (attrs.src && SDK.test(attrs.src)) continue;
     let text = script.text;
