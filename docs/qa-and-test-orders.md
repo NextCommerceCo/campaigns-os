@@ -937,3 +937,42 @@ expectations, and commerce-ref validation. A doctor-clean non-packet run means
 "the built output carries no template residue", **not** "the commerce wiring
 matches a spec". Treat it as a residue/visual gate, not equivalent to a
 packet-driven QA pass.
+
+### Per-page credential declarations
+
+Canonical `qa run` emits `page-binding:<page_id>` in the existing `api-metadata`
+family, with `campaigns-os-page-binding/v0` evidence (typed in the verdict schema).
+`match` means the statically declared credential equals the expected credential;
+`mismatch` is a blocker. `unknown` requires manual review. All three carry
+`identity: not_verified`: credential equality never proves a unique Campaign App
+ID, and no App ID is inferred from `campaignId` or `next-campaign-id`.
+
+Expected data reuses the commercial QA resolver (packet, then spec, then an
+explicit supported environment source). Conflicting authored values are unknown.
+The SDK loads `window.nextConfig.apiKey` before `next-api-key` at boot, so meta
+wins at runtime; this check deliberately reports differing declarations as a
+conflict rather than certifying one. It does not observe SDK execution.
+
+The bounded HTML loader is reused. HTML is parsed without execution; JavaScript
+is parsed with Acorn, accepting only unconditional literal `window.nextConfig`
+object or `.apiKey` assignments. Getters, spreads, computed values, branches,
+other executable statements, modules, async/nomodule scripts, event handlers and a base element require
+review. Nested Google Maps/payment keys and inert HTML do not count as campaign
+credentials. This small static grammar deliberately leaves many real pages
+unknown; a literal inside arbitrary code is not proof of effective configuration.
+
+External executable scripts other than the recognized jsDelivr Campaign Cart
+loader/index are inspected only on the page's origin. Each page admits at most
+6 such references; each run fetches at most 24 distinct URLs (deduplicated),
+256 KiB per response and 6 MiB aggregate, 5 seconds per request including body
+read (at most 30 seconds of sequential config requests per page). Redirects,
+credential-bearing URL authority, cross-origin URLs, missing/unreadable scripts,
+and limits all produce unknown. Config requests never forward cookies or auth.
+Page redirects within the origin resolve relative config paths against the final URL; a changed origin is unknown. There are no recursive imports or API lookups. Keys are transient comparison
+inputs: no raw value, masked fragment, digest, config URL, or exception text is
+included in this evidence. Credential meta hints are excluded from ordinary
+meta assertions to avoid duplicating their values into the verdict.
+
+Older verdicts lacking this assertion were not checked. Consumers must retain
+run/time/spec-hash context and segregate server-stamped untrusted submissions;
+a trusted submission attests the runner, not execution or resource identity.

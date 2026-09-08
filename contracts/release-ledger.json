@@ -1213,6 +1213,63 @@
         }
       ],
       "entry_sha256": "16609aa55db211b38806b0c3349641d88565248b3c12ebe8beefe2e7aa0618c6"
+    },
+    {
+      "id": "RL-0023",
+      "sequence": 23,
+      "date": "2026-09-08",
+      "kind": "release",
+      "surface_version": "1.21.0",
+      "changelog_section": "1.21.0",
+      "changelog_sha256": "9939f01569c237b0f0aa3e5cea72f737699980c3e04e389000db67d0a01bd1eb",
+      "agent_impact": "Page QA emits credential-free static comparison assertions. Unknown declarations need review; credential mismatch blocks. Consumers must not infer App identity or runtime execution from equality.",
+      "compatibility": "additive",
+      "migration": "Reinstall the producer and adopt the new verdict schema after merge; old verdicts remain not checked.",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "summary": "Types credential-free per-page static binding evidence."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances surface to 1.21.0 and pins the verdict schema."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerates surface version context."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerates surface version context; recipe unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents declaration semantics, bounds and identity limits."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Adds non-executing Acorn and parse5 parsers for page declarations."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Pins parser dependency bytes for reproducible runtime preparation."
+        }
+      ],
+      "entry_sha256": "4633b50af63d8cf07ba69690e15db30261b2a3e6d7524cfa11b2eba17d3e3655"
     }
   ]
 }

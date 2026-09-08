@@ -129,6 +129,60 @@
     }
   },
   "$defs": {
+    "pageBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "observation",
+        "outcome",
+        "reason",
+        "source_kinds",
+        "identity"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "campaigns-os-page-binding/v0"
+        },
+        "observation": {
+          "const": "static_declaration"
+        },
+        "outcome": {
+          "enum": [
+            "match",
+            "mismatch",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "credential_comparison",
+            "page_unavailable",
+            "conflicting_declarations",
+            "conflicting_expected",
+            "expected_unavailable",
+            "script_unavailable_or_limit",
+            "dynamic_unresolved",
+            "no_source"
+          ]
+        },
+        "source_kinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "meta",
+              "inline",
+              "config_script"
+            ]
+          }
+        },
+        "identity": {
+          "const": "not_verified"
+        }
+      },
+      "description": "Credential-free static declaration comparison, not observed execution or Campaign App identity. No keys, hashes, fragments, source URLs or inferred resource IDs."
+    },
     "pageUrlRef": {
       "type": "object",
       "additionalProperties": true,
@@ -144,6 +198,34 @@
       "description": "A funnel-topology page reference: identity fields plus the resolved live URL."
     },
     "assertion": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^page-binding:"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "family": {
+                "const": "api-metadata"
+              },
+              "evidence": {
+                "$ref": "#/$defs/pageBinding"
+              }
+            },
+            "required": [
+              "evidence"
+            ]
+          }
+        }
+      ],
       "type": "object",
       "additionalProperties": true,
       "required": ["id", "family", "page", "status"],
