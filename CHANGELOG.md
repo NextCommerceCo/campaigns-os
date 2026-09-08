@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.21.0] - 2026-09-08
+
+### Added
+
+- Canonical page QA compares bounded static Campaign Cart credential declarations with expected configuration. Evidence is credential-free and explicitly does not establish runtime execution or a unique Campaign App ID. Conflicting, dynamic, unavailable and missing declarations require review; a proven credential mismatch blocks. The verdict schema types the additive page-binding evidence.
+
 ## [1.20.0+agent.1] - 2026-09-06
 
 ### Changed

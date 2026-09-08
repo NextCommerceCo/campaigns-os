@@ -248,6 +248,7 @@ export function createPageSourceLoader({
           ok: true,
           status: response.status,
           status_text: response.statusText || "",
+          final_url: response.url || null,
           html,
         };
       }, timeoutMs);

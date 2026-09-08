@@ -1,3 +1,4 @@
+import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
 export { shellToken } from "./shell-token.mjs";
 import { createHash } from "node:crypto";
@@ -1725,9 +1726,11 @@ async function runResolvedQa(args, resolved) {
     .filter((page) => page?.id !== undefined && page?.id !== null)
     .map((page) => String(page.id)));
   const capturesByPageId = new Map();
+  const bindingExpected = expectedBinding(resolved);
+  const bindingScriptLoader = createBindingScriptLoader();
   const pages = resolved.topologies.flatMap(topology => topology.pages);
   const pageResults = await mapConcurrent(pages, COMMERCIAL_QA_LIMITS.concurrency, page =>
-    runPageChecks(page, args, { sourceLoader, captureCommercial: commercialIds.has(String(page.page_id)) }));
+    runPageChecks(page, args, { sourceLoader, bindingExpected, bindingScriptLoader, captureCommercial: commercialIds.has(String(page.page_id)) }));
   for (const [index, page] of pages.entries()) {
     const pageResult = pageResults[index];
     assertions.push(...pageResult.assertions);
@@ -1997,9 +2000,12 @@ function topologyList(topologies) {
 async function runPageChecks(page, args, {
   sourceLoader = createPageSourceLoader({ authCookie: args["auth-cookie"] }),
   captureCommercial = false,
+  bindingExpected = { value: null },
+  bindingScriptLoader = createBindingScriptLoader(),
 } = {}) {
   const assertions = [];
   if (!page.url) {
+    assertions.push(bindingAssertion(page, await observeBinding({ source: null, page, expected: bindingExpected, scriptLoader: bindingScriptLoader })));
     assertions.push(assertion({
       id: `route-url:${page.page_id}`,
       family: "funnel-flow",
@@ -2019,6 +2025,7 @@ async function runPageChecks(page, args, {
   }
 
   const source = await sourceLoader(page);
+  assertions.push(bindingAssertion(page, await observeBinding({ source, page, expected: bindingExpected, scriptLoader: bindingScriptLoader })));
   if (!source.ok) {
     const isHttpStatus = source.error_code === "http_status";
     assertions.push(assertion({
@@ -2052,6 +2059,7 @@ async function runPageChecks(page, args, {
   const expectedMeta = page.expected_meta_tags || {};
   const actualMeta = extractMetaTags(html);
   for (const [name, expected] of Object.entries(expectedMeta)) {
+    if (["next-api-key", "next-campaign-api-key"].includes(name)) continue; // credential evidence is value-free
     const actual = actualMeta[name] || null;
     const unsupportedHint = unsupportedSdkMetaHint(name);
     if (unsupportedHint) {
