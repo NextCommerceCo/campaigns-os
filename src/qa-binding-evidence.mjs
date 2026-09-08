@@ -33,6 +33,7 @@ export function createBindingScriptLoader({ fetchImpl = globalThis.fetch } = {})
       const base = new URL(pageUrl);
       url = new URL(src, base);
       // URL resolution preserves a fragment supplied by src; refuse it before fetch/cache.
+      // A path reference such as /config.js does not inherit the page URL fragment.
       if (!['http:', 'https:'].includes(url.protocol) || url.origin !== base.origin || url.username || url.password || url.hash) return { ok: false };
     } catch { return { ok: false }; }
     const key = url.href;

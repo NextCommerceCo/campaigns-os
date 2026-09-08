@@ -64,7 +64,10 @@ test('config loader enforces scope, redirect refusal, deduplication, byte and co
   } });
   for (const src of ['https://other.test/config.js', 'https://user:password@fixture.example.test/x', 'file:///tmp/config.js', '/config.js#fragment', 'https://fixture.example.test/config.js#fragment']) assert.equal((await load(src, page.url)).ok, false);
   assert.equal(calls, 0);
-  await Promise.all([load('/config.js', page.url), load('/config.js', page.url + '#page-fragment')]);
+  assert.equal(new URL('/config.js', page.url + '#page-fragment').hash, '');
+  const sources = await Promise.all([load('/config.js', page.url), load('/config.js', page.url + '#page-fragment')]);
+  assert.ok(sources.every(source => source.ok), 'both path references must reach the cache, not fragment refusal');
+  assert.deepEqual(sources[0], sources[1]);
   assert.equal(calls, 1);
   for (const src of ['/redirect', '/large', '/error?credential=' + key]) assert.deepEqual(await load(src, page.url), { ok: false });
   for (let i = calls; i < BINDING_LIMITS.scripts_per_run; i++) await load('/c' + i, page.url);
