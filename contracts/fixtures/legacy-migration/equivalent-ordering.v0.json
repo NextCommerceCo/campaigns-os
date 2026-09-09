@@ -1,0 +1,18 @@
+{
+  "schema_version": "campaigns-os-legacy-migration-inventory/v0",
+  "migration_id": "example-sdk03-shadow",
+  "source": { "campaign_id": 1602, "sdk_version": "0.3.12" },
+  "target": {
+    "campaign": { "language": "en", "name": "Example SDK 0.4 Shadow", "payment_gateway_group_id": 4, "currency": "usd", "available_shipping_countries": ["US"], "available_payment_methods": ["card_token"] },
+    "packages": [
+      { "name": "Widget Refill", "price": "29.95", "product_variant_id": 513, "product_id": 185, "package_key": "widget-upsell" },
+      { "price": "49.95", "product_id": 184, "package_key": "widget-unit", "product_variant_id": 512, "name": "Widget" }
+    ],
+    "shipping_methods": [{ "price": "4.95", "shipping_method": "default-shipping", "shipping_key": "standard" }],
+    "offer_intents": [
+      { "benefit": { "value": "25.00", "type": "package_percentage" }, "condition": { "package_keys": ["widget-upsell"], "all_packages": false, "type": "any" }, "code": "WIDGETREFILL25", "offer_type": "voucher", "name": "Widget Refill - 25%", "intent_key": "widget-post-purchase" },
+      { "benefit": { "price_rounding": "0.95", "type": "package_percentage", "value": "10.00" }, "condition": { "package_keys": ["widget-unit"], "value": 2, "type": "count", "all_packages": false }, "offer_type": "offer", "name": "Widget - Buy 2 - 10%", "intent_key": "widget-two-pack" }
+    ],
+    "authorized_domains": ["www.example.com", "try.example.com"]
+  }
+}

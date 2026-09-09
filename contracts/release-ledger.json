@@ -1270,6 +1270,75 @@
         }
       ],
       "entry_sha256": "4633b50af63d8cf07ba69690e15db30261b2a3e6d7524cfa11b2eba17d3e3655"
+    },
+    {
+      "id": "RL-0024",
+      "sequence": 24,
+      "date": "2026-09-09",
+      "kind": "release",
+      "surface_version": "1.22.0",
+      "changelog_section": "1.22.0",
+      "changelog_sha256": "54d4d970e5c8d878cd17baf8886cfbd4bb71992e3e50b399e0ef6b84c87338d4",
+      "agent_impact": "Consumers may pin the new legacy-migration subpath and delete private copies of the v0 inventory validator and normalizer. Offer intents are part of v0 and resolve stable package keys only at apply time. The public module remains pure; authenticated execution, preview/apply gating, audit and receipt persistence stay connector-owned.",
+      "compatibility": "additive",
+      "migration": "Pin the release, import @nextcommerce/campaigns-os/legacy-migration, and replace local inventory/Offer contract code while preserving the connector's guarded write protocol.",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
+          "summary": "Adds the strict SDK 0.3.x inventory, unit-package, explicit Offer-intent, domain, and credential-free input contract."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
+          "summary": "Adds the exact-hash preview plan with keyed Offer intents held until package IDs resolve."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json",
+          "summary": "Adds portable write receipts with Offer rows keyed by intent key and upstream resource IDs."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Exports the pure legacy-migration module, its declarations, and all three v0 schemas, and runs its checker in npm run check."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances the supported surface to 1.22.0 and pins the additive module, schema, and guide entries."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Documents the migration module and keeps its execution boundary outside the public package."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/legacy-migration.md",
+          "surface_entry": "docs/legacy-migration.md",
+          "summary": "Documents invariants, Offer request construction, canonical readback projection, deterministic hashing, and token-free evidence."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerates orientation context for supported surface 1.22.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerates supported-surface context; the runtime recipe is unchanged."
+        }
+      ],
+      "entry_sha256": "53f24acf51a9403cc462813dd2c3e10cece05367c45c0fdf45ae3baee14d88f7"
     }
   ]
 }

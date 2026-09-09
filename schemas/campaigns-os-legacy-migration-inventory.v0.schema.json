@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
+  "title": "Campaigns OS Legacy Migration Inventory v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "migration_id", "source", "target"],
+  "properties": {
+    "schema_version": { "const": "campaigns-os-legacy-migration-inventory/v0" },
+    "migration_id": { "$ref": "#/$defs/key" },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["campaign_id", "sdk_version"],
+      "properties": {
+        "campaign_id": { "type": "integer", "minimum": 1 },
+        "sdk_version": { "type": "string", "pattern": "^0\\.3\\.\\d+(?:-[0-9A-Za-z.-]+)?$" }
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["campaign", "packages", "shipping_methods", "offer_intents", "authorized_domains"],
+      "properties": {
+        "campaign": { "$ref": "#/$defs/campaign" },
+        "packages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/package" } },
+        "shipping_methods": { "type": "array", "items": { "$ref": "#/$defs/shipping" } },
+        "offer_intents": { "type": "array", "items": { "$ref": "#/$defs/offer" } },
+        "authorized_domains": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/hostname" } }
+      }
+    }
+  },
+  "$defs": {
+    "key": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$" },
+    "money": { "type": "string", "pattern": "^(?:0|[1-9]\\d{0,7})(?:\\.\\d{1,2})?$" },
+    "hostname": { "type": "string", "pattern": "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$" },
+    "campaign": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "currency", "language", "payment_gateway_group_id"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "currency": { "type": "string", "pattern": "^[A-Za-z]{3}$" },
+        "language": { "type": "string", "minLength": 2, "maxLength": 16 },
+        "payment_gateway_group_id": { "type": "integer", "minimum": 1 },
+        "additional_currencies": { "type": "array", "items": { "type": "string" } },
+        "available_payment_methods": { "type": "array", "items": { "type": "string" } },
+        "available_express_payment_methods": { "type": "array", "items": { "type": "string" } },
+        "available_shipping_countries": { "type": "array", "items": { "type": "string" } },
+        "statement_descriptor": { "type": "string", "minLength": 1, "maxLength": 255 }
+      }
+    },
+    "package": {
+      "type": "object", "additionalProperties": false,
+      "required": ["package_key", "name", "product_id", "product_variant_id", "price"],
+      "properties": {
+        "package_key": { "$ref": "#/$defs/key" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "product_id": { "type": "integer", "minimum": 1 },
+        "product_variant_id": { "type": "integer", "minimum": 1 },
+        "price": { "$ref": "#/$defs/money" },
+        "price_recurring": { "$ref": "#/$defs/money" },
+        "interval": { "type": "string", "minLength": 1 },
+        "interval_count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "shipping": {
+      "type": "object", "additionalProperties": false,
+      "required": ["shipping_key", "shipping_method", "price"],
+      "properties": {
+        "shipping_key": { "$ref": "#/$defs/key" },
+        "shipping_method": { "type": "string", "minLength": 1 },
+        "price": { "$ref": "#/$defs/money" }
+      }
+    },
+    "offer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["intent_key", "name", "offer_type", "condition", "benefit"],
+      "properties": {
+        "intent_key": { "$ref": "#/$defs/key" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "offer_type": { "enum": ["offer", "voucher"] },
+        "code": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "condition": {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "all_packages", "package_keys"],
+          "properties": {
+            "type": { "enum": ["any", "count"] },
+            "value": { "type": ["integer", "null"], "minimum": 1 },
+            "all_packages": { "const": false },
+            "package_keys": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/key" } }
+          },
+          "allOf": [
+            { "if": { "properties": { "type": { "const": "count" } }, "required": ["type"] }, "then": { "required": ["value"], "properties": { "value": { "type": "integer", "minimum": 1 } } } },
+            { "if": { "properties": { "type": { "const": "any" } }, "required": ["type"] }, "then": { "properties": { "value": { "type": "null" } } } }
+          ]
+        },
+        "benefit": {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "value"],
+          "properties": {
+            "type": { "enum": ["package_percentage", "shipping_percentage", "order_percentage"] },
+            "value": { "$ref": "#/$defs/money" },
+            "price_rounding": { "type": ["string", "null"], "enum": ["0.00", "0.95", "0.97", "0.99", null] }
+          }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "offer_type": { "const": "voucher" } }, "required": ["offer_type"] }, "then": { "required": ["code"] } },
+        { "if": { "properties": { "offer_type": { "const": "offer" } }, "required": ["offer_type"] }, "then": { "not": { "required": ["code"] } } }
+      ]
+    }
+  }
+}

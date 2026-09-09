@@ -1,0 +1,16 @@
+{
+  "schema_version": "campaigns-os-legacy-provisioning-plan/v0",
+  "store": "test-store.example.com",
+  "migration_id": "example-sdk03-shadow",
+  "inventory_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "preview_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "source": { "campaign_id": 1602, "sdk_version": "0.3.12" },
+  "operations": [
+    { "operation_id": "campaign:create", "action": "campaign.create", "resource_key": "campaign", "request": { "name": "Example SDK 0.4 Shadow" } },
+    { "operation_id": "package:create:widget-unit", "action": "package.create", "resource_key": "widget-unit", "depends_on": "campaign:create", "request": { "name": "Widget", "product_id": 184, "product_variant_ids": [512], "price": "49.95" } }
+  ],
+  "offer_intents": [
+    { "intent_key": "widget-two-pack", "name": "Widget - Buy 2 - 10%", "offer_type": "offer", "condition": { "type": "count", "value": 2, "all_packages": false, "package_keys": ["widget-unit"] }, "benefit": { "type": "package_percentage", "value": "10.00", "price_rounding": "0.95" } }
+  ],
+  "authorized_domains": ["try.example.com"]
+}

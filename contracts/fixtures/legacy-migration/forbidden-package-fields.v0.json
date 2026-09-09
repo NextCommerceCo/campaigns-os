@@ -1,0 +1,10 @@
+{
+  "schema_version": "campaigns-os-legacy-migration-inventory/v0",
+  "migration_id": "forbidden-package",
+  "source": { "campaign_id": 1, "sdk_version": "0.3.12" },
+  "target": {
+    "campaign": { "name": "Forbidden", "currency": "USD", "language": "en", "payment_gateway_group_id": 1 },
+    "packages": [{ "package_key": "unit", "name": "2x Widget", "product_id": 1, "product_variant_id": 10, "price": "10.00", "quantity": 2 }],
+    "shipping_methods": [], "offer_intents": [], "authorized_domains": []
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
+  "title": "Campaigns OS Legacy Provisioning Plan v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "store", "migration_id", "inventory_hash", "preview_hash", "source", "operations", "offer_intents", "authorized_domains"],
+  "properties": {
+    "schema_version": { "const": "campaigns-os-legacy-provisioning-plan/v0" },
+    "store": { "type": "string", "minLength": 1 },
+    "migration_id": { "$ref": "#/$defs/key" },
+    "inventory_hash": { "$ref": "#/$defs/hash" },
+    "preview_hash": { "$ref": "#/$defs/hash" },
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["campaign_id", "sdk_version"],
+      "properties": { "campaign_id": { "type": "integer", "minimum": 1 }, "sdk_version": { "type": "string", "pattern": "^0\\.3\\.\\d+(?:-[0-9A-Za-z.-]+)?$" } }
+    },
+    "operations": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["operation_id", "action", "resource_key", "request"],
+        "properties": {
+          "operation_id": { "type": "string", "minLength": 1 },
+          "action": { "enum": ["campaign.create", "package.create", "shipping_method.create"] },
+          "resource_key": { "type": "string", "minLength": 1 },
+          "depends_on": { "type": "string", "minLength": 1 },
+          "request": { "type": "object" }
+        }
+      }
+    },
+    "offer_intents": { "type": "array", "items": { "$ref": "campaigns-os-legacy-migration-inventory.v0.schema.json#/$defs/offer" } },
+    "authorized_domains": { "type": "array", "uniqueItems": true, "items": { "$ref": "campaigns-os-legacy-migration-inventory.v0.schema.json#/$defs/hostname" } }
+  },
+  "$defs": {
+    "key": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$" },
+    "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}

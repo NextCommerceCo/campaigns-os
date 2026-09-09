@@ -1,0 +1,13 @@
+{
+  "schema_version": "campaigns-os-legacy-migration-inventory/v0",
+  "migration_id": "duplicate-keys",
+  "source": { "campaign_id": 1, "sdk_version": "0.3.12" },
+  "target": {
+    "campaign": { "name": "Duplicate", "currency": "USD", "language": "en", "payment_gateway_group_id": 1 },
+    "packages": [
+      { "package_key": "unit", "name": "One", "product_id": 1, "product_variant_id": 10, "price": "10.00" },
+      { "package_key": "unit", "name": "Two", "product_id": 2, "product_variant_id": 20, "price": "20.00" }
+    ],
+    "shipping_methods": [], "offer_intents": [], "authorized_domains": []
+  }
+}

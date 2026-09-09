@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.22.0] - 2026-09-09
+
+### Added
+
+- Added the supported `@nextcommerce/campaigns-os/legacy-migration` subpath and
+  strict v0 inventory, preview-plan, and receipt schemas for bounded Campaign
+  Cart SDK 0.3.x shadow migrations. The pure helpers normalize keyed rows for
+  stable hashes, reject credentials and package merchandising, build Offers
+  create bodies from resolved package keys, compare canonical Offer/package
+  readback shapes, and project token-free receipt evidence.
+- Offer intents ship in v0. Migration Offers must name explicit package keys;
+  `all_packages` is refused even though the upstream API supports it, so a
+  migration cannot silently capture packages added later.
+
+### Changed
+
+- Bumped the supported surface to `1.22.0` for the additive package and schema
+  exports. Authenticated transport, preview/apply execution, audit and receipt
+  persistence, sessions, deletes, and rollback remain connector-owned.
+
 ## [1.21.0] - 2026-09-08
 
 ### Added
