@@ -1,0 +1,12 @@
+{
+  "schema_version": "campaigns-os-legacy-migration-inventory/v0",
+  "migration_id": "dangling-offer",
+  "source": { "campaign_id": 1, "sdk_version": "0.3.12" },
+  "target": {
+    "campaign": { "name": "Dangling", "currency": "USD", "language": "en", "payment_gateway_group_id": 1 },
+    "packages": [{ "package_key": "unit", "name": "One", "product_id": 1, "product_variant_id": 10, "price": "10.00" }],
+    "shipping_methods": [],
+    "offer_intents": [{ "intent_key": "tier-2", "name": "Buy 2", "offer_type": "offer", "condition": { "type": "count", "value": 2, "all_packages": false, "package_keys": ["missing"] }, "benefit": { "type": "package_percentage", "value": "10.00" } }],
+    "authorized_domains": []
+  }
+}

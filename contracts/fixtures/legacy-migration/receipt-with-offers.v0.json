@@ -1,0 +1,18 @@
+{
+  "schema_version": "campaigns-os-legacy-provisioning-receipt/v0",
+  "store": "test-store.example.com",
+  "migration_id": "example-sdk03-shadow",
+  "inventory_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "preview_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "state": "provisioned",
+  "created_at": "2026-09-09T01:00:00Z",
+  "updated_at": "2026-09-09T01:02:00Z",
+  "applied_at": "2026-09-09T01:02:00Z",
+  "campaign_id": 700,
+  "writes": [
+    { "operation_id": "campaign:create", "action": "campaign.create", "resource_key": "campaign", "upstream_ids": { "campaign_id": 700 }, "readback": { "id": 700, "api_key": "public-storefront-key-that-must-not-enter-build-evidence" }, "audit_key": "audit-1" },
+    { "operation_id": "package:create:widget-unit", "action": "package.create", "resource_key": "widget-unit", "upstream_ids": { "campaign_id": 700, "package_id": 701 }, "audit_key": "audit-2" },
+    { "operation_id": "offer:create:widget-two-pack", "action": "offer.create", "resource_key": "widget-two-pack", "intent_key": "widget-two-pack", "upstream_ids": { "campaign_id": 700, "offer_id": 702 }, "audit_key": "audit-3" }
+  ],
+  "failure": null
+}

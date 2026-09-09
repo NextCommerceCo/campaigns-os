@@ -22,7 +22,15 @@
       "import": "./campaign-spec/dist/index.js",
       "default": "./campaign-spec/dist/index.js"
     },
+    "./legacy-migration": {
+      "types": "./src/legacy-migration.d.ts",
+      "import": "./src/legacy-migration.mjs",
+      "default": "./src/legacy-migration.mjs"
+    },
     "./schemas/campaign-spec.v4.schema.json": "./schemas/campaign-spec.v4.schema.json",
+    "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json": "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
+    "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json": "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
+    "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json": "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -35,7 +43,8 @@
     "build:spec": "tsc -p campaign-spec/tsconfig.build.json",
     "prepare": "npm run build:spec",
     "check:spec": "node --test \"campaign-spec/test/**/*.test.ts\"",
-    "check": "node ./scripts/check-catalog-provenance.mjs && node ./scripts/check-workflow-contracts.mjs && npm run build:spec && node --test ./src/*.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs ./scripts/check-catalog-provenance.test.mjs ./scripts/check-workflow-contracts.test.mjs ./scripts/check-slot-manifest.test.mjs ./scripts/check-skill-versions.test.mjs ./scripts/check-supported-surface.test.mjs ./scripts/check-campaign-spec-conformance.test.mjs ./scripts/check-release-ledger.test.mjs ./scripts/generate-orientation-reference.test.mjs ./scripts/check-runtime-recipe.test.mjs && npm run check:spec && node ./scripts/check-fixtures.mjs && node ./scripts/check-campaign-spec-conformance.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs && node ./scripts/check-slot-manifest.mjs && node ./scripts/check-skill-versions.mjs && node ./scripts/check-cart-readiness-contract.mjs && npm run check:sidecar-bundle && node ./scripts/check-supported-surface.mjs && node ./scripts/check-release-ledger.mjs && node ./scripts/check-runtime-recipe.mjs && npm run check:orientation-docs && npm run check:runtime-docs && node ./scripts/check-pack.mjs --skip-prepare",
+    "check": "node ./scripts/check-catalog-provenance.mjs && node ./scripts/check-workflow-contracts.mjs && npm run build:spec && node --test ./src/*.test.mjs ./scripts/refresh-starter-template-catalog.test.mjs ./scripts/check-catalog-provenance.test.mjs ./scripts/check-workflow-contracts.test.mjs ./scripts/check-slot-manifest.test.mjs ./scripts/check-skill-versions.test.mjs ./scripts/check-supported-surface.test.mjs ./scripts/check-campaign-spec-conformance.test.mjs ./scripts/check-release-ledger.test.mjs ./scripts/generate-orientation-reference.test.mjs ./scripts/check-runtime-recipe.test.mjs && npm run check:spec && node ./scripts/check-fixtures.mjs && node ./scripts/check-legacy-migration.mjs && node ./scripts/check-campaign-spec-conformance.mjs && node ./scripts/check-private-strings.mjs && node ./scripts/check-template-doctrine.mjs && node ./scripts/check-slot-manifest.mjs && node ./scripts/check-skill-versions.mjs && node ./scripts/check-cart-readiness-contract.mjs && npm run check:sidecar-bundle && node ./scripts/check-supported-surface.mjs && node ./scripts/check-release-ledger.mjs && node ./scripts/check-runtime-recipe.mjs && npm run check:orientation-docs && npm run check:runtime-docs && node ./scripts/check-pack.mjs --skip-prepare",
+    "check:legacy-migration": "node ./scripts/check-legacy-migration.mjs",
     "check:fixtures": "node ./scripts/check-fixtures.mjs",
     "check:spec-conformance": "node ./scripts/check-campaign-spec-conformance.mjs",
     "check:pack": "node ./scripts/check-pack.mjs",

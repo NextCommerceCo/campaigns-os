@@ -1,11 +1,15 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act \u2014 hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here \u2014 src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) \u2014 is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.21.0",
+  "surface_version": "1.22.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
     "./campaign-spec",
-    "./schemas/campaign-spec.v4.schema.json"
+    "./legacy-migration",
+    "./schemas/campaign-spec.v4.schema.json",
+    "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
+    "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
+    "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json"
   ],
   "bin": [
     "campaigns-os"
@@ -49,6 +53,15 @@
     },
     "schemas/campaign-spec.v4.schema.json": {
       "sha256": "12b57573739357acb2b007d00a737cd86face441c47f2719fc51b041dc8ea4a5"
+    },
+    "schemas/campaigns-os-legacy-migration-inventory.v0.schema.json": {
+      "sha256": "d6edc4572900d15fdaf6b8c59916b0d885303c1d398bdadeb7c58285522c9049"
+    },
+    "schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json": {
+      "sha256": "24890762bbb27c6f11f6e969e08ee56c5b5af946269f59428844989d4acb5e12"
+    },
+    "schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json": {
+      "sha256": "1405c32bb9698030e9a40d754191e413cdd505dde91ac7de2e41c8887700f8f2"
     },
     "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json": {
       "sha256": "1bc53b9a75a6c19c89aee6e9664574980b09d2e13eb8826b157f5ab6ba82d0b0"
@@ -97,6 +110,7 @@
     "docs/campaign-standardization-report.md",
     "docs/brand-theme-bridge.md",
     "docs/qa-and-test-orders.md",
+    "docs/legacy-migration.md",
     "docs/versioning.md",
     "docs/workflow-findings-sidecar.md",
     "AGENTS.md",

@@ -1,0 +1,10 @@
+{
+  "campaign_id": 700,
+  "package_ids": { "widget-unit": 701 },
+  "shipping_method_ids": {},
+  "offer_ids": { "widget-two-pack": 702 },
+  "offer_intent_keys": ["widget-two-pack"],
+  "plan_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "receipt_hash": "sha256:3464a3aeb02977e1f8b43e2ba3fc671a199891d9deba5c0181db52c5c853d334",
+  "applied_at": "2026-09-09T01:02:00Z"
+}

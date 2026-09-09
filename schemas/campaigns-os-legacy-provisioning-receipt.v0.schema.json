@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextcommerce.com/schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json",
+  "title": "Campaigns OS Legacy Provisioning Receipt v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "store", "migration_id", "inventory_hash", "preview_hash", "state", "created_at", "updated_at", "campaign_id", "writes"],
+  "properties": {
+    "schema_version": { "const": "campaigns-os-legacy-provisioning-receipt/v0" },
+    "store": { "type": "string", "minLength": 1 },
+    "migration_id": { "$ref": "#/$defs/key" },
+    "inventory_hash": { "$ref": "#/$defs/hash" },
+    "preview_hash": { "$ref": "#/$defs/hash", "description": "The exact confirmation hash of the preview plan; projected as plan_hash in build evidence." },
+    "state": { "enum": ["applying", "provisioned", "awaiting_manual_configuration", "failed", "reconciliation_required"] },
+    "created_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "updated_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "applied_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+    "campaign_id": { "type": ["integer", "null"], "minimum": 1 },
+    "writes": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["operation_id", "action", "resource_key", "upstream_ids"],
+        "properties": {
+          "operation_id": { "type": "string", "minLength": 1 },
+          "action": { "enum": ["campaign.create", "package.create", "shipping_method.create", "offer.create"] },
+          "resource_key": { "type": "string", "minLength": 1 },
+          "intent_key": { "$ref": "#/$defs/key" },
+          "upstream_ids": {
+            "type": "object", "additionalProperties": false, "required": ["campaign_id"],
+            "properties": {
+              "campaign_id": { "type": "integer", "minimum": 1 },
+              "package_id": { "type": ["integer", "null"], "minimum": 1 },
+              "shipping_method_id": { "type": ["integer", "null"], "minimum": 1 },
+              "offer_id": { "type": ["integer", "null"], "minimum": 1 }
+            }
+          },
+          "readback": { "type": "object" },
+          "audit_key": { "type": "string", "minLength": 1 }
+        },
+        "allOf": [
+          { "if": { "properties": { "action": { "const": "campaign.create" } }, "required": ["action"] }, "then": { "properties": { "upstream_ids": { "required": ["campaign_id"], "properties": { "campaign_id": { "type": "integer", "minimum": 1 } } } } } },
+          { "if": { "properties": { "action": { "const": "package.create" } }, "required": ["action"] }, "then": { "properties": { "upstream_ids": { "required": ["package_id"], "properties": { "package_id": { "type": "integer", "minimum": 1 } } } } } },
+          { "if": { "properties": { "action": { "const": "shipping_method.create" } }, "required": ["action"] }, "then": { "properties": { "upstream_ids": { "required": ["shipping_method_id"], "properties": { "shipping_method_id": { "type": "integer", "minimum": 1 } } } } } },
+          { "if": { "properties": { "action": { "const": "offer.create" } }, "required": ["action"] }, "then": { "required": ["intent_key"], "properties": { "upstream_ids": { "required": ["offer_id"], "properties": { "offer_id": { "type": "integer", "minimum": 1 } } } } } }
+        ]
+      }
+    },
+    "failure": { "type": ["object", "null"] }
+  },
+  "allOf": [
+    { "if": { "properties": { "state": { "enum": ["provisioned", "awaiting_manual_configuration"] } }, "required": ["state"] }, "then": { "required": ["applied_at"], "properties": { "campaign_id": { "type": "integer", "minimum": 1 } } } }
+  ],
+  "$defs": {
+    "key": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,79}$" },
+    "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}
