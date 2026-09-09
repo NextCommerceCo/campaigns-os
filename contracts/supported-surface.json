@@ -55,7 +55,7 @@
       "sha256": "12b57573739357acb2b007d00a737cd86face441c47f2719fc51b041dc8ea4a5"
     },
     "schemas/campaigns-os-legacy-migration-inventory.v0.schema.json": {
-      "sha256": "097c0814a063146946321010de13af2e8609e7164d08c8000263f7d41b9368b9"
+      "sha256": "d6edc4572900d15fdaf6b8c59916b0d885303c1d398bdadeb7c58285522c9049"
     },
     "schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json": {
       "sha256": "24890762bbb27c6f11f6e969e08ee56c5b5af946269f59428844989d4acb5e12"

@@ -41,6 +41,24 @@ test("valid inventory, plan, and receipt fixtures conform to their public schema
   }
 });
 
+test("Offer percentage schema and runtime both enforce the range (0, 100]", () => {
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  const inventorySchema = schema("campaigns-os-legacy-migration-inventory.v0.schema.json");
+  const validate = ajv.compile(inventorySchema);
+  for (const value of ["0.01", "10", "99.99", "100", "100.00"]) {
+    const inventory = fixture("valid-inventory.v0.json");
+    inventory.target.offer_intents[0].benefit.value = value;
+    assert.equal(validate(inventory), true, `${value}: ${JSON.stringify(validate.errors)}`);
+    assert.deepEqual(validateLegacyMigrationInventory(inventory), [], value);
+  }
+  for (const value of ["0", "0.00", "100.01", "250.00"]) {
+    const inventory = fixture("valid-inventory.v0.json");
+    inventory.target.offer_intents[0].benefit.value = value;
+    assert.equal(validate(inventory), false, value);
+    assert.ok(validateLegacyMigrationInventory(inventory).some((issue) => issue.includes("benefit.value")), value);
+  }
+});
+
 test("normalization gives equivalent keyed-list ordering the same hash", async () => {
   const canonical = normalizeLegacyMigrationInventory(fixture("valid-inventory.v0.json"));
   const reordered = normalizeLegacyMigrationInventory(fixture("equivalent-ordering.v0.json"));
@@ -277,6 +295,12 @@ test("receipt validation refuses ambiguous projection identities and private cre
   secret.writes[0].readback.admin_api_token = "must-never-cross-the-contract";
   assert.ok(validateLegacyProvisioningReceipt(secret).some((issue) => issue.includes("private credential fields are forbidden")));
   assert.deepEqual(validateLegacyProvisioningReceipt(fixture("receipt-with-offers.v0.json")), []);
+
+  const applying = fixture("receipt-with-offers.v0.json");
+  applying.state = "applying";
+  applying.campaign_id = null;
+  delete applying.applied_at;
+  assert.deepEqual(validateLegacyProvisioningReceipt(applying), []);
 });
 
 test("receipt validator covers state, timestamps, write actions, IDs, offer identities, and shipping projection", async () => {

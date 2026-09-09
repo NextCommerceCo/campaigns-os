@@ -436,7 +436,7 @@ export function validateLegacyProvisioningReceipt(input) {
         rejectUnknownKeys(row.upstream_ids, new Set(["campaign_id", "package_id", "shipping_method_id", "offer_id"]), `writes[${index}].upstream_ids`, issues);
         if (!isPositiveInteger(row.upstream_ids.campaign_id))
           issues.push(`writes[${index}].upstream_ids.campaign_id: every successful write requires its positive parent campaign ID`);
-        else if (!isPositiveInteger(input.campaign_id) || row.upstream_ids.campaign_id !== input.campaign_id)
+        else if (input.campaign_id !== null && row.upstream_ids.campaign_id !== input.campaign_id)
           issues.push(`writes[${index}].upstream_ids.campaign_id: must equal the receipt campaign_id`);
         for (const field of ["package_id", "shipping_method_id", "offer_id"])
           if (row.upstream_ids[field] !== undefined && row.upstream_ids[field] !== null && !isPositiveInteger(row.upstream_ids[field]))
