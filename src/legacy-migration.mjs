@@ -8,11 +8,14 @@ const HOST_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-
 const MONEY_RE = /^(?:0|[1-9]\d{0,7})(?:\.\d{1,2})?$/;
 const SHA256_RE = /^sha256:[a-f0-9]{64}$/;
 const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
-const CREDENTIAL_KEY_RE = /(?:authorization|token|secret|privatekey|adminkey|apikey|accesskey|accesstoken|clientsecret)/;
+const CREDENTIAL_KEY_RE = /(?:authorization|token|secret|privatekey|adminkey|apikey|accesskey|accesstoken|clientsecret|credential|password|cookie|session)/;
 const OFFER_TYPES = new Set(["offer", "voucher"]);
 const CONDITION_TYPES = new Set(["any", "count"]);
 const BENEFIT_TYPES = new Set(["package_percentage", "shipping_percentage", "order_percentage"]);
 const PRICE_ROUNDINGS = new Set(["0.00", "0.95", "0.97", "0.99"]);
+const PLAN_OPERATION_ACTIONS = new Set(["campaign.create", "package.create", "shipping_method.create"]);
+const RECEIPT_STATES = new Set(["applying", "provisioned", "awaiting_manual_configuration", "failed", "reconciliation_required"]);
+const TERMINAL_RECEIPT_STATES = new Set(["provisioned", "awaiting_manual_configuration"]);
 const PACKAGE_MERCHANDISING_FIELDS = new Set([
   "quantity", "qty", "tiers", "coupon", "offer_price", "post_purchase_price",
 ]);
@@ -20,6 +23,7 @@ const PACKAGE_MERCHANDISING_FIELDS = new Set([
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const isPositiveInteger = (value) => Number.isSafeInteger(value) && value > 0;
 const isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
+const isMoneyString = (value) => typeof value === "string" && MONEY_RE.test(value);
 
 function rejectUnknownKeys(value, allowed, path, issues) {
   if (!isObject(value)) return;
@@ -46,18 +50,18 @@ export async function hashLegacyMigrationArtifact(value) {
   return `sha256:${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function findCredentialFields(value, path = "$", found = [], seen = new WeakSet()) {
+function findCredentialFields(value, path = "$", found = [], seen = new WeakSet(), allowPublicApiKey = false) {
   if (!value || typeof value !== "object" || seen.has(value)) return found;
   seen.add(value);
   if (Array.isArray(value)) {
-    value.forEach((entry, index) => findCredentialFields(entry, `${path}[${index}]`, found, seen));
+    value.forEach((entry, index) => findCredentialFields(entry, `${path}[${index}]`, found, seen, allowPublicApiKey));
     return found;
   }
   for (const [key, entry] of Object.entries(value)) {
     const entryPath = `${path}.${key}`;
     const normalizedKey = key.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
-    if (CREDENTIAL_KEY_RE.test(normalizedKey)) found.push(entryPath);
-    findCredentialFields(entry, entryPath, found, seen);
+    if (CREDENTIAL_KEY_RE.test(normalizedKey) && !(allowPublicApiKey && normalizedKey === "apikey")) found.push(entryPath);
+    findCredentialFields(entry, entryPath, found, seen, allowPublicApiKey);
   }
   return found;
 }
@@ -86,7 +90,7 @@ export function validateLegacyOfferIntent(intent, { packageKeys } = {}) {
     issues.push("offer.intent_key: must be a path-safe 1-80 character key");
   if (!isNonEmptyString(intent.name) || intent.name.length > 128) issues.push("offer.name: must be 1-128 characters");
   if (!OFFER_TYPES.has(intent.offer_type)) issues.push("offer.offer_type: must be offer or voucher");
-  if (intent.offer_type === "voucher" && !isNonEmptyString(intent.code)) issues.push("offer.code: voucher offers require a code");
+  if (intent.offer_type === "voucher" && (!isNonEmptyString(intent.code) || intent.code.length > 64)) issues.push("offer.code: voucher offers require a code of 1-64 characters");
   if (intent.offer_type !== "voucher" && intent.code != null) issues.push("offer.code: only voucher offers may carry a code");
 
   const condition = intent.condition;
@@ -118,7 +122,7 @@ export function validateLegacyOfferIntent(intent, { packageKeys } = {}) {
     rejectUnknownKeys(benefit, new Set(["type", "value", "price_rounding"]), "offer.benefit", issues);
     if (!BENEFIT_TYPES.has(benefit.type))
       issues.push("offer.benefit.type: must be package_percentage, shipping_percentage, or order_percentage");
-    if (!MONEY_RE.test(String(benefit.value ?? "")) || Number(benefit.value) <= 0 || Number(benefit.value) > 100)
+    if (!isMoneyString(benefit.value) || Number(benefit.value) <= 0 || Number(benefit.value) > 100)
       issues.push("offer.benefit.value: must be a decimal percentage in (0, 100]");
     if (benefit.price_rounding != null && !PRICE_ROUNDINGS.has(benefit.price_rounding))
       issues.push("offer.benefit.price_rounding: must be 0.00, 0.95, 0.97, 0.99, or null");
@@ -151,6 +155,7 @@ export function validateLegacyMigrationInventory(input) {
       if (!isNonEmptyString(campaign[field])) issues.push(`target.campaign.${field}: required non-empty string`);
     if (isNonEmptyString(campaign.name) && campaign.name.length > 200) issues.push("target.campaign.name: must be at most 200 characters");
     if (isNonEmptyString(campaign.currency) && !/^[A-Za-z]{3}$/.test(campaign.currency)) issues.push("target.campaign.currency: must be a three-letter currency code");
+    if (isNonEmptyString(campaign.language) && (campaign.language.length < 2 || campaign.language.length > 16)) issues.push("target.campaign.language: must be 2-16 characters");
     if (!isPositiveInteger(campaign.payment_gateway_group_id))
       issues.push("target.campaign.payment_gateway_group_id: must be a positive integer");
     for (const field of ["additional_currencies", "available_payment_methods", "available_express_payment_methods", "available_shipping_countries"])
@@ -167,11 +172,11 @@ export function validateLegacyMigrationInventory(input) {
       const path = `target.packages[${index}]`;
       if (!isObject(row)) return issues.push(`${path}: must be an object`);
       rejectUnknownKeys(row, new Set(["package_key", "name", "product_id", "product_variant_id", "price", "price_recurring", "interval", "interval_count", ...PACKAGE_MERCHANDISING_FIELDS]), path, issues);
-      if (!isNonEmptyString(row.name)) issues.push(`${path}.name: required non-empty string`);
+      if (!isNonEmptyString(row.name) || row.name.length > 200) issues.push(`${path}.name: must be 1-200 characters`);
       if (!isPositiveInteger(row.product_id)) issues.push(`${path}.product_id: must be a positive integer`);
       if (!isPositiveInteger(row.product_variant_id)) issues.push(`${path}.product_variant_id: must be exactly one positive integer`);
-      if (!MONEY_RE.test(String(row.price ?? ""))) issues.push(`${path}.price: must be a non-negative decimal string with at most two places`);
-      if (row.price_recurring !== undefined && !MONEY_RE.test(String(row.price_recurring))) issues.push(`${path}.price_recurring: must be a non-negative decimal string with at most two places`);
+      if (!isMoneyString(row.price)) issues.push(`${path}.price: must be a non-negative decimal string with at most two places`);
+      if (row.price_recurring !== undefined && !isMoneyString(row.price_recurring)) issues.push(`${path}.price_recurring: must be a non-negative decimal string with at most two places`);
       if (row.interval !== undefined && !isNonEmptyString(row.interval)) issues.push(`${path}.interval: must be a non-empty string`);
       if (row.interval_count !== undefined && !isPositiveInteger(row.interval_count)) issues.push(`${path}.interval_count: must be a positive integer`);
       for (const key of Object.keys(row))
@@ -185,7 +190,7 @@ export function validateLegacyMigrationInventory(input) {
     if (!isObject(row)) return issues.push(`${path}: must be an object`);
     rejectUnknownKeys(row, new Set(["shipping_key", "shipping_method", "price"]), path, issues);
     if (!isNonEmptyString(row.shipping_method)) issues.push(`${path}.shipping_method: required non-empty string`);
-    if (!MONEY_RE.test(String(row.price ?? ""))) issues.push(`${path}.price: must be a non-negative decimal string with at most two places`);
+    if (!isMoneyString(row.price)) issues.push(`${path}.price: must be a non-negative decimal string with at most two places`);
   });
 
   validateKeyedRows(target?.offer_intents, "target.offer_intents", "intent_key", issues);
@@ -314,7 +319,8 @@ export function compareLegacyPackageReadback(request, readback, { currency } = {
   const checks = [];
   const actualVariantId = readback?.product_variant_id;
   checks.push(comparison("product_variant_ids", variantIds, isPositiveInteger(actualVariantId) ? [actualVariantId] : null,
-    isPositiveInteger(actualVariantId) && variantIds.length === 1 && variantIds[0] === actualVariantId ? "match" : "mismatch"));
+    !isPositiveInteger(actualVariantId) ? "unprojectable" : variantIds.length === 1 && variantIds[0] === actualVariantId ? "match" : "mismatch",
+    !isPositiveInteger(actualVariantId) ? "readback.product_variant_id is unavailable; package identity was not guessed" : undefined));
   if (request.product_id !== undefined) checks.push(comparison("product_id", request.product_id, readback?.product_id,
     String(request.product_id) === String(readback?.product_id) ? "match" : "mismatch"));
   if (!currency) {
@@ -340,24 +346,31 @@ export function validateLegacyProvisioningPlan(input) {
   else rejectUnknownKeys(input.source, new Set(["campaign_id", "sdk_version"]), "source", issues);
   for (const field of ["inventory_hash", "preview_hash"])
     if (!SHA256_RE.test(String(input[field] ?? ""))) issues.push(`${field}: must be a sha256 digest`);
-  const offerKeys = validateKeyedRows(input.offer_intents, "offer_intents", "intent_key", issues);
-  void offerKeys;
+  validateKeyedRows(input.offer_intents, "offer_intents", "intent_key", issues);
   const packageKeys = new Set();
   const resourceKeys = new Set();
   if (!Array.isArray(input.operations)) issues.push("operations: must be an array");
   else {
     const operationIds = new Set();
+    const dependencies = [];
     input.operations.forEach((operation, index) => {
       if (!isObject(operation)) return issues.push(`operations[${index}]: must be an object`);
       rejectUnknownKeys(operation, new Set(["operation_id", "action", "resource_key", "depends_on", "request"]), `operations[${index}]`, issues);
       if (!isNonEmptyString(operation.operation_id) || operationIds.has(operation.operation_id)) issues.push(`operations[${index}].operation_id: missing or duplicate`);
       else operationIds.add(operation.operation_id);
-      if (!new Set(["campaign.create", "package.create", "shipping_method.create"]).has(operation.action)) issues.push(`operations[${index}].action: unsupported action`);
+      if (!PLAN_OPERATION_ACTIONS.has(operation.action)) issues.push(`operations[${index}].action: unsupported action`);
       const resourceIdentity = `${operation.action}:${operation.resource_key}`;
       if (!isNonEmptyString(operation.resource_key) || resourceKeys.has(resourceIdentity)) issues.push(`operations[${index}].resource_key: missing or duplicate for ${operation.action}`);
       else resourceKeys.add(resourceIdentity);
+      if (!isObject(operation.request)) issues.push(`operations[${index}].request: required object`);
+      if (operation.depends_on !== undefined) {
+        if (!isNonEmptyString(operation.depends_on)) issues.push(`operations[${index}].depends_on: must be a non-empty operation ID`);
+        else dependencies.push([index, operation.depends_on]);
+      }
       if (operation.action === "package.create" && isNonEmptyString(operation.resource_key)) packageKeys.add(operation.resource_key);
     });
+    for (const [index, dependency] of dependencies)
+      if (!operationIds.has(dependency)) issues.push(`operations[${index}].depends_on: unresolved operation ID ${JSON.stringify(dependency)}`);
   }
   if (Array.isArray(input.offer_intents)) input.offer_intents.forEach((intent, index) => {
     for (const issue of validateLegacyOfferIntent(intent, { packageKeys })) issues.push(`offer_intents[${index}]: ${issue.replace(/^offer\./, "")}`);
@@ -389,23 +402,46 @@ export function validateLegacyProvisioningReceipt(input) {
   if (input.schema_version !== LEGACY_PROVISIONING_RECEIPT_VERSION) issues.push(`schema_version: expected ${LEGACY_PROVISIONING_RECEIPT_VERSION}`);
   if (!isNonEmptyString(input.store)) issues.push("store: required non-empty string");
   if (!isNonEmptyString(input.migration_id) || !ID_RE.test(input.migration_id)) issues.push("migration_id: must be a path-safe 1-80 character id");
-  if (!new Set(["applying", "provisioned", "awaiting_manual_configuration", "failed", "reconciliation_required"]).has(input.state)) issues.push("state: unsupported receipt state");
+  if (!RECEIPT_STATES.has(input.state)) issues.push("state: unsupported receipt state");
   for (const field of ["inventory_hash", "preview_hash"])
-    if (input[field] != null && !SHA256_RE.test(String(input[field]))) issues.push(`${field}: must be a sha256 digest`);
+    if (!SHA256_RE.test(String(input[field] ?? ""))) issues.push(`${field}: must be a sha256 digest`);
   for (const field of ["created_at", "updated_at"])
     if (!ISO_INSTANT_RE.test(String(input[field] ?? ""))) issues.push(`${field}: must be an ISO-8601 UTC instant`);
-  if (input.applied_at != null && !ISO_INSTANT_RE.test(String(input.applied_at))) issues.push("applied_at: must be an ISO-8601 UTC instant");
-  if (new Set(["provisioned", "awaiting_manual_configuration"]).has(input.state)) {
+  if (input.applied_at !== undefined && !ISO_INSTANT_RE.test(String(input.applied_at))) issues.push("applied_at: must be an ISO-8601 UTC instant");
+  if (!Object.hasOwn(input, "campaign_id")) issues.push("campaign_id: required receipt field");
+  else if (input.campaign_id !== null && !isPositiveInteger(input.campaign_id)) issues.push("campaign_id: must be null or a positive integer");
+  if (TERMINAL_RECEIPT_STATES.has(input.state)) {
     if (!isPositiveInteger(input.campaign_id)) issues.push("campaign_id: terminal receipt requires a positive integer campaign ID");
     if (!ISO_INSTANT_RE.test(String(input.applied_at ?? ""))) issues.push("applied_at: terminal receipt requires an explicit apply instant");
   }
   if (!Array.isArray(input.writes)) issues.push("writes: must be an array");
   else {
     const offerKeys = new Set();
+    const operationIds = new Set();
+    const resourceKeys = new Set();
     input.writes.forEach((row, index) => {
       if (!isObject(row)) return issues.push(`writes[${index}]: must be an object`);
       rejectUnknownKeys(row, new Set(["operation_id", "action", "resource_key", "intent_key", "upstream_ids", "readback", "audit_key"]), `writes[${index}]`, issues);
-      if (isObject(row.upstream_ids)) rejectUnknownKeys(row.upstream_ids, new Set(["campaign_id", "package_id", "shipping_method_id", "offer_id"]), `writes[${index}].upstream_ids`, issues);
+      if (!isNonEmptyString(row.operation_id) || operationIds.has(row.operation_id)) issues.push(`writes[${index}].operation_id: missing or duplicate`);
+      else operationIds.add(row.operation_id);
+      const resourceIdentity = `${row.action}:${row.resource_key}`;
+      if (!isNonEmptyString(row.resource_key) || resourceKeys.has(resourceIdentity)) issues.push(`writes[${index}].resource_key: missing or duplicate for ${row.action}`);
+      else resourceKeys.add(resourceIdentity);
+      if (row.intent_key !== undefined && (!isNonEmptyString(row.intent_key) || !ID_RE.test(row.intent_key)))
+        issues.push(`writes[${index}].intent_key: must be a path-safe 1-80 character key`);
+      if (row.readback !== undefined && !isObject(row.readback)) issues.push(`writes[${index}].readback: must be an object`);
+      if (row.audit_key !== undefined && !isNonEmptyString(row.audit_key)) issues.push(`writes[${index}].audit_key: must be a non-empty string`);
+      if (!isObject(row.upstream_ids)) issues.push(`writes[${index}].upstream_ids: must be an object`);
+      else {
+        rejectUnknownKeys(row.upstream_ids, new Set(["campaign_id", "package_id", "shipping_method_id", "offer_id"]), `writes[${index}].upstream_ids`, issues);
+        if (!isPositiveInteger(row.upstream_ids.campaign_id))
+          issues.push(`writes[${index}].upstream_ids.campaign_id: every successful write requires its positive parent campaign ID`);
+        else if (!isPositiveInteger(input.campaign_id) || row.upstream_ids.campaign_id !== input.campaign_id)
+          issues.push(`writes[${index}].upstream_ids.campaign_id: must equal the receipt campaign_id`);
+        for (const field of ["package_id", "shipping_method_id", "offer_id"])
+          if (row.upstream_ids[field] !== undefined && row.upstream_ids[field] !== null && !isPositiveInteger(row.upstream_ids[field]))
+            issues.push(`writes[${index}].upstream_ids.${field}: must be null or a positive integer`);
+      }
       const idField = {
         "campaign.create": "campaign_id", "package.create": "package_id",
         "shipping_method.create": "shipping_method_id", "offer.create": "offer_id",
@@ -413,11 +449,13 @@ export function validateLegacyProvisioningReceipt(input) {
       if (!idField) issues.push(`writes[${index}].action: unsupported action`);
       else if (!isPositiveInteger(row.upstream_ids?.[idField])) issues.push(`writes[${index}].upstream_ids.${idField}: successful write requires a positive integer ID`);
       if (row.action !== "offer.create") return;
-      if (!isNonEmptyString(row.intent_key)) issues.push(`writes[${index}].intent_key: offer.create requires an intent key`);
+      if (!isNonEmptyString(row.intent_key) || !ID_RE.test(row.intent_key)) issues.push(`writes[${index}].intent_key: offer.create requires a path-safe 1-80 character intent key`);
       else if (offerKeys.has(row.intent_key)) issues.push(`writes[${index}].intent_key: duplicate applied Offer intent`);
       else offerKeys.add(row.intent_key);
     });
   }
+  if (input.failure !== undefined && input.failure !== null && !isObject(input.failure)) issues.push("failure: must be an object or null");
+  for (const field of findCredentialFields(input, "$", [], new WeakSet(), true)) issues.push(`${field}: private credential fields are forbidden recursively`);
   return issues;
 }
 
@@ -429,7 +467,7 @@ export function parseLegacyProvisioningReceipt(input) {
 
 export async function projectLegacyProvisioningReceipt(receipt) {
   const parsed = parseLegacyProvisioningReceipt(receipt);
-  if (!ISO_INSTANT_RE.test(String(parsed.applied_at ?? "")))
+  if (!TERMINAL_RECEIPT_STATES.has(parsed.state) || !ISO_INSTANT_RE.test(String(parsed.applied_at ?? "")))
     throw new LegacyMigrationValidationError(["applied_at: a receipt must be terminal and carry an explicit apply instant before it can become build evidence"]);
   const receiptHash = await hashLegacyMigrationArtifact(parsed);
   const offerIntentKeys = parsed.writes

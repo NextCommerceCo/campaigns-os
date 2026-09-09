@@ -2,22 +2,36 @@ export type Sha256Digest = `sha256:${string}`;
 export type LegacyMigrationAction = "campaign.create" | "package.create" | "shipping_method.create" | "offer.create";
 export type LegacyMigrationReceiptState = "applying" | "provisioned" | "awaiting_manual_configuration" | "failed" | "reconciliation_required";
 
-export interface LegacyOfferIntentV0 {
+type LegacyOfferConditionV0 =
+  | { type: "any"; value?: null; all_packages: false; package_keys: string[] }
+  | { type: "count"; value: number; all_packages: false; package_keys: string[] };
+
+interface LegacyOfferIntentBaseV0 {
   intent_key: string;
   name: string;
-  offer_type: "offer" | "voucher";
-  code?: string;
-  condition: { type: "any" | "count"; value?: number | null; all_packages: false; package_keys: string[] };
+  condition: LegacyOfferConditionV0;
   benefit: { type: "package_percentage" | "shipping_percentage" | "order_percentage"; value: string; price_rounding?: "0.00" | "0.95" | "0.97" | "0.99" | null };
 }
 
-export interface LegacyOfferCreateRequestV0 {
+export type LegacyOfferIntentV0 = LegacyOfferIntentBaseV0 & (
+  | { offer_type: "offer"; code?: never }
+  | { offer_type: "voucher"; code: string }
+);
+
+type LegacyOfferCreateConditionV0 =
+  | { type: "any"; all_packages: false; package_ids: number[] }
+  | { type: "count"; value: number; all_packages: false; package_ids: number[] };
+
+interface LegacyOfferCreateRequestBaseV0 {
   name: string;
-  offer_type: "offer" | "voucher";
-  code?: string;
-  condition: { type: "any" | "count"; value?: number; all_packages: false; package_ids: number[] };
+  condition: LegacyOfferCreateConditionV0;
   benefit: { type: LegacyOfferIntentV0["benefit"]["type"]; value: string; price_rounding?: NonNullable<LegacyOfferIntentV0["benefit"]["price_rounding"]> };
 }
+
+export type LegacyOfferCreateRequestV0 = LegacyOfferCreateRequestBaseV0 & (
+  | { offer_type: "offer"; code?: never }
+  | { offer_type: "voucher"; code: string }
+);
 
 export interface LegacyOfferReadbackV0 {
   name?: string; offer_type?: string; code?: string;
@@ -63,19 +77,32 @@ export interface LegacyProvisioningPlanV0 {
   authorized_domains: string[];
 }
 
-export interface LegacyProvisioningWriteV0 {
-  operation_id: string; action: LegacyMigrationAction; resource_key: string; intent_key?: string;
-  upstream_ids: { campaign_id: number | null; package_id?: number | null; shipping_method_id?: number | null; offer_id?: number | null };
+interface LegacyProvisioningWriteBaseV0 {
+  operation_id: string; resource_key: string;
   readback?: Record<string, unknown>; audit_key?: string;
 }
 
-export interface LegacyProvisioningReceiptV0 {
+type LegacyUpstreamIdsV0 = {
+  campaign_id: number; package_id?: number | null; shipping_method_id?: number | null; offer_id?: number | null;
+};
+
+export type LegacyProvisioningWriteV0 =
+  | (LegacyProvisioningWriteBaseV0 & { action: "campaign.create"; intent_key?: string; upstream_ids: LegacyUpstreamIdsV0 })
+  | (LegacyProvisioningWriteBaseV0 & { action: "package.create"; intent_key?: string; upstream_ids: LegacyUpstreamIdsV0 & { package_id: number } })
+  | (LegacyProvisioningWriteBaseV0 & { action: "shipping_method.create"; intent_key?: string; upstream_ids: LegacyUpstreamIdsV0 & { shipping_method_id: number } })
+  | (LegacyProvisioningWriteBaseV0 & { action: "offer.create"; intent_key: string; upstream_ids: LegacyUpstreamIdsV0 & { offer_id: number } });
+
+interface LegacyProvisioningReceiptBaseV0 {
   schema_version: "campaigns-os-legacy-provisioning-receipt/v0";
   store: string; migration_id: string; inventory_hash: Sha256Digest; preview_hash: Sha256Digest;
-  state: LegacyMigrationReceiptState; created_at: string; updated_at: string; applied_at?: string;
-  campaign_id: number | null; writes: LegacyProvisioningWriteV0[];
+  created_at: string; updated_at: string; writes: LegacyProvisioningWriteV0[];
   failure?: Record<string, unknown> | null;
 }
+
+export type LegacyProvisioningReceiptV0 = LegacyProvisioningReceiptBaseV0 & (
+  | { state: "provisioned" | "awaiting_manual_configuration"; applied_at: string; campaign_id: number }
+  | { state: "applying" | "failed" | "reconciliation_required"; applied_at?: string; campaign_id: number | null }
+);
 
 export interface LegacyReadbackCheck { field: string; expected: unknown; actual: unknown; status: "match" | "mismatch" | "unprojectable"; detail?: string }
 export interface LegacyReadbackComparison { ok: boolean; checks: LegacyReadbackCheck[] }

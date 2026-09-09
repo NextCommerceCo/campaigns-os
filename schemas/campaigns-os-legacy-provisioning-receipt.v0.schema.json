@@ -28,7 +28,7 @@
           "upstream_ids": {
             "type": "object", "additionalProperties": false, "required": ["campaign_id"],
             "properties": {
-              "campaign_id": { "type": ["integer", "null"], "minimum": 1 },
+              "campaign_id": { "type": "integer", "minimum": 1 },
               "package_id": { "type": ["integer", "null"], "minimum": 1 },
               "shipping_method_id": { "type": ["integer", "null"], "minimum": 1 },
               "offer_id": { "type": ["integer", "null"], "minimum": 1 }

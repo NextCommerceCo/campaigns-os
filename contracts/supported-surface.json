@@ -61,7 +61,7 @@
       "sha256": "24890762bbb27c6f11f6e969e08ee56c5b5af946269f59428844989d4acb5e12"
     },
     "schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json": {
-      "sha256": "6a55587548713918cf1f357dad9b4555fa0bbab428139757c511c39e5c852652"
+      "sha256": "1405c32bb9698030e9a40d754191e413cdd505dde91ac7de2e41c8887700f8f2"
     },
     "schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json": {
       "sha256": "1bc53b9a75a6c19c89aee6e9664574980b09d2e13eb8826b157f5ab6ba82d0b0"

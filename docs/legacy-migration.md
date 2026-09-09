@@ -19,9 +19,12 @@ The v0 contract includes three schemas:
 
 The contract contains no Admin API token, authenticated transport, session,
 write executor, audit-store implementation, receipt store, rollback, or delete
-operation. Credential-like field names are rejected recursively. Execution is
-owned by the connector and must retain read-before-write, explicit preview and
-apply, read-after-write, audit, durable receipt, and stop-on-ambiguity rules.
+operation. Inventory and plan inputs reject credential-like field names
+recursively. Receipts may retain the public campaign `api_key` returned by the
+Admin API, but reject private credential fields; their build-evidence projection
+removes raw readback entirely. Execution is owned by the connector and must
+retain read-before-write, explicit preview and apply, read-after-write, audit,
+durable receipt, and stop-on-ambiguity rules.
 
 Package rows identify exactly one product variant. Quantity tiers, vouchers,
 and post-purchase pricing are Offers, never duplicate or quantity-shaped
