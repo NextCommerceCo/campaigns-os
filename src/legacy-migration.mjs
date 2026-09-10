@@ -290,7 +290,7 @@ function equivalentCountValue(expected, actual) {
   if (expected === actual) return true;
   return isPositiveInteger(expected)
     && typeof actual === "string"
-    && /^[1-9]\d*(?:\.0+)?$/.test(actual)
+    && /^[1-9]\d*\.0+$/.test(actual)
     && Number(actual) === expected;
 }
 

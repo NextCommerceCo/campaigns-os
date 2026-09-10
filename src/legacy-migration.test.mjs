@@ -171,7 +171,7 @@ test("Offer readback comparator projects write-only package_ids from condition.p
     assert.equal(result.checks.find((check) => check.field === "condition.value").status, "match");
   }
 
-  for (const value of ["3.00", "2.50", "02.00", "2e0", 2.5]) {
+  for (const value of ["2", "3.00", "2.50", "02.00", "2e0", 2.5]) {
     const result = compareLegacyOfferReadback(request, {
       name: request.name, offer_type: "offer",
       condition: { type: "count", value, all_packages: false, packages: [{ id: 701 }] },
