@@ -396,9 +396,10 @@ test("test-order 'tiers' plans one strict-selection baseline per declared tier p
     {
       page_type: "checkout",
       packages: [
-        { ref_id: "1", name: "1x Bottle" },
-        { package_id: 2, title: "3x Bottle" },
-        { id: "2" }, // duplicate ref under an alias key → deduped
+        { ref_id: "1", qty: 1, name: "1x Bottle" },
+        { ref_id: "1", qty: 2, name: "2x Bottle" },
+        { package_id: 2, qty: 3, title: "3x Bottle" },
+        { id: "2", qty: 3 }, // duplicate ref + quantity under an alias key → deduped
         { name: "no ref at all" }, // ref-less entries are skipped
       ],
       exit_intent: { enabled: true, offer_code: "EXIT10" },
@@ -410,15 +411,19 @@ test("test-order 'tiers' plans one strict-selection baseline per declared tier p
   const plans = testOrderPlans("tiers", topo, {});
   assert.deepEqual(plans.map((plan) => planId(plan)), [
     "checkout@tier:1",
+    "checkout@tier:1x2",
     "checkout@tier:2",
     "checkout@coupon:EXIT10",
   ]);
   assert.deepEqual(plans[0].source, { type: "selector_tier", ref: "1", declared_by: "1x Bottle" });
+  assert.deepEqual(plans[1].source, { type: "selector_tier", ref: "1", quantity: 2, declared_by: "2x Bottle" });
   assert.equal(plans[0].select_package, "1");
+  assert.equal(plans[1].select_package, "1:2");
+  assert.equal(plans[2].select_package, "2", "a unique 3x catalog package is one package purchase, not multiplier 3");
   assert.equal(plans[0].apply_coupon, null);
-  assert.equal(plans[2].select_package, null);
-  assert.equal(plans[2].apply_coupon, "EXIT10");
-  assert.deepEqual(plans[2].source.surfaces, ["exit_intent", "promo_code_input"]);
+  assert.equal(plans[3].select_package, null);
+  assert.equal(plans[3].apply_coupon, "EXIT10");
+  assert.deepEqual(plans[3].source.surfaces, ["exit_intent", "promo_code_input"]);
 });
 
 test("tiers:common and tiers:full cross every declared tier with the path shapes; coupons stay single checkout orders", () => {
@@ -774,6 +779,176 @@ test("--select-package builds strict card selectors covering package and bundle 
   // Refs are CSS-escaped so a hostile/odd ref cannot break out of the selector.
   const escaped = packageCardSelectors('a"b');
   assert.ok(escaped.every((selector) => selector.includes('a\\"b')));
+});
+
+test("strict package selection resolves the rendered card by requested purchase quantity", () => {
+  const { packageCardClickSelector, resolvePackageCardCandidate } = __qaBrowserTestHooks;
+  const cards = [
+    {
+      bundle_id: "bundle-1x",
+      package_id: "1",
+      items: [{ package_id: "1", quantity: 1 }],
+      click_selector: '[data-next-bundle-id="bundle-1x"]',
+    },
+    {
+      bundle_id: "bundle-2x",
+      package_id: "1",
+      items: [{ package_id: "1", quantity: 2 }],
+      click_selector: '[data-next-bundle-id="bundle-2x"]',
+    },
+  ];
+
+  assert.equal(
+    resolvePackageCardCandidate(cards, { packageId: "1", quantity: 2, quantityExplicit: true }).bundle_id,
+    "bundle-2x",
+  );
+  assert.throws(
+    () => resolvePackageCardCandidate(cards.slice(0, 1), { packageId: "1", quantity: 2, quantityExplicit: true }),
+    /quantity 2/,
+  );
+  assert.throws(
+    () => resolvePackageCardCandidate([...cards, { ...cards[1], bundle_id: "also-2x" }], { packageId: "1", quantity: 2, quantityExplicit: true }),
+    /ambiguous/,
+  );
+  assert.throws(
+    () => resolvePackageCardCandidate(cards, { packageId: "missing", quantity: 1, quantityExplicit: false }),
+    /no rendered card/,
+  );
+
+  // An explicit bundle id remains authoritative for legacy per-tier cards.
+  assert.equal(
+    resolvePackageCardCandidate(cards, { packageId: "bundle-2x", quantity: 1, quantityExplicit: false }).bundle_id,
+    "bundle-2x",
+  );
+  assert.throws(
+    () => resolvePackageCardCandidate([...cards, { ...cards[1] }], { packageId: "bundle-2x", quantity: 1, quantityExplicit: false }),
+    /bundle identity is ambiguous/,
+  );
+
+  const legacy = [{ bundle_id: null, package_id: "legacy", items: null }];
+  assert.equal(
+    resolvePackageCardCandidate(legacy, { packageId: "legacy", quantity: 1, quantityExplicit: false }).package_id,
+    "legacy",
+  );
+  assert.throws(
+    () => resolvePackageCardCandidate(legacy, { packageId: "legacy", quantity: 2, quantityExplicit: true }),
+    /quantity 2/,
+  );
+
+  assert.equal(packageCardClickSelector(cards[1]), '[data-next-bundle-id="bundle-2x"]');
+  assert.equal(packageCardClickSelector(legacy[0]), '[data-next-selector-card][data-next-package-id="legacy"], [data-next-package-id="legacy"]');
+  assert.throws(() => packageCardClickSelector({ bundle_id: null, package_id: null, items: null }), /no package or bundle identity/);
+});
+
+test("strict package selection reads bundle composition from rendered card markup", async () => {
+  const { renderedPackageCardCandidates } = __qaBrowserTestHooks;
+  const node = (attrs, children = {}) => ({
+    closest() { return this.card || this; },
+    hasAttribute(name) { return Object.hasOwn(attrs, name); },
+    getAttribute(name) { return attrs[name] ?? null; },
+    querySelector(selector) { return children[selector] || null; },
+  });
+  const nestedPackage = node({ "data-next-package-id": "1" });
+  const nestedBundle = node({ "data-next-bundle-id": "bundle-2x" });
+  const bundleCard = node({
+    "data-next-bundle-items": '[{"packageId":1,"quantity":2}]',
+  }, {
+    "[data-next-package-id]": nestedPackage,
+    "[data-next-bundle-id]": nestedBundle,
+  });
+  nestedPackage.card = bundleCard;
+  nestedBundle.card = bundleCard;
+  const packageCard = node({ "data-next-package-id": "2", "data-next-quantity": "3" });
+  const invalidCard = node({ "data-next-package-id": "3", "data-next-bundle-items": "not-json" });
+  const page = {
+    locator: () => ({ evaluateAll: async (collect) => collect([bundleCard, nestedPackage, nestedBundle, packageCard, invalidCard]) }),
+  };
+
+  assert.deepEqual(await renderedPackageCardCandidates(page), [
+    { bundle_id: "bundle-2x", package_id: "1", items: [{ package_id: "1", quantity: 2 }] },
+    { bundle_id: null, package_id: "2", items: [{ package_id: "2", quantity: 3 }] },
+    { bundle_id: null, package_id: "3", items: null },
+  ]);
+  assert.deepEqual(await renderedPackageCardCandidates({ locator: () => ({ evaluateAll: async () => { throw new Error("unreadable"); } }) }), []);
+});
+
+test("strict package selection clicks the quantity-matched bundle before checkout can submit", async () => {
+  const { selectPackageCard } = __qaBrowserTestHooks;
+  const cards = [
+    { bundle_id: "bundle-1x", package_id: "1", items: [{ package_id: "1", quantity: 1 }] },
+    { bundle_id: "bundle-2x", package_id: "1", items: [{ package_id: "1", quantity: 2 }] },
+  ];
+  const clicks = [];
+  let selectionState = "selected";
+  let renderedCards = cards;
+  const candidateSelector = "[data-next-bundle-card], [data-next-selector-card], [data-next-package-id], [data-next-bundle-id]";
+  const page = {
+    waitForTimeout: async () => {},
+    locator(selector) {
+      if (selector === candidateSelector) return { evaluateAll: async () => typeof renderedCards === "function" ? renderedCards() : renderedCards };
+      return {
+        first: () => ({
+          scrollIntoViewIfNeeded: async () => {},
+          click: async () => { clicks.push(selector); },
+          evaluate: async () => selectionState,
+        }),
+      };
+    },
+  };
+
+  const detail = await selectPackageCard(page, { packageId: "1", quantity: 2, quantityExplicit: true });
+  assert.deepEqual(clicks, ['[data-next-bundle-id="bundle-2x"]']);
+  assert.match(detail, /1:2/);
+
+  selectionState = "unknown";
+  await assert.rejects(
+    selectPackageCard(page, { packageId: "1", quantity: 2, quantityExplicit: true }),
+    /cannot verify.*selected state/,
+  );
+  selectionState = "selected";
+
+  selectionState = "unselected";
+  await assert.rejects(
+    selectPackageCard(page, { packageId: "1", quantity: 2, quantityExplicit: true }),
+    /did not enter a selected state/,
+  );
+  selectionState = "selected";
+
+  let candidateReads = 0;
+  const driftedComposition = cards.map((card) => card.bundle_id === "bundle-2x"
+    ? { ...card, items: [{ package_id: "1", quantity: 1 }] }
+    : card);
+  renderedCards = () => candidateReads++ === 0 ? cards : driftedComposition;
+  await assert.rejects(
+    selectPackageCard(page, { packageId: "1", quantity: 2, quantityExplicit: true }),
+    /quantity 2/,
+  );
+
+  candidateReads = 0;
+  const replacedCards = cards.map((card) => card.bundle_id === "bundle-2x" ? { ...card, bundle_id: "replacement-2x" } : card);
+  renderedCards = () => candidateReads++ === 0 ? cards : replacedCards;
+  await assert.rejects(
+    selectPackageCard(page, { packageId: "1", quantity: 2, quantityExplicit: true }),
+    /rendered selection changed/,
+  );
+  renderedCards = cards;
+
+  candidateReads = 0;
+  const driftedBundle = cards.map((card) => card.bundle_id === "bundle-2x"
+    ? { ...card, items: [{ package_id: "1", quantity: 1 }] }
+    : card);
+  renderedCards = () => candidateReads++ === 0 ? cards : driftedBundle;
+  await assert.rejects(
+    selectPackageCard(page, { packageId: "bundle-2x", quantity: 1, quantityExplicit: false }),
+    /composition changed/,
+  );
+  renderedCards = cards;
+
+  await assert.rejects(
+    selectPackageCard(page, { packageId: "1", quantity: 3, quantityExplicit: true }),
+    /quantity 3/,
+  );
+  assert.equal(clicks.length, 6, "wrong quantity must fail before any additional click or order submission");
 });
 
 test("order creation proof: read-back is authoritative when the live create request was missed", () => {
