@@ -1360,6 +1360,81 @@
         }
       ],
       "entry_sha256": "fb1de3fbd3754af8f71012bfac9451abeccb322004765e8cc352e203db81ec92"
+    },
+    {
+      "id": "RL-0026",
+      "sequence": 26,
+      "date": "2026-09-10",
+      "kind": "release",
+      "surface_version": "1.23.0",
+      "changelog_section": "1.23.0",
+      "changelog_sha256": "0d8e79e1303a02784f687f4803e752ec94a905ae788b1ca075be306ca4326bc8",
+      "agent_impact": "Bundle consumers must distinguish exact raw CampaignSpec integrity from canonical material identity. New producer artifacts carry spec.material_hash and identity.spec_material_hash, while QA spec_hash remains the canonical material value. Safe current-directory packet prefixes normalize; traversal and foreign paths remain refused. A required QA verdict with disposition blocked makes conformance non-ready and sets stage_blocked. Legacy artifacts with neither new producer field retain strict exact-hash comparison; mixed generations fail closed.",
+      "compatibility": "additive",
+      "migration": "Regenerate Build Context and Assembly Report together before promoting or running QA. Consumers may continue reading a fully legacy bundle under strict exact-hash compatibility, but must not mix legacy and material-identity producers.",
+      "changes": [
+        {
+          "class": "hashed_surface",
+          "path": "contracts/migration-sidecar-bundle.v0.json",
+          "surface_entry": "contracts/migration-sidecar-bundle.v0.json",
+          "summary": "Separates raw and material spec identities, declares strict legacy compatibility, and defines safe repository-relative path normalization."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "summary": "Types the additive spec.material_hash produced for QA correlation."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+          "summary": "Types the additive identity.spec_material_hash while preserving identity.spec_hash as raw integrity."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-sidecar-bundle-conformance.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-sidecar-bundle-conformance.v0.schema.json",
+          "summary": "Adds the stage_blocked result required to distinguish blocked QA evidence from completed handoff."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Emits one shared canonical material identity into Build Context and Assembly Report without changing raw spec hashes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "Documents raw/material identity, safe path equivalence, legacy compatibility, and blocked-QA handoff behavior."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances the supported surface to 1.23.0 and pins the changed bundle contract and schemas."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Documents the distinct identity layers, path safety, and blocked-QA conformance boundary."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerates orientation context for supported surface 1.23.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerates supported-surface context; the runtime recipe is unchanged."
+        }
+      ],
+      "entry_sha256": "3ca19e3b7dfa1970248ed919ed2762a9eabd360387abcea124e55bd8489ea4a6"
     }
   ]
 }

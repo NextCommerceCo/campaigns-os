@@ -33,7 +33,12 @@
         "public_route_slug": { "type": "string", "minLength": 1 },
         "campaign_directory": { "type": "string", "minLength": 1 },
         "live_url_path": { "type": "string", "minLength": 1 },
-        "spec_hash": { "type": "string", "minLength": 1 }
+        "spec_hash": { "type": "string", "minLength": 1 },
+        "spec_material_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Canonical semantic identity used to correlate QA with the authored spec. spec_hash remains exact raw-byte integrity."
+        }
       }
     },
     "inputs": {

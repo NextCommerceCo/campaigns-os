@@ -9,6 +9,7 @@
     "bundle_id",
     "ok",
     "status",
+    "stage_blocked",
     "root",
     "packet_generated_at",
     "material_digest",
@@ -21,6 +22,10 @@
     "bundle_id": { "const": "campaigns-os-migration-sidecar-bundle/v0" },
     "ok": { "type": "boolean" },
     "status": { "enum": ["conformant", "nonconformant"] },
+    "stage_blocked": {
+      "type": "boolean",
+      "description": "True when a required QA sidecar is shape-valid but its disposition still blocks handoff."
+    },
     "root": { "type": "string", "minLength": 1 },
     "packet_generated_at": { "type": ["string", "null"] },
     "material_digest": {

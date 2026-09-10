@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.23.0] - 2026-09-10
+
+### Fixed
+
+- Fresh intake and QA projection now agree on one canonical CampaignSpec
+  material identity without changing the existing raw-byte integrity hashes.
+  Safe `./` repository-relative packet spellings normalize consistently, while
+  traversal, absolute paths, URIs, foreign QA/spec material, and mixed producer
+  generations fail closed. Stored pre-material bundles retain an explicit
+  strict exact-hash compatibility path.
+- `bundle check --require-qa` rejects a shape-valid QA sidecar whose disposition
+  is still `blocked` and emits `stage_blocked: true`, so consumers cannot mistake
+  coherent evidence for a completed handoff.
+
 ## [1.22.0+agent.1] - 2026-09-10
 
 ### Fixed

@@ -97,10 +97,61 @@ function compareIdentity(errors, records, identityField) {
   ));
 }
 
+function compareSpecMaterialIdentity(errors, records, identityField) {
+  const contextMaterial = valueAt(records.get("build_context")?.value, identityField.artifact_paths.build_context);
+  const reportMaterial = valueAt(records.get("assembly_report")?.value, identityField.artifact_paths.assembly_report);
+
+  if (!contextMaterial && !reportMaterial) {
+    // The ordinary spec_hash identity field already compares the two legacy
+    // producer values. QA's spec_hash is semantic material identity even for
+    // legacy bundles, so it must never participate in the raw-byte check.
+    return;
+  }
+
+  const present = [];
+  const missing = [];
+  for (const [kind, path] of Object.entries(identityField.artifact_paths)) {
+    if (!records.has(kind)) continue;
+    const value = valueAt(records.get(kind).value, path);
+    if (value == null || value === "") missing.push({ kind, path });
+    else present.push({ kind, value });
+  }
+
+  if (missing.length) {
+    errors.push(artifactFinding(
+      "bundle.identity.spec_material_hash_incomplete",
+      missing[0].kind,
+      `Material spec identity is partially regenerated; missing ${missing.map((entry) => `${entry.kind}:${entry.path}`).join(", ")}.`,
+      "Regenerate Build Context, Assembly Report, and any required QA sidecar from the same CampaignSpec.",
+    ));
+    return;
+  }
+
+  const expected = present[0]?.value;
+  const mismatch = present.find((entry) => entry.value !== expected);
+  if (mismatch) {
+    errors.push(artifactFinding(
+      "bundle.identity.spec_material_hash_mismatch",
+      mismatch.kind,
+      `spec_material_hash disagrees across bundle artifacts (${present.map((entry) => `${entry.kind}=${entry.value}`).join(", ")}).`,
+      "Regenerate the sidecars from the same CampaignSpec and explicit QA verdict.",
+    ));
+  }
+}
+
 function bundleRootFor(packetPath) {
   const absolute = resolve(packetPath);
   if (basename(dirname(absolute)) === ".campaign-runtime") return dirname(dirname(absolute));
   return dirname(absolute);
+}
+
+function normalizeRepositoryRelativePath(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const path = value.trim();
+  if (path.startsWith("/") || path.includes("\\") || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)) return null;
+  const segments = path.split("/");
+  if (segments.includes("..")) return null;
+  return segments.filter((segment) => segment && segment !== ".").join("/") || ".";
 }
 
 export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
@@ -214,7 +265,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
   const doctor = records.get("doctor_output")?.value;
   const qaVerdict = records.get("qa_verdict")?.value;
 
-  if (context && context.packet_path !== "campaign-runtime.build.json") {
+  if (context && normalizeRepositoryRelativePath(context.packet_path) !== "campaign-runtime.build.json") {
     errors.push(artifactFinding(
       "bundle.build_context.packet_path",
       "build_context",
@@ -222,7 +273,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       "Regenerate the Build Context with canonical repository-relative output paths.",
     ));
   }
-  if (report && report.inputs?.packet_path !== "campaign-runtime.build.json") {
+  if (report && normalizeRepositoryRelativePath(report.inputs?.packet_path) !== "campaign-runtime.build.json") {
     errors.push(artifactFinding(
       "bundle.assembly_report.packet_path",
       "assembly_report",
@@ -258,10 +309,19 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
         ));
       }
     }
+    if (requireQa && qaVerdict.disposition === "blocked") {
+      errors.push(artifactFinding(
+        "bundle.qa_verdict.blocked",
+        "qa_verdict",
+        "QA Verdict is schema-valid but blocked, so it cannot satisfy QA-complete handoff.",
+        "Resolve the failing QA blockers and promote the resulting named verdict explicitly.",
+      ));
+    }
   }
 
   for (const identityField of SIDECAR_BUNDLE_CONTRACT.identity_fields) {
-    compareIdentity(errors, records, identityField);
+    if (identityField.name === "spec_material_hash") compareSpecMaterialIdentity(errors, records, identityField);
+    else compareIdentity(errors, records, identityField);
   }
 
   const materialEntries = artifacts
@@ -276,6 +336,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
     bundle_id: SIDECAR_BUNDLE_CONTRACT.bundle_id,
     ok: errors.length === 0,
     status: errors.length === 0 ? "conformant" : "nonconformant",
+    stage_blocked: requireQa && qaVerdict?.disposition === "blocked",
     root,
     packet_generated_at: packet?.generated_at ?? null,
     material_digest: materialDigest,

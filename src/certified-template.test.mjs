@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
+import { specMaterialHash } from "./spec-identity.mjs";
+
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 
@@ -202,6 +204,20 @@ test("prepare-build marks a certified family and doctor reports it ready", () =>
       freshnessLines.some((line) => /Template family "olympus".*last verified against SDK \d+\.\d+\.\d+/.test(line)),
       "doctor output surfaces the family's last-verified SDK version",
     );
+  });
+});
+
+test("prepare-build emits separate raw-byte and material spec identities", () => {
+  withTempDir((dir) => {
+    const result = prepareBuild(dir, ["--template-family", "olympus", "--no-run-session"]);
+    const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+    const context = readJson(join(result.target, ".campaign-runtime/build-context.json"));
+    const report = readJson(join(result.target, ".campaign-runtime/assembly-report.json"));
+
+    assert.match(context.spec.hash, /^[0-9a-f]{64}$/, "the existing unprefixed hash remains raw-byte integrity");
+    assert.equal(context.spec.material_hash, specMaterialHash(spec));
+    assert.equal(report.identity.spec_hash, context.spec.hash);
+    assert.equal(report.identity.spec_material_hash, context.spec.material_hash);
   });
 });
 

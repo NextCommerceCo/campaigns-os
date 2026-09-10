@@ -30,10 +30,25 @@ remedy; conformance does not silently widen discovery.
 
 The checker validates canonical paths, declared schema versions, strict UTC
 timestamps, cross-artifact Map ID, public slug, campaign directory, live URL
-path, template family, and spec-hash identity, doctor freshness, and the
-URL/order-free QA projection. A blocked doctor or QA verdict is still valid
-evidence: conformance says the evidence is readable and coherent, not that the
-campaign is ready.
+path, template family, and spec identity, doctor freshness, and the URL/order-
+free QA projection. Safe repository-relative spellings such as
+`campaign-runtime.build.json` and `./campaign-runtime.build.json` are
+equivalent; absolute paths, URIs, backslashes, and parent traversal are not.
+
+Spec identity has two deliberately separate meanings. Build Context
+`spec.hash` and Assembly Report `identity.spec_hash` retain exact raw-byte
+integrity. Build Context `spec.material_hash`, Assembly Report
+`identity.spec_material_hash`, and QA Verdict `spec_hash` carry the canonical
+semantic identity used for cross-producer correlation. Harmless JSON formatting
+and the declared volatile top-level metadata do not change the material hash;
+commerce or funnel changes do. A partially regenerated material-identity set
+fails closed. For stored bundles produced before the material fields existed,
+the checker uses the contract's explicit strict-legacy mode and requires the
+three historical hash values to match exactly.
+
+A blocked doctor remains readable evidence. Under `--require-qa`, a schema-
+valid QA Verdict whose disposition is `blocked` is nonconformant for handoff and
+the result carries `stage_blocked: true`; shape-valid does not mean ready.
 
 The Build Packet schema keeps `campaign_directory` and `live_url_path`
 nullable for older or partial packet compatibility. Bundle conformance is

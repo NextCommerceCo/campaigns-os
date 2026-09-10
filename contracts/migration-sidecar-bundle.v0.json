@@ -102,11 +102,33 @@
       "name": "spec_hash",
       "artifact_paths": {
         "build_context": "spec.hash",
-        "assembly_report": "identity.spec_hash",
+        "assembly_report": "identity.spec_hash"
+      },
+      "meaning": "Exact raw-byte integrity for the authored CampaignSpec. This identity is never compared with QA's semantic spec hash."
+    },
+    {
+      "name": "spec_material_hash",
+      "artifact_paths": {
+        "build_context": "spec.material_hash",
+        "assembly_report": "identity.spec_material_hash",
         "qa_verdict": "spec_hash"
+      },
+      "meaning": "Canonical CampaignSpec material identity used for cross-producer QA correlation.",
+      "compatibility": {
+        "mode": "complete_material_or_strict_legacy_exact",
+        "legacy_artifact_paths": {
+          "build_context": "spec.hash",
+          "assembly_report": "identity.spec_hash"
+        },
+        "rule": "When neither producer has a material identity, compare the legacy producer raw-byte values exactly and do not compare them with QA's semantic spec hash. When either producer has a material identity, every present bundle artifact must carry the material identity. Mixed producer generations fail closed."
       }
     }
   ],
+  "repository_relative_paths": {
+    "equivalent_spellings": ["campaign-runtime.build.json", "./campaign-runtime.build.json"],
+    "forbidden": ["absolute", "uri", "backslash", "parent_traversal"],
+    "rule": "Normalize only empty and current-directory segments before comparing canonical repository-relative artifact names."
+  },
   "ci_producer": {
     "refresh_doctor": "campaigns-os doctor --packet campaign-runtime.build.json --strip-paths --json",
     "promote_historical_qa": "campaigns-os qa promote --packet campaign-runtime.build.json --verdict <explicit-full-verdict.json> --json",
