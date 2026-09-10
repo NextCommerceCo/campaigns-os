@@ -60,6 +60,39 @@ test("the same order without the stray line reconciles clean", () => {
   assert.equal(result.evidence.extra.length, 0);
 });
 
+test("a selected unit package bought twice reconciles only to a persisted quantity of two", () => {
+  const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "KEER-BAG", product_id: 382, product_variant_id: 383 },
+    { ref_id: 2, qty: 2, product_sku: "KEER-BAG", product_id: 382, product_variant_id: 383 },
+  ] } }] };
+  const display = {
+    summary_present: true,
+    summary_rows: [{ package_id: "1", text: "2x Tactical Sling Bag" }],
+    selected_bundle_package_ids: ["1"],
+  };
+  const selected_packages = [{ packageId: "1", quantity: 2 }];
+
+  const correct = reconcileOrderAgainstDisplay({
+    lines: [{ title: "Tactical Sling Bag", quantity: 2, sku: "KEER-BAG", product_id: 382, variant_id: 383 }],
+    display,
+    events,
+    selected_packages,
+  });
+  assert.equal(correct.ok, true);
+  assert.deepEqual(correct.matched_quantities, [{ package_ref_id: "1", unit_quantity: 1, purchase_multiplier: 2, persisted_quantity: 2 }]);
+
+  const wrong = reconcileOrderAgainstDisplay({
+    lines: [{ title: "Tactical Sling Bag", quantity: 1, sku: "KEER-BAG", product_id: 382, variant_id: 383 }],
+    display,
+    events,
+    selected_packages,
+  });
+  assert.equal(wrong.ok, false);
+  assert.deepEqual(wrong.missing, ["1"]);
+  assert.match(wrong.quantity_mismatches[0].reason, /requested 2.*persisted 1/);
+});
+
 test("a displayed package that was never charged is a blocker too", () => {
   const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
   const display = {
@@ -79,6 +112,39 @@ test("a displayed package that was never charged is a blocker too", () => {
   assert.equal(reconciliation.ok, false);
   assert.deepEqual(reconciliation.missing, ["7"]);
   assert.deepEqual(reconciliation.extra, []);
+});
+
+test("duplicate-SKU packages remain ambiguous unless rendered or requested identity resolves them", () => {
+  const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "SAME-SKU" },
+    { ref_id: 2, qty: 1, product_sku: "SAME-SKU" },
+  ] } }] };
+  const reconciliation = reconcileOrderAgainstDisplay({
+    lines: [{ title: "Ambiguous", quantity: 1, sku: "SAME-SKU" }],
+    display: {
+      summary_present: true,
+      summary_rows: [{ package_id: "1" }, { package_id: "2" }],
+    },
+    events,
+  });
+
+  assert.equal(reconciliation.ok, false);
+  assert.deepEqual(reconciliation.missing, ["1", "2"]);
+  assert.deepEqual(reconciliation.unresolved_lines, [{ title: "Ambiguous", quantity: 1 }]);
+
+  const renderedIdentity = reconcileOrderAgainstDisplay({
+    lines: [{ title: "Resolved", quantity: 1, sku: "SAME-SKU" }],
+    display: {
+      summary_present: true,
+      summary_rows: [{ package_id: "2" }],
+    },
+    events,
+  });
+  assert.equal(renderedIdentity.ok, true);
+  assert.deepEqual(renderedIdentity.matched_quantities, [
+    { package_ref_id: "2", unit_quantity: 1, purchase_multiplier: 1, persisted_quantity: 1 },
+  ]);
 });
 
 test("upsell lines are out of scope — an accepted upsell is not a stray charge", () => {
@@ -188,6 +254,14 @@ test("total parity skips with a reason when the checkout exposes no readable tot
 
   const noOrderTotal = assessOrderTotalParity({ display: { total_text: "$139.00" }, preUpsellTotal: null });
   assert.equal(noOrderTotal.comparable, false);
+});
+
+test("total capture supports the maintained Demeter grand-total surface", () => {
+  const { checkoutTotalSelectors } = __qaBrowserTestHooks;
+  assert.deepEqual(checkoutTotalSelectors(), [
+    '[data-next-display="cart.total"]',
+    '[data-next-cart-summary] .order-totals__value--total',
+  ]);
 });
 
 test("displayed money parsing reads the amount, not the currency code beside it", () => {

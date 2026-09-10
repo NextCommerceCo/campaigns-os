@@ -2829,6 +2829,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     lines: order.receipt_line_items,
     display: checkoutDisplay,
     events,
+    selected_packages: parseCart(args["select-package"]),
   });
   order.verification.total_parity = assessOrderTotalParity({
     display: checkoutDisplay,
@@ -3212,9 +3213,9 @@ async function selectRequestedCart(page, args) {
 // `--cart` is best-effort: a ref that matches no rendered card silently falls
 // through to the funnel's default tier, so a multi-tier selector can only ever
 // prove the pre-selected card. `--select-package <ref[:qty][,ref...]>` is the
-// strict variant: the requested card must exist, be clickable, and (when the
-// selector exposes selected-state markers) actually enter the selected state —
-// otherwise the selected_bundle step fails instead of driving the wrong tier.
+// strict variant: the requested card must exist, be clickable, and an explicit
+// quantity must visibly enter the selected state — otherwise the
+// selected_bundle step fails instead of driving the wrong tier.
 function packageCardSelectors(ref) {
   const escaped = escapeCss(String(ref));
   return [
@@ -3236,21 +3237,109 @@ async function selectRequestedPackages(page, args) {
 }
 
 async function selectPackageCard(page, item) {
-  const selectors = packageCardSelectors(item.packageId);
-  for (const selector of selectors) {
-    const target = page.locator(selector).first();
-    if (!await target.count().catch(() => 0)) continue;
-    await target.scrollIntoViewIfNeeded().catch(() => {});
-    await target.click({ timeout: 5000 }).catch(async () => {
-      await target.click({ force: true, timeout: 5000 });
-    });
-    const state = await packageCardSelectionState(page, selector);
-    if (state === "unselected") {
-      throw new Error(`--select-package ${item.packageId}: card matched ${selector} but did not enter a selected state after click`);
-    }
-    return `${item.packageId} via ${selector}${state === "unknown" ? " (card exposes no selected-state marker; click recorded)" : ""}`;
+  const candidate = resolvePackageCardCandidate(await renderedPackageCardCandidates(page), item);
+  const selector = packageCardClickSelector(candidate);
+  const target = page.locator(selector).first();
+  await target.scrollIntoViewIfNeeded().catch(() => {});
+  await target.click({ timeout: 5000 }).catch(async () => {
+    await target.click({ force: true, timeout: 5000 });
+  });
+  const state = await packageCardSelectionState(page, selector);
+  if (state === "unselected") {
+    throw new Error(`--select-package ${item.packageId}: card matched ${selector} but did not enter a selected state after click`);
   }
-  throw new Error(`--select-package ${item.packageId}: no rendered card matched any of ${selectors.join(", ")}`);
+  if (item.quantityExplicit && state !== "selected") {
+    throw new Error(`--select-package ${item.packageId}:${item.quantity}: cannot verify that the quantity-matched card entered its selected state`);
+  }
+  // Re-read after the click. Dynamic selectors may rewrite bundle contents;
+  // the composition at submit time, not the pre-click markup, is the proof.
+  const selected = resolvePackageCardCandidate(await renderedPackageCardCandidates(page), item);
+  if (packageCardIdentity(selected) !== packageCardIdentity(candidate)) {
+    throw new Error(`--select-package ${item.packageId}: rendered selection changed to a different card after click`);
+  }
+  const quantity = item.quantity || 1;
+  return `${item.packageId}:${quantity} via ${selector}${state === "unknown" ? " (card exposes no selected-state marker; composition verified)" : ""}`;
+}
+
+async function renderedPackageCardCandidates(page) {
+  return page.locator("[data-next-bundle-card], [data-next-selector-card], [data-next-package-id], [data-next-bundle-id]").evaluateAll((elements) => {
+    const cards = [];
+    const seen = new Set();
+    const parseItems = (value) => {
+      if (!value) return null;
+      try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) return null;
+        return parsed.map((entry) => ({
+          package_id: String(entry?.packageId ?? entry?.package_id ?? ""),
+          quantity: Number(entry?.quantity ?? 1),
+        })).filter((entry) => entry.package_id && Number.isFinite(entry.quantity) && entry.quantity > 0);
+      } catch {
+        return null;
+      }
+    };
+    for (const element of elements) {
+      const card = element.closest("[data-next-bundle-card], [data-next-selector-card]") || element;
+      if (seen.has(card)) continue;
+      seen.add(card);
+      const bundleNode = card.hasAttribute("data-next-bundle-id")
+        ? card
+        : card.querySelector("[data-next-bundle-id]");
+      const bundleId = bundleNode?.getAttribute("data-next-bundle-id") || null;
+      const packageNode = card.hasAttribute("data-next-package-id")
+        ? card
+        : card.querySelector("[data-next-package-id]");
+      const packageId = packageNode?.getAttribute("data-next-package-id") || null;
+      let items = parseItems(card.getAttribute("data-next-bundle-items"));
+      const declaredQuantity = Number(card.getAttribute("data-next-quantity"));
+      if (!items && packageId && Number.isFinite(declaredQuantity) && declaredQuantity > 0) {
+        items = [{ package_id: packageId, quantity: declaredQuantity }];
+      }
+      cards.push({ bundle_id: bundleId, package_id: packageId, items });
+    }
+    return cards;
+  }).catch(() => []);
+}
+
+function packageCardIdentity(candidate) {
+  return candidate?.bundle_id ? `bundle:${candidate.bundle_id}` : `package:${candidate?.package_id || ""}`;
+}
+
+function packageCardClickSelector(candidate) {
+  if (candidate?.click_selector) return candidate.click_selector;
+  if (candidate?.bundle_id) return `[data-next-bundle-id="${escapeCss(String(candidate.bundle_id))}"]`;
+  return `[data-next-selector-card][data-next-package-id="${escapeCss(String(candidate?.package_id || ""))}"], [data-next-package-id="${escapeCss(String(candidate?.package_id || ""))}"]`;
+}
+
+function resolvePackageCardCandidate(candidates, item) {
+  const ref = String(item?.packageId || "");
+  const quantity = Number(item?.quantity || 1);
+  const matchingRef = (candidates || []).filter((candidate) => (
+    String(candidate?.bundle_id || "") === ref || String(candidate?.package_id || "") === ref
+  ));
+  if (!matchingRef.length) {
+    throw new Error(`--select-package ${ref}: no rendered card exposes that package or bundle identity`);
+  }
+
+  const exactBundle = matchingRef.filter((candidate) => String(candidate?.bundle_id || "") === ref);
+  if (exactBundle.length === 1) return exactBundle[0];
+  if (exactBundle.length > 1) {
+    throw new Error(`--select-package ${ref}: rendered bundle identity is ambiguous across ${exactBundle.length} cards`);
+  }
+
+  const exactComposition = matchingRef.filter((candidate) => (
+    Array.isArray(candidate?.items)
+    && candidate.items.length === 1
+    && String(candidate.items[0]?.package_id || "") === ref
+    && Number(candidate.items[0]?.quantity) === quantity
+  ));
+  if (exactComposition.length === 1) return exactComposition[0];
+  if (exactComposition.length > 1) {
+    throw new Error(`--select-package ${ref}:${quantity}: rendered package composition is ambiguous across ${exactComposition.length} cards`);
+  }
+  const unknownComposition = matchingRef.filter((candidate) => !Array.isArray(candidate?.items));
+  if (quantity === 1 && matchingRef.length === 1 && unknownComposition.length === 1) return unknownComposition[0];
+  throw new Error(`--select-package ${ref}:${quantity}: no rendered card has exactly package ${ref} at quantity ${quantity}`);
 }
 
 // Bounded retry instead of a single fixed wait: SPA selectors can propagate
@@ -3513,12 +3602,27 @@ function linePriceDeltaEvidence(lines, events) {
   };
 }
 
-function campaignPackageMetaForLine(events, line) {
+function campaignPackageMetaForLine(events, line, options = {}) {
+  return campaignPackageResolutionForLine(events, line, options)?.pkg || null;
+}
+
+function campaignPackageResolutionForLine(events, line, { selected_packages = [], preferred_refs = [] } = {}) {
+  const selected = new Map((selected_packages || []).map((item) => [String(item.packageId), Number(item.quantity || 1)]));
+  const preferred = new Set((preferred_refs || []).map(String));
   for (let index = events.responses.length - 1; index >= 0; index -= 1) {
     const body = events.responses[index]?.body;
     if (!Array.isArray(body?.packages)) continue;
-    const match = body.packages.find((pkg) => packageMatchesLine(pkg, line));
-    if (match) return match;
+    const matches = body.packages.map((pkg) => {
+      const ref = String(pkg?.ref_id ?? pkg?.package_id ?? pkg?.id ?? "");
+      const purchaseMultiplier = selected.get(ref) || 1;
+      return packageMatchesLine(pkg, line, { purchaseMultiplier })
+        ? { pkg, ref, purchaseMultiplier }
+        : null;
+    }).filter(Boolean);
+    const requestedMatches = matches.filter((entry) => selected.has(entry.ref));
+    const preferredMatches = matches.filter((entry) => preferred.has(entry.ref));
+    const resolved = requestedMatches.length ? requestedMatches : preferredMatches.length ? preferredMatches : matches;
+    if (resolved.length === 1) return resolved[0];
   }
   return null;
 }
@@ -3526,9 +3630,10 @@ function campaignPackageMetaForLine(events, line) {
 // A campaign typically carries several packages for the same product at
 // different quantities (1x/3x/6x tiers), so a SKU/product match alone is
 // ambiguous — the package quantity must match the persisted line quantity too.
-function packageMatchesLine(pkg, line) {
-  const qty = Number(pkg?.qty ?? pkg?.quantity);
-  if (!Number.isFinite(qty) || qty !== Number(line?.quantity || 0)) return false;
+function packageMatchesLine(pkg, line, { purchaseMultiplier = 1 } = {}) {
+  const unitQuantity = Number(pkg?.qty ?? pkg?.quantity);
+  const multiplier = Number(purchaseMultiplier);
+  if (!Number.isFinite(unitQuantity) || !Number.isFinite(multiplier) || unitQuantity * multiplier !== Number(line?.quantity || 0)) return false;
   if (pkg?.product_sku && line?.sku) return normalizeLabel(pkg.product_sku) === normalizeLabel(line.sku);
   if (pkg?.product_variant_id != null && line?.variant_id != null) return Number(pkg.product_variant_id) === Number(line.variant_id);
   if (pkg?.product_id != null && line?.product_id != null) return Number(pkg.product_id) === Number(line.product_id);
@@ -3927,8 +4032,17 @@ function receiptRenderingAssertion(page, path, order) {
 // The rendered order summary is the display authority: `[data-summary-lines]`
 // rows are what the shopper is told they are buying, and the SDK stamps each
 // row's package ref id into `data-package-id` from `{item.packageId}`.
+const CHECKOUT_TOTAL_SELECTORS = Object.freeze([
+  '[data-next-display="cart.total"]',
+  "[data-next-cart-summary] .order-totals__value--total",
+]);
+
+function checkoutTotalSelectors() {
+  return [...CHECKOUT_TOTAL_SELECTORS];
+}
+
 async function checkoutDisplayEvidence(browserPage) {
-  return browserPage.evaluate(() => {
+  return browserPage.evaluate((totalSelectors) => {
     const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
     const ID_ATTRIBUTES = ["data-package-id", "data-next-package-id", "data-next-bundle-id"];
     const readId = (element) => {
@@ -4001,7 +4115,7 @@ async function checkoutDisplayEvidence(browserPage) {
         }))
     ));
 
-    const totalNode = document.querySelector('[data-next-display="cart.total"]');
+    const totalNode = document.querySelector(totalSelectors.join(","));
     return {
       summary_present: summaries.length > 0,
       summary_rows: summaryRows.slice(0, 40),
@@ -4010,7 +4124,7 @@ async function checkoutDisplayEvidence(browserPage) {
       discount_rows: discountRows.slice(0, 20),
       total_text: totalNode ? clean(totalNode.textContent) : null,
     };
-  }).catch((error) => ({
+  }, CHECKOUT_TOTAL_SELECTORS).catch((error) => ({
     summary_present: false,
     summary_rows: [],
     selected_bundle_package_ids: [],
@@ -4056,7 +4170,7 @@ function displayedPackageIds(display) {
   };
 }
 
-function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null } = {}) {
+function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null, selected_packages = [] } = {}) {
   if (!display) {
     return { comparable: false, reason: "checkout display evidence was not captured for this order" };
   }
@@ -4083,17 +4197,32 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
   const matchedSummaryIds = new Set();
   const extra = [];
   const unresolved = [];
+  const matchedQuantities = [];
+  const quantityMismatches = [];
 
   for (const line of nonUpsellLines) {
-    const meta = events ? campaignPackageMetaForLine(events, line) : null;
+    const resolution = events ? campaignPackageResolutionForLine(events, line, {
+      selected_packages,
+      preferred_refs: resolved.displayed_package_ids,
+    }) : null;
+    const meta = resolution?.pkg || null;
     const ref = meta?.ref_id == null ? null : String(meta.ref_id);
     if (!ref) {
       // Bonus, gift and trial lines carry no campaign-package equivalent (the
       // same tolerance linePriceDeltaEvidence applies). An unresolvable line
       // cannot prove a stray charge, so it is reported, never counted as one.
       unresolved.push({ title: line.title, quantity: line.quantity });
+      const mismatch = requestedPackageQuantityMismatch(events, line, selected_packages);
+      if (mismatch) quantityMismatches.push(mismatch);
       continue;
     }
+    const unitQuantity = Number(meta.qty ?? meta.quantity);
+    matchedQuantities.push({
+      package_ref_id: ref,
+      unit_quantity: unitQuantity,
+      purchase_multiplier: resolution.purchaseMultiplier,
+      persisted_quantity: Number(line.quantity),
+    });
     if (displayed.has(ref)) {
       if (summaryIds.has(ref)) matchedSummaryIds.add(ref);
       continue;
@@ -4109,15 +4238,52 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
   const missing = [...summaryIds].filter((id) => !matchedSummaryIds.has(id));
   return {
     comparable: true,
-    ok: extra.length === 0 && missing.length === 0,
+    ok: extra.length === 0 && missing.length === 0 && quantityMismatches.length === 0,
     displayed_package_ids: [...displayed],
     summary_package_ids: [...summaryIds],
     non_upsell_line_count: nonUpsellLines.length,
     extra,
     missing,
+    matched_quantities: matchedQuantities,
+    ...(quantityMismatches.length ? { quantity_mismatches: quantityMismatches } : {}),
     ...(unresolved.length ? { unresolved_lines: unresolved } : {}),
     ...(display.discount_rows?.length ? { discount_rows: display.discount_rows } : {}),
   };
+}
+
+function requestedPackageQuantityMismatch(events, line, selectedPackages) {
+  if (!events || !selectedPackages?.length) return null;
+  for (let index = events.responses.length - 1; index >= 0; index -= 1) {
+    const packages = events.responses[index]?.body?.packages;
+    if (!Array.isArray(packages)) continue;
+    for (const selected of selectedPackages) {
+      const ref = String(selected.packageId);
+      const pkg = packages.find((candidate) => String(candidate?.ref_id ?? candidate?.package_id ?? candidate?.id ?? "") === ref);
+      if (!pkg || !packageIdentityMatchesLine(pkg, line)) continue;
+      const unitQuantity = Number(pkg.qty ?? pkg.quantity);
+      const purchaseMultiplier = Number(selected.quantity || 1);
+      const requestedQuantity = unitQuantity * purchaseMultiplier;
+      const persistedQuantity = Number(line?.quantity || 0);
+      if (Number.isFinite(requestedQuantity) && requestedQuantity !== persistedQuantity) {
+        return {
+          package_ref_id: ref,
+          unit_quantity: unitQuantity,
+          purchase_multiplier: purchaseMultiplier,
+          requested_quantity: requestedQuantity,
+          persisted_quantity: persistedQuantity,
+          reason: `package ${ref} requested ${requestedQuantity} unit(s) (${unitQuantity} per package × ${purchaseMultiplier}) but persisted ${persistedQuantity}`,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function packageIdentityMatchesLine(pkg, line) {
+  if (pkg?.product_sku && line?.sku) return normalizeLabel(pkg.product_sku) === normalizeLabel(line.sku);
+  if (pkg?.product_variant_id != null && line?.variant_id != null) return Number(pkg.product_variant_id) === Number(line.variant_id);
+  if (pkg?.product_id != null && line?.product_id != null) return Number(pkg.product_id) === Number(line.product_id);
+  return false;
 }
 
 function orderDisplayParityAssertion(page, planIdentifier, order) {
@@ -4669,7 +4835,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       for (const path of paths) {
         plans.push({
           path,
-          select_package: tier.ref,
+          select_package: tier.quantity === 1 ? tier.ref : `${tier.ref}:${tier.quantity}`,
           apply_coupon: null,
           checkout_page: checkoutPage,
           topology_plan: resolvedTopology,
@@ -4677,6 +4843,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
           source: {
             type: "selector_tier",
             ref: tier.ref,
+            ...(tier.quantity === 1 ? {} : { quantity: tier.quantity }),
             declared_by: tier.declared_by,
             ...(qualifier ? { checkout_page_id: checkoutPage.page_id || checkoutPage.label || null } : {}),
           },
@@ -4712,16 +4879,35 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
 // Selector tiers are the packages the spec declares on the checkout page —
 // same ref tolerance as the doctor's specPackageRecords (ref_id/package_id/id).
 function declaredSelectorTiers(checkoutPage) {
-  const tiers = [];
-  const seen = new Set();
+  const records = [];
+  const quantitiesByRef = new Map();
   for (const pkg of Array.isArray(checkoutPage?.packages) ? checkoutPage.packages : []) {
     if (!pkg || typeof pkg !== "object") continue;
     const ref = [pkg.ref_id, pkg.package_id, pkg.id]
       .map((value) => (value == null ? "" : String(value).trim()))
       .find(Boolean);
-    if (!ref || seen.has(ref)) continue;
-    seen.add(ref);
-    tiers.push({ ref, declared_by: stringArg(pkg.name) || stringArg(pkg.title) || undefined });
+    const declaredQuantity = Number(pkg.qty ?? pkg.quantity ?? 1);
+    if (!ref || !Number.isInteger(declaredQuantity) || declaredQuantity < 1) continue;
+    records.push({ pkg, ref, declaredQuantity });
+    if (!quantitiesByRef.has(ref)) quantitiesByRef.set(ref, new Set());
+    quantitiesByRef.get(ref).add(declaredQuantity);
+  }
+
+  const tiers = [];
+  const seen = new Set();
+  for (const { pkg, ref, declaredQuantity } of records) {
+    // A unique ref is a catalog package bought once, even when that package's
+    // own composition is 3x. Only repeated declarations of the SAME ref at
+    // different quantities express shopper purchase multipliers (Keer 1x/2x).
+    const quantity = quantitiesByRef.get(ref).size > 1 ? declaredQuantity : 1;
+    const identity = `${ref}:${quantity}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    tiers.push({
+      ref,
+      quantity,
+      declared_by: stringArg(pkg.name) || stringArg(pkg.title) || undefined,
+    });
   }
   return tiers;
 }
@@ -4750,7 +4936,7 @@ function declaredCheckoutCoupons(checkoutPage) {
 function planId(plan) {
   if (typeof plan === "string") return plan;
   const suffix = plan.source?.type === "selector_tier"
-    ? `@tier:${plan.source.ref}`
+    ? `@tier:${plan.source.ref}${plan.source.quantity > 1 ? `x${plan.source.quantity}` : ""}`
     : plan.source?.type === "declared_coupon"
       ? `@coupon:${plan.source.code}`
       : "";
@@ -5091,7 +5277,11 @@ function parseCart(value) {
   if (!value) return [];
   return String(value).split(",").map((part) => {
     const [packageId, quantity] = part.split(":").map((item) => item.trim());
-    return { packageId, quantity: Number.parseInt(quantity || "1", 10) || 1 };
+    return {
+      packageId,
+      quantity: Number.parseInt(quantity || "1", 10) || 1,
+      quantityExplicit: Boolean(quantity),
+    };
   }).filter((item) => item.packageId);
 }
 
@@ -5200,6 +5390,9 @@ export const __qaBrowserTestHooks = Object.freeze({
   declaredSelectorTiers,
   declaredCheckoutCoupons,
   packageCardSelectors,
+  selectPackageCard,
+  renderedPackageCardCandidates,
+  resolvePackageCardCandidate,
   assessCouponApplication,
   linePriceDeltaEvidence,
   packageMatchesLine,
@@ -5252,6 +5445,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   declaredOfferSurface,
   offerSurfaceEvidence,
   checkoutDisplayEvidence,
+  checkoutTotalSelectors,
   exitIntentSurfaceAssertion,
   promoCodeSurfaceAssertion,
   displayedPackageIds,
