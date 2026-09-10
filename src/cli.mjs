@@ -655,47 +655,55 @@ function hasDoneRecommendation(session) {
   return session?.last_recommendation?.stage === "done";
 }
 
-function recordQaStageOutcome(args, result) {
-  const packetArg = optionalString(args.packet);
-  if (!packetArg) return;
-  const packetPath = resolve(packetArg);
-  const packet = readJson(packetPath);
-  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
-  const reportPath = args.report
-    ? resolve(args.report)
-    : join(targetRepo, ".campaign-runtime/assembly-report.json");
-  if (!existsSync(reportPath)) return;
-  const report = readJson(reportPath);
-  if (!assemblyReportMatchesPacket(report, packet)) return;
+export function recordQaStageOutcome(args, result) {
+  try {
+    const packetArg = optionalString(args.packet);
+    if (!packetArg) return false;
+    const packetPath = resolve(packetArg);
+    const packet = readJson(packetPath);
+    const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
+    const reportPath = args.report
+      ? resolve(args.report)
+      : join(targetRepo, ".campaign-runtime/assembly-report.json");
+    if (!existsSync(reportPath)) return false;
+    const report = readJson(reportPath);
+    if (!assemblyReportMatchesPacket(report, packet)) return false;
 
-  const verdict = result.verdict;
-  const failed = (Array.isArray(verdict.assertions) ? verdict.assertions : [])
-    .filter((assertion) => assertion?.status === "fail")
-    .map((assertion) => `${assertion.id}: ${assertion.actual || "assertion failed"}`);
-  const updated = recordProducerStageOutcome(report, {
-    stage: "qa",
-    disposition: verdict.disposition,
-    timestamp: verdict.completed_at,
-    command: "campaigns-os qa run",
-    outputs: [result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString),
-    blockers: verdict.disposition === "blocked" ? failed : [],
-    warnings: verdict.disposition === "ready_with_exceptions"
-      ? ["QA completed with explicitly attributed exceptions; inspect the verdict artifact."]
-      : [],
-  });
-  writeJsonAtomic(reportPath, updated);
+    const verdict = result.verdict;
+    const failed = (Array.isArray(verdict.assertions) ? verdict.assertions : [])
+      .filter((assertion) => assertion?.status === "fail")
+      .map((assertion) => `${assertion.id}: ${assertion.actual || "assertion failed"}`);
+    const updated = recordProducerStageOutcome(report, {
+      stage: "qa",
+      disposition: verdict.disposition,
+      timestamp: verdict.completed_at,
+      command: "campaigns-os qa run",
+      outputs: [result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString),
+      blockers: verdict.disposition === "blocked" ? failed : [],
+      warnings: verdict.disposition === "ready_with_exceptions"
+        ? ["QA completed with explicitly attributed exceptions; inspect the verdict artifact."]
+        : [],
+    });
+    writeJsonAtomic(reportPath, updated);
 
-  // Updating the QA stage changes the report after the preflight doctor
-  // snapshot. Refresh the doctor artifact from the updated ledger in the same
-  // producer transaction so closeout never leaves a known-stale green sidecar.
-  const contextPath = args.context
-    ? resolve(args.context)
-    : join(targetRepo, ".campaign-runtime/build-context.json");
-  const doctor = doctorPacket(packetPath, {
-    contextPath: existsSync(contextPath) ? contextPath : null,
-    reportPath,
-  });
-  writeJsonAtomic(join(targetRepo, ".campaign-runtime/doctor-output.json"), doctor);
+    // Updating the QA stage changes the report after the preflight doctor
+    // snapshot. Refresh the doctor artifact from the updated ledger in the same
+    // producer transaction so closeout never leaves a known-stale green sidecar.
+    const contextPath = args.context
+      ? resolve(args.context)
+      : join(targetRepo, ".campaign-runtime/build-context.json");
+    const doctor = doctorPacket(packetPath, {
+      contextPath: existsSync(contextPath) ? contextPath : null,
+      reportPath,
+    });
+    writeJsonAtomic(join(targetRepo, ".campaign-runtime/doctor-output.json"), doctor);
+    return true;
+  } catch (error) {
+    // Assembly Report ownership is best-effort telemetry. A malformed or
+    // partial sidecar must never replace QA's result or prevent run closeout.
+    process.stderr.write(`[campaigns-os] QA stage ledger update skipped: ${error.message}\n`);
+    return false;
+  }
 }
 
 async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown) {
@@ -2501,7 +2509,7 @@ function toConstantCase(value) {
   return normalized || "WARNING";
 }
 
-export function doctorCommand(args) {
+export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
   // Non-packet mode (learnings L7): doctor a `campaign-build`'d page-kit
   // campaign that has only a built _site/ and no full Build Packet. Resolves
   // scope from the built output and runs the built-output residue/text/
@@ -2517,7 +2525,7 @@ export function doctorCommand(args) {
     reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   };
-  let result = doctorPacket(packetPath, doctorOptions);
+  const result = runDoctor(packetPath, doctorOptions);
   // Refresh the retained sidecar so it never silently stays an earlier stage's
   // snapshot: before this, only prepare-build/start wrote doctor-output.json,
   // and every later standalone doctor run reported fresh state on stdout while
@@ -2538,8 +2546,6 @@ export function doctorCommand(args) {
         const command = `campaigns-os ${args._[0] || "doctor"}`;
         const updatedReport = recordDoctorStageOutcome(report, result, { command, doctorOutPath });
         writeJsonAtomic(reportPath, updatedReport);
-        result = doctorPacket(packetPath, doctorOptions);
-        writeJsonAtomic(reportPath, recordDoctorStageOutcome(updatedReport, result, { command, doctorOutPath }));
       }
     }
     writeJson(doctorOutPath, result);
