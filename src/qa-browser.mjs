@@ -2760,11 +2760,12 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
+  const selectedPackages = parseCart(args["select-package"]);
   let checkoutDisplay = null;
 
   await ladder.run("opened_checkout", () => gotoAndSettle(page, checkoutPage.url, args), { timeoutMs: budget() });
   await ladder.run("selected_bundle", async () => {
-    const strictSelection = await selectRequestedPackages(page, args);
+    const strictSelection = await selectRequestedPackages(page, selectedPackages);
     await selectRequestedCart(page, args);
     await advanceToCheckoutForm(page);
     if (strictSelection) return `selected requested package card(s): ${strictSelection}`;
@@ -2829,7 +2830,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     lines: order.receipt_line_items,
     display: checkoutDisplay,
     events,
-    selected_packages: parseCart(args["select-package"]),
+    selected_packages: selectedPackages,
   });
   order.verification.total_parity = assessOrderTotalParity({
     display: checkoutDisplay,
@@ -3226,8 +3227,7 @@ function packageCardSelectors(ref) {
   ];
 }
 
-async function selectRequestedPackages(page, args) {
-  const requested = parseCart(args["select-package"]);
+async function selectRequestedPackages(page, requested) {
   if (!requested.length) return null;
   const details = [];
   for (const item of requested) {
@@ -3256,6 +3256,9 @@ async function selectPackageCard(page, item) {
   const selected = resolvePackageCardCandidate(await renderedPackageCardCandidates(page), item);
   if (packageCardIdentity(selected) !== packageCardIdentity(candidate)) {
     throw new Error(`--select-package ${item.packageId}: rendered selection changed to a different card after click`);
+  }
+  if (packageCardProofIdentity(selected) !== packageCardProofIdentity(candidate)) {
+    throw new Error(`--select-package ${item.packageId}: rendered card composition changed after click`);
   }
   const quantity = item.quantity || 1;
   return `${item.packageId}:${quantity} via ${selector}${state === "unknown" ? " (card exposes no selected-state marker; composition verified)" : ""}`;
@@ -3305,10 +3308,26 @@ function packageCardIdentity(candidate) {
   return candidate?.bundle_id ? `bundle:${candidate.bundle_id}` : `package:${candidate?.package_id || ""}`;
 }
 
+function packageCardProofIdentity(candidate) {
+  const items = Array.isArray(candidate?.items)
+    ? candidate.items.map((item) => ({
+        package_id: String(item?.package_id || ""),
+        quantity: Number(item?.quantity),
+      })).sort((left, right) => (
+        left.package_id.localeCompare(right.package_id)
+        || left.quantity - right.quantity
+      ))
+    : null;
+  return JSON.stringify({ identity: packageCardIdentity(candidate), items });
+}
+
 function packageCardClickSelector(candidate) {
   if (candidate?.click_selector) return candidate.click_selector;
   if (candidate?.bundle_id) return `[data-next-bundle-id="${escapeCss(String(candidate.bundle_id))}"]`;
-  return `[data-next-selector-card][data-next-package-id="${escapeCss(String(candidate?.package_id || ""))}"], [data-next-package-id="${escapeCss(String(candidate?.package_id || ""))}"]`;
+  const packageId = String(candidate?.package_id || "");
+  if (!packageId) throw new Error("rendered package card has no package or bundle identity");
+  const escaped = escapeCss(packageId);
+  return `[data-next-selector-card][data-next-package-id="${escaped}"], [data-next-package-id="${escaped}"]`;
 }
 
 function resolvePackageCardCandidate(candidates, item) {
@@ -3609,24 +3628,28 @@ function campaignPackageMetaForLine(events, line, options = {}) {
 function campaignPackageResolutionForLine(events, line, { selected_packages = [], preferred_refs = [] } = {}) {
   const selected = new Map((selected_packages || []).map((item) => [String(item.packageId), Number(item.quantity || 1)]));
   const preferred = new Set((preferred_refs || []).map(String));
+  let packages = null;
   for (let index = events.responses.length - 1; index >= 0; index -= 1) {
-    const body = events.responses[index]?.body;
-    if (!Array.isArray(body?.packages)) continue;
-    const matches = body.packages.map((pkg) => {
-      const ref = String(pkg?.ref_id ?? pkg?.package_id ?? pkg?.id ?? "");
-      const purchaseMultiplier = selected.get(ref) || 1;
-      return packageMatchesLine(pkg, line, { purchaseMultiplier })
-        ? { pkg, ref, purchaseMultiplier }
-        : null;
-    }).filter(Boolean);
-    const requestedMatches = matches.filter((entry) => selected.has(entry.ref));
-    const preferredMatches = matches.filter((entry) => preferred.has(entry.ref));
-    const resolved = requestedMatches.length ? requestedMatches : preferredMatches.length ? preferredMatches : matches;
-    // The newest packages response is authoritative. If it is ambiguous, an
-    // older response with fewer candidates must not manufacture a resolution.
-    return resolved.length === 1 ? resolved[0] : null;
+    const candidate = events.responses[index]?.body?.packages;
+    if (!Array.isArray(candidate)) continue;
+    packages = candidate;
+    break;
   }
-  return null;
+  if (!packages) return null;
+
+  const matches = packages.map((pkg) => {
+    const ref = String(pkg?.ref_id ?? pkg?.package_id ?? pkg?.id ?? "");
+    const purchaseMultiplier = selected.get(ref) || 1;
+    return packageMatchesLine(pkg, line, { purchaseMultiplier })
+      ? { pkg, ref, purchaseMultiplier }
+      : null;
+  }).filter(Boolean);
+  const requestedMatches = matches.filter((entry) => selected.has(entry.ref));
+  const preferredMatches = matches.filter((entry) => preferred.has(entry.ref));
+  const resolved = requestedMatches.length ? requestedMatches : preferredMatches.length ? preferredMatches : matches;
+  // The newest packages response is authoritative. Ambiguity must not fall
+  // back to an older response with fewer candidates and manufacture a match.
+  return resolved.length === 1 ? resolved[0] : null;
 }
 
 // A campaign typically carries several packages for the same product at
@@ -5392,6 +5415,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   declaredSelectorTiers,
   declaredCheckoutCoupons,
   packageCardSelectors,
+  packageCardClickSelector,
   selectPackageCard,
   renderedPackageCardCandidates,
   resolvePackageCardCandidate,

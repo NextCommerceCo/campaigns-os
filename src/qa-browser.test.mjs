@@ -782,7 +782,7 @@ test("--select-package builds strict card selectors covering package and bundle 
 });
 
 test("strict package selection resolves the rendered card by requested purchase quantity", () => {
-  const { resolvePackageCardCandidate } = __qaBrowserTestHooks;
+  const { packageCardClickSelector, resolvePackageCardCandidate } = __qaBrowserTestHooks;
   const cards = [
     {
       bundle_id: "bundle-1x",
@@ -834,6 +834,10 @@ test("strict package selection resolves the rendered card by requested purchase 
     () => resolvePackageCardCandidate(legacy, { packageId: "legacy", quantity: 2, quantityExplicit: true }),
     /quantity 2/,
   );
+
+  assert.equal(packageCardClickSelector(cards[1]), '[data-next-bundle-id="bundle-2x"]');
+  assert.equal(packageCardClickSelector(legacy[0]), '[data-next-selector-card][data-next-package-id="legacy"], [data-next-package-id="legacy"]');
+  assert.throws(() => packageCardClickSelector({ bundle_id: null, package_id: null, items: null }), /no package or bundle identity/);
 });
 
 test("strict package selection reads bundle composition from rendered card markup", async () => {
@@ -929,11 +933,22 @@ test("strict package selection clicks the quantity-matched bundle before checkou
   );
   renderedCards = cards;
 
+  candidateReads = 0;
+  const driftedBundle = cards.map((card) => card.bundle_id === "bundle-2x"
+    ? { ...card, items: [{ package_id: "1", quantity: 1 }] }
+    : card);
+  renderedCards = () => candidateReads++ === 0 ? cards : driftedBundle;
+  await assert.rejects(
+    selectPackageCard(page, { packageId: "bundle-2x", quantity: 1, quantityExplicit: false }),
+    /composition changed/,
+  );
+  renderedCards = cards;
+
   await assert.rejects(
     selectPackageCard(page, { packageId: "1", quantity: 3, quantityExplicit: true }),
     /quantity 3/,
   );
-  assert.equal(clicks.length, 5, "wrong quantity must fail before any additional click or order submission");
+  assert.equal(clicks.length, 6, "wrong quantity must fail before any additional click or order submission");
 });
 
 test("order creation proof: read-back is authoritative when the live create request was missed", () => {
