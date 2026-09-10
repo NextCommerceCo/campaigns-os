@@ -701,13 +701,16 @@ Two flags target funnels the default-tier drive cannot prove:
 - `--select-package <ref[:qty],...>` — **strict** package/bundle card selection.
   Each ref is matched against rendered selector/bundle cards
   (`[data-next-package-id]`, `[data-next-bundle-card][data-next-bundle-id]`) and
-  clicked; when the selector exposes selected-state markers
-  (`data-next-selected="true"` / `.next-selected`), the card must actually enter
-  the selected state. A ref that matches no card, or a card that refuses
-  selection, **fails the `selected_bundle` step** instead of silently driving
-  the pre-selected default tier. Use this to traverse non-default tiers of a
-  multi-tier selector (for example the 1x tier of a 3-tier funnel). `--cart`
-  remains the best-effort variant.
+  clicked. An explicit quantity requires one unambiguous rendered card whose
+  `data-next-bundle-items` composition contains exactly that package and
+  quantity; package identity alone is not enough. The card must then expose a
+  selected-state marker (`data-next-selected="true"` / `.next-selected`) after
+  the click. A missing card, ambiguous composition, wrong quantity, or
+  unverifiable/refused selection **fails the `selected_bundle` step** instead
+  of silently driving the pre-selected default tier. A bundle ref remains an
+  authoritative identity when exactly one rendered card declares it. Use this
+  flag to traverse non-default tiers of a multi-tier selector. `--cart` remains
+  the best-effort variant.
 - `--apply-coupon <code>` — types the code into the rendered coupon/promo input
   (`[data-next-checkout-field="coupon"]` and common fallbacks, revealing a
   collapsed "Have a coupon?" disclosure when needed) and clicks the apply
@@ -736,9 +739,13 @@ the CampaignSpec instead:
 
 - one strict-selection **checkout baseline per selector tier** the spec declares
   in the checkout page's `packages` (refs read from `ref_id`/`package_id`/`id`,
-  deduplicated, in declaration order) — each tier goes through the same strict
-  `--select-package` machinery, so a tier whose card is missing or refuses
-  selection fails its path;
+  deduplicated by ref and purchase quantity, in declaration order) — each tier
+  goes through the same strict `--select-package` machinery, so a tier whose
+  card is missing, ambiguous, quantity-mismatched, or refuses selection fails
+  its path. Repeated declarations of the same ref at distinct quantities are
+  purchase multipliers (`ref` and `ref:2`). A uniquely referenced catalog
+  package with its own `qty: 3` composition is still bought once (`ref`), not
+  multiplied by three;
 - plus one **checkout order per declared coupon code** — checkout
   `exit_intent.offer_code` and `promo_code_input.offer_code`, counted only when
   the surface has `enabled: true` (the same rule build/doctor use for offer
@@ -756,6 +763,16 @@ Two variants cross tiers with path shapes in a single run:
 - `tiers:full` — every declared tier × that checkout's full set of actual
   terminal paths. This is single-run tier×path coverage; expect the expanded
   count to exceed the default `--max-test-orders` and raise the cap deliberately.
+
+The persisted order read-back must reconcile the selected package's unit
+composition multiplied by the requested purchase quantity. For example,
+selecting `1:2` for a one-unit package proves only when the persisted line has
+quantity two. A line with the right SKU but the wrong quantity fails; duplicate
+same-SKU package candidates remain ambiguous unless rendered or requested
+package identity resolves them. Checkout total parity reads the standard
+`data-next-display="cart.total"` surface and the maintained Demeter
+`[data-next-cart-summary] .order-totals__value--total` surface. If neither is
+readable, total parity is explicitly skipped as unavailable rather than passed.
 
 Coupon plans stay single checkout orders in every variant: coupon proof is
 persisted-order read-back and does not need upsell traversal. Each planned
