@@ -110,8 +110,15 @@ export function findRunSession(cwd = process.cwd(), { home = homedir(), now = ne
  * one out first. Exact-path only, no upward walk: sweeping is a write, and it
  * must never reach into an ancestor project. Never throws.
  */
-export function findStaleRunSession(rootDir = process.cwd(), { now = new Date(), ttlMs = RUN_SESSION_TTL_MS } = {}) {
-  const path = resolveRunSessionPath(rootDir);
+export function findStaleRunSession(rootDir = process.cwd(), { home = homedir(), now = new Date(), ttlMs = RUN_SESSION_TTL_MS } = {}) {
+  const dir = resolve(rootDir);
+  // Same boundary findRunSession enforces: the filesystem root, $HOME, or an
+  // ancestor of $HOME is a shared directory, never a project — and this
+  // caller goes on to assemble, remit, and delete.
+  const { root } = parse(dir);
+  const resolvedHome = resolve(home);
+  if (dir === root || dir === resolvedHome || resolvedHome.startsWith(dir + sep)) return null;
+  const path = resolveRunSessionPath(dir);
   if (!existsSync(path)) return null;
   try {
     const session = JSON.parse(readFileSync(path, "utf8"));

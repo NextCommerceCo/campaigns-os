@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { resolveCampaignsApiKeyValue } from "./cli.mjs";
-import { buildRunSession, findRunSession, resolveRunSessionPath, writeRunSession } from "./run-session.mjs";
+import { buildRunSession, findRunSession, findStaleRunSession, resolveRunSessionPath, writeRunSession } from "./run-session.mjs";
 import { resolveRunRecordPath } from "./run-record.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -110,16 +110,24 @@ async function withServer(handler, run) {
 test("resolveCampaignsApiKeyValue: packet, then packet-local CampaignSpec, then declared env source; null otherwise", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
-    writeFileSync(join(dir, "spec.json"), JSON.stringify({ campaign: { campaigns_api_key: "pk_spec" } }));
+    writeFileSync(join(dir, "spec.json"), JSON.stringify({ campaign: { campaigns_api_key: "pk_spec_key" } }));
     const withPacketKey = { campaign: { campaigns_api_key: " pk_packet " }, spec: { local_path: "./spec.json" } };
     assert.equal(resolveCampaignsApiKeyValue(withPacketKey, packetPath, {}), "pk_packet");
     const legacyPacketKey = { campaign: { api_key: "pk_legacy" } };
     assert.equal(resolveCampaignsApiKeyValue(legacyPacketKey, packetPath, {}), "pk_legacy");
     const specOnly = { campaign: {}, spec: { local_path: "./spec.json" } };
-    assert.equal(resolveCampaignsApiKeyValue(specOnly, packetPath, {}), "pk_spec");
+    assert.equal(resolveCampaignsApiKeyValue(specOnly, packetPath, {}), "pk_spec_key");
     const envOnly = { campaign: { api_key_source: "env:MY_CAMPAIGN_KEY" } };
-    assert.equal(resolveCampaignsApiKeyValue(envOnly, packetPath, { MY_CAMPAIGN_KEY: "pk_env" }), "pk_env");
+    assert.equal(resolveCampaignsApiKeyValue(envOnly, packetPath, { MY_CAMPAIGN_KEY: "pk_env_key" }), "pk_env_key");
     assert.equal(resolveCampaignsApiKeyValue(envOnly, packetPath, {}), null);
+    // The env source is restricted to variable names that name a campaign key,
+    // so a packet cannot route an arbitrary secret into the header.
+    const foreignEnv = { campaign: { api_key_source: "env:AWS_SECRET_ACCESS_KEY" } };
+    assert.equal(resolveCampaignsApiKeyValue(foreignEnv, packetPath, { AWS_SECRET_ACCESS_KEY: "AKIAsomethingsecret1" }), null);
+    // And the value must look like a token: no whitespace, JSON, URLs, or blobs.
+    assert.equal(resolveCampaignsApiKeyValue({ campaign: { campaigns_api_key: "has space in it" } }, packetPath, {}), null);
+    assert.equal(resolveCampaignsApiKeyValue({ campaign: { campaigns_api_key: "short" } }, packetPath, {}), null);
+    assert.equal(resolveCampaignsApiKeyValue({ campaign: { campaigns_api_key: "https://x.test/k" } }, packetPath, {}), null);
     const missingSpec = { campaign: {}, spec: { local_path: "./nope.json" } };
     assert.equal(resolveCampaignsApiKeyValue(missingSpec, packetPath, {}), null);
     assert.equal(resolveCampaignsApiKeyValue({}, packetPath, {}), null);
@@ -203,6 +211,36 @@ test("CLI: run end with only a stale session reports the closeout instead of fai
   });
 });
 
+test("CLI: stale closeout inherits the invoking command's --no-remit and --no-run-session", () => {
+  withTempDir((dir) => {
+    const packetPath = seedPacket(dir);
+    const stale = writeStaleSession(dir, { packet: packetPath });
+    // --no-run-session: no sweep at all, the stale file is left alone.
+    const untouched = runCli(dir, ["run", "status", "--no-run-session"], isolatedEnv(dir, "on"));
+    assert.equal(untouched.status, 0);
+    assert.equal(existsSync(resolveRunSessionPath(dir)), true);
+    // --no-remit on the ending command: consent is ON, the record is written, nothing is sent.
+    const end = runCli(dir, ["run", "end", "--no-remit", "--proxy-base", "http://127.0.0.1:1", "--json"], isolatedEnv(dir, "on"));
+    assert.equal(end.status, 0, end.stderr);
+    const out = JSON.parse(end.stdout);
+    assert.equal(out.ok, true);
+    const record = JSON.parse(readFileSync(resolveRunRecordPath(stale.run_id, dir), "utf8"));
+    assert.equal(record.consent_state, "on");
+    assert.equal(record.remit_attempted, false);
+    assert.equal(record.remit_state, "skipped");
+  });
+});
+
+test("findStaleRunSession never adopts a session at $HOME, an ancestor of $HOME, or the filesystem root", () => {
+  withTempDir((dir) => {
+    writeStaleSession(dir, {});
+    assert.ok(findStaleRunSession(dir), "a project dir is swept");
+    assert.equal(findStaleRunSession(dir, { home: dir }), null, "$HOME itself is not");
+    assert.equal(findStaleRunSession(dir, { home: join(dir, "deeper", "home") }), null, "an ancestor of $HOME is not");
+    assert.equal(findStaleRunSession("/", { home: dir }), null, "the root is not");
+  });
+});
+
 test("CLI: a stale session whose packet is gone is cleared with a note and no Run Record", () => {
   withTempDir((dir) => {
     const stale = writeStaleSession(dir, { packet: join(dir, "vanished.json") });
@@ -210,6 +248,12 @@ test("CLI: a stale session whose packet is gone is cleared with a note and no Ru
     assert.equal(status, 0);
     assert.match(stderr, /cleared without a Run Record: packet missing/);
     assert.equal(existsSync(resolveRunRecordPath(stale.run_id, dir)), false);
+    // and `run end` on such a session says ok:false — the file is gone but no record was produced
+    const stale2 = writeStaleSession(dir, { packet: join(dir, "vanished-too.json") });
+    const end = JSON.parse(runCli(dir, ["run", "end", "--json"], isolatedEnv(dir)).stdout);
+    assert.equal(end.ok, false);
+    assert.equal(end.stale_closeout[0].run_id, stale2.run_id);
+    assert.match(end.stale_closeout[0].error, /packet missing/);
   });
 });
 
@@ -221,6 +265,10 @@ test("CLI: run status reports a stale session file but never sweeps it", () => {
     assert.match(stdout, /No active run session/);
     assert.match(stdout, new RegExp(`stale run session file is present \\(${stale.run_id}`));
     assert.equal(existsSync(resolveRunSessionPath(dir)), true, "status is read-only");
+    const json = JSON.parse(runCli(dir, ["run", "status", "--json"], isolatedEnv(dir)).stdout);
+    assert.equal(json.active, false);
+    assert.equal(json.stale_session.run_id, stale.run_id);
+    assert.ok(json.stale_session.session_path.endsWith(join(".campaign-runtime", "run-session.json"))); // cwd may be realpath'd (/private on macOS)
   });
 });
 
@@ -246,6 +294,7 @@ test("CLI: telemetry list uses the admin key from env for the cross-tenant listi
       const out = JSON.parse(run.stdout);
       assert.equal(out.scope, "admin");
       assert.equal(out.count, 1);
+      assert.equal(out.returned, 1);
       assert.equal(out.runs[0].run_id, "run_a");
       assert.equal(requests[0].headers["x-campaigns-ops-admin-key"], "admin_secret");
       assert.equal("x-campaign-key" in requests[0].headers, false);
@@ -269,6 +318,22 @@ test("CLI: telemetry list --packet lists the tenant scope with the packet's camp
       assert.equal("x-campaigns-ops-admin-key" in requests[0].headers, false);
       assert.match(text, /None in this tenant scope/);
     });
+  });
+});
+
+test("CLI: telemetry list never sends the admin key to a non-canonical, non-loopback base without --trust-proxy-base, and never over plain http", () => {
+  withTempDir((dir) => {
+    const env = { ...isolatedEnv(dir), CAMPAIGN_OPS_ADMIN_KEY: "admin_secret" };
+    const remote = runCli(dir, ["telemetry", "list", "--proxy-base", "https://proxy.example.invalid"], env);
+    assert.notEqual(remote.status, 0);
+    assert.match(remote.stderr, /refusing to send the ops admin key to non-canonical https:\/\/proxy\.example\.invalid/);
+    const plain = runCli(dir, ["telemetry", "list", "--proxy-base", "http://proxy.example.invalid"], env);
+    assert.notEqual(plain.status, 0);
+    assert.match(plain.stderr, /must be https/);
+    // --trust-proxy-base is the explicit vouch; the request then fails on DNS, proving it got past the gate.
+    const trusted = runCli(dir, ["telemetry", "list", "--proxy-base", "https://proxy.example.invalid", "--trust-proxy-base"], env);
+    assert.notEqual(trusted.status, 0);
+    assert.doesNotMatch(trusted.stderr, /refusing to send/);
   });
 });
 

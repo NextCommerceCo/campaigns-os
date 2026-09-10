@@ -43,6 +43,8 @@ import {
 } from "./run-record.mjs";
 import {
   announceDefaultOnTelemetry,
+  CANONICAL_REMIT_SCOPE,
+  normalizeConsentScope,
   promptAndPersistConsent,
   readConfig,
   resolveConfigPath,
@@ -65,7 +67,7 @@ import {
   SOURCE_PREP_CODES,
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
-import { DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
+import { boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -359,7 +361,7 @@ Usage:
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
-  campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY)
+  campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY)
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd)
@@ -9032,7 +9034,16 @@ function runSessionStatus(args, ambient = null) {
   const found = ambient || findRunSession(process.cwd());
   const progress = found ? runSessionProgress(found) : null;
   if (args.json) {
-    console.log(JSON.stringify({ ok: true, action: "run-status", active: Boolean(found), session: found?.session ?? null, session_path: found?.path ?? null, progress }, null, 2));
+    const stale = found ? null : findStaleRunSession(process.cwd());
+    console.log(JSON.stringify({
+      ok: true,
+      action: "run-status",
+      active: Boolean(found),
+      session: found?.session ?? null,
+      session_path: found?.path ?? null,
+      progress,
+      stale_session: stale ? { run_id: stale.session.run_id, session_path: stale.path, idle_since: stale.session.updated_at || stale.session.started_at || null } : null,
+    }, null, 2));
     return;
   }
   if (!found) {
@@ -9101,7 +9112,7 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
     const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === resolve(process.cwd()));
     if (swept.length) {
       if (args.json) {
-        console.log(JSON.stringify({ ok: true, action: "run-end", stale_closeout: swept }, null, 2));
+        console.log(JSON.stringify({ ok: swept.every((entry) => Boolean(entry.record_path)), action: "run-end", stale_closeout: swept }, null, 2));
         return;
       }
       for (const entry of swept) console.log(`Stale run session ${entry.run_id} closed out${entry.record_path ? ` (Run Record ${entry.record_path}, remit ${entry.remit_state || "skipped"})` : ` without a Run Record (${entry.error})`}.`);
@@ -9146,18 +9157,27 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
 const STALE_SWEEP_TARGET_COMMANDS = new Set(["start", "prepare-build", "build"]);
 
 async function closeOutStaleRunSessions(command, args) {
+  // A command that opted out of sessions altogether must not sweep either.
+  if (args["no-run-session"] === true) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
   if (command === "run" && (args._[1] === "start" || args._[1] === "end")) roots.push(resolve(process.cwd()));
+  // The closeout inherits the invoking command's remit controls: an explicit
+  // --no-remit / --no-write stays an opt-out, and a run pointed at a custom
+  // --proxy-base never remits the stale record to the canonical endpoint.
+  const inherited = {};
+  for (const flag of ["no-remit", "no-write", "proxy-base"]) {
+    if (args[flag] !== undefined) inherited[flag] = args[flag];
+  }
   const results = [];
   for (const root of roots) {
-    const result = await closeOutStaleRunSession(root);
+    const result = await closeOutStaleRunSession(root, inherited);
     if (result) results.push(result);
   }
   return results;
 }
 
-async function closeOutStaleRunSession(rootDir) {
+async function closeOutStaleRunSession(rootDir, inherited = {}) {
   const stale = findStaleRunSession(rootDir);
   if (!stale) return null;
   const { session, path: sessionPath, dir } = stale;
@@ -9167,7 +9187,7 @@ async function closeOutStaleRunSession(rootDir) {
   if (packet && existsSync(packet)) {
     try {
       const summary = await runRecordCommand(
-        { _: ["run-record"], packet, "run-id": session.run_id, "lifecycle-journal": session.lifecycle_journal, json: true },
+        { ...inherited, _: ["run-record"], packet, "run-id": session.run_id, "lifecycle-journal": session.lifecycle_journal, json: true },
         stale,
         { silent: true, promptForConsent: false },
       );
@@ -9194,15 +9214,29 @@ async function closeOutStaleRunSession(rootDir) {
 // CampaignSpec, then the declared env source. Campaign keys are
 // public-by-design; the value is sent as a header, never written into the
 // record. Best-effort: any read problem resolves to null (unscoped remit).
+// A campaign key is an opaque token; the receiver hashes it. The shape gate
+// below is about what is NOT a campaign key: whitespace, JSON, a URL, a
+// multi-kilobyte blob. The env source is additionally restricted to variable
+// names that name a campaign key, so a packet cannot point `api_key_source`
+// at an arbitrary secret (`env:AWS_SECRET_ACCESS_KEY`) and have its value
+// travel as a header.
+const CAMPAIGN_KEY_SHAPE = /^[A-Za-z0-9._-]{8,256}$/;
+const CAMPAIGN_KEY_ENV_NAME = /^[A-Z][A-Z0-9_]*CAMPAIGN[A-Z0-9_]*$/;
+
+function campaignKeyOrNull(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return CAMPAIGN_KEY_SHAPE.test(trimmed) ? trimmed : null;
+}
+
 export function resolveCampaignsApiKeyValue(packet, packetPath, env = process.env) {
-  const packetKey = firstNonEmptyString(packet?.campaign?.campaigns_api_key, packet?.campaign?.api_key);
-  if (packetKey) return packetKey.trim();
+  const packetKey = campaignKeyOrNull(firstNonEmptyString(packet?.campaign?.campaigns_api_key, packet?.campaign?.api_key));
+  if (packetKey) return packetKey;
   try {
     const localSpecPath = packet?.spec?.local_path;
     if (isNonEmptyString(localSpecPath) && isNonEmptyString(packetPath)) {
       const spec = readJsonIfExists(resolveFromFile(packetPath, localSpecPath));
-      const specKey = firstNonEmptyString(spec?.campaign?.campaigns_api_key, spec?.campaigns_api_key, spec?.campaign?.api_key);
-      if (specKey) return specKey.trim();
+      const specKey = campaignKeyOrNull(firstNonEmptyString(spec?.campaign?.campaigns_api_key, spec?.campaigns_api_key, spec?.campaign?.api_key));
+      if (specKey) return specKey;
     }
   } catch {
     // unreadable spec — fall through to env
@@ -9210,8 +9244,7 @@ export function resolveCampaignsApiKeyValue(packet, packetPath, env = process.en
   const source = optionalString(packet?.campaign?.api_key_source);
   if (source && source.startsWith("env:")) {
     const envName = source.slice("env:".length).trim();
-    const value = envName ? env?.[envName] : null;
-    if (isNonEmptyString(value)) return value.trim();
+    if (CAMPAIGN_KEY_ENV_NAME.test(envName)) return campaignKeyOrNull(env?.[envName]);
   }
   return null;
 }
@@ -9676,8 +9709,21 @@ async function telemetryCommand(args) {
 const DEFAULT_ADMIN_KEY_ENV = "CAMPAIGN_OPS_ADMIN_KEY";
 const TELEMETRY_LIST_TIMEOUT_MS = 15_000;
 
+const TELEMETRY_LIST_MAX_BODY_BYTES = 4_000_000; // the receiver caps a listing at 500 summaries
+
+function isLoopbackProxyBase(url) {
+  return ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+}
+
 async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
+  if (typeof fetchImpl !== "function") throw new Error("Global fetch is not available. Upgrade to Node 18+.");
   const proxyBase = String(optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE).replace(/\/+$/, "");
+  let proxyUrl;
+  try { proxyUrl = new URL(proxyBase); } catch { throw new Error(`telemetry list: --proxy-base is not a URL: ${proxyBase}`); }
+  const loopback = isLoopbackProxyBase(proxyUrl);
+  if (proxyUrl.protocol !== "https:" && !loopback) {
+    throw new Error(`telemetry list: --proxy-base must be https (or loopback for local testing); refusing to send a key over ${proxyUrl.protocol}//${proxyUrl.host}.`);
+  }
   const headers = { Accept: "application/json" };
   let scope;
   if (optionalString(args.packet)) {
@@ -9688,6 +9734,14 @@ async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
     headers["X-Campaign-Key"] = key;
     scope = "tenant";
   } else {
+    // The admin key is a secret, unlike a campaign key. It goes only to the
+    // canonical endpoint, a loopback test server, or a base the operator
+    // explicitly vouched for with --trust-proxy-base — the same fail-closed
+    // posture remit takes with default-on consent.
+    const canonical = normalizeConsentScope(proxyBase) === CANONICAL_REMIT_SCOPE;
+    if (!canonical && !loopback && args["trust-proxy-base"] !== true) {
+      throw new Error(`telemetry list: refusing to send the ops admin key to non-canonical ${proxyUrl.origin}. Pass --trust-proxy-base if that endpoint is yours, or use --packet for a tenant-scoped listing.`);
+    }
     const envName = optionalString(args["admin-key-env"]) || DEFAULT_ADMIN_KEY_ENV;
     const adminKey = process.env[envName];
     if (!isNonEmptyString(adminKey)) throw new Error(`telemetry list: set ${envName} (the ops admin key) for the cross-tenant listing, or pass --packet <campaign-runtime.build.json> for a tenant-scoped one.`);
@@ -9701,17 +9755,20 @@ async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   if (args.trusted === true || args.trusted === "true") query.set("trusted", "true");
   const url = `${proxyBase}${DEFAULT_RUNS_ENDPOINT}${query.size ? `?${query}` : ""}`;
   const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(TELEMETRY_LIST_TIMEOUT_MS) });
-  const text = await response.text();
+  const text = await boundedResponseText(response, { maxBodyBytes: TELEMETRY_LIST_MAX_BODY_BYTES, timeoutMs: TELEMETRY_LIST_TIMEOUT_MS });
   let body;
   try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text.slice(0, 400) }; }
   if (!response.ok) throw new Error(`telemetry list: ${response.status} ${response.statusText} from ${url}: ${JSON.stringify(body).slice(0, 400)}`);
   const limit = Number.isFinite(Number(args.limit)) && Number(args.limit) > 0 ? Number(args.limit) : 50;
+  // --limit trims client-side (the receiver has no page size); `count` is
+  // what is shown, `returned` what the receiver sent, `total` what it holds.
+  const returned = Array.isArray(body.runs) ? body.runs.length : 0;
   const runs = Array.isArray(body.runs) ? body.runs.slice(0, limit) : [];
   if (args.json) {
-    console.log(JSON.stringify({ ok: true, action: "telemetry-list", scope, endpoint: url, count: body.count ?? runs.length, total: body.total ?? null, truncated: body.truncated === true, runs }, null, 2));
+    console.log(JSON.stringify({ ok: true, action: "telemetry-list", scope, endpoint: url, count: runs.length, returned, total: body.total ?? null, truncated: body.truncated === true, runs }, null, 2));
     return;
   }
-  console.log(`Run Records at ${proxyBase} (${scope} scope): ${body.count ?? runs.length} listed${body.total != null ? ` of ${body.total}` : ""}${body.truncated ? " (truncated)" : ""}`);
+  console.log(`Run Records at ${proxyBase} (${scope} scope): showing ${runs.length} of ${returned} returned${body.total != null ? `, ${body.total} stored` : ""}${body.truncated ? " (receiver scan truncated)" : ""}`);
   if (!runs.length) {
     console.log(scope === "tenant"
       ? "None in this tenant scope. Records remitted before the CLI sent X-Campaign-Key are unscoped — list them with the admin key."

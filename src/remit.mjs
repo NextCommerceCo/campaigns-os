@@ -36,7 +36,7 @@ async function withTimeout(promise, timeoutMs, label, onTimeout = null) {
   }
 }
 
-async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES, timeoutMs = DEFAULT_REMIT_TIMEOUT_MS } = {}) {
+export async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES, timeoutMs = DEFAULT_REMIT_TIMEOUT_MS } = {}) {
   const max = Number.isFinite(maxBodyBytes) && maxBodyBytes > 0 ? maxBodyBytes : DEFAULT_REMIT_MAX_BODY_BYTES;
 
   if (response?.body && typeof response.body.getReader === "function") {
