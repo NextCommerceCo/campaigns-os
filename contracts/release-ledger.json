@@ -1345,6 +1345,27 @@
       "sequence": 25,
       "date": "2026-09-10",
       "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.22.0+agent.1",
+      "changelog_sha256": "55026ebeef4b3df362dcf380bfb8bb1f636058b64c40f7d452f41241a07f4e64",
+      "agent_impact": "Typed-card QA consumers now get distinct test plans for repeated quantities of the same package ref. Explicit-quantity selection fails before order creation unless one rendered card has the exact composition and visibly becomes selected. Read display_reconciliation.matched_quantities or quantity_mismatches for persisted proof; Demeter totals are comparable through the maintained summary selector.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents quantity-distinct planning, strict rendered composition selection, persisted multiplier reconciliation, and Demeter total capture."
+        }
+      ],
+      "entry_sha256": "fb1de3fbd3754af8f71012bfac9451abeccb322004765e8cc352e203db81ec92"
+    },
+    {
+      "id": "RL-0026",
+      "sequence": 26,
+      "date": "2026-09-10",
+      "kind": "release",
       "surface_version": "1.23.0",
       "changelog_section": "1.23.0",
       "changelog_sha256": "0d8e79e1303a02784f687f4803e752ec94a905ae788b1ca075be306ca4326bc8",
@@ -1413,7 +1434,7 @@
           "summary": "Regenerates supported-surface context; the runtime recipe is unchanged."
         }
       ],
-      "entry_sha256": "37f0dc504df3c804acb3db781585fe73135b99ffd7cdeb67320c451c19151627"
+      "entry_sha256": "3ca19e3b7dfa1970248ed919ed2762a9eabd360387abcea124e55bd8489ea4a6"
     }
   ]
 }
