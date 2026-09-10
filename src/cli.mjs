@@ -65,7 +65,7 @@ import {
   SOURCE_PREP_CODES,
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
-import { remitRunRecord } from "./remit.mjs";
+import { DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -78,6 +78,7 @@ import {
   buildRunSession,
   clearRunSession,
   findRunSession,
+  findStaleRunSession,
   isRunSessionStale,
   isRunSessionTerminal,
   mintSessionRunId,
@@ -358,14 +359,15 @@ Usage:
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
+  campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY)
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
-  campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it
+  campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd)
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
-  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
+  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
@@ -456,6 +458,13 @@ export async function main(argv) {
   // ONCE here and threaded through dispatch + persistence so the run_id a
   // command is tagged with and the journal it writes to come from a single
   // read (no TOCTOU skew if the session changes mid-run).
+  //
+  // Before that read, close out any STALE session at the root this command is
+  // about to open a new one in. findRunSession ignores stale sessions so a new
+  // run never inherits an old run_id — but an ignored session was also an
+  // abandoned one: nine of them were found lingering with no Run Record and
+  // nothing remitted. Closing out is best-effort and never blocks the command.
+  const sweptStale = await closeOutStaleRunSessions(command, args);
   const ambient = ambientRunSession(args);
 
   // Wrap every command in the lifecycle instrumentation (T6): it captures the
@@ -471,7 +480,7 @@ export async function main(argv) {
   // prepare-build auto-open a run session mid-command, they publish it here
   // so onFinish persists this command's own lifecycle entry into the new
   // session — without two interleaved invocations ever sharing a session.
-  const sessionHolder = { current: ambient, autoStarted: false, qaResult: null };
+  const sessionHolder = { current: ambient, autoStarted: false, qaResult: null, sweptStale };
   await withCommandLifecycle(
     {
       command,
@@ -909,12 +918,12 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "telemetry") {
-    telemetryCommand(args);
+    await telemetryCommand(args);
     return;
   }
 
   if (command === "run") {
-    await runSessionCommand(args, ambient);
+    await runSessionCommand(args, ambient, sessionHolder);
     return;
   }
 
@@ -8979,11 +8988,11 @@ function findingsExport(args, ambient = null) {
 // one run_id + one lifecycle journal across every command in the project
 // without per-command flags — the experience for "talk to your agent and
 // build". See src/run-session.mjs.
-async function runSessionCommand(args, ambient = null) {
+async function runSessionCommand(args, ambient = null, sessionHolder = null) {
   const sub = args._[1] || "status";
   if (sub === "start") return runSessionStart(args);
   if (sub === "status") return runSessionStatus(args, ambient);
-  if (sub === "end") return runSessionEnd(args, ambient);
+  if (sub === "end") return runSessionEnd(args, ambient, sessionHolder);
   throw new Error(`Unknown run subcommand "${sub}". Use: start | end | status.`);
 }
 
@@ -9028,6 +9037,10 @@ function runSessionStatus(args, ambient = null) {
   }
   if (!found) {
     console.log("No active run session. Start one with: campaigns-os run start");
+    const stale = findStaleRunSession(process.cwd());
+    if (stale) {
+      console.log(`A stale run session file is present (${stale.session.run_id}, idle since ${stale.session.updated_at || stale.session.started_at}). It will be closed out — Run Record assembled and remitted under consent — by the next \`run start\`, \`run end\`, \`start\`, or \`prepare-build\` here.`);
+    }
     return;
   }
   console.log(`Active run session: ${found.session.run_id}`);
@@ -9079,10 +9092,21 @@ function runSessionProgress(found) {
   }
 }
 
-async function runSessionEnd(args, ambient = null) {
+async function runSessionEnd(args, ambient = null, sessionHolder = null) {
   // Use the session resolved once in main() (single source of truth).
   const found = ambient;
   if (!found) {
+    // A stale session at cwd was already closed out by main()'s sweep; that IS
+    // the end the operator asked for, so report it rather than fail.
+    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === resolve(process.cwd()));
+    if (swept.length) {
+      if (args.json) {
+        console.log(JSON.stringify({ ok: true, action: "run-end", stale_closeout: swept }, null, 2));
+        return;
+      }
+      for (const entry of swept) console.log(`Stale run session ${entry.run_id} closed out${entry.record_path ? ` (Run Record ${entry.record_path}, remit ${entry.remit_state || "skipped"})` : ` without a Run Record (${entry.error})`}.`);
+      return;
+    }
     throw new Error("No active run session to end. Start one with: campaigns-os run start.");
   }
   const { session, path: sessionPath } = found;
@@ -9105,6 +9129,91 @@ async function runSessionEnd(args, ambient = null) {
   await runRecordCommand(endArgs, found);
   clearRunSession(sessionPath);
   if (!args.json) console.log(`Run session ${session.run_id} ended; session cleared.`);
+}
+
+// Stale-session closeout. A run session that idled past RUN_SESSION_TTL_MS is
+// invisible to findRunSession (correct: a new work session must not inherit
+// it) but was previously just abandoned: the file lingered, its lifecycle
+// journal was never assembled, nothing was remitted. Sessions only ever
+// auto-closed on a ready `qa run`, and most real runs stop earlier — so the
+// runs most worth learning from (blocked, abandoned, agent-driven) left no
+// record. Now, right before a command opens a NEW session at a root, the stale
+// one there is assembled into its Run Record (remit under the usual consent)
+// and removed. Roots: --target for start/prepare-build/build; cwd for
+// `run start` / `run end`. `run status` never sweeps — it is read-only.
+// Best-effort throughout: a closeout failure clears the file and says so on
+// stderr; it never blocks the command that triggered it.
+const STALE_SWEEP_TARGET_COMMANDS = new Set(["start", "prepare-build", "build"]);
+
+async function closeOutStaleRunSessions(command, args) {
+  const roots = [];
+  if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
+  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) roots.push(resolve(process.cwd()));
+  const results = [];
+  for (const root of roots) {
+    const result = await closeOutStaleRunSession(root);
+    if (result) results.push(result);
+  }
+  return results;
+}
+
+async function closeOutStaleRunSession(rootDir) {
+  const stale = findStaleRunSession(rootDir);
+  if (!stale) return null;
+  const { session, path: sessionPath, dir } = stale;
+  const packet = optionalString(session.packet);
+  const idleSince = session.updated_at || session.started_at || null;
+  const result = { run_id: session.run_id, dir, idle_since: idleSince, record_path: null, remit_state: null, error: null };
+  if (packet && existsSync(packet)) {
+    try {
+      const summary = await runRecordCommand(
+        { _: ["run-record"], packet, "run-id": session.run_id, "lifecycle-journal": session.lifecycle_journal, json: true },
+        stale,
+        { silent: true, promptForConsent: false },
+      );
+      result.record_path = summary?.record_path || null;
+      result.remit_state = summary?.record?.remit_state || null;
+    } catch (error) {
+      result.error = error instanceof Error ? error.message : String(error);
+    }
+  } else {
+    result.error = packet ? `packet missing: ${packet}` : "no packet recorded on the session";
+  }
+  clearRunSession(sessionPath);
+  process.stderr.write(
+    result.record_path
+      ? `[campaigns-os] Stale run session ${session.run_id} (idle since ${idleSince}) closed out: Run Record ${result.record_path} (remit ${result.remit_state || "skipped"}).\n`
+      : `[campaigns-os] Stale run session ${session.run_id} (idle since ${idleSince}) cleared without a Run Record: ${result.error}.\n`,
+  );
+  return result;
+}
+
+// The Campaigns API key VALUE for this packet, for the remit's X-Campaign-Key
+// header (the receiver's tenant join). Same precedence as the doctor's
+// presence check (resolveCampaignsApiKey): packet, then the packet-local
+// CampaignSpec, then the declared env source. Campaign keys are
+// public-by-design; the value is sent as a header, never written into the
+// record. Best-effort: any read problem resolves to null (unscoped remit).
+export function resolveCampaignsApiKeyValue(packet, packetPath, env = process.env) {
+  const packetKey = firstNonEmptyString(packet?.campaign?.campaigns_api_key, packet?.campaign?.api_key);
+  if (packetKey) return packetKey.trim();
+  try {
+    const localSpecPath = packet?.spec?.local_path;
+    if (isNonEmptyString(localSpecPath) && isNonEmptyString(packetPath)) {
+      const spec = readJsonIfExists(resolveFromFile(packetPath, localSpecPath));
+      const specKey = firstNonEmptyString(spec?.campaign?.campaigns_api_key, spec?.campaigns_api_key, spec?.campaign?.api_key);
+      if (specKey) return specKey.trim();
+    }
+  } catch {
+    // unreadable spec — fall through to env
+  }
+  const source = optionalString(packet?.campaign?.api_key_source);
+  if (source && source.startsWith("env:")) {
+    const envName = source.slice("env:".length).trim();
+    const value = envName ? env?.[envName] : null;
+    if (isNonEmptyString(value)) return value.trim();
+  }
+  return null;
 }
 
 // Run Telemetry capture + remit. Thin dispatch: read this run's artifacts with
@@ -9255,9 +9364,10 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
 
   // Remit is consent-gated, non-fatal, bounded, and idempotent on run_id. Its
   // outcome is stamped into the local record so a dropped send is visible, not silent.
+  const campaignKey = remitDisabled ? null : resolveCampaignsApiKeyValue(packet, packetPath, process.env);
   const remitStatus = remitDisabled
     ? { attempted: false, ok: null, error: null, endpoint: null }
-    : await remitRunRecord(record, { proxyBase, consent });
+    : await remitRunRecord(record, { proxyBase, consent, campaignKey });
   record.remit_attempted = remitStatus.attempted;
   record.remit_ok = remitStatus.ok;
   record.remit_error = remitStatus.error;
@@ -9278,7 +9388,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
   if (record.remit_attempted) {
-    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}`);
+    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : " (unscoped: no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source — the receiver lists this record only via the admin listing or by run_id)"}`);
   } else {
     console.log(`Remit: skipped (consent ${record.consent_state}${remitDisabled ? ", disabled for this run" : ""}).`);
   }
@@ -9501,7 +9611,7 @@ function packageVersion() {
 // Machine-level Run Telemetry consent. `status` reports the resolved state and
 // its source; `on`/`off` persist an explicit choice to the user-level config.
 // Consent gates REMIT only — local capture is unaffected.
-function telemetryCommand(args) {
+async function telemetryCommand(args) {
   const sub = args._[1] || "status";
   const configPath = resolveConfigPath();
 
@@ -9539,13 +9649,78 @@ function telemetryCommand(args) {
     }
     console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})`);
     console.log(`Config: ${configPath}${configPresent ? "" : " (not set)"}`);
-    if (!resolved.resolved) {
-      console.log("No explicit choice yet — defaults OFF. Set with: campaigns-os telemetry on|off");
+    if (resolved.default_on === true) {
+      console.log(`No explicit choice recorded — remit to the canonical NEXT endpoint (${resolved.scope}) is ON by default. Opt out with: campaigns-os telemetry off`);
+    } else if (!resolved.resolved) {
+      // Only reachable for a malformed config file or a scope mismatch — the
+      // resolver fails CLOSED there, so the state really is off until the
+      // operator records a choice. (The old text said "defaults OFF", which
+      // contradicted the default-on canonical path above.)
+      console.log("Consent could not be resolved (malformed config or an endpoint scope mismatch) — remit is OFF until you set it: campaigns-os telemetry on|off");
     }
     return;
   }
 
-  throw new Error(`Unknown telemetry subcommand "${sub}". Use: status | on | off.`);
+  if (sub === "list") return telemetryList(args);
+
+  throw new Error(`Unknown telemetry subcommand "${sub}". Use: status | on | off | list.`);
+}
+
+// `telemetry list` — the reader that never existed. Since the receiver
+// tenant-scoped GET /api/runs (2026-08-31), listing needs either the campaign
+// key (tenant scope: only records remitted WITH X-Campaign-Key) or the ops
+// admin key (cross-tenant, includes every unscoped record). With --packet the
+// campaign key is resolved exactly as the remit resolves it; otherwise the
+// admin key is read from the env var named by --admin-key-env (default
+// CAMPAIGN_OPS_ADMIN_KEY). Read-only; never persists anything.
+const DEFAULT_ADMIN_KEY_ENV = "CAMPAIGN_OPS_ADMIN_KEY";
+const TELEMETRY_LIST_TIMEOUT_MS = 15_000;
+
+async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
+  const proxyBase = String(optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE).replace(/\/+$/, "");
+  const headers = { Accept: "application/json" };
+  let scope;
+  if (optionalString(args.packet)) {
+    const packetPath = resolve(args.packet);
+    const packet = readJson(packetPath);
+    const key = resolveCampaignsApiKeyValue(packet, packetPath, process.env);
+    if (!key) throw new Error(`telemetry list --packet: no Campaigns API key found in ${packetPath}, its local CampaignSpec, or the declared env source; pass a packet that carries one, or list cross-tenant with the admin key instead.`);
+    headers["X-Campaign-Key"] = key;
+    scope = "tenant";
+  } else {
+    const envName = optionalString(args["admin-key-env"]) || DEFAULT_ADMIN_KEY_ENV;
+    const adminKey = process.env[envName];
+    if (!isNonEmptyString(adminKey)) throw new Error(`telemetry list: set ${envName} (the ops admin key) for the cross-tenant listing, or pass --packet <campaign-runtime.build.json> for a tenant-scoped one.`);
+    headers["X-Campaigns-Ops-Admin-Key"] = adminKey.trim();
+    scope = "admin";
+  }
+  const query = new URLSearchParams();
+  if (optionalString(args.since)) query.set("since", args.since);
+  if (optionalString(args.package)) query.set("package", args.package);
+  if (optionalString(args.surface)) query.set("surface", args.surface);
+  if (args.trusted === true || args.trusted === "true") query.set("trusted", "true");
+  const url = `${proxyBase}${DEFAULT_RUNS_ENDPOINT}${query.size ? `?${query}` : ""}`;
+  const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(TELEMETRY_LIST_TIMEOUT_MS) });
+  const text = await response.text();
+  let body;
+  try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text.slice(0, 400) }; }
+  if (!response.ok) throw new Error(`telemetry list: ${response.status} ${response.statusText} from ${url}: ${JSON.stringify(body).slice(0, 400)}`);
+  const limit = Number.isFinite(Number(args.limit)) && Number(args.limit) > 0 ? Number(args.limit) : 50;
+  const runs = Array.isArray(body.runs) ? body.runs.slice(0, limit) : [];
+  if (args.json) {
+    console.log(JSON.stringify({ ok: true, action: "telemetry-list", scope, endpoint: url, count: body.count ?? runs.length, total: body.total ?? null, truncated: body.truncated === true, runs }, null, 2));
+    return;
+  }
+  console.log(`Run Records at ${proxyBase} (${scope} scope): ${body.count ?? runs.length} listed${body.total != null ? ` of ${body.total}` : ""}${body.truncated ? " (truncated)" : ""}`);
+  if (!runs.length) {
+    console.log(scope === "tenant"
+      ? "None in this tenant scope. Records remitted before the CLI sent X-Campaign-Key are unscoped — list them with the admin key."
+      : "None stored.");
+    return;
+  }
+  for (const run of runs) {
+    console.log(`  ${String(run.received_at || "").slice(0, 19).padEnd(19)}  ${String(run.run_id || "").padEnd(30)}  ${String(run.package_version || "-").padEnd(14)}  ${String(run.primary_surface || "-").padEnd(12)}  ${run.trusted === true ? "trusted" : "anon"}  ${run.campaign_key_hash ? "scoped" : "unscoped"}`);
+  }
 }
 
 // Tiny Prompts: skippable one-line guidance at stage boundaries. They surface

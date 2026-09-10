@@ -100,6 +100,29 @@ export function findRunSession(cwd = process.cwd(), { home = homedir(), now = ne
   return null;
 }
 
+/**
+ * The session file at `rootDir` when it exists but is STALE (idle past the
+ * TTL). findRunSession deliberately ignores such a file so a new work session
+ * never inherits an old run_id — but ignoring it also meant abandoning it: the
+ * file lingered, its lifecycle journal was never assembled into a Run Record,
+ * and nothing was ever remitted for that run. Callers that are about to open a
+ * new session (start / prepare-build / run start) use this to close the old
+ * one out first. Exact-path only, no upward walk: sweeping is a write, and it
+ * must never reach into an ancestor project. Never throws.
+ */
+export function findStaleRunSession(rootDir = process.cwd(), { now = new Date(), ttlMs = RUN_SESSION_TTL_MS } = {}) {
+  const path = resolveRunSessionPath(rootDir);
+  if (!existsSync(path)) return null;
+  try {
+    const session = JSON.parse(readFileSync(path, "utf8"));
+    if (!session || typeof session !== "object" || Array.isArray(session) || !isNonEmptyString(session.run_id)) return null;
+    if (!isRunSessionStale(session, { now, ttlMs })) return null;
+    return { session, path, dir: resolve(rootDir) };
+  } catch {
+    return null;
+  }
+}
+
 /** Mint the session's canonical run_id (same shape as the run-record minter). */
 export function mintSessionRunId(now = new Date()) {
   return `run_${now.getTime()}_${randomBytes(4).toString("hex")}`;
