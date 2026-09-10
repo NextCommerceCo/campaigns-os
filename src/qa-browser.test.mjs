@@ -911,6 +911,16 @@ test("strict package selection clicks the quantity-matched bundle before checkou
   selectionState = "selected";
 
   let candidateReads = 0;
+  const driftedComposition = cards.map((card) => card.bundle_id === "bundle-2x"
+    ? { ...card, items: [{ package_id: "1", quantity: 1 }] }
+    : card);
+  renderedCards = () => candidateReads++ === 0 ? cards : driftedComposition;
+  await assert.rejects(
+    selectPackageCard(page, { packageId: "1", quantity: 2, quantityExplicit: true }),
+    /quantity 2/,
+  );
+
+  candidateReads = 0;
   const replacedCards = cards.map((card) => card.bundle_id === "bundle-2x" ? { ...card, bundle_id: "replacement-2x" } : card);
   renderedCards = () => candidateReads++ === 0 ? cards : replacedCards;
   await assert.rejects(
@@ -923,7 +933,7 @@ test("strict package selection clicks the quantity-matched bundle before checkou
     selectPackageCard(page, { packageId: "1", quantity: 3, quantityExplicit: true }),
     /quantity 3/,
   );
-  assert.equal(clicks.length, 4, "wrong quantity must fail before any additional click or order submission");
+  assert.equal(clicks.length, 5, "wrong quantity must fail before any additional click or order submission");
 });
 
 test("order creation proof: read-back is authoritative when the live create request was missed", () => {

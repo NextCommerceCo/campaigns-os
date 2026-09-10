@@ -116,10 +116,13 @@ test("a displayed package that was never charged is a blocker too", () => {
 
 test("duplicate-SKU packages remain ambiguous unless rendered or requested identity resolves them", () => {
   const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
-  const events = { responses: [{ body: { packages: [
-    { ref_id: 1, qty: 1, product_sku: "SAME-SKU" },
-    { ref_id: 2, qty: 1, product_sku: "SAME-SKU" },
-  ] } }] };
+  const events = { responses: [
+    { body: { packages: [{ ref_id: 1, qty: 1, product_sku: "SAME-SKU" }] } },
+    { body: { packages: [
+      { ref_id: 1, qty: 1, product_sku: "SAME-SKU" },
+      { ref_id: 2, qty: 1, product_sku: "SAME-SKU" },
+    ] } },
+  ] };
   const reconciliation = reconcileOrderAgainstDisplay({
     lines: [{ title: "Ambiguous", quantity: 1, sku: "SAME-SKU" }],
     display: {

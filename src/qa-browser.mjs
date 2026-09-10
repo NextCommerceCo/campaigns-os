@@ -3622,7 +3622,9 @@ function campaignPackageResolutionForLine(events, line, { selected_packages = []
     const requestedMatches = matches.filter((entry) => selected.has(entry.ref));
     const preferredMatches = matches.filter((entry) => preferred.has(entry.ref));
     const resolved = requestedMatches.length ? requestedMatches : preferredMatches.length ? preferredMatches : matches;
-    if (resolved.length === 1) return resolved[0];
+    // The newest packages response is authoritative. If it is ambiguous, an
+    // older response with fewer candidates must not manufacture a resolution.
+    return resolved.length === 1 ? resolved[0] : null;
   }
   return null;
 }
