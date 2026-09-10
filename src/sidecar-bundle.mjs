@@ -102,10 +102,9 @@ function compareSpecMaterialIdentity(errors, records, identityField) {
   const reportMaterial = valueAt(records.get("assembly_report")?.value, identityField.artifact_paths.assembly_report);
 
   if (!contextMaterial && !reportMaterial) {
-    compareIdentity(errors, records, {
-      name: "spec_hash",
-      artifact_paths: identityField.compatibility.legacy_artifact_paths,
-    });
+    // The ordinary spec_hash identity field already compares the two legacy
+    // producer values. QA's spec_hash is semantic material identity even for
+    // legacy bundles, so it must never participate in the raw-byte check.
     return;
   }
 
