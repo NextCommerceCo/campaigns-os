@@ -160,13 +160,25 @@ test("Offer request builder resolves stable package keys and carries no local ke
 test("Offer readback comparator projects write-only package_ids from condition.packages", () => {
   const intent = fixture("valid-inventory.v0.json").target.offer_intents[0];
   const request = buildLegacyOfferRequest(intent, { "widget-unit": 701 });
-  const result = compareLegacyOfferReadback(request, {
-    name: request.name, offer_type: "offer",
-    condition: { type: "count", value: 2, all_packages: false, packages: [{ id: 701 }] },
-    benefit: request.benefit,
-  });
-  assert.equal(result.ok, true);
-  assert.equal(result.checks.find((check) => check.field === "condition.package_ids").status, "match");
+  for (const value of [2, "2.0", "2.00"]) {
+    const result = compareLegacyOfferReadback(request, {
+      name: request.name, offer_type: "offer",
+      condition: { type: "count", value, all_packages: false, packages: [{ id: 701 }] },
+      benefit: request.benefit,
+    });
+    assert.equal(result.ok, true, String(value));
+    assert.equal(result.checks.find((check) => check.field === "condition.package_ids").status, "match");
+    assert.equal(result.checks.find((check) => check.field === "condition.value").status, "match");
+  }
+
+  for (const value of ["3.00", "2.50", "02.00", "2e0", 2.5]) {
+    const result = compareLegacyOfferReadback(request, {
+      name: request.name, offer_type: "offer",
+      condition: { type: "count", value, all_packages: false, packages: [{ id: 701 }] },
+      benefit: request.benefit,
+    });
+    assert.equal(result.checks.find((check) => check.field === "condition.value").status, "mismatch", String(value));
+  }
 });
 
 test("comparators mark unprojectable API fields instead of guessing", () => {
