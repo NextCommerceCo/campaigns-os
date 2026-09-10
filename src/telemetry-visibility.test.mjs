@@ -123,7 +123,7 @@ test("resolveCampaignsApiKeyValue: packet, then packet-local CampaignSpec, then 
     // The env source is restricted to variable names that name a campaign key,
     // so a packet cannot route an arbitrary secret into the header.
     const foreignEnv = { campaign: { api_key_source: "env:AWS_SECRET_ACCESS_KEY" } };
-    assert.equal(resolveCampaignsApiKeyValue(foreignEnv, packetPath, { AWS_SECRET_ACCESS_KEY: "AKIAsomethingsecret1" }), null);
+    assert.equal(resolveCampaignsApiKeyValue(foreignEnv, packetPath, { AWS_SECRET_ACCESS_KEY: "not-a-campaign-key-000001" }), null);
     // And the value must look like a token: no whitespace, JSON, URLs, or blobs.
     assert.equal(resolveCampaignsApiKeyValue({ campaign: { campaigns_api_key: "has space in it" } }, packetPath, {}), null);
     assert.equal(resolveCampaignsApiKeyValue({ campaign: { campaigns_api_key: "short" } }, packetPath, {}), null);
