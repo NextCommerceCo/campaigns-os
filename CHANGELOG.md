@@ -2,6 +2,23 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.24.0] - 2026-09-10
+
+### Added
+
+- Run Records now distinguish summed active command time (`duration_ms`) from
+  the full elapsed run span (`wall_clock_duration_ms`).
+
+### Changed
+
+- Explicit Build Packets select the matching run session from the target repo,
+  toolkit, or another project directory, while simultaneous campaign sessions
+  fail closed on conflicts. Blocked QA attempts keep the session open for
+  repair; final closeout references every attempt.
+- `doctor` and `qa run` now own their matching Assembly Report stage status,
+  current evidence paths, and producer timestamps. They never infer historical
+  completion from artifact presence.
+
 ## [1.23.0] - 2026-09-10
 
 ### Fixed

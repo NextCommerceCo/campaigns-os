@@ -28,6 +28,15 @@ implementation detail, however stable it looks.
 | Runtime-recipe fixtures: `contracts/fixtures/runtime-recipe/**` (as named), `docs/runtime-readiness.md` | Accept and single-mutation reject documents a consumer's parser validates against, the prepared-runtime states its output checks must distinguish, and the generated guide. | Named. All of it is generated — regenerate with `npm run generate:runtime-docs`; CI fails on a stale copy. |
 | Migration sidecar bundle: `contracts/migration-sidecar-bundle.v0.json`, `docs/migration-sidecar-bundle.md`, and `contracts/fixtures/sidecar-bundle/production-shaped/**` (as named) | The strict machine contract and production-shaped consumer fixture for the root Build Packet plus Build Context, Assembly Report, Doctor Output, and QA Verdict JSON sidecars. Packet selection uses `generated_at`, never mtime; raw spec integrity is distinct from canonical material identity; safe repository-relative spellings normalize without accepting traversal; markdown may coexist but is never readback truth. | The machine contract and schemas are hashed. The fixture is named byte-for-byte consumer input and must keep passing `campaigns-os bundle check --require-qa`. A required QA verdict with `disposition: blocked` keeps handoff nonconformant and sets `stage_blocked`. |
 
+The Run Record lifecycle block keeps two duration meanings explicit:
+`duration_ms` is summed active command time, while `wall_clock_duration_ms` is
+the elapsed span between the first command start and last completion. Run
+sessions bind to an explicit packet across working directories, retain blocked
+QA attempts for repair, and close only on a ready verdict or explicit `run end`.
+Doctor and QA producers update only their matching Assembly Report stage with
+their current output paths and timestamps; they do not synthesize historical
+stage completion.
+
 Everything on this list must also **ship in the npm tarball** — the gate checks
 `package.json` `files[]` coverage, so "supported" can never mean "absent from
 the package a consumer installs."

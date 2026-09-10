@@ -207,6 +207,7 @@ const RUN_RECORD_LIFECYCLE_KEYS = [
   "started_at",
   "completed_at",
   "duration_ms",
+  "wall_clock_duration_ms",
   "stages",
   "repair_loop_count",
 ];
@@ -380,8 +381,12 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
   for (const count of commandCounts.values()) if (count > 1) repairLoopCount += count - 1;
 
   // Duration is active work, not the idle wall-clock gap between separate
-  // invocations. The outer timestamps remain available for audit/debugging.
+  // invocations. Report the full run span separately so operator/review/idle
+  // time remains visible without inflating command execution time.
   const durationMs = durationSum;
+  const wallClockDurationMs = earliest && latest
+    ? Math.max(0, Date.parse(latest) - Date.parse(earliest))
+    : null;
 
   // Top-level command/argv_shape describe the RUN, not its earliest invocation.
   // They are meaningful only when the run is a single distinct command; for a
@@ -399,6 +404,7 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
     started_at: earliest,
     completed_at: latest,
     duration_ms: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
+    wall_clock_duration_ms: wallClockDurationMs == null ? null : Math.round(wallClockDurationMs),
     stages,
     repair_loop_count: repairLoopCount,
   };

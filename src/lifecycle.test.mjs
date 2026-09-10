@@ -296,6 +296,9 @@ test("aggregateLifecycleForRun: one stage per command, repair_loop_count counts 
   assert.deepEqual(agg.argv_shape, []);
   // duration is summed active command time, not idle wall-clock span between invocations
   assert.equal(agg.duration_ms, 68);
+  // wall-clock span is reported separately so idle/review time is observable
+  // without corrupting active command duration.
+  assert.equal(agg.wall_clock_duration_ms, 2008);
   assert.equal(agg.stages[0].exit_status, 2); // per-command exit preserved
 });
 

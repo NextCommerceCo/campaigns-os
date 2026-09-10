@@ -1417,11 +1417,10 @@ function resolveTargetBaseDir(packet, packetPath) {
   return resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
 }
 
-// #171: run-record closeout is a REQUIRED terminal action after every qa run
-// (including blocked runs) — the dogfood operator finished `qa run` exit 4 and
-// stopped, the session stayed open, and no durable Run Record existed.
-// With an active run session the CLI auto-assembles the Run Record after
-// `qa run`; this action is the explicit contract for every other path.
+// Run-record closeout is required for every QA workflow. With an active run
+// session, blocked attempts stay attached to that session while repair
+// continues; the first ready outcome auto-closes with all attempt references.
+// This action is the explicit contract for sessionless or manually ended paths.
 // Packetless modes (qa --site, parity fixtures) get no action: run-record
 // requires a Build Packet, and a required-but-impossible command is worse
 // than none (Kilo review, PR #176). Paths are shell-quoted when needed.
@@ -1435,7 +1434,7 @@ export function buildQaCloseoutActions({ packetPath = null, localPath = null } =
       required: true,
       stage: "qa",
       command: `campaigns-os run-record --packet ${shellToken(packetPath)}${verdictRef} --json`,
-      description: "Assemble the durable Run Record closeout for this QA run. Required at every terminal QA state, including blocked — the verdict alone is not the run's durable record. Skipped automatically only when an active run session already auto-assembled it after qa run.",
+      description: "Assemble the durable Run Record closeout for this QA workflow, including blocked outcomes. If an active session remains open after a blocked attempt, repair and re-test first (or use run end to close manually); a ready attempt auto-assembles one record that references every attempt.",
     },
   ];
 }

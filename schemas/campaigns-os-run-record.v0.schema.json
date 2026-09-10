@@ -241,6 +241,10 @@
         "started_at": { "type": ["string", "null"] },
         "completed_at": { "type": ["string", "null"] },
         "duration_ms": { "type": ["number", "null"] },
+        "wall_clock_duration_ms": {
+          "type": ["number", "null"],
+          "description": "Elapsed wall-clock span from the earliest command start to the latest command completion. Kept separate from duration_ms, which sums active command execution time."
+        },
         "stages": {
           "type": "array",
           "description": "Per-stage timings, populated by run-record aggregating the lifecycle journal for this run_id. One stage per command invocation (name = command), or `command:phase` when a command marked its own sub-phases.",

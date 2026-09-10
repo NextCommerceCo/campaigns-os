@@ -46,6 +46,25 @@ test("standalone doctor honors --doctor-out override", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("standalone doctor owns the matching Assembly Report stage ledger", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), JSON.stringify({
+    schema_version: "campaign-runtime-assembly-report/v0",
+    identity: { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug },
+    stages: { doctor: { stage: "doctor", status: "pending", inputs: [], outputs: [], commands: [], blockers: [], warnings: [] } },
+  }));
+
+  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const report = JSON.parse(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"));
+  assert.equal(report.stages.doctor.status, result.ok ? (result.warnings.length ? "completed_with_warnings" : "completed") : "blocked");
+  assert.equal(report.stages.doctor.checked_at, result.generated_at);
+  assert.deepEqual(report.stages.doctor.commands, ["campaigns-os doctor"]);
+  assert.equal(report.stages.doctor.outputs.length, 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 // #171: stale-green sidecar. Mutating commands stamp the retained snapshot
 // stale; `next` refreshes it wholesale on every call.
 import { writeFileSync, mkdirSync } from "node:fs";

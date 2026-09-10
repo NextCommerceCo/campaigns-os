@@ -22,6 +22,7 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, relative, reso
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
+import { recordProducerStageOutcome } from "./stage-ledger.mjs";
 import {
   appendFinding,
   buildFinding,
@@ -364,7 +365,7 @@ Usage:
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
-  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session), and \`qa run\` auto-assembles the Run Record and clears the session. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
+  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
@@ -455,7 +456,7 @@ export async function main(argv) {
   // ONCE here and threaded through dispatch + persistence so the run_id a
   // command is tagged with and the journal it writes to come from a single
   // read (no TOCTOU skew if the session changes mid-run).
-  const ambient = ambientRunSession();
+  const ambient = ambientRunSession(args);
 
   // Wrap every command in the lifecycle instrumentation (T6): it captures the
   // command, its argv shape, exit status, and timing. Re-throws unchanged so
@@ -485,11 +486,53 @@ export async function main(argv) {
   );
 }
 
-function ambientRunSession() {
+function ambientRunSession(args = {}) {
   try {
-    return findRunSession(process.cwd());
-  } catch {
+    const cwdSession = findRunSession(process.cwd());
+    const packetArg = optionalString(args.packet);
+    if (!packetArg) return cwdSession;
+
+    const packetPath = canonicalExistingPath(resolve(packetArg));
+    const candidateRoots = new Set([dirname(packetPath)]);
+    try {
+      const packet = readJson(packetPath);
+      const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
+      if (targetRepo) candidateRoots.add(targetRepo);
+    } catch {
+      // The command itself owns malformed/missing packet diagnostics. Session
+      // selection can still use the packet's containing project when present.
+    }
+
+    const targetSessions = [];
+    for (const root of candidateRoots) {
+      const found = findRunSession(root);
+      if (found && !targetSessions.some((entry) => canonicalExistingPath(entry.path) === canonicalExistingPath(found.path))) targetSessions.push(found);
+    }
+    if (targetSessions.length > 1) {
+      throw new Error(`Conflicting active run sessions resolve from packet ${packetPath}: ${targetSessions.map((entry) => entry.session.run_id).join(", ")}. End the stale or wrong session before continuing.`);
+    }
+    const targetSession = targetSessions[0] || null;
+    if (targetSession?.session?.packet && canonicalExistingPath(resolve(targetSession.session.packet)) !== packetPath) {
+      throw new Error(`Conflicting active run session ${targetSession.session.run_id} is bound to ${targetSession.session.packet}, not packet ${packetPath}. End it before continuing.`);
+    }
+    if (cwdSession && targetSession && canonicalExistingPath(cwdSession.path) !== canonicalExistingPath(targetSession.path)) {
+      throw new Error(`Conflicting active run sessions: cwd selects ${cwdSession.session.run_id}, while packet ${packetPath} selects ${targetSession.session.run_id}. End the wrong session before continuing.`);
+    }
+    if (cwdSession && !targetSession) {
+      throw new Error(`Conflicting active run session: cwd selects ${cwdSession.session.run_id}, but packet ${packetPath} has no matching active target session. Run the command from the packet target, start its session, or end the cwd session.`);
+    }
+    return targetSession;
+  } catch (error) {
+    if (/Conflicting active run session/i.test(String(error?.message || ""))) throw error;
     return null;
+  }
+}
+
+function canonicalExistingPath(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
   }
 }
 
@@ -612,12 +655,79 @@ function hasDoneRecommendation(session) {
   return session?.last_recommendation?.stage === "done";
 }
 
+function recordQaStageOutcome(args, result) {
+  const packetArg = optionalString(args.packet);
+  if (!packetArg) return;
+  const packetPath = resolve(packetArg);
+  const packet = readJson(packetPath);
+  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
+  const reportPath = args.report
+    ? resolve(args.report)
+    : join(targetRepo, ".campaign-runtime/assembly-report.json");
+  if (!existsSync(reportPath)) return;
+  const report = readJson(reportPath);
+  if (!assemblyReportMatchesPacket(report, packet)) return;
+
+  const verdict = result.verdict;
+  const failed = (Array.isArray(verdict.assertions) ? verdict.assertions : [])
+    .filter((assertion) => assertion?.status === "fail")
+    .map((assertion) => `${assertion.id}: ${assertion.actual || "assertion failed"}`);
+  const updated = recordProducerStageOutcome(report, {
+    stage: "qa",
+    disposition: verdict.disposition,
+    timestamp: verdict.completed_at,
+    command: "campaigns-os qa run",
+    outputs: [result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString),
+    blockers: verdict.disposition === "blocked" ? failed : [],
+    warnings: verdict.disposition === "ready_with_exceptions"
+      ? ["QA completed with explicitly attributed exceptions; inspect the verdict artifact."]
+      : [],
+  });
+  writeJsonAtomic(reportPath, updated);
+
+  // Updating the QA stage changes the report after the preflight doctor
+  // snapshot. Refresh the doctor artifact from the updated ledger in the same
+  // producer transaction so closeout never leaves a known-stale green sidecar.
+  const contextPath = args.context
+    ? resolve(args.context)
+    : join(targetRepo, ".campaign-runtime/build-context.json");
+  const doctor = doctorPacket(packetPath, {
+    contextPath: existsSync(contextPath) ? contextPath : null,
+    reportPath,
+  });
+  writeJsonAtomic(join(targetRepo, ".campaign-runtime/doctor-output.json"), doctor);
+}
+
 async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown) {
   if (command !== "qa" || args._[1] !== "run" || thrown) return;
   const found = sessionHolder?.current;
   const result = sessionHolder?.qaResult;
   if (!found?.session || !result?.verdict) return;
   if (isRunSessionTerminal(found.session) || isRunSessionStale(found.session)) return;
+
+  const attempt = {
+    path: resolve(result.local_path),
+    disposition: optionalString(result.verdict.disposition) || optionalString(result.status),
+    run_id: optionalString(result.verdict.run_id) || optionalString(result.run_id),
+    completed_at: optionalString(result.verdict.completed_at),
+  };
+  const updatedFound = {
+    ...found,
+    session: {
+      ...found.session,
+      qa_attempts: [...(Array.isArray(found.session.qa_attempts) ? found.session.qa_attempts : []), attempt],
+      updated_at: new Date().toISOString(),
+    },
+  };
+  writeRunSession(found.dir, updatedFound.session);
+  sessionHolder.current = updatedFound;
+
+  if (attempt.disposition === "blocked") {
+    process.stderr.write(
+      `[campaigns-os] QA attempt ${attempt.run_id || "recorded"} is blocked; run session ${found.session.run_id} remains active for repair and re-test.\n`,
+    );
+    return;
+  }
 
   const packet = optionalString(args.packet) || optionalString(found.session.packet);
   if (!packet) {
@@ -630,15 +740,15 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
       ...args,
       _: ["run-record"],
       packet,
-      "run-id": found.session.run_id,
-      "lifecycle-journal": found.session.lifecycle_journal,
+      "run-id": updatedFound.session.run_id,
+      "lifecycle-journal": updatedFound.session.lifecycle_journal,
       "qa-verdict": result.local_path,
     };
-    const summary = await runRecordCommand(endArgs, found, { silent: true, promptForConsent: false });
-    clearRunSession(found.path);
+    const summary = await runRecordCommand(endArgs, updatedFound, { silent: true, promptForConsent: false });
+    clearRunSession(updatedFound.path);
     sessionHolder.current = null;
     process.stderr.write(
-      `[campaigns-os] Run session ${found.session.run_id} auto-ended after qa run; Run Record ${summary?.record_path || "assembled"}.\n`,
+      `[campaigns-os] Run session ${updatedFound.session.run_id} auto-ended after qa run; Run Record ${summary?.record_path || "assembled"}.\n`,
     );
   } catch (error) {
     process.stderr.write(`[campaigns-os] run session auto-end skipped after QA: ${error.message}\n`);
@@ -775,6 +885,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   if (command === "qa") {
     const { runQaCli } = await import("./qa-node.mjs");
     const result = await runQaCli(args);
+    if (args._[1] === "run" && result?.verdict) recordQaStageOutcome(args, result);
     if (sessionHolder) sessionHolder.qaResult = result;
     return;
   }
@@ -2401,11 +2512,12 @@ export function doctorCommand(args) {
   }
   const packetPath = resolve(requireArg(args, "packet"));
   const explicitSidecarArgs = Boolean(args.context || args.report);
-  const result = doctorPacket(packetPath, {
+  const doctorOptions = {
     contextPath: args.context ? resolve(args.context) : explicitSidecarArgs ? null : undefined,
     reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
-  });
+  };
+  let result = doctorPacket(packetPath, doctorOptions);
   // Refresh the retained sidecar so it never silently stays an earlier stage's
   // snapshot: before this, only prepare-build/start wrote doctor-output.json,
   // and every later standalone doctor run reported fresh state on stdout while
@@ -2415,9 +2527,42 @@ export function doctorCommand(args) {
     const doctorOutPath = resolve(
       args["doctor-out"] || join(dirname(packetPath), ".campaign-runtime/doctor-output.json"),
     );
+    const packet = readJson(packetPath);
+    const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
+    const reportPath = args.report
+      ? resolve(args.report)
+      : join(targetRepo, ".campaign-runtime/assembly-report.json");
+    if (existsSync(reportPath)) {
+      const report = readJson(reportPath);
+      if (assemblyReportMatchesPacket(report, packet)) {
+        const command = `campaigns-os ${args._[0] || "doctor"}`;
+        const updatedReport = recordDoctorStageOutcome(report, result, { command, doctorOutPath });
+        writeJsonAtomic(reportPath, updatedReport);
+        result = doctorPacket(packetPath, doctorOptions);
+        writeJsonAtomic(reportPath, recordDoctorStageOutcome(updatedReport, result, { command, doctorOutPath }));
+      }
+    }
     writeJson(doctorOutPath, result);
   }
   return result;
+}
+
+function recordDoctorStageOutcome(report, result, { command, doctorOutPath }) {
+  return recordProducerStageOutcome(report, {
+    stage: "doctor",
+    disposition: result.ok ? (result.warnings?.length ? "ready_with_warnings" : "ready") : "blocked",
+    timestamp: result.generated_at,
+    command,
+    outputs: [doctorOutPath],
+    blockers: (result.errors || []).map((issue) => issue?.message).filter(isNonEmptyString),
+    warnings: (result.warnings || []).map((issue) => issue?.message).filter(isNonEmptyString),
+  });
+}
+
+function assemblyReportMatchesPacket(report, packet) {
+  return isObject(report)
+    && optionalString(report.identity?.map_id) === optionalString(packet.spec?.map_id)
+    && optionalString(report.identity?.public_route_slug) === optionalString(packet.campaign?.public_route_slug);
 }
 
 // L7 non-packet doctor: resolve scope from a built _site/, run the built-output
@@ -8831,7 +8976,7 @@ function findingsExport(args, ambient = null) {
 async function runSessionCommand(args, ambient = null) {
   const sub = args._[1] || "status";
   if (sub === "start") return runSessionStart(args);
-  if (sub === "status") return runSessionStatus(args);
+  if (sub === "status") return runSessionStatus(args, ambient);
   if (sub === "end") return runSessionEnd(args, ambient);
   throw new Error(`Unknown run subcommand "${sub}". Use: start | end | status.`);
 }
@@ -8868,8 +9013,8 @@ function runSessionStart(args) {
   console.log(`Finish with: campaigns-os run end${packet ? "" : " --packet <campaign-runtime.build.json>"}`);
 }
 
-function runSessionStatus(args) {
-  const found = findRunSession(process.cwd());
+function runSessionStatus(args, ambient = null) {
+  const found = ambient || findRunSession(process.cwd());
   const progress = found ? runSessionProgress(found) : null;
   if (args.json) {
     console.log(JSON.stringify({ ok: true, action: "run-status", active: Boolean(found), session: found?.session ?? null, session_path: found?.path ?? null, progress }, null, 2));
@@ -8883,6 +9028,7 @@ function runSessionStatus(args) {
   console.log(`Lifecycle journal: ${found.session.lifecycle_journal}`);
   console.log(`Started: ${found.session.started_at}`);
   if (found.session.packet) console.log(`Packet: ${found.session.packet}`);
+  console.log(`QA attempts: ${Array.isArray(found.session.qa_attempts) ? found.session.qa_attempts.length : 0}`);
   if (progress) {
     if (progress.incomplete_stages.length) {
       console.log(`Incomplete stages: ${progress.incomplete_stages.map((stage) => `${stage.stage} (${stage.status || "pending"})`).join(", ")}`);
@@ -8917,6 +9063,7 @@ function runSessionProgress(found) {
     return {
       incomplete_stages: incomplete,
       deviations,
+      qa_attempt_count: Array.isArray(found.session.qa_attempts) ? found.session.qa_attempts.length : 0,
       next_command: incomplete.length
         ? `campaigns-os next --packet ${packetPath} --json`
         : `campaigns-os run end --packet ${packetPath}`,
@@ -9021,7 +9168,24 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       baseDir,
     ));
   }
-  if (qaVerdictExists) artifacts.push(runRecordArtifactRef("qa_verdict", qaVerdictPath, optionalString(qaVerdict?.schema_version), baseDir));
+  const qaAttemptPaths = (Array.isArray(ambient?.session?.qa_attempts) ? ambient.session.qa_attempts : [])
+    .map((attempt) => typeof attempt === "string" ? attempt : attempt?.path)
+    .filter(isNonEmptyString)
+    .map((path) => resolve(path));
+  if (qaVerdictExists) qaAttemptPaths.push(qaVerdictPath);
+  const seenQaAttempts = new Set();
+  for (const attemptPath of qaAttemptPaths) {
+    const canonicalPath = canonicalExistingPath(attemptPath);
+    if (seenQaAttempts.has(canonicalPath) || !existsSync(canonicalPath)) continue;
+    seenQaAttempts.add(canonicalPath);
+    let schemaVersion = null;
+    try {
+      schemaVersion = optionalString(readJson(canonicalPath)?.schema_version);
+    } catch {
+      // Artifact capture is best-effort; a malformed attempt remains hashable.
+    }
+    artifacts.push(runRecordArtifactRef("qa_verdict", canonicalPath, schemaVersion, baseDir));
+  }
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
   const write = args["no-write"] !== true;
@@ -9136,8 +9300,8 @@ function runRecordArtifactRef(kind, filePath, schemaVersion, baseDir) {
 }
 
 function artifactRefPath(kind, filePath, baseDir) {
-  const base = resolve(baseDir);
-  const fullPath = resolve(filePath);
+  const base = canonicalExistingPath(resolve(baseDir));
+  const fullPath = canonicalExistingPath(resolve(filePath));
   const rel = relative(base, fullPath);
   if (!rel) return ".";
   if (rel.startsWith("..") || isAbsolute(rel)) return `external:${kind}`;
