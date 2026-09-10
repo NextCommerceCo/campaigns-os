@@ -1,7 +1,7 @@
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
+import { specMaterialHash } from "./spec-identity.mjs";
 export { shellToken } from "./shell-token.mjs";
-import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
@@ -2732,23 +2732,7 @@ function countAssertions(assertions) {
 }
 
 function computeSpecHash(spec) {
-  return `sha256:${createHash("sha256").update(canonicalJson(stripVolatileSpecFields(spec))).digest("hex")}`;
-}
-
-function canonicalJson(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
-}
-
-function stripVolatileSpecFields(spec) {
-  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return spec;
-  const out = {};
-  for (const [key, value] of Object.entries(spec)) {
-    if (["spec_identity", "slug", "map_id", "saved_at"].includes(key)) continue;
-    out[key] = value;
-  }
-  return out;
+  return specMaterialHash(spec);
 }
 
 function generateRunId() {

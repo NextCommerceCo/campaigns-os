@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
+import { specMaterialHash } from "./spec-identity.mjs";
 import {
   appendFinding,
   buildFinding,
@@ -2020,6 +2021,7 @@ function prepareBuild(args, options = {}) {
     spec: {
       path: portable(specPath),
       hash: sha256File(specPath),
+      material_hash: specMaterialHash(spec),
       active_pages: activePages.map((page) => ({
         id: page.id,
         type: page.type || null,
@@ -2282,6 +2284,7 @@ function createAssemblyReport({
       campaign_directory: packet.campaign.campaign_directory,
       live_url_path: packet.campaign.live_url_path,
       spec_hash: sha256File(specPath),
+      spec_material_hash: context.spec.material_hash,
     },
     inputs: {
       packet_path: portable(packetPath),

@@ -12,6 +12,7 @@ import {
   inspectSidecarBundle,
   SIDECAR_BUNDLE_CONTRACT,
 } from "./sidecar-bundle.mjs";
+import { writeQaSidecar } from "./qa-sidecar.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const FIXTURE = join(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped");
@@ -56,6 +57,43 @@ test("the public production-shaped fixture is a QA-complete conformant bundle", 
     ["doctor_output", true],
     ["qa_verdict", true],
   ]);
+});
+
+test("equivalent safe repository-relative packet pointers are conformant", () => withFixture((root) => {
+  const contextPath = join(root, ".campaign-runtime/build-context.json");
+  const reportPath = join(root, ".campaign-runtime/assembly-report.json");
+  const context = readJson(contextPath);
+  const report = readJson(reportPath);
+  context.packet_path = "./campaign-runtime.build.json";
+  report.inputs.packet_path = "./campaign-runtime.build.json";
+  writeJson(contextPath, context);
+  writeJson(reportPath, report);
+
+  const result = inspectSidecarBundle({
+    packetPath: join(root, "campaign-runtime.build.json"),
+    requireQa: true,
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.errors, null, 2));
+}));
+
+test("packet pointers containing traversal or foreign paths are rejected", () => {
+  for (const pointer of ["../campaign-runtime.build.json", "nested/../campaign-runtime.build.json", "/tmp/campaign-runtime.build.json", "https://example.test/campaign-runtime.build.json"]) {
+    withFixture((root) => {
+      const contextPath = join(root, ".campaign-runtime/build-context.json");
+      const reportPath = join(root, ".campaign-runtime/assembly-report.json");
+      const context = readJson(contextPath);
+      const report = readJson(reportPath);
+      context.packet_path = pointer;
+      report.inputs.packet_path = pointer;
+      writeJson(contextPath, context);
+      writeJson(reportPath, report);
+
+      const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+      assert.equal(result.ok, false, pointer);
+      assert.ok(result.errors.some((finding) => finding.code === "bundle.build_context.packet_path"), pointer);
+      assert.ok(result.errors.some((finding) => finding.code === "bundle.assembly_report.packet_path"), pointer);
+    });
+  }
 });
 
 test("the conformance result and doctor fixture validate against their published schemas", () => {
@@ -119,6 +157,75 @@ test("cross-artifact identity drift is a conformance failure", () => withFixture
   const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((finding) => finding.code === "bundle.identity.map_id_mismatch"));
+}));
+
+test("material spec identity correlates QA without reinterpreting raw-byte integrity", () => withFixture((root) => {
+  const materialHash = `sha256:${"a".repeat(64)}`;
+  const contextPath = join(root, ".campaign-runtime/build-context.json");
+  const reportPath = join(root, ".campaign-runtime/assembly-report.json");
+  const qaPath = join(root, ".campaign-runtime/qa-verdict.json");
+  const context = readJson(contextPath);
+  const report = readJson(reportPath);
+  const qa = readJson(qaPath);
+  context.spec.material_hash = materialHash;
+  report.identity.spec_material_hash = materialHash;
+  qa.spec_hash = materialHash;
+  writeJson(contextPath, context);
+  writeJson(reportPath, report);
+  writeJson(qaPath, qa);
+
+  const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+  assert.equal(result.ok, true, JSON.stringify(result.errors, null, 2));
+  assert.notEqual(context.spec.hash, materialHash);
+  assert.equal(report.identity.spec_hash, context.spec.hash);
+}));
+
+test("changed spec material, foreign QA, and partially regenerated identities fail closed", () => {
+  const cases = [
+    {
+      code: "bundle.identity.spec_material_hash_mismatch",
+      mutate: ({ context, report, qa }) => {
+        context.spec.material_hash = `sha256:${"a".repeat(64)}`;
+        report.identity.spec_material_hash = context.spec.material_hash;
+        qa.spec_hash = `sha256:${"b".repeat(64)}`;
+      },
+    },
+    {
+      code: "bundle.identity.spec_material_hash_incomplete",
+      mutate: ({ context, qa }) => {
+        context.spec.material_hash = `sha256:${"a".repeat(64)}`;
+        qa.spec_hash = context.spec.material_hash;
+      },
+    },
+  ];
+
+  for (const identityCase of cases) {
+    withFixture((root) => {
+      const paths = {
+        context: join(root, ".campaign-runtime/build-context.json"),
+        report: join(root, ".campaign-runtime/assembly-report.json"),
+        qa: join(root, ".campaign-runtime/qa-verdict.json"),
+      };
+      const artifacts = Object.fromEntries(Object.entries(paths).map(([kind, path]) => [kind, readJson(path)]));
+      identityCase.mutate(artifacts);
+      for (const [kind, path] of Object.entries(paths)) writeJson(path, artifacts[kind]);
+      const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+      assert.equal(result.ok, false);
+      assert.ok(result.errors.some((finding) => finding.code === identityCase.code), JSON.stringify(result.errors, null, 2));
+    });
+  }
+});
+
+test("a schema-valid blocked QA verdict cannot satisfy QA-complete handoff", () => withFixture((root) => {
+  const qaPath = join(root, ".campaign-runtime/qa-verdict.json");
+  const qa = readJson(qaPath);
+  qa.disposition = "blocked";
+  qa.assertions[0].status = "fail";
+  writeJson(qaPath, qa);
+  const result = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.stage_blocked, true);
+  assert.ok(result.errors.some((finding) => finding.code === "bundle.qa_verdict.blocked"));
 }));
 
 test("every producer-owned campaign identity fails conformance independently when it drifts", () => {
@@ -237,6 +344,66 @@ test("the CLI exposes bundle check as JSON and honors --require-qa", () => {
   assert.equal(result.bundle_id, SIDECAR_BUNDLE_CONTRACT.bundle_id);
 });
 
+test("fresh prepare-build, doctor, and QA projection form a conformant bundle", () => {
+  const root = join(tmpdir(), `campaigns-os-sidecar-integration-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  const target = join(root, "target");
+  try {
+    cpSync(join(ROOT, "examples/target-page-kit"), target, { recursive: true });
+    execFileSync("node", [
+      CLI,
+      "prepare-build",
+      "--spec", join(ROOT, "examples/campaignspec.v42.basic.json"),
+      "--source", join(ROOT, "examples/source-html"),
+      "--target", target,
+      "--template-family", "olympus",
+      "--no-run-session",
+      "--json",
+    ], { encoding: "utf8", cwd: root, stdio: "pipe" });
+
+    const packetPath = join(target, "campaign-runtime.build.json");
+    try {
+      execFileSync("node", [CLI, "doctor", "--packet", packetPath, "--strip-paths", "--json"], {
+        encoding: "utf8",
+        cwd: root,
+        stdio: "pipe",
+      });
+    } catch (error) {
+      assert.equal(error.status, 2, String(error.stderr || error));
+    }
+
+    const packet = readJson(packetPath);
+    const context = readJson(join(target, ".campaign-runtime/build-context.json"));
+    writeQaSidecar({
+      packetPath,
+      now: () => "2026-09-10T01:00:00.000Z",
+      verdict: {
+        schema_version: "1.0",
+        run_id: "FRESHBUNDLE000000000000000001",
+        campaign_slug: packet.spec.map_id,
+        public_route_slug: packet.campaign.public_route_slug,
+        campaign_ref_id: null,
+        spec_version: "4.2",
+        spec_hash: context.spec.material_hash,
+        started_at: "2026-09-10T00:58:00.000Z",
+        completed_at: "2026-09-10T00:59:00.000Z",
+        runtime: "campaigns-os-node-qa@integration-test",
+        disposition: "ready",
+        entry_urls: [],
+        page_urls: [],
+        tested_urls: [],
+        assertions: [{ id: "http:checkout", family: "funnel-flow", page: "checkout", status: "pass", severity: "info" }],
+        test_orders: [],
+        exceptions: [],
+      },
+    });
+
+    const result = inspectSidecarBundle({ packetPath, requireQa: true });
+    assert.equal(result.ok, true, JSON.stringify(result.errors, null, 2));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("the machine contract forbids mtime selection and requires explicit historical QA promotion", () => {
   assert.equal(SIDECAR_BUNDLE_CONTRACT.packet_discovery.selection_authority, "campaign-runtime.build.json#generated_at");
   assert.equal(SIDECAR_BUNDLE_CONTRACT.packet_discovery.forbidden_selection_authority, "filesystem_mtime");
@@ -257,6 +424,19 @@ test("the machine contract forbids mtime selection and requires explicit histori
     assembly_report: "template_family.value",
     doctor_output: "derived.template_family",
   });
+  assert.deepEqual(identities.spec_hash, {
+    build_context: "spec.hash",
+    assembly_report: "identity.spec_hash",
+  });
+  assert.deepEqual(identities.spec_material_hash, {
+    build_context: "spec.material_hash",
+    assembly_report: "identity.spec_material_hash",
+    qa_verdict: "spec_hash",
+  });
+  assert.equal(
+    SIDECAR_BUNDLE_CONTRACT.identity_fields.find((identity) => identity.name === "spec_material_hash").compatibility.mode,
+    "complete_material_or_strict_legacy_exact",
+  );
   assert.match(SIDECAR_BUNDLE_CONTRACT.ci_producer.promote_historical_qa, /--verdict <explicit-full-verdict\.json>/);
   assert.deepEqual(SIDECAR_BUNDLE_CONTRACT.ci_producer.never_select_qa_by, [
     "filesystem_mtime",

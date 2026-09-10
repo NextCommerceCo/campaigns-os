@@ -30,6 +30,11 @@
       "properties": {
         "path": { "type": "string" },
         "hash": { "type": "string" },
+        "material_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Canonical semantic identity used to correlate QA with the authored spec. hash remains exact raw-byte integrity."
+        },
         "active_pages": {
           "type": "array",
           "items": {

@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act \u2014 hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here \u2014 src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) \u2014 is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.22.0",
+  "surface_version": "1.23.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -31,7 +31,7 @@
   ],
   "hashed": {
     "contracts/migration-sidecar-bundle.v0.json": {
-      "sha256": "267798ff04384406f06dbcdcdef897e72c1a4b68030dff72c0240600bb0fabcc"
+      "sha256": "13b6d80c94ce8d036dd0c449acfeca95c911c88ace90d284594ab8b028d6a987"
     },
     "contracts/runtime-recipe.campaigns-os-node-v1.json": {
       "sha256": "f06944b37ddbcfc6353ebc01dbc1eaf9ee5ebe3dbc91609214e25252905915ff"
@@ -43,10 +43,10 @@
       "sha256": "65bcd8b5f41f1e9ecfc36f3b8838cd4ed531bd74c5a318ee5147131f6c9b4a1c"
     },
     "schemas/campaign-runtime-assembly-report.v0.schema.json": {
-      "sha256": "8a6d877800bf023ced7ba926a765fe4bf1b944e0960ba2c1888e82074a2f1b1b"
+      "sha256": "3fa085f2ad368567983cdc9c01e7c712682d02df9c28e69a2b7befb45d444468"
     },
     "schemas/campaign-runtime-build-context.v0.schema.json": {
-      "sha256": "6f17e0c2bd80593e64c12b40024764c5ddb48d22264c42540513555bdcfb1ea0"
+      "sha256": "15118c9d05adc7b21dca06f4e3a33acac4ba7b342df3c3a14be19bea71de533c"
     },
     "schemas/campaign-runtime-build-packet.v0.schema.json": {
       "sha256": "8a049d03398d7778e8284a17b4024506a911812abce27961ded8e31e5c6ac40b"
@@ -73,7 +73,7 @@
       "sha256": "0b39390dd9e51c473d04b8d7eb010da1e050e9a0f645ace0e2f891a8bc1b0a42"
     },
     "schemas/campaigns-os-sidecar-bundle-conformance.v0.schema.json": {
-      "sha256": "07ae43d81583a11ad0ebdcc7704fdd4f286235627f974876b7204b0626db5efa"
+      "sha256": "22dc5b48f12337163bd36307510e619f49e77331c974f45292ecd6e72175570d"
     },
     "schemas/campaigns-os-release-ledger.v1.schema.json": {
       "sha256": "08ca132134b9e4610370e88082a5e888d09ddec0d5ee4512d84cc57181da722e"
