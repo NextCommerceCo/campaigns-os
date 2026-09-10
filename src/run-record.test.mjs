@@ -99,6 +99,14 @@ test("validator accepts a fully-populated record", () => {
   assert.equal(result.ok, true, JSON.stringify(result.errors));
 });
 
+test("validator accepts nullable toolkit provenance and rejects malformed values", () => {
+  assert.equal(validateRunRecord(minimalRecord({ surface_version: null, toolkit_commit: null })).ok, true);
+  assert.equal(validateRunRecord(minimalRecord({ surface_version: "1.25.0", toolkit_commit: "404c12c" })).ok, true);
+  assert.equal(validateRunRecord(minimalRecord({ surface_version: "" })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ toolkit_commit: "not-a-sha" })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ toolkit_commit: "ABCDEF1" })).ok, false);
+});
+
 test("validator rejects missing core fields", () => {
   const result = validateRunRecord({ schema_version: RUN_RECORD_SCHEMA });
   assert.equal(result.ok, false);

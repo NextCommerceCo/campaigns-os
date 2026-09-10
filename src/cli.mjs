@@ -9216,6 +9216,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   const record = assembleRunRecord({
     runId,
     packageVersion: packageVersion(),
+    ...toolkitProvenance(),
     command: "run-record",
     argvShape: argvShape(args),
     consent: { state: consent.state, source: consent.source },
@@ -9496,6 +9497,38 @@ function parseNonNegativeIntegerFlag(value, flag) {
 
 function packageVersion() {
   return readJson(join(ROOT, "package.json")).version;
+}
+
+// Toolkit provenance for the Run Record. package_version has been
+// 0.1.0-alpha.0 since the scaffold and the package is a git dependency, so the
+// version a consumer can actually segment on is the supported-surface version,
+// plus the commit the toolkit was installed from: package.json `gitHead` (npm
+// stamps it on git-dependency installs), else the checkout's HEAD when this is
+// a working clone. Best-effort and nullable — provenance never blocks capture.
+function toolkitProvenance() {
+  let surfaceVersion = null;
+  let toolkitCommit = null;
+  try {
+    const version = readJson(join(ROOT, "contracts", "supported-surface.json")).surface_version;
+    if (isNonEmptyString(version)) surfaceVersion = version;
+  } catch {
+    // manifest unreadable — leave null
+  }
+  try {
+    const gitHead = readJson(join(ROOT, "package.json")).gitHead;
+    if (typeof gitHead === "string" && /^[0-9a-f]{7,40}$/.test(gitHead)) toolkitCommit = gitHead;
+  } catch {
+    // package.json unreadable — leave null
+  }
+  if (!toolkitCommit && existsSync(join(ROOT, ".git"))) {
+    try {
+      const head = execFileSync("git", ["-C", ROOT, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      if (/^[0-9a-f]{7,40}$/.test(head)) toolkitCommit = head;
+    } catch {
+      // not a usable git checkout — leave null
+    }
+  }
+  return { surfaceVersion, toolkitCommit };
 }
 
 // Machine-level Run Telemetry consent. `status` reports the resolved state and

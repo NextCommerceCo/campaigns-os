@@ -92,6 +92,16 @@ export function validateRunRecord(record) {
     add("record.argv_shape", "argv_shape is required and must be an array of strings (flag names, never values).");
   }
 
+  // Toolkit provenance is optional and nullable: a missing manifest or a
+  // tarball install without gitHead must never block capture. When present
+  // the shapes are strict so the server-side segmentation can trust them.
+  if (record.surface_version != null && !isNonEmptyString(record.surface_version)) {
+    add("record.surface_version", "surface_version must be a non-empty string or null.");
+  }
+  if (record.toolkit_commit != null && !(typeof record.toolkit_commit === "string" && /^[0-9a-f]{7,40}$/.test(record.toolkit_commit))) {
+    add("record.toolkit_commit", "toolkit_commit must be a 7–40 character lowercase hex commit or null.");
+  }
+
   if (!RUN_RECORD_CONSENT_STATES.includes(record.consent_state)) {
     add("record.consent_state", `consent_state is required and must be one of: ${RUN_RECORD_CONSENT_STATES.join(", ")}.`);
   }
@@ -560,6 +570,8 @@ function uniqueEntries(entries) {
 export function assembleRunRecord({
   runId,
   packageVersion,
+  surfaceVersion = null,
+  toolkitCommit = null,
   command,
   argvShape = [],
   consent = { state: "off", source: "default" },
@@ -604,6 +616,8 @@ export function assembleRunRecord({
     schema_version: RUN_RECORD_SCHEMA,
     run_id: runId,
     package_version: packageVersion,
+    surface_version: isNonEmptyString(surfaceVersion) ? surfaceVersion : null,
+    toolkit_commit: typeof toolkitCommit === "string" && /^[0-9a-f]{7,40}$/.test(toolkitCommit) ? toolkitCommit : null,
     command,
     argv_shape: Array.isArray(argvShape) ? argvShape : [],
     created_at: now.toISOString(),

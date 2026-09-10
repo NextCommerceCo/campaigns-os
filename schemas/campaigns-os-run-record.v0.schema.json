@@ -29,6 +29,15 @@
       "minLength": 1,
       "description": "Version of the @nextcommerce/campaigns-os package that produced this record."
     },
+    "surface_version": {
+      "type": ["string", "null"],
+      "description": "supported-surface version (contracts/supported-surface.json) of the toolkit that produced this record — the version signal consumers can segment on, since package_version has not moved off 0.1.0-alpha.0. Null when the manifest is unreadable."
+    },
+    "toolkit_commit": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "Git commit the toolkit was installed from: package.json gitHead (stamped on git-dependency installs), else the checkout HEAD. Null when neither is available."
+    },
     "command": {
       "type": "string",
       "minLength": 1,

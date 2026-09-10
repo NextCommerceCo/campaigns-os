@@ -206,9 +206,15 @@ export function validateSurfaceBump(oldSurface, surface, changedPaths) {
   // is still a surface move and still owes a version advance.
   const hashedPaths = new Set([...Object.keys(surface.hashed), ...Object.keys(oldSurface.hashed)]);
   const touched = changedPaths.filter((path) => hashedPaths.has(path)).sort();
+  // cli_commands is part of the same test: a command promoted onto the
+  // surface (or dropped from it) is a contract move a consumer must be able
+  // to see in the version history. Before this clause, `checkpoint` landed
+  // on the surface with no bump at all (a9e1022) — the manifest can name a
+  // new supported command and nothing downstream learns it happened.
   const manifestMoved =
     JSON.stringify(surface.hashed) !== JSON.stringify(oldSurface.hashed) ||
-    JSON.stringify([...surface.named].sort()) !== JSON.stringify([...oldSurface.named].sort());
+    JSON.stringify([...surface.named].sort()) !== JSON.stringify([...oldSurface.named].sort()) ||
+    JSON.stringify([...surface.cli_commands].sort()) !== JSON.stringify([...oldSurface.cli_commands].sort());
   if (!touched.length && !manifestMoved) return errors;
   if (semverLte(surface.surface_version, oldSurface.surface_version)) {
     const what = touched.length ? `hashed surface files changed (${touched.join(", ")})` : "the surface manifest itself changed";

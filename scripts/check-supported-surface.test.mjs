@@ -189,6 +189,19 @@ test("bump gate: shrinking the manifest without touching any schema file still o
   assert.match(errors[0], /the surface manifest itself changed/);
 });
 
+test("bump gate: promoting a CLI command onto the surface without an advance fails", () => {
+  const oldSurface = loadSurface(surfaceText(), "m");
+  const unbumped = loadSurface(surfaceText({ cli_commands: ["build", "qa", "next"] }), "m");
+  const errors = validateSurfaceBump(oldSurface, unbumped, ["contracts/supported-surface.json"]);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /the surface manifest itself changed but surface_version did not advance/);
+  const bumped = loadSurface(surfaceText({ cli_commands: ["build", "qa", "next"], surface_version: "1.1.0" }), "m");
+  assert.deepEqual(validateSurfaceBump(oldSurface, bumped, ["contracts/supported-surface.json"]), []);
+  // Order is not a move; membership is.
+  const reordered = loadSurface(surfaceText({ cli_commands: ["qa", "build"] }), "m");
+  assert.deepEqual(validateSurfaceBump(oldSurface, reordered, []), []);
+});
+
 test("bump gate: surface_version can never move backwards, even with no surface change", () => {
   const oldSurface = loadSurface(surfaceText({ surface_version: "1.4.0" }), "m");
   const surface = loadSurface(surfaceText({ surface_version: "1.0.0" }), "m");
