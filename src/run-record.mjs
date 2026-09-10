@@ -234,6 +234,7 @@ export function validateRunRecordLifecycle(lc) {
   if (lc.started_at != null && typeof lc.started_at !== "string") add("record.lifecycle.started_at", "started_at must be a string or null.");
   if (lc.completed_at != null && typeof lc.completed_at !== "string") add("record.lifecycle.completed_at", "completed_at must be a string or null.");
   if (lc.duration_ms != null && typeof lc.duration_ms !== "number") add("record.lifecycle.duration_ms", "duration_ms must be a number or null.");
+  if (lc.wall_clock_duration_ms != null && typeof lc.wall_clock_duration_ms !== "number") add("record.lifecycle.wall_clock_duration_ms", "wall_clock_duration_ms must be a number or null.");
   if (lc.repair_loop_count != null && !Number.isInteger(lc.repair_loop_count)) add("record.lifecycle.repair_loop_count", "repair_loop_count must be an integer or null.");
   if (lc.stages != null) {
     if (!Array.isArray(lc.stages)) {

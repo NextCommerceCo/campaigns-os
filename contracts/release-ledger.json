@@ -1435,6 +1435,63 @@
         }
       ],
       "entry_sha256": "3ca19e3b7dfa1970248ed919ed2762a9eabd360387abcea124e55bd8489ea4a6"
+    },
+    {
+      "id": "RL-0027",
+      "sequence": 27,
+      "date": "2026-09-10",
+      "kind": "release",
+      "surface_version": "1.24.0",
+      "changelog_section": "1.24.0",
+      "changelog_sha256": "468ab82db8aef15cc571f392e0ad594fbda51733f8dcf0600a72334181fac6ce",
+      "agent_impact": "Commands carrying an explicit Build Packet now resolve the packet-associated target run session across working directories and refuse competing cwd/target sessions. Blocked QA verdicts remain attached as attempts while repair continues; ready closeout references all attempts. Run Records expose wall_clock_duration_ms separately from summed active duration_ms. Doctor and QA update only their own matching Assembly Report stages from current producer evidence.",
+      "compatibility": "additive",
+      "migration": "No migration is required. Consumers may read wall_clock_duration_ms when present. Operators should keep a blocked session open through repair, then let a ready QA verdict close it or use run end explicitly.",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Types the additive wall_clock_duration_ms lifecycle span separately from summed active command time."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "Associates explicit packets with target sessions, rejects simultaneous-session conflicts, retains blocked QA attempts, and closes ready runs with all attempt references."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances the supported surface to 1.24.0 and pins the additive Run Record lifecycle field."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Documents duration semantics, packet-bound sessions, QA attempt retention, and producer-owned stage bookkeeping."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Documents cross-directory session association, blocked repair loops, all-attempt closeout, and separate wall-clock timing."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerates orientation context for supported surface 1.24.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerates supported-surface context; the runtime recipe is unchanged."
+        }
+      ],
+      "entry_sha256": "e6e58a0eeb853c07e3953a80e40a54b4108d3f12e600438cc400663e45059394"
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Run Telemetry
 
-Status: Implemented v0 — Run Records, consent/remit, ambient run sessions, QA auto-close, lifecycle timing, and repair-loop aggregation are live.
+Status: Implemented v0 — Run Records, consent/remit, packet-associated ambient sessions, QA repair-loop closeout, lifecycle timing, and repair-loop aggregation are live.
 Date: 2026-06-08
 
 > Supersedes the v0 "Workflow Findings Sidecar" framing. The sidecar was
@@ -251,10 +251,15 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   also inherit the active `run_id` when writing findings. Explicit `--run-id` /
   `--lifecycle-journal` still wins; `CAMPAIGNS_OS_TELEMETRY` consent still gates
   remit.
-- `campaigns-os qa run` is a terminal capture point: after the QA verdict is
-  written, an active session auto-assembles the aggregated Run Record
-  (consent-gated remit) and clears the session. Pass `--no-remit` to skip remit
-  for that local Run Record.
+- Each `campaigns-os qa run` records its full local verdict path on the active
+  session. A blocked verdict keeps that session open for repair and another QA
+  attempt. A ready or ready-with-exceptions verdict auto-assembles the
+  aggregated Run Record with references to every attempt, then clears the
+  session. Pass `--no-remit` to skip remit for that local Run Record.
+- An explicit absolute `--packet` associates commands and `run status` with the
+  target campaign session even from the toolkit or another project directory.
+  If cwd and packet resolve to different active sessions, the command fails
+  with both run IDs instead of silently cross-writing lifecycle evidence.
 - `campaigns-os run end` remains the manual close path for non-QA or interrupted
   sessions. `run status` reports the active session.
 - Sessions older than 12 hours are treated as stale and are not auto-discovered,
@@ -274,8 +279,9 @@ scrubber-ignored `.campaign-runtime/`.
   whole lifecycle journal for a `run_id` (Tier 1): each command invocation
   becomes a `lifecycle.stages[]` entry (with per-stage `exit_status`),
   `repair_loop_count` counts command re-runs, and run-level `duration_ms` sums
-  active command time instead of idle wall-clock gaps between invocations.
-  `started_at` / `completed_at` still preserve the outer observed bounds. Heavy
+  active command time instead of idle wall-clock gaps between invocations;
+  `wall_clock_duration_ms` reports that full outer span separately.
+  `started_at` / `completed_at` preserve the observed bounds. Heavy
   commands mark their own sub-phases (Tier 2), which aggregate into
   `command:phase` stages. The cross-command `run_id` is threaded automatically
   by the run session (Tier 3), so these fields populate with real data from a

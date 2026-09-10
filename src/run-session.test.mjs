@@ -223,6 +223,62 @@ test("CLI: with a session active, a command auto-logs with NO per-command flags"
   });
 });
 
+test("CLI: an absolute packet selects its target session from toolkit and unrelated directories", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    const unrelated = join(dir, "operator-project");
+    mkdirSync(target, { recursive: true });
+    mkdirSync(unrelated, { recursive: true });
+    writeFileSync(join(target, "package.json"), "{}\n");
+    writeFileSync(join(unrelated, "package.json"), "{}\n");
+    const packetPath = join(target, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const start = JSON.parse(runIn(target, ["run", "start", "--packet", packetPath, "--json"]));
+
+    runIn(ROOT, ["doctor", "--packet", packetPath], { allowFail: true });
+    runIn(unrelated, ["doctor", "--packet", packetPath], { allowFail: true });
+    const status = JSON.parse(runIn(unrelated, ["run", "status", "--packet", packetPath, "--json"]));
+    assert.equal(status.active, true);
+    assert.equal(status.session.run_id, start.session.run_id);
+
+    const { entries } = readLifecycleJournal(start.session.lifecycle_journal);
+    assert.equal(entries.filter((entry) => entry.command === "doctor").length, 2);
+    assert.ok(entries.filter((entry) => entry.command === "doctor").every((entry) => entry.run_id === start.session.run_id));
+  });
+});
+
+test("CLI: packet-target sessions stay isolated and a conflicting cwd session is refused", () => {
+  withTempDir((dir) => {
+    const targets = ["campaign-a", "campaign-b"].map((name) => {
+      const target = join(dir, name);
+      mkdirSync(target, { recursive: true });
+      writeFileSync(join(target, "package.json"), "{}\n");
+      const packet = join(target, "campaign-runtime.build.json");
+      cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packet);
+      const start = JSON.parse(runIn(target, ["run", "start", "--packet", packet, "--json"]));
+      return { target, packet, start };
+    });
+
+    runIn(ROOT, ["doctor", "--packet", targets[0].packet], { allowFail: true });
+    runIn(ROOT, ["doctor", "--packet", targets[1].packet], { allowFail: true });
+    for (const current of targets) {
+      const doctors = readLifecycleJournal(current.start.session.lifecycle_journal).entries.filter((entry) => entry.command === "doctor");
+      assert.equal(doctors.length, 1);
+      assert.equal(doctors[0].run_id, current.start.session.run_id);
+    }
+
+    assert.throws(
+      () => execFileSync("node", [CLI, "doctor", "--packet", targets[1].packet], { encoding: "utf8", cwd: targets[0].target, stdio: "pipe" }),
+      /conflicting active run sessions/i,
+    );
+    clearRunSession(resolveRunSessionPath(targets[1].target));
+    assert.throws(
+      () => execFileSync("node", [CLI, "doctor", "--packet", targets[1].packet], { encoding: "utf8", cwd: targets[0].target, stdio: "pipe" }),
+      (error) => /cwd selects .* but packet .* has no matching active target session/i.test(String(error.stderr || "")),
+    );
+  });
+});
+
 test("CLI: lifecycle argv_shape preserves underscore-prefixed user flags", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
@@ -271,11 +327,19 @@ test("CLI: full ambient flow — run start -> prepare-build (no flags) -> run en
   });
 });
 
-test("CLI: qa run auto-writes Run Record and clears the active session", () => {
+test("CLI: blocked qa run records an attempt and keeps the session open for repair", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
     cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+    packet.assembly.target_repo = ".";
+    writeFileSync(packetPath, `${JSON.stringify(packet, null, 2)}\n`);
     cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+    mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+    cpSync(
+      resolve(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"),
+      join(dir, ".campaign-runtime/assembly-report.json"),
+    );
     const start = JSON.parse(runIn(dir, ["run", "start", "--packet", packetPath, "--json"]));
 
     const qa = JSON.parse(runIn(dir, [
@@ -288,8 +352,22 @@ test("CLI: qa run auto-writes Run Record and clears the active session", () => {
     ], { allowFail: true }));
 
     assert.equal(qa.status, "blocked");
-    assert.equal(findRunSession(dir), null);
+    const active = findRunSession(dir);
+    assert.equal(active.session.run_id, start.session.run_id);
+    assert.equal(active.session.qa_attempts.length, 1);
+    assert.equal(active.session.qa_attempts[0].disposition, "blocked");
+    assert.equal(realpathSync(active.session.qa_attempts[0].path), realpathSync(qa.local_path));
+    const report = JSON.parse(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"));
+    assert.equal(report.stages.qa.status, "blocked");
+    assert.equal(report.stages.qa.checked_at, qa.verdict.completed_at);
+    assert.ok(report.stages.qa.outputs.includes(qa.local_path));
+    const doctorSidecar = JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8"));
+    assert.notEqual(doctorSidecar.stale, true);
     const recordPath = resolveRunRecordPath(start.session.run_id, dir);
+    assert.equal(existsSync(recordPath), false);
+
+    runIn(dir, ["run", "end", "--no-remit", "--json"]);
+    assert.equal(findRunSession(dir), null);
     assert.equal(existsSync(recordPath), true);
     const record = JSON.parse(readFileSync(recordPath, "utf8"));
     assert.equal(record.run_id, start.session.run_id);
@@ -301,7 +379,7 @@ test("CLI: qa run auto-writes Run Record and clears the active session", () => {
   });
 });
 
-test("CLI: done recommendations suppress deviations but qa run still auto-writes the Run Record", () => {
+test("CLI: done recommendations suppress deviations while blocked qa keeps the repair session open", () => {
   withTempDir((dir) => {
     const session = {
       ...buildRunSession({ runId: "run_done", lifecycleJournal: join(dir, ".campaign-runtime/command-lifecycle.jsonl") }),
@@ -326,9 +404,33 @@ test("CLI: done recommendations suppress deviations but qa run still auto-writes
       "--json",
     ], { allowFail: true });
     assert.equal(existsSync(join(dir, ".campaign-runtime/agent-deviations.jsonl")), false);
-    assert.equal(findRunSession(dir), null);
+    assert.equal(findRunSession(dir).session.run_id, session.run_id);
     const recordPath = resolveRunRecordPath(session.run_id, dir);
-    assert.equal(existsSync(recordPath), true);
+    assert.equal(existsSync(recordPath), false);
+  });
+});
+
+test("CLI: run end references every QA attempt recorded on the session", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    const started = JSON.parse(runIn(dir, ["run", "start", "--packet", packetPath, "--json"]));
+    const firstPath = join(dir, "qa-output", "first.json");
+    const secondPath = join(dir, "qa-output", "second.json");
+    mkdirSync(join(dir, "qa-output"), { recursive: true });
+    writeFileSync(firstPath, `${JSON.stringify({ schema_version: "campaigns-os-qa-verdict/v1", disposition: "blocked" })}\n`);
+    writeFileSync(secondPath, `${JSON.stringify({ schema_version: "campaigns-os-qa-verdict/v1", disposition: "ready" })}\n`);
+    writeRunSession(dir, {
+      ...started.session,
+      qa_attempts: [
+        { path: firstPath, disposition: "blocked", run_id: "qa_1" },
+        { path: secondPath, disposition: "ready", run_id: "qa_2" },
+      ],
+    });
+
+    const ended = JSON.parse(runIn(dir, ["run", "end", "--qa-verdict", secondPath, "--no-remit", "--no-write", "--json"]));
+    const qaRefs = ended.record.artifacts.filter((artifact) => artifact.kind === "qa_verdict");
+    assert.deepEqual(qaRefs.map((artifact) => artifact.path), ["./qa-output/first.json", "./qa-output/second.json"]);
   });
 });
 
