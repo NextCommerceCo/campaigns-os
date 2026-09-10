@@ -41,6 +41,12 @@ export const RUN_RECORD_ARTIFACT_KINDS = [
 ];
 
 export const RUN_RECORD_CONSENT_STATES = ["on", "off"];
+// Toolkit provenance shapes. One definition each: the validator, the assembler
+// and the CLI stamp all read these, and the JSON Schema carries the same
+// literal (a schema cannot reference a JS constant; the schema test pins them
+// equal).
+export const RUN_RECORD_SURFACE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
+export const RUN_RECORD_COMMIT_PATTERN = /^[0-9a-f]{7,40}$/;
 export const RUN_RECORD_REMIT_STATES = ["skipped", "pending", "ok", "failed"];
 
 // Required core. Strict here; permissive about optional sub-structures (the
@@ -95,10 +101,10 @@ export function validateRunRecord(record) {
   // Toolkit provenance is optional and nullable: a missing manifest or a
   // tarball install without gitHead must never block capture. When present
   // the shapes are strict so the server-side segmentation can trust them.
-  if (record.surface_version != null && !isNonEmptyString(record.surface_version)) {
-    add("record.surface_version", "surface_version must be a non-empty string or null.");
+  if (record.surface_version != null && !(typeof record.surface_version === "string" && RUN_RECORD_SURFACE_VERSION_PATTERN.test(record.surface_version))) {
+    add("record.surface_version", "surface_version must be a MAJOR.MINOR.PATCH string or null.");
   }
-  if (record.toolkit_commit != null && !(typeof record.toolkit_commit === "string" && /^[0-9a-f]{7,40}$/.test(record.toolkit_commit))) {
+  if (record.toolkit_commit != null && !(typeof record.toolkit_commit === "string" && RUN_RECORD_COMMIT_PATTERN.test(record.toolkit_commit))) {
     add("record.toolkit_commit", "toolkit_commit must be a 7–40 character lowercase hex commit or null.");
   }
 
@@ -616,8 +622,8 @@ export function assembleRunRecord({
     schema_version: RUN_RECORD_SCHEMA,
     run_id: runId,
     package_version: packageVersion,
-    surface_version: isNonEmptyString(surfaceVersion) ? surfaceVersion : null,
-    toolkit_commit: typeof toolkitCommit === "string" && /^[0-9a-f]{7,40}$/.test(toolkitCommit) ? toolkitCommit : null,
+    surface_version: typeof surfaceVersion === "string" && RUN_RECORD_SURFACE_VERSION_PATTERN.test(surfaceVersion) ? surfaceVersion : null,
+    toolkit_commit: typeof toolkitCommit === "string" && RUN_RECORD_COMMIT_PATTERN.test(toolkitCommit) ? toolkitCommit : null,
     command,
     argv_shape: Array.isArray(argvShape) ? argvShape : [],
     created_at: now.toISOString(),

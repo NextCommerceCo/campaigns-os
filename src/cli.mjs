@@ -36,6 +36,8 @@ import {
 } from "./findings.mjs";
 import {
   assembleRunRecord,
+  RUN_RECORD_COMMIT_PATTERN,
+  RUN_RECORD_SURFACE_VERSION_PATTERN,
   mintRunId,
   RUN_RECORD_SURFACES,
   validateRunRecordLifecycle,
@@ -9510,22 +9512,28 @@ function toolkitProvenance() {
   let toolkitCommit = null;
   try {
     const version = readJson(join(ROOT, "contracts", "supported-surface.json")).surface_version;
-    if (isNonEmptyString(version)) surfaceVersion = version;
-  } catch {
-    // manifest unreadable — leave null
+    if (typeof version === "string" && RUN_RECORD_SURFACE_VERSION_PATTERN.test(version)) surfaceVersion = version;
+  } catch (error) {
+    // The manifest ships in every install; failing to read it is a broken
+    // install, not a "no git" situation — say so once rather than emit
+    // surface_version: null forever with no explanation.
+    process.stderr.write(`[campaigns-os] toolkit provenance: contracts/supported-surface.json unreadable (${error?.message || error}); surface_version will be null.\n`);
   }
   try {
     const gitHead = readJson(join(ROOT, "package.json")).gitHead;
-    if (typeof gitHead === "string" && /^[0-9a-f]{7,40}$/.test(gitHead)) toolkitCommit = gitHead;
+    if (typeof gitHead === "string" && RUN_RECORD_COMMIT_PATTERN.test(gitHead)) toolkitCommit = gitHead;
   } catch {
-    // package.json unreadable — leave null
+    // package.json unreadable — the manifest read above already warned
   }
-  if (!toolkitCommit && existsSync(join(ROOT, ".git"))) {
+  if (!toolkitCommit) {
+    // No pre-check on a .git entry: in a worktree or submodule .git is a
+    // file, not a directory. Ask git and accept "not a repository" quietly —
+    // a tarball install legitimately has no commit.
     try {
       const head = execFileSync("git", ["-C", ROOT, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-      if (/^[0-9a-f]{7,40}$/.test(head)) toolkitCommit = head;
+      if (RUN_RECORD_COMMIT_PATTERN.test(head)) toolkitCommit = head;
     } catch {
-      // not a usable git checkout — leave null
+      // not a git checkout — leave null
     }
   }
   return { surfaceVersion, toolkitCommit };

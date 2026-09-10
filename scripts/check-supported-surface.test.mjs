@@ -200,6 +200,13 @@ test("bump gate: promoting a CLI command onto the surface without an advance fai
   // Order is not a move; membership is.
   const reordered = loadSurface(surfaceText({ cli_commands: ["qa", "build"] }), "m");
   assert.deepEqual(validateSurfaceBump(oldSurface, reordered, []), []);
+  // package_exports and bin membership are contract-bearing the same way.
+  for (const overrides of [{ package_exports: ["./campaign-spec", "./new"] }, { package_exports: [] }, { bin: ["campaigns-os", "cos"] }, { bin: [] }]) {
+    const moved = loadSurface(surfaceText(overrides), "m");
+    assert.equal(validateSurfaceBump(oldSurface, moved, []).length, 1, JSON.stringify(overrides));
+    const movedAndBumped = loadSurface(surfaceText({ ...overrides, surface_version: "1.1.0" }), "m");
+    assert.deepEqual(validateSurfaceBump(oldSurface, movedAndBumped, []), []);
+  }
 });
 
 test("bump gate: surface_version can never move backwards, even with no surface change", () => {

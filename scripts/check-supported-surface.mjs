@@ -211,10 +211,16 @@ export function validateSurfaceBump(oldSurface, surface, changedPaths) {
   // to see in the version history. Before this clause, `checkpoint` landed
   // on the surface with no bump at all (a9e1022) — the manifest can name a
   // new supported command and nothing downstream learns it happened.
+  // package_exports and bin are contract-bearing in exactly the same way: a
+  // consumer imports a subpath or invokes the bin by name, and a rename or
+  // removal is a move it must be able to see in the version history.
+  const sortedList = (value) => JSON.stringify([...(value || [])].sort());
   const manifestMoved =
     JSON.stringify(surface.hashed) !== JSON.stringify(oldSurface.hashed) ||
-    JSON.stringify([...surface.named].sort()) !== JSON.stringify([...oldSurface.named].sort()) ||
-    JSON.stringify([...surface.cli_commands].sort()) !== JSON.stringify([...oldSurface.cli_commands].sort());
+    sortedList(surface.named) !== sortedList(oldSurface.named) ||
+    sortedList(surface.cli_commands) !== sortedList(oldSurface.cli_commands) ||
+    sortedList(surface.package_exports) !== sortedList(oldSurface.package_exports) ||
+    sortedList(surface.bin) !== sortedList(oldSurface.bin);
   if (!touched.length && !manifestMoved) return errors;
   if (semverLte(surface.surface_version, oldSurface.surface_version)) {
     const what = touched.length ? `hashed surface files changed (${touched.join(", ")})` : "the surface manifest itself changed";

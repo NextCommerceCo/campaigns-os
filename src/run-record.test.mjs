@@ -14,7 +14,9 @@ import {
   assembleRunRecord,
   mintRunId,
   resolveRunRecordPath,
+  RUN_RECORD_COMMIT_PATTERN,
   RUN_RECORD_SCHEMA,
+  RUN_RECORD_SURFACE_VERSION_PATTERN,
   selectRunFindingIds,
   validateRunRecord,
   writeRunRecord,
@@ -103,6 +105,12 @@ test("validator accepts nullable toolkit provenance and rejects malformed values
   assert.equal(validateRunRecord(minimalRecord({ surface_version: null, toolkit_commit: null })).ok, true);
   assert.equal(validateRunRecord(minimalRecord({ surface_version: "1.25.0", toolkit_commit: "404c12c" })).ok, true);
   assert.equal(validateRunRecord(minimalRecord({ surface_version: "" })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ surface_version: "banana" })).ok, false);
+  assert.equal(validateRunRecord(minimalRecord({ surface_version: "1.25" })).ok, false);
+  // the JSON Schema carries the same literals as the exported patterns
+  const schema = JSON.parse(readFileSync(new URL("../schemas/campaigns-os-run-record.v0.schema.json", import.meta.url), "utf8"));
+  assert.equal(new RegExp(schema.properties.surface_version.pattern).source, RUN_RECORD_SURFACE_VERSION_PATTERN.source);
+  assert.equal(new RegExp(schema.properties.toolkit_commit.pattern).source, RUN_RECORD_COMMIT_PATTERN.source);
   assert.equal(validateRunRecord(minimalRecord({ toolkit_commit: "not-a-sha" })).ok, false);
   assert.equal(validateRunRecord(minimalRecord({ toolkit_commit: "ABCDEF1" })).ok, false);
 });
