@@ -118,10 +118,9 @@
         "mode": "complete_material_or_strict_legacy_exact",
         "legacy_artifact_paths": {
           "build_context": "spec.hash",
-          "assembly_report": "identity.spec_hash",
-          "qa_verdict": "spec_hash"
+          "assembly_report": "identity.spec_hash"
         },
-        "rule": "When neither producer has a material identity, compare every legacy value exactly. When either producer has one, every present bundle artifact must carry the material identity. Mixed producer generations fail closed."
+        "rule": "When neither producer has a material identity, compare the legacy producer raw-byte values exactly and do not compare them with QA's semantic spec hash. When either producer has a material identity, every present bundle artifact must carry the material identity. Mixed producer generations fail closed."
       }
     }
   ],

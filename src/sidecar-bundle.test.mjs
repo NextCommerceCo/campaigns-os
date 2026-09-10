@@ -180,6 +180,29 @@ test("material spec identity correlates QA without reinterpreting raw-byte integ
   assert.equal(report.identity.spec_hash, context.spec.hash);
 }));
 
+test("legacy bundles compare raw producer hashes once and never compare QA semantic identity", () => withFixture((root) => {
+  const contextPath = join(root, ".campaign-runtime/build-context.json");
+  const reportPath = join(root, ".campaign-runtime/assembly-report.json");
+  const qaPath = join(root, ".campaign-runtime/qa-verdict.json");
+  const context = readJson(contextPath);
+  const report = readJson(reportPath);
+  const qa = readJson(qaPath);
+  delete context.spec.material_hash;
+  delete report.identity.spec_material_hash;
+  qa.spec_hash = `sha256:${"b".repeat(64)}`;
+  writeJson(contextPath, context);
+  writeJson(reportPath, report);
+  writeJson(qaPath, qa);
+
+  const conformant = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+  assert.equal(conformant.errors.some((finding) => finding.code.startsWith("bundle.identity.spec_")), false, JSON.stringify(conformant.errors, null, 2));
+
+  report.identity.spec_hash = `sha256:${"c".repeat(64)}`;
+  writeJson(reportPath, report);
+  const drifted = inspectSidecarBundle({ packetPath: join(root, "campaign-runtime.build.json"), requireQa: true });
+  assert.equal(drifted.errors.filter((finding) => finding.code === "bundle.identity.spec_hash_mismatch").length, 1);
+}));
+
 test("changed spec material, foreign QA, and partially regenerated identities fail closed", () => {
   const cases = [
     {
@@ -436,6 +459,10 @@ test("the machine contract forbids mtime selection and requires explicit histori
   assert.equal(
     SIDECAR_BUNDLE_CONTRACT.identity_fields.find((identity) => identity.name === "spec_material_hash").compatibility.mode,
     "complete_material_or_strict_legacy_exact",
+  );
+  assert.deepEqual(
+    SIDECAR_BUNDLE_CONTRACT.identity_fields.find((identity) => identity.name === "spec_material_hash").compatibility.legacy_artifact_paths,
+    { build_context: "spec.hash", assembly_report: "identity.spec_hash" },
   );
   assert.match(SIDECAR_BUNDLE_CONTRACT.ci_producer.promote_historical_qa, /--verdict <explicit-full-verdict\.json>/);
   assert.deepEqual(SIDECAR_BUNDLE_CONTRACT.ci_producer.never_select_qa_by, [
