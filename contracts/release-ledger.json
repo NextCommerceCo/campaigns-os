@@ -1492,6 +1492,33 @@
         }
       ],
       "entry_sha256": "e6e58a0eeb853c07e3953a80e40a54b4108d3f12e600438cc400663e45059394"
+    },
+    {
+      "id": "RL-0028",
+      "sequence": 28,
+      "date": "2026-09-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.24.0+agent.1",
+      "changelog_sha256": "abd841d09318f0841bf5369b326ebf0483a1289086252254f8091c1b1aab529d",
+      "agent_impact": "Remit now carries X-Campaign-Key, so remitted Run Records land in the tenant scope the receiver lists; a stale run session is closed out (Run Record assembled and remitted) by the next start/prepare-build/build at its target or run start/run end at cwd; `telemetry list` reads stored records back; `telemetry status` wording corrected. No argv shape a consumer pins changes.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "run-record remit sends X-Campaign-Key; stale run sessions are closed out before a new one opens; telemetry gains a list reader (tenant or admin scope) and corrected status wording."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Documents tenant-scoped remit, the telemetry list reader, and stale-session closeout."
+        }
+      ],
+      "entry_sha256": "07904fc466a0304c656c3cca7eb1b13f98103958d728effacd1ca7cd1ec41c64"
     }
   ]
 }

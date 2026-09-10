@@ -36,7 +36,7 @@ async function withTimeout(promise, timeoutMs, label, onTimeout = null) {
   }
 }
 
-async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES, timeoutMs = DEFAULT_REMIT_TIMEOUT_MS } = {}) {
+export async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES, timeoutMs = DEFAULT_REMIT_TIMEOUT_MS } = {}) {
   const max = Number.isFinite(maxBodyBytes) && maxBodyBytes > 0 ? maxBodyBytes : DEFAULT_REMIT_MAX_BODY_BYTES;
 
   if (response?.body && typeof response.body.getReader === "function") {
@@ -87,6 +87,7 @@ export async function remit(path, payload, proxyBase, {
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_REMIT_TIMEOUT_MS,
   maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES,
+  headers = {},
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
@@ -98,7 +99,7 @@ export async function remit(path, payload, proxyBase, {
   response = await withTimeout(
     fetchImpl(`${base}${suffix}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(payload),
       ...(controller ? { signal: controller.signal } : {}),
     }),
@@ -123,6 +124,7 @@ export async function remit(path, payload, proxyBase, {
 export async function remitRunRecord(record, {
   proxyBase,
   consent,
+  campaignKey = null,
   endpoint = DEFAULT_RUNS_ENDPOINT,
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_REMIT_TIMEOUT_MS,
@@ -131,8 +133,16 @@ export async function remitRunRecord(record, {
   if (!consent || consent.state !== "on") {
     return { attempted: false, ok: null, error: null, endpoint: null };
   }
+  // Tenant identity travels as a header, never in the body: the receiver
+  // stamps campaign_key_hash server-side from X-Campaign-Key and its
+  // tenant-scoped listing joins on that hash. A record remitted without the
+  // header is stored but invisible to every tenant scope (reachable only via
+  // the admin listing or by known run_id) — which is exactly how every record
+  // this CLI remitted before 2026-09-10 went dark once the receiver
+  // tenant-scoped its listing. Campaign keys are public-by-design.
+  const headers = typeof campaignKey === "string" && campaignKey.trim() ? { "X-Campaign-Key": campaignKey.trim() } : {};
   try {
-    await remit(endpoint, record, proxyBase, { fetchImpl, timeoutMs, maxBodyBytes });
+    await remit(endpoint, record, proxyBase, { fetchImpl, timeoutMs, maxBodyBytes, headers });
     return { attempted: true, ok: true, error: null, endpoint };
   } catch (error) {
     return { attempted: true, ok: false, error: error instanceof Error ? error.message : String(error), endpoint };

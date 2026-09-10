@@ -193,6 +193,16 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
 - **Durable status** — the local Run Record records `remit_attempted`,
   `remit_ok`, and `error` so a dropped send is visible, not silent. No
   background retry daemon.
+- **Tenant-scoped** — the remit sends the packet's Campaigns API key (packet,
+  then the packet-local CampaignSpec, then the declared `env:` source) as the
+  `X-Campaign-Key` header. The receiver hashes it server-side into
+  `campaign_key_hash`, which its tenant-scoped `GET /api/runs` joins on. A
+  record remitted without the header is stored but reachable only through the
+  cross-tenant admin listing or by known `run_id` — every record this CLI
+  remitted before 2026-09-10 is in that state. The key never enters the record.
+- **Readable back** — `campaigns-os telemetry list --packet <json>` lists the
+  tenant scope; `campaigns-os telemetry list` with `CAMPAIGN_OPS_ADMIN_KEY` set
+  (or `--admin-key-env <VAR>`) lists cross-tenant, unscoped records included.
 
 The public package only emits and remits; it does not cluster, route, summarize
 across runs, or create issues.
@@ -264,6 +274,12 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   sessions. `run status` reports the active session.
 - Sessions older than 12 hours are treated as stale and are not auto-discovered,
   so a later work session does not inherit an old `run_id` or lifecycle journal.
+  A stale session is closed out, not abandoned: the next `start`,
+  `prepare-build`, or `build` at that `--target`, or `run start` / `run end` at
+  cwd, assembles its Run Record from the lifecycle journal (remit under the
+  usual consent) and removes the file before opening a new session. A stale
+  session whose packet is gone is cleared with a stderr note and no record.
+  `run status` reports a stale file but never sweeps it.
 
 The session file is transient, machine-local, and lives under the
 scrubber-ignored `.campaign-runtime/`.

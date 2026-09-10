@@ -130,6 +130,22 @@ test("remitRunRecord: consent ON success records ok + endpoint and sends run_id 
   assert.equal(JSON.parse(calls[0].init.body).run_id, "run_idem_1"); // upsert key travels with the payload
 });
 
+test("remitRunRecord: sends X-Campaign-Key when a campaign key is supplied, never in the body", async () => {
+  const { fetchImpl, calls } = recordingFetch(fakeResponse({ body: JSON.stringify({ ok: true }) }));
+  await remitRunRecord({ run_id: "run_key_1", schema_version: "campaigns-os-run-record/v0" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, campaignKey: " pk_public_123 ", fetchImpl });
+  assert.equal(calls[0].init.headers["X-Campaign-Key"], "pk_public_123");
+  assert.equal(calls[0].init.headers["Content-Type"], "application/json");
+  assert.equal("campaign_key" in JSON.parse(calls[0].init.body), false);
+});
+
+test("remitRunRecord: no campaign key means no X-Campaign-Key header at all", async () => {
+  const { fetchImpl, calls } = recordingFetch(fakeResponse({ body: JSON.stringify({ ok: true }) }));
+  await remitRunRecord({ run_id: "run_key_2", schema_version: "campaigns-os-run-record/v0" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
+  assert.equal("X-Campaign-Key" in calls[0].init.headers, false);
+  await remitRunRecord({ run_id: "run_key_3", schema_version: "campaigns-os-run-record/v0" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, campaignKey: "   ", fetchImpl });
+  assert.equal("X-Campaign-Key" in calls[1].init.headers, false);
+});
+
 test("remitRunRecord: a network throw is SWALLOWED — status records the failure, never rethrows", async () => {
   const fetchImpl = async () => { throw new Error("ECONNREFUSED"); };
   const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
