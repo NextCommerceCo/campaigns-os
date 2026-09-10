@@ -25,6 +25,30 @@ Notable supported-surface changes are recorded here.
   `cli_commands` membership changes, not only when hashed or named entries do.
   `checkpoint` (a9e1022) landed on the surface with no bump under the old rule.
 
+## [1.24.0+agent.1] - 2026-09-10
+
+### Fixed
+
+- Run Telemetry remit now sends the packet's Campaigns API key as
+  `X-Campaign-Key`, so the receiver stamps the tenant hash its scoped listing
+  joins on. Since the receiver tenant-scoped `GET /api/runs` (2026-08-31),
+  every record this CLI remitted was stored but invisible to every tenant scope.
+- Stale run sessions (idle past 12 hours) are closed out instead of abandoned:
+  `start`, `prepare-build`, `build` (at `--target`) and `run start` / `run end`
+  (at cwd) assemble the stale session's Run Record and remit it under consent
+  before opening a new session. Sessions previously only auto-closed on a ready
+  `qa run`, so most real runs left no record at all.
+- `telemetry status` no longer says "defaults OFF" when consent is unresolved;
+  it distinguishes the default-on canonical endpoint from a malformed config or
+  scope mismatch, where remit really is off.
+
+### Added
+
+- `campaigns-os telemetry list` reads stored Run Records back: `--packet` for
+  the tenant scope (via the packet's campaign key), otherwise cross-tenant via
+  the ops admin key in `CAMPAIGN_OPS_ADMIN_KEY` (or `--admin-key-env <VAR>`).
+  `run status` reports a stale session file; `run end` reports a closeout.
+
 ## [1.24.0] - 2026-09-10
 
 ### Added
