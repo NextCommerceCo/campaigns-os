@@ -286,6 +286,14 @@ function comparison(field, expected, actual, status, detail) {
   return { field, expected, actual, status, ...(detail ? { detail } : {}) };
 }
 
+function equivalentCountValue(expected, actual) {
+  if (expected === actual) return true;
+  return isPositiveInteger(expected)
+    && typeof actual === "string"
+    && /^[1-9]\d*\.0+$/.test(actual)
+    && Number(actual) === expected;
+}
+
 export function compareLegacyOfferReadback(request, readback) {
   const checks = [
     comparison("name", request.name, readback?.name, request.name === readback?.name ? "match" : "mismatch"),
@@ -304,7 +312,13 @@ export function compareLegacyOfferReadback(request, readback) {
     readback?.condition?.all_packages === false ? "match" : "mismatch"));
   for (const field of ["type", "value"]) {
     const expected = request.condition[field];
-    if (expected !== undefined) checks.push(comparison(`condition.${field}`, expected, readback?.condition?.[field], expected === readback?.condition?.[field] ? "match" : "mismatch"));
+    if (expected !== undefined) {
+      const actual = readback?.condition?.[field];
+      const matches = field === "value" && request.condition.type === "count"
+        ? equivalentCountValue(expected, actual)
+        : expected === actual;
+      checks.push(comparison(`condition.${field}`, expected, actual, matches ? "match" : "mismatch"));
+    }
   }
   for (const field of ["type", "value", "price_rounding"]) {
     const expected = request.benefit[field];
