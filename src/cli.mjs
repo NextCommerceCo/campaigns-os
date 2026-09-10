@@ -9218,7 +9218,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   const record = assembleRunRecord({
     runId,
     packageVersion: packageVersion(),
-    ...toolkitProvenance(),
+    ...toolkitProvenance({ silent }),
     command: "run-record",
     argvShape: argvShape(args),
     consent: { state: consent.state, source: consent.source },
@@ -9507,7 +9507,7 @@ function packageVersion() {
 // plus the commit the toolkit was installed from: package.json `gitHead` (npm
 // stamps it on git-dependency installs), else the checkout's HEAD when this is
 // a working clone. Best-effort and nullable — provenance never blocks capture.
-function toolkitProvenance() {
+function toolkitProvenance({ silent = false } = {}) {
   let surfaceVersion = null;
   let toolkitCommit = null;
   try {
@@ -9517,7 +9517,9 @@ function toolkitProvenance() {
     // The manifest ships in every install; failing to read it is a broken
     // install, not a "no git" situation — say so once rather than emit
     // surface_version: null forever with no explanation.
-    process.stderr.write(`[campaigns-os] toolkit provenance: contracts/supported-surface.json unreadable (${error?.message || error}); surface_version will be null.\n`);
+    // Threaded from runRecordCommand's `silent`: an internal caller (run end,
+    // the stale-session sweep) that asked for silence stays silent.
+    if (!silent) process.stderr.write(`[campaigns-os] toolkit provenance: contracts/supported-surface.json unreadable (${error?.message || error}); surface_version will be null.\n`);
   }
   try {
     const gitHead = readJson(join(ROOT, "package.json")).gitHead;
