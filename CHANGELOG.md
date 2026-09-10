@@ -2,6 +2,29 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0] - 2026-09-10
+
+### Added
+
+- The partner entry path is now on the supported surface: `next`, `theme`,
+  `tooling`, `install-skills`, `install-agent-context`,
+  `validate-assembly-report`, and `telemetry` join `cli_commands`. The public
+  guides already instruct `install-skills`, `tooling status`, and
+  `next --packet` as the first steps; until now those three carried the weakest
+  compatibility promise in the repo. `validate-build-packet` stays an
+  undocumented alias of `doctor` and is not promoted.
+- Run Records stamp toolkit provenance: `surface_version` (from
+  `contracts/supported-surface.json`) and `toolkit_commit` (package.json
+  `gitHead` on git-dependency installs, else the checkout HEAD). Both nullable;
+  every record to date carries `package_version: 0.1.0-alpha.0`, so this is the
+  first version signal a consumer can segment on.
+
+### Changed
+
+- `check-supported-surface.mjs --base` now owes a `surface_version` bump when
+  `cli_commands` membership changes, not only when hashed or named entries do.
+  `checkpoint` (a9e1022) landed on the surface with no bump under the old rule.
+
 ## [1.24.0+agent.1] - 2026-09-10
 
 ### Fixed

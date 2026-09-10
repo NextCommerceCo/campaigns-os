@@ -1519,6 +1519,57 @@
         }
       ],
       "entry_sha256": "07904fc466a0304c656c3cca7eb1b13f98103958d728effacd1ca7cd1ec41c64"
+    },
+    {
+      "id": "RL-0029",
+      "sequence": 29,
+      "date": "2026-09-10",
+      "kind": "release",
+      "surface_version": "1.25.0",
+      "changelog_section": "1.25.0",
+      "changelog_sha256": "a41fbdec569cedc8ba0a2435fede497e6758200bc9fc44475d8e3a8e3cae5c46",
+      "agent_impact": "Seven commands the public partner guides instruct (next, theme, tooling, install-skills, install-agent-context, validate-assembly-report, telemetry) are now supported argv entry points and may be pinned. Run Records carry surface_version and toolkit_commit; consumers may read them to segment telemetry by toolkit version. The surface gate now versions cli_commands membership changes.",
+      "compatibility": "additive",
+      "migration": "No migration is required. Consumers pinning cli_commands may add the promoted commands. Receivers of Run Records should tolerate the two new nullable top-level fields (they already tolerate unknown fields).",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances the supported surface to 1.25.0, promotes the seven partner-path commands into cli_commands, and pins the Run Record schema carrying provenance fields."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Documents the promoted commands, why validate-build-packet is excluded, and that cli_commands membership changes now owe a surface_version bump."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Adds nullable surface_version and toolkit_commit provenance fields to the Run Record."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "Stamps surface_version and toolkit_commit into every assembled Run Record."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerates orientation context for supported surface 1.25.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerates supported-surface context; the runtime recipe is unchanged."
+        }
+      ],
+      "entry_sha256": "5497b8b97f397d466ba66b6a66093b24bcc8aa026bcc1dcac04a6394dd270c3f"
     }
   ]
 }

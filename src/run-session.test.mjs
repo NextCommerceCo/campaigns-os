@@ -372,6 +372,11 @@ test("CLI: blocked qa run records an attempt and keeps the session open for repa
     const record = JSON.parse(readFileSync(recordPath, "utf8"));
     assert.equal(record.run_id, start.session.run_id);
     assert.equal(validateRunRecord(record).ok, true);
+    // Toolkit provenance: this test runs from a git checkout of the toolkit, so
+    // both fields resolve; the manifest is the authority for surface_version.
+    const manifest = JSON.parse(readFileSync(join(ROOT, "contracts/supported-surface.json"), "utf8"));
+    assert.equal(record.surface_version, manifest.surface_version);
+    assert.match(record.toolkit_commit, /^[0-9a-f]{7,40}$/);
     assert.equal(record.remit_state, "skipped");
     assert.ok(record.artifacts.some((artifact) => artifact.kind === "qa_verdict"));
     assert.ok(record.lifecycle.stages.some((stage) => stage.name === "qa"));
