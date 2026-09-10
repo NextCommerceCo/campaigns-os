@@ -33,6 +33,22 @@ Notable supported-surface changes are recorded here.
   is still `blocked` and emits `stage_blocked: true`, so consumers cannot mistake
   coherent evidence for a completed handoff.
 
+## [1.22.0+agent.1] - 2026-09-10
+
+### Fixed
+
+- Spec-driven checkout proof now keeps repeated quantities for the same package
+  reference as distinct purchase cases. Strict selection requires an exact,
+  unambiguous rendered package composition and verifies that the chosen card
+  entered its selected state before checkout can continue.
+- Persisted-order reconciliation now distinguishes a package's unit composition
+  from its purchase multiplier, rejects quantity drift, and prefers requested or
+  rendered package identity when duplicate SKUs would otherwise be ambiguous.
+  Total parity also reads the maintained Demeter order-summary total; an absent
+  total remains skipped rather than passing.
+- Voucher proof is unchanged: a line-price delta remains explicitly weak
+  evidence when the persisted order exposes no authoritative voucher identifier.
+
 ## [1.22.0] - 2026-09-09
 
 ### Added
