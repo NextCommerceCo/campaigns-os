@@ -836,7 +836,7 @@ deciding what to do next, it classifies what the attempt did to the store:
 
 | Classification | What it means | What the runner does |
 |---|---|---|
-| `not_created` | The path failed before the checkout was submitted, or the platform rejected every order create it saw. Nothing reached the store. | Re-runs the path once. This is the bounded retry for a transient miss; the re-run decides the assertion. |
+| `not_created` | The path failed before the checkout was submitted, or the platform rejected every order create it saw. Nothing reached the store. | Re-runs the path once, if the creation budget has a slot no still-unrun planned path needs. This is the bounded retry for a transient miss; the re-run decides the assertion. |
 | `created` | An order exists and was read back — the failure happened after the purchase (most often a receipt that did not render its line items). | Runs a **read-only recovery pass**: reloads the receipt the order already produced, re-reads the persisted order, and re-checks the buyer-visible receipt surface and the voucher read-back. It clicks nothing, applies nothing, and submits nothing. |
 | `ambiguous` | The submit may have created an order this runner cannot see: a ref id with an unusable read-back, a lost create response, a network-failed create, or a 4xx that follows an earlier 2xx on the same endpoint. | Stops. It never resubmits, and the assertion names the check an operator should run — look for an existing order against the run's QA email or the observed ref id. |
 
@@ -844,6 +844,29 @@ The classification fails closed: anything not provably not-created is ambiguous,
 and ambiguous is never resubmitted. A `manual_review` (a hosted-checkout
 redirect) is still never re-run, and it charges the creation budget, because the
 platform may have created an order behind the redirect.
+
+Whether an order create succeeded is decided from the **whole** event log,
+counted once while the runner still holds it. The log that travels in the
+evidence payload keeps only the last 20 entries per stream, and on a multi-offer
+path the upsell and cart traffic that follows a successful create pushes that
+create out of that window. A classifier reading the truncated copy would see a
+bare rejection, call the path `not_created`, and submit again against a store
+that already holds the order.
+
+A re-run is bounded twice over: once per path per run, and never with budget a
+planned path still needs. Under the default budget — one creation per planned
+path — a path whose submit was **rejected** has already spent its own slot, so it
+is not re-run and its assertion records why under
+`evidence.order_creation.rerun_skipped`. Raise `--max-order-creations` to buy
+re-runs for those paths. A re-run that stops on the budget never becomes the
+deciding result: it proved nothing, so the first attempt's real failure stands.
+
+Recovery may only clear a failure on evidence it actually re-read. If the
+receipt reload's persisted-order read-back fails or never happens, the pass stops
+honestly: the read-back failure is itself a remaining failure, and the receipt
+rendering and voucher checks are recorded as not re-assessed rather than
+re-decided against the original attempt's numbers. A `tiers` run's coupon lives
+on its plan, not on the run-level flags, and recovery re-checks it from there.
 
 A pass that only came back after recovery is never presented as a first-attempt
 pass. The assertion carries `evidence.order_creation` (classification, reason,

@@ -167,7 +167,8 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
   const assertions = [];
   const orders = [];
   try {
-    for (const plan of plans) {
+    for (let index = 0; index < plans.length; index += 1) {
+      const plan = plans[index];
       // Spec-driven plans name the checkout page that declares their tier or
       // coupon (multi-funnel specs); operator-mode plans drive the primary.
       const identifier = planId(plan);
@@ -177,6 +178,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
 
       let result = firstAttempt;
       let rerunFrom = null;
+      let rerunSkipped = null;
       let recovery = null;
       let creationRecord = null;
 
@@ -201,24 +203,50 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
           // The failure is provably pre-submit, so re-running costs nothing and
           // answers "was that real?". One re-run per path per run, never a loop.
           // This is the 2026-09-06 transient-accept case the retry exists for.
-          rerunFrom = firstAttempt;
-          try {
-            const rerunAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
-            if (rerunAttempt.order) orders.push(rerunAttempt.order);
-            // The re-run decides the assertion. A first failure that does not
-            // reproduce was not a defect in this build; one that does, still is.
-            result = rerunAttempt;
-          } catch (error) {
-            // A re-run that throws must not escape the loop: this plan would
-            // lose its assertion and its analytics entry, and `attempts` is
-            // keyed one-to-one against `plannedPlanIds`.
-            result = {
-              ok: false,
-              error: `re-run threw: ${error instanceof Error ? error.message : String(error)}`,
-              order: firstAttempt.order,
-            };
+          //
+          // A re-run is a bonus, never an entitlement. A path whose submit was
+          // REJECTED is also provably not-created, and re-running it spends a
+          // second creation slot — so the re-run may only use budget that no
+          // still-unrun planned path needs. Without that reservation an early
+          // rejected path eats the budget twice and the last planned paths are
+          // never attempted at all.
+          const pathsStillPlanned = plans.length - (index + 1);
+          if (creationBudget.remaining() > pathsStillPlanned) {
+            rerunFrom = firstAttempt;
+            try {
+              const rerunAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
+              if (rerunAttempt.order) orders.push(rerunAttempt.order);
+              if (rerunAttempt.budget_exhausted) {
+                // The re-run stopped itself before its submit click, so it
+                // proved nothing. Letting it decide would erase this path's
+                // real failure and report a safety stop about a path that
+                // demonstrably did submit.
+                rerunFrom = null;
+                rerunSkipped = "the re-run stopped before its submit click: this run's order-creation budget was already spent. The first attempt's failure stands.";
+              } else {
+                // The re-run decides the assertion. A first failure that does
+                // not reproduce was not a defect in this build; one that does,
+                // still is.
+                result = rerunAttempt;
+              }
+            } catch (error) {
+              // A re-run that throws must not escape the loop: this plan would
+              // lose its assertion and its analytics entry, and `attempts` is
+              // keyed one-to-one against `plannedPlanIds`.
+              result = {
+                ok: false,
+                error: `re-run threw: ${error instanceof Error ? error.message : String(error)}`,
+                order: firstAttempt.order,
+              };
+            }
+          } else {
+            rerunSkipped = `not re-run: this run's remaining order-creation budget (${creationBudget.remaining()}) is reserved for ${pathsStillPlanned} planned path(s) that have not run yet. Raise --max-order-creations to re-run a path that already submitted.`;
           }
-          creationRecord = { classification, action: "rerun" };
+          creationRecord = {
+            classification,
+            action: rerunSkipped ? "rerun_skipped" : "rerun",
+            ...(rerunSkipped ? { rerun_skipped: rerunSkipped } : {}),
+          };
         } else if (classification.creation === "created") {
           // The order exists. Re-running would buy the same thing twice for a
           // failure the buyer already paid for, so the only thing left is to
@@ -2751,7 +2779,13 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
     }
     // Whether this attempt reached the submit click, recorded on every result
     // shape the runner can return. The classifier trusts this over the ladder.
-    if (result && typeof result === "object") result.submit = { reserved: submitState.reserved };
+    if (result && typeof result === "object") {
+      result.submit = { reserved: submitState.reserved };
+      // Order-create activity counted while the WHOLE event log is still in
+      // hand. Everything the result carries onwards has been through
+      // `sanitizedEvents`, which keeps the last 20 entries per stream.
+      result.order_creates = summarizeOrderCreateActivity(events);
+    }
     return stampTestOrderPlan(result, normalizedPlan);
   };
 
@@ -4521,33 +4555,64 @@ function orderTotalParityAssertion(page, planIdentifier, order) {
 // It fails CLOSED by construction: everything that is not provably not-created
 // is ambiguous. Getting that default backwards reintroduces the duplicate
 // purchase with extra machinery on top.
+// Order-create activity counted from the FULL live event log, at the one moment
+// the runner still holds it. `sanitizedEvents` keeps only the last 20 entries of
+// each stream, which is the right bound for an evidence payload and the wrong
+// one for a safety decision: on a multi-offer path the upsell and cart traffic
+// that FOLLOWS a successful create evicts that create from the retained window,
+// and a classifier reading the truncated copy would conclude that nothing
+// reached the platform and re-run the submit against a store that already holds
+// the order. So the counts are taken once, whole, and travel on the result.
+function summarizeOrderCreateActivity(events) {
+  const isCreate = (entry) => ORDER_CREATE_RESPONSE_PATTERN.test(String(entry?.url || ""));
+  const responses = Array.isArray(events?.responses) ? events.responses : [];
+  const requests = Array.isArray(events?.requests) ? events.requests : [];
+  const failed = Array.isArray(events?.failed) ? events.failed : [];
+  const createResponses = responses.filter(isCreate);
+  const accepted = createResponses.filter((response) => response.status >= 200 && response.status < 300);
+  // The ref id an accepted create announced, even when the attempt failed
+  // afterwards and its order row carries none. It is what an operator searches
+  // for when the runner refuses to re-run an ambiguous path.
+  const observedRefId = accepted.map((response) => stringArg(response?.body?.ref_id)).find(Boolean) || null;
+  return {
+    create_requests: requests.filter((entry) => isCreate(entry) && String(entry.method || "POST").toUpperCase() === "POST").length,
+    accepted_create_responses: accepted.length,
+    rejected_create_responses: createResponses.filter((response) => response.status >= 400).length,
+    failed_create_requests: failed.filter(isCreate).length,
+    ...(observedRefId ? { observed_ref_id: observedRefId } : {}),
+  };
+}
+
 function orderCreationSignals(attempt) {
   const events = attempt?.events || attempt?.order?.evidence?.events || {};
-  const responses = Array.isArray(events.responses) ? events.responses : [];
-  const requests = Array.isArray(events.requests) ? events.requests : [];
-  const failed = Array.isArray(events.failed) ? events.failed : [];
-  const isCreate = (entry) => ORDER_CREATE_RESPONSE_PATTERN.test(String(entry?.url || ""));
-  const createResponses = responses.filter(isCreate);
   const steps = Array.isArray(attempt?.order?.evidence?.steps) ? attempt.order.evidence.steps : [];
+  // Re-derived from whatever event log survived onto the result. Kept as a
+  // floor, never as the answer: it can only ever under-count.
+  const sanitized = summarizeOrderCreateActivity(events);
+  const observed = attempt?.order_creates && typeof attempt.order_creates === "object" ? attempt.order_creates : null;
+  // Whichever source saw more of the log wins. A signal that appears in either
+  // one is a signal, and no count here may be talked DOWN by truncation.
+  const creates = (key) => Math.max(Number(sanitized[key]) || 0, Number(observed?.[key]) || 0);
   // The submit seam is authoritative when the runner threaded it: it is set on
   // the far side of the budget check and immediately before the click. Without
   // it, an `order_submitted` step that merely STARTED counts as submitted —
   // the click may have landed before the step threw.
   const submitKnown = Boolean(attempt?.submit);
   return {
-    ref_id: attempt?.order?.ref_id || null,
+    ref_id: attempt?.order?.ref_id || observed?.observed_ref_id || sanitized.observed_ref_id || null,
     order_verified: attempt?.order?.ok === true,
-    create_requests: requests.filter((entry) => isCreate(entry) && String(entry.method || "POST").toUpperCase() === "POST").length,
-    accepted_create_responses: createResponses.filter((response) => response.status >= 200 && response.status < 300).length,
-    rejected_create_responses: createResponses.filter((response) => response.status >= 400).length,
-    failed_create_requests: failed.filter(isCreate).length,
+    create_requests: creates("create_requests"),
+    accepted_create_responses: creates("accepted_create_responses"),
+    rejected_create_responses: creates("rejected_create_responses"),
+    failed_create_requests: creates("failed_create_requests"),
     submitted: submitKnown ? attempt.submit.reserved === true : steps.some((entry) => entry.step === "order_submitted"),
     submit_observed: submitKnown,
+    create_activity_observed: Boolean(observed),
     // Nothing to read is not the same as reading that nothing happened. An
     // attempt carrying neither a submit record nor a step ladder supports no
     // conclusion at all, and the classifier must not mistake that silence for
     // proof of a pre-submit failure.
-    evidence_observed: submitKnown || steps.length > 0,
+    evidence_observed: submitKnown || steps.length > 0 || Boolean(observed),
   };
 }
 
@@ -4661,9 +4726,15 @@ function createOrderCreationBudget({ plans = [], args = {} } = {}) {
 // mutate the very order under inspection, which is a worse bug than the one
 // this replaces — so an upsell-action failure is reported as surviving
 // recovery rather than re-tested.
-async function recoverCreatedOrder({ context, attempt, checkoutPage, args = {} }) {
+async function recoverCreatedOrder({ context, attempt, plan = null, checkoutPage, args = {} }) {
   const order = attempt?.order;
   const checks = [];
+  // The per-plan effective args, exactly as the runner computed them for the
+  // attempt being recovered. `--test-order tiers` REFUSES a run-level
+  // `--apply-coupon` and carries each coupon on its plan instead, so recovering
+  // against the run-level flags would find no coupon to re-check, leave
+  // `remaining` empty, and clear a coupon blocker nobody re-verified.
+  const planArgs = plan ? argsForPlan(args, normalizeTestOrderPlan(plan, args)) : args;
   const receiptUrl = order?.final_url || null;
   if (!context || !receiptUrl) {
     checks.push({
@@ -4677,9 +4748,9 @@ async function recoverCreatedOrder({ context, attempt, checkoutPage, args = {} }
   let page = null;
   try {
     page = await context.newPage();
-    page.setDefaultTimeout(numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
+    page.setDefaultTimeout(numberArg(planArgs["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS));
     const events = captureCheckoutEvents(page);
-    await gotoAndSettle(page, receiptUrl, args);
+    await gotoAndSettle(page, receiptUrl, planArgs);
     checks.push({ check: "reload_receipt", ok: true, reason: "receipt reloaded read-only; no control was clicked and nothing was submitted" });
 
     const recovered = {
@@ -4689,51 +4760,75 @@ async function recoverCreatedOrder({ context, attempt, checkoutPage, args = {} }
     };
     const remaining = [];
 
-    // The receipt page's own load re-reads the persisted order.
+    // The receipt page's own load re-reads the persisted order. Recovery clears
+    // a blocker without buying anything again, so it may only clear on evidence
+    // it actually re-read: a read-back that failed, or never happened, is a
+    // remaining failure rather than a check nobody counts. Re-deciding against
+    // the ORIGINAL attempt's line items would re-assess the receipt using
+    // numbers this pass never re-confirmed, which is the dishonest stop the
+    // recovery contract exists to forbid.
     const orderRead = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i);
-    if (orderRead && orderRead.status >= 200 && orderRead.status < 300 && orderRead.body && typeof orderRead.body === "object") {
+    const orderReadOk = Boolean(
+      orderRead && orderRead.status >= 200 && orderRead.status < 300 && orderRead.body && typeof orderRead.body === "object",
+    );
+    if (orderReadOk) {
       recovered.receipt_line_items = extractReceiptLines(orderRead.body);
       recovered.vouchers = extractOrderVouchers(orderRead.body);
       recovered.discount_total = orderDiscountTotal(orderRead.body);
       recovered.verification.order_read_status = orderRead.status;
       checks.push({ check: "order_read_back", ok: true, reason: `persisted order re-read (HTTP ${orderRead.status})` });
     } else {
-      checks.push({
-        check: "order_read_back",
-        ok: false,
-        reason: orderRead ? `order read-back returned HTTP ${orderRead.status}` : "the receipt reload produced no order read-back",
-      });
+      const reason = orderRead
+        ? `order read-back returned HTTP ${orderRead.status}`
+        : "the receipt reload produced no order read-back";
+      recovered.verification.order_read_status = orderRead?.status ?? null;
+      remaining.push(`persisted order read-back: ${reason}`);
+      checks.push({ check: "order_read_back", ok: false, reason });
     }
+
+    // Nothing below may be re-decided without that fresh read-back. Rendered
+    // lines only mean something against the persisted lines they are supposed
+    // to show, and a voucher read-back is a read of the persisted order by
+    // definition. Evidence is still captured; the verdict is not moved.
+    const staleReadBack = "not re-assessed: the persisted order was not re-read on this pass, so there is no current persisted evidence to decide against";
 
     const receiptFailures = order.verification?.receipt_rendering_failures || [];
     if (receiptFailures.length) {
       const rendered = await receiptRenderingEvidence(page);
-      const assessment = assessReceiptRendering((recovered.receipt_line_items || []).length, rendered);
       recovered.receipt_rendering = rendered;
-      recovered.verification.receipt_rendering = assessment;
       recovered.evidence.receipt_rendering = rendered;
-      if (assessment.required && !assessment.ok) {
-        const failure = `buyer-visible receipt line items: ${assessment.reason}`;
-        remaining.push(failure);
-        recovered.verification.receipt_rendering_failures = [failure];
-        checks.push({ check: "receipt_rendering", ok: false, reason: assessment.reason });
+      if (!orderReadOk) {
+        checks.push({ check: "receipt_rendering", ok: false, reason: staleReadBack });
       } else {
-        delete recovered.verification.receipt_rendering_failures;
-        checks.push({ check: "receipt_rendering", ok: true, reason: assessment.reason });
+        const assessment = assessReceiptRendering((recovered.receipt_line_items || []).length, rendered);
+        recovered.verification.receipt_rendering = assessment;
+        if (assessment.required && !assessment.ok) {
+          const failure = `buyer-visible receipt line items: ${assessment.reason}`;
+          remaining.push(failure);
+          recovered.verification.receipt_rendering_failures = [failure];
+          checks.push({ check: "receipt_rendering", ok: false, reason: assessment.reason });
+        } else {
+          delete recovered.verification.receipt_rendering_failures;
+          checks.push({ check: "receipt_rendering", ok: true, reason: assessment.reason });
+        }
       }
     }
 
-    const requestedCoupon = stringArg(args["apply-coupon"]);
+    const requestedCoupon = stringArg(planArgs["apply-coupon"]);
     if (requestedCoupon && order.verification?.coupon && order.verification.coupon.ok !== true) {
-      const couponAssessment = assessCouponApplication(requestedCoupon, {
-        vouchers: recovered.vouchers || [],
-        totalDiscount: recovered.discount_total,
-        lines: recovered.receipt_line_items || [],
-        events,
-      });
-      recovered.verification.coupon = couponAssessment;
-      if (!couponAssessment.ok) remaining.push(`coupon ${requestedCoupon}: ${couponAssessment.reason}`);
-      checks.push({ check: "coupon_read_back", ok: couponAssessment.ok === true, reason: couponAssessment.reason });
+      if (!orderReadOk) {
+        checks.push({ check: "coupon_read_back", ok: false, reason: staleReadBack });
+      } else {
+        const couponAssessment = assessCouponApplication(requestedCoupon, {
+          vouchers: recovered.vouchers || [],
+          totalDiscount: recovered.discount_total,
+          lines: recovered.receipt_line_items || [],
+          events,
+        });
+        recovered.verification.coupon = couponAssessment;
+        if (!couponAssessment.ok) remaining.push(`coupon ${requestedCoupon}: ${couponAssessment.reason}`);
+        checks.push({ check: "coupon_read_back", ok: couponAssessment.ok === true, reason: couponAssessment.reason });
+      }
     }
 
     const upsellFailures = order.verification?.upsell_step_failures || [];
@@ -4777,6 +4872,7 @@ function orderCreationEvidence(record) {
       reason: record.classification.reason,
       action: record.action,
       creation_count: record.creation_count ?? 0,
+      ...(record.rerun_skipped ? { rerun_skipped: record.rerun_skipped } : {}),
       ...(record.classification.ref_id ? { ref_id: record.classification.ref_id } : {}),
       ...(record.classification.creation === "ambiguous" ? { operator_check: AMBIGUOUS_CREATION_OPERATOR_CHECK } : {}),
     },
@@ -4843,6 +4939,8 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
       actual: `stopped before submit: this run's order-creation budget was already spent (${result.error || "budget exhausted"})`,
       evidence: {
         ...planEvidence,
+        ...retry,
+        ...creation,
         order_creation_budget: {
           limit: result.order_creation_budget?.limit ?? null,
           reserved: result.order_creation_budget?.reserved ?? null,
@@ -5884,6 +5982,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   orderCreationEvidence,
   classifyTestOrderCreation,
   orderCreationSignals,
+  summarizeOrderCreateActivity,
   createOrderCreationBudget,
   dispatchTestOrderPlans,
   recoverCreatedOrder,

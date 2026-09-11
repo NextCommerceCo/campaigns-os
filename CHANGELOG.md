@@ -33,6 +33,30 @@ Notable supported-surface changes are recorded here.
   `evidence.order_creation` — classification, reason, action, and the number of
   real orders the path actually created — and `evidence.recovery` with the
   original failure, the checks that were re-run, and whether it cleared.
+- Whether an order create succeeded is decided from the whole event log, counted
+  once while the runner still holds it. The copy that travels in the evidence
+  payload keeps the last 20 entries per stream, and on a multi-offer path the
+  upsell and cart traffic that follows a successful create evicts that create
+  from the retained window — so a decision read from the truncated copy would
+  see a bare rejection, call the path `not_created`, and submit again against a
+  store that already holds the order. The create the platform accepted also
+  supplies the ref id the operator check names, even when the failed order row
+  carries none.
+- A re-run is bounded twice over: once per path per run, and never with a
+  creation slot a still-unrun planned path needs. Under the default budget a
+  path whose submit was *rejected* has already spent its own slot, so it is not
+  re-run and its assertion records why under
+  `evidence.order_creation.rerun_skipped`; raising `--max-order-creations` buys
+  those re-runs back. A re-run that stops on the budget never becomes the
+  deciding result — it proved nothing, and reporting it would erase the real
+  failure and claim nothing was submitted about a path that did submit.
+- The recovery pass may only clear a failure on evidence it actually re-read. A
+  persisted-order read-back that fails, or never happens, is itself a remaining
+  failure, and the receipt-rendering and voucher checks are recorded as not
+  re-assessed rather than re-decided against the original attempt's numbers. It
+  also re-checks the coupon from the plan being recovered rather than from the
+  run-level flags, because `--test-order tiers` refuses a run-level
+  `--apply-coupon` and carries each coupon on its plan.
 
 ### Added
 

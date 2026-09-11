@@ -8,6 +8,7 @@ const {
   classifyTestOrderCreation,
   createOrderCreationBudget,
   dispatchTestOrderPlans,
+  summarizeOrderCreateActivity,
   testOrderAssertion,
 } = __qaBrowserTestHooks;
 
@@ -532,4 +533,186 @@ test("the budget refuses to be talked past, whoever asks", () => {
   // An explicit operator raise is the only way past it.
   const raised = createOrderCreationBudget({ plans: plannedPlans(2), args: { "max-order-creations": "3" } });
   assert.equal(raised.limit, 3);
+});
+
+// --- The evidence window a safety decision is allowed to read from -----------
+
+// Everything the runner carries onwards has been through `sanitizedEvents`,
+// which keeps the last 20 entries per stream. On a multi-offer path the upsell
+// and cart traffic that FOLLOWS a successful create pushes that create out of
+// the retained window, so a classifier reading the truncated copy would see a
+// bare rejection, call the path not_created, and submit again against a store
+// that already holds the order. The counts are therefore taken once, from the
+// whole log, and travel on the result as `order_creates`.
+function noisyCreateLog() {
+  const responses = [
+    createResponse(201),
+    ...Array.from({ length: 19 }, (_, index) => ({
+      status: 200,
+      url: `https://api.example/api/v1/upsells/${index}/`,
+      body: { ok: true },
+    })),
+    { status: 422, url: ORDERS_API, body: { detail: "already placed" } },
+  ];
+  return eventLog({ responses });
+}
+
+function truncate(events) {
+  return {
+    requests: events.requests.slice(-20),
+    responses: events.responses.slice(-20),
+    failed: events.failed.slice(-20),
+    console: [],
+    pageErrors: [],
+    navigations: [],
+  };
+}
+
+test("a successful create evicted from the sanitized window still counts", () => {
+  const full = noisyCreateLog();
+  const summary = summarizeOrderCreateActivity(full);
+  assert.equal(summary.accepted_create_responses, 1);
+  assert.equal(summary.rejected_create_responses, 1);
+  assert.equal(summary.observed_ref_id, "ref-1");
+
+  // The fact the durable summary exists to survive: after truncation the 201 is
+  // simply gone from the log, and no amount of re-reading it brings it back.
+  const sanitized = truncate(full);
+  assert.equal(sanitized.responses.length, 20);
+  assert.equal(sanitized.responses.some((response) => response.status === 201), false);
+});
+
+test("an order created before 20 more responses is ambiguous, not a licence to buy again", async () => {
+  const full = noisyCreateLog();
+  const attempt = {
+    ok: false,
+    // What `waitForCheckoutResult` throws: the most recent create decides.
+    error: "order create rejected: HTTP 422",
+    submit: { reserved: true },
+    // The value `failedTestOrderResult` always writes, whatever the platform said.
+    order_creates: summarizeOrderCreateActivity(full),
+    order: {
+      path: "checkout",
+      ok: false,
+      ref_id: null,
+      final_url: CHECKOUT_PAGE.url,
+      verification: { verified: false },
+      evidence: { steps: SUBMITTED_STEPS, events: truncate(full) },
+    },
+    events: truncate(full),
+  };
+
+  const classification = classifyTestOrderCreation(attempt);
+  assert.equal(classification.creation, "ambiguous");
+  // The operator gets something to search for, from the create the platform
+  // accepted, even though the failed order row carries no ref id.
+  assert.equal(classification.ref_id, "ref-1");
+
+  const runner = scriptedRunner([{ submits: true, attempt }]);
+  const { assertions } = await dispatch({ runner });
+  assert.deepEqual(runner.submissions, ["checkout"], "the path that already created an order is never submitted twice");
+  assert.equal(runner.calls.length, 1);
+
+  const result = testOrderAssertionFor(assertions);
+  assert.equal(result.evidence.order_creation.classification, "ambiguous");
+  assert.equal(result.evidence.order_creation.action, "stopped");
+  assert.equal(result.evidence.order_creation.ref_id, "ref-1");
+});
+
+// --- A re-run may not spend a slot a planned path still needs ----------------
+
+function rejectedCreateAttempt(id) {
+  return {
+    ok: false,
+    error: "order create rejected (HTTP 422)",
+    submit: { reserved: true },
+    order_creates: { create_requests: 1, accepted_create_responses: 0, rejected_create_responses: 1, failed_create_requests: 0 },
+    order: {
+      path: id,
+      ok: false,
+      ref_id: null,
+      final_url: CHECKOUT_PAGE.url,
+      verification: { verified: false, error: "order create rejected (HTTP 422)" },
+      evidence: { steps: SUBMITTED_STEPS },
+    },
+    events: eventLog({ responses: [{ status: 422, url: ORDERS_API, body: { detail: "rejected" } }] }),
+  };
+}
+
+test("a rejected create does not eat the budget a later planned path needs", async () => {
+  // A rejected create is provably not_created, so it is re-run-eligible — but
+  // re-running it submits a SECOND time, and under the default budget (one
+  // creation per planned path) that slot belongs to a path that has not run
+  // yet. The re-run is the thing that yields, never the planned path.
+  const runner = scriptedRunner([
+    { submits: true, attempt: rejectedCreateAttempt("checkout") },
+    { submits: true, attempt: rejectedCreateAttempt("accept") },
+    { submits: true, attempt: rejectedCreateAttempt("decline") },
+  ]);
+  const { assertions, creationBudget } = await dispatch({
+    plans: ["checkout", "accept", "decline"],
+    runner,
+  });
+
+  assert.deepEqual(runner.submissions, ["checkout", "accept", "decline"], "every planned path gets its attempt");
+  assert.equal(creationBudget.reserved, 3);
+
+  for (const id of ["checkout", "accept", "decline"]) {
+    const result = testOrderAssertionFor(assertions, id);
+    // Each path reports the failure it actually had, not a budget stop about a
+    // path that demonstrably submitted.
+    assert.equal(result.actual, "order create rejected (HTTP 422)");
+    assert.equal(result.evidence.order_creation_budget, undefined);
+    assert.equal(result.evidence.order_creation.action, "rerun_skipped");
+    assert.match(result.evidence.order_creation.rerun_skipped, /budget/i);
+    assert.equal(result.evidence.order_creation.creation_count, 1);
+  }
+});
+
+test("a pre-submit failure still re-runs when the budget has room to spare", async () => {
+  // The guard bounds re-runs by remaining budget, not by forbidding them: a
+  // pre-submit failure reserved nothing, so the slot this path was given is
+  // still unspent and the 2026-09-06 transient case is still answered.
+  const runner = scriptedRunner([
+    { submits: false, attempt: preSubmitFailureAttempt() },
+    { submits: true, attempt: passedAttempt("ref-2") },
+    { submits: true, attempt: passedAttempt("ref-3") },
+  ]);
+  const { assertions, creationBudget } = await dispatch({ plans: ["checkout", "accept"], runner });
+
+  assert.equal(runner.calls.length, 3);
+  assert.deepEqual(runner.submissions, ["checkout", "accept"]);
+  assert.equal(creationBudget.reserved, 2);
+  assert.equal(testOrderAssertionFor(assertions, "checkout").evidence.retry.attempts, 2);
+  assert.equal(testOrderAssertionFor(assertions, "accept").status, "pass");
+});
+
+test("a re-run that stops on the budget never becomes the deciding result", async () => {
+  // Defence in depth for the seam: whatever the re-run does, a stop it chose
+  // proves nothing about the checkout, so it must not erase the real failure
+  // the first attempt recorded — or report "nothing was submitted" about a
+  // path that did submit.
+  const first = preSubmitFailureAttempt();
+  const runner = scriptedRunner([
+    { submits: false, attempt: first },
+    {
+      submits: false,
+      attempt: {
+        ok: false,
+        budget_exhausted: true,
+        error: "order-creation budget exhausted: 1 of 1 real order creation(s) already reserved in this run.",
+        submit: { reserved: false },
+        order: { path: "checkout", ok: false, ref_id: null, evidence: { steps: PRE_SUBMIT_STEPS } },
+        events: eventLog(),
+      },
+    },
+  ]);
+  const { assertions } = await dispatch({ runner });
+
+  const result = testOrderAssertionFor(assertions);
+  assert.equal(result.actual, first.error);
+  assert.doesNotMatch(result.actual, /budget/i);
+  assert.equal(result.evidence.order_creation_budget, undefined, "a budget stop on the re-run is not this path's verdict");
+  assert.equal(result.evidence.retry, undefined, "an attempt that never submitted is not a recorded retry");
+  assert.match(result.evidence.order_creation.rerun_skipped, /budget/i);
 });
