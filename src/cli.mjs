@@ -7156,6 +7156,17 @@ const ORDER_PATH_DEPTHS_WITHOUT_PURCHASE = new Set(["off", "none", "skip", "not_
  *                   ADVISORY ONLY. Treating it as unmet would retroactively
  *                   un-finish every existing campaign on upgrade.
  */
+// The declared depth an operator is told to re-prove. When the packet and the
+// report disagree there is no single value, so both are named from the
+// structured field rather than left for the reader to dig out of prose.
+function describeDeclaredDepth(purchaseProof) {
+  const depths = purchaseProof?.declared_depths;
+  if (depths && depths.packet && depths.report && depths.packet.toLowerCase() !== depths.report.toLowerCase()) {
+    return `The build packet declares an order path depth of "${depths.packet}" and the assembly report mirrors "${depths.report}"`;
+  }
+  return `The declared order path depth is "${purchaseProof?.declared_depth || "unspecified"}"`;
+}
+
 export function assessPurchaseProofCoverage({ packet = null, report = null } = {}) {
   const packetDepth = optionalString(packet?.qa?.proof_policy?.order_path_depth);
   const reportDepth = optionalString(report?.proof_policy?.order_path_depth);
@@ -7169,15 +7180,21 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
   if (packetDepth && reportDepth && packetDepth.toLowerCase() !== reportDepth.toLowerCase()) {
     return {
       state: "unknown",
-      declared_depth: packetDepth,
+      // Neither side is trustworthy, so there is no single declared depth to
+      // report; both values are exposed structurally so a consumer never has
+      // to parse the reason to learn that the two artifacts disagree.
+      declared_depth: null,
+      declared_depths: { packet: packetDepth, report: reportDepth },
       reason: `The build packet declares an order-path depth of "${packetDepth}" while the assembly report's mirror of it reads "${reportDepth}". Reconcile the packet and the report before treating either depth as proved.`,
     };
   }
   const declared = packetDepth || reportDepth;
+  const declaredDepths = { packet: packetDepth || null, report: reportDepth || null };
   if (!declared || ORDER_PATH_DEPTHS_WITHOUT_PURCHASE.has(declared.toLowerCase())) {
     return {
       state: "not_required",
       declared_depth: declared || null,
+      declared_depths: declaredDepths,
       reason: "No order-path depth is declared, so no purchase proof is owed.",
     };
   }
@@ -7186,6 +7203,7 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
     return {
       state: "unknown",
       declared_depth: declared,
+      declared_depths: declaredDepths,
       reason: "The assembly report's qa stage records no purchase-proof summary, so the depth QA exercised cannot be read from it.",
     };
   }
@@ -7193,12 +7211,14 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
     return {
       state: "satisfied",
       declared_depth: declared,
+      declared_depths: declaredDepths,
       reason: `QA executed ${summary.order_paths_executed} order path(s) against a declared "${declared}" depth.`,
     };
   }
   return {
     state: "unmet",
     declared_depth: declared,
+    declared_depths: declaredDepths,
     reason: `QA recorded zero executed order paths, so a declared "${declared}" order-path depth is not proved. A \`--test-order off\` run is a diagnostic, not purchase proof; re-run QA at the declared depth or change the declared depth deliberately.`,
   };
 }
@@ -7797,7 +7817,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
         "purchase_proof_unknown",
         "manual",
         null,
-        `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} The declared order path depth is "${purchaseProof.declared_depth || "unspecified"}"; re-run \`campaigns-os qa run --test-order <depth>\` if that depth still has to be proved.`,
+        `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} ${describeDeclaredDepth(purchaseProof)}; re-run \`campaigns-os qa run --test-order <depth>\` if that depth still has to be proved.`,
       );
     }
   }

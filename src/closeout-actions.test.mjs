@@ -242,8 +242,37 @@ test("a packet/report order-path depth disagreement reads as unknown, not as the
     report: { proof_policy: { order_path_depth: "off" }, stages: { qa: { purchase_proof: { order_paths_executed: 2 } } } },
   });
   assert.equal(result.state, "unknown");
-  assert.equal(result.declared_depth, "common");
+  // No single declared depth exists when the two sides disagree; both are
+  // exposed structurally, not only inside the prose reason.
+  assert.equal(result.declared_depth, null);
+  assert.deepEqual(result.declared_depths, { packet: "common", report: "off" });
   assert.match(result.reason, /"common".*"off"/);
+});
+
+test("the purchase_proof_unknown action names both sides of a depth disagreement from the structured field", () => {
+  const purchaseProof = assessPurchaseProofCoverage({
+    packet: { qa: { proof_policy: { order_path_depth: "common" } } },
+    report: { proof_policy: { order_path_depth: "off" } },
+  });
+  const actions = doneActions(satisfied, { purchaseProof });
+  const advisory = actions.find((action) => action.id === "purchase_proof_unknown");
+  assert.ok(advisory);
+  assert.match(advisory.description, /packet declares an order path depth of "common"/);
+  assert.match(advisory.description, /report mirrors "off"/);
+  assert.doesNotMatch(advisory.description, /"unspecified"/);
+});
+
+test("every coverage shape carries declared_depths beside declared_depth", () => {
+  const shapes = [
+    assessPurchaseProofCoverage({ packet: { qa: { proof_policy: { order_path_depth: "off" } } } }),
+    assessPurchaseProofCoverage({ packet: { qa: { proof_policy: { order_path_depth: "common" } } }, report: {} }),
+    assessPurchaseProofCoverage({ packet: { qa: { proof_policy: { order_path_depth: "common" } } }, report: { stages: { qa: { purchase_proof: { order_paths_executed: 1 } } } } }),
+    assessPurchaseProofCoverage({ packet: { qa: { proof_policy: { order_path_depth: "common" } } }, report: { stages: { qa: { purchase_proof: { order_paths_executed: 0 } } } } }),
+  ];
+  for (const shape of shapes) {
+    assert.deepEqual(Object.keys(shape.declared_depths).sort(), ["packet", "report"]);
+    assert.equal(shape.declared_depths.packet, shape.declared_depth);
+  }
 });
 
 test("a disagreement is unknown in the other direction too, and never not_required", () => {
