@@ -21,8 +21,8 @@ the blocker. Scale review depth to the task and preserve the existing checks and
 approval boundaries. Carry review and verification through the existing Polish
 and QA stages; assembly review does not replace them.
 
-If delegation is unavailable or disallowed, perform a separate review pass and
-state that it did not receive independent review.
+If delegation is unavailable or disallowed, perform a distinct self-review in the
+current session and disclose that no independent agent reviewed the result.
 
 ## Inputs and Build Rules
 
