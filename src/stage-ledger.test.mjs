@@ -200,3 +200,77 @@ test("the doctor stage never carries QA-owned identity", () => {
   assert.equal(Object.prototype.hasOwnProperty.call(updated.stages.doctor, "verdict_run_id"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(updated.stages.doctor, "purchase_proof"), false);
 });
+
+// `$defs.stage.evidence` in schemas/campaign-runtime-assembly-report.v0.schema.json
+// is `oneOf: [array, object]`. The object branch archived; the array branch was
+// deleted with no history entry at all, so operator notes written in the legal
+// array shape left the report entirely on the next producer write.
+
+test("array-shaped previous evidence is archived, not deleted", () => {
+  const input = report();
+  input.stages.qa = {
+    ...input.stages.qa,
+    status: "completed_with_warnings",
+    checked_at: "2026-09-10T09:00:00.000Z",
+    evidence: [{ note: "operator note A" }, { note: "operator note B" }],
+  };
+  const updated = recordProducerStageOutcome(input, {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T02:59:06.305Z",
+    command: "campaigns-os qa run",
+    identity: { verdict_run_id: "TODAY_RUN" },
+    evidence: { runtime_result: "all persisted cases verified" },
+  });
+  const qa = updated.stages.qa;
+  assert.deepEqual(qa.evidence, { runtime_result: "all persisted cases verified" });
+  assert.equal(qa.history.length, 1);
+  assert.deepEqual(qa.history[0], {
+    status: "completed_with_warnings",
+    checked_at: "2026-09-10T09:00:00.000Z",
+    evidence: [{ note: "operator note A" }, { note: "operator note B" }],
+  });
+});
+
+test("array-shaped evidence survives a producer write that carries no evidence of its own", () => {
+  const input = report();
+  input.stages.qa = { ...input.stages.qa, status: "blocked", evidence: [{ note: "operator note A" }] };
+  const updated = recordProducerStageOutcome(input, {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T02:59:06.305Z",
+    command: "campaigns-os qa run",
+  });
+  const qa = updated.stages.qa;
+  assert.equal(Object.prototype.hasOwnProperty.call(qa, "evidence"), false);
+  assert.deepEqual(qa.history, [{ status: "blocked", evidence: [{ note: "operator note A" }] }]);
+});
+
+test("an archived array is a copy, not a live reference into the caller's report", () => {
+  const input = report();
+  const notes = [{ note: "operator note A" }];
+  input.stages.qa = { ...input.stages.qa, status: "blocked", evidence: notes };
+  const updated = recordProducerStageOutcome(input, {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T02:59:06.305Z",
+    command: "campaigns-os qa run",
+  });
+  notes[0].note = "mutated after the write";
+  assert.deepEqual(updated.stages.qa.history[0].evidence, [{ note: "operator note A" }]);
+});
+
+test("re-recording identical array evidence does not grow history", () => {
+  const args = {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T02:59:06.305Z",
+    command: "campaigns-os qa run",
+    identity: { verdict_run_id: "TODAY_RUN" },
+    evidence: [{ note: "operator note A" }],
+  };
+  const once = recordProducerStageOutcome(report(), args);
+  assert.deepEqual(once.stages.qa.evidence, [{ note: "operator note A" }]);
+  const twice = recordProducerStageOutcome(once, { ...args, timestamp: "2026-09-11T03:30:00.000Z" });
+  assert.equal(Object.prototype.hasOwnProperty.call(twice.stages.qa, "history"), false);
+});

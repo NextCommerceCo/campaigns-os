@@ -26,7 +26,9 @@ function terminalStatus(disposition) {
 // stage. A previous stage with no `checked_at` (the pre-#308 report shape)
 // produces a history entry with no `checked_at`: an absent timestamp is
 // preserved as absent rather than stamped with now, because manufactured
-// provenance is worse than the stale field it replaces.
+// provenance is worse than the stale field it replaces. Both schema-legal
+// `evidence` shapes archive, object and array alike; an array of operator notes
+// is exactly the evidence a producer has no standing to silently drop.
 const QA_OWNED_FIELDS = Object.freeze(["verdict_run_id", "evidence", "purchase_proof"]);
 
 // Bounded so a committed handoff artifact cannot grow without limit, and deep
@@ -36,6 +38,15 @@ export const PRODUCER_STAGE_HISTORY_LIMIT = 5;
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+// `$defs.stage.evidence` is `oneOf: [array, object]`, so an operator or an
+// out-of-repo producer may legally have written either shape. Recognize both,
+// or the array branch is deleted below with no history entry and the notes it
+// carried leave the report entirely.
+function evidenceValue(value) {
+  if (isPlainObject(value) || Array.isArray(value)) return value;
+  return null;
 }
 
 function sameJson(a, b) {
@@ -50,7 +61,7 @@ function archivePreviousIdentity(previous, incoming) {
   const hadIdentity = typeof previous.verdict_run_id === "string" && previous.verdict_run_id.trim()
     ? previous.verdict_run_id.trim()
     : null;
-  const hadEvidence = isPlainObject(previous.evidence) ? previous.evidence : null;
+  const hadEvidence = evidenceValue(previous.evidence);
   if (!hadIdentity && !hadEvidence) return null;
   // An unchanged verdict is a re-record, not a new chapter: re-running the same
   // producer against the same verdict must not grow history.
@@ -59,7 +70,7 @@ function archivePreviousIdentity(previous, incoming) {
   if (typeof previous.status === "string" && previous.status.trim()) entry.status = previous.status;
   if (typeof previous.checked_at === "string" && previous.checked_at.trim()) entry.checked_at = previous.checked_at;
   if (hadIdentity) entry.verdict_run_id = hadIdentity;
-  if (hadEvidence) entry.evidence = hadEvidence;
+  if (hadEvidence) entry.evidence = JSON.parse(JSON.stringify(hadEvidence));
   return entry;
 }
 
@@ -120,7 +131,8 @@ export function recordProducerStageOutcome(report, {
     const incomingRunId = typeof identity?.verdict_run_id === "string" && identity.verdict_run_id.trim()
       ? identity.verdict_run_id.trim()
       : null;
-    const incomingEvidence = isPlainObject(evidence) ? JSON.parse(JSON.stringify(evidence)) : null;
+    const incomingEvidenceSource = evidenceValue(evidence);
+    const incomingEvidence = incomingEvidenceSource ? JSON.parse(JSON.stringify(incomingEvidenceSource)) : null;
     const archived = archivePreviousIdentity(previous, { verdict_run_id: incomingRunId, evidence: incomingEvidence });
     for (const field of QA_OWNED_FIELDS) delete next[field];
     if (incomingRunId) next.verdict_run_id = incomingRunId;

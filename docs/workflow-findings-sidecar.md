@@ -363,8 +363,11 @@ carrying its **own original status and `checked_at`**. A stage that had no
 `checked_at` yields a history entry with no `checked_at` — an absent timestamp
 stays absent rather than being stamped with now, because manufactured provenance
 is worse than the stale field it replaces. Re-recording the same verdict does not
-grow history. Every other extension field on the stage (`waivers`, and anything
-an out-of-repo consumer writes) passes through a producer write verbatim.
+grow history. `evidence` has two schema-legal shapes, object and array, and both
+archive — an array of operator notes is preserved as history rather than dropped
+on the next producer write. Every other extension field on the stage (`waivers`,
+and anything an out-of-repo consumer writes) passes through a producer write
+verbatim.
 
 These fields are additive under the assembly-report stage definition, which
 already permits additional properties; no schema and no surface version moved.
