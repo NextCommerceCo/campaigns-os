@@ -1048,3 +1048,218 @@ test("expired and malformed waiver history stays inert and publishes counts only
   });
   assert.equal(JSON.stringify(result).includes("malformed-secret"), false);
 });
+
+// Failure attribution: a failed request is classified by origin (first-party
+// versus cross-origin) and role (a dependency the page renders from versus a
+// beacon-class request). Only a cross-origin, non-dependency failure is a
+// warning; everything else still voids the collection and stays unwaivable.
+function attributionCapture(responses, { mediaElements = [] } = {}) {
+  return pageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl: "https://shop.example.test/landing/",
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_000 },
+    mediaElements,
+    responses,
+  });
+}
+
+function okResponse(id, url, resourceType, bytes = 512) {
+  return { request_id: id, url, resource_type: resourceType, status: 200, encoded_data_length: bytes };
+}
+
+test("a failed cross-origin ping leaves the capture complete, passes the checkpoint, and is recorded as a warning with its origin", () => {
+  const capture = attributionCapture([
+    okResponse("app", "https://shop.example.test/assets/app.js", "Script"),
+    okResponse("css", "https://shop.example.test/assets/site.css", "Stylesheet"),
+    okResponse("hero", "https://cdn.example.test/hero.jpg?token=private", "Image"),
+    // A tag-manager beacon to a host that no longer resolves: no response,
+    // no status, no transfer size, one Network.loadingFailed.
+    { request_id: "beacon", url: "https://attribution.example.invalid/ping?cid=private", resource_type: "Ping", failed: true },
+  ]);
+
+  assert.equal(capture.measurement_status, "complete");
+  assert.equal(capture.response_collection.status, "complete");
+  assert.deepEqual(capture.problems, [{ code: "cross_origin_request_failed", count: 1 }]);
+  const beacon = capture.resource_ledger.entries.find((entry) => entry.resource_type === "ping");
+  assert.equal(beacon.url, "https://attribution.example.invalid/ping");
+  assert.equal(beacon.failed_request_count, 1);
+  assert.equal(beacon.cross_origin_request_count, 1);
+  // Not double-penalised: a request that never got a response has no
+  // transfer size to be unavailable.
+  assert.equal(beacon.unmeasured_request_count, 0);
+  assert.equal(capture.problems.some((problem) => problem.code === "transfer_size_unavailable"), false);
+
+  const evidence = evidenceForCapture(capture);
+  assert.equal(evidence.measurement.status, "complete");
+  assert.deepEqual(evidence.measurement.incomplete, []);
+  assert.deepEqual(evidence.measurement.warnings, [{
+    route: "/landing/",
+    viewport: "desktop",
+    problem_codes: ["cross_origin_request_failed"],
+    failed_origins: ["https://attribution.example.invalid"],
+    failed_origin_count: 1,
+  }]);
+  const gate = evaluate(evidence);
+  assert.equal(gate.code, "polish.hidden_eager_media.pass");
+  assert.equal(gate.status, "pass");
+  assert.equal(JSON.stringify(evidence).includes("cid=private"), false);
+});
+
+test("a failed first-party image still fails the collection and blocks unwaivably", () => {
+  const capture = attributionCapture([
+    okResponse("app", "https://shop.example.test/assets/app.js", "Script"),
+    { request_id: "hero", url: "https://shop.example.test/assets/hero.jpg", resource_type: "Image", failed: true },
+  ]);
+
+  assert.equal(capture.measurement_status, "incomplete");
+  assert.equal(capture.response_collection.status, "failed");
+  assert.deepEqual(capture.problems, [
+    { code: "dependency_request_failed", count: 1 },
+    { code: "response_collection_failed", count: 1 },
+  ]);
+  const evidence = evidenceForCapture(capture);
+  assert.equal(evidence.measurement.status, "incomplete");
+  assert.deepEqual(evidence.measurement.warnings, []);
+  assert.deepEqual(evidence.measurement.incomplete[0].problem_codes, [
+    "dependency_request_failed",
+    "response_collection_failed",
+  ]);
+  const gate = evaluate(evidence);
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
+  assert.equal(gate.waivable, false);
+});
+
+test("a failed document response blocks unwaivably", () => {
+  const finalDocumentUrl = "https://shop.example.test/landing/";
+  const capture = buildPageLoadCapture({
+    buildFingerprint: BUILD_FINGERPRINT,
+    slug: "merchant",
+    requestedRoute: "/landing/",
+    viewport: "desktop",
+    finalDocumentUrl,
+    requestedDocumentUrl: finalDocumentUrl,
+    responseCollectionStatus: "complete",
+    networkidle: { status: "settled", duration_ms: 1_000 },
+    mediaElements: [],
+    responses: [{
+      request_id: "main-document",
+      url: finalDocumentUrl,
+      resource_type: "Document",
+      status: 502,
+      mime_type: "text/html",
+      is_final_main_document: true,
+      document_context_fingerprint: `sha256:${"d".repeat(64)}`,
+      failed: true,
+    }],
+  });
+
+  assert.equal(capture.measurement_status, "incomplete");
+  assert.equal(capture.response_collection.status, "failed");
+  assert.equal(capture.document_response.status, "error");
+  assert.deepEqual(capture.problems.map((problem) => problem.code), [
+    "dependency_request_failed",
+    "document_response_error",
+    "response_collection_failed",
+  ]);
+  const gate = evaluate(evidenceForCapture(capture));
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
+  assert.equal(gate.waivable, false);
+});
+
+test("a failed cross-origin script is a dependency failure and still blocks", () => {
+  const capture = attributionCapture([
+    okResponse("app", "https://shop.example.test/assets/app.js", "Script"),
+    { request_id: "sdk", url: "https://cdn.example.test/sdk.js?v=private", resource_type: "Script", failed: true },
+  ]);
+
+  assert.equal(capture.measurement_status, "incomplete");
+  assert.equal(capture.response_collection.status, "failed");
+  assert.deepEqual(capture.problems.map((problem) => problem.code), [
+    "dependency_request_failed",
+    "response_collection_failed",
+  ]);
+  const gate = evaluate(evidenceForCapture(capture));
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
+  assert.equal(gate.waivable, false);
+});
+
+test("cross-origin stylesheet, image, font, and media failures block; cross-origin fetch, xhr, other, and preflight failures warn", () => {
+  const blocking = ["Stylesheet", "Image", "Font", "Media"];
+  const warning = ["Fetch", "XHR", "Other", "Preflight", "EventSource", "Manifest"];
+  for (const resourceType of blocking) {
+    const capture = attributionCapture([
+      { request_id: "cross", url: `https://cdn.example.test/${resourceType.toLowerCase()}`, resource_type: resourceType, failed: true },
+    ]);
+    assert.equal(capture.response_collection.status, "failed", resourceType);
+    assert.equal(capture.problems.some((problem) => problem.code === "dependency_request_failed"), true, resourceType);
+  }
+  for (const resourceType of warning) {
+    const capture = attributionCapture([
+      { request_id: "cross", url: `https://cdn.example.test/${resourceType.toLowerCase()}`, resource_type: resourceType, failed: true },
+    ]);
+    assert.equal(capture.response_collection.status, "complete", resourceType);
+    assert.equal(capture.measurement_status, "complete", resourceType);
+    assert.deepEqual(capture.problems, [{ code: "cross_origin_request_failed", count: 1 }], resourceType);
+  }
+  // First-party beacon-class failures are never downgraded to a warning.
+  const firstParty = attributionCapture([
+    { request_id: "own", url: "https://shop.example.test/api/track", resource_type: "Fetch", failed: true },
+  ]);
+  assert.equal(firstParty.response_collection.status, "failed");
+  assert.deepEqual(firstParty.problems.map((problem) => problem.code), [
+    "dependency_request_failed",
+    "response_collection_failed",
+  ]);
+});
+
+test("a capture cannot self-declare a dependency failure as a cross-origin warning", () => {
+  const base = attributionCapture([
+    { request_id: "beacon", url: "https://attribution.example.invalid/ping", resource_type: "Ping", failed: true },
+  ]);
+  assert.equal(base.measurement_status, "complete");
+  const mutations = [
+    // The ledger says the failed request was first-party; the problem still claims cross-origin.
+    (capture) => {
+      capture.resource_ledger.entries.find((entry) => entry.resource_type === "ping").cross_origin_request_count = 0;
+      capture.metrics.cross_origin_request_count -= 1;
+    },
+    // The ledger says the failed request was a script; the problem still claims a beacon.
+    (capture) => {
+      capture.resource_ledger.entries.find((entry) => entry.resource_type === "ping").resource_type = "script";
+    },
+    // The warning is dropped but the ledger still records the failure.
+    (capture) => { capture.problems = []; },
+    // A dependency failure claims the collection completed.
+    (capture) => {
+      capture.problems = [{ code: "dependency_request_failed", count: 1 }];
+      capture.measurement_status = "incomplete";
+    },
+  ];
+  for (const [index, mutate] of mutations.entries()) {
+    const capture = structuredClone(base);
+    mutate(capture);
+    capture.integrity = buildPolishCaptureIntegrity(capture);
+    const evidence = evidenceForCapture(capture);
+    assert.equal(evidence.measurement.status, "incomplete", `mutation ${index}`);
+    assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true, `mutation ${index}`);
+    assert.equal(evaluate(evidence).waivable, false, `mutation ${index}`);
+  }
+});
+
+test("a capture cannot declare its collection complete over a ledger-recorded dependency failure", () => {
+  const capture = attributionCapture([
+    { request_id: "hero", url: "https://shop.example.test/assets/hero.jpg", resource_type: "Image", failed: true },
+  ]);
+  assert.equal(capture.response_collection.status, "failed");
+  capture.response_collection.status = "complete";
+  capture.problems = capture.problems.filter((problem) => problem.code !== "response_collection_failed");
+  capture.integrity = buildPolishCaptureIntegrity(capture);
+  const evidence = evidenceForCapture(capture);
+  assert.equal(evidence.measurement.status, "incomplete");
+  assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+  assert.equal(evaluate(evidence).waivable, false);
+});

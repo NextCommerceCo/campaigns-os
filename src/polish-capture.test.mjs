@@ -861,10 +861,14 @@ test("cached, service-worker, failed, and unfinished CDP responses make measurem
   assert.equal(result.total_transferred_bytes, 500);
   assert.deepEqual(result.problems, [
     { code: "cache_observed", count: 1 },
-    { code: "request_failed", count: 1 },
+    { code: "dependency_request_failed", count: 1 },
     { code: "service_worker_observed", count: 1 },
-    { code: "transfer_size_unavailable", count: 1 },
   ]);
+  // A failed request has no transfer size by definition; it is attributed
+  // once as a failure, not a second time as an unavailable measurement.
+  const failedResource = result.resources.find((resource) => resource.url.endsWith("/unfinished.mp4"));
+  assert.equal(failedResource.failed_request_count, 1);
+  assert.equal(failedResource.unmeasured_request_count, 0);
   const serialized = JSON.stringify(result);
   for (const secret of ["private-id", "token=", "session=", "secret="]) {
     assert.equal(serialized.includes(secret), false, secret);

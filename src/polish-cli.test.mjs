@@ -202,7 +202,7 @@ test("polish capture text bounds incomplete cells, problem codes, reasons, and a
     problem_codes: [
       "document_response_error",
       "producer_timeout",
-      "request_failed",
+      "dependency_request_failed",
       `PRIVATE_PROBLEM_${index}`,
     ],
   }));
@@ -228,11 +228,45 @@ test("polish capture text bounds incomplete cells, problem codes, reasons, and a
   });
 
   assert.match(output, /Capture problems:/);
-  assert.match(output, /Problem codes: document_response_error, producer_timeout, request_failed/);
+  assert.match(output, /Problem codes: dependency_request_failed, document_response_error, producer_timeout/);
   assert.match(output, /Additional incomplete capture cells omitted: 16/);
   assert.match(output, /Checkpoint: Package-owned page-load capture is incomplete/);
   assert.match(output, /campaigns-os polish capture --packet <packet> --base-url <url>/);
   assert.doesNotMatch(output, /PRIVATE|private=|token=secret|curl/);
+});
+
+test("polish capture text prints non-blocking capture warnings with safe origins only", () => {
+  const output = formatPolishCaptureText({
+    status: "ready",
+    measurement: {
+      status: "complete",
+      incomplete: [],
+      warnings: [{
+        route: "/landing/?private=route-secret",
+        viewport: "desktop",
+        problem_codes: ["cross_origin_request_failed", "PRIVATE_PROBLEM"],
+        failed_origins: [
+          "https://attribution.example.invalid",
+          "https://attribution.example.invalid/path?token=secret",
+          "javascript:alert(1)",
+          "PRIVATE_ORIGIN",
+        ],
+        failed_origin_count: 4,
+      }],
+    },
+    checkpoint: { code: "polish.hidden_eager_media.pass", findings: [], required_actions: [] },
+    observed_findings: [],
+  });
+
+  assert.match(output, /Status: READY/);
+  assert.match(output, /Measurement: COMPLETE/);
+  assert.doesNotMatch(output, /Capture problems:/);
+  assert.match(output, /Capture warnings \(not blocking\):/);
+  assert.match(output, /Route: \/landing\//);
+  assert.match(output, /Problem codes: cross_origin_request_failed/);
+  assert.match(output, /Failed origins: https:\/\/attribution\.example\.invalid$/m);
+  assert.match(output, /Checkpoint: Package-owned page-load evidence has no blocking hidden eager media/);
+  assert.doesNotMatch(output, /PRIVATE|private=|token=secret|javascript:/);
 });
 
 test("missing Chromium persists browser_unavailable and prints the install-browser action", async () => {

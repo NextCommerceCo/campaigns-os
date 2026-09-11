@@ -8867,6 +8867,18 @@ function safePolishFindingSource(value) {
     : "[source unavailable]";
 }
 
+function safePolishFailedOrigin(value) {
+  if (typeof value !== "string" || value.length > 2_048) return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function safePolishByteCount(value) {
   return Number.isSafeInteger(value) && value >= 0 ? String(value) : "unavailable";
 }
@@ -8907,6 +8919,37 @@ export function formatPolishCaptureText(result) {
     }
     if (incomplete.length > incompleteCells.length) {
       lines.push(`Additional incomplete capture cells omitted: ${incomplete.length - incompleteCells.length}`);
+    }
+  }
+  // Warning-class capture problems: recorded evidence that did not make the
+  // cell incomplete (a failed cross-origin beacon, typically merchant tag
+  // configuration). Shown so the operator can see it without opening the
+  // assembly report; it is not a required action.
+  const warnings = Array.isArray(result?.measurement?.warnings)
+    ? result.measurement.warnings
+    : [];
+  const warningCells = warnings.slice(0, POLISH_CAPTURE_TEXT_INCOMPLETE_LIMIT);
+  if (warningCells.length) {
+    lines.push("Capture warnings (not blocking):");
+    for (const cell of warningCells) {
+      const viewport = cell?.viewport === "desktop" || cell?.viewport === "mobile"
+        ? cell.viewport
+        : "unknown";
+      const problemCodes = [...new Set((Array.isArray(cell?.problem_codes)
+        ? cell.problem_codes.slice(0, POLISH_CAPTURE_TEXT_RAW_PROBLEM_LIMIT)
+        : []).filter((code) => SAFE_POLISH_CAPTURE_PROBLEM_CODES.has(code)))]
+        .sort()
+        .slice(0, POLISH_CAPTURE_TEXT_PROBLEM_LIMIT);
+      const origins = [...new Set((Array.isArray(cell?.failed_origins)
+        ? cell.failed_origins.slice(0, POLISH_CAPTURE_TEXT_SOURCE_LIMIT)
+        : []).map(safePolishFailedOrigin).filter(Boolean))];
+      lines.push(`- Route: ${safePolishFindingRoute(cell?.route)}`);
+      lines.push(`  Viewport: ${viewport}`);
+      lines.push(`  Problem codes: ${problemCodes.length ? problemCodes.join(", ") : "unavailable"}`);
+      lines.push(`  Failed origins: ${origins.length ? origins.join(", ") : "unavailable"}`);
+    }
+    if (warnings.length > warningCells.length) {
+      lines.push(`Additional capture warning cells omitted: ${warnings.length - warningCells.length}`);
     }
   }
   const safeCheckpointReason = SAFE_POLISH_CHECKPOINT_REASONS.get(result?.checkpoint?.code);

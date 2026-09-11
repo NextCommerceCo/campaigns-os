@@ -1702,6 +1702,27 @@
         }
       ],
       "entry_sha256": "4ae5327ff1958e5365830c8bfef99d981171f0eb7a7e6a4c132f265bf62c9714"
+    },
+    {
+      "id": "RL-0034",
+      "sequence": 34,
+      "date": "2026-09-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.5",
+      "changelog_sha256": "16afb08ffe9eb64ee8192bd60a86705df177640ba68d6b79cc5b83acca1605b9",
+      "agent_impact": "polish capture no longer turns a single failed cross-origin beacon-class request (a stale analytics pixel in a merchant tag container, typically) into polish.hidden_eager_media.capture_incomplete. Failed requests are attributed by origin and role: dependency_request_failed (document, any first-party resource, or any script/stylesheet/image/font/media of any origin) still fails the collection and blocks unwaivably; cross_origin_request_failed is recorded on the resource ledger and surfaced as a warning while the capture stays complete. The request_failed problem code is retired; a consumer matching on it should match the two attributed codes instead. A failed request is no longer also counted as transfer_size_unavailable. Page-load evidence gains measurement.warnings[] (route, viewport, warning problem_codes[], bounded failed_origins[], failed_origin_count) and polish capture text output prints a Capture warnings (not blocking) block. An assembly report carrying an older capture that was blocked on request_failed re-validates as capture_shape_invalid and needs a fresh polish capture, which it needed anyway.",
+      "compatibility": "compatible",
+      "migration": "none for callers. Consumers that key on the request_failed problem code should key on dependency_request_failed and cross_origin_request_failed. Recapture any campaign blocked on capture_incomplete by a cross-origin beacon failure.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "polish",
+          "summary": "polish capture text output prints measurement.warnings[] under a Capture warnings (not blocking) heading with the route, viewport, warning problem codes, and origin-only failed hosts; the incomplete-cell block is unchanged. Origins are re-validated as bare http(s) origins before printing."
+        }
+      ],
+      "entry_sha256": "e0dcb18a6b2e1e90a5e449705dc9ceaf1220ccd51eaabc1a11353d1c7792e50c"
     }
   ]
 }
