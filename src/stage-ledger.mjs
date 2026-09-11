@@ -11,10 +11,68 @@ function terminalStatus(disposition) {
   throw new Error(`Unsupported producer disposition "${disposition}".`);
 }
 
+// Extension fields on a producer stage that the PRODUCER owns, not the
+// operator. Everything else on the stage object is someone else's data and
+// passes through a producer write untouched (`waivers` is read elsewhere in
+// this repo, and out-of-repo consumers read this report too), so this list must
+// stay exactly as long as the evidence a producer can actually restate.
+//
+// Compatibility decision, deliberate and narrow: before this, every hand-authored
+// extension field survived the spread, which let a stage carry a refreshed
+// status/outputs/timestamp beside a previous run's `verdict_run_id` and an
+// `evidence` block describing an already-fixed bug. Latest identity and latest
+// status can no longer disagree. The previous pair is not deleted — it is moved,
+// with its ORIGINAL status and timestamp, into a bounded `history[]` on the same
+// stage. A previous stage with no `checked_at` (the pre-#308 report shape)
+// produces a history entry with no `checked_at`: an absent timestamp is
+// preserved as absent rather than stamped with now, because manufactured
+// provenance is worse than the stale field it replaces.
+const QA_OWNED_FIELDS = Object.freeze(["verdict_run_id", "evidence", "purchase_proof"]);
+
+// Bounded so a committed handoff artifact cannot grow without limit, and deep
+// enough that a couple of repair attempts do not evict the state a reviewer
+// came looking for.
+export const PRODUCER_STAGE_HISTORY_LIMIT = 5;
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function sameJson(a, b) {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+/**
+ * Archive the previous producer-owned identity, if there was one, without
+ * inventing anything it did not carry.
+ */
+function archivePreviousIdentity(previous, incoming) {
+  const hadIdentity = typeof previous.verdict_run_id === "string" && previous.verdict_run_id.trim()
+    ? previous.verdict_run_id.trim()
+    : null;
+  const hadEvidence = isPlainObject(previous.evidence) ? previous.evidence : null;
+  if (!hadIdentity && !hadEvidence) return null;
+  // An unchanged verdict is a re-record, not a new chapter: re-running the same
+  // producer against the same verdict must not grow history.
+  if (sameJson(hadIdentity, incoming.verdict_run_id ?? null) && sameJson(hadEvidence, incoming.evidence ?? null)) return null;
+  const entry = {};
+  if (typeof previous.status === "string" && previous.status.trim()) entry.status = previous.status;
+  if (typeof previous.checked_at === "string" && previous.checked_at.trim()) entry.checked_at = previous.checked_at;
+  if (hadIdentity) entry.verdict_run_id = hadIdentity;
+  if (hadEvidence) entry.evidence = hadEvidence;
+  return entry;
+}
+
 /**
  * Return an Assembly Report copy with the current doctor/QA producer outcome.
  * The producer supplies its own timestamp and artifact paths; this helper never
  * invents historical completion evidence.
+ *
+ * `identity` (currently `{ verdict_run_id }`) and `evidence` are the QA
+ * producer's own explanation of the run the canonical fields point at.
+ * `proof` is the counts-only purchase-proof summary — never order ids, refs,
+ * emails or URLs, because this report is committed and rides into the readback
+ * bundle.
  */
 export function recordProducerStageOutcome(report, {
   stage,
@@ -24,6 +82,9 @@ export function recordProducerStageOutcome(report, {
   outputs = [],
   blockers = [],
   warnings = [],
+  identity = null,
+  evidence = null,
+  proof = null,
 } = {}) {
   if (!PRODUCER_STAGES.has(stage)) throw new Error("Producer stage must be doctor or qa.");
   if (typeof timestamp !== "string" || !Number.isFinite(Date.parse(timestamp))) {
@@ -52,6 +113,24 @@ export function recordProducerStageOutcome(report, {
   };
   if (status.startsWith("completed")) next.completed_at = timestamp;
   else delete next.completed_at;
+
+  // Only QA restates a verdict. The doctor stage has no verdict identity and no
+  // purchase proof, so it never gains these fields even if a caller passes them.
+  if (stage === "qa") {
+    const incomingRunId = typeof identity?.verdict_run_id === "string" && identity.verdict_run_id.trim()
+      ? identity.verdict_run_id.trim()
+      : null;
+    const incomingEvidence = isPlainObject(evidence) ? JSON.parse(JSON.stringify(evidence)) : null;
+    const archived = archivePreviousIdentity(previous, { verdict_run_id: incomingRunId, evidence: incomingEvidence });
+    for (const field of QA_OWNED_FIELDS) delete next[field];
+    if (incomingRunId) next.verdict_run_id = incomingRunId;
+    if (incomingEvidence) next.evidence = incomingEvidence;
+    if (isPlainObject(proof)) next.purchase_proof = JSON.parse(JSON.stringify(proof));
+    if (archived) {
+      const priorHistory = Array.isArray(previous.history) ? previous.history.filter(isPlainObject) : [];
+      next.history = [...priorHistory, archived].slice(-PRODUCER_STAGE_HISTORY_LIMIT);
+    }
+  }
   stages[stage] = next;
   updated.stages = stages;
   return updated;
