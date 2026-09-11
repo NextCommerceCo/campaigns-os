@@ -10,9 +10,12 @@ import {
   POLISH_CAPTURE_PRODUCER,
   POLISH_CAPTURE_INTEGRITY_ALGORITHM,
   POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION,
+  POLISH_CAPTURE_WARNING_PROBLEM_CODES,
   POLISH_PRELOAD_ATTRIBUTES,
   POLISH_RESOURCE_TYPES,
   POLISH_ROUTE_CAPTURE_SCHEMA_VERSION,
+  failedRequestProblemCode,
+  polishCaptureMeasurementStatus,
   redactCaptureUrl,
 } from "./polish-capture.mjs";
 import {
@@ -39,6 +42,8 @@ export const POLISH_CAPTURE_PROBLEM_CODES = Object.freeze([
   "capture_integrity_invalid",
   "capture_shape_invalid",
   "capture_subject_invalid",
+  "cross_origin_request_failed",
+  "dependency_request_failed",
   "duplicate_request_identity",
   "document_response_ambiguous",
   "document_response_error",
@@ -56,7 +61,6 @@ export const POLISH_CAPTURE_PROBLEM_CODES = Object.freeze([
   "producer_failed",
   "producer_timeout",
   "redirect_chain_invalid",
-  "request_failed",
   "request_identity_invalid",
   "resource_aliases_invalid",
   "resource_ledger_overflow",
@@ -73,6 +77,8 @@ export const POLISH_CAPTURE_PROBLEM_CODES = Object.freeze([
   "url_length_overflow",
 ]);
 const CAPTURE_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
+const CAPTURE_WARNING_PROBLEM_CODES = new Set(POLISH_CAPTURE_WARNING_PROBLEM_CODES);
+export const MAX_CAPTURE_WARNING_ORIGINS = 32;
 
 function normalizeString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -543,7 +549,38 @@ function validProblems(capture) {
       || !Number.isInteger(problem.count)
       || problem.count <= 0)) return false;
   if (!isSortedUnique(capture.problems.map(({ code }) => code))) return false;
-  return (capture.measurement_status === "complete") === (capture.problems.length === 0);
+  return capture.measurement_status === polishCaptureMeasurementStatus(capture.problems);
+}
+
+// Recomputes the attributed failure counts from the ledger alone: every
+// request under one entry shares the entry's origin relation and resolved
+// type, so the entry decides the class for all of its failed requests.
+function attributedFailureCounts(entries) {
+  const counts = { cross_origin_request_failed: 0, dependency_request_failed: 0 };
+  for (const resource of entries) {
+    if (resource.failed_request_count === 0) continue;
+    counts[failedRequestProblemCode({
+      crossOrigin: resource.cross_origin_request_count > 0,
+      resourceType: resource.resource_type,
+    })] += resource.failed_request_count;
+  }
+  return counts;
+}
+
+function captureWarningOrigins(capture) {
+  const entries = Array.isArray(capture?.resource_ledger?.entries) ? capture.resource_ledger.entries : [];
+  const origins = new Set();
+  for (const resource of entries) {
+    if (resource.failed_request_count === 0) continue;
+    if (failedRequestProblemCode({
+      crossOrigin: resource.cross_origin_request_count > 0,
+      resourceType: resource.resource_type,
+    }) !== "cross_origin_request_failed") continue;
+    // A ledger URL has already passed safeHttpUrl in validResourceLedger, so a
+    // parse failure here is a bug worth throwing on, not a case to swallow.
+    origins.add(new URL(resource.url).origin);
+  }
+  return [...origins].sort();
 }
 
 function projectCaptureIntegrity(integrity) {
@@ -710,9 +747,14 @@ function validCaptureShape(capture) {
     !== (problemCount(capture, "final_document_route_mismatch") > 0)) return false;
   const noOverflow = capture.resource_ledger.omitted_resource_count === 0;
   if (noOverflow) {
+    const failures = attributedFailureCounts(entries);
+    // A dependency failure voids the collection; a cross-origin beacon-class
+    // failure alone never does. Both stay tied to the ledger they came from.
+    if (failures.dependency_request_failed > 0 && capture.response_collection.status === "complete") return false;
     if (problemCount(capture, "cache_observed") !== capture.metrics.cache_request_count
       || problemCount(capture, "service_worker_observed") !== capture.metrics.service_worker_request_count
-      || problemCount(capture, "request_failed") !== entries.reduce((sum, resource) => sum + resource.failed_request_count, 0)
+      || problemCount(capture, "cross_origin_request_failed") !== failures.cross_origin_request_failed
+      || problemCount(capture, "dependency_request_failed") !== failures.dependency_request_failed
       || problemCount(capture, "transfer_size_unavailable") !== entries.reduce((sum, resource) => sum + resource.unmeasured_request_count, 0)
       || problemCount(capture, "resource_type_ambiguous") !== entries.filter((resource) => resource.resource_type_status === "ambiguous").length
       || problemCount(capture, "resource_type_unknown") !== entries.filter((resource) => resource.resource_type_status === "unknown").length) return false;
@@ -887,6 +929,25 @@ export function buildPolishPageLoadEvidence({
       viewport: capture.subject.viewport,
       problem_codes: capture.problems.map((problem) => problem.code).sort(),
     }));
+  // Complete captures that still carry warning-class problems. They do not
+  // block, but the operator and the merchant should see them in the verdict
+  // without opening the assembly report.
+  const warnings = records
+    .filter((capture) => capture.measurement_status === "complete"
+      && capture.problems.some((problem) => CAPTURE_WARNING_PROBLEM_CODES.has(problem.code)))
+    .map((capture) => {
+      const origins = captureWarningOrigins(capture);
+      return {
+        route: capture.subject.requested_route,
+        viewport: capture.subject.viewport,
+        problem_codes: capture.problems
+          .filter((problem) => CAPTURE_WARNING_PROBLEM_CODES.has(problem.code))
+          .map((problem) => problem.code)
+          .sort(),
+        failed_origins: origins.slice(0, MAX_CAPTURE_WARNING_ORIGINS),
+        failed_origin_count: origins.length,
+      };
+    });
   const subjectComplete = Boolean(isSha256(subject.build_fingerprint)
     && subject.campaign_slug
     && subject.route_scope
@@ -911,6 +972,7 @@ export function buildPolishPageLoadEvidence({
       duplicate,
       unexpected,
       incomplete,
+      warnings,
     },
     captures: records,
     findings: hiddenEagerMediaFindings(records),

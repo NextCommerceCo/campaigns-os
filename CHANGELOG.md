@@ -2,6 +2,49 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.5] - 2026-09-11
+
+### Changed
+
+- `polish capture` attributes a failed request before judging it. A
+  `Network.loadingFailed` used to flip the whole response collection to
+  `failed`, which made every route and viewport `capture_incomplete` — the
+  nonwaivable block built for browser crashes and missing routes — even when
+  the only failure was a cross-origin analytics beacon in the merchant's tag
+  container that has nothing to do with hidden media. A failure is now
+  classified by the failing resource's origin relative to the final document
+  and by its role. `cross_origin_request_failed` covers a cross-origin request
+  in a beacon-class role, an explicit allowlist of `ping`, `fetch`, `xhr`,
+  `other`, and `preflight`; it is recorded on the resource ledger and surfaced
+  as a warning, and the capture stays complete so the checkpoint is evaluated
+  on its merits. `dependency_request_failed` covers everything else — the
+  document response, any first-party resource, and any cross-origin resource
+  outside the allowlist (`script`, `stylesheet`, `image`, `font`, `media`, and
+  also `texttrack`, `manifest`, `eventsource`, `cspviolationreport`,
+  `prefetch`, `signedexchange`, `websocket`, or an unresolved type); it still
+  fails the collection and still blocks unwaivably. `request_failed` is
+  retired in favour of the two attributed codes.
+- A failed request is no longer also counted as `transfer_size_unavailable`
+  or in the ledger entry's `unmeasured_request_count`: a request that never got
+  a response has no transfer size by definition, and attributing the failure
+  once is the whole point.
+- Page-load evidence gains `measurement.warnings[]`: one entry per complete
+  capture that carries a warning-class problem, with the route, viewport, the
+  warning `problem_codes[]`, the bounded sorted `failed_origins[]`, and the full
+  `failed_origin_count`. `polish capture` text output prints these under
+  `Capture warnings (not blocking):` with the safe origins and a
+  `shown of total` count whenever the printed list is shorter, so an operator can
+  see a failing merchant pixel without opening the assembly report. Warnings
+  never change `measurement.status`.
+- The ledger-tied shape invariants keep both attributed counts honest: each is
+  recomputed from the resource ledger's `failed_request_count`,
+  `cross_origin_request_count`, and resolved `resource_type`, and a capture
+  that declares its collection complete over a ledger-recorded dependency
+  failure is `capture_shape_invalid`. A capture cannot self-declare a
+  first-party or dependency failure as a cross-origin warning.
+- `docs/polish-evidence.md` documents the attribution rule, the warning class,
+  and the `measurement.warnings[]` projection.
+
 ## [1.25.0+agent.4] - 2026-09-11
 
 ### Changed

@@ -117,6 +117,7 @@ copied between builds, or repaired in place. Its stable projection is:
 | `measurement.status` | `complete` only when the subject is valid and every expected route/viewport has exactly one complete capture. |
 | `measurement.expected_capture_count`, `measurement.captured_count` | Planned and recorded capture totals. |
 | `measurement.missing[]`, `measurement.duplicate[]`, `measurement.unexpected[]`, `measurement.incomplete[]` | Route/viewport coverage defects. Each incomplete entry carries its sorted `problem_codes[]`. |
+| `measurement.warnings[]` | Complete captures that still carry warning-class problems (today only `cross_origin_request_failed`). Each entry carries the route, viewport, the warning `problem_codes[]`, the bounded sorted `failed_origins[]` (at most 32) and the full `failed_origin_count`. Warnings never change `measurement.status`; they are evidence for the operator and the merchant. |
 | `captures[]` | One deterministic package projection per route and viewport; see the per-capture map below. |
 | `findings[]` | Observed hidden eager-media findings. Each records `code`, route, viewport, tag and element index, bounded `sources[]` / `resource_ids[]` with their full counts, a fingerprint over the complete resource-identity set, transferred and threshold bytes, preload state, and `hidden_by[]`. |
 
@@ -138,16 +139,47 @@ Each `captures[]` entry has this shape:
 | `media[]` state and transfer fields | `preload_attribute`, `preload_defers_fetch`, `hidden_at_load`, `hidden_by[]`, `zero_size_at_load`, `fetched_bytes`, `declared_bytes`, `fetched_request_count`, and bounded `fetched_resources[]`. Zero-size geometry is evidence only, not hidden-state proof. |
 | `resource_ledger.limit`, `total_resource_count`, `omitted_resource_count`, `omitted_request_count` | Ledger bound and explicit overflow totals. Any omission makes the capture incomplete. |
 | `resource_ledger.entries[]` | Safe URL/resource identity, type and type status, transferred/declared bytes, request/canceled/declared/unmeasured/failed/partial/cross-origin/cache/service-worker counts, HTTP statuses, and match-resource IDs. Queries, fragments, credentials, headers, cookies, bodies, and raw protocol records are excluded. |
-| `problems[]` | Sorted `{ code, count }` completeness defects. Any entry forces `measurement_status: "incomplete"`. |
+| `problems[]` | Sorted `{ code, count }` capture problems. Any entry outside the warning class forces `measurement_status: "incomplete"`; a warning-class entry (`cross_origin_request_failed`) is recorded without making the capture incomplete. |
 | `integrity.schema_version`, `algorithm`, `association_fingerprint`, `projection_fingerprint` | Versioned SHA-256 tamper-evidence for the deterministic projection and media/resource joins. These checks detect accidental or partial mutation; they are not a keyed signature. |
 
 Transfer accounting retains the greater of the terminal CDP encoded length and
 the cumulative `Network.dataReceived` encoded-byte count. A slow, failed, or
 unfinished transfer can therefore contribute an observed lower bound even when
-the terminal measurement is unavailable. Genuine failures still make the
-capture incomplete. Browser-canceled loads and requests still in flight when
-the bounded capture window closes remain complete when they have a response and
-an observed or declared size; they are recorded as canceled rather than failed.
+the terminal measurement is unavailable. Browser-canceled loads and requests
+still in flight when the bounded capture window closes remain complete when
+they have a response and an observed or declared size; they are recorded as
+canceled rather than failed.
+
+A genuine failure (`Network.loadingFailed` that is not a cancellation) is
+attributed before it is judged, by the failing resource's origin relative to
+the final document and by its role:
+
+- `cross_origin_request_failed` — a cross-origin request in a beacon-class
+  role. The beacon class is an explicit allowlist: `ping`, `fetch`, `xhr`,
+  `other`, `preflight`. A stale analytics pixel in a merchant tag container
+  is the common case. It says nothing about hidden media, so the capture stays
+  complete and the checkpoint is evaluated on its merits. The failure is still
+  recorded on the ledger entry (`failed_request_count`, with
+  `cross_origin_request_count` naming the origin relation) and surfaced in
+  `measurement.warnings[]` with the failing origin.
+- `dependency_request_failed` — everything else: the document response, any
+  first-party resource of any role, and any cross-origin resource outside the
+  beacon allowlist — `document`, `script`, `stylesheet`, `image`, `font`,
+  `media`, and also `texttrack`, `manifest`, `eventsource`,
+  `cspviolationreport`, `prefetch`, `signedexchange`, `websocket`, and an
+  unknown or ambiguous type. A failed caption track or CSP report endpoint
+  is not a beacon even though nothing renders from it. The failure voids the
+  collection: `response_collection.status` becomes `failed`,
+  `response_collection_failed` is added, and the capture is incomplete and
+  nonwaivable, exactly as before. Widening the beacon allowlist is an
+  operator-visible trade-off, not a tidy-up.
+
+A failed request has no transfer size by definition, so it is never also
+counted as `transfer_size_unavailable` or in the entry's
+`unmeasured_request_count`. Both attributed counts are recomputed from the
+resource ledger at evaluation time; a capture whose problems disagree with its
+ledger, or that declares its collection complete over a ledger-recorded
+dependency failure, is `capture_shape_invalid` and blocks.
 
 For canceled responses, the collector also retains the declared body size from
 `Content-Range`'s total when available, falling back to `Content-Length`.
@@ -191,9 +223,11 @@ the threshold pass this checkpoint.
 
 Measurement completeness is nonwaivable. Missing/malformed evidence, a stale
 build/campaign/route/viewport binding, final-document route mismatch, integrity
-mismatch, unfinished or failed transfers, cache/service-worker observations,
-unjoinable media sources, and resource-ledger contradictions all block until a
-fresh capture succeeds. URLs in persisted resources and findings drop query,
+mismatch, unfinished transfers, dependency request failures, cache/service-worker
+observations, unjoinable media sources, and resource-ledger contradictions all
+block until a fresh capture succeeds. A failed cross-origin beacon-class request
+is the one recorded problem that does not: it is a warning, not a completeness
+defect. URLs in persisted resources and findings drop query,
 fragment, credentials, headers, cookies, bodies, and raw CDP/DOM records.
 
 Only a complete real finding is waivable. The decision binds the current build,
@@ -331,7 +365,7 @@ The gate returns the **first** failing code; fix in this order.
 | `polish.evidence_incomplete` | One or more §2/§3 problems; the `problems` array names each. |
 | `polish.hidden_eager_media.capture_malformed` | Package capture is missing/malformed, or packet/report authority is inconsistent. Repair authority when named, then capture again. |
 | `polish.hidden_eager_media.capture_stale` | Page-load evidence is bound to a different build, campaign, route scope, route set, or viewport set. Recapture. |
-| `polish.hidden_eager_media.capture_incomplete` | One or more required route/viewport measurements failed completeness. Repair the named capture problem and recapture; this is not waivable. |
+| `polish.hidden_eager_media.capture_incomplete` | One or more required route/viewport measurements failed completeness. Repair the named capture problem and recapture; this is not waivable. `dependency_request_failed` names a document, first-party, or script/stylesheet/media failure; a `cross_origin_request_failed` warning alone never produces this code. |
 | `polish.hidden_eager_media` | Complete evidence contains hidden eager media strictly above the threshold. Repair and recapture, or record an exact named-human checkpoint waiver. |
 | `polish.evidence_current` (pass) / `polish.assembly_source_package_waived` (waived) | Gate satisfied. |
 

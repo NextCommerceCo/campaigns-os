@@ -571,7 +571,7 @@ test("same-request-id redirects become one parent-owned contiguous chain without
   assert.equal("redirect_chain" in result.responses[0].redirect_chain[0], false);
 });
 
-test("genuine network failures fail the collection; in-flight transfers at capture end are canceled, not failed", async () => {
+test("genuine network failures are recorded as failed for capture attribution; in-flight transfers at capture end are canceled, not failed", async () => {
   const pageUrl = "https://shop.example.test/landing/";
   const failedUrl = "https://cdn.example.test/failed.mp4?token=private";
   const unfinishedUrl = "https://cdn.example.test/unfinished.mp4?token=private";
@@ -619,7 +619,10 @@ test("genuine network failures fail the collection; in-flight transfers at captu
   });
   await adapter.close();
 
-  assert.equal(failed.responseCollectionStatus, "failed");
+  // The collector observed the network faithfully, so the collection is
+  // complete; whether the failed record voids the capture is decided by
+  // origin and role in polish-capture.mjs, not here.
+  assert.equal(failed.responseCollectionStatus, "complete");
   assert.deepEqual(failed.responses, [{
     request_id: "failed-media",
     url: failedUrl,
@@ -843,7 +846,7 @@ test("a cache-layer error is a genuine failure, not a cancellation", async () =>
   });
   await adapter.close();
 
-  assert.equal(result.responseCollectionStatus, "failed");
+  assert.equal(result.responseCollectionStatus, "complete");
   assert.equal(result.responses[0].failed, true);
 });
 
@@ -1708,4 +1711,76 @@ test("a missing Chromium executable produces an actionable polish-capture error 
       return true;
     },
   );
+});
+
+test("a failed beacon with no response is recorded with the identity capture attribution needs; an unattributable failure still fails the collection", async () => {
+  const pageUrl = "https://shop.example.test/landing/";
+  const beaconUrl = "https://attribution.example.invalid/ping?cid=private";
+  const fake = fakeChromium([
+    {
+      finalUrl: pageUrl,
+      async navigate({ emit }) {
+        emit("Network.requestWillBeSent", {
+          requestId: "beacon",
+          type: "Ping",
+          request: { url: beaconUrl },
+        });
+        // DNS never resolved: no responseReceived, no dataReceived.
+        emit("Network.loadingFailed", {
+          requestId: "beacon",
+          errorText: "net::ERR_NAME_NOT_RESOLVED",
+          canceled: false,
+        });
+      },
+    },
+    {
+      finalUrl: pageUrl,
+      async navigate({ emit }) {
+        // A failure the collector cannot attribute (no URL, no type) is a
+        // measurement defect, not evidence about the page. An empty URL is
+        // no URL.
+        emit("Network.requestWillBeSent", { requestId: "ghost", request: {} });
+        emit("Network.loadingFailed", {
+          requestId: "ghost",
+          errorText: "net::ERR_FAILED",
+          canceled: false,
+        });
+        emit("Network.requestWillBeSent", { requestId: "blank", type: "Ping", request: { url: "" } });
+        emit("Network.loadingFailed", {
+          requestId: "blank",
+          errorText: "net::ERR_FAILED",
+          canceled: false,
+        });
+      },
+    },
+  ]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  const beacon = await adapter.captureRoute({
+    url: pageUrl,
+    viewport: { key: "desktop", width: 1_440, height: 1_200 },
+  });
+  const ghost = await adapter.captureRoute({
+    url: pageUrl,
+    viewport: { key: "mobile", width: 390, height: 844 },
+  });
+  await adapter.close();
+
+  assert.equal(beacon.responseCollectionStatus, "complete");
+  assert.deepEqual(beacon.responses, [{
+    request_id: "beacon",
+    url: beaconUrl,
+    resource_type: "Ping",
+    source_urls: [beaconUrl],
+    from_disk_cache: false,
+    from_prefetch_cache: false,
+    from_service_worker: false,
+    request_served_from_cache: false,
+    failed: true,
+  }]);
+  assert.equal(JSON.stringify(beacon).includes("ERR_NAME_NOT_RESOLVED"), false);
+
+  assert.equal(ghost.responseCollectionStatus, "failed");
+  assert.equal(ghost.responses.length, 2);
+  assert.equal(ghost.responses.every((response) => response.failed && !("url" in response)), true);
 });

@@ -198,6 +198,11 @@ function responseRecord(current, {
   };
 }
 
+function attributableResponseRecord(record) {
+  return typeof record?.url === "string" && record.url !== ""
+    && typeof record?.resource_type === "string" && record.resource_type !== "";
+}
+
 function completeResponseRecord(record) {
   return typeof record?.url === "string"
     && typeof record?.resource_type === "string"
@@ -264,7 +269,14 @@ function createNetworkCollector() {
       state.current = null;
       return;
     }
-    if (record.failed || !completeResponseRecord(record)) collectionFailed = true;
+    // A failed load is recorded as failed and left to capture attribution
+    // (polish-capture.mjs decides whether the failure voids the collection by
+    // origin and role). The collection itself fails only when the record
+    // cannot be attributed — no URL or resource type to attribute it by — or
+    // when a non-failed load is missing its terminal measurement.
+    if (record.failed ? !attributableResponseRecord(record) : !completeResponseRecord(record)) {
+      collectionFailed = true;
+    }
     if (responseRecordCount >= MAX_PAGE_LOAD_RESPONSE_RECORDS) {
       responseOverflow = true;
       collectionFailed = true;
@@ -346,7 +358,6 @@ function createNetworkCollector() {
         return;
       }
       finishCurrent(state, { failed: true });
-      collectionFailed = true;
     },
 
     "Network.dataReceived"(event = {}) {

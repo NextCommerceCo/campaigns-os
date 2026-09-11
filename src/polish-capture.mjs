@@ -53,6 +53,45 @@ export const POLISH_PRELOAD_ATTRIBUTES = Object.freeze([
 ]);
 
 const KNOWN_RESOURCE_TYPES = new Set(POLISH_RESOURCE_TYPES.filter((value) => value !== "unknown"));
+// Beacon-class resource roles: one-shot programmatic requests whose failure
+// says nothing about what the page renders. This is a deliberate allowlist.
+// A failed cross-origin request in one of these roles is a warning; a failed
+// request in any other role — document, script, stylesheet, image, font,
+// media, and also the roles that are not beacons even though nothing renders
+// from them (a caption track, a manifest, an event stream, a CSP report
+// endpoint, a prefetch hint, a signed exchange, a websocket) — blocks
+// whatever its origin, as does an unknown or ambiguous type. Widening this
+// list is an operator-visible trade-off, not a tidy-up.
+export const POLISH_BEACON_RESOURCE_TYPES = Object.freeze([
+  "fetch",
+  "other",
+  "ping",
+  "preflight",
+  "xhr",
+]);
+const BEACON_RESOURCE_TYPES = new Set(POLISH_BEACON_RESOURCE_TYPES);
+// Problem codes that are recorded on the capture but do not make it
+// incomplete: they carry evidence the operator should see without turning
+// measured-complete evidence into an unwaivable block.
+export const POLISH_CAPTURE_WARNING_PROBLEM_CODES = Object.freeze([
+  "cross_origin_request_failed",
+]);
+const WARNING_PROBLEM_CODES = new Set(POLISH_CAPTURE_WARNING_PROBLEM_CODES);
+
+export function polishCaptureMeasurementStatus(problems) {
+  return (Array.isArray(problems) ? problems : []).some((problem) => !WARNING_PROBLEM_CODES.has(problem?.code))
+    ? "incomplete"
+    : "complete";
+}
+
+// A failed request is attributed to a class by origin and role. Failed
+// requests grouped under one ledger entry share both, so the class can be
+// recomputed from the entry alone (polish-page-load.mjs does exactly that).
+export function failedRequestProblemCode({ crossOrigin, resourceType }) {
+  return crossOrigin && BEACON_RESOURCE_TYPES.has(resourceType)
+    ? "cross_origin_request_failed"
+    : "dependency_request_failed";
+}
 
 function resolvedCaptureUrl(value, { baseUrl } = {}) {
   if (value === "[url-too-long]" || baseUrl === "[url-too-long]") {
@@ -459,10 +498,11 @@ export function aggregateCdpResponses(responses, {
 
     if (cacheObserved) addProblemCount(problemCounts, "cache_observed");
     if (fromServiceWorker) addProblemCount(problemCounts, "service_worker_observed");
-    if (failed) addProblemCount(problemCounts, "request_failed");
     const transferMeasured = Number.isInteger(transferredBytes) && transferredBytes >= 0;
     const sizeAccounted = transferMeasured || declaredBytes !== null;
-    if (!sizeAccounted) addProblemCount(problemCounts, "transfer_size_unavailable");
+    // A failed request has no transfer size by definition; its failure is
+    // already attributed above and is not also an unavailable measurement.
+    if (!sizeAccounted && !failed) addProblemCount(problemCounts, "transfer_size_unavailable");
 
     const group = groups.get(resolved.resource_id) || {
       resource_id: resolved.resource_id,
@@ -487,7 +527,7 @@ export function aggregateCdpResponses(responses, {
     group.observed_resource_types.add(resourceType.value);
     if (resourceType.status === "unknown") group.resource_type_status = "unknown";
     if (transferMeasured) group.transferred_bytes += transferredBytes;
-    else if (!sizeAccounted) group.unmeasured_request_count += 1;
+    else if (!sizeAccounted && !failed) group.unmeasured_request_count += 1;
     if (canceled) group.canceled_request_count += 1;
     if (declaredBytes !== null) {
       group.declared_bytes = Math.max(group.declared_bytes, declaredBytes);
@@ -534,6 +574,16 @@ export function aggregateCdpResponses(responses, {
       group.resource_type = "unknown";
       addProblemCount(problemCounts, "resource_type_unknown");
     }
+    // Failed requests are attributed after type resolution so the code matches
+    // what the ledger entry will say, which is what the shape invariant
+    // recomputes from. Every request under one entry shares the entry's
+    // origin relation, so the count is the entry's failed count.
+    if (group.failed_request_count > 0) {
+      addProblemCount(problemCounts, failedRequestProblemCode({
+        crossOrigin: group.cross_origin_request_count > 0,
+        resourceType: group.resource_type,
+      }), group.failed_request_count);
+    }
     const { observed_resource_types: ignored, statuses, match_resource_ids: matchIds, ...projection } = group;
     return {
       ...projection,
@@ -551,7 +601,7 @@ export function aggregateCdpResponses(responses, {
   const problems = projectedProblems(problemCounts);
 
   return {
-    measurement_status: problems.length ? "incomplete" : "complete",
+    measurement_status: polishCaptureMeasurementStatus(problems),
     observed_response_count: prepared.length,
     unattributed_request_count: unattributedRequestCount,
     total_transferred_bytes: sum("transferred_bytes"),
@@ -756,7 +806,16 @@ export function buildPageLoadCapture({
   }
   if (!Array.isArray(mediaElements)) addCaptureProblem("media_collection_unavailable");
   if (!Array.isArray(responses)) addCaptureProblem("response_collection_unavailable");
-  const collectionStatus = normalizedToken(responseCollectionStatus);
+  // The browser collector reports whether it observed the network faithfully.
+  // Whether a failed request voids the collection is decided here, from the
+  // attributed ledger: a dependency failure (document, first-party, or any
+  // script/stylesheet/media) fails it; a cross-origin beacon-class failure is
+  // recorded as a warning and leaves the measurement complete.
+  const reportedCollectionStatus = normalizedToken(responseCollectionStatus);
+  const dependencyFailed = (problemCounts.get("dependency_request_failed") || 0) > 0;
+  const collectionStatus = reportedCollectionStatus === "complete" && dependencyFailed
+    ? "failed"
+    : reportedCollectionStatus;
   if (collectionStatus === "failed") addCaptureProblem("response_collection_failed");
   else if (collectionStatus !== "complete") addCaptureProblem("response_collection_status_invalid");
   if (collectionStatus === "complete" && Array.isArray(responses) && network.observed_response_count === 0) {
@@ -859,7 +918,7 @@ export function buildPageLoadCapture({
     schema_version: POLISH_ROUTE_CAPTURE_SCHEMA_VERSION,
     performed_by: POLISH_CAPTURE_PRODUCER,
     subject,
-    measurement_status: problems.length ? "incomplete" : "complete",
+    measurement_status: polishCaptureMeasurementStatus(problems),
     producer_status: normalizedProducerProblem ? "failed" : "complete",
     response_collection: {
       status: collectionStatus === "complete" || collectionStatus === "failed" ? collectionStatus : "invalid",
