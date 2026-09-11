@@ -49,8 +49,36 @@ function evidenceValue(value) {
   return null;
 }
 
+// An empty object or array is schema-legal but says nothing. History exists to
+// preserve prior identity a reviewer might come looking for; an empty evidence
+// block is not that, and archiving one produces a no-op entry that evicts a
+// real one from the bounded window. Empty therefore reads as absent.
+function meaningfulEvidence(value) {
+  const evidence = evidenceValue(value);
+  if (!evidence) return null;
+  const empty = Array.isArray(evidence) ? evidence.length === 0 : Object.keys(evidence).length === 0;
+  return empty ? null : evidence;
+}
+
+// Key order is not meaning. `previous` has been round-tripped through disk and
+// may come back with its keys in any order, while `incoming` carries whatever
+// order the producer happened to build it in; a plain JSON.stringify comparison
+// would call those two unequal and archive a new history entry on every
+// re-record of an unchanged verdict, which is precisely what the dedup below
+// exists to prevent. Canonicalize object keys (arrays keep their order, which
+// IS meaning) before comparing.
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (isPlainObject(value)) {
+    const out = {};
+    for (const key of Object.keys(value).sort()) out[key] = canonicalize(value[key]);
+    return out;
+  }
+  return value;
+}
+
 function sameJson(a, b) {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  return JSON.stringify(canonicalize(a ?? null)) === JSON.stringify(canonicalize(b ?? null));
 }
 
 /**
@@ -61,11 +89,13 @@ function archivePreviousIdentity(previous, incoming) {
   const hadIdentity = typeof previous.verdict_run_id === "string" && previous.verdict_run_id.trim()
     ? previous.verdict_run_id.trim()
     : null;
-  const hadEvidence = evidenceValue(previous.evidence);
+  const hadEvidence = meaningfulEvidence(previous.evidence);
   if (!hadIdentity && !hadEvidence) return null;
   // An unchanged verdict is a re-record, not a new chapter: re-running the same
-  // producer against the same verdict must not grow history.
-  if (sameJson(hadIdentity, incoming.verdict_run_id ?? null) && sameJson(hadEvidence, incoming.evidence ?? null)) return null;
+  // producer against the same verdict must not grow history. Both sides are
+  // normalized the same way, so an empty incoming evidence block compares equal
+  // to an empty previous one instead of looking like a change.
+  if (sameJson(hadIdentity, incoming.verdict_run_id ?? null) && sameJson(hadEvidence, meaningfulEvidence(incoming.evidence))) return null;
   const entry = {};
   if (typeof previous.status === "string" && previous.status.trim()) entry.status = previous.status;
   if (typeof previous.checked_at === "string" && previous.checked_at.trim()) entry.checked_at = previous.checked_at;

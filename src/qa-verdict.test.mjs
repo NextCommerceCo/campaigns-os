@@ -306,3 +306,20 @@ test("summarizePurchaseProof tolerates a malformed verdict", () => {
   assert.equal(summarizePurchaseProof({ verdict: null, proofPolicy: null }).order_paths_executed, 0);
   assert.equal(summarizePurchaseProof({ verdict: { test_orders: "nope" } }).order_paths_executed, 0);
 });
+
+// Kilo review, PR #315: `Number.isFinite(0)` is true, and the `??` chain stops
+// at a literal 0 rather than falling through to the next field, so a run that
+// received no ids at all reported every order as created.
+test("summarizePurchaseProof does not count a numeric zero id as an order created", () => {
+  const summary = summarizePurchaseProof({
+    verdict: { test_orders: [{ next_order_id: 0, order_id: 0, ref_id: 0, is_test: true }, { next_order_id: 0, order_id: 0, ref_id: 0, is_test: true }] },
+    proofPolicy: { order_path_depth: "common" },
+  });
+  assert.equal(summary.order_paths_executed, 2);
+  assert.equal(summary.orders_created, 0);
+});
+
+test("summarizePurchaseProof still counts a positive numeric id", () => {
+  const summary = summarizePurchaseProof({ verdict: { test_orders: [{ next_order_id: 1001, is_test: true }] } });
+  assert.equal(summary.orders_created, 1);
+});

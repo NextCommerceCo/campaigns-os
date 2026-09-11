@@ -190,9 +190,16 @@ export function validateVerdict(verdict) {
 // actually happened has to be numbers, never the orders themselves.
 export function summarizePurchaseProof({ verdict = null, proofPolicy = null } = {}) {
   const orders = Array.isArray(verdict?.test_orders) ? verdict.test_orders.filter((order) => order && typeof order === "object") : [];
+  // A real id is a non-empty trimmed string or a POSITIVE number. Numeric `0`
+  // is the conventional placeholder the runner emits when an id was never
+  // received, and `Number.isFinite(0)` is true — counting it would report an
+  // order as created on a run that created nothing. Note the `??` chain stops
+  // at a literal `0` (it is not nullish), so a zero here is never rescued by
+  // the next field either; both facts push the same way, toward not counting.
   const created = orders.filter((order) => {
     const id = order.next_order_id ?? order.order_id ?? order.ref_id;
-    return typeof id === "string" ? id.trim().length > 0 : Number.isFinite(id);
+    if (typeof id === "string") return id.trim().length > 0;
+    return Number.isFinite(id) && id > 0;
   });
   return {
     declared_order_path_depth: optionalString(proofPolicy?.order_path_depth),

@@ -274,3 +274,82 @@ test("re-recording identical array evidence does not grow history", () => {
   const twice = recordProducerStageOutcome(once, { ...args, timestamp: "2026-09-11T03:30:00.000Z" });
   assert.equal(Object.prototype.hasOwnProperty.call(twice.stages.qa, "history"), false);
 });
+
+// Kilo review, PR #315: the dedup compared evidence with a plain
+// JSON.stringify, which is key-order sensitive. `previous` comes back from disk
+// in whatever order it was serialized in; the producer builds the incoming copy
+// in its own order. Equal evidence written twice must stay one chapter.
+test("evidence that differs only in key order is a re-record, not a new chapter", () => {
+  const first = recordProducerStageOutcome(report(), {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T02:59:06.305Z",
+    command: "campaigns-os qa run",
+    identity: { verdict_run_id: "TODAY_RUN" },
+    evidence: { checked: ["cart", "upsell"], summary: "clean", counts: { fail: 0, warn: 1 } },
+  });
+  // A disk round-trip with the keys reordered, exactly as a reserializer or a
+  // hand-edit would leave them.
+  const roundTripped = JSON.parse(JSON.stringify(first));
+  roundTripped.stages.qa.evidence = { counts: { warn: 1, fail: 0 }, summary: "clean", checked: ["cart", "upsell"] };
+
+  const second = recordProducerStageOutcome(roundTripped, {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T03:30:00.000Z",
+    command: "campaigns-os qa run",
+    identity: { verdict_run_id: "TODAY_RUN" },
+    evidence: { checked: ["cart", "upsell"], summary: "clean", counts: { fail: 0, warn: 1 } },
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(second.stages.qa, "history"), false);
+});
+
+test("array evidence keeps its order as meaning even though object keys do not", () => {
+  const first = recordProducerStageOutcome(report(), {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T02:59:06.305Z",
+    command: "campaigns-os qa run",
+    evidence: [{ note: "A" }, { note: "B" }],
+  });
+  const second = recordProducerStageOutcome(first, {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T03:30:00.000Z",
+    command: "campaigns-os qa run",
+    evidence: [{ note: "B" }, { note: "A" }],
+  });
+  assert.deepEqual(second.stages.qa.history, [{ status: "completed", checked_at: "2026-09-11T02:59:06.305Z", evidence: [{ note: "A" }, { note: "B" }] }]);
+});
+
+// Kilo review, PR #315: an empty object or array passed the truthiness check
+// and produced a history entry carrying nothing, evicting a real entry from the
+// bounded window.
+test("empty prior evidence archives nothing", () => {
+  for (const empty of [{}, []]) {
+    const input = report();
+    input.stages.qa = { ...input.stages.qa, status: "blocked", evidence: empty };
+    const updated = recordProducerStageOutcome(input, {
+      stage: "qa",
+      disposition: "ready",
+      timestamp: "2026-09-11T02:59:06.305Z",
+      command: "campaigns-os qa run",
+      identity: { verdict_run_id: "TODAY_RUN" },
+      evidence: [{ note: "operator note A" }],
+    });
+    assert.equal(Object.prototype.hasOwnProperty.call(updated.stages.qa, "history"), false, `empty ${JSON.stringify(empty)} must not archive`);
+  }
+});
+
+test("empty prior evidence beside a real prior identity archives the identity alone", () => {
+  const input = report();
+  input.stages.qa = { ...input.stages.qa, status: "blocked", checked_at: "2026-09-10T00:00:00.000Z", verdict_run_id: "YESTERDAY_RUN", evidence: {} };
+  const updated = recordProducerStageOutcome(input, {
+    stage: "qa",
+    disposition: "ready",
+    timestamp: "2026-09-11T02:59:06.305Z",
+    command: "campaigns-os qa run",
+    identity: { verdict_run_id: "TODAY_RUN" },
+  });
+  assert.deepEqual(updated.stages.qa.history, [{ status: "blocked", checked_at: "2026-09-10T00:00:00.000Z", verdict_run_id: "YESTERDAY_RUN" }]);
+});

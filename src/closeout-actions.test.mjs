@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildNextActions } from "./cli.mjs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { assessPurchaseProofCoverage, buildNextActions, orderRunRecordFileNames, readRunRecordsForTarget } from "./cli.mjs";
 import { buildQaCloseoutActions } from "./qa-node.mjs";
 
 // #171: run-record closeout must be a REQUIRED next action at terminal
@@ -165,4 +169,95 @@ test("done emits no purchase-proof advisory when coverage is satisfied or not re
     const actions = doneActions(satisfied, { purchaseProof: { state, declared_depth: state === "satisfied" ? "common" : "off" } });
     assert.equal(actions.find((action) => action.id === "purchase_proof_unknown"), undefined);
   }
+});
+
+// Kilo review, PR #315: the records scan read only the newest 50 file names, so
+// an older matching record read as `no_record` / `foreign_campaign` and the
+// operator was asked to re-make a record that already existed.
+function seedRecords(count, { matchingIndex }) {
+  const base = mkdtempSync(join(tmpdir(), "campaigns-os-records-"));
+  const dir = join(base, ".campaign-runtime", "run-records");
+  mkdirSync(dir, { recursive: true });
+  const start = 1_757_000_000_000;
+  for (let index = 0; index < count; index += 1) {
+    // index 0 is the OLDEST, so the matching record sits far outside any
+    // newest-N window.
+    const runId = `run_${start + index * 1000}_${String(index).padStart(8, "0")}`;
+    const identity = index === matchingIndex
+      ? { map_id: "demo-map-01", campaign_slug: "demo-route" }
+      : { map_id: "other-map-99", campaign_slug: "other-route" };
+    writeFileSync(join(dir, `${runId}.json`), JSON.stringify({ run_id: runId, created_at: new Date(start + index * 1000).toISOString(), identity }));
+  }
+  return base;
+}
+
+test("the records scan reaches a matching record far older than the newest 50", () => {
+  const base = seedRecords(60, { matchingIndex: 0 });
+  const entries = readRunRecordsForTarget(base);
+  assert.equal(entries.length, 60);
+  const matching = entries.filter((entry) => entry.record?.identity?.map_id === "demo-map-01");
+  assert.equal(matching.length, 1, "the oldest matching record must survive the scan bound");
+});
+
+test("the records scan returns newest first and tolerates a malformed file beside good ones", () => {
+  const base = seedRecords(3, { matchingIndex: 0 });
+  writeFileSync(join(base, ".campaign-runtime", "run-records", "run_9999999999999_bad.json"), "{ not json");
+  const entries = readRunRecordsForTarget(base);
+  assert.equal(entries.length, 4);
+  assert.equal(entries[0].record, null, "the newest name is the malformed one, and it reads as null rather than throwing");
+  assert.ok(entries.slice(1).every((entry) => entry.record));
+  const stamps = entries.slice(1).map((entry) => Number(/^run_(\d+)_/.exec(entry.record.run_id)[1]));
+  assert.deepEqual(stamps, [...stamps].sort((a, b) => b - a));
+});
+
+// Kilo review, PR #315: lexicographic ordering only matched numeric ordering
+// while every run id carried the same digit count.
+test("run id ordering survives a change of timestamp digit length", () => {
+  const names = [
+    "run_999999999999_aaaaaaaa.json",
+    "run_1757000000000_bbbbbbbb.json",
+    "run_10000000000000_cccccccc.json",
+  ];
+  assert.deepEqual(orderRunRecordFileNames(names), [
+    "run_10000000000000_cccccccc.json",
+    "run_1757000000000_bbbbbbbb.json",
+    "run_999999999999_aaaaaaaa.json",
+  ]);
+  // A lexicographic reverse sort would have put the 12-digit id first.
+  assert.notDeepEqual(orderRunRecordFileNames(names), [...names].sort().reverse());
+});
+
+test("an unparseable record name sorts last rather than displacing a timestamped one", () => {
+  assert.deepEqual(
+    orderRunRecordFileNames(["notes.json", "run_1757000000000_bbbbbbbb.json", "run_1757000001000_cccccccc.json"]),
+    ["run_1757000001000_cccccccc.json", "run_1757000000000_bbbbbbbb.json", "notes.json"],
+  );
+});
+
+// Kilo review, PR #315: the packet won over the report without the two ever
+// being compared, so a corrupted mirror could quietly decide the gate.
+test("a packet/report order-path depth disagreement reads as unknown, not as the packet's value", () => {
+  const result = assessPurchaseProofCoverage({
+    packet: { qa: { proof_policy: { order_path_depth: "common" } } },
+    report: { proof_policy: { order_path_depth: "off" }, stages: { qa: { purchase_proof: { order_paths_executed: 2 } } } },
+  });
+  assert.equal(result.state, "unknown");
+  assert.equal(result.declared_depth, "common");
+  assert.match(result.reason, /"common".*"off"/);
+});
+
+test("a disagreement is unknown in the other direction too, and never not_required", () => {
+  const result = assessPurchaseProofCoverage({
+    packet: { qa: { proof_policy: { order_path_depth: "off" } } },
+    report: { proof_policy: { order_path_depth: "common" } },
+  });
+  assert.equal(result.state, "unknown");
+});
+
+test("matching depths on both sides still assess normally", () => {
+  const satisfied = assessPurchaseProofCoverage({
+    packet: { qa: { proof_policy: { order_path_depth: "common" } } },
+    report: { proof_policy: { order_path_depth: "COMMON" }, stages: { qa: { purchase_proof: { order_paths_executed: 1 } } } },
+  });
+  assert.equal(satisfied.state, "satisfied");
 });

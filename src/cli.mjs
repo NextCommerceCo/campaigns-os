@@ -7053,17 +7053,52 @@ function addPrepareBuildGateErrors(errors, report, gate = prepareBuildGateIssue(
 // Run Records are machine-local (they are in the runtime-state ignore block), so
 // `next` reads them best-effort: an absent directory is the normal case, not an
 // error, and a slow or hostile records directory must never stall orchestration.
-const RUN_RECORDS_SCAN_LIMIT = 50;
+// Bounded, but bounded well above any plausible per-target history rather than
+// at the working-set size. The old bound was 50, which is reachable on a
+// long-lived campaign, and truncation here is not a performance trade — it
+// silently changes the ANSWER: an older matching record outside the window
+// reads as `no_record` or `foreign_campaign`, which asks the operator to
+// re-make a record that already exists. That is the exact regression this
+// closeout work is closing, so the cap is now a runaway-directory guard and
+// nothing else. The parse cost stays tolerable because `readJson` failures are
+// swallowed per file, so a malformed record still costs one failed parse rather
+// than aborting the scan.
+const RUN_RECORDS_SCAN_LIMIT = 5000;
 const RUN_RECORD_QA_DIGEST_LIMIT = 8;
 
-function readRunRecordsForTarget(baseDir) {
+// Run ids are `run_<epoch-ms>_<hex>`, and `readdirSync().sort().reverse()` only
+// ordered those correctly by accident: lexicographic order matches numeric order
+// only while every id has the same digit count. A 13-to-14 digit rollover (or a
+// hand-named file, or an id minted on a machine with a different clock) flips
+// "newest" silently. Parse the timestamp and compare it as a number; anything
+// unparseable sorts last, because a file that cannot say when it was written
+// must never displace one that can.
+export function orderRunRecordFileNames(names) {
+  const stamp = (name) => {
+    const match = /^run_(\d+)_/.exec(name);
+    if (!match) return null;
+    const value = Number(match[1]);
+    return Number.isSafeInteger(value) ? value : null;
+  };
+  return [...names].sort((a, b) => {
+    const left = stamp(a);
+    const right = stamp(b);
+    if (left !== right) {
+      if (left === null) return 1;
+      if (right === null) return -1;
+      return right - left;
+    }
+    // Same stamp, or both unstamped: fall back to a stable name comparison so
+    // the order is at least deterministic across platforms.
+    return a < b ? 1 : a > b ? -1 : 0;
+  });
+}
+
+export function readRunRecordsForTarget(baseDir) {
   try {
     const dir = join(resolve(baseDir), RUN_RECORDS_DIR_REL_PATH);
     if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
-    const names = readdirSync(dir)
-      .filter((name) => name.endsWith(".json"))
-      .sort()
-      .reverse()
+    const names = orderRunRecordFileNames(readdirSync(dir).filter((name) => name.endsWith(".json")))
       .slice(0, RUN_RECORDS_SCAN_LIMIT);
     const entries = [];
     for (const name of names) {
@@ -7122,8 +7157,23 @@ const ORDER_PATH_DEPTHS_WITHOUT_PURCHASE = new Set(["off", "none", "skip", "not_
  *                   un-finish every existing campaign on upgrade.
  */
 export function assessPurchaseProofCoverage({ packet = null, report = null } = {}) {
-  const declared = optionalString(packet?.qa?.proof_policy?.order_path_depth)
-    || optionalString(report?.proof_policy?.order_path_depth);
+  const packetDepth = optionalString(packet?.qa?.proof_policy?.order_path_depth);
+  const reportDepth = optionalString(report?.proof_policy?.order_path_depth);
+  // The packet is author intent and the report is the assembly-time echo of it,
+  // so the packet wins — but only when the two actually agree. A hand-edit or a
+  // stale report mirror can leave them disagreeing, and silently preferring the
+  // packet then lets a corrupted pair decide the gate. Neither value is
+  // trustworthy in that state, so the coverage is genuinely unknown: advisory,
+  // never a silent unblock, and named loudly enough that an operator can see
+  // which two artifacts to reconcile.
+  if (packetDepth && reportDepth && packetDepth.toLowerCase() !== reportDepth.toLowerCase()) {
+    return {
+      state: "unknown",
+      declared_depth: packetDepth,
+      reason: `The build packet declares an order-path depth of "${packetDepth}" while the assembly report's mirror of it reads "${reportDepth}". Reconcile the packet and the report before treating either depth as proved.`,
+    };
+  }
+  const declared = packetDepth || reportDepth;
   if (!declared || ORDER_PATH_DEPTHS_WITHOUT_PURCHASE.has(declared.toLowerCase())) {
     return {
       state: "not_required",
