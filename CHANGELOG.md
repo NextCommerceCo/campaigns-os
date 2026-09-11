@@ -6,12 +6,15 @@ Notable supported-surface changes are recorded here.
 
 ### Changed
 
-- `next-campaigns-build` recommends build, independent review, repair, and
-  verification as the normal campaign build shape. The director chooses
-  assignments and available models, preferring cheaper capable models for
-  bounded work. Review uses source material and rendered or runtime evidence;
-  repair remains within the existing Polish and QA stages. Runtimes without
-  delegation use a separate review pass and disclose that limitation.
+- `next-campaigns-build` recommends **build → independent review → repair →
+  verification** as the normal campaign build shape. The director selects models
+  by required capability and consequences of failure, then prefers cheaper
+  suitable models for bounded work. Review uses source material and rendered or
+  runtime evidence. Two repair-and-verification rounds that leave the targeted
+  finding or failing required check unresolved trigger reassessment or surfacing
+  the blocker. The loop preserves the existing Polish and QA stages. If delegation
+  is unavailable or disallowed, the fallback is an in-session self-review with
+  disclosure that no independent agent reviewed the result.
 - `next-campaigns-os` points to the loop at the build handoff. Skill versions
   advance to `next-campaigns-build` 1.0.1 and `next-campaigns-os` 1.0.8.
 

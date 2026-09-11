@@ -1677,8 +1677,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.25.0+agent.4",
-      "changelog_sha256": "1542c5a65cc23c803e07ad8eb5651ede9504a9618a92978905f592c48d7e6747",
-      "agent_impact": "Campaign builders should follow build, independent review, repair, and verification, with director-selected assignments and available models. Prefer cheaper capable models for bounded work; disclose a separate review pass when delegation is unavailable or disallowed. Existing lifecycle stages, checks, and approval boundaries remain authoritative.",
+      "changelog_sha256": "a246e1321b041f9ac4ab90f59f84a1639f4c77110952b82d9ae03c62454cb5e1",
+      "agent_impact": "Campaign builders should follow build → independent review → repair → verification. The director selects models by required capability and consequences of failure, then prefers cheaper suitable models for bounded work. Reassess or surface the blocker when two repair-and-verification rounds leave the targeted finding or failing required check unresolved. If delegation is unavailable or disallowed, perform self-review in the current session and disclose that no independent agent reviewed the result. Existing lifecycle stages, checks, and approval boundaries remain authoritative.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -1701,7 +1701,7 @@
           "summary": "Advances next-campaigns-build to 1.0.1 and next-campaigns-os to 1.0.8 for installer update detection."
         }
       ],
-      "entry_sha256": "9ac3b0c6726dff0d40ae694313519e205d4fc81e2051a9e0f735e94ff66cc37a"
+      "entry_sha256": "4ae5327ff1958e5365830c8bfef99d981171f0eb7a7e6a4c132f265bf62c9714"
     }
   ]
 }
