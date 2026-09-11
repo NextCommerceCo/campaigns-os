@@ -43,6 +43,16 @@ Notable supported-surface changes are recorded here.
   advisory and never un-finishes an existing campaign. A declared depth of `off`
   keeps intentional no-order diagnostics unchanged.
 
+- Purchase-proof coverage now reports `unknown` when the build packet and the
+  assembly report disagree about the declared order-path depth, instead of
+  silently preferring the packet. A corrupted or stale mirror of the depth can no
+  longer decide the gate from one side alone.
+- The run-records scan reads a campaign's full history rather than the newest 50
+  file names, and orders run ids by their parsed timestamp rather than
+  lexicographically. An older matching record no longer reads as "no record", and
+  ordering no longer depends on every run id having the same digit count. Reads
+  stay bounded and a malformed record is still ignored rather than fatal.
+
 All fields are additive under the assembly-report stage definition, which already
 permits additional properties. No schema changed and no surface version moved.
 

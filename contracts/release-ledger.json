@@ -1605,7 +1605,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.25.0+agent.2",
-      "changelog_sha256": "1923cbb6e97cdbbe8aca260840d84f3a39bdf982fd4e9620cd2fdc37aa300ddd",
+      "changelog_sha256": "c93d70a78df07c9a43615fdc7f519a82137bb20fc267695c58a6aec8ff19f97b",
       "agent_impact": "`next` at stage done no longer emits a required run_record_closeout when a matching, current, closed Run Record already exists for the packet; it emits a non-required run_record_present naming that record instead, and a distinct required run_record_remit_recovery when only the remit is unfinished. Orchestrators keying on action ids should recognize run_record_present (informational), run_record_remit_recovery (required, re-runs run-record against the existing run_id), and purchase_proof_unknown (informational). stages.qa gains three additive fields a consumer may read: verdict_run_id and evidence are now producer-owned and always describe the run the stage status points at, purchase_proof carries counts-only purchase coverage, and any superseded verdict_run_id/evidence pair is preserved in a bounded history[] on the same stage.",
       "compatibility": "additive",
       "migration": "No migration is required for existing targets. A report written before this change carries no purchase_proof; next treats that as unknown and advisory, so no campaign regresses from done. A packet that intends a no-order run should declare qa.proof_policy.order_path_depth: \"off\" \u2014 otherwise a QA run that executes zero order paths now holds next at stage qa instead of reporting done.",
@@ -1629,7 +1629,7 @@
           "summary": "Documents how next recognizes a matching, current, closed Run Record, the seven reason codes, the remit-recovery action, that a skipped remit under consent-off counts as closed, and the producer-owned QA identity with its bounded history[]."
         }
       ],
-      "entry_sha256": "49ed9957e2714809c7dbdbc0c741001965aaa378f42c49a7f785ca2f8a5b0c43"
+      "entry_sha256": "dcbef7f194a4ffc4d7474adac7124a5fccdadd2aee5604cc8203532f33f29293"
     }
   ]
 }
