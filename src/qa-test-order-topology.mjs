@@ -177,7 +177,7 @@ function dedupeTerminals(terminals) {
   return deduped;
 }
 
-function canonicalHttpUrl(value) {
+export function canonicalHttpUrl(value) {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const url = new URL(value.trim());

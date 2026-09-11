@@ -22,6 +22,7 @@ const {
 
 test("step ladder declares the canonical ordered step names", () => {
   assert.deepEqual([...TEST_ORDER_STEP_LADDER], [
+    "entered_via_landing",
     "opened_checkout",
     "selected_bundle",
     "bump_state",
