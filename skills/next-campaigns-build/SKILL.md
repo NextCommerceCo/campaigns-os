@@ -1,10 +1,33 @@
 ---
 name: next-campaigns-build
-version: 1.0.0
+version: 1.0.1
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 
 # Next Campaigns Build
+
+## Recommended Build Loop
+
+For campaign builds, follow **build → independent review → repair → verification**.
+The main session owns the plan, integration, and final acceptance. Choose subagent
+assignments and models for the task's required capabilities and the consequences
+of failure, especially for SDK-owned commerce, payments, offers, and theme wiring.
+Among suitable models, prefer cheaper ones for bounded implementation, inspection,
+and repair.
+
+Have a fresh reviewer inspect the result against the source material and actual
+rendered or runtime evidence, without the builder's rationale. Keep one writer at
+a time. Resolve concrete findings and rerun the relevant checks before declaring
+completion. After two repair-and-verification rounds that leave the targeted
+finding or failing required check unresolved, reassess the approach or surface
+the blocker. Scale review depth to the task and preserve the existing checks and
+approval boundaries. Carry review and verification through the existing Polish
+and QA stages; assembly review does not replace them.
+
+If delegation is unavailable or disallowed, perform a distinct self-review in the
+current session and disclose that no independent agent reviewed the result.
+
+## Inputs and Build Rules
 
 Inputs:
 

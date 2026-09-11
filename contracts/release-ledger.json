@@ -1669,6 +1669,39 @@
         }
       ],
       "entry_sha256": "89507cc55489115a938f8d9e2a0e4030390395cd7a60cbb479ef3ea01785a345"
+    },
+    {
+      "id": "RL-0033",
+      "sequence": 33,
+      "date": "2026-09-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.4",
+      "changelog_sha256": "a246e1321b041f9ac4ab90f59f84a1639f4c77110952b82d9ae03c62454cb5e1",
+      "agent_impact": "Campaign builders should follow build → independent review → repair → verification. The director selects models by required capability and consequences of failure, then prefers cheaper suitable models for bounded work. Reassess or surface the blocker when two repair-and-verification rounds leave the targeted finding or failing required check unresolved. If delegation is unavailable or disallowed, perform self-review in the current session and disclose that no independent agent reviewed the result. Existing lifecycle stages, checks, and approval boundaries remain authoritative.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Recommends the build-review-repair-verification loop, evidence-based independent review, bounded repair, and a fallback when delegation is unavailable."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Points to the recommended build loop at the assembly handoff."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advances next-campaigns-build to 1.0.1 and next-campaigns-os to 1.0.8 for installer update detection."
+        }
+      ],
+      "entry_sha256": "4ae5327ff1958e5365830c8bfef99d981171f0eb7a7e6a4c132f265bf62c9714"
     }
   ]
 }
