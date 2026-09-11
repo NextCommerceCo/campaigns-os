@@ -88,6 +88,7 @@ import {
   mintSessionRunId,
   writeRunSession,
 } from "./run-session.mjs";
+import { ensureRuntimeStateIgnored } from "./runtime-state-ignore.mjs";
 import {
   createSourceHtmlIntake,
   normalizePageKitRoute,
@@ -2279,6 +2280,11 @@ function prepareBuild(args, options = {}) {
   ], prepareBuildCollisionPaths);
 
   let doctor = null;
+  // Housekeeping for the target's git history: the machine-local half of
+  // .campaign-runtime/ (sessions, journals, Run Records, caches, evidence)
+  // gets an ignore rule the first time a build touches this repo. The
+  // readback bundle and handoff inputs stay committable. Best-effort.
+  ensureRuntimeStateIgnored(targetRepo);
   if (options.installContext) installAgentContext(targetRepo, false);
   if (options.runDoctor) {
     doctor = doctorPacket(packetPath, { contextPath, reportPath, outputBaseDir: targetRepo });
@@ -8055,12 +8061,14 @@ function installAgentContext(targetRepo, dryRun = false) {
     if (!dryRun) writeFileSync(dest, readFileSync(source, "utf8"));
     written.push(dest);
   }
+  const gitignore = ensureRuntimeStateIgnored(targetRepo, { dryRun });
   return {
     ok: true,
     status: dryRun ? "dry_run" : "installed",
     target_repo: targetRepo,
     directory: outDir,
     files: written,
+    gitignore,
     note: "Context files are staged under .campaign-runtime/agent-context and do not overwrite root agent files.",
   };
 }
@@ -9020,6 +9028,7 @@ function runSessionStart(args) {
   }
   const session = buildRunSession({ runId, lifecycleJournal, packet });
   const sessionPath = writeRunSession(rootDir, session);
+  ensureRuntimeStateIgnored(rootDir);
 
   if (args.json) {
     console.log(JSON.stringify({ ok: true, action: "run-start", session, session_path: sessionPath }, null, 2));

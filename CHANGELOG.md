@@ -2,6 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.1] - 2026-09-10
+
+### Added
+
+- `start`, `prepare-build`, `install-agent-context`, and `run start` write a
+  managed ignore block into the target's `.gitignore` for the machine-local
+  half of `.campaign-runtime/` — `run-session.json`, `command-lifecycle.jsonl`,
+  `agent-deviations.jsonl`, `workflow-findings.jsonl`, `run-records/`,
+  `fetched-specs/`, `polish-evidence/`, `evidence/`, `*.log`, `*.tmp`. Written
+  once, keyed on a marker line, list editable beneath it. The readback bundle
+  (`build-context`, `assembly-report`, `doctor-output`, `qa-verdict`),
+  `input/`, `theme/`, `agent-context/`, and `setup-handoff.json` are
+  deliberately not ignored: they are the campaign's committed handoff. Three
+  campaign repositories were found carrying another machine's session file,
+  journals, and deviation logs; nothing had ever written the rule.
+
 ## [1.25.0] - 2026-09-10
 
 ### Added

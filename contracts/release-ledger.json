@@ -1570,6 +1570,33 @@
         }
       ],
       "entry_sha256": "5497b8b97f397d466ba66b6a66093b24bcc8aa026bcc1dcac04a6394dd270c3f"
+    },
+    {
+      "id": "RL-0030",
+      "sequence": 30,
+      "date": "2026-09-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.1",
+      "changelog_sha256": "7df4a608bc6b0e9865a406d6c921238a31d66947d63c4ebfa7dd3ec952528f2b",
+      "agent_impact": "start, prepare-build, install-agent-context and run start now write a managed .gitignore block into the target for machine-local runtime state (sessions, journals, Run Records, caches, evidence). The readback bundle and handoff inputs stay committable. No argv shape a consumer pins changes; a target that already carries the marker line is untouched.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Writes the managed runtime-state ignore block into the target on prepare-build, install-agent-context (reported in its JSON) and run start."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "States which .campaign-runtime entries are committed handoff and which are machine-local, and that the CLI writes the ignore rule for the latter."
+        }
+      ],
+      "entry_sha256": "5edbdc9a10eabe51190a3d11aa86d13746804d67a7d7ab4f6a1dd13be07b5c45"
     }
   ]
 }
