@@ -2,6 +2,103 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.3] - 2026-09-11
+
+### Changed
+
+- A failed typed-card path is no longer re-run unconditionally. The runner now
+  classifies what the attempt did to the store first — `not_created`, `created`,
+  or `ambiguous` — and only `not_created` earns the bounded one-per-path re-run.
+  A failure that happened *after* the order was created, which a receipt whose
+  line items never became buyer-visible is the common case of, used to open a
+  fresh page, refill the form and click submit again: it bought the same thing
+  twice for a failure the buyer had already paid for. That path now gets a
+  read-only recovery pass instead — reload the receipt the order already
+  produced, re-read the persisted order, re-check the buyer-visible receipt
+  surface and the voucher read-back. It clicks nothing, applies nothing and
+  submits nothing, because re-driving an upsell or re-applying a coupon would
+  mutate the order under inspection. An upsell-action failure therefore cannot
+  be cleared by recovery and is reported as having survived it.
+- Anything the runner cannot prove was not created is `ambiguous` and is never
+  resubmitted: a ref id whose read-back is unusable, a submit whose create
+  outcome never arrived, a create that failed at the network level after it was
+  sent, and — the one that reads as a clean rejection but is not — a 4xx that
+  follows an earlier 2xx on the same endpoint, which the "most recent response
+  decides" rule reports as `order create rejected` while an order exists. Those
+  paths stop and name the operator check (look for an existing order against the
+  run's QA email or the observed ref id) rather than risking a duplicate
+  purchase. A hosted-checkout `manual_review` is still never re-run.
+- Passing after recovery stays distinguishable from passing first time, which is
+  the property the retry it replaces established. The assertion carries
+  `evidence.order_creation` — classification, reason, action, and two counts
+  that are not the same number: `submissions_reserved`, the platform-side
+  creation slots charged to this path — reserved before a submit click, or
+  charged for a hosted-checkout redirect where no submit click happens — which
+  stand whether or not the create that followed succeeded; and
+  `orders_confirmed_created`, the creates the platform was observed to accept. A spent slot with no confirmed order is
+  the ambiguous case, not an order to reconcile, and reporting only the first
+  would let it be read as one. It also carries `evidence.recovery` with the
+  original failure, the checks that were re-run, and whether it cleared.
+- Whether an order create succeeded is decided from the whole event log, counted
+  once while the runner still holds it. The copy that travels in the evidence
+  payload keeps the last 20 entries per stream, and on a multi-offer path the
+  upsell and cart traffic that follows a successful create evicts that create
+  from the retained window — so a decision read from the truncated copy would
+  see a bare rejection, call the path `not_created`, and submit again against a
+  store that already holds the order. The create the platform accepted also
+  supplies the ref id the operator check names, even when the failed order row
+  carries none.
+- A re-run is bounded twice over: once per path per run, and never with a
+  creation slot a still-unrun planned path needs. Under the default budget a
+  path whose submit was *rejected* has already spent its own slot, so it is not
+  re-run and its assertion records why under
+  `evidence.order_creation.rerun_skipped`; raising `--max-order-creations` buys
+  those re-runs back. A re-run that stops on the budget never becomes the
+  deciding result — it proved nothing, and reporting it would erase the real
+  failure and claim nothing was submitted about a path that did submit.
+- The recovery pass may only clear a failure on evidence it actually re-read. A
+  persisted-order read-back that fails, or never happens, is itself a remaining
+  failure, and the receipt-rendering and voucher checks are recorded as not
+  re-assessed rather than re-decided against the original attempt's numbers. It
+  also re-checks the coupon from the plan being recovered rather than from the
+  run-level flags, because `--test-order tiers` refuses a run-level
+  `--apply-coupon` and carries each coupon on its plan.
+
+### Added
+
+- `qa run --max-order-creations <n>` bounds the number of **real order
+  creations** in a run and defaults to the planned path count.
+  `--max-test-orders` never bounded purchases: it caps planned paths before the
+  browser launches, and its own error text used to concede that "the worst case
+  is twice this many real orders". The new budget is reserved immediately before
+  each submit click rather than reconciled afterwards, so an exhausted budget
+  stops the path instead of being discovered by counting orders. It is built per
+  run, so two runs against two targets cannot spend each other's budget. A
+  budget stop carries its own assertion text and its own
+  `order_creation_budget` evidence: it is a safety stop the runner chose, and a
+  supervisor must not read it as a broken checkout. The value is validated on
+  the budget itself, so every path that can create a real order is covered —
+  `qa run` and `qa parity` alike, and any caller added later: a non-numeric,
+  fractional, negative, or zero `--max-order-creations` is refused with an error
+  naming the flag, rather than falling through to the default budget while the
+  operator believes the run is capped.
+
+### Fixed
+
+- The read-only recovery pass recognizes a persisted-order read-back whether or
+  not the server sends a trailing slash, and whether or not the URL carries a
+  querystring — the same shapes the canonical order patterns already admit.
+  Against a server that omits the slash the pass previously saw no read-back at
+  all, recorded every check as not re-assessed, and could therefore never clear
+  a blocker it had in fact re-verified. All three read-back call sites now share
+  one named pattern instead of three hand-rolled copies.
+- A hosted-checkout `manual_review` charges the creation budget unconditionally.
+  The charge was skipped whenever the submit seam had already reserved a slot,
+  so a redirect that followed a reservation went uncounted even though the
+  platform may have created an order behind it — an exception the documented
+  "a manual review charges the budget" never admitted.
+||||||| 2912d70
+
 ## [1.25.0+agent.2] - 2026-09-11
 
 ### Fixed

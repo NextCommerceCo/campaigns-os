@@ -257,6 +257,7 @@ for (const expected of [
   "campaigns-os qa — Node/npm spec-aware QA",
   "--test-order <off|common|checkout|accept|decline|both|full|tiers[:checkout|common|full]|accept-decline[-accept...]>",
   "--max-test-orders <n>",
+  "--max-order-creations <n>",
 ]) {
   if (!qaRunHelp.includes(expected)) {
     throw new Error(`qa run --help should include ${expected}`);
