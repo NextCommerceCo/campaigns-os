@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { computeDisposition } from "./qa-verdict.mjs";
 
-const { testOrderAssertion, retryEvidence, shouldRetryTestOrder } = __qaBrowserTestHooks;
+const { testOrderAssertion, retryEvidence, classifyTestOrderCreation } = __qaBrowserTestHooks;
 
 // Card 11. On 2026-09-06 `browser-test-order:accept` failed in 2 of 5 browser
 // runs, each time on a build whose adjacent run passed the same path. The
@@ -85,28 +85,47 @@ test("a first attempt with no error string still records why it was retried", ()
   assert.equal(retryEvidence(verified).retry.first_attempt_error, "card declined");
 });
 
-// The retry decision decides whether a second REAL order is placed on a live
+// The re-run decision decides whether a second REAL order is placed on a live
 // store, and it lived inline in a browser loop no test could reach. A stray edit
 // dropped the manual_review clause and nothing objected, while the changelog,
 // the skill, the in-code comment and the PR all still described the old rule.
-// It is a named predicate now, and these are its cases.
+//
+// It was a named boolean predicate (`shouldRetryTestOrder`), and a boolean was
+// the wrong shape: "this attempt failed" said nothing about whether the store
+// had already been charged, so a receipt-only failure after a successful order
+// earned a second purchase. The predicate is a three-way classification now,
+// and only `not_created` earns a re-run. These are its cases.
 
-test("only a hard failure earns a retry", () => {
-  assert.equal(shouldRetryTestOrder({ ok: true }), false);
-  assert.equal(shouldRetryTestOrder({ ok: false }), true);
-  assert.equal(shouldRetryTestOrder({ ok: false, error: "boom" }), true);
+const retryable = (attempt) => classifyTestOrderCreation(attempt).creation === "not_created";
+
+test("only a provably pre-submit failure earns a re-run", () => {
+  const preSubmit = {
+    ok: false,
+    submit: { reserved: false },
+    order: { ok: false, ref_id: null, evidence: { steps: [{ step: "customer_fields_filled", status: "failed" }] } },
+    events: { requests: [], responses: [], failed: [] },
+  };
+  assert.equal(retryable({ ok: true }), false);
+  assert.equal(retryable(preSubmit), true);
+  assert.equal(retryable({ ...preSubmit, error: "boom" }), true);
+
+  // The behaviour this replaces: a bare failure with no evidence about the
+  // store used to be re-run unconditionally. It is ambiguous now, and ambiguous
+  // is never re-run.
+  assert.equal(retryable({ ok: false }), false);
+  assert.equal(classifyTestOrderCreation({ ok: false }).creation, "ambiguous");
 });
 
 test("a manual_review is never retried", () => {
   // A hosted-checkout redirect is a platform-owned flow, not a flake. Re-running
   // it places another real order on the store and proves nothing.
-  assert.equal(shouldRetryTestOrder({ ok: false, manual_review: true }), false);
-  assert.equal(shouldRetryTestOrder({ ok: false, manual_review: true, order: { hosted_checkout_url: "https://pay.example/x" } }), false);
+  assert.equal(retryable({ ok: false, manual_review: true }), false);
+  assert.equal(retryable({ ok: false, manual_review: true, order: { hosted_checkout_url: "https://pay.example/x" } }), false);
 });
 
-test("a missing attempt is not a retry candidate", () => {
-  assert.equal(shouldRetryTestOrder(null), false);
-  assert.equal(shouldRetryTestOrder(undefined), false);
+test("a missing attempt is not a re-run candidate", () => {
+  assert.equal(retryable(null), false);
+  assert.equal(retryable(undefined), false);
 });
 
 test("recorded first-attempt status is computed, not asserted", () => {
