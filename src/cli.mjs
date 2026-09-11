@@ -8946,7 +8946,13 @@ export function formatPolishCaptureText(result) {
       lines.push(`- Route: ${safePolishFindingRoute(cell?.route)}`);
       lines.push(`  Viewport: ${viewport}`);
       lines.push(`  Problem codes: ${problemCodes.length ? problemCodes.join(", ") : "unavailable"}`);
-      lines.push(`  Failed origins: ${origins.length ? origins.join(", ") : "unavailable"}`);
+      const originTotal = Number.isSafeInteger(cell?.failed_origin_count) && cell.failed_origin_count >= 0
+        ? cell.failed_origin_count
+        : null;
+      const originCount = originTotal !== null && originTotal !== origins.length
+        ? ` (${origins.length} shown of ${originTotal})`
+        : "";
+      lines.push(`  Failed origins: ${origins.length ? origins.join(", ") : "unavailable"}${originCount}`);
     }
     if (warnings.length > warningCells.length) {
       lines.push(`Additional capture warning cells omitted: ${warnings.length - warningCells.length}`);

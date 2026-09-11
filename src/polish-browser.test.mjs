@@ -1737,10 +1737,17 @@ test("a failed beacon with no response is recorded with the identity capture att
       finalUrl: pageUrl,
       async navigate({ emit }) {
         // A failure the collector cannot attribute (no URL, no type) is a
-        // measurement defect, not evidence about the page.
+        // measurement defect, not evidence about the page. An empty URL is
+        // no URL.
         emit("Network.requestWillBeSent", { requestId: "ghost", request: {} });
         emit("Network.loadingFailed", {
           requestId: "ghost",
+          errorText: "net::ERR_FAILED",
+          canceled: false,
+        });
+        emit("Network.requestWillBeSent", { requestId: "blank", type: "Ping", request: { url: "" } });
+        emit("Network.loadingFailed", {
+          requestId: "blank",
           errorText: "net::ERR_FAILED",
           canceled: false,
         });
@@ -1774,6 +1781,6 @@ test("a failed beacon with no response is recorded with the identity capture att
   assert.equal(JSON.stringify(beacon).includes("ERR_NAME_NOT_RESOLVED"), false);
 
   assert.equal(ghost.responseCollectionStatus, "failed");
-  assert.equal(ghost.responses[0].failed, true);
-  assert.equal("url" in ghost.responses[0], false);
+  assert.equal(ghost.responses.length, 2);
+  assert.equal(ghost.responses.every((response) => response.failed && !("url" in response)), true);
 });

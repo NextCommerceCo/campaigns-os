@@ -154,20 +154,25 @@ A genuine failure (`Network.loadingFailed` that is not a cancellation) is
 attributed before it is judged, by the failing resource's origin relative to
 the final document and by its role:
 
-- `dependency_request_failed` — the document response, any first-party
-  resource, or a `document`, `script`, `stylesheet`, `image`, `font`, `media`,
-  or unresolved-type resource of any origin. The page renders from these, so
-  the failure voids the collection: `response_collection.status` becomes
-  `failed`, `response_collection_failed` is added, and the capture is
-  incomplete and nonwaivable, exactly as before.
 - `cross_origin_request_failed` — a cross-origin request in a beacon-class
-  role (`ping`, `fetch`, `xhr`, `other`, `preflight`, and the remaining
-  non-dependency types). A stale analytics pixel in a merchant tag container
+  role. The beacon class is an explicit allowlist: `ping`, `fetch`, `xhr`,
+  `other`, `preflight`. A stale analytics pixel in a merchant tag container
   is the common case. It says nothing about hidden media, so the capture stays
   complete and the checkpoint is evaluated on its merits. The failure is still
   recorded on the ledger entry (`failed_request_count`, with
   `cross_origin_request_count` naming the origin relation) and surfaced in
   `measurement.warnings[]` with the failing origin.
+- `dependency_request_failed` — everything else: the document response, any
+  first-party resource of any role, and any cross-origin resource outside the
+  beacon allowlist — `document`, `script`, `stylesheet`, `image`, `font`,
+  `media`, and also `texttrack`, `manifest`, `eventsource`,
+  `cspviolationreport`, `prefetch`, `signedexchange`, `websocket`, and an
+  unknown or ambiguous type. A failed caption track or CSP report endpoint
+  is not a beacon even though nothing renders from it. The failure voids the
+  collection: `response_collection.status` becomes `failed`,
+  `response_collection_failed` is added, and the capture is incomplete and
+  nonwaivable, exactly as before. Widening the beacon allowlist is an
+  operator-visible trade-off, not a tidy-up.
 
 A failed request has no transfer size by definition, so it is never also
 counted as `transfer_size_unavailable` or in the entry's

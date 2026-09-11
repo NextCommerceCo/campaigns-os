@@ -1710,8 +1710,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.25.0+agent.5",
-      "changelog_sha256": "16afb08ffe9eb64ee8192bd60a86705df177640ba68d6b79cc5b83acca1605b9",
-      "agent_impact": "polish capture no longer turns a single failed cross-origin beacon-class request (a stale analytics pixel in a merchant tag container, typically) into polish.hidden_eager_media.capture_incomplete. Failed requests are attributed by origin and role: dependency_request_failed (document, any first-party resource, or any script/stylesheet/image/font/media of any origin) still fails the collection and blocks unwaivably; cross_origin_request_failed is recorded on the resource ledger and surfaced as a warning while the capture stays complete. The request_failed problem code is retired; a consumer matching on it should match the two attributed codes instead. A failed request is no longer also counted as transfer_size_unavailable. Page-load evidence gains measurement.warnings[] (route, viewport, warning problem_codes[], bounded failed_origins[], failed_origin_count) and polish capture text output prints a Capture warnings (not blocking) block. An assembly report carrying an older capture that was blocked on request_failed re-validates as capture_shape_invalid and needs a fresh polish capture, which it needed anyway.",
+      "changelog_sha256": "470d14ead4d40ab4e3a3c986a2141ed5f5c9c2c7fe35724dcfd3453bda593827",
+      "agent_impact": "polish capture no longer turns a single failed cross-origin beacon-class request (a stale analytics pixel in a merchant tag container, typically) into polish.hidden_eager_media.capture_incomplete. Failed requests are attributed by origin and role: cross_origin_request_failed (a cross-origin request in the explicit beacon allowlist: ping, fetch, xhr, other, preflight) is recorded on the resource ledger and surfaced as a warning while the capture stays complete; dependency_request_failed (the document, any first-party resource, or any cross-origin resource outside that allowlist) still fails the collection and blocks unwaivably. The request_failed problem code is retired; a consumer matching on it should match the two attributed codes instead. A failed request is no longer also counted as transfer_size_unavailable. Page-load evidence gains measurement.warnings[] (route, viewport, warning problem_codes[], bounded failed_origins[], failed_origin_count) and polish capture text output prints a Capture warnings (not blocking) block. An assembly report carrying an older capture that was blocked on request_failed re-validates as capture_shape_invalid and needs a fresh polish capture, which it needed anyway.",
       "compatibility": "compatible",
       "migration": "none for callers. Consumers that key on the request_failed problem code should key on dependency_request_failed and cross_origin_request_failed. Recapture any campaign blocked on capture_incomplete by a cross-origin beacon failure.",
       "changes": [
@@ -1719,10 +1719,10 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "polish",
-          "summary": "polish capture text output prints measurement.warnings[] under a Capture warnings (not blocking) heading with the route, viewport, warning problem codes, and origin-only failed hosts; the incomplete-cell block is unchanged. Origins are re-validated as bare http(s) origins before printing."
+          "summary": "polish capture text output prints measurement.warnings[] under a Capture warnings (not blocking) heading with the route, viewport, warning problem codes, and origin-only failed hosts plus a shown-of-total count when the printed list is shorter than failed_origin_count; the incomplete-cell block is unchanged. Origins are re-validated as bare http(s) origins before printing."
         }
       ],
-      "entry_sha256": "e0dcb18a6b2e1e90a5e449705dc9ceaf1220ccd51eaabc1a11353d1c7792e50c"
+      "entry_sha256": "57b151bef12832d81b0e7515dbff537fed2e5b6a6a23e1528da23cec54a50155"
     }
   ]
 }

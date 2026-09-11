@@ -576,12 +576,9 @@ function captureWarningOrigins(capture) {
       crossOrigin: resource.cross_origin_request_count > 0,
       resourceType: resource.resource_type,
     }) !== "cross_origin_request_failed") continue;
-    try {
-      origins.add(new URL(resource.url).origin);
-    } catch {
-      // A ledger URL is already a projected origin+pathname; anything else was
-      // rejected by validResourceLedger before this runs.
-    }
+    // A ledger URL has already passed safeHttpUrl in validResourceLedger, so a
+    // parse failure here is a bug worth throwing on, not a case to swallow.
+    origins.add(new URL(resource.url).origin);
   }
   return [...origins].sort();
 }

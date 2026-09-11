@@ -264,7 +264,7 @@ test("polish capture text prints non-blocking capture warnings with safe origins
   assert.match(output, /Capture warnings \(not blocking\):/);
   assert.match(output, /Route: \/landing\//);
   assert.match(output, /Problem codes: cross_origin_request_failed/);
-  assert.match(output, /Failed origins: https:\/\/attribution\.example\.invalid$/m);
+  assert.match(output, /Failed origins: https:\/\/attribution\.example\.invalid \(1 shown of 4\)$/m);
   assert.match(output, /Checkpoint: Package-owned page-load evidence has no blocking hidden eager media/);
   assert.doesNotMatch(output, /PRIVATE|private=|token=secret|javascript:/);
 });

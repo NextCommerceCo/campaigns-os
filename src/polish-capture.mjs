@@ -53,20 +53,23 @@ export const POLISH_PRELOAD_ATTRIBUTES = Object.freeze([
 ]);
 
 const KNOWN_RESOURCE_TYPES = new Set(POLISH_RESOURCE_TYPES.filter((value) => value !== "unknown"));
-// Resource roles the rendered page depends on. A failed request in one of
-// these roles blocks the capture whatever its origin; a failed request outside
-// them blocks only when it is first-party. Unknown and ambiguous types are
-// treated as dependencies because they cannot be proven otherwise.
-export const POLISH_DEPENDENCY_RESOURCE_TYPES = Object.freeze([
-  "document",
-  "font",
-  "image",
-  "media",
-  "script",
-  "stylesheet",
-  "unknown",
+// Beacon-class resource roles: one-shot programmatic requests whose failure
+// says nothing about what the page renders. This is a deliberate allowlist.
+// A failed cross-origin request in one of these roles is a warning; a failed
+// request in any other role — document, script, stylesheet, image, font,
+// media, and also the roles that are not beacons even though nothing renders
+// from them (a caption track, a manifest, an event stream, a CSP report
+// endpoint, a prefetch hint, a signed exchange, a websocket) — blocks
+// whatever its origin, as does an unknown or ambiguous type. Widening this
+// list is an operator-visible trade-off, not a tidy-up.
+export const POLISH_BEACON_RESOURCE_TYPES = Object.freeze([
+  "fetch",
+  "other",
+  "ping",
+  "preflight",
+  "xhr",
 ]);
-const DEPENDENCY_RESOURCE_TYPES = new Set(POLISH_DEPENDENCY_RESOURCE_TYPES);
+const BEACON_RESOURCE_TYPES = new Set(POLISH_BEACON_RESOURCE_TYPES);
 // Problem codes that are recorded on the capture but do not make it
 // incomplete: they carry evidence the operator should see without turning
 // measured-complete evidence into an unwaivable block.
@@ -85,7 +88,7 @@ export function polishCaptureMeasurementStatus(problems) {
 // requests grouped under one ledger entry share both, so the class can be
 // recomputed from the entry alone (polish-page-load.mjs does exactly that).
 export function failedRequestProblemCode({ crossOrigin, resourceType }) {
-  return crossOrigin && !DEPENDENCY_RESOURCE_TYPES.has(resourceType)
+  return crossOrigin && BEACON_RESOURCE_TYPES.has(resourceType)
     ? "cross_origin_request_failed"
     : "dependency_request_failed";
 }

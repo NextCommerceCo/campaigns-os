@@ -199,7 +199,8 @@ function responseRecord(current, {
 }
 
 function attributableResponseRecord(record) {
-  return typeof record?.url === "string" && typeof record?.resource_type === "string";
+  return typeof record?.url === "string" && record.url !== ""
+    && typeof record?.resource_type === "string" && record.resource_type !== "";
 }
 
 function completeResponseRecord(record) {

@@ -1187,9 +1187,10 @@ test("a failed cross-origin script is a dependency failure and still blocks", ()
   assert.equal(gate.waivable, false);
 });
 
-test("cross-origin stylesheet, image, font, and media failures block; cross-origin fetch, xhr, other, and preflight failures warn", () => {
-  const blocking = ["Stylesheet", "Image", "Font", "Media"];
-  const warning = ["Fetch", "XHR", "Other", "Preflight", "EventSource", "Manifest"];
+test("only cross-origin ping, fetch, xhr, other, and preflight failures warn; every other role blocks", () => {
+  const blocking = ["Stylesheet", "Image", "Font", "Media", "TextTrack", "EventSource", "Manifest",
+    "CSPViolationReport", "Prefetch", "SignedExchange", "WebSocket", "Unrecognised"];
+  const warning = ["Ping", "Fetch", "XHR", "Other", "Preflight"];
   for (const resourceType of blocking) {
     const capture = attributionCapture([
       { request_id: "cross", url: `https://cdn.example.test/${resourceType.toLowerCase()}`, resource_type: resourceType, failed: true },

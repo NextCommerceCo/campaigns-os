@@ -13,16 +13,17 @@ Notable supported-surface changes are recorded here.
   the only failure was a cross-origin analytics beacon in the merchant's tag
   container that has nothing to do with hidden media. A failure is now
   classified by the failing resource's origin relative to the final document
-  and by its role. `dependency_request_failed` covers the document response,
-  any first-party resource, and any `document`, `script`, `stylesheet`,
-  `image`, `font`, `media`, or unresolved-type resource of any origin; it
-  still fails the collection and still blocks unwaivably.
-  `cross_origin_request_failed` covers a cross-origin request in a
-  beacon-class role (`ping`, `fetch`, `xhr`, `other`, `preflight`, and the
-  remaining non-dependency types); it is recorded on the resource ledger and
-  surfaced as a warning, and the capture stays complete so the checkpoint is
-  evaluated on its merits. `request_failed` is retired in favour of the two
-  attributed codes.
+  and by its role. `cross_origin_request_failed` covers a cross-origin request
+  in a beacon-class role, an explicit allowlist of `ping`, `fetch`, `xhr`,
+  `other`, and `preflight`; it is recorded on the resource ledger and surfaced
+  as a warning, and the capture stays complete so the checkpoint is evaluated
+  on its merits. `dependency_request_failed` covers everything else — the
+  document response, any first-party resource, and any cross-origin resource
+  outside the allowlist (`script`, `stylesheet`, `image`, `font`, `media`, and
+  also `texttrack`, `manifest`, `eventsource`, `cspviolationreport`,
+  `prefetch`, `signedexchange`, `websocket`, or an unresolved type); it still
+  fails the collection and still blocks unwaivably. `request_failed` is
+  retired in favour of the two attributed codes.
 - A failed request is no longer also counted as `transfer_size_unavailable`
   or in the ledger entry's `unmeasured_request_count`: a request that never got
   a response has no transfer size by definition, and attributing the failure
@@ -31,7 +32,8 @@ Notable supported-surface changes are recorded here.
   capture that carries a warning-class problem, with the route, viewport, the
   warning `problem_codes[]`, the bounded sorted `failed_origins[]`, and the full
   `failed_origin_count`. `polish capture` text output prints these under
-  `Capture warnings (not blocking):` with the safe origins, so an operator can
+  `Capture warnings (not blocking):` with the safe origins and a
+  `shown of total` count whenever the printed list is shorter, so an operator can
   see a failing merchant pixel without opening the assembly report. Warnings
   never change `measurement.status`.
 - The ledger-tied shape invariants keep both attributed counts honest: each is
