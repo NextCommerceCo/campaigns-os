@@ -822,6 +822,37 @@ browser launch, prints the planned count, and names the exact
 eight terminal paths plus the checkout baseline, so it requires
 `--max-test-orders 9`. No approval step is involved.
 
+`--max-test-orders` bounds **planned paths**, which is not the same as real
+purchases. `--max-order-creations` bounds **actual order creations**, defaults to
+the planned path count, and is reserved immediately before each submit click —
+before the purchase, never reconciled after it. An exhausted budget stops that
+path with its own assertion text and its own `order_creation_budget` evidence, so
+a safety stop the runner chose can never be read as a broken checkout.
+
+### What happens when a path fails
+
+A failed path is not one thing, and the runner does not treat it as one. Before
+deciding what to do next, it classifies what the attempt did to the store:
+
+| Classification | What it means | What the runner does |
+|---|---|---|
+| `not_created` | The path failed before the checkout was submitted, or the platform rejected every order create it saw. Nothing reached the store. | Re-runs the path once. This is the bounded retry for a transient miss; the re-run decides the assertion. |
+| `created` | An order exists and was read back — the failure happened after the purchase (most often a receipt that did not render its line items). | Runs a **read-only recovery pass**: reloads the receipt the order already produced, re-reads the persisted order, and re-checks the buyer-visible receipt surface and the voucher read-back. It clicks nothing, applies nothing, and submits nothing. |
+| `ambiguous` | The submit may have created an order this runner cannot see: a ref id with an unusable read-back, a lost create response, a network-failed create, or a 4xx that follows an earlier 2xx on the same endpoint. | Stops. It never resubmits, and the assertion names the check an operator should run — look for an existing order against the run's QA email or the observed ref id. |
+
+The classification fails closed: anything not provably not-created is ambiguous,
+and ambiguous is never resubmitted. A `manual_review` (a hosted-checkout
+redirect) is still never re-run, and it charges the creation budget, because the
+platform may have created an order behind the redirect.
+
+A pass that only came back after recovery is never presented as a first-attempt
+pass. The assertion carries `evidence.order_creation` (classification, reason,
+action, and the count of real orders this path created) and, where a recovery
+pass ran, `evidence.recovery` with the original failure, the checks that were
+re-run, and whether it cleared. An upsell-action failure cannot be cleared by
+recovery — re-clicking the offer would mutate the order under inspection — so it
+is reported as having survived the pass.
+
 The default card is the Discover test card `6011 1111 1111 1117`, CVV `123`,
 expiration `12/2030` (success path; `6011 0009 9013 9424` exercises 3DS). Override
 with `--test-card`, `--test-cvv`, `--test-exp-month`, and `--test-exp-year`.

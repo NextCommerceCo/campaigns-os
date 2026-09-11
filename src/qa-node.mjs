@@ -123,7 +123,10 @@ Options:
                                   "tiers:full" cross every tier with those path shapes. Incompatible with
                                   --select-package/--apply-coupon (tiers derives them from the spec).
                                   Requires one-time setup: npm run qa:install-browser.
-  --max-test-orders <n>           Accidental-flood guard for browser order count (not a permission gate). Default: 6.
+  --max-test-orders <n>           Accidental-flood guard for planned browser order paths (not a permission gate). Default: 6.
+  --max-order-creations <n>       Hard bound on REAL order creations in this run, reserved before each submit
+                                  click. Default: the planned path count. A path whose failure is confirmed to
+                                  have created an order is inspected read-only, never resubmitted.
   --allowed-domains-confirmed <bool>
                                   qa policy set: persist non-localhost SDK-origin confirmation.
                                   Localhost on any port is a global Development domain with analytics suppressed.
