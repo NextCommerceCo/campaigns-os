@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.2] - 2026-09-11
+
+### Changed
+
+- `next-campaigns-build` recommends build, independent review, repair, and
+  verification as the normal campaign build shape. The director chooses
+  assignments and available models, preferring cheaper capable models for
+  bounded work. Review uses source material and rendered or runtime evidence;
+  repair remains within the existing Polish and QA stages. Runtimes without
+  delegation use a separate review pass and disclose that limitation.
+- `next-campaigns-os` points to the loop at the build handoff. Skill versions
+  advance to `next-campaigns-build` 1.0.1 and `next-campaigns-os` 1.0.8.
+
 ## [1.25.0+agent.1] - 2026-09-10
 
 ### Added
