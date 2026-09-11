@@ -708,7 +708,60 @@ timeout still leaves the ladder up to the point of failure. Ladder entries carry
 object. Evidence is resolved even when the step fails or times out, because the
 failing path is the one worth reading.
 
-Two steps write structured evidence today.
+Four steps write structured evidence today.
+
+**`entered_via_landing` — cart entry.** The first rung of the ladder, before
+`opened_checkout`. A checkout renders its customer form whether or not the SDK
+cart holds anything, so the runner cannot tell, from the checkout alone, a
+funnel that selects the package *on* the checkout (bundle cards on the checkout
+page) from one that filled the cart *upstream* and only displays it — the
+`shop-single-step` shape, where the landing page adds to the cart and hands
+off. Opening the checkout URL directly on the second shape used to run every
+fill step green and then sit in `order_submitted` for the full step budget,
+because the SDK never posts an order for an empty cart.
+
+The step opens the checkout and probes it for a main-cart selection surface:
+`[data-next-bundle-selector]`, `[data-next-cart-selector]`, or a
+`[data-next-package-id]` card, **not** counting anything inside the rendered
+`[data-next-cart-summary]`, order-bump toggles, upsell-context selectors, or
+unrendered `<template>` content. When a surface is present the step is
+`skipped` with that reason, `opened_checkout` opens the checkout as before, and
+the rest of the ladder is unchanged — existing families run exactly as they
+did. When none is present the runner resolves the funnel's entry page from the
+same topology the rest of the ladder uses (the page whose `expected_next_url`
+is the checkout, preferring a `select`/`landing`/`product` page and then the
+lowest `order`; failing that, the topology's first entry-like page before the
+checkout — never a receipt or an offer page), navigates there, waits for the
+SDK, and clicks the cart-entry control: an SDK add-to-cart control
+(`[data-next-action="add-to-cart"]`, `[data-next-checkout-action="add-to-cart"]`,
+`[data-next-add-to-cart]`), or a link into the checkout URL carrying
+`?forcePackageId=`, which is what the certified `shop-single-step` landing
+renders. A visible SDK control is preferred over a visible link, and a hidden
+control is used only when nothing is visible. `--select-package <ref>` is strict
+here as it is on checkout: the control must carry that package id (own
+attribute, nearest card, or the `forcePackageId` ref) or the step fails by
+name, and only one ref can be selected before the SDK navigates away. The
+runner then **waits for the page to reach the checkout URL** — the SDK owns
+that navigation through `data-next-url`; the runner never opens the checkout
+itself after the click, because a fresh navigation is what would throw the
+cart away. `opened_checkout` then records the arrival instead of re-opening.
+
+Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
+`landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
+`first_page_fallback`), `control_text`, `control_kind` (`add_to_cart` or
+`checkout_link`), `package_id`, `sdk_ready`, `arrived_url`, and the
+`checkout_selection_surface` probe result. The failure codes are
+`cart_entry_unresolved` (no selection surface on checkout and no entry page
+resolves from the topology), `cart_entry_control_missing` (the entry page
+renders no control, or none carrying the requested ref), and
+`cart_entry_no_navigation` (the click did not reach the checkout URL). Each
+fails the path inside the step budget with the code as the first word of the
+error, never as a step timeout.
+
+Which page a funnel enters the cart from is still inferred from topology and
+the rendered checkout. Recording it authoritatively on the spec is the open
+design half of campaigns-os#206; the `landing_resolution` evidence exists so a
+reader can see which inference the runner made.
 
 **`customer_fields_filled` — customer/address-field trace.** Each field is
 recorded before its action runs and updated after, as
@@ -740,6 +793,24 @@ created. A campaign whose checkout posts the order directly, with no cart call
 at all, still records the step as `skipped` with that reason; a create that
 responds non-2xx is reported as `ok: false` rather than hidden. A response body
 whose line shape is unreadable omits `line_count` rather than reporting zero.
+
+**`order_submitted` — empty-cart guard.** Immediately before the creation
+reservation and the submit click, the runner reads the cart the page holds:
+the SDK's public API first (`window.next.getCartCount()`, the store's own
+`totalQuantity`, installed on every SDK page), the debugger's cart store
+second (`window.nextDebug.stores.cart`, present with `?debugger=true`, and
+the only public place the line items and package ids are readable), and the
+observed cart-API create response third. The enriched line list on
+`getCartData()` is never read, for the reason the cart-state verification
+section above gives. A cart that reads as zero items fails
+the step with `cart_empty_before_submit` — no submit click is made and no
+creation slot is reserved, so the failure classifies as `not_created` under the
+#316 budget semantics and keeps its bounded re-run. The step's evidence carries
+`cart_before_submit` (`empty`, `source`, `count`, `line_count`,
+`package_ids`) on success and failure alike. A cart that cannot be read at all
+(`unreadable: true`, no SDK global and no cart call observed) is **not** treated
+as empty: the runner has no proof either way, the submit proceeds, and the
+platform decides. There is no flag to skip the guard.
 
 ### Package/bundle card selection and coupons
 
@@ -887,7 +958,7 @@ deciding what to do next, it classifies what the attempt did to the store:
 
 | Classification | What it means | What the runner does |
 |---|---|---|
-| `not_created` | The path failed before the checkout was submitted, or the platform rejected every order create it saw. Nothing reached the store. | Re-runs the path once, if the creation budget has a slot no still-unrun planned path needs. This is the bounded retry for a transient miss; the re-run decides the assertion. |
+| `not_created` | The path failed before the checkout was submitted (including the runner's own named refusals: `cart_entry_unresolved`, `cart_entry_control_missing`, `cart_entry_no_navigation`, `cart_empty_before_submit`), or the platform rejected every order create it saw. Nothing reached the store. | Re-runs the path once, if the creation budget has a slot no still-unrun planned path needs. This is the bounded retry for a transient miss; the re-run decides the assertion. |
 | `created` | An order exists and was read back — the failure happened after the purchase (most often a receipt that did not render its line items). | Runs a **read-only recovery pass**: reloads the receipt the order already produced, re-reads the persisted order, and re-checks the buyer-visible receipt surface and the voucher read-back. It clicks nothing, applies nothing, and submits nothing. |
 | `ambiguous` | The submit may have created an order this runner cannot see: a ref id with an unusable read-back, a lost create response, a network-failed create, or a 4xx that follows an earlier 2xx on the same endpoint. | Stops. It never resubmits, and the assertion names the check an operator should run — look for an existing order against the run's QA email or the observed ref id. |
 

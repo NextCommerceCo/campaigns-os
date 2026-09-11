@@ -2,6 +2,36 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.6] - 2026-09-11
+
+### Added
+
+- The typed-card runner gains a cart entry step, `entered_via_landing`, as the
+  first rung of the ladder (campaigns-os#206, runner half). A checkout that
+  carries its own package selection surface skips the step and runs exactly the
+  ladder it always ran. A checkout that carries none — the `shop-single-step`
+  shape, where the landing page fills the cart and the checkout only displays
+  it — is entered through the funnel's landing/entry page: the runner resolves
+  it from the same topology the ladder already uses, clicks the SDK add-to-cart
+  control (or the `?forcePackageId=` checkout link the certified template
+  renders), honours `--select-package` strictly, and waits for the SDK to land
+  on the checkout URL rather than opening it itself. The step records the
+  landing URL, the control text and kind, the package id, and how the entry
+  page was resolved. Its failures are named — `cart_entry_unresolved`,
+  `cart_entry_control_missing`, `cart_entry_no_navigation` — and fail inside
+  the step budget instead of as a 45 s timeout. Until now the runner could not
+  place an order on this family by construction.
+- An empty-cart guard on `order_submitted`. Immediately before the creation
+  reservation and the submit click, the runner reads the SDK cart
+  (`window.next` first, `window.nextDebug.stores.cart` second, the observed
+  cart-API response third) and refuses a zero-item cart with
+  `cart_empty_before_submit`. No click is made and no creation slot is
+  reserved, so the failure classifies as `not_created` under the #316 budget
+  semantics and keeps its bounded re-run. An unreadable cart is not treated as
+  empty. There is no flag to skip the guard.
+- `docs/qa-and-test-orders.md` documents both, the evidence each step carries,
+  and the four failure codes.
+
 ## [1.25.0+agent.5] - 2026-09-11
 
 ### Changed
