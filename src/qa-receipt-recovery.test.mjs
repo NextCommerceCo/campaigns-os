@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
-const { recoverCreatedOrder, dispatchTestOrderPlans } = __qaBrowserTestHooks;
+const { recoverCreatedOrder, dispatchTestOrderPlans, ORDER_DETAIL_RESPONSE_PATTERN } = __qaBrowserTestHooks;
 
 // Direct tests for the read-only recovery pass itself. Every other test of this
 // change drives recovery through an injected fake, which proves the dispatch
@@ -320,4 +320,75 @@ test("the dispatch loop hands recovery the plan it recovered", async () => {
   assert.equal(seen.length, 1);
   assert.equal(seen[0].plan, COUPON_PLAN);
   assert.equal(seen[0].coupon_in_args, null, "the coupon is on the plan, never on the run-level args");
+});
+
+// --- The read-back the whole pass depends on -------------------------------
+//
+// Recovery may only clear on evidence it re-read, so a read-back the runner
+// fails to RECOGNIZE is indistinguishable from one that never happened: every
+// check is recorded as not re-assessed and no blocker can ever clear. The
+// recovery pattern therefore has to admit exactly what the canonical order
+// patterns admit — a trailing slash the server may or may not send, and a
+// querystring that changes nothing about which order was read.
+
+test("the order read-back pattern admits both slash forms and a querystring", () => {
+  for (const url of [
+    "https://api.example/api/v1/orders/ref-1/",
+    "https://api.example/api/v1/orders/ref-1",
+    "https://api.example/api/v1/orders/ref-1/?expand=lines",
+    "https://api.example/api/v1/orders/ref-1?expand=lines",
+  ]) {
+    assert.equal(ORDER_DETAIL_RESPONSE_PATTERN.test(url), true, url);
+  }
+
+  // Still not a read-back of ONE order: the create collection and the upsells
+  // sub-resource are different endpoints and must not be read as the order.
+  for (const url of [
+    "https://api.example/api/v1/orders/",
+    "https://api.example/api/v1/orders",
+    "https://api.example/api/v1/orders/ref-1/upsells/",
+  ]) {
+    assert.equal(ORDER_DETAIL_RESPONSE_PATTERN.test(url), false, url);
+  }
+});
+
+test("a read-back served without a trailing slash still clears the blocker", async () => {
+  // The same store, the same order, the same 200 — described by a server that
+  // does not redirect to a trailing slash. This used to produce `cleared: false`
+  // with every check recorded as unread, so recovery could not clear any
+  // blocker at all against such a server.
+  const { context } = fakeReceiptContext({
+    responses: [{ status: 200, url: "https://api.example/api/v1/orders/ref-1", body: persistedOrderBody({ lines: 1 }) }],
+    rendered: renderedReceipt(1),
+  });
+
+  const recovery = await recoverCreatedOrder({
+    context,
+    attempt: receiptFailureAttempt(),
+    plan: "checkout",
+    checkoutPage: CHECKOUT_PAGE,
+    args: {},
+  });
+
+  assert.equal(checkFor(recovery, "order_read_back").ok, true);
+  assert.equal(recovery.cleared, true);
+  assert.equal(recovery.result.ok, true);
+});
+
+test("a read-back served with a querystring is read, not ignored", async () => {
+  const { context } = fakeReceiptContext({
+    responses: [{ status: 200, url: "https://api.example/api/v1/orders/ref-1/?expand=lines", body: persistedOrderBody({ lines: 1 }) }],
+    rendered: renderedReceipt(1),
+  });
+
+  const recovery = await recoverCreatedOrder({
+    context,
+    attempt: receiptFailureAttempt(),
+    plan: "checkout",
+    checkoutPage: CHECKOUT_PAGE,
+    args: {},
+  });
+
+  assert.equal(checkFor(recovery, "order_read_back").ok, true);
+  assert.equal(recovery.cleared, true);
 });

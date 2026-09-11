@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { computeDisposition } from "./qa-verdict.mjs";
+import { __qaNodeTestHooks } from "./qa-node.mjs";
 
 const {
   classifyTestOrderCreation,
   createOrderCreationBudget,
   dispatchTestOrderPlans,
   summarizeOrderCreateActivity,
+  confirmedOrderCreates,
   testOrderAssertion,
 } = __qaBrowserTestHooks;
 
@@ -222,7 +224,7 @@ test("a receipt failure after a confirmed order is recovered, never re-bought", 
   const result = testOrderAssertionFor(assertions);
   assert.equal(result.evidence.order_creation.classification, "created");
   assert.equal(result.evidence.order_creation.action, "recovered");
-  assert.equal(result.evidence.order_creation.creation_count, 1);
+  assert.equal(result.evidence.order_creation.submissions_reserved, 1);
 });
 
 test("a recovery pass that clears is never laundered into a first-attempt pass", async () => {
@@ -241,7 +243,7 @@ test("a recovery pass that clears is never laundered into a first-attempt pass",
   assert.equal(result.evidence.recovery.cleared, true);
   assert.match(result.evidence.recovery.original_error, /buyer-visible receipt line items/);
   assert.equal(result.evidence.recovery.original_ref_id, "ref-1");
-  assert.equal(result.evidence.order_creation.creation_count, 1);
+  assert.equal(result.evidence.order_creation.submissions_reserved, 1);
 
   const firstTime = testOrderAssertion(CHECKOUT_PAGE, "checkout", passedAttempt());
   assert.equal(firstTime.evidence.recovery, undefined);
@@ -259,7 +261,7 @@ test("a receipt failure that survives recovery stays a blocker and says so", asy
   assert.equal(computeDisposition([result]), "blocked");
   assert.equal(result.evidence.recovery.cleared, false);
   assert.match(result.evidence.recovery.note, /survived/i);
-  assert.equal(result.evidence.order_creation.creation_count, 1);
+  assert.equal(result.evidence.order_creation.submissions_reserved, 1);
   assert.equal(creationBudget.reserved, 1);
   assert.deepEqual(runner.submissions, ["checkout"]);
 });
@@ -507,18 +509,18 @@ test("the run's durable evidence reconciles creations against test_orders[]", as
   assert.equal(creationBudget.reserved, created.length);
 
   const recovered = testOrderAssertionFor(assertions, "checkout");
-  assert.equal(recovered.evidence.order_creation.creation_count, 1);
+  assert.equal(recovered.evidence.order_creation.submissions_reserved, 1);
   assert.equal(recovered.evidence.recovery.cleared, true);
   assert.match(recovered.evidence.recovery.original_error, /receipt line items/);
   assert.equal(recovered.evidence.recovery.checks.length, 1);
   assert.equal(recovered.evidence.ref_id, "ref-1");
 
   const rerun = testOrderAssertionFor(assertions, "accept");
-  assert.equal(rerun.evidence.order_creation.creation_count, 1);
+  assert.equal(rerun.evidence.order_creation.submissions_reserved, 1);
   assert.equal(rerun.evidence.retry.attempts, 2);
 
   const totalCreations = [recovered, rerun]
-    .reduce((sum, entry) => sum + entry.evidence.order_creation.creation_count, 0);
+    .reduce((sum, entry) => sum + entry.evidence.order_creation.submissions_reserved, 0);
   assert.equal(totalCreations, created.length);
 });
 
@@ -665,7 +667,7 @@ test("a rejected create does not eat the budget a later planned path needs", asy
     assert.equal(result.evidence.order_creation_budget, undefined);
     assert.equal(result.evidence.order_creation.action, "rerun_skipped");
     assert.match(result.evidence.order_creation.rerun_skipped, /budget/i);
-    assert.equal(result.evidence.order_creation.creation_count, 1);
+    assert.equal(result.evidence.order_creation.submissions_reserved, 1);
   }
 });
 
@@ -715,4 +717,118 @@ test("a re-run that stops on the budget never becomes the deciding result", asyn
   assert.equal(result.evidence.order_creation_budget, undefined, "a budget stop on the re-run is not this path's verdict");
   assert.equal(result.evidence.retry, undefined, "an attempt that never submitted is not a recorded retry");
   assert.match(result.evidence.order_creation.rerun_skipped, /budget/i);
+});
+
+// --- What the counts mean --------------------------------------------------
+//
+// A reservation is a slot spent immediately BEFORE the submit click. It stands
+// whether or not the create that followed succeeded, which is the property that
+// makes it safe — and the property that makes it a bad answer to "did this path
+// create an order?". The assertion carries both numbers so an operator never
+// has to guess which question they are reading.
+
+test("a spent reservation with no accepted create reports zero confirmed orders", async () => {
+  // The create was sent and failed at the network level: the platform may hold
+  // the order, so the slot is spent and the path is ambiguous — but nothing was
+  // OBSERVED to be created, and the evidence must not imply otherwise.
+  const attempt = {
+    ok: false,
+    error: "order create failed at the network level",
+    submit: { reserved: true },
+    order: {
+      path: "checkout",
+      ok: false,
+      ref_id: null,
+      final_url: CHECKOUT_PAGE.url,
+      verification: { verified: false },
+      evidence: { steps: SUBMITTED_STEPS },
+    },
+    events: eventLog({ failed: [{ url: ORDERS_API }] }),
+  };
+  const runner = scriptedRunner([{ submits: true, attempt }]);
+  const { assertions, creationBudget } = await dispatch({ runner });
+
+  const creation = testOrderAssertionFor(assertions).evidence.order_creation;
+  assert.equal(creation.classification, "ambiguous");
+  assert.equal(creation.submissions_reserved, 1, "the slot was spent before the click and stays spent");
+  assert.equal(creation.orders_confirmed_created, 0, "nothing was observed to be created");
+  assert.equal(creationBudget.reserved, 1);
+});
+
+test("a confirmed create is reported as a confirmed order, not only as a spent slot", async () => {
+  const runner = scriptedRunner([{ submits: true, attempt: receiptFailureAttempt() }]);
+  const { assertions } = await dispatch({ runner, recovery: clearedRecovery() });
+
+  const creation = testOrderAssertionFor(assertions).evidence.order_creation;
+  assert.equal(creation.submissions_reserved, 1);
+  assert.equal(creation.orders_confirmed_created, 1);
+});
+
+test("a recovered path counts the one order it already has, never the recovery pass", async () => {
+  // Recovery re-reads the created order. Counting the deciding result as a
+  // fresh attempt would report two orders for one purchase — the exact
+  // over-count the read-only pass exists to avoid.
+  const runner = scriptedRunner([{ submits: true, attempt: receiptFailureAttempt() }]);
+  const { assertions } = await dispatch({ runner, recovery: clearedRecovery() });
+
+  assert.equal(testOrderAssertionFor(assertions).evidence.order_creation.orders_confirmed_created, 1);
+  assert.equal(confirmedOrderCreates([]), 0);
+});
+
+test("a hosted-checkout manual review charges the budget even after a reserved submit", async () => {
+  // The inner guard this replaces skipped the charge whenever the submit seam
+  // had already reserved. A redirect that follows a reservation can still leave
+  // a platform-created order out of this runner's sight, so the documented
+  // "a manual review charges the budget" holds with no exception.
+  const attempt = {
+    ok: false,
+    manual_review: true,
+    error: null,
+    submit: { reserved: true },
+    order: {
+      path: "checkout",
+      ok: false,
+      ref_id: null,
+      outcome: "manual_review",
+      hosted_checkout_url: "https://pay.example/hosted",
+      final_url: "https://pay.example/hosted",
+      verification: { verified: false, hosted_redirect: true },
+      evidence: { steps: SUBMITTED_STEPS },
+    },
+    events: eventLog(),
+  };
+  const runner = scriptedRunner([{ submits: true, attempt }]);
+  const { assertions, creationBudget } = await dispatch({ runner, args: { "max-order-creations": "3" } });
+
+  assert.equal(creationBudget.reserved, 2, "the submit slot and the redirect are different risks");
+  assert.equal(testOrderAssertionFor(assertions).status, "manual_review");
+  assert.equal(runner.calls.length, 1, "a hosted redirect is still never re-run");
+});
+
+// --- The flag, at the surface it is typed at --------------------------------
+//
+// The value used to travel as a raw string into the browser runner and only
+// become a number there, where anything non-numeric or non-positive quietly
+// became the default budget. A bound that silently ignores what the operator
+// typed is worse than no bound: the run places the default number of real
+// orders while the operator believes they capped it.
+
+const { validatedOrderCreationLimit } = __qaNodeTestHooks;
+
+test("an unusable --max-order-creations is refused at the qa run entry", () => {
+  for (const value of ["foo", "", "1.5", true]) {
+    assert.throws(
+      () => validatedOrderCreationLimit({ "max-order-creations": value }),
+      /--max-order-creations/,
+      `expected ${JSON.stringify(value)} to be refused`,
+    );
+  }
+  assert.throws(() => validatedOrderCreationLimit({ "max-order-creations": "-3" }), /must not be negative/);
+  assert.throws(() => validatedOrderCreationLimit({ "max-order-creations": "0" }), /--test-order off/);
+});
+
+test("a usable --max-order-creations is returned, and an absent one defers", () => {
+  assert.equal(validatedOrderCreationLimit({ "max-order-creations": "2" }), 2);
+  assert.equal(validatedOrderCreationLimit({ "max-order-creations": 2 }), 2);
+  assert.equal(validatedOrderCreationLimit({}), null, "absent defers to the planned path count");
 });

@@ -1665,6 +1665,7 @@ async function runParityQa(args) {
 }
 
 async function runQa(args) {
+  validatedOrderCreationLimit(args);
   const resolved = await resolveQaInputs(args);
   return runResolvedQa(args, resolved);
 }
@@ -2759,6 +2760,33 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+// The real-order flood guard, checked at the surface the operator types it at.
+// The value used to travel as a raw string all the way into the browser runner
+// and only became a number there, where a non-numeric or non-positive input
+// silently fell back to the default budget: `--max-order-creations foo` and
+// `--max-order-creations -3` both looked accepted while the run went on to
+// place the default number of real orders. A bound nobody can typo past is the
+// entire point of the flag, so an unusable value is an error, not a default.
+//
+// Returns the validated limit, or null when the flag was not supplied (the
+// runner then defaults it to the planned path count).
+function validatedOrderCreationLimit(args = {}) {
+  const key = "max-order-creations";
+  if (args[key] === undefined || args[key] === null) return null;
+  const raw = String(args[key]).trim();
+  const parsed = Number(raw);
+  if (!raw || !Number.isInteger(parsed)) {
+    throw new Error(`--${key} must be a whole number of real order creations (got ${JSON.stringify(String(args[key]))}).`);
+  }
+  if (parsed < 0) {
+    throw new Error(`--${key} must not be negative (got ${parsed}). It bounds how many real orders this run may create.`);
+  }
+  if (parsed === 0) {
+    throw new Error(`--${key} must be at least 1 (got 0). To place no real orders at all, use --test-order off.`);
+  }
+  return parsed;
+}
+
 function stringArg(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -3161,6 +3189,7 @@ function extractApiError(raw) {
 
 export const __qaNodeTestHooks = Object.freeze({
   extractTopologies,
+  validatedOrderCreationLimit,
   resolveQaInputs,
   runResolvedQa,
   runPageChecks,

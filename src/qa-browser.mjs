@@ -65,6 +65,13 @@ const DEFAULT_QA_TEST_EMAIL = "qa-test@campaigns-os.test";
 const SDK_DEBUGGER_PAGE_TYPES = Object.freeze(["checkout", "upsell", "downsell", "thankyou", "receipt"]);
 const ORDER_UPSELLS_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/upsells\/?(?:[?#].*)?$/i;
 const ORDER_CREATE_RESPONSE_PATTERN = /\/api\/v1\/orders\/?(?:[?#].*)?$/i;
+// The persisted-order READ-BACK: one order addressed by id, as opposed to the
+// create endpoint above. Anchored exactly like its siblings — the trailing
+// slash is OPTIONAL and a querystring still matches. Requiring the slash here
+// (as three hand-rolled copies of this pattern used to) means a server that
+// omits it produces no read-back at all: the order is read, the runner does not
+// see it, and recovery can never clear a blocker it actually re-verified.
+const ORDER_DETAIL_RESPONSE_PATTERN = /\/api\/v1\/orders\/[^/?#]+\/?(?:[?#].*)?$/i;
 // Cart CREATE only. Anchored like the order patterns so a querystring still
 // matches while sibling endpoints (notably /api/v1/carts/calculate/) do not —
 // a repricing call is not evidence that a cart was created.
@@ -175,6 +182,11 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       const pageForPlan = (typeof plan === "object" && plan?.checkout_page?.url) ? plan.checkout_page : checkoutPage;
       const firstAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
       orders.push(firstAttempt.order);
+      // Every attempt this path actually SUBMITTED, in order. The confirmed
+      // creation count is read from these and never from the deciding result
+      // alone: a recovered result is derived from the first attempt, so
+      // counting it again would report two orders for one purchase.
+      const attemptsForPlan = [firstAttempt];
 
       let result = firstAttempt;
       let rerunFrom = null;
@@ -194,9 +206,15 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
         // it places another real order nobody reads. It is charged to the
         // creation budget rather than treated as free, because the platform may
         // have created an order behind the redirect where this runner cannot see.
-        if (firstAttempt.submit?.reserved !== true) {
-          creationBudget.consume({ plan_id: identifier, kind: "hosted_checkout_redirect" });
-        }
+        //
+        // Charged unconditionally, including when the submit seam already
+        // reserved a slot. A redirect that follows a reservation can still leave
+        // a platform-created order the runner never saw, so the two are
+        // different risks, not the same one counted twice — and the documented
+        // property is "a manual review charges the budget", with no exception a
+        // reader could be surprised by. Over-charging costs at worst one unspent
+        // planned path; under-charging costs a real order nobody budgeted for.
+        creationBudget.consume({ plan_id: identifier, kind: "hosted_checkout_redirect" });
       } else if (!firstAttempt.ok) {
         const classification = classifyTestOrderCreation(firstAttempt);
         if (classification.creation === "not_created") {
@@ -215,6 +233,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
             rerunFrom = firstAttempt;
             try {
               const rerunAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
+              attemptsForPlan.push(rerunAttempt);
               if (rerunAttempt.order) orders.push(rerunAttempt.order);
               if (rerunAttempt.budget_exhausted) {
                 // The re-run stopped itself before its submit click, so it
@@ -272,7 +291,16 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       }
 
       if (creationRecord) {
-        creationRecord.creation_count = creationBudget.reservationsFor(identifier).length;
+        // Two different numbers, because they answer two different questions
+        // and one of them can lie on its own. `submissions_reserved` is what
+        // the run SPENT: slots taken immediately before a submit click, which
+        // stand even when the create then failed at the network level.
+        // `orders_confirmed_created` is what the platform is observed to have
+        // ACCEPTED on this path. They agree on the ordinary path and diverge
+        // exactly where an operator most needs to see it — a spent slot with
+        // no confirmed order is the ambiguous case, not a purchase to reconcile.
+        creationRecord.submissions_reserved = creationBudget.reservationsFor(identifier).length;
+        creationRecord.orders_confirmed_created = confirmedOrderCreates(attemptsForPlan);
         creationRecord.recovery = recovery;
         creationRecord.firstAttempt = firstAttempt;
       }
@@ -4011,7 +4039,7 @@ function failedOrderCreateRequest(events) {
 async function buildOrderEvidence({ page, events, path, email, checkoutPage, args, preferredOrderBody = null, allowLateWait = true }) {
   if (allowLateWait) await waitForLateOrderEvidence(page, events);
   const orderCreate = lastJsonResponse(events, ORDER_CREATE_RESPONSE_PATTERN);
-  const orderRead = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i);
+  const orderRead = lastJsonResponse(events, ORDER_DETAIL_RESPONSE_PATTERN);
   const upsellOrderResponse = lastJsonResponse(events, ORDER_UPSELLS_RESPONSE_PATTERN);
   const orderBody = preferredOrderBody || upsellOrderResponse?.body || orderRead?.body || orderCreate?.body || null;
   const refId = stringArg(orderBody?.ref_id) || refIdFromUrl(page.url());
@@ -4085,7 +4113,7 @@ function assessOrderCreation({ orderCreate, orderRead, upsellOrderResponse, refI
 async function waitForLateOrderEvidence(page, events, { timeoutMs = 4000, intervalMs = 250 } = {}) {
   const hasOrderEvidence = () => Boolean(
     lastJsonResponse(events, ORDER_CREATE_RESPONSE_PATTERN)
-    || lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i)
+    || lastJsonResponse(events, ORDER_DETAIL_RESPONSE_PATTERN)
     || lastJsonResponse(events, ORDER_UPSELLS_RESPONSE_PATTERN),
   );
   if (hasOrderEvidence()) return;
@@ -4583,6 +4611,18 @@ function summarizeOrderCreateActivity(events) {
   };
 }
 
+// Orders the platform is OBSERVED to have accepted across a path's submitted
+// attempts. Counted the same way the classifier counts: whichever view of the
+// log saw more wins, because the copy that travels on the result has been
+// truncated to the last 20 entries per stream and can only ever under-count.
+function confirmedOrderCreates(attempts = []) {
+  return attempts.reduce((total, attempt) => {
+    const carried = Number(attempt?.order_creates?.accepted_create_responses) || 0;
+    const derived = Number(summarizeOrderCreateActivity(attempt?.events || {}).accepted_create_responses) || 0;
+    return total + Math.max(carried, derived);
+  }, 0);
+}
+
 function orderCreationSignals(attempt) {
   const events = attempt?.events || attempt?.order?.evidence?.events || {};
   const steps = Array.isArray(attempt?.order?.evidence?.steps) ? attempt.order.evidence.steps : [];
@@ -4767,7 +4807,7 @@ async function recoverCreatedOrder({ context, attempt, plan = null, checkoutPage
     // the ORIGINAL attempt's line items would re-assess the receipt using
     // numbers this pass never re-confirmed, which is the dishonest stop the
     // recovery contract exists to forbid.
-    const orderRead = lastJsonResponse(events, /\/api\/v1\/orders\/[^/]+\/$/i);
+    const orderRead = lastJsonResponse(events, ORDER_DETAIL_RESPONSE_PATTERN);
     const orderReadOk = Boolean(
       orderRead && orderRead.status >= 200 && orderRead.status < 300 && orderRead.body && typeof orderRead.body === "object",
     );
@@ -4871,7 +4911,8 @@ function orderCreationEvidence(record) {
       classification: record.classification.creation,
       reason: record.classification.reason,
       action: record.action,
-      creation_count: record.creation_count ?? 0,
+      submissions_reserved: record.submissions_reserved ?? 0,
+      orders_confirmed_created: record.orders_confirmed_created ?? 0,
       ...(record.rerun_skipped ? { rerun_skipped: record.rerun_skipped } : {}),
       ...(record.classification.ref_id ? { ref_id: record.classification.ref_id } : {}),
       ...(record.classification.creation === "ambiguous" ? { operator_check: AMBIGUOUS_CREATION_OPERATOR_CHECK } : {}),
@@ -5983,6 +6024,8 @@ export const __qaBrowserTestHooks = Object.freeze({
   classifyTestOrderCreation,
   orderCreationSignals,
   summarizeOrderCreateActivity,
+  confirmedOrderCreates,
+  ORDER_DETAIL_RESPONSE_PATTERN,
   createOrderCreationBudget,
   dispatchTestOrderPlans,
   recoverCreatedOrder,
