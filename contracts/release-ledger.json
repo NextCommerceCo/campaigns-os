@@ -1597,6 +1597,39 @@
         }
       ],
       "entry_sha256": "5edbdc9a10eabe51190a3d11aa86d13746804d67a7d7ab4f6a1dd13be07b5c45"
+    },
+    {
+      "id": "RL-0031",
+      "sequence": 31,
+      "date": "2026-09-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.2",
+      "changelog_sha256": "c93d70a78df07c9a43615fdc7f519a82137bb20fc267695c58a6aec8ff19f97b",
+      "agent_impact": "`next` at stage done no longer emits a required run_record_closeout when a matching, current, closed Run Record already exists for the packet; it emits a non-required run_record_present naming that record instead, and a distinct required run_record_remit_recovery when only the remit is unfinished. Orchestrators keying on action ids should recognize run_record_present (informational), run_record_remit_recovery (required, re-runs run-record against the existing run_id), and purchase_proof_unknown (informational). stages.qa gains three additive fields a consumer may read: verdict_run_id and evidence are now producer-owned and always describe the run the stage status points at, purchase_proof carries counts-only purchase coverage, and any superseded verdict_run_id/evidence pair is preserved in a bounded history[] on the same stage.",
+      "compatibility": "additive",
+      "migration": "No migration is required for existing targets. A report written before this change carries no purchase_proof; next treats that as unknown and advisory, so no campaign regresses from done. A packet that intends a no-order run should declare qa.proof_policy.order_path_depth: \"off\" \u2014 otherwise a QA run that executes zero order paths now holds next at stage qa instead of reporting done.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "next reads the target Run Records best-effort and suppresses the required closeout only for a matching, current, closed record, adding run_record_present, run_record_remit_recovery and purchase_proof_unknown actions and refusing done when a declared order-path depth records zero executed paths; qa run restates its own verdict_run_id, writes a counts-only purchase-proof summary onto stages.qa, and archives any superseded identity/evidence pair into a bounded history[]."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents the counts-only purchase-proof coverage summary, why it carries no order identity, and that --test-order off is a diagnostic that cannot satisfy a declared common/full/tiers depth."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Documents how next recognizes a matching, current, closed Run Record, the seven reason codes, the remit-recovery action, that a skipped remit under consent-off counts as closed, and the producer-owned QA identity with its bounded history[]."
+        }
+      ],
+      "entry_sha256": "dcbef7f194a4ffc4d7474adac7124a5fccdadd2aee5604cc8203532f33f29293"
     }
   ]
 }

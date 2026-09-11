@@ -651,6 +651,53 @@ controls on an ordinary or unknown page remain blockers; they are not treated
 as evidence that a receipt was reached. Cross-origin handoffs count as terminal
 navigation, but not as Campaigns OS receipt rendering or persisted-receipt proof.
 
+### Purchase-proof coverage (`--test-order off` is a diagnostic)
+
+A QA run finalizes a verdict and records a terminal stage status whether or not
+any order path ran. That made `--test-order off` indistinguishable, downstream,
+from proof that a purchase worked: the report showed a completed QA stage, and
+`next` advanced to `done` on the status alone.
+
+So every QA run now writes a **purchase-proof coverage summary** onto the
+Assembly Report's `stages.qa`:
+
+```json
+"purchase_proof": {
+  "declared_order_path_depth": "common",
+  "declared_typed_card_depth": "common",
+  "order_paths_executed": 3,
+  "orders_created": 3,
+  "orders_verified": 3,
+  "all_orders_test_mode": true
+}
+```
+
+**Counts only, by design.** No order id, ref id, customer email, or checkout URL
+appears in it. This summary rides into the committed Assembly Report and the
+readback bundle, where the verdict's own order arrays are deliberately emptied
+(see the committed verdict sidecar above) — so the signal that a purchase
+happened has to be numbers, not the orders themselves. `all_orders_test_mode` is
+`null`, not `false`, when nothing ran: "no order left test mode" and "no order
+ran" are different facts.
+
+`next` compares the declared depth against what was exercised:
+
+| Declared `order_path_depth` | `order_paths_executed` | `next` |
+|---|---|---|
+| absent, or `off`/`none` | anything | unaffected — intentional no-order diagnostics are preserved |
+| `common`, `full`, `tiers`, … | ≥ 1 | proceeds |
+| `common`, `full`, `tiers`, … | `0` | returns stage `qa`, not `done`, and says why in `picked_reason` |
+| `common`, `full`, `tiers`, … | **summary absent** | proceeds, with a non-required `purchase_proof_unknown` advisory |
+
+That last row is load-bearing. Every report written before this summary existed
+has no `purchase_proof`, and an unknown must never retroactively un-finish a
+campaign that was already complete. Unknown is advisory; only an explicit zero
+holds the pipeline at `qa`.
+
+If a no-order run is what you intend, declare it: set
+`qa.proof_policy.order_path_depth` to `off` on the packet. That is a deliberate,
+inspectable statement rather than a silent gap.
+
 ### Step-ladder evidence
 
 Every typed-card path executes as an ordered ladder of named, individually timed
