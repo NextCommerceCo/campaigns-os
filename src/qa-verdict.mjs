@@ -179,3 +179,36 @@ export function validateVerdict(verdict) {
   }
   return errors;
 }
+
+// Purchase-proof coverage summary.
+//
+// COUNTS ONLY, deliberately. This summary is written onto the Assembly Report's
+// qa stage, which is committed and rides into the readback bundle. The sidecar
+// projection strips order ids, refs, emails and checkout URLs out of the verdict
+// before it can be published, and sidecar-bundle conformance FAILS a bundle
+// whose projected order arrays are non-empty. So the signal that a purchase
+// actually happened has to be numbers, never the orders themselves.
+export function summarizePurchaseProof({ verdict = null, proofPolicy = null } = {}) {
+  const orders = Array.isArray(verdict?.test_orders) ? verdict.test_orders.filter((order) => order && typeof order === "object") : [];
+  // A real id is a non-empty trimmed string or a POSITIVE number. Numeric `0`
+  // is the conventional placeholder the runner emits when an id was never
+  // received, and `Number.isFinite(0)` is true — counting it would report an
+  // order as created on a run that created nothing. Note the `??` chain stops
+  // at a literal `0` (it is not nullish), so a zero here is never rescued by
+  // the next field either; both facts push the same way, toward not counting.
+  const created = orders.filter((order) => {
+    const id = order.next_order_id ?? order.order_id ?? order.ref_id;
+    if (typeof id === "string") return id.trim().length > 0;
+    return Number.isFinite(id) && id > 0;
+  });
+  return {
+    declared_order_path_depth: optionalString(proofPolicy?.order_path_depth),
+    declared_typed_card_depth: optionalString(proofPolicy?.typed_card_depth),
+    order_paths_executed: orders.length,
+    orders_created: created.length,
+    orders_verified: orders.filter((order) => order.verification?.verified === true).length,
+    // null, not false, when nothing ran: "no order was out of test mode" and
+    // "no order ran at all" are different facts.
+    all_orders_test_mode: orders.length ? orders.every((order) => order.is_test === true) : null,
+  };
+}

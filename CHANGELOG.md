@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.25.0+agent.2] - 2026-09-11
+## [1.25.0+agent.3] - 2026-09-11
 
 ### Changed
 
@@ -97,6 +97,61 @@ Notable supported-surface changes are recorded here.
   so a redirect that followed a reservation went uncounted even though the
   platform may have created an order behind it — an exception the documented
   "a manual review charges the budget" never admitted.
+||||||| 2912d70
+
+## [1.25.0+agent.2] - 2026-09-11
+
+### Fixed
+
+- `next` now reads `.campaign-runtime/run-records/` and stops demanding a Run
+  Record that already exists. At stage `done` it emitted a required
+  `run_record_closeout` unconditionally, because nothing in the CLI had ever read
+  that directory — a shadow-campaign validation run ended with a record already
+  assembled, closed and remitted, and was still told to make one. A record
+  satisfies closeout only when its identity matches the packet, it is not older
+  than the report's doctor/QA evidence, it references the QA verdict the report
+  currently points at, and its remit closed (`ok`, or `skipped` for the
+  consent-off / `--no-remit` local-only path). Missing, foreign-campaign, stale,
+  and outdated records still get the required closeout; a failed or unfinished
+  remit gets a distinct `run_record_remit_recovery` action that re-runs
+  `run-record` against the existing `run_id` rather than minting a second record.
+  Any doubt — an unreadable record, an unrecognized remit state — emits the
+  closeout. An ambient run session still wins, exactly as before.
+- The QA producer now owns `stages.qa.verdict_run_id` and `stages.qa.evidence`.
+  Only the canonical fields refreshed before, so a stage could carry a passing
+  status and current output links beside a previous run's id and an
+  `evidence.remaining_blocker` describing an already-fixed bug. The previous pair
+  is preserved, not deleted: it moves into a bounded `history[]` on the same
+  stage with its own original status and timestamp, and a stage that had no
+  `checked_at` yields a history entry with none. Unrelated extension fields
+  (`waivers`, and anything written out-of-repo) pass through verbatim.
+
+### Added
+
+- Each QA run records a counts-only purchase-proof summary on
+  `stages.qa.purchase_proof` (declared order-path and typed-card depth, order
+  paths executed, orders created, orders verified, all-test-mode). No order id,
+  ref id, email or URL is in it — this artifact is committed and rides into the
+  readback bundle, where the verdict's own order arrays are emptied. `next` now
+  refuses `done` when the packet declares an order-path depth and the summary
+  records zero executed paths, so a `--test-order off` diagnostic can no longer
+  be presented as common-depth purchase proof. An **absent** summary — every
+  report written before this — is unknown, not unmet: it produces a non-required
+  advisory and never un-finishes an existing campaign. A declared depth of `off`
+  keeps intentional no-order diagnostics unchanged.
+
+- Purchase-proof coverage now reports `unknown` when the build packet and the
+  assembly report disagree about the declared order-path depth, instead of
+  silently preferring the packet. A corrupted or stale mirror of the depth can no
+  longer decide the gate from one side alone.
+- The run-records scan reads a campaign's full history rather than the newest 50
+  file names, and orders run ids by their parsed timestamp rather than
+  lexicographically. An older matching record no longer reads as "no record", and
+  ordering no longer depends on every run id having the same digit count. Reads
+  stay bounded and a malformed record is still ignored rather than fatal.
+
+All fields are additive under the assembly-report stage definition, which already
+permits additional properties. No schema changed and no surface version moved.
 
 ## [1.25.0+agent.1] - 2026-09-10
 
