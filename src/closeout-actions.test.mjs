@@ -89,3 +89,80 @@ test("explicit post-polish next stages emit one resolved owned-checkpoint action
     );
   }
 });
+
+// A matching, current, closed Run Record already IS the closeout. Demanding a
+// second one is the failure the 2026-09-11 shadow-campaign validation run
+// recorded: `next` returned stage "done" and still emitted a required
+// run_record_closeout after QA had assembled, closed and remitted the record.
+// Suppression is narrow on purpose — see src/run-record-closeout.mjs.
+
+const satisfied = { satisfied: true, reason_code: "satisfied", record_id: "run_1_abcd", record_path: "/t/.campaign-runtime/run-records/run_1_abcd.json", detail: "closed and remitted" };
+
+function doneActions(closeout, extra = {}) {
+  return buildNextActions({ ...BASE, result: { stage: "done" }, ambient: null, runRecordCloseout: closeout, ...extra });
+}
+
+test("a satisfied closeout replaces the required demand with a non-required record pointer", () => {
+  const actions = doneActions(satisfied);
+  assert.equal(actions.find((action) => action.id === "run_record_closeout"), undefined);
+  const pointer = actions.find((action) => action.id === "run_record_present");
+  assert.ok(pointer, "next must still say where the durable record is");
+  assert.notEqual(pointer.required, true);
+  assert.match(pointer.description, /run_1_abcd/);
+});
+
+for (const reason of ["no_record", "foreign_campaign", "stale_predates_evidence", "outdated_artifacts"]) {
+  test(`closeout stays required for ${reason}`, () => {
+    const actions = doneActions({ satisfied: false, reason_code: reason, record_id: null, record_path: null, detail: `detail for ${reason}` });
+    const closeout = actions.find((action) => action.id === "run_record_closeout");
+    assert.ok(closeout, `${reason} must still demand a Run Record`);
+    assert.equal(closeout.required, true);
+    assert.match(closeout.description, new RegExp(reason));
+  });
+}
+
+test("an unassessed closeout keeps the unconditional required demand", () => {
+  const closeout = doneActions(null).find((action) => action.id === "run_record_closeout");
+  assert.ok(closeout);
+  assert.equal(closeout.required, true);
+});
+
+test("a failed remit recovers the existing record instead of minting a second one", () => {
+  const actions = doneActions({ satisfied: false, reason_code: "remit_failed", record_id: "run_1_abcd", record_path: "/t/run_1_abcd.json", detail: "remit failed" });
+  assert.equal(actions.find((action) => action.id === "run_record_closeout"), undefined);
+  const recovery = actions.find((action) => action.id === "run_record_remit_recovery");
+  assert.ok(recovery);
+  assert.equal(recovery.required, true);
+  assert.match(recovery.command, /run-record --packet \/campaigns\/demo\/campaign-runtime\.build\.json --run-id run_1_abcd/);
+});
+
+test("a pending remit also recovers the existing record", () => {
+  const actions = doneActions({ satisfied: false, reason_code: "remit_incomplete", record_id: "run_1_abcd", record_path: "/t/run_1_abcd.json", detail: "remit pending" });
+  assert.ok(actions.find((action) => action.id === "run_record_remit_recovery"));
+});
+
+test("an ambient run session still wins at done, satisfied or not", () => {
+  const actions = buildNextActions({ ...BASE, result: { stage: "done" }, ambient: { session: { packet: BASE.packetPath } }, runRecordCloseout: satisfied });
+  const runEnd = actions.find((action) => action.id === "run_end");
+  assert.ok(runEnd);
+  assert.equal(runEnd.required, true);
+  assert.equal(actions.find((action) => action.id === "run_record_closeout"), undefined);
+});
+
+// `--test-order off` is a legitimate diagnostic. It is not purchase proof, and
+// a report whose QA stage records zero executed order paths must not be
+// presented as satisfying a declared common/full depth.
+
+test("done advises when purchase-proof coverage cannot be determined", () => {
+  const actions = doneActions(satisfied, { purchaseProof: { state: "unknown", declared_depth: "common", reason: "This report predates purchase-proof coverage." } });
+  const advisory = actions.find((action) => action.id === "purchase_proof_unknown");
+  assert.ok(advisory, "an absent summary is unknown, and unknown is advisory");
+  assert.notEqual(advisory.required, true);
+});
+
+test("done emits no purchase-proof advisory when coverage is satisfied or not required", () => {
+  for (const state of ["satisfied", "not_required"]) {
+    const actions = doneActions(satisfied, { purchaseProof: { state, declared_depth: state === "satisfied" ? "common" : "off" } });
+    assert.equal(actions.find((action) => action.id === "purchase_proof_unknown"), undefined);
+  }
+});

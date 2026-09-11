@@ -23,6 +23,8 @@ import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { summarizePurchaseProof } from "./qa-verdict.mjs";
+import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
   appendFinding,
   buildFinding,
@@ -38,6 +40,7 @@ import {
   assembleRunRecord,
   RUN_RECORD_COMMIT_PATTERN,
   RUN_RECORD_SURFACE_VERSION_PATTERN,
+  RUN_RECORDS_DIR_REL_PATH,
   mintRunId,
   RUN_RECORD_SURFACES,
   validateRunRecordLifecycle,
@@ -697,6 +700,13 @@ export function recordQaStageOutcome(args, result) {
       warnings: verdict.disposition === "ready_with_exceptions"
         ? ["QA completed with explicitly attributed exceptions; inspect the verdict artifact."]
         : [],
+      // The producer knows its own run id and must restate it, or the stage
+      // keeps a previous run's identity beside this run's status and outputs.
+      identity: { verdict_run_id: optionalString(verdict.run_id) },
+      // Counts-only: never order ids, refs, emails or URLs (see
+      // summarizePurchaseProof). This is what lets `next` tell a real purchase
+      // path from a `--test-order off` diagnostic.
+      proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
     });
     writeJsonAtomic(reportPath, updated);
 
@@ -7040,7 +7050,110 @@ function addPrepareBuildGateErrors(errors, report, gate = prepareBuildGateIssue(
  *   "doctor-blocked" and "done" need their own handling), then read
  *   `result.blocked === true` to detect the surfaced-blocker case.
  */
-function pickNextStage(report, doctor, prepareBuildGate = prepareBuildGateIssue(report)) {
+// Run Records are machine-local (they are in the runtime-state ignore block), so
+// `next` reads them best-effort: an absent directory is the normal case, not an
+// error, and a slow or hostile records directory must never stall orchestration.
+const RUN_RECORDS_SCAN_LIMIT = 50;
+const RUN_RECORD_QA_DIGEST_LIMIT = 8;
+
+function readRunRecordsForTarget(baseDir) {
+  try {
+    const dir = join(resolve(baseDir), RUN_RECORDS_DIR_REL_PATH);
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
+    const names = readdirSync(dir)
+      .filter((name) => name.endsWith(".json"))
+      .sort()
+      .reverse()
+      .slice(0, RUN_RECORDS_SCAN_LIMIT);
+    const entries = [];
+    for (const name of names) {
+      const path = join(dir, name);
+      try {
+        entries.push({ path, record: readJson(path) });
+      } catch {
+        // One corrupt record must not hide a good one beside it. The assessor
+        // ignores unreadable entries rather than treating them as evidence.
+        entries.push({ path, record: null });
+      }
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+// Hash whatever QA verdict the report's qa stage currently points at, so a Run
+// Record can be checked against the evidence the report carries NOW rather than
+// against whatever it carried when the record was written.
+function currentQaVerdictDigestsForReport(report, reportPath) {
+  const digests = new Set();
+  for (const hint of qaVerdictPathHints(report)) {
+    if (digests.size >= RUN_RECORD_QA_DIGEST_LIMIT) break;
+    try {
+      const candidate = reportPath ? resolveFromFile(reportPath, hint) : resolve(hint);
+      if (!candidate || !existsSync(candidate) || !statSync(candidate).isFile()) continue;
+      digests.add(sha256File(candidate));
+    } catch {
+      // best-effort: an unreadable hint simply contributes no digest, which
+      // fails open to "outdated" rather than to a false match.
+    }
+  }
+  return [...digests];
+}
+
+// Declared order-path depths that ask for no purchase at all. A packet may
+// legitimately declare one: `--test-order off` diagnostics stay intentional.
+const ORDER_PATH_DEPTHS_WITHOUT_PURCHASE = new Set(["off", "none", "skip", "not_required", "unspecified"]);
+
+/**
+ * Compare the purchase depth a packet DECLARES against the depth QA actually
+ * exercised. Four states, and the difference between the last two is the whole
+ * safety argument:
+ *
+ * - `not_required` the declared depth asks for no order path.
+ * - `satisfied`    QA executed at least one order path.
+ * - `unmet`        QA recorded a purchase-proof summary showing zero order
+ *                   paths while the packet declares a depth that needs one.
+ *                   This is the `--test-order off` run being presented as
+ *                   common-depth proof.
+ * - `unknown`      the qa stage carries no purchase-proof summary at all —
+ *                   every report written before this change. Unknown is
+ *                   ADVISORY ONLY. Treating it as unmet would retroactively
+ *                   un-finish every existing campaign on upgrade.
+ */
+export function assessPurchaseProofCoverage({ packet = null, report = null } = {}) {
+  const declared = optionalString(packet?.qa?.proof_policy?.order_path_depth)
+    || optionalString(report?.proof_policy?.order_path_depth);
+  if (!declared || ORDER_PATH_DEPTHS_WITHOUT_PURCHASE.has(declared.toLowerCase())) {
+    return {
+      state: "not_required",
+      declared_depth: declared || null,
+      reason: "No order-path depth is declared, so no purchase proof is owed.",
+    };
+  }
+  const summary = report?.stages?.qa?.purchase_proof;
+  if (!isObject(summary) || !Number.isInteger(summary.order_paths_executed)) {
+    return {
+      state: "unknown",
+      declared_depth: declared,
+      reason: "The assembly report's qa stage records no purchase-proof summary, so the depth QA exercised cannot be read from it.",
+    };
+  }
+  if (summary.order_paths_executed > 0) {
+    return {
+      state: "satisfied",
+      declared_depth: declared,
+      reason: `QA executed ${summary.order_paths_executed} order path(s) against a declared "${declared}" depth.`,
+    };
+  }
+  return {
+    state: "unmet",
+    declared_depth: declared,
+    reason: `QA recorded zero executed order paths, so a declared "${declared}" order-path depth is not proved. A \`--test-order off\` run is a diagnostic, not purchase proof; re-run QA at the declared depth or change the declared depth deliberately.`,
+  };
+}
+
+function pickNextStage(report, doctor, prepareBuildGate = prepareBuildGateIssue(report), purchaseProof = null) {
   const polishGate = doctor?.derived?.polish_gate || evaluatePolishGate({ report });
   const polishCheckpointGate = doctor?.derived?.polish_checkpoint_gate || null;
   // prepare-build is the earliest lifecycle prerequisite. Surface its
@@ -7114,6 +7227,17 @@ function pickNextStage(report, doctor, prepareBuildGate = prepareBuildGateIssue(
       return {
         stage: cliStage,
         reason: `Stage "${reportKey}" has status "${status || "(unset)"}"; run "${cliStage}" next.`,
+      };
+    }
+    // A terminal QA status is not the same claim as purchase proof. QA finalizes
+    // a verdict and records a terminal status even when no order path ran, so a
+    // `--test-order off` diagnostic used to carry the pipeline to "done" against
+    // a packet declaring common depth. Only an EXPLICIT zero blocks: an absent
+    // summary is unknown and stays advisory.
+    if (cliStage === "qa" && purchaseProof?.state === "unmet") {
+      return {
+        stage: "qa",
+        reason: purchaseProof.reason,
       };
     }
   }
@@ -7199,10 +7323,29 @@ export function nextStage(stage, args, ambient = null) {
       : prepareBuildGate?.stage
         ? "Resolve the prepare-build blockers recorded in the assembly report, then rerun `campaigns-os prepare-build` or `campaigns-os start` before continuing."
         : prepareBuildGate?.reason || "Restore the lifecycle assembly report before continuing.";
+  // Closeout recognition and purchase-proof coverage are both derived from
+  // artifacts already on disk. Both are best-effort reads: orchestration must
+  // keep working when the records directory is absent (the normal case — it is
+  // machine-local and git-ignored) or unreadable.
+  const purchaseProof = assessPurchaseProofCoverage({ packet, report });
+  let runRecordCloseout = null;
+  try {
+    runRecordCloseout = assessRunRecordCloseout({
+      records: readRunRecordsForTarget(dirname(packetPath)),
+      packet,
+      report,
+      currentQaVerdictDigests: currentQaVerdictDigestsForReport(report, report ? reportPath : null),
+      qaVerdictRecorded: qaVerdictPathHints(report).length > 0,
+    });
+  } catch {
+    // Any failure here leaves the closeout unassessed, which keeps the original
+    // unconditional required action. Fail toward demanding the record.
+    runRecordCloseout = null;
+  }
   const finalize = (result) => {
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate });
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof });
     recordNextRecommendation(ambient, result);
     return result;
   };
@@ -7239,7 +7382,7 @@ export function nextStage(stage, args, ambient = null) {
   // and recoverable across sessions / machines.
   let picked = null;
   if (!stage) {
-    picked = pickNextStage(report, doctor, prepareBuildGate);
+    picked = pickNextStage(report, doctor, prepareBuildGate, purchaseProof);
     if (picked.stage === "doctor-blocked") {
       return finalize({
         ok: false,
@@ -7436,7 +7579,7 @@ function divergenceInspectAction(divergences, packetPath) {
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const pushPolishCheckpointActions = () => {
@@ -7568,8 +7711,44 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     // session open and no durable Run Record, and nothing prompted otherwise.
     if (ambient) {
       push("run_end", "command", `campaigns-os run end${ambient.session?.packet ? "" : ` --packet ${shellToken(packetPath)}`}`, "Close the active run session: assemble the aggregated Run Record and clear run-session.json. Required — the run's durable record depends on it.", { required: true });
+    } else if (runRecordCloseout?.satisfied === true) {
+      // The record for THIS packet, covering the evidence the report currently
+      // carries, is already closed. Demanding another one told the operator to
+      // duplicate work that was done — but staying silent would hide where the
+      // durable record is, so the action becomes informational, not required.
+      push(
+        "run_record_present",
+        "manual",
+        null,
+        `Durable Run Record already closed for this run: ${runRecordCloseout.record_id || "(unnamed)"} at ${runRecordCloseout.record_path || "the target's .campaign-runtime/run-records/"}. ${runRecordCloseout.detail || ""}`.trim(),
+      );
+    } else if (runRecordCloseout && reasonIsRemitRecovery(runRecordCloseout.reason_code) && runRecordCloseout.record_id) {
+      // A record exists; only its remit is unfinished. Minting a second record
+      // would fork the run's identity. run-record is idempotent on run_id, so
+      // recovery re-runs against the record already on disk.
+      push(
+        "run_record_remit_recovery",
+        "command",
+        `campaigns-os run-record --packet ${shellToken(packetPath)} --run-id ${shellToken(runRecordCloseout.record_id)} --json`,
+        `Recover the existing Run Record's remit (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || "the local record is written but its remit did not complete."} Re-running against the same run id is idempotent; do not mint a second record.`,
+        { required: true },
+      );
     } else {
-      push("run_record_closeout", "command", `campaigns-os run-record --packet ${shellToken(packetPath)} --json`, "Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.", { required: true });
+      const why = runRecordCloseout
+        ? ` No usable record was found for this packet (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || ""}`.trimEnd()
+        : "";
+      push("run_record_closeout", "command", `campaigns-os run-record --packet ${shellToken(packetPath)} --json`, `Assemble the durable Run Record closeout for this run. Required even without an active run session — stage artifacts and the QA verdict alone are not the run's durable record.${why}`, { required: true });
+    }
+    // `--test-order off` is a diagnostic, not purchase proof. When the report
+    // is too old to say either way, say so — an unknown must never turn into a
+    // new block on a campaign that was already finished.
+    if (purchaseProof?.state === "unknown") {
+      push(
+        "purchase_proof_unknown",
+        "manual",
+        null,
+        `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} The declared order path depth is "${purchaseProof.declared_depth || "unspecified"}"; re-run \`campaigns-os qa run --test-order <depth>\` if that depth still has to be proved.`,
+      );
     }
   }
   return actions;
