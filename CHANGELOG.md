@@ -30,8 +30,13 @@ Notable supported-surface changes are recorded here.
   purchase. A hosted-checkout `manual_review` is still never re-run.
 - Passing after recovery stays distinguishable from passing first time, which is
   the property the retry it replaces established. The assertion carries
-  `evidence.order_creation` — classification, reason, action, and the number of
-  real orders the path actually created — and `evidence.recovery` with the
+  `evidence.order_creation` — classification, reason, action, and two counts
+  that are not the same number: `submissions_reserved`, the creation slots this
+  path spent immediately before a submit click, which stand whether or not the
+  create that followed succeeded; and `orders_confirmed_created`, the creates
+  the platform was observed to accept. A spent slot with no confirmed order is
+  the ambiguous case, not an order to reconcile, and reporting only the first
+  would let it be read as one. It also carries `evidence.recovery` with the
   original failure, the checks that were re-run, and whether it cleared.
 - Whether an order create succeeded is decided from the whole event log, counted
   once while the runner still holds it. The copy that travels in the evidence
@@ -70,7 +75,26 @@ Notable supported-surface changes are recorded here.
   run, so two runs against two targets cannot spend each other's budget. A
   budget stop carries its own assertion text and its own
   `order_creation_budget` evidence: it is a safety stop the runner chose, and a
-  supervisor must not read it as a broken checkout.
+  supervisor must not read it as a broken checkout. The value is validated at
+  the `qa run` entry: a non-numeric, fractional, negative, or zero
+  `--max-order-creations` is refused with an error naming the flag, rather than
+  falling through to the default budget while the operator believes the run is
+  capped.
+
+### Fixed
+
+- The read-only recovery pass recognizes a persisted-order read-back whether or
+  not the server sends a trailing slash, and whether or not the URL carries a
+  querystring — the same shapes the canonical order patterns already admit.
+  Against a server that omits the slash the pass previously saw no read-back at
+  all, recorded every check as not re-assessed, and could therefore never clear
+  a blocker it had in fact re-verified. All three read-back call sites now share
+  one named pattern instead of three hand-rolled copies.
+- A hosted-checkout `manual_review` charges the creation budget unconditionally.
+  The charge was skipped whenever the submit seam had already reserved a slot,
+  so a redirect that followed a reservation went uncounted even though the
+  platform may have created an order behind it — an exception the documented
+  "a manual review charges the budget" never admitted.
 
 ## [1.25.0+agent.1] - 2026-09-10
 

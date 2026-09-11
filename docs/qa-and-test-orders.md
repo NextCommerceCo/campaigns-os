@@ -827,7 +827,10 @@ purchases. `--max-order-creations` bounds **actual order creations**, defaults t
 the planned path count, and is reserved immediately before each submit click —
 before the purchase, never reconciled after it. An exhausted budget stops that
 path with its own assertion text and its own `order_creation_budget` evidence, so
-a safety stop the runner chose can never be read as a broken checkout.
+a safety stop the runner chose can never be read as a broken checkout. The value
+is validated where it is typed: a non-numeric, fractional, negative, or zero
+`--max-order-creations` is an error naming the flag, never a silent fall back to
+the default budget.
 
 ### What happens when a path fails
 
@@ -870,11 +873,20 @@ on its plan, not on the run-level flags, and recovery re-checks it from there.
 
 A pass that only came back after recovery is never presented as a first-attempt
 pass. The assertion carries `evidence.order_creation` (classification, reason,
-action, and the count of real orders this path created) and, where a recovery
+action, and two separate counts) and, where a recovery
 pass ran, `evidence.recovery` with the original failure, the checks that were
 re-run, and whether it cleared. An upsell-action failure cannot be cleared by
 recovery — re-clicking the offer would mutate the order under inspection — so it
 is reported as having survived the pass.
+
+The two counts answer two different questions, and neither is a substitute for
+the other. `submissions_reserved` is what the run **spent**: creation slots taken
+immediately before a submit click, which stand whether or not the create that
+followed succeeded. `orders_confirmed_created` is what the platform was
+**observed to accept** on that path, counted from the whole event log. They agree
+on the ordinary path and diverge exactly where it matters — a spent slot with no
+confirmed order is the ambiguous case, a path to check against the store rather
+than an order to reconcile.
 
 The default card is the Discover test card `6011 1111 1111 1117`, CVV `123`,
 expiration `12/2030` (success path; `6011 0009 9013 9424` exercises 3DS). Override

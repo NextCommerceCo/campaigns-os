@@ -1605,8 +1605,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.25.0+agent.2",
-      "changelog_sha256": "31f641b64373673ae79e3f128f24d4a20d0875018e1353d9e231140884905721",
-      "agent_impact": "The worst-case number of real orders a qa run places drops. RL-0022 recorded that a run may place up to twice as many real orders as --max-test-orders plans; it no longer can. A failed typed-card path is classified before it is re-run, and only a failure the runner can prove happened before submit is re-run. A failure after the order was created \u2014 a receipt whose line items are not buyer-visible is the common one \u2014 is inspected read-only against the order that already exists and never resubmitted, so a receipt-only failure no longer buys twice. An outcome the runner cannot prove either way stops the path and names an operator check instead of resubmitting. Two dispositions change for a consumer reading verdicts: a previously flaky post-creation failure that used to pass on a second real order now passes only if the read-only recovery pass clears it, and otherwise blocks; and a run can now stop a planned path with an explicit order-creation budget assertion, which is a safety stop the runner chose and must not be dispatched as a checkout repair. Read assertion evidence.order_creation for the classification and the real-order count, and evidence.recovery to tell a recovered pass from a first-attempt pass. New flag qa run --max-order-creations <n>, defaulting to the planned path count; --max-test-orders keeps its existing meaning.",
+      "changelog_sha256": "2d4ed1f288bb101a4212ab2442267a8ba444dd58cff36081293581bee1d33314",
+      "agent_impact": "The worst-case number of real orders a qa run places drops. RL-0022 recorded that a run may place up to twice as many real orders as --max-test-orders plans; it no longer can. A failed typed-card path is classified before it is re-run, and only a failure the runner can prove happened before submit is re-run. A failure after the order was created \u2014 a receipt whose line items are not buyer-visible is the common one \u2014 is inspected read-only against the order that already exists and never resubmitted, so a receipt-only failure no longer buys twice. An outcome the runner cannot prove either way stops the path and names an operator check instead of resubmitting. Two dispositions change for a consumer reading verdicts: a previously flaky post-creation failure that used to pass on a second real order now passes only if the read-only recovery pass clears it, and otherwise blocks; and a run can now stop a planned path with an explicit order-creation budget assertion, which is a safety stop the runner chose and must not be dispatched as a checkout repair. Read assertion evidence.order_creation for the classification and for two counts that are not interchangeable: submissions_reserved, the creation slots the path spent immediately before a submit click, which stand whether or not the create that followed succeeded, and orders_confirmed_created, the creates the platform was observed to accept. A spent slot with no confirmed order is the ambiguous case, not an order to reconcile. Read evidence.recovery to tell a recovered pass from a first-attempt pass. New flag qa run --max-order-creations <n>, defaulting to the planned path count and refused at the qa run entry when it is non-numeric, fractional, negative or zero; --max-test-orders keeps its existing meaning.",
       "compatibility": "compatible",
       "migration": "none for callers. Supervisors and operators reading verdicts should treat a browser-test-order failure carrying evidence.order_creation_budget as a safety stop rather than a checkout defect, and should expect one order per planned path rather than up to two.",
       "changes": [
@@ -1614,13 +1614,13 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "qa",
-          "summary": "Adds qa run --max-order-creations <n>, a hard bound on real order creations reserved immediately before each submit click and defaulting to the planned path count, and documents it beside the planned-path cap in the qa help block and the Build Packet test-order policy notes. --max-test-orders keeps its planned-path meaning. The runner behind the flag classifies a failed typed-card path as not_created, created or ambiguous, re-runs only a provable pre-submit failure, and inspects a confirmed-created failure read-only instead of resubmitting it."
+          "summary": "Adds qa run --max-order-creations <n>, a hard bound on real order creations reserved immediately before each submit click and defaulting to the planned path count, and documents it beside the planned-path cap in the qa help block and the Build Packet test-order policy notes. --max-test-orders keeps its planned-path meaning. The flag is parsed and range-checked at the qa run entry, so an unusable value errors naming the flag instead of falling back to the default budget. The runner behind it classifies a failed typed-card path as not_created, created or ambiguous, re-runs only a provable pre-submit failure, and inspects a confirmed-created failure read-only instead of resubmitting it."
         },
         {
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "Separates the planned-path cap from the actual-creation budget and documents the three creation classifications, the read-only recovery pass for a confirmed-created failure, and that an ambiguous creation outcome is never resubmitted. Also records that creation is decided from the whole event log rather than the truncated evidence copy, that a re-run may not spend a creation slot a still-unrun planned path needs, and that recovery clears only on persisted evidence it re-read on that pass."
+          "summary": "Separates the planned-path cap from the actual-creation budget and documents the three creation classifications, the read-only recovery pass for a confirmed-created failure, and that an ambiguous creation outcome is never resubmitted. Also records that creation is decided from the whole event log rather than the truncated evidence copy, that a re-run may not spend a creation slot a still-unrun planned path needs, that recovery clears only on persisted evidence it re-read on that pass, and what the separate submissions_reserved and orders_confirmed_created counts each mean."
         },
         {
           "class": "skill",
@@ -1635,7 +1635,7 @@
           "summary": "next-campaigns-qa 1.2.0 -> 1.3.0."
         }
       ],
-      "entry_sha256": "fbc5b31ab70544bad2ca01bc39ee5c5ef99c85c3d7dfe6b59c3bfd6ef24eccc7"
+      "entry_sha256": "0bc2ce165b2728dec90b69e476887bba75d63f8bbb686ddf68bc31c02723d552"
     }
   ]
 }
