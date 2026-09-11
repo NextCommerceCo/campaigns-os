@@ -2,6 +2,52 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.2] - 2026-09-11
+
+### Changed
+
+- A failed typed-card path is no longer re-run unconditionally. The runner now
+  classifies what the attempt did to the store first — `not_created`, `created`,
+  or `ambiguous` — and only `not_created` earns the bounded one-per-path re-run.
+  A failure that happened *after* the order was created, which a receipt whose
+  line items never became buyer-visible is the common case of, used to open a
+  fresh page, refill the form and click submit again: it bought the same thing
+  twice for a failure the buyer had already paid for. That path now gets a
+  read-only recovery pass instead — reload the receipt the order already
+  produced, re-read the persisted order, re-check the buyer-visible receipt
+  surface and the voucher read-back. It clicks nothing, applies nothing and
+  submits nothing, because re-driving an upsell or re-applying a coupon would
+  mutate the order under inspection. An upsell-action failure therefore cannot
+  be cleared by recovery and is reported as having survived it.
+- Anything the runner cannot prove was not created is `ambiguous` and is never
+  resubmitted: a ref id whose read-back is unusable, a submit whose create
+  outcome never arrived, a create that failed at the network level after it was
+  sent, and — the one that reads as a clean rejection but is not — a 4xx that
+  follows an earlier 2xx on the same endpoint, which the "most recent response
+  decides" rule reports as `order create rejected` while an order exists. Those
+  paths stop and name the operator check (look for an existing order against the
+  run's QA email or the observed ref id) rather than risking a duplicate
+  purchase. A hosted-checkout `manual_review` is still never re-run.
+- Passing after recovery stays distinguishable from passing first time, which is
+  the property the retry it replaces established. The assertion carries
+  `evidence.order_creation` — classification, reason, action, and the number of
+  real orders the path actually created — and `evidence.recovery` with the
+  original failure, the checks that were re-run, and whether it cleared.
+
+### Added
+
+- `qa run --max-order-creations <n>` bounds the number of **real order
+  creations** in a run and defaults to the planned path count.
+  `--max-test-orders` never bounded purchases: it caps planned paths before the
+  browser launches, and its own error text used to concede that "the worst case
+  is twice this many real orders". The new budget is reserved immediately before
+  each submit click rather than reconciled afterwards, so an exhausted budget
+  stops the path instead of being discovered by counting orders. It is built per
+  run, so two runs against two targets cannot spend each other's budget. A
+  budget stop carries its own assertion text and its own
+  `order_creation_budget` evidence: it is a safety stop the runner chose, and a
+  supervisor must not read it as a broken checkout.
+
 ## [1.25.0+agent.1] - 2026-09-10
 
 ### Added
