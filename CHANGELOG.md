@@ -31,10 +31,11 @@ Notable supported-surface changes are recorded here.
 - Passing after recovery stays distinguishable from passing first time, which is
   the property the retry it replaces established. The assertion carries
   `evidence.order_creation` — classification, reason, action, and two counts
-  that are not the same number: `submissions_reserved`, the creation slots this
-  path spent immediately before a submit click, which stand whether or not the
-  create that followed succeeded; and `orders_confirmed_created`, the creates
-  the platform was observed to accept. A spent slot with no confirmed order is
+  that are not the same number: `submissions_reserved`, the platform-side
+  creation slots charged to this path — reserved before a submit click, or
+  charged for a hosted-checkout redirect where no submit click happens — which
+  stand whether or not the create that followed succeeded; and
+  `orders_confirmed_created`, the creates the platform was observed to accept. A spent slot with no confirmed order is
   the ambiguous case, not an order to reconcile, and reporting only the first
   would let it be read as one. It also carries `evidence.recovery` with the
   original failure, the checks that were re-run, and whether it cleared.
@@ -75,11 +76,12 @@ Notable supported-surface changes are recorded here.
   run, so two runs against two targets cannot spend each other's budget. A
   budget stop carries its own assertion text and its own
   `order_creation_budget` evidence: it is a safety stop the runner chose, and a
-  supervisor must not read it as a broken checkout. The value is validated at
-  the `qa run` entry: a non-numeric, fractional, negative, or zero
-  `--max-order-creations` is refused with an error naming the flag, rather than
-  falling through to the default budget while the operator believes the run is
-  capped.
+  supervisor must not read it as a broken checkout. The value is validated on
+  the budget itself, so every path that can create a real order is covered —
+  `qa run` and `qa parity` alike, and any caller added later: a non-numeric,
+  fractional, negative, or zero `--max-order-creations` is refused with an error
+  naming the flag, rather than falling through to the default budget while the
+  operator believes the run is capped.
 
 ### Fixed
 

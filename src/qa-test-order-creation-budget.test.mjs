@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { computeDisposition } from "./qa-verdict.mjs";
-import { __qaNodeTestHooks } from "./qa-node.mjs";
+import { __qaNodeTestHooks, runQaCli } from "./qa-node.mjs";
 
 const {
   classifyTestOrderCreation,
@@ -831,4 +831,35 @@ test("a usable --max-order-creations is returned, and an absent one defers", () 
   assert.equal(validatedOrderCreationLimit({ "max-order-creations": "2" }), 2);
   assert.equal(validatedOrderCreationLimit({ "max-order-creations": 2 }), 2);
   assert.equal(validatedOrderCreationLimit({}), null, "absent defers to the planned path count");
+});
+
+test("the budget itself refuses an unusable limit, whichever subcommand built it", () => {
+  // The check lives on the budget rather than on a subcommand. Validating it at
+  // the `qa run` entry alone left `qa parity` reaching the same runner by its
+  // own route and inheriting the silent default this bound exists to remove.
+  for (const value of ["foo", "-3", "0"]) {
+    assert.throws(
+      () => createOrderCreationBudget({ plans: plannedPlans(2), args: { "max-order-creations": value } }),
+      /--max-order-creations/,
+      `expected ${JSON.stringify(value)} to be refused`,
+    );
+  }
+  assert.equal(createOrderCreationBudget({ plans: plannedPlans(2), args: { "max-order-creations": "1" } }).limit, 1);
+  assert.equal(createOrderCreationBudget({ plans: plannedPlans(2), args: {} }).limit, 2, "absent defers to the planned path count");
+});
+
+test("qa parity refuses an unusable --max-order-creations before it loads anything", async () => {
+  // The reachable regression: this subcommand does not go through runQa, so it
+  // used to fall through to the planned-path default for any unusable value.
+  await assert.rejects(
+    runQaCli({ _: ["qa", "parity"], fixture: "unused.json", scenario: "unused", "max-order-creations": "foo" }),
+    /--max-order-creations/,
+  );
+  // Named before the fixture it never has to read, so a typo costs nothing.
+  await assert.rejects(
+    runQaCli({ _: ["qa", "parity"], "max-order-creations": "-3" }),
+    /--max-order-creations/,
+  );
+  // A parity run with no such flag still reaches its own required-input errors.
+  await assert.rejects(runQaCli({ _: ["qa", "parity"] }), /--fixture/);
 });

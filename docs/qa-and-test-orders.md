@@ -828,7 +828,8 @@ the planned path count, and is reserved immediately before each submit click —
 before the purchase, never reconciled after it. An exhausted budget stops that
 path with its own assertion text and its own `order_creation_budget` evidence, so
 a safety stop the runner chose can never be read as a broken checkout. The value
-is validated where it is typed: a non-numeric, fractional, negative, or zero
+is validated on the budget itself, which every browser path builds — `qa run`
+and `qa parity` alike: a non-numeric, fractional, negative, or zero
 `--max-order-creations` is an error naming the flag, never a silent fall back to
 the default budget.
 
@@ -880,9 +881,11 @@ recovery — re-clicking the offer would mutate the order under inspection — s
 is reported as having survived the pass.
 
 The two counts answer two different questions, and neither is a substitute for
-the other. `submissions_reserved` is what the run **spent**: creation slots taken
-immediately before a submit click, which stand whether or not the create that
-followed succeeded. `orders_confirmed_created` is what the platform was
+the other. `submissions_reserved` is what the run **spent**: the platform-side creation
+slots charged to this path. Most are reserved immediately before a submit click;
+a hosted-checkout `manual_review` charges one for a redirect where no submit
+click happens at all. A slot stands whether or not the create that followed
+succeeded. `orders_confirmed_created` is what the platform was
 **observed to accept** on that path, counted from the whole event log. They agree
 on the ordinary path and diverge exactly where it matters — a spent slot with no
 confirmed order is the ambiguous case, a path to check against the store rather

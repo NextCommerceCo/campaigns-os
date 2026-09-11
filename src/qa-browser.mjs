@@ -293,8 +293,11 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       if (creationRecord) {
         // Two different numbers, because they answer two different questions
         // and one of them can lie on its own. `submissions_reserved` is what
-        // the run SPENT: slots taken immediately before a submit click, which
-        // stand even when the create then failed at the network level.
+        // the run SPENT on this path: every platform-side creation slot charged
+        // to it, whichever way it was charged — reserved before a submit click,
+        // or charged for a hosted-checkout redirect that creates the order out
+        // of this runner's sight. A slot stands even when the create that
+        // followed failed at the network level.
         // `orders_confirmed_created` is what the platform is observed to have
         // ACCEPTED on this path. They agree on the ordinary path and diverge
         // exactly where an operator most needs to see it — a spent slot with
@@ -4710,9 +4713,37 @@ const AMBIGUOUS_CREATION_OPERATOR_CHECK =
 // construction: a path that submits is never submitted again.
 const ORDER_CREATION_BUDGET_EXHAUSTED = "order_creation_budget_exhausted";
 
+// The flag's one definition, deliberately placed on the BUDGET rather than on a
+// subcommand. Validating it at the `qa run` entry alone left `qa parity` — which
+// reaches `runBrowserTestOrders` by its own route — falling through to the
+// silent default this bound exists to remove, and any future browser caller
+// would have inherited the same gap. Every path that can create a real order
+// builds its budget here, so this is the only place the check cannot be
+// bypassed by adding a caller.
+//
+// Returns the validated limit, or null when the flag was not supplied (the
+// budget then defaults to the planned path count).
+export function validatedOrderCreationLimit(args = {}) {
+  const key = "max-order-creations";
+  if (args?.[key] === undefined || args?.[key] === null) return null;
+  const raw = String(args[key]).trim();
+  const parsed = Number(raw);
+  if (!raw || !Number.isInteger(parsed)) {
+    throw new Error(`--${key} must be a whole number of real order creations (got ${JSON.stringify(String(args[key]))}).`);
+  }
+  if (parsed < 0) {
+    throw new Error(`--${key} must not be negative (got ${parsed}). It bounds how many real orders this run may create.`);
+  }
+  if (parsed === 0) {
+    throw new Error(`--${key} must be at least 1 (got 0). To place no real orders at all, use --test-order off.`);
+  }
+  return parsed;
+}
+
 function createOrderCreationBudget({ plans = [], args = {} } = {}) {
   const planned = Array.isArray(plans) ? plans.length : 0;
-  const limit = Math.max(0, numberArg(args["max-order-creations"], planned));
+  const requested = validatedOrderCreationLimit(args);
+  const limit = requested === null ? Math.max(0, planned) : requested;
   const reservations = [];
   let reserved = 0;
   const record = (context, kind) => {
@@ -6025,6 +6056,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   orderCreationSignals,
   summarizeOrderCreateActivity,
   confirmedOrderCreates,
+  validatedOrderCreationLimit,
   ORDER_DETAIL_RESPONSE_PATTERN,
   createOrderCreationBudget,
   dispatchTestOrderPlans,

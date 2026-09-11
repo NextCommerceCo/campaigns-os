@@ -4,7 +4,7 @@ import { specMaterialHash } from "./spec-identity.mjs";
 export { shellToken } from "./shell-token.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
-import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
+import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
@@ -1598,6 +1598,10 @@ function parityReplayEvidence(bundle) {
 }
 
 async function runParityQa(args) {
+  // Checked here as well as on the budget itself: the budget is built after a
+  // browser has launched, and a flag the operator typed wrong should cost them
+  // nothing. The budget stays the authority — this is fail-fast, not the gate.
+  validatedOrderCreationLimit(args);
   const fixturePath = stringArg(args.fixture);
   const scenarioId = stringArg(args.scenario) || stringArg(args._[2]);
   if (!fixturePath) throw new Error("QA parity requires --fixture <parity-fixture.json>.");
@@ -1665,6 +1669,8 @@ async function runParityQa(args) {
 }
 
 async function runQa(args) {
+  // Fail-fast before anything resolves or launches. The authoritative check
+  // lives on the creation budget itself, which every browser path builds.
   validatedOrderCreationLimit(args);
   const resolved = await resolveQaInputs(args);
   return runResolvedQa(args, resolved);
@@ -2758,33 +2764,6 @@ function readJson(path) {
 
 function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-// The real-order flood guard, checked at the surface the operator types it at.
-// The value used to travel as a raw string all the way into the browser runner
-// and only became a number there, where a non-numeric or non-positive input
-// silently fell back to the default budget: `--max-order-creations foo` and
-// `--max-order-creations -3` both looked accepted while the run went on to
-// place the default number of real orders. A bound nobody can typo past is the
-// entire point of the flag, so an unusable value is an error, not a default.
-//
-// Returns the validated limit, or null when the flag was not supplied (the
-// runner then defaults it to the planned path count).
-function validatedOrderCreationLimit(args = {}) {
-  const key = "max-order-creations";
-  if (args[key] === undefined || args[key] === null) return null;
-  const raw = String(args[key]).trim();
-  const parsed = Number(raw);
-  if (!raw || !Number.isInteger(parsed)) {
-    throw new Error(`--${key} must be a whole number of real order creations (got ${JSON.stringify(String(args[key]))}).`);
-  }
-  if (parsed < 0) {
-    throw new Error(`--${key} must not be negative (got ${parsed}). It bounds how many real orders this run may create.`);
-  }
-  if (parsed === 0) {
-    throw new Error(`--${key} must be at least 1 (got 0). To place no real orders at all, use --test-order off.`);
-  }
-  return parsed;
 }
 
 function stringArg(value) {
