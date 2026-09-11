@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { createVerdict, deriveExceptions, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { createVerdict, deriveExceptions, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, summarizePurchaseProof, validateVerdict } from "./qa-verdict.mjs";
 
 const baseVerdict = {
   runId: "RUN1",
@@ -254,4 +254,72 @@ test("QA_ASSERTION_FAMILY_VOCABULARY matches every family literal the runner emi
     [...QA_ASSERTION_FAMILY_VOCABULARY].sort(),
     "QA_ASSERTION_FAMILY_VOCABULARY must equal the set of family literals emitted by src/*.mjs",
   );
+});
+
+// Purchase-proof summary: counts only, by design. This rides into the committed
+// assembly report and the readback bundle, and the sidecar projection strips
+// order ids, refs, emails and URLs from the verdict for exactly that reason —
+// so the summary must carry none of them either.
+
+test("summarizePurchaseProof counts order paths without carrying any order identity", () => {
+  const summary = summarizePurchaseProof({
+    verdict: {
+      test_orders: [
+        { path: "accept", ok: true, next_order_id: "1001", ref_id: "REF-1", qa_email: "qa@example.test", is_test: true, checkout_url: "https://example.test/checkout", verification: { verified: true } },
+        { path: "accept", ok: true, next_order_id: "1002", ref_id: "REF-2", qa_email: "qa@example.test", is_test: true, checkout_url: "https://example.test/checkout", verification: { verified: false } },
+      ],
+    },
+    proofPolicy: { order_path_depth: "common", typed_card_depth: "common" },
+  });
+  assert.deepEqual(summary, {
+    declared_order_path_depth: "common",
+    declared_typed_card_depth: "common",
+    order_paths_executed: 2,
+    orders_created: 2,
+    orders_verified: 1,
+    all_orders_test_mode: true,
+  });
+  const serialized = JSON.stringify(summary);
+  for (const leak of ["1001", "1002", "REF-1", "REF-2", "example.test", "qa@"]) {
+    assert.equal(serialized.includes(leak), false, `summary must not carry ${leak}`);
+  }
+});
+
+test("summarizePurchaseProof reports an explicit zero for a --test-order off run", () => {
+  const summary = summarizePurchaseProof({ verdict: { test_orders: [] }, proofPolicy: { order_path_depth: "common" } });
+  assert.equal(summary.order_paths_executed, 0);
+  assert.equal(summary.orders_created, 0);
+  assert.equal(summary.all_orders_test_mode, null);
+  assert.equal(summary.declared_typed_card_depth, null);
+});
+
+test("summarizePurchaseProof flags an order that is not in test mode", () => {
+  const summary = summarizePurchaseProof({
+    verdict: { test_orders: [{ next_order_id: "1", is_test: true }, { next_order_id: "2", is_test: false }] },
+    proofPolicy: {},
+  });
+  assert.equal(summary.all_orders_test_mode, false);
+  assert.equal(summary.declared_order_path_depth, null);
+});
+
+test("summarizePurchaseProof tolerates a malformed verdict", () => {
+  assert.equal(summarizePurchaseProof({ verdict: null, proofPolicy: null }).order_paths_executed, 0);
+  assert.equal(summarizePurchaseProof({ verdict: { test_orders: "nope" } }).order_paths_executed, 0);
+});
+
+// Kilo review, PR #315: `Number.isFinite(0)` is true, and the `??` chain stops
+// at a literal 0 rather than falling through to the next field, so a run that
+// received no ids at all reported every order as created.
+test("summarizePurchaseProof does not count a numeric zero id as an order created", () => {
+  const summary = summarizePurchaseProof({
+    verdict: { test_orders: [{ next_order_id: 0, order_id: 0, ref_id: 0, is_test: true }, { next_order_id: 0, order_id: 0, ref_id: 0, is_test: true }] },
+    proofPolicy: { order_path_depth: "common" },
+  });
+  assert.equal(summary.order_paths_executed, 2);
+  assert.equal(summary.orders_created, 0);
+});
+
+test("summarizePurchaseProof still counts a positive numeric id", () => {
+  const summary = summarizePurchaseProof({ verdict: { test_orders: [{ next_order_id: 1001, is_test: true }] } });
+  assert.equal(summary.orders_created, 1);
 });

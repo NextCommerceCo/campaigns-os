@@ -4,7 +4,7 @@ import { specMaterialHash } from "./spec-identity.mjs";
 export { shellToken } from "./shell-token.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
-import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail } from "./qa-browser.mjs";
+import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
@@ -123,7 +123,10 @@ Options:
                                   "tiers:full" cross every tier with those path shapes. Incompatible with
                                   --select-package/--apply-coupon (tiers derives them from the spec).
                                   Requires one-time setup: npm run qa:install-browser.
-  --max-test-orders <n>           Accidental-flood guard for browser order count (not a permission gate). Default: 6.
+  --max-test-orders <n>           Accidental-flood guard for planned browser order paths (not a permission gate). Default: 6.
+  --max-order-creations <n>       Hard bound on REAL order creations in this run, reserved before each submit
+                                  click. Default: the planned path count. A path whose failure is confirmed to
+                                  have created an order is inspected read-only, never resubmitted.
   --allowed-domains-confirmed <bool>
                                   qa policy set: persist non-localhost SDK-origin confirmation.
                                   Localhost on any port is a global Development domain with analytics suppressed.
@@ -1595,6 +1598,10 @@ function parityReplayEvidence(bundle) {
 }
 
 async function runParityQa(args) {
+  // Checked here as well as on the budget itself: the budget is built after a
+  // browser has launched, and a flag the operator typed wrong should cost them
+  // nothing. The budget stays the authority — this is fail-fast, not the gate.
+  validatedOrderCreationLimit(args);
   const fixturePath = stringArg(args.fixture);
   const scenarioId = stringArg(args.scenario) || stringArg(args._[2]);
   if (!fixturePath) throw new Error("QA parity requires --fixture <parity-fixture.json>.");
@@ -1662,6 +1669,9 @@ async function runParityQa(args) {
 }
 
 async function runQa(args) {
+  // Fail-fast before anything resolves or launches. The authoritative check
+  // lives on the creation budget itself, which every browser path builds.
+  validatedOrderCreationLimit(args);
   const resolved = await resolveQaInputs(args);
   return runResolvedQa(args, resolved);
 }
@@ -3158,6 +3168,7 @@ function extractApiError(raw) {
 
 export const __qaNodeTestHooks = Object.freeze({
   extractTopologies,
+  validatedOrderCreationLimit,
   resolveQaInputs,
   runResolvedQa,
   runPageChecks,

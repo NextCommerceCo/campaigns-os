@@ -284,6 +284,94 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
 The session file is transient, machine-local, and lives under the
 scrubber-ignored `.campaign-runtime/`.
 
+## Closeout recognition (`next` reads the records it demands)
+
+Nothing in the CLI used to read `.campaign-runtime/run-records/`, so `next` at
+stage `done` demanded a Run Record unconditionally — including for runs that had
+already assembled, closed, and remitted one. `next` now reads that directory and
+decides whether a **matching, current, successfully closed** record exists for
+the packet it was called with.
+
+The reading is deliberately conservative. Records are machine-local (they are in
+the managed `.gitignore` block), so an absent directory is the normal case and
+never an error; the scan is bounded and wrapped, and a slow, unreadable, or
+corrupt records directory can never fail or stall orchestration. **Any doubt
+emits the closeout.** A false demand costs one idempotent command; false silence
+loses the run's durable record.
+
+A record satisfies closeout only when all of these hold:
+
+1. **Identity** — its `identity.map_id` and `identity.campaign_slug` equal the
+   packet's `spec.map_id` and `campaign.public_route_slug`. Both sides must
+   assert an identity; a record that names neither is not evidence about this
+   campaign.
+2. **Currency** — its `created_at` is not earlier than the newest `checked_at` /
+   `completed_at` on the report's `doctor` and `qa` stages. An older report that
+   carries no such timestamps contributes no floor rather than a fabricated one.
+3. **Artifacts** — when the report's `qa` stage points at a QA verdict, one of
+   the record's `qa_verdict` artifact references must carry that verdict's
+   current SHA-256. (A record may reference several verdicts: a session retains
+   each blocked repair attempt alongside the one that passed.) Verdict identity
+   only — the assembly report's own hash drifts the instant a producer writes a
+   stage, so including it would make every record instantly outdated.
+4. **Closure** — `remit_state` is `ok`, or `skipped`. **`skipped` counts as
+   closed**: it is the consent-off / `--no-remit` / local-only path, a deliberate
+   non-remit rather than a failure.
+
+The newest matching record decides, so an older good record can never mask a
+newer broken one.
+
+### Reason codes
+
+| Code | `next` emits |
+|---|---|
+| `satisfied` | a non-required `run_record_present` action naming the record and its path |
+| `no_record` | the required `run_record_closeout` |
+| `foreign_campaign` | the required `run_record_closeout` |
+| `stale_predates_evidence` | the required `run_record_closeout` |
+| `outdated_artifacts` | the required `run_record_closeout` |
+| `remit_failed` | the required `run_record_remit_recovery` |
+| `remit_incomplete` | the required `run_record_remit_recovery` |
+
+A failed or never-finished remit is **not** a missing record, and must not be
+answered by minting a second one — that would fork the run's identity. Because
+remit is idempotent on `run_id`, recovery re-runs `run-record` against the record
+already on disk:
+
+```bash
+campaigns-os run-record --packet <packet> --run-id <existing-run-id> --json
+```
+
+An active run session still wins: with an ambient session open, `done` emits the
+required `run end` exactly as before, satisfied or not.
+
+`campaigns-os qa run`'s own closeout action is unchanged. It fires while the
+record for that verdict cannot exist yet, so it is correctly unconditional.
+
+### Latest QA identity cannot disagree with latest QA status
+
+The QA producer owns `stages.qa.verdict_run_id`, `stages.qa.evidence`, and
+`stages.qa.purchase_proof`. Before this, only the canonical fields
+(status/outputs/timestamps) refreshed, and hand-authored extension fields
+survived untouched — so a stage could carry a passing status and today's output
+links beside a previous run's id and an `evidence.remaining_blocker` describing
+a bug that had since been fixed.
+
+Prior evidence is **preserved, not deleted**: the previous `verdict_run_id` /
+`evidence` pair moves into a bounded `history[]` on the same stage, oldest first,
+carrying its **own original status and `checked_at`**. A stage that had no
+`checked_at` yields a history entry with no `checked_at` — an absent timestamp
+stays absent rather than being stamped with now, because manufactured provenance
+is worse than the stale field it replaces. Re-recording the same verdict does not
+grow history. `evidence` has two schema-legal shapes, object and array, and both
+archive — an array of operator notes is preserved as history rather than dropped
+on the next producer write. Every other extension field on the stage (`waivers`,
+and anything an out-of-repo consumer writes) passes through a producer write
+verbatim.
+
+These fields are additive under the assembly-report stage definition, which
+already permits additional properties; no schema and no surface version moved.
+
 ## Deferred (not v0)
 
 - Command-lifecycle instrumentation — **landed (T6).** A `withCommandLifecycle`
