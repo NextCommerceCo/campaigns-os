@@ -1800,8 +1800,29 @@
       "entry_sha256": "b79a62ae2d0d204f19c43031329336110b81a85c0654663e901543f52524d12e"
     },
     {
-      "id": "RL-0039",
+      "id": "RL-0043",
       "sequence": 38,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.15",
+      "changelog_sha256": "d99a106691b5a9654a8c2f6f0332adfa7e402572bb982bb45d15bf4ee1e0a3b2",
+      "agent_impact": "No behaviour change. Treat a published verdict or remitted Run Record from the public runner as an unverified submitted claim, not as evidence of execution: it is stamped trusted:false / anonymous because the runner carries no ingest credential, and it records what the submitter reported — not that a run happened, and not that its artifacts reflect real observations. A fabricated verdict passes every schema check (standing negative control in src/qa-verdict-schema.test.mjs), so do not build QA history or a launch decision on one; require the run's own attributed local execution evidence instead. Existing readback rules are unchanged (qa promote refuses an untrusted source verdict; run-record's QA-verdict inference excludes untrusted records). Attributed publishing is tracked as campaigns-os#329 and does not exist today.",
+      "compatibility": "compatible",
+      "migration": "none. Keep filtering readback on trusted, do not treat an anonymous published record as proof that a run occurred, and require independent execution evidence for any launch decision.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Adds \"What a published anonymous record is\": such a record is an unverified submitted claim recording what the submitter reported, not that a run happened or that its artifacts reflect real observations — the receiver verifies nothing it is told and a fabricated verdict is shape-valid, as the standing negative control shows. States that any launch decision needs independent execution evidence from the run's own attributed local artifacts, restates the two readback chokepoints, and names campaigns-os#329 as where attributed publishing is tracked."
+        }
+      ],
+      "entry_sha256": "6d3095850d55024a21f907b6d1c7e600d07052aa95ca63c7c58cc72a62cc3b7b"
+    },
+    {
+      "id": "RL-0039",
+      "sequence": 39,
       "date": "2026-09-12",
       "kind": "release",
       "surface_version": null,
@@ -1824,7 +1845,7 @@
           "summary": "States the token-less rule in the theme section: the gate passes with nothing to generate, browser QA then blocks on the starter palette at blocker severity, and the waiver or a hand-authored brand layer is the bypass."
         }
       ],
-      "entry_sha256": "ae8f7ed5cbdb2d54db7ea129af2d740ab6533c88fbd85115f5c862296cdb22f9"
+      "entry_sha256": "246dd59c59c629cd23d45ddf7f992eaf1f5ef8fdcdb52a500cae4f50ed620acb"
     }
   ]
 }
