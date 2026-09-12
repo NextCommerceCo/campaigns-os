@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
-import { computeDisposition } from "./qa-verdict.mjs";
+import { computeDisposition, deriveExceptions } from "./qa-verdict.mjs";
 import { __qaNodeTestHooks, runQaCli } from "./qa-node.mjs";
 
 const {
@@ -412,10 +412,66 @@ test("an exhausted creation budget stops the run before the submit click", async
   assert.equal(creationBudget.reserved, 1);
 
   const stopped = testOrderAssertionFor(assertions, "accept");
-  assert.equal(stopped.status, "fail");
+  // Nothing was submitted, so the path was not exercised: manual_review at warn
+  // severity, the same vocabulary a hosted-checkout redirect uses. It is never a
+  // blocker-severity fail, which is reserved for a checkout this runner actually
+  // observed failing.
+  assert.equal(stopped.status, "manual_review");
+  assert.equal(stopped.severity, "warn");
   assert.match(stopped.actual, /budget/i);
   assert.equal(stopped.evidence.order_creation_budget.limit, 1);
   assert.equal(stopped.evidence.order_creation_budget.reserved, 1);
+});
+
+test("a budget stop does not block the verdict, and does not pass silently either", async () => {
+  const runner = scriptedRunner([
+    { submits: true, attempt: passedAttempt("ref-1") },
+    { submits: true, attempt: passedAttempt("ref-2") },
+  ]);
+  const { assertions } = await dispatch({
+    plans: ["checkout", "accept"],
+    runner,
+    args: { "max-order-creations": "1" },
+  });
+  const passed = testOrderAssertionFor(assertions, "checkout");
+  const stopped = testOrderAssertionFor(assertions, "accept");
+  assert.equal(passed.status, "pass");
+
+  // The operator chose the budget. A run that spends it is not a broken
+  // checkout, so it must not finalize `blocked` and send a supervisor after a
+  // checkout repair that has nothing to repair.
+  assert.notEqual(computeDisposition([passed, stopped]), "blocked");
+  // It is not clean either: one planned path was never proved.
+  assert.equal(computeDisposition([passed, stopped]), "ready_with_exceptions");
+  // The unproved path is visible to a consumer reading exceptions[], not buried
+  // in the assertion list.
+  assert.ok(
+    deriveExceptions([passed, stopped]).some((entry) => entry.id === stopped.id),
+    "a budget stop is carried in exceptions[]",
+  );
+});
+
+test("a budget stop is distinguishable from a genuine order-creation failure", async () => {
+  const runner = scriptedRunner([
+    { submits: true, attempt: passedAttempt("ref-1") },
+    { submits: true, attempt: passedAttempt("ref-2") },
+  ]);
+  const { assertions } = await dispatch({
+    plans: ["checkout", "accept"],
+    runner,
+    args: { "max-order-creations": "1" },
+  });
+  const stopped = testOrderAssertionFor(assertions, "accept");
+  const genuine = testOrderAssertion(CHECKOUT_PAGE, "accept", preSubmitFailureAttempt());
+
+  // The whole point: status and severity alone, with no evidence read, must
+  // already tell the two apart.
+  assert.equal(genuine.status, "fail");
+  assert.equal(genuine.severity, "blocker");
+  assert.notEqual(stopped.status, genuine.status);
+  assert.notEqual(stopped.severity, genuine.severity);
+  // And a genuine failure still blocks.
+  assert.equal(computeDisposition([genuine]), "blocked");
 });
 
 test("a budget stop is not reported as a broken checkout", async () => {
