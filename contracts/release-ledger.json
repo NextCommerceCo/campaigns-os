@@ -1779,14 +1779,35 @@
       "entry_sha256": "d2627d4422fcf5cc0f14f9c81a84ea3979e0a76f419c1b65dcc846dbdcaafd00"
     },
     {
-      "id": "RL-0041",
+      "id": "RL-0037",
       "sequence": 37,
       "date": "2026-09-12",
       "kind": "release",
       "surface_version": null,
+      "changelog_section": "1.25.0+agent.9",
+      "changelog_sha256": "a4cbf993eb1946794c1417fa34ee8c153fb45dfba1a4db5d45a299dfbd77b5d6",
+      "agent_impact": "A qa run that spends its --max-order-creations budget changes disposition and exit code. The assertion for the path the budget stopped was status fail / severity blocker, indistinguishable from a checkout the runner watched fail, so every budgeted run whose budget ran out before the last planned path finalized blocked and exited 4. It is now status manual_review / severity warn, the same vocabulary a hosted-checkout redirect uses for a path a human must decide, and such a run finalizes ready_with_exceptions. A consumer that treated a browser-test-order blocker as a checkout defect worth dispatching a repair for will stop doing so for budget stops; one that gates on disposition blocked or exit code 4 will now see ready_with_exceptions for these runs and must read exceptions[], where the unexercised path is listed, rather than assuming an unblocked run proved every planned path. The assertion id, family, expected/actual text and evidence.order_creation_budget are unchanged, and a genuine order-creation failure is still a blocker that blocks.",
+      "compatibility": "compatible",
+      "migration": "none. If you gate on disposition or exit code, read exceptions[] (or assertion status manual_review in family browser-test-order) to see which planned paths were not exercised; do not read an unblocked verdict as proof that every planned path ran.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Records the status and severity a budget stop carries (manual_review / warn, never a blocker fail), and the disposition a run that spends its order-creation budget finalizes (ready_with_exceptions, with the unexercised path in exceptions[]), beside the existing --max-order-creations description."
+        }
+      ],
+      "entry_sha256": "b79a62ae2d0d204f19c43031329336110b81a85c0654663e901543f52524d12e"
+    },
+    {
+      "id": "RL-0041",
+      "sequence": 38,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
       "changelog_section": "1.25.0+agent.13",
-      "changelog_sha256": "f97e60516728ef31f554800a86b3e658986dbf2d5cd5dcc4f0d0938b4647b1f0",
-      "agent_impact": "No behaviour change. Content-claim findings (invented_counts, verified_buyer_chrome, and the discount-claim residue codes) remain warning-only and nothing downstream gates on them; that posture is now documented rather than implied. An agent that read \"Detection fails closed\" in the content_residue.anti_pattern message as a promise that a later stage would block must stop doing so: no stage does. Consumers matching that message on its trailing sentence must re-read it.",
+      "changelog_sha256": "9b571811478c581f30addb1da1bb11301b542f9abbc6f5a6eff798dde6f53e78",
+      "agent_impact": "No behaviour change. Content-claim findings (every content_residue.anti_pattern finding id, and the discount-claim residue codes) remain warning-only and nothing downstream gates on them; that posture is now documented rather than implied. An agent that read \"Detection fails closed\" in the content_residue.anti_pattern message as a promise that a later stage would block must stop doing so: no stage does. Consumers matching that message on its trailing sentence must re-read it.",
       "compatibility": "compatible",
       "migration": "none. Do not treat content_residue.anti_pattern, template_contract.discount_claim_residue, or template_contract.discount_claim_unverified as gates; the claims are the operator's and the client's responsibility.",
       "changes": [
@@ -1794,7 +1815,7 @@
           "class": "named_surface",
           "path": "docs/campaign-build-brief.md",
           "surface_entry": "docs/campaign-build-brief.md",
-          "summary": "Adds \"Content Claims Are Reviewed, Not Enforced\": the doctor's invented-count, verified-buyer-chrome and above-maximum discount findings are warnings with no blocker, blocked_stages entry, QA assertion or order gate behind them, and the operator and client own the claims. Names the two hard content checks that do block, so the boundary is explicit."
+          "summary": "Adds \"Content Claims Are Reviewed, Not Enforced\": every content anti-pattern under the content_residue.anti_pattern warning code (finding ids invented_counts, verified_buyer_chrome, byline_persona, borrowed_authority, press_marquee, science_theater) and the above-maximum discount findings are warnings with no blocker, blocked_stages entry, QA assertion or order gate behind them, and the operator and client own the claims. Separates the warning code from the finding ids, and names the two hard content checks that do block, so the boundary is explicit."
         },
         {
           "class": "cli_surface",
@@ -1803,7 +1824,7 @@
           "summary": "Rewrites the trailing sentence of the content_residue.anti_pattern warning message: it no longer says detection fails closed, and instead states that this is a review warning nothing downstream blocks on and that the claim is the operator's and the client's responsibility. Severity, finding ids, detection and all other doctor messages are unchanged."
         }
       ],
-      "entry_sha256": "44786c1f73952a7a4a089146d620bb1f3e6ea1fba36a472a1cdf1fcc17500c25"
+      "entry_sha256": "2172591a480fb55b0804e3a275aa4d7261ec6719f58d14605dd2a12da7d091ab"
     }
   ]
 }

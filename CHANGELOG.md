@@ -8,10 +8,11 @@ Notable supported-surface changes are recorded here.
 
 - Policy: fabricated social proof and over-maximum discount copy stay doctor
   warnings, and the docs now say so plainly. `docs/campaign-build-brief.md`
-  gains a "Content Claims Are Reviewed, Not Enforced" section naming the three
-  findings that are warning-only (`invented_counts` and `verified_buyer_chrome`
-  under `content_residue.anti_pattern`, plus
-  `template_contract.discount_claim_residue` /
+  gains a "Content Claims Are Reviewed, Not Enforced" section naming what is
+  warning-only (every content anti-pattern under the `content_residue.anti_pattern`
+  warning code — finding ids `invented_counts`, `verified_buyer_chrome`,
+  `byline_persona`, `borrowed_authority`, `press_marquee`, `science_theater` —
+  plus `template_contract.discount_claim_residue` /
   `discount_claim_unverified`), stating that nothing downstream reads them — no
   blocker, no `blocked_stages` entry, no QA assertion, no order gate — and that
   responsibility for the claims sits with the operator and the client. The
@@ -19,6 +20,27 @@ Notable supported-surface changes are recorded here.
   closed", which read as though something later in the ladder would stop the
   build; it now says it is a review warning that nothing blocks on. Severity,
   finding ids, detection, and every other message are unchanged.
+
+## [1.25.0+agent.9] - 2026-09-12
+
+### Fixed
+
+- A `qa run` that spends its `--max-order-creations` budget no longer reports
+  the stopped path as a blocker, and no longer finalizes `blocked`. The
+  budget-stop assertion was emitted with `status: fail` and
+  `severity: blocker` — byte-identical to a checkout the runner watched fail —
+  so `computeDisposition` turned any budgeted run whose budget ran out before
+  the last planned path into `blocked` (exit code `4`), and the only thing
+  separating a deliberate safety stop from a broken checkout was the assertion
+  text and an `evidence.order_creation_budget` key that no disposition code
+  read. Nothing is submitted for a budget-stopped path, so it is now recorded
+  as `manual_review` at `warn` severity, the vocabulary this runner already
+  uses for a hosted-checkout redirect: a path a human decides, not one the
+  runner proved either way. Such a run finalizes `ready_with_exceptions`, and
+  the unexercised path rides in `exceptions[]` so it can never be mistaken for
+  a clean `ready`. The assertion text and the `order_creation_budget` evidence
+  are unchanged, and a genuine order-creation failure is still a blocker that
+  blocks.
 
 ## [1.25.0+agent.8] - 2026-09-12
 

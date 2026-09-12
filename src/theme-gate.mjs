@@ -36,10 +36,6 @@ export function commerceScopeFromScope(scope) {
   return { built, out_of_scope: outOfScope, all: [...built, ...outOfScope] };
 }
 
-export function commercePagesFromScope(scope) {
-  return commerceScopeFromScope(scope).all;
-}
-
 export function themeWaiverFrom(reportTheme, ephemeralWaiver = null) {
   if (typeof ephemeralWaiver === "string" && ephemeralWaiver.trim()) {
     return { reason: ephemeralWaiver.trim(), waived_by: "cli_flag", waived_at: null };

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 
+import { shellToken } from "./shell-token.mjs";
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import {
   detectFrameworks,
@@ -857,15 +858,15 @@ function buildRemediation(root) {
     risks.push("Production storefront/deploy URL is unknown.");
   }
   const proof = [
-    `campaigns-os standardize --target ${shellQuote(root.identity.page_kit_root)} --json`,
+    `campaigns-os standardize --target ${shellToken(root.identity.page_kit_root)} --json`,
   ];
   const family = root.identity.template_family.value;
   const familyConfirmed = family && root.identity.template_family.confidence !== "tentative";
   if (root.built_output.present && familyConfirmed) {
-    const slugFlag = root.built_output.slug ? ` --slug ${shellQuote(root.built_output.slug)}` : "";
-    proof.push(`campaigns-os doctor --built ${shellQuote(root.identity.page_kit_root)} --family ${shellQuote(family)}${slugFlag} --json`);
+    const slugFlag = root.built_output.slug ? ` --slug ${shellToken(root.built_output.slug)}` : "";
+    proof.push(`campaigns-os doctor --built ${shellToken(root.identity.page_kit_root)} --family ${shellToken(family)}${slugFlag} --json`);
   } else if (root.built_output.present) {
-    proof.push(`campaigns-os doctor --built ${shellQuote(root.identity.page_kit_root)} --family <template-family> --json`);
+    proof.push(`campaigns-os doctor --built ${shellToken(root.identity.page_kit_root)} --family <template-family> --json`);
   }
   return {
     safe_agent_repairs: unique(safe),
@@ -1213,12 +1214,6 @@ function appendList(lines, label, items) {
     return;
   }
   for (const item of items) lines.push(`- ${item}`);
-}
-
-function shellQuote(value) {
-  const raw = String(value || "");
-  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(raw)) return raw;
-  return `'${raw.replace(/'/g, "'\\''")}'`;
 }
 
 function escapeRegExp(value) {
