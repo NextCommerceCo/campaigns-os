@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
-import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
@@ -1431,16 +1431,18 @@ export function buildQaCloseoutActions({ packetPath = null, localPath = null, ru
   if (!packetPath) return [];
   const verdictRef = localPath ? ` --qa-verdict ${shellToken(localPath)}` : "";
   // Will the session STILL hold this run_id by the time the operator runs the
-  // printed command? Only for a blocked attempt: that keeps the session open
-  // for repair (autoEndRunSessionAfterTerminalQa returns early on blocked),
-  // and its close — the later ready auto-end, or `run end` — then assembles and
-  // remits under this same run_id. Remit is a plain POST with no replace verb
+  // printed command? Only when this attempt does not end the session — a
+  // blocked one, which stays open for repair, or any disposition this version
+  // does not recognise. Both sides read SESSION_ENDING_DISPOSITIONS, so the
+  // answer here and the auto-end's own answer cannot drift apart.
+  // A session that stays open closes later — the eventual ready auto-end, or
+  // `run end` — assembling and remitting under this same run_id. Remit is a plain POST with no replace verb
   // and the receiver refuses a second POST for a stored run_id with 409, so a
   // command printed without `--no-remit` spends the id on the interim record
   // and leaves the session's final record — the one carrying every QA attempt
   // and the aggregated lifecycle — refused at the door.
   //
-  // Every other disposition auto-ends the session IN THIS SAME PROCESS, before
+  // A session-ending disposition auto-ends the session IN THIS SAME PROCESS, before
   // the operator can type anything: the record is already assembled and the
   // session cleared, so the printed command mints its own run_id and there is
   // nothing to collide with. Printing `--no-remit` there would be worse than
@@ -1448,10 +1450,10 @@ export function buildQaCloseoutActions({ packetPath = null, localPath = null, ru
   // receiver, and if the auto-end's own remit had failed, that newer closed
   // record would bury the failure the operator still has to recover from. The
   // auto-end prints that recovery command itself; see autoEndCloseoutNotice.
-  const sessionRetainsRunId = runSessionActive && disposition === "blocked";
+  const sessionRetainsRunId = runSessionActive && !SESSION_ENDING_DISPOSITIONS.has(disposition);
   const remitRef = sessionRetainsRunId ? " --no-remit" : "";
   const sessionNote = sessionRetainsRunId
-    ? " This attempt is blocked, so the run session stays open and this writes the local record only (--no-remit): it shares the session's run id, and the session's own close is what remits that id once."
+    ? " This attempt does not end the run session, so the session stays open and this writes the local record only (--no-remit): it shares the session's run id, and the session's own close is what remits that id once."
     : "";
   return [
     {

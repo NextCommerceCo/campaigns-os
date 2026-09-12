@@ -7,7 +7,8 @@ Notable supported-surface changes are recorded here.
 ### Fixed
 
 - The `run-record` closeout `qa run` prints as `Required next:` now carries
-  `--no-remit` after a **blocked** verdict. Remit is a plain POST with no
+  `--no-remit` whenever the attempt does not end the run session — a **blocked**
+  verdict, or any disposition this version does not recognise. Remit is a plain POST with no
   replace verb, and the receiver keeps one record per `run_id`: a second POST
   for an id it already holds comes back `409 run_record_conflict`. A blocked
   verdict keeps the run session open, so the printed command inherited that
@@ -16,9 +17,13 @@ Notable supported-surface changes are recorded here.
   and the aggregated lifecycle) refused at the door. The run that mattered ended
   `remit_state: failed` locally while the canonical side kept the earlier,
   thinner record. The session now owns the one accepted send for its id.
-  A terminal verdict is unchanged: it auto-ends the session in the same process,
-  before the printed command can run, so that command mints its own `run_id` and
-  remits — as it does with no session at all.
+  A session-ending verdict is unchanged: it auto-ends the session in the same
+  process, before the printed command can run, so that command mints its own
+  `run_id` and remits — as it does with no session at all. Which dispositions
+  end a session is now one exported set (`SESSION_ENDING_DISPOSITIONS`) read by
+  both the auto-end and the closeout, enumerated rather than excluded: an
+  unrecognised disposition keeps the session open on both sides instead of
+  letting them disagree about who owns the `run_id`.
 - When a session's auto-end assembles its record but the remit does not close,
   the auto-end now says so and names the local record to keep. It deliberately
   does not print a re-send command: `run-record --run-id <id>` reassembles the

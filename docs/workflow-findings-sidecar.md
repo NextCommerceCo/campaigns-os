@@ -272,12 +272,16 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   aggregated Run Record with references to every attempt, then clears the
   session. Pass `--no-remit` to skip remit for that local Run Record.
   Because the session's close is what remits the session's `run_id`, the
-  `run-record` closeout command a **blocked** QA run prints carries
-  `--no-remit`: the session stays open, so that command would share its id, and
-  assembling an interim record is useful while spending the session's one
-  accepted POST on it is not. A terminal verdict auto-ends the session in the
-  same process, before the printed command can run, so there the command mints
-  its own `run_id` and remits normally — as it does with no session at all. When
+  `run-record` closeout command a QA run prints carries `--no-remit` whenever
+  the attempt does not end the session — a **blocked** verdict, or a disposition
+  the toolkit does not recognise: the session stays open, so that command would
+  share its id, and assembling an interim record is useful while spending the
+  session's one accepted POST on it is not. A session-ending verdict auto-ends
+  in the same process, before the printed command can run, so there the command
+  mints its own `run_id` and remits normally — as it does with no session at
+  all. One exported set decides which dispositions end a session, read by both
+  the auto-end and the closeout, so the two cannot disagree about who owns the
+  `run_id`. When
   an auto-end's own remit does not close, the auto-end says so and names the
   local record to keep. It does not print a re-send command: `run-record
   --run-id` reassembles rather than reloads (see below), and the session whose

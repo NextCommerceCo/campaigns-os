@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { recordProducerStageOutcome } from "./stage-ledger.mjs";
-import { summarizePurchaseProof } from "./qa-verdict.mjs";
+import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
   appendFinding,
@@ -740,12 +740,29 @@ export function recordQaStageOutcome(args, result) {
 // the "recovery" would replace a complete record with a thinner one and send
 // that instead. Resending the persisted file is the right fix and is follow-up
 // work; until it exists the honest advice is to keep the file.
+// One line, no control characters. The notice below is the operator's only
+// signal that a remit failed, and it is multi-line by construction - a run id
+// or path carrying a newline, a carriage return, or an ANSI escape could split
+// it, overwrite it, or dress a fabricated line up as toolkit output. Neither
+// value is toolkit-authored: the path comes from a packet-derived target
+// directory and the id can be handed in with --run-id. Replaced, never dropped,
+// so a mangled value stays visible as mangled rather than silently shortening
+// the message.
+function singleLineField(value, fallback = "") {
+  const raw = typeof value === "string" ? value : value == null ? "" : String(value);
+  if (!raw) return fallback;
+  // C0, DEL and C1, which covers CR, LF, TAB and the ESC that starts ANSI.
+  return raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, "\uFFFD");
+}
+
 export function autoEndCloseoutNotice({ runId, recordPath = null, remitState = null, remitError = null }) {
-  const assembled = `[campaigns-os] Run session ${runId} auto-ended after qa run; Run Record ${recordPath || "assembled"}.\n`;
+  const safeRunId = singleLineField(runId, "(unnamed run)");
+  const safeRecordPath = singleLineField(recordPath);
+  const assembled = `[campaigns-os] Run session ${safeRunId} auto-ended after qa run; Run Record ${safeRecordPath || "assembled"}.\n`;
   if (remitState === "ok" || remitState === "skipped") return assembled;
-  const why = remitError ? ` (${remitError})` : "";
-  const kept = recordPath
-    ? `The complete record is on disk at ${recordPath} — it holds every QA attempt this session collected. Keep it.`
+  const why = remitError ? ` (${singleLineField(remitError)})` : "";
+  const kept = safeRecordPath
+    ? `The complete record is on disk at ${safeRecordPath} — it holds every QA attempt this session collected. Keep it.`
     : "No local record path was reported for this run, so there is nothing on disk to keep.";
   return `${assembled}[campaigns-os] That record's remit did not complete${why}. ${kept} There is no retry-from-file path yet: re-running run-record against this run id reassembles the record from current disk state, without the session's attempt references, so it would overwrite this one with less than it has.\n`;
 }
@@ -774,9 +791,16 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
   writeRunSession(found.dir, updatedFound.session);
   sessionHolder.current = updatedFound;
 
-  if (attempt.disposition === "blocked") {
+  // Enumerated, not excluded: a disposition this version does not recognise
+  // keeps the session open rather than silently closing and remitting it. The
+  // closeout command printed moments ago read the same set, so the two can
+  // never disagree about whether the session still holds this run_id.
+  if (!SESSION_ENDING_DISPOSITIONS.has(attempt.disposition)) {
+    const why = attempt.disposition === "blocked"
+      ? "is blocked"
+      : `carries no session-ending disposition (${attempt.disposition || "none recorded"})`;
     process.stderr.write(
-      `[campaigns-os] QA attempt ${attempt.run_id || "recorded"} is blocked; run session ${found.session.run_id} remains active for repair and re-test.\n`,
+      `[campaigns-os] QA attempt ${attempt.run_id || "recorded"} ${why}; run session ${found.session.run_id} remains active for repair and re-test.\n`,
     );
     return;
   }

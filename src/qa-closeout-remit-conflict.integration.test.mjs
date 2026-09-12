@@ -308,3 +308,41 @@ test("re-running run-record against a cleared session's id reassembles, and thin
   );
   assert.equal(accepting.posts.length, 1, "and the thinner record is what reached the receiver");
 });
+
+// The notice is the operator's only signal that a remit failed, and it is
+// multi-line by construction. Neither the run id nor the record path is
+// toolkit-authored — the path derives from the packet's target directory, the
+// id can arrive via --run-id — so a newline or an ANSI escape in either would
+// split the message, overwrite a line, or forge one that reads as toolkit
+// output. Each field stays on its own line, mangled-but-visible.
+test("the auto-end notice keeps one clean line per field", () => {
+  const LF = String.fromCharCode(10);
+  const CR = String.fromCharCode(13);
+  const ESC = String.fromCharCode(27);
+  const notice = autoEndCloseoutNotice({
+    runId: ["run_1_abcd", "[campaigns-os] remit ok"].join(LF),
+    recordPath: ["/t/records", `${ESC}[2Krun.json`, "spoofed"].join(CR),
+    remitState: "failed",
+    remitError: ["boom", "[campaigns-os] and all is well"].join(LF),
+  });
+
+  // Exactly the notice's own two lines, each one the toolkit's: an injected
+  // newline would either add a third or leave a line the prefix does not open.
+  const lines = notice.trimEnd().split(LF);
+  assert.equal(lines.length, 2);
+  for (const line of lines) assert.match(line, /^\[campaigns-os\] /);
+  for (const control of [CR, ESC]) {
+    assert.ok(!notice.includes(control), `notice must not carry ${JSON.stringify(control)}`);
+  }
+  // Replaced, not dropped: the operator still sees that the value was mangled.
+  assert.match(notice, /run_1_abcd�/);
+  assert.match(notice, /\/t\/records�/);
+  assert.match(notice, /remit did not complete \(boom�/);
+});
+
+test("the auto-end notice survives a missing run id and record path", () => {
+  const notice = autoEndCloseoutNotice({ runId: null, recordPath: null, remitState: "failed", remitError: null });
+  assert.match(notice, /\(unnamed run\)/);
+  assert.match(notice, /Run Record assembled\./);
+  assert.match(notice, /nothing on disk to keep/);
+});

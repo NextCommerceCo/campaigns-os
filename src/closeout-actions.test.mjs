@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { assessPurchaseProofCoverage, buildNextActions, orderRunRecordFileNames, readRunRecordsForTarget } from "./cli.mjs";
 import { buildQaCloseoutActions } from "./qa-node.mjs";
+import { SESSION_ENDING_DISPOSITIONS } from "./qa-verdict.mjs";
 
 // #171: run-record closeout must be a REQUIRED next action at terminal
 // stages and after qa run — the dogfood run ended with the session open and
@@ -73,6 +74,36 @@ for (const disposition of ["ready", "ready_with_exceptions"]) {
     assert.doesNotMatch(closeout.command, /--no-remit/);
   });
 }
+
+// Membership in the session-ending set is enumerated, not excluded, on both
+// sides. A disposition this version does not recognise — a newer toolkit's
+// verdict, a foreign one — must therefore land on the session-keeping side:
+// the auto-end leaves the session open, so the printed command shares its
+// run_id and must not spend it. Failing open here would re-POST that id and
+// earn the 409 this whole path exists to avoid.
+for (const disposition of ["quarantined", "READY", "", null]) {
+  test(`an unrecognised disposition (${JSON.stringify(disposition)}) keeps the run id and withholds the remit`, () => {
+    const [closeout] = buildQaCloseoutActions({
+      packetPath: "/campaigns/demo/campaign-runtime.build.json",
+      localPath: "qa-output/demo/RUN1.json",
+      runSessionActive: true,
+      disposition,
+    });
+    assert.match(closeout.command, /--no-remit/);
+  });
+}
+
+// The two sides read one constant, so the set the closeout treats as
+// session-ending is exactly the set the auto-end closes on.
+test("the session-ending set is exactly the dispositions the closeout lets remit", () => {
+  const remits = (disposition) => !buildQaCloseoutActions({
+    packetPath: "/campaigns/demo/campaign-runtime.build.json",
+    runSessionActive: true,
+    disposition,
+  })[0].command.includes("--no-remit");
+  for (const disposition of SESSION_ENDING_DISPOSITIONS) assert.equal(remits(disposition), true, disposition);
+  for (const disposition of ["blocked", "unknown_future_value"]) assert.equal(remits(disposition), false, disposition);
+});
 
 test("with no run session the printed closeout owns its run id and remits", () => {
   for (const disposition of ["blocked", "ready", null]) {
