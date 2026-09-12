@@ -989,7 +989,14 @@ purchases. `--max-order-creations` bounds **actual order creations**, defaults t
 the planned path count, and is reserved immediately before each submit click —
 before the purchase, never reconciled after it. An exhausted budget stops that
 path with its own assertion text and its own `order_creation_budget` evidence, so
-a safety stop the runner chose can never be read as a broken checkout. The value
+a safety stop the runner chose can never be read as a broken checkout. Nothing
+was submitted for that path, so it is recorded as `manual_review` at `warn`
+severity — the same "a human decides this one" vocabulary a hosted-checkout
+redirect uses — and never as a blocker-severity `fail`, which belongs to a
+checkout the runner watched fail. A run that spends its budget therefore
+finalizes `ready_with_exceptions`, not `blocked`: the unexercised path is listed
+in `exceptions[]` so it can never pass for a clean `ready`, but no supervisor is
+sent after a checkout repair that has nothing to repair. The value
 is validated on the budget itself, which every browser path builds — `qa run`
 and `qa parity` alike: a non-numeric, fractional, negative, or zero
 `--max-order-creations` is an error naming the flag, never a silent fall back to
