@@ -299,14 +299,25 @@ function resolveArtifactPath(baseDir, artifactPath) {
 }
 
 /**
- * The previous run's QA verdict, reached through that run's own Run Record
- * artifact reference. Returns `{ verdict, record, path, reason }`; `verdict`
- * is null whenever `reason` is set.
+ * The previous run's FINAL QA verdict, reached through that run's own Run
+ * Record artifact reference. Returns `{ verdict, record, path, reason }`;
+ * `verdict` is null whenever `reason` is set.
+ *
+ * The LAST qa_verdict reference, not the first. A run session that needed
+ * repair and re-test carries one qa_verdict artifact per attempt, appended in
+ * session order with the run's canonical verdict last — so the first reference
+ * is typically the blocked attempt that triggered the repair. Comparing
+ * against it would report a defect that was fixed before that run closed, and
+ * reintroduced by the change under test, as pre-existing: precisely the
+ * false-clean answer this label exists to prevent.
+ *
+ * The single-record boundary is unchanged: this still reads the final attempt
+ * of exactly one earlier run, never a merged view across runs.
  */
 export function loadPriorQaVerdict({ baseDir, mapId = null, currentRunId = null } = {}) {
   const record = findPriorRunRecord({ baseDir, mapId, currentRunId });
   if (!record) return { verdict: null, record: null, path: null, reason: "no_prior_run" };
-  const ref = (Array.isArray(record.artifacts) ? record.artifacts : []).find((artifact) => artifact?.kind === "qa_verdict");
+  const ref = (Array.isArray(record.artifacts) ? record.artifacts : []).findLast((artifact) => artifact?.kind === "qa_verdict");
   const path = ref ? resolveArtifactPath(baseDir, ref.path) : null;
   if (!path) return { verdict: null, record, path: null, reason: "prior_run_without_qa_verdict" };
   try {

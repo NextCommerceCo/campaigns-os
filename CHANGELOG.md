@@ -17,9 +17,12 @@ Notable supported-surface changes are recorded here.
   — the most recent record under the Build Packet's
   `.campaign-runtime/run-records/` whose `identity.map_id` matches, and only
   the first match, so nothing is ever compared against a non-adjacent run. QA
-  findings are compared against that record's own `qa_verdict` artifact; doctor
-  findings against its `observations.doctor` code lists, which every Run Record
-  already carries. The fingerprint is the identity each artifact already uses:
+  findings are compared against that record's LAST `qa_verdict` artifact: a run
+  that needed repair and re-test carries one reference per attempt in session
+  order, and the first is typically the blocked attempt, so comparing against it
+  would report a defect fixed before that run closed and reintroduced now as
+  pre-existing. Doctor findings compare against the record's
+  `observations.doctor` code lists, which every Run Record already carries. The fingerprint is the identity each artifact already uses:
   `family | id | page` for a QA assertion (no URL, so a local run and a
   published run compare like for like) and the `code` for a doctor issue.
   Same fingerprint and same status is `pre_existing`; absent, or present with a
@@ -32,10 +35,16 @@ Notable supported-surface changes are recorded here.
   reason stated — including every finding of a first run on a campaign, which
   has nothing to compare against.
   The labels ride the full verdict, the derived exceptions, the committed QA
-  verdict sidecar, and the doctor output; `cause_summary`
+  verdict sidecar, and every doctor result; `cause_summary`
   (`{total, counts, prior_run_id, comparison}`) rides the verdict and the
-  doctor output. The human reports lead with a one-line tally and tag each
-  finding. Passing assertions carry no cause — a pass has no cause to explain.
+  doctor output. Doctor classification is applied where the doctor result is
+  produced, not in one command, so all four producers that persist
+  `.campaign-runtime/doctor-output.json` (`doctor`, `next`, `prepare-build` /
+  `start`, and the QA stage refresh) leave the labels on the retained artifact
+  — running QA after doctor no longer strips them back out. Non-packet doctor
+  (`--built` / `--site`) has no Run Record home and is not annotated. The human
+  reports lead with a one-line tally and tag each finding. Passing assertions
+  carry no cause — a pass has no cause to explain.
 
 ### Changed
 

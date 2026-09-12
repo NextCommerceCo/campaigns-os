@@ -2544,17 +2544,6 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   };
   const result = runDoctor(packetPath, doctorOptions);
-  // Per-finding cause classification. The comparison set is the previous Run
-  // Record's own doctor observations (error_codes / warning_codes), which every
-  // Run Record ever written already carries — so this works against existing
-  // history instead of needing a run to go by first. Code granularity, because
-  // that is the granularity the record stores.
-  result.cause_summary = annotateDoctorIssueCauses({
-    errors: result.errors,
-    warnings: result.warnings,
-    baseDir: dirname(packetPath),
-    mapId: result.derived?.map_id || null,
-  });
   // Refresh the retained sidecar so it never silently stays an earlier stage's
   // snapshot: before this, only prepare-build/start wrote doctor-output.json,
   // and every later standalone doctor run reported fresh state on stdout while
@@ -3087,7 +3076,28 @@ export function checkpointWaive(args) {
 }
 
 export function doctorPacket(packetPath, options = {}) {
-  return withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
+  const result = withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
+  // Per-finding cause classification lives HERE, at the single production
+  // boundary, and not in the doctor command. Four producers persist
+  // .campaign-runtime/doctor-output.json from a doctorPacket result — `doctor`,
+  // `next`, prepare-build/start, and the QA stage refresh — and annotating only
+  // one of them means running QA after doctor silently strips the labels back
+  // out of the retained artifact. Every consumer of a doctor result gets the
+  // same shape, whether or not it writes one.
+  //
+  // The comparison set is the previous Run Record's own doctor observations
+  // (error_codes / warning_codes), which every Run Record ever written already
+  // carries — so this works against existing history rather than needing a run
+  // to go by first. Code granularity, because that is the granularity the
+  // record stores. baseDir is the packet directory, the same root the Run
+  // Record writes under.
+  result.cause_summary = annotateDoctorIssueCauses({
+    errors: result.errors,
+    warnings: result.warnings,
+    baseDir: dirname(resolve(packetPath)),
+    mapId: result.derived?.map_id || null,
+  });
+  return result;
 }
 
 function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {

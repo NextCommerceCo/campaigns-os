@@ -392,9 +392,16 @@ Exactly one comparison, against exactly one earlier run:
    record that happens to carry usable evidence would compare this run against
    a non-adjacent one and report anything introduced in between as
    pre-existing.
-2. **Read that run's findings.** For QA, through that Run Record's own
-   `qa_verdict` artifact reference. For doctor, from the Run Record's
-   `observations.doctor.error_codes` / `warning_codes`.
+2. **Read that run's findings.** For QA, through that Run Record's **last**
+   `qa_verdict` artifact reference. A run session that needed repair and
+   re-test carries one reference per attempt in session order, so the first is
+   typically the blocked attempt that triggered the repair; comparing against
+   it would report a defect that was fixed before that run closed, and
+   reintroduced now, as pre-existing. The last reference is the verdict the
+   run actually closed on. This does not widen the boundary — it is still the
+   final attempt of exactly one earlier run, never a merged view across runs.
+   For doctor, from the Run Record's `observations.doctor.error_codes` /
+   `warning_codes`.
 3. **Classify.** Environment and upstream drift are decided first, from the
    finding itself, and win outright — a Chromium capture failure that also
    happened last time is still not the campaign's fault. Everything else is
@@ -436,9 +443,16 @@ meaningful.
 - The committed QA verdict sidecar — both fields survive the projection, and
   so does `cause_summary`. They are a short enum and a reason code: no URL, no
   order reference, no capture body.
-- `doctor` — `cause` / `cause_reason` on every error and warning, a
-  `cause_summary` on the output, and a cause tag after each issue line on the
-  human report.
+- Every doctor result — `cause` / `cause_reason` on every error and warning and
+  a `cause_summary` on the output, applied where the doctor result is produced
+  rather than in one command. Four producers persist
+  `.campaign-runtime/doctor-output.json` (`doctor`, `next`, `prepare-build` /
+  `start`, and the QA stage refresh), so the retained artifact keeps its labels
+  whichever one wrote it last: running QA after doctor no longer strips them.
+  The `doctor` human report adds the summary line and a cause tag after each
+  issue line; the existing `[code] message` shape is unchanged.
+  Non-packet doctor (`--built` / `--site`) has no Run Record home and is not
+  annotated.
 
 ## Offer Application QA
 

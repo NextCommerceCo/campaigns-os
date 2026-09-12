@@ -56,6 +56,32 @@ function writePriorRun(baseDir, { runId, mapId, verdict }) {
   return verdictPath;
 }
 
+/**
+ * A prior run that needed repair and re-test: two qa_verdict artifacts on one
+ * Run Record, appended in session order — the blocked first attempt, then the
+ * final verdict the run actually closed on.
+ */
+function writePriorRunWithAttempts(baseDir, { runId, mapId, attempts }) {
+  const recordsDir = join(baseDir, ".campaign-runtime/run-records");
+  mkdirSync(recordsDir, { recursive: true });
+  mkdirSync(join(baseDir, `qa-output/${mapId}`), { recursive: true });
+  const artifacts = attempts.map((verdict) => {
+    const rel = `qa-output/${mapId}/${verdict.run_id}.json`;
+    writeFileSync(join(baseDir, rel), `${JSON.stringify(verdict, null, 2)}\n`);
+    return { kind: "qa_verdict", path: `./${rel}`, schema_version: "1.0", sha256: null };
+  });
+  writeFileSync(
+    join(recordsDir, `${runId}.json`),
+    `${JSON.stringify({
+      schema_version: "campaigns-os-run-record/v0",
+      run_id: runId,
+      identity: { map_id: mapId, campaign_slug: null, template_family: null, entry_point_shape: "packet" },
+      artifacts,
+      observations: {},
+    }, null, 2)}\n`,
+  );
+}
+
 function writePriorDoctorRun(baseDir, { runId, mapId, errorCodes = [], warningCodes = [] }) {
   const recordsDir = join(baseDir, ".campaign-runtime/run-records");
   mkdirSync(recordsDir, { recursive: true });
@@ -301,4 +327,50 @@ test("classification helpers agree with the fingerprint helpers", () => {
     CAUSE_CLASSES.PRE_EXISTING,
   );
   assert.equal(qaEnvironmentReason(finding({ id: "http:checkout" })), null);
+});
+
+test("the comparison uses the prior run's FINAL QA attempt, not its first blocked one", () => {
+  const base = scratch();
+  const x = finding({ id: "http:upsell1", page: "upsell1" });
+  writePriorRunWithAttempts(base, {
+    runId: "run_1757000000000_aaaaaaaa",
+    mapId: "map-1",
+    attempts: [
+      // The blocked attempt that triggered the repair: X was present.
+      { run_id: "qa_attempt_1", assertions: [x, finding({ id: "http:checkout" })] },
+      // The verdict the run actually closed on: X had been fixed.
+      { run_id: "qa_final", assertions: [finding({ id: "http:checkout" })] },
+    ],
+  });
+
+  const assertions = [{ ...x }, finding({ id: "http:checkout" })];
+  const summary = annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+
+  // X was fixed before the prior run closed and is back now. Comparing against
+  // the first attempt would call it pre_existing and hide the regression.
+  assert.equal(assertions[0].cause, CAUSE_CLASSES.CAUSED_BY_CHANGE);
+  assert.equal(assertions[0].cause_reason, "new_since_prior_run");
+  assert.equal(assertions[1].cause, CAUSE_CLASSES.PRE_EXISTING);
+  assert.equal(summary.prior_run_id, "qa_final");
+});
+
+test("a multi-attempt prior run is still ONE record: the boundary does not widen to earlier runs", () => {
+  const base = scratch();
+  writePriorRunWithAttempts(base, {
+    runId: "run_1757000001000_bbbbbbbb",
+    mapId: "map-1",
+    attempts: [
+      { run_id: "qa_attempt_1", assertions: [finding({ id: "http:receipt", page: "receipt" })] },
+      { run_id: "qa_final", assertions: [] },
+    ],
+  });
+  writePriorRun(base, {
+    runId: "run_1757000000000_aaaaaaaa",
+    mapId: "map-1",
+    verdict: { run_id: "qa_older", assertions: [finding({ id: "http:receipt", page: "receipt" })] },
+  });
+  const assertions = [finding({ id: "http:receipt", page: "receipt" })];
+  const summary = annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  assert.equal(summary.prior_run_id, "qa_final");
+  assert.equal(assertions[0].cause, CAUSE_CLASSES.CAUSED_BY_CHANGE);
 });

@@ -1785,8 +1785,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.25.0+agent.12",
-      "changelog_sha256": "82fe72444edabb9c9399bd57f5d677179e46c8123228de8fb78be019b361be9f",
-      "agent_impact": "QA and doctor findings now carry a cause class, so a consumer can tell whether the change under test caused what a run surfaced instead of re-reading every finding by hand. Two additive optional fields ride each finding: cause (caused_by_change | pre_existing | test_environment | upstream_drift | unknown) and cause_reason (a short reason code). A cause_summary object ({total, counts, prior_run_id, comparison}) rides the QA verdict and the doctor output. The fields appear on the full verdict, on the derived exceptions, on the committed QA verdict sidecar, and on doctor errors and warnings; passing assertions carry none. Absence is not a claim: output emitted before this release carries neither field, and the first run on a campaign labels every finding unknown because there is no earlier run to compare against. The human reports gained a summary line and a per-finding tag; the doctor issue line keeps its existing \"[code] message\" shape with the tag appended.",
+      "changelog_sha256": "7f116ef1b80d731c24f5da0ee95a8ec41044c6f00114781a1f8853e970fa50b7",
+      "agent_impact": "QA and doctor findings now carry a cause class, so a consumer can tell whether the change under test caused what a run surfaced instead of re-reading every finding by hand. Two additive optional fields ride each finding: cause (caused_by_change | pre_existing | test_environment | upstream_drift | unknown) and cause_reason (a short reason code). A cause_summary object ({total, counts, prior_run_id, comparison}) rides the QA verdict and the doctor output. The fields appear on the full verdict, on the derived exceptions, on the committed QA verdict sidecar, and on every doctor result — classification is applied where the doctor result is produced, so all four producers that persist .campaign-runtime/doctor-output.json leave the labels on the retained artifact. Passing assertions carry none, and non-packet doctor (--built / --site) is not annotated. Absence is not a claim: output emitted before this release carries neither field, and the first run on a campaign labels every finding unknown because there is no earlier run to compare against. The human reports gained a summary line and a per-finding tag; the doctor issue line keeps its existing \"[code] message\" shape with the tag appended.",
       "compatibility": "additive",
       "migration": "none. Tolerate cause/cause_reason/cause_summary being absent, and never read an absent cause_summary as \"nothing was caused by the change\". A consumer that wants the labels to be meaningful must let campaigns-os run-record write a Run Record after each run, since the previous run is found through Run Record discovery.",
       "changes": [
@@ -1794,16 +1794,16 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "doctor",
-          "summary": "doctor stamps cause and cause_reason onto every error and warning and carries a cause_summary on its output, comparing against the previous Run Record's doctor code observations; the human report prints the summary line and appends a cause tag to each issue line. The run-record discovery helpers moved to src/run-record.mjs and are re-exported here unchanged."
+          "summary": "Every doctor result is stamped with cause and cause_reason per error and warning plus a cause_summary, applied where the result is produced rather than in the doctor command, so the retained doctor artifact keeps its labels whichever producer wrote it last. The comparison is against the previous Run Record's doctor code observations. The doctor human report prints the summary line and appends a cause tag to each issue line. The run-record discovery helpers moved to src/run-record.mjs and are re-exported here unchanged."
         },
         {
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "Documents the cause-class vocabulary, the single previous-run comparison rule and its fingerprints, every unknown reason code including the first-run case, and where the labels appear across the verdict, the exceptions, the committed sidecar and the doctor output."
+          "summary": "Documents the cause-class vocabulary, the single previous-run comparison rule (including that QA compares against the prior run's last, final QA attempt) and its fingerprints, every unknown reason code including the first-run case, and where the labels appear across the verdict, the exceptions, the committed sidecar and every doctor producer."
         }
       ],
-      "entry_sha256": "b0d131815c133c8e84bf2a4574af34466ba24433632f5163cc0630e84e2c7267"
+      "entry_sha256": "30ad576034d9d4368b9cadee0b11e0fde09fd07fc376740814098df36a518256"
     }
   ]
 }
