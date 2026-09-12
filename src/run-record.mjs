@@ -703,14 +703,21 @@ const RUN_RECORDS_SCAN_LIMIT = 5000;
 // "newest" silently. Parse the timestamp and compare it as a number; anything
 // unparseable sorts last, because a file that cannot say when it was written
 // must never displace one that can.
-// A Run Record file is one this toolkit minted: `run_<epoch-ms>_<suffix>.json`
-// (mintRunId's shape). Admitting every *.json in the directory means an
-// operator note, an editor backup, or any unrelated artifact that happens to
-// land there gets parsed as run state and, worse, can be selected as the
-// previous run. Filter at scan time rather than leaning on the orderer's
+// A Run Record file is named for its run id, which always carries the `run_`
+// prefix. Admitting every *.json in the directory means an operator note, an
+// editor backup, or any unrelated artifact that happens to land there gets
+// parsed as run state and — worse — can be selected as THE previous run.
+// Filter at scan time rather than leaning on the orderer's
 // unstamped-sorts-last fallback: that fallback keeps ordering deterministic,
 // it does not make a stray file not a record.
-export const RUN_RECORD_FILE_NAME_PATTERN = /^run_\d+_.+\.json$/;
+//
+// Prefix, deliberately, and not the full minted `run_<epoch-ms>_<hex>` shape.
+// mintRunId produces that shape, but `--run-id` lets an operator supply their
+// own and writeRunRecord writes whatever it is given after sanitizing — so a
+// digits-required pattern would hide real records (the closeout suite writes
+// `run_synth_*` ones) and report a run that exists as missing. That failure is
+// worse than the one this filter closes.
+export const RUN_RECORD_FILE_NAME_PATTERN = /^run_.+\.json$/;
 
 export function orderRunRecordFileNames(names) {
   const stamp = (name) => {

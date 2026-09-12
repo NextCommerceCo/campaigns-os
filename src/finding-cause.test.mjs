@@ -383,6 +383,30 @@ test("a stray file in the run-records directory is not a previous run", () => {
   assert.equal(findPriorRunRecord({ baseDir: base, mapId: "map-1" }).run_id, "run_1757000000000_aaaaaaaa");
 });
 
+test("a record written under an operator-supplied run id is still a record", () => {
+  // `--run-id` lets an operator name a run, and writeRunRecord writes whatever
+  // it is given. A filter that required the minted `run_<epoch-ms>_<hex>` shape
+  // would report such a run as missing — worse than the stray file it excludes.
+  const base = scratch();
+  const recordsDir = join(base, ".campaign-runtime/run-records");
+  mkdirSync(recordsDir, { recursive: true });
+  writeFileSync(
+    join(recordsDir, "run_synth_0000000001.json"),
+    `${JSON.stringify({
+      schema_version: "campaigns-os-run-record/v0",
+      run_id: "run_synth_0000000001",
+      identity: { map_id: "map-1" },
+      artifacts: [],
+      observations: { doctor: { error_codes: ["built_output.page_missing"], warning_codes: [] } },
+    })}\n`,
+  );
+  const errors = [{ code: "built_output.page_missing", message: "x" }];
+  const summary = annotateDoctorIssueCauses({ errors, warnings: [], baseDir: base, mapId: "map-1" });
+  assert.equal(summary.comparison, "prior_run");
+  assert.equal(summary.prior_run_id, "run_synth_0000000001");
+  assert.equal(errors[0].cause, CAUSE_CLASSES.PRE_EXISTING);
+});
+
 test("both surfaces report the same previous-run identity", () => {
   const base = scratch();
   writePriorRun(base, {
