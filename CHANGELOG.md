@@ -47,11 +47,18 @@ Notable supported-surface changes are recorded here.
   than guessed at, and read like an absent marker: the toggle falls back to its
   input and active state instead of being reported as a disagreement. The same
   applies to a toggle with no marker vocabulary, such as a switch variant whose
-  only `aria-hidden` node is its always-rendered slider. The verdict payload
-  now records `markerResolved`, `markerFamily`, `markerTag` and `markerSignal`
-  (`pseudo`, `glyph`, `fill`, `display_toggled`, `not_rendered`, or null) so an
-  operator reading a misaligned toggle can see which element the harness picked
-  and how it read it.
+  only `aria-hidden` node is its always-rendered slider.
+
+  The verdict payload records how the toggle was read, so an operator looking at
+  a misaligned bump can see which element the harness picked and what it made of
+  it. `markerResolved` keeps its meaning — whether a marker element was found —
+  and the new `markerReadable` says whether that marker's state could actually
+  be read; only `markerAgrees` depends on the second. `markerSignal` names the
+  reading: `pseudo`, `glyph`, `fill` or `display_toggled` when a state vocabulary
+  was recognised, `not_rendered` when the marker is on the page but hidden,
+  `unresolved` when it renders but carries no state signal, and null only when
+  no marker was found at all. `markerFamily` and `markerTag` record which
+  selector matched and what it matched.
 
   The probe moves to `src/qa-order-bump.mjs` as an `evaluate()` body, the
   shape `qa-cart-entry.mjs` already uses, so the real-browser proof over

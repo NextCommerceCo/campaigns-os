@@ -112,16 +112,34 @@ export function orderBumpEvidenceScript() {
       };
     };
 
-    const rendered = (element) => {
-      if (!(element instanceof Element) || element.hidden) return false;
-      if (element.closest("[hidden]")) return false;
+    // The one visibility test, in two halves that every call site shares: is the
+    // element styled to be seen, and does it occupy a box. Both the toggle
+    // filter and the marker read go through these, so a toggle and its own
+    // marker can never be judged by different rules — `visibility: collapse`
+    // was rejected for a marker and accepted for the toggle containing it.
+    // Returns the computed style so a caller that needs it does not read twice.
+    const visibleStyle = (element) => {
+      if (!(element instanceof Element) || element.hidden) return null;
+      if (element.closest("[hidden]")) return null;
       const style = getComputedStyle(element);
-      if (style.display === "none") return false;
-      if (style.visibility === "hidden" || style.visibility === "collapse") return false;
-      if (Number.parseFloat(style.opacity || "1") <= 0.5) return false;
+      if (style.display === "none") return null;
+      if (style.visibility === "hidden" || style.visibility === "collapse") return null;
+      if (Number.parseFloat(style.opacity || "1") <= 0.5) return null;
+      return style;
+    };
+
+    const hasBox = (element) => {
       const rect = element.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0 && element.getClientRects().length > 0) return true;
-      // Zero-sized host, rendered tick: the marker is on the page after all.
+      return rect.width > 0 && rect.height > 0 && element.getClientRects().length > 0;
+    };
+
+    const displayed = (element) => Boolean(visibleStyle(element)) && hasBox(element);
+
+    // A marker is held to the same visibility rules, with one addition: a
+    // zero-sized host still renders when its own tick does.
+    const rendered = (element) => {
+      if (!visibleStyle(element)) return false;
+      if (hasBox(element)) return true;
       const tick = pseudoTick(element);
       return Boolean(tick && tick.shown && tick.boxed);
     };
@@ -234,11 +252,7 @@ export function orderBumpEvidenceScript() {
       return fallback;
     };
 
-    const toggles = Array.from(document.querySelectorAll(toggleSelector)).filter((toggle) => {
-      const rect = toggle.getBoundingClientRect();
-      const style = getComputedStyle(toggle);
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-    }).map((toggle, index) => {
+    const toggles = Array.from(document.querySelectorAll(toggleSelector)).filter(displayed).map((toggle, index) => {
       const input = toggle.querySelector('input[type="checkbox"]');
       const resolved = resolveMarker(toggle);
       const marker = resolved?.element || null;
@@ -249,14 +263,18 @@ export function orderBumpEvidenceScript() {
         && rendered(markerContainer);
       // A hidden marker is unchecked in every family, so it needs no signal.
       // A rendered one is read for a positive signal, and a rendered marker
-      // with none is unresolved rather than checked.
+      // with none is `unresolved`: it exists and renders, but nothing on it
+      // says which state it is in. That is distinct from finding no marker at
+      // all, which is a null signal, so the two are never conflated by a reader
+      // of the evidence.
       const signal = marker && markerVisible ? checkedSignal(marker) : null;
-      const markerSignal = marker ? (markerVisible ? signal?.signal || null : "not_rendered") : null;
+      const markerSignal = !marker
+        ? null
+        : (markerVisible ? signal?.signal || "unresolved" : "not_rendered");
       const markerChecked = Boolean(markerVisible && signal?.checked);
-      // Unresolved: the marker exists and renders, but nothing on it says
-      // which state it is in. Read like an absent marker, never as a
-      // disagreement.
-      const markerReadable = Boolean(marker) && (!markerVisible || Boolean(signal));
+      // Readable: a marker was found AND its state can be read. An unreadable
+      // marker is read like an absent one, never as a disagreement.
+      const markerReadable = markerSignal !== null && markerSignal !== "unresolved";
       const active = toggle.classList.contains("next-active")
         || toggle.classList.contains("next-in-cart")
         || toggle.classList.contains("next-selected")
@@ -269,15 +287,23 @@ export function orderBumpEvidenceScript() {
         packageId: toggle.getAttribute("data-next-package-id") || null,
         active,
         inputChecked,
-        markerResolved: markerReadable,
+        // Was a marker element found at all. Unchanged in meaning: whether the
+        // harness located something to read.
+        markerResolved: Boolean(marker),
+        // Whether that marker's state could actually be read. A found-but-
+        // unreadable marker is resolved and not readable, and only `markerAgrees`
+        // depends on this one.
+        markerReadable,
         // Which family matched and what it resolved to, so an operator reading
         // a misaligned verdict can see whether the harness found the right
         // element before concluding the page is wrong.
         markerFamily: resolved?.family || null,
         markerTag: marker ? marker.tagName.toLowerCase() : null,
-        // Which state vocabulary the marker was read through: "pseudo",
-        // "glyph", "fill", "display_toggled", "not_rendered", or null when the
-        // marker renders but says nothing.
+        // How the marker was read: "pseudo", "glyph", "fill" or
+        // "display_toggled" when a state vocabulary was recognised,
+        // "not_rendered" when the marker is on the page but hidden,
+        // "unresolved" when it renders but carries no state signal, and null
+        // when no marker was found at all.
         markerSignal,
         markerChecked,
         inputAgrees,
