@@ -7605,6 +7605,46 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
   ];
 }
 
+// A token-less campaign passes the theme gate and then blocks browser QA.
+//
+// `evaluateThemeGate` returns pass/`theme_gate.nothing_generatable` when no
+// brand theme can be generated: there is nothing to apply, so there is nothing
+// to gate on. But `residueSeverityForThemeGate` reads that same pass as
+// "a brand layer is in place", and runs the template-residue checks at BLOCKER
+// severity — so the starter family's own palette on the commerce calls to
+// action lands as `template-residue:<page>:style:*` blockers at `qa run`. Only
+// a waiver downgrades those rows to warn.
+//
+// Both halves are deliberate and both stay as they are. What was missing is
+// that nothing between the passing gate and the blocked verdict said this
+// would happen, so the decision got made after a failed QA run rather than
+// before it — twice, two different ways. This advisory moves the decision
+// forward. It is informational by construction: no `required` flag, no
+// command to run, and it waives nothing on the operator's behalf.
+const THEME_STARTER_PALETTE_ACTION_ID = "theme_gate.starter_palette_blocks_qa";
+const THEME_STARTER_PALETTE_STAGES = new Set(["build", "polish", "deploy", "qa"]);
+
+function themeStarterPaletteAdvisory(themeGate, packetPath) {
+  if (themeGate?.code !== "theme_gate.nothing_generatable") return null;
+  const packetArg = shellToken(packetPath || "<packet>");
+  return {
+    id: THEME_STARTER_PALETTE_ACTION_ID,
+    kind: "manual",
+    command: null,
+    description: "This campaign has no generatable brand tokens, so the theme gate passes "
+      + "(theme_gate.nothing_generatable) with no brand layer and the commerce pages keep the starter "
+      + "family's own palette. Browser QA does not read that as acceptable: with the gate unwaived it "
+      + "runs the template-residue checks at blocker severity, so `qa run` will block on "
+      + "template-residue:<page>:style:* rows for the starter call-to-action colour. Decide before QA, "
+      + "not after a blocked verdict. Either record an explicit operator waiver — "
+      + `\`campaigns-os theme waive --packet ${packetArg} --reason "<why the starter palette is acceptable>"\` `
+      + "— which downgrades those rows to warn severity and keeps the shipped palette visible in the "
+      + "verdict; or hand-author the brand layer (write brand-theme.css, list it after next-core.css in "
+      + "commerce-page frontmatter styles, rebuild, then record report.theme.status=applied with "
+      + "load_order=after-next-core), per docs/brand-theme-bridge.md. This notice waives nothing on its own.",
+  };
+}
+
 // Packet 03 (INV-5 first slice): the replacement recommendation when the
 // ledger and the artifacts disagree. Tells the operator to inspect and
 // decide — it resolves nothing, writes nothing, and never claims a stage is
@@ -7737,6 +7777,22 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     pushPolishCheckpointActions();
     push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after recording valid Polish evidence.");
     return actions;
+  }
+  // Ahead of every stage that still has QA in front of it, say that a
+  // token-less build will block there and name the two lanes that clear it.
+  // Placed before the stage actions so it is read before `qa_run` rather than
+  // after it. The blocked-gate branches above return early and keep owning
+  // their own action lists: a blocked gate is a different code, and a blocked
+  // polish gate is a stop-and-fix state whose own actions come first — the
+  // advisory reappears on the next `next` once that gate clears.
+  const starterPaletteAdvisory = themeStarterPaletteAdvisory(themeGate, packetPath);
+  if (starterPaletteAdvisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
+    push(
+      starterPaletteAdvisory.id,
+      starterPaletteAdvisory.kind,
+      starterPaletteAdvisory.command,
+      starterPaletteAdvisory.description,
+    );
   }
   if (result.stage === "setup") {
     push("setup_skill", "skill", "next-campaigns-os-setup", "Prepare the target page-kit structure and agent context, then record stages.setup in the assembly report.");
@@ -10130,24 +10186,41 @@ function printDoctorTinyPrompt(result, args) {
   console.log('Found workflow friction here? campaigns-os findings add --stage doctor --kind friction --summary "..."');
 }
 
-function printNextTinyPrompt(result, args) {
-  if (args.json) return;
+// The human half of `next`. Split out from the printer so the text an operator
+// actually reads is assertable without a subprocess: JSON output is covered by
+// next_actions[], and the prompt is the only place a non-JSON caller sees any
+// of it. Returns the lines to print, in order; an empty array prints nothing.
+export function nextTinyPromptLines(result) {
+  const lines = [];
   // A blocked gate owns the tiny prompt: print the exact commands so the
   // operator/agent acts on data, not on remembering doctrine.
   const blockedGate = (result.gates || []).find((gate) => gate.status === "blocked" && gate.id === "theme_gate");
   if (blockedGate) {
-    console.log("");
-    console.log("Theme gate is BLOCKING this stage. Resolve it with:");
+    lines.push("", "Theme gate is BLOCKING this stage. Resolve it with:");
     for (const action of result.next_actions || []) {
-      console.log(`  - ${action.command || action.description}`);
+      lines.push(`  - ${action.command || action.description}`);
     }
-    return;
+    return lines;
   }
-  if (result.stage !== "qa") return;
-  console.log("");
-  console.log("Next expected proof: browser QA + typed-card proof. Run: campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common");
-  console.log("Localhost on any port is a Development domain (SDK allowed, analytics suppressed). Non-localhost origins still need SDK allowlist confirmation.");
-  console.log('Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: campaigns-os findings add --stage qa --kind missing_prompt --summary "..."');
+  // A passing-but-token-less theme gate is the case that used to say nothing
+  // at all until QA blocked. It is not a blocker here, so it does not take the
+  // prompt over — it is printed alongside whatever else this stage says.
+  const starterPalette = (result.next_actions || []).find((action) => action?.id === THEME_STARTER_PALETTE_ACTION_ID);
+  if (starterPalette) {
+    lines.push("", "Theme gate passes with no brand layer, and browser QA will BLOCK on the starter palette:");
+    lines.push(`  - ${starterPalette.description}`);
+  }
+  if (result.stage !== "qa") return lines;
+  lines.push("");
+  lines.push("Next expected proof: browser QA + typed-card proof. Run: campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common");
+  lines.push("Localhost on any port is a Development domain (SDK allowed, analytics suppressed). Non-localhost origins still need SDK allowlist confirmation.");
+  lines.push('Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: campaigns-os findings add --stage qa --kind missing_prompt --summary "..."');
+  return lines;
+}
+
+function printNextTinyPrompt(result, args) {
+  if (args.json) return;
+  for (const line of nextTinyPromptLines(result)) console.log(line);
 }
 
 function printPrepareResult(result, args) {

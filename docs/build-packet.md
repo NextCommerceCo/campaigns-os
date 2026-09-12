@@ -189,6 +189,25 @@ in `inspect_only` mode. The optional theme evidence lives in `context.theme`,
 `report.theme`, and `.campaign-runtime/theme/theme-report.json`. The Build
 Packet itself does not gain required theme fields in v0.
 
+A campaign whose source carries no brand tokens has one more decision to make,
+and it is due before QA rather than after it. With nothing to generate, the
+theme gate passes (`theme_gate.nothing_generatable`) and no brand layer is
+applied, so the commerce pages ship the starter family's own palette — and
+browser QA, with the gate unwaived, runs the template-residue checks at blocker
+severity, so `qa run` blocks on `template-residue:<page>:style:*` rows for the
+starter call-to-action colour. That is deliberate on both sides: a passing gate
+means "nothing could be generated", not "this palette was reviewed". Two lanes
+clear it, and `campaigns-os next` names them from the build stage onward so the
+choice is made before a blocked verdict forces it. Either record an explicit
+operator waiver (`campaigns-os theme waive --packet <packet> --reason "<why the
+starter palette is acceptable>"`), which downgrades those rows to warn severity
+and keeps the shipped palette visible in the verdict; or hand-author the brand
+layer — write `brand-theme.css`, list it after `next-core.css` in commerce-page
+frontmatter styles, rebuild, and record `report.theme.status: applied` with
+`load_order: after-next-core`. Nothing waives the gate on the operator's
+behalf. See [Brand Theme Bridge](./brand-theme-bridge.md) for both lanes in
+full.
+
 `start` / `prepare-build` also accept `--brief <campaign-build-brief.yaml|json>`
 and auto-discover `campaign-build-brief.yaml`, `.yml`, or `.json` from the
 source root or target repo. When none is present, Campaigns OS creates a guided
