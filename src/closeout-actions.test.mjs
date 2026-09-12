@@ -40,14 +40,15 @@ test("qa run closeout action is required, names the packet and verdict, and surv
 });
 
 // Remit is POST-only and the receiver holds one record per run_id, refusing a
-// second POST for an id it already has. A closeout run under an open session
-// inherits that session's run_id, and the session's own close remits that id —
-// so the printed command must not spend it first.
-test("with a run session active the printed closeout writes locally and leaves the remit to the session", () => {
+// second POST for an id it already has. A closeout run while the session still
+// holds that id would spend it on the interim record, and the session's own
+// close — the record carrying every attempt — would be refused.
+test("a blocked attempt keeps the session open, so the printed closeout leaves the remit to it", () => {
   const [closeout] = buildQaCloseoutActions({
     packetPath: "/campaigns/demo/campaign-runtime.build.json",
     localPath: "qa-output/demo/RUN1.json",
     runSessionActive: true,
+    disposition: "blocked",
   });
   assert.match(closeout.command, /--no-remit/);
   // The flag has to reach the command, not only the prose beside it.
@@ -55,12 +56,33 @@ test("with a run session active the printed closeout writes locally and leaves t
   assert.match(closeout.description, /--no-remit/);
 });
 
-test("with no run session the printed closeout owns its run id and remits", () => {
-  const [closeout] = buildQaCloseoutActions({
-    packetPath: "/campaigns/demo/campaign-runtime.build.json",
-    localPath: "qa-output/demo/RUN1.json",
+// A terminal verdict auto-ends the session in the same process, BEFORE the
+// operator can run this command: the record is assembled, the session cleared,
+// and the id spent. The command then mints its own run_id, so there is nothing
+// to collide with — and a local-only record here would be actively harmful,
+// since a newer closed record buries a failed auto-end remit that still needs
+// recovering.
+for (const disposition of ["ready", "ready_with_exceptions"]) {
+  test(`a ${disposition} attempt auto-ends the session, so the printed closeout still remits`, () => {
+    const [closeout] = buildQaCloseoutActions({
+      packetPath: "/campaigns/demo/campaign-runtime.build.json",
+      localPath: "qa-output/demo/RUN1.json",
+      runSessionActive: true,
+      disposition,
+    });
+    assert.doesNotMatch(closeout.command, /--no-remit/);
   });
-  assert.doesNotMatch(closeout.command, /--no-remit/);
+}
+
+test("with no run session the printed closeout owns its run id and remits", () => {
+  for (const disposition of ["blocked", "ready", null]) {
+    const [closeout] = buildQaCloseoutActions({
+      packetPath: "/campaigns/demo/campaign-runtime.build.json",
+      localPath: "qa-output/demo/RUN1.json",
+      disposition,
+    });
+    assert.doesNotMatch(closeout.command, /--no-remit/);
+  }
 });
 
 test("qa run closeout emits no action for packetless modes (site / parity)", () => {

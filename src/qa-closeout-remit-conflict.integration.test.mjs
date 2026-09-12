@@ -25,6 +25,8 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 
 import { buildQaCloseoutActions } from "./qa-node.mjs";
+import { autoEndCloseoutNotice } from "./cli.mjs";
+import { assessRunRecordCloseout } from "./run-record-closeout.mjs";
 
 // Async on purpose: the receiver below lives in THIS process, so a synchronous
 // child-process call would block the event loop that has to accept its request.
@@ -102,7 +104,7 @@ function readRecords(dir) {
     .map((name) => JSON.parse(readFileSync(join(recordDir, name), "utf8")));
 }
 
-test("the closeout command a QA run prints under an open session does not spend the session's run_id", async (t) => {
+test("the closeout command a blocked QA run prints does not spend the still-open session's run_id", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-closeout-remit-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const receiver = await startConflictingReceiver();
@@ -120,7 +122,7 @@ test("the closeout command a QA run prints under an open session does not spend 
 
   // Exactly what a blocked QA run prints, executed as printed. Only the
   // receiver base is appended, so the fake endpoint is reachable at all.
-  const [closeout] = buildQaCloseoutActions({ packetPath, localPath: verdictPath, runSessionActive: true });
+  const [closeout] = buildQaCloseoutActions({ packetPath, localPath: verdictPath, runSessionActive: true, disposition: "blocked" });
   const argv = tokenize(closeout.command);
   assert.equal(argv[0], "campaigns-os");
   await runCli([...argv.slice(1), "--proxy-base", receiver.base], { cwd: dir });
@@ -153,7 +155,7 @@ test("with no run session open the printed closeout still remits on its own run 
   const packetPath = join(dir, "campaign-runtime.build.json");
   cpSync(join(ROOT, "examples/build-packet.basic.json"), packetPath);
 
-  const [closeout] = buildQaCloseoutActions({ packetPath, localPath: null, runSessionActive: false });
+  const [closeout] = buildQaCloseoutActions({ packetPath, localPath: null, runSessionActive: false, disposition: "blocked" });
   assert.doesNotMatch(closeout.command, /--no-remit/, "a sessionless closeout owns its run id and must publish it");
   await runCli([...tokenize(closeout.command).slice(1), "--proxy-base", receiver.base], { cwd: dir });
 
@@ -161,4 +163,77 @@ test("with no run session open the printed closeout still remits on its own run 
   const [record] = readRecords(dir);
   assert.equal(record.remit_state, "ok");
   assert.equal(receiver.posts[0].run_id, record.run_id);
+});
+
+// A terminal verdict auto-ends the session: the record is assembled, remitted
+// and the session cleared inside the SAME process, before the operator can run
+// the printed command. So a closeout printed with --no-remit there would mint a
+// second, local-only record — and because the closeout assessor takes the
+// newest matching record and counts `skipped` as closed, that newer record
+// would bury an auto-end remit that FAILED and suppress its recovery.
+//
+// The auto-end itself is not reachable from a test without a deployed campaign
+// to run QA against, so this drives `run end` instead: cli.mjs runs the
+// identical runRecordCommand + clearRunSession pair, which is what produces the
+// state under test — a session record on disk whose remit did not close.
+test("a failed session remit stays recoverable: the closeout does not print a local-only record over it", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-closeout-recovery-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  // A receiver that refuses everything: the session's remit cannot close.
+  const server = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      response.writeHead(500, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "receiver_unavailable" }));
+    });
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "closeout-recovery", private: true }));
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  cpSync(join(ROOT, "examples/build-packet.basic.json"), packetPath);
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+
+  const started = JSON.parse(await runCli(["run", "start", "--packet", packetPath, "--json"], { cwd: dir }));
+  const sessionRunId = started.session.run_id;
+  await runCli(["run", "end", "--packet", packetPath, "--proxy-base", base, "--json"], { cwd: dir });
+
+  const sessionRecord = readRecords(dir).find((record) => record.run_id === sessionRunId);
+  assert.equal(sessionRecord.remit_state, "failed", "the session's record must be the failed-remit case under test");
+
+  // With only that record on disk, the assessor still demands recovery.
+  const closeout = assessRunRecordCloseout({
+    records: readRecords(dir).map((record) => ({ record })),
+    packet,
+  });
+  assert.notEqual(closeout.reason_code, "satisfied", "a failed remit is not a closed record");
+  assert.equal(closeout.reason_code, "remit_failed");
+  assert.equal(closeout.record_id, sessionRunId, "recovery must name the existing run id, not a new one");
+
+  // And the printed QA closeout for a terminal verdict does not add a
+  // local-only record that would become the newest and bury it.
+  const [action] = buildQaCloseoutActions({ packetPath, localPath: null, runSessionActive: true, disposition: "ready" });
+  assert.doesNotMatch(action.command, /--no-remit/);
+
+  // The auto-end is where that failure is surfaced, naming the existing id.
+  const notice = autoEndCloseoutNotice({
+    runId: sessionRunId,
+    packetPath,
+    recordPath: "/t/record.json",
+    remitState: sessionRecord.remit_state,
+    remitError: sessionRecord.remit_error,
+  });
+  assert.match(notice, new RegExp(`run-record --packet ${packetPath} --run-id ${sessionRunId} --json`));
+  assert.doesNotMatch(notice, /--no-remit/);
+});
+
+test("the auto-end notice stays quiet when the remit closed", () => {
+  for (const remitState of ["ok", "skipped"]) {
+    const notice = autoEndCloseoutNotice({ runId: "run_1_abcd", packetPath: "/t/packet.json", recordPath: "/t/r.json", remitState });
+    assert.doesNotMatch(notice, /--run-id/);
+    assert.match(notice, /auto-ended after qa run/);
+  }
 });

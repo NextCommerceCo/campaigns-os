@@ -7,20 +7,23 @@ Notable supported-surface changes are recorded here.
 ### Fixed
 
 - The `run-record` closeout `qa run` prints as `Required next:` now carries
-  `--no-remit` while a run session is active. Remit is a plain POST with no
+  `--no-remit` after a **blocked** verdict. Remit is a plain POST with no
   replace verb, and the receiver keeps one record per `run_id`: a second POST
-  for an id it already holds comes back `409 run_record_conflict`. A
-  `run-record` run under an open session inherits that session's `run_id`, so
-  the command executed exactly as printed published the interim record and the
-  session's own close — the record carrying every QA attempt and the aggregated
-  lifecycle — was refused at the door. The run that mattered ended with
+  for an id it already holds comes back `409 run_record_conflict`. A blocked
+  verdict keeps the run session open, so the printed command inherited that
+  session's `run_id` — and executed exactly as printed it published the interim
+  record, leaving the session's own close (the record carrying every QA attempt
+  and the aggregated lifecycle) refused at the door. The run that mattered ended
   `remit_state: failed` locally while the canonical side kept the earlier,
-  thinner record. The session now owns the one accepted send for its id: the
-  printed command writes the local record and leaves the remit to the ready
-  auto-end or `run end`. With no session open nothing changes — the closeout
-  mints its own `run_id` and remits as before. A new test runs the printed
-  command through the CLI against a receiver that enforces the conflict, and
-  asserts the session's id is sent exactly once.
+  thinner record. The session now owns the one accepted send for its id.
+  A terminal verdict is unchanged: it auto-ends the session in the same process,
+  before the printed command can run, so that command mints its own `run_id` and
+  remits — as it does with no session at all.
+- When a session's auto-end assembles its record but the remit does not close,
+  the auto-end now prints the recovery command naming that `run_id`. The session
+  is cleared at that point, so from the next command onwards a bare `run-record`
+  mints a fresh id and cannot repair the record that failed to send; this is the
+  last moment the operator is looking at it.
 - The comments and docs describing the remit endpoint as upserting on `run_id`
   are corrected to what it does. Idempotency is enforced by refusal, not
   replacement: a send that never landed can be retried (which is what the

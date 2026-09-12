@@ -272,10 +272,15 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   aggregated Run Record with references to every attempt, then clears the
   session. Pass `--no-remit` to skip remit for that local Run Record.
   Because the session's close is what remits the session's `run_id`, the
-  `run-record` closeout command a QA run prints while a session is active
-  carries `--no-remit`: assembling an interim record is useful, spending the
-  session's one accepted POST on it is not. With no session open the printed
-  command mints its own `run_id` and remits normally.
+  `run-record` closeout command a **blocked** QA run prints carries
+  `--no-remit`: the session stays open, so that command would share its id, and
+  assembling an interim record is useful while spending the session's one
+  accepted POST on it is not. A terminal verdict auto-ends the session in the
+  same process, before the printed command can run, so there the command mints
+  its own `run_id` and remits normally — as it does with no session at all. When
+  an auto-end's own remit does not close, the auto-end prints the recovery
+  command for that `run_id`, because once the session is cleared no later
+  `run-record` can repair that record without being told the id.
 - An explicit absolute `--packet` associates commands and `run status` with the
   target campaign session even from the toolkit or another project directory.
   If cwd and packet resolve to different active sessions, the command fails

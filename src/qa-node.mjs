@@ -1427,23 +1427,31 @@ function resolveTargetBaseDir(packet, packetPath) {
 // Packetless modes (qa --site, parity fixtures) get no action: run-record
 // requires a Build Packet, and a required-but-impossible command is worse
 // than none (Kilo review, PR #176). Paths are shell-quoted when needed.
-export function buildQaCloseoutActions({ packetPath = null, localPath = null, runSessionActive = false } = {}) {
+export function buildQaCloseoutActions({ packetPath = null, localPath = null, runSessionActive = false, disposition = null } = {}) {
   if (!packetPath) return [];
   const verdictRef = localPath ? ` --qa-verdict ${shellToken(localPath)}` : "";
-  // With an ambient run session open, this command inherits the SESSION's
-  // run_id rather than minting one — and the session's own close (the ready
-  // auto-end, or `run end`) will assemble and remit a record under that same
-  // run_id afterwards. Remit is a plain POST with no replace verb, and the
-  // receiver rejects a second POST for an existing run_id with 409, so a
-  // command printed without `--no-remit` sends the interim record first and
-  // leaves the session's final record — the one carrying every QA attempt and
-  // the aggregated lifecycle — refused at the door. The session owns the one
-  // remit for its run_id; this command stays local until the session closes.
-  // Without a session there is nothing to collide with: the record is minted
-  // under its own run_id and remits normally.
-  const remitRef = runSessionActive ? " --no-remit" : "";
-  const sessionNote = runSessionActive
-    ? " A run session is active, so this writes the local record only (--no-remit): it shares the session's run id, and the session's own close is what remits that id once."
+  // Will the session STILL hold this run_id by the time the operator runs the
+  // printed command? Only for a blocked attempt: that keeps the session open
+  // for repair (autoEndRunSessionAfterTerminalQa returns early on blocked),
+  // and its close — the later ready auto-end, or `run end` — then assembles and
+  // remits under this same run_id. Remit is a plain POST with no replace verb
+  // and the receiver refuses a second POST for a stored run_id with 409, so a
+  // command printed without `--no-remit` spends the id on the interim record
+  // and leaves the session's final record — the one carrying every QA attempt
+  // and the aggregated lifecycle — refused at the door.
+  //
+  // Every other disposition auto-ends the session IN THIS SAME PROCESS, before
+  // the operator can type anything: the record is already assembled and the
+  // session cleared, so the printed command mints its own run_id and there is
+  // nothing to collide with. Printing `--no-remit` there would be worse than
+  // useless — it would write a local-only record that never reaches the
+  // receiver, and if the auto-end's own remit had failed, that newer closed
+  // record would bury the failure the operator still has to recover from. The
+  // auto-end prints that recovery command itself; see autoEndCloseoutNotice.
+  const sessionRetainsRunId = runSessionActive && disposition === "blocked";
+  const remitRef = sessionRetainsRunId ? " --no-remit" : "";
+  const sessionNote = sessionRetainsRunId
+    ? " This attempt is blocked, so the run session stays open and this writes the local record only (--no-remit): it shares the session's run id, and the session's own close is what remits that id once."
     : "";
   return [
     {
@@ -1940,7 +1948,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
     commercial: verdict.commercial || null,
-    next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath, runSessionActive }),
+    next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath, runSessionActive, disposition: verdict.disposition }),
     verdict,
   };
 }

@@ -726,6 +726,20 @@ export function recordQaStageOutcome(args, result) {
   }
 }
 
+// What the auto-end says once it has assembled the record and cleared the
+// session. The clearing is why the remit outcome has to be reported HERE: from
+// the next command onwards there is no session, so a bare `run-record` mints a
+// fresh run_id and cannot repair this record's send. If the remit did not
+// close, the only command that recovers it is one naming this run_id, and this
+// is the last moment the operator is looking at it. `skipped` is a deliberate
+// non-remit (consent off, --no-remit, local-only), not a failure.
+export function autoEndCloseoutNotice({ runId, packetPath, recordPath = null, remitState = null, remitError = null }) {
+  const assembled = `[campaigns-os] Run session ${runId} auto-ended after qa run; Run Record ${recordPath || "assembled"}.\n`;
+  if (remitState === "ok" || remitState === "skipped") return assembled;
+  const why = remitError ? ` (${remitError})` : "";
+  return `${assembled}[campaigns-os] That record's remit did not complete${why}. Recover it against the SAME run id — minting a second record would fork the run's identity:\n  campaigns-os run-record --packet ${shellToken(packetPath)} --run-id ${shellToken(runId)} --json\n`;
+}
+
 async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown) {
   if (command !== "qa" || args._[1] !== "run" || thrown) return;
   const found = sessionHolder?.current;
@@ -775,9 +789,13 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
     const summary = await runRecordCommand(endArgs, updatedFound, { silent: true, promptForConsent: false });
     clearRunSession(updatedFound.path);
     sessionHolder.current = null;
-    process.stderr.write(
-      `[campaigns-os] Run session ${updatedFound.session.run_id} auto-ended after qa run; Run Record ${summary?.record_path || "assembled"}.\n`,
-    );
+    process.stderr.write(autoEndCloseoutNotice({
+      runId: updatedFound.session.run_id,
+      packetPath: packet,
+      recordPath: summary?.record_path || null,
+      remitState: optionalString(summary?.record?.remit_state),
+      remitError: optionalString(summary?.record?.remit_error),
+    }));
   } catch (error) {
     process.stderr.write(`[campaigns-os] run session auto-end skipped after QA: ${error.message}\n`);
   }
