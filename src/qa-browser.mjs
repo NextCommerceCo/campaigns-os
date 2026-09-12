@@ -3510,8 +3510,7 @@ async function gotoAndSettle(page, url, args) {
 async function selectRequestedCart(page, args) {
   const cart = parseCart(args.cart);
   for (const item of cart) {
-    const selector = `[data-next-selector-card][data-next-package-id="${escapeCss(String(item.packageId))}"], [data-next-package-id="${escapeCss(String(item.packageId))}"]`;
-    const target = page.locator(selector).first();
+    const target = page.locator(packageCardClickSelector({ package_id: item.packageId })).first();
     if (await target.count().catch(() => 0)) {
       await target.scrollIntoViewIfNeeded().catch(() => {});
       await target.click({ timeout: 5000 }).catch(() => {});
@@ -3526,16 +3525,6 @@ async function selectRequestedCart(page, args) {
 // strict variant: the requested card must exist, be clickable, and an explicit
 // quantity must visibly enter the selected state — otherwise the
 // selected_bundle step fails instead of driving the wrong tier.
-function packageCardSelectors(ref) {
-  const escaped = escapeCss(String(ref));
-  return [
-    `[data-next-selector-card][data-next-package-id="${escaped}"]`,
-    `[data-next-bundle-card][data-next-bundle-id="${escaped}"]`,
-    `[data-next-package-id="${escaped}"]`,
-    `[data-next-bundle-id="${escaped}"]`,
-  ];
-}
-
 async function selectRequestedPackages(page, requested) {
   if (!requested.length) return null;
   const details = [];
@@ -6153,7 +6142,6 @@ export const __qaBrowserTestHooks = Object.freeze({
   enforceTestOrderLimit,
   declaredSelectorTiers,
   declaredCheckoutCoupons,
-  packageCardSelectors,
   packageCardClickSelector,
   selectPackageCard,
   renderedPackageCardCandidates,

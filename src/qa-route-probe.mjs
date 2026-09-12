@@ -21,9 +21,6 @@
 //      the probe, the second degrades to a named `not_probed` state that stays
 //      usable offline and in CI.
 
-export const ROUTE_PROBE_STATUSES = Object.freeze(["pass", "failed", "not_probed"]);
-export const ROUTE_PROBE_OUTCOMES = Object.freeze(["resolved", "unresolved", "unreachable", "skipped"]);
-
 export const ROUTE_PROBE_DEFAULT_TIMEOUT_MS = 5000;
 // Entry URLs are one per funnel, so a real campaign is well inside this. The
 // cap exists so a pathological topology cannot turn a diagnostic command into

@@ -9,8 +9,6 @@
 // the single decision point every consumer (next, doctor, qa) shares.
 const COMMERCE_PAGE_TYPES = new Set(["checkout", "upsell", "downsell", "receipt", "thankyou"]);
 
-export const THEME_GATE_STATUSES = new Set(["pass", "blocked", "waived", "not_applicable"]);
-
 function isCommercePage(page) {
   return COMMERCE_PAGE_TYPES.has(String(page?.type || "")) || String(page?.role || "") === "runtime";
 }

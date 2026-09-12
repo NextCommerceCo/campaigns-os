@@ -1,5 +1,9 @@
 export const POLISH_PRODUCER_TIMEOUT_ERROR_CODE = "POLISH_PRODUCER_TIMEOUT";
 export const POLISH_PRODUCER_CLEANUP_ERROR_CODE = "POLISH_PRODUCER_CLEANUP_FAILED";
+// Shared by the browser adapter (which raises it) and polish-node (which
+// classifies it) without polish-node importing the adapter module, so the
+// CLI can keep lazy-loading polish-browser.
+export const POLISH_BROWSER_UNAVAILABLE_ERROR_CODE = "POLISH_BROWSER_UNAVAILABLE";
 export const POLISH_BROWSER_CELL_DEADLINE_MS = 45_000;
 export const POLISH_BROWSER_CLEANUP_DEADLINE_MS = 5_000;
 export const POLISH_BROWSER_STARTUP_DEADLINE_MS = 45_000;

@@ -1744,6 +1744,39 @@
         }
       ],
       "entry_sha256": "97943be6f346451c2b20c4329f1c32e7e38d071e7c928f77284ae5cd8a69f812"
+    },
+    {
+      "id": "RL-0036",
+      "sequence": 36,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.7",
+      "changelog_sha256": "7f0283cbf8f30249ecb882d3071e101ee88516c3f7ab31e2778d2296cf2013c0",
+      "agent_impact": "The undocumented validate-build-packet alias of doctor is removed; an agent or script still spelling it gets the unknown-command did-you-mean error and must use doctor. start, build, and prepare-build now share one dispatch body parameterised by mode, and standardize / standardization-report share one branch; every flag, output, exit code, and the derived known-command list are unchanged. Internal dead code (an orphaned QA selector composer, alias re-exports, dead status enums, unused polish exports) is deleted; none of it was on the supported surface or reachable from any command.",
+      "compatibility": "breaking",
+      "migration": "Supported callers: none (validate-build-packet was never on the supported surface; doctor is unchanged). Known unsupported consumer: the private ops repo delegates the alias verbatim in its campaign-os shim (delegate map, shim manifest public_replacement) and its campaigns-os skill; retarget those three sites to doctor before bumping that repo's campaigns-os pin past this release, or they hit the unknown-command error.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Removes the unsupported validate-build-packet dispatch alias (doctor itself is unchanged). start, build, and prepare-build dispatch through one body with a PREPARE_MODES table ({runDoctor, installContext}); standardize and standardization-report share one branch. The literal command comparisons remain so knownCommands() still derives the same list."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Drops the mention of the removed validate-build-packet alias from the relative-path note; doctor is the only spelling."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Records that the validate-build-packet alias was removed (it now returns the unknown-command error) instead of describing it as a surviving unsupported alias."
+        }
+      ],
+      "entry_sha256": "d2627d4422fcf5cc0f14f9c81a84ea3979e0a76f419c1b65dcc846dbdcaafd00"
     }
   ]
 }

@@ -55,6 +55,21 @@ test("knownCommands covers the real dispatch branches", () => {
   }
 });
 
+// A comment or string literal inside dispatch() that happens to contain
+// `command === "x"` would leak `x` into the derived list and then into
+// did-you-mean. Pin the exact set, so a leaked token fails here instead of
+// surfacing as a bogus suggestion. (Deliberately no subprocess per command:
+// dispatching e.g. `install-skills` bare would write to the real home
+// directory.)
+test("knownCommands is exactly the dispatch branches, nothing leaked from comments", () => {
+  assert.deepEqual([...knownCommands()].sort(), [
+    "build", "bundle", "checkpoint", "doctor", "findings", "help",
+    "install-agent-context", "install-skills", "next", "polish", "prepare-build",
+    "qa", "run", "run-record", "standardization-report", "standardize", "start",
+    "telemetry", "theme", "tooling", "validate-assembly-report",
+  ]);
+});
+
 test("help documents the bounded staged checkpoint registry", () => {
   const out = runCliSuccess(["help"]);
   assert.match(out, /checkpoint waive .*--gate <checkpoint-id>/);
@@ -83,6 +98,15 @@ test("a short typo does not produce a confidently-wrong suggestion", () => {
   const out = runCli(["dr"]);
   assert.match(out, /Unknown command: dr\./);
   assert.doesNotMatch(out, /Did you mean/);
+});
+
+test("the removed validate-build-packet alias is an unknown command, not a silent doctor", () => {
+  // The alias was never on the supported surface; anyone still spelling it
+  // must be told to use doctor rather than have it quietly keep working.
+  const out = runCli(["validate-build-packet", "--packet", "x"]);
+  assert.match(out, /Unknown command: validate-build-packet\./);
+  assert.match(out, /campaigns-os --help/);
+  assert.doesNotMatch(out, /Doctor|Build Packet/);
 });
 
 test("an unrelated command gets no suggestion but still points at help", () => {

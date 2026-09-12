@@ -62,7 +62,7 @@ const KNOWN_RESOURCE_TYPES = new Set(POLISH_RESOURCE_TYPES.filter((value) => val
 // endpoint, a prefetch hint, a signed exchange, a websocket) — blocks
 // whatever its origin, as does an unknown or ambiguous type. Widening this
 // list is an operator-visible trade-off, not a tidy-up.
-export const POLISH_BEACON_RESOURCE_TYPES = Object.freeze([
+const POLISH_BEACON_RESOURCE_TYPES = Object.freeze([
   "fetch",
   "other",
   "ping",

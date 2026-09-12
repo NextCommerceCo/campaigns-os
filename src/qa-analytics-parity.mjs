@@ -38,17 +38,6 @@ export const HOOKED_DATA_LAYERS = Object.freeze([
   "ElevarDataLayer",
 ]);
 
-// Canonical SDK commerce events (subset that the parity gate cares about most).
-// dl_purchase is the highest-value check; the others round out the funnel.
-export const CANONICAL_COMMERCE_EVENTS = Object.freeze([
-  "dl_view_item",
-  "dl_add_to_cart",
-  "dl_begin_checkout",
-  "dl_add_shipping_info",
-  "dl_add_payment_info",
-  "dl_purchase",
-]);
-
 // Default extra hosts treated as analytics tag-fires beyond the well-known ones.
 // Everflow (affiliate) often fires from a merchant-custom tracking domain, so it
 // is matched by substring and the host list is extensible via args.

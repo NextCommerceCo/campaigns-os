@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 export const DESIGN_SOURCE_PACKAGE_SCHEMA = "campaign-design-source-package/v0";
-export const DESIGN_SOURCE_PACKAGE_SCHEMA_VERSION = DESIGN_SOURCE_PACKAGE_SCHEMA;
 export const DESIGN_SOURCE_PACKAGE_REL_PATH = ".campaign-runtime/input/design-source-package.json";
 export const DESIGN_SOURCE_PACKAGE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
@@ -709,10 +708,6 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   return artifact;
 }
 
-export const createHtmlFunnelDesignSourcePackage = synthesizeHtmlFunnelDesignSourcePackage;
-export const createDesignSourcePackage = synthesizeHtmlFunnelDesignSourcePackage;
-export const createDesignSourcePackageArtifact = synthesizeHtmlFunnelDesignSourcePackage;
-
 export function evaluateDesignSourcePackageReadiness(value, {
   generatedAt = value?.generated_at || new Date().toISOString(),
   now = Date.now(),
@@ -864,14 +859,10 @@ export function designSourcePackageMaterialProjection(value) {
   };
 }
 
-export const createDesignSourcePackageMaterialProjection = designSourcePackageMaterialProjection;
-
 export function computeDesignSourcePackageMaterialFingerprint(value) {
   const canonical = canonicalJson(designSourcePackageMaterialProjection(value));
   return `${MATERIAL_FINGERPRINT_PREFIX}${createHash("sha256").update(canonical).digest("hex")}`;
 }
-
-export const designSourcePackageMaterialFingerprint = computeDesignSourcePackageMaterialFingerprint;
 
 export function serializeDesignSourcePackage(value) {
   return `${JSON.stringify(canonicalize(value), null, 2)}\n`;
@@ -1066,8 +1057,6 @@ export function validateDesignSourcePackage(value, {
 
   return { ok: errors.length === 0, errors, warnings };
 }
-
-export const validateDesignSourcePackageArtifact = validateDesignSourcePackage;
 
 function validateCurrentPageScope(value, scope, add) {
   if (!isObject(scope)) {

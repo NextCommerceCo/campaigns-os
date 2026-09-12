@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
@@ -132,4 +132,34 @@ test("start shares the guard: it refuses to overwrite recorded stage evidence", 
     assert.match(rerun.stderr, /--force/);
     assert.ok(bytesBefore.equals(readFileSync(reportPath)), "the refused start must leave the report byte-identical");
   });
+});
+
+// The three intake commands share one dispatch body parameterised by mode.
+// Pin the mode table so a refactor cannot silently swap which command runs
+// doctor or installs agent context: start = doctor + context, build = doctor
+// only, prepare-build = neither.
+test("start, build, and prepare-build keep their doctor / agent-context modes", () => {
+  const expected = [
+    { command: "start", runDoctor: true, installContext: true },
+    { command: "build", runDoctor: true, installContext: false },
+    { command: "prepare-build", runDoctor: false, installContext: false },
+  ];
+  for (const { command, runDoctor, installContext } of expected) {
+    withTempDir((dir) => {
+      // Seed a placeholder doctor sidecar so presence cannot tell the modes
+      // apart (a local checkout may carry a gitignored one; CI does not): a
+      // doctor run rewrites it, no-doctor leaves it byte-identical.
+      const target = join(dir, "target");
+      cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
+      const sidecar = join(target, ".campaign-runtime/doctor-output.json");
+      mkdirSync(dirname(sidecar), { recursive: true });
+      writeFileSync(sidecar, "{\"placeholder\":true}\n");
+      const sidecarBefore = readFileSync(sidecar);
+      const run = runPrepare(dir, [], { command });
+      const result = JSON.parse(run.stdout);
+      assert.equal(result.doctor !== null && typeof result.doctor === "object", runDoctor, `${command}: result.doctor`);
+      assert.equal(!sidecarBefore.equals(readFileSync(sidecar)), runDoctor, `${command}: doctor-output.json rewritten`);
+      assert.equal(existsSync(join(run.target, ".campaign-runtime/agent-context/CLAUDE.md")), installContext, `${command}: agent context install`);
+    });
+  }
 });

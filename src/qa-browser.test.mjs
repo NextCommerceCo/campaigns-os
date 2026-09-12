@@ -765,22 +765,6 @@ test("promoted template families declare checkout commerce structure contracts",
   }
 });
 
-test("--select-package builds strict card selectors covering package and bundle refs", () => {
-  const { packageCardSelectors } = __qaBrowserTestHooks;
-  const selectors = packageCardSelectors("7");
-
-  assert.deepEqual(selectors, [
-    '[data-next-selector-card][data-next-package-id="7"]',
-    '[data-next-bundle-card][data-next-bundle-id="7"]',
-    '[data-next-package-id="7"]',
-    '[data-next-bundle-id="7"]',
-  ]);
-
-  // Refs are CSS-escaped so a hostile/odd ref cannot break out of the selector.
-  const escaped = packageCardSelectors('a"b');
-  assert.ok(escaped.every((selector) => selector.includes('a\\"b')));
-});
-
 test("strict package selection resolves the rendered card by requested purchase quantity", () => {
   const { packageCardClickSelector, resolvePackageCardCandidate } = __qaBrowserTestHooks;
   const cards = [
@@ -837,6 +821,9 @@ test("strict package selection resolves the rendered card by requested purchase 
 
   assert.equal(packageCardClickSelector(cards[1]), '[data-next-bundle-id="bundle-2x"]');
   assert.equal(packageCardClickSelector(legacy[0]), '[data-next-selector-card][data-next-package-id="legacy"], [data-next-package-id="legacy"]');
+  // Refs are CSS-escaped so a hostile/odd ref cannot break out of the selector
+  // (this composer also serves best-effort --cart selection).
+  assert.ok(packageCardClickSelector({ package_id: 'a"b' }).includes('a\\"b'));
   assert.throws(() => packageCardClickSelector({ bundle_id: null, package_id: null, items: null }), /no package or bundle identity/);
 });
 
