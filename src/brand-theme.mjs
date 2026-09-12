@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+
+import { shellToken } from "./shell-token.mjs";
 import {
   existsSync,
   mkdirSync,
@@ -88,12 +90,6 @@ function loadContracts(repoRoot = ROOT) {
 
 function issue(code, message, detail = null) {
   return detail ? { code, message, detail } : { code, message };
-}
-
-function shellToken(value) {
-  const text = String(value ?? "");
-  if (/^[A-Za-z0-9_/@%+=:,.-]+$/.test(text)) return text;
-  return `'${text.replace(/'/g, "'\\''")}'`;
 }
 
 function cleanCssRef(value) {
