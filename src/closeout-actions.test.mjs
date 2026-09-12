@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { assessPurchaseProofCoverage, buildNextActions, orderRunRecordFileNames, readRunRecordsForTarget } from "./cli.mjs";
 import { buildQaCloseoutActions } from "./qa-node.mjs";
+import { SESSION_ENDING_DISPOSITIONS } from "./qa-verdict.mjs";
 
 // #171: run-record closeout must be a REQUIRED next action at terminal
 // stages and after qa run — the dogfood run ended with the session open and
@@ -37,6 +38,82 @@ test("qa run closeout action is required, names the packet and verdict, and surv
   assert.equal(closeout.required, true);
   assert.match(closeout.command, /run-record --packet \/campaigns\/demo\/campaign-runtime\.build\.json --qa-verdict qa-output\/demo\/RUN1\.json/);
   assert.match(closeout.description, /including blocked/);
+});
+
+// Remit is POST-only and the receiver holds one record per run_id, refusing a
+// second POST for an id it already has. A closeout run while the session still
+// holds that id would spend it on the interim record, and the session's own
+// close — the record carrying every attempt — would be refused.
+test("a blocked attempt keeps the session open, so the printed closeout leaves the remit to it", () => {
+  const [closeout] = buildQaCloseoutActions({
+    packetPath: "/campaigns/demo/campaign-runtime.build.json",
+    localPath: "qa-output/demo/RUN1.json",
+    runSessionActive: true,
+    disposition: "blocked",
+  });
+  assert.match(closeout.command, /--no-remit/);
+  // The flag has to reach the command, not only the prose beside it.
+  assert.match(closeout.command, /--qa-verdict qa-output\/demo\/RUN1\.json --no-remit --json$/);
+  assert.match(closeout.description, /--no-remit/);
+});
+
+// A terminal verdict auto-ends the session in the same process, BEFORE the
+// operator can run this command: the record is assembled, the session cleared,
+// and the id spent. The command then mints its own run_id, so there is nothing
+// to collide with — and a local-only record here would be actively harmful,
+// since a newer closed record buries a failed auto-end remit that still needs
+// recovering.
+for (const disposition of ["ready", "ready_with_exceptions"]) {
+  test(`a ${disposition} attempt auto-ends the session, so the printed closeout still remits`, () => {
+    const [closeout] = buildQaCloseoutActions({
+      packetPath: "/campaigns/demo/campaign-runtime.build.json",
+      localPath: "qa-output/demo/RUN1.json",
+      runSessionActive: true,
+      disposition,
+    });
+    assert.doesNotMatch(closeout.command, /--no-remit/);
+  });
+}
+
+// Membership in the session-ending set is enumerated, not excluded, on both
+// sides. A disposition this version does not recognise — a newer toolkit's
+// verdict, a foreign one — must therefore land on the session-keeping side:
+// the auto-end leaves the session open, so the printed command shares its
+// run_id and must not spend it. Failing open here would re-POST that id and
+// earn the 409 this whole path exists to avoid.
+for (const disposition of ["quarantined", "READY", "", null]) {
+  test(`an unrecognised disposition (${JSON.stringify(disposition)}) keeps the run id and withholds the remit`, () => {
+    const [closeout] = buildQaCloseoutActions({
+      packetPath: "/campaigns/demo/campaign-runtime.build.json",
+      localPath: "qa-output/demo/RUN1.json",
+      runSessionActive: true,
+      disposition,
+    });
+    assert.match(closeout.command, /--no-remit/);
+  });
+}
+
+// The two sides read one constant, so the set the closeout treats as
+// session-ending is exactly the set the auto-end closes on.
+test("the session-ending set is exactly the dispositions the closeout lets remit", () => {
+  const remits = (disposition) => !buildQaCloseoutActions({
+    packetPath: "/campaigns/demo/campaign-runtime.build.json",
+    runSessionActive: true,
+    disposition,
+  })[0].command.includes("--no-remit");
+  for (const disposition of SESSION_ENDING_DISPOSITIONS) assert.equal(remits(disposition), true, disposition);
+  for (const disposition of ["blocked", "unknown_future_value"]) assert.equal(remits(disposition), false, disposition);
+});
+
+test("with no run session the printed closeout owns its run id and remits", () => {
+  for (const disposition of ["blocked", "ready", null]) {
+    const [closeout] = buildQaCloseoutActions({
+      packetPath: "/campaigns/demo/campaign-runtime.build.json",
+      localPath: "qa-output/demo/RUN1.json",
+      disposition,
+    });
+    assert.doesNotMatch(closeout.command, /--no-remit/);
+  }
 });
 
 test("qa run closeout emits no action for packetless modes (site / parity)", () => {

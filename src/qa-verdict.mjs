@@ -8,6 +8,20 @@ export const STATUS = Object.freeze({
   MANUAL_REVIEW: "manual_review",
 });
 
+// The dispositions that END a run session, and the single definition of that
+// set. A blocked attempt keeps the session open for repair; these close it.
+//
+// Both sides of the decision read this: autoEndRunSessionAfterTerminalQa, which
+// closes the session and remits under its run_id, and buildQaCloseoutActions,
+// which prints the run-record command an operator runs next. Membership is
+// enumerated rather than excluded so an unrecognised disposition — a newer
+// toolkit's verdict, a foreign one — falls on the session-keeping side for
+// BOTH. Getting that backwards on one side only is the whole bug class: the
+// printed command would spend a run_id the session still holds, and the
+// session's own close would then be refused 409 by the receiver, which stores
+// one record per run_id and has no replace verb.
+export const SESSION_ENDING_DISPOSITIONS = Object.freeze(new Set(["ready", "ready_with_exceptions"]));
+
 export const SEVERITY = Object.freeze({
   INFO: "info",
   WARN: "warn",
