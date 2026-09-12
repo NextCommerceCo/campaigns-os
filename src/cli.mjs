@@ -127,6 +127,7 @@ import {
   findForbiddenPriceHides,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
+  templateBrandContractPath,
 } from "./template-brand-contract.mjs";
 import {
   scanBuiltOutputContentResidue,
@@ -7656,6 +7657,49 @@ const THEME_STARTER_PALETTE_STAGES = new Set(["build", "polish", "deploy", "qa"]
  * `next` never throws over this. A defect becomes its own advisory, in the same
  * shape, naming the family and the error code.
  */
+// Everything below is interpolated into a description that prints to a
+// terminal and ships in next_actions[] JSON, and all three values ultimately
+// come from a packet and a file on disk. None of them is trusted prose.
+//
+// The family is a filename component (template-brand-contract.<family>.v0.json)
+// and every real family — the packet schema's enum and the commerce catalog
+// alike — is a lowercase slug, so anything else is not a family we can name.
+// The code is reduced to the loader's own enum. The detail is loader-authored
+// but quotes file content, so it is folded to one line, stripped of control
+// characters, escaped for Markdown, and bounded.
+const TEMPLATE_FAMILY_SLUG = /^[a-z0-9][a-z0-9-]*$/;
+const BRAND_CONTRACT_ERROR_CODES = new Set([
+  "parse_error",
+  "schema_mismatch",
+  "extends_cycle",
+  "extends_missing_parent",
+  "family_mismatch",
+]);
+const ADVISORY_DETAIL_MAX = 300;
+
+export function safeFamilyLabel(family) {
+  const value = optionalString(family);
+  return value && TEMPLATE_FAMILY_SLUG.test(value) ? value : "unknown-family";
+}
+
+export function safeBrandContractCode(code) {
+  const value = optionalString(code);
+  return value && BRAND_CONTRACT_ERROR_CODES.has(value) ? value : "unknown";
+}
+
+// One trimmed line, no control characters, no Markdown that could restyle the
+// rest of the description or a rendered bullet.
+export function singleLineDetail(detail, max = ADVISORY_DETAIL_MAX) {
+  const flattened = String(detail ?? "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[ --]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[`*_[\]<>]/g, "\\$&");
+  if (!flattened) return "(no detail reported)";
+  return flattened.length > max ? `${flattened.slice(0, max - 1).trimEnd()}…` : flattened;
+}
+
 function familyPaletteResidueState(packet) {
   const family = optionalString(packet?.assembly?.template_family);
   if (!family) return { state: "no_family", family: null };
@@ -7666,8 +7710,8 @@ function familyPaletteResidueState(packet) {
     return {
       state: "defect",
       family,
-      code: optionalString(error?.code) || "unknown",
-      detail: error instanceof Error ? error.message : String(error),
+      code: safeBrandContractCode(error?.code),
+      detail: singleLineDetail(error instanceof Error ? error.message : error),
     };
   }
   // null is "resolved to no contract", never "something went wrong": no public
@@ -7687,15 +7731,23 @@ function familyPaletteResidueState(packet) {
 // campaigns that did generate a brand layer.
 function brandContractDefectAdvisory(residueState) {
   if (residueState.state !== "defect") return null;
+  const family = safeFamilyLabel(residueState.family);
+  // A private-only family has no file at contracts/template-brand-contract.
+  // <family>.v0.json, so naming that path would send the operator to repair
+  // something that was never there. Name it only when it is actually on disk;
+  // otherwise point at the fragment that supplied the contract.
+  const publicPath = templateBrandContractPath(family);
+  const source = publicPath && existsSync(publicPath)
+    ? `contracts/template-brand-contract.${family}.v0.json`
+    : "the private fragment supplying it";
   return {
     id: BRAND_CONTRACT_DEFECT_ACTION_ID,
     kind: "manual",
     command: null,
-    description: `The template brand contract for family "${residueState.family}" exists but could not be read `
+    description: `The contract source for family "${family}" exists but could not be read `
       + `(${residueState.code}): ${residueState.detail} Browser QA rejects an unreadable contract outright — it records `
-      + `template-brand-contract:${residueState.family} as a blocker — so this will stop \`qa run\` regardless of the theme `
-      + "gate, and no waiver clears it. Repair contracts/template-brand-contract."
-      + `${residueState.family}.v0.json (or the private fragment supplying it) before QA. Until it is readable, whether this `
+      + `template-brand-contract:${family} as a blocker — so this will stop \`qa run\` regardless of the theme `
+      + `gate, and no waiver clears it. Repair ${source} before QA. Until it is readable, whether this `
       + "campaign also ships the starter palette on its commerce pages cannot be determined.",
   };
 }

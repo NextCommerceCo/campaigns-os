@@ -76,7 +76,14 @@ Notable supported-surface changes are recorded here.
   distinct from a family that resolves to no contract, and it is reported
   regardless of the theme gate's outcome, because QA rejects the contract
   whether or not the campaign has brand tokens. `next` still never throws over
-  a defective contract.
+  a defective contract. Every value interpolated into that description is
+  bounded before it is printed or serialized: the family must match the
+  lowercase template-family slug (or it reads `unknown-family`), the code must
+  be one of the loader's own (or `unknown`), and the loader detail is folded to
+  one trimmed line with control characters stripped, Markdown escaped, and
+  length capped. The repair path names
+  `contracts/template-brand-contract.<family>.v0.json` only when that file is
+  on disk, and otherwise says the private fragment supplying it.
 ## [1.25.0+agent.9] - 2026-09-12
 
 ### Fixed
