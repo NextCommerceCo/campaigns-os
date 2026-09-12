@@ -1,0 +1,100 @@
+// Real-browser proof for the order-bump state marker (campaigns-os#323).
+//
+// The defect is a DOM-resolution one — which element the marker selector picks
+// out of a toggle — so it can only be proved in a real layout engine: it turns
+// on document order, computed `display`, and the shared checkout CSS that shows
+// and hides the tick by the card's state class. The fixture under
+// fixtures/qa-order-bump/ carries the shape that produced it: a toggle whose
+// own `aria-hidden` checkbox input precedes its rendered tick.
+//
+// Chromium is not part of `npm ci --ignore-scripts`, so the file skips when it
+// cannot launch (CI), matching qa-cart-entry.browser.test.mjs.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
+
+const FIXTURE = new URL("../fixtures/qa-order-bump/aria-hidden-checkbox/checkout.html", import.meta.url).pathname;
+
+async function chromiumAvailable() {
+  try {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    await browser.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let evidence = null;
+
+// One launch for the whole file; the probe is a pure read of a static document.
+async function bumpEvidence() {
+  if (evidence) return evidence;
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(await readFile(FIXTURE, "utf8"), { waitUntil: "load" });
+    evidence = await page.evaluate(orderBumpEvidenceScript(), ORDER_BUMP_PROBE_INPUT);
+    return evidence;
+  } finally {
+    await browser.close();
+  }
+}
+
+const available = await chromiumAvailable();
+const browserTest = available ? test : test.skip;
+if (!available) {
+  test("Playwright Chromium is unavailable; browser-backed order-bump proof skipped (run `npm run qa:install-browser`)", () => {});
+}
+
+browserTest("an accepted bump resolves its rendered tick, not the toggle's own aria-hidden checkbox, and reads checked", async () => {
+  const { toggles } = await bumpEvidence();
+  assert.equal(toggles.length, 3, "all three visible toggles are read");
+
+  const accepted = toggles.find((toggle) => toggle.packageId === "4");
+  assert.equal(accepted.active, true, "the card carries next-in-cart");
+  assert.equal(accepted.inputChecked, true);
+  assert.equal(accepted.markerResolved, true);
+  // The heart of #323: the marker is the tick element, never the input.
+  assert.equal(accepted.markerTag, "div", "the marker is the rendered tick, not the aria-hidden <input>");
+  assert.equal(accepted.markerFamily, "[os-component='check']");
+  assert.equal(accepted.markerChecked, true, "a rendered tick reads checked");
+  assert.equal(accepted.markerAgrees, true);
+  assert.equal(accepted.statesAgree, true);
+});
+
+browserTest("a declined bump reads unchecked, so the check still catches a real disagreement", async () => {
+  const { toggles } = await bumpEvidence();
+  const declined = toggles.find((toggle) => toggle.packageId === "5");
+
+  assert.equal(declined.active, false);
+  assert.equal(declined.inputChecked, false);
+  assert.equal(declined.markerResolved, true, "the tick is still the resolved marker while hidden");
+  assert.equal(declined.markerTag, "div");
+  assert.equal(declined.markerChecked, false, "a tick that is not rendered reads unchecked");
+  assert.equal(declined.statesAgree, true);
+});
+
+browserTest("a decorative aria-hidden switch slider is not a state marker", async () => {
+  const { toggles } = await bumpEvidence();
+  const slider = toggles.find((toggle) => toggle.packageId === "6");
+
+  assert.equal(slider.active, true);
+  assert.equal(slider.inputChecked, null, "the switch variant carries no checkbox input");
+  assert.equal(slider.markerResolved, false, "the always-rendered slider says nothing about state");
+  assert.equal(slider.markerFamily, null);
+  assert.equal(slider.markerChecked, false);
+  assert.equal(slider.markerAgrees, true, "no readable marker is not a disagreement");
+  assert.equal(slider.statesAgree, true);
+});
+
+browserTest("every toggle on the fixture reads aligned, so a bump run can read clean", async () => {
+  const { toggles } = await bumpEvidence();
+  const misaligned = toggles.filter((toggle) => !toggle.statesAgree);
+  assert.deepEqual(misaligned, [], "no toggle reports a false misalignment");
+});

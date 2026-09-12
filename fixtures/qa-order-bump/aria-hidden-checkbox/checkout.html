@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Order bump state marker fixture</title>
+<style>
+  body { margin: 0; font: 16px/1.4 system-ui, sans-serif; }
+  [data-next-toggle-card] { display: block; padding: 12px; border: 1px solid #ccc; }
+
+  /* The toggle's own state input is visually hidden and marked aria-hidden.
+     This is the element campaigns-os#323 resolved as the "marker". */
+  .bump__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .bump__checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #9b9b9b;
+  }
+
+  /* The rendered tick, driven by the card's state class. This is the shape the
+     shared checkout CSS uses for every toggle card. */
+  [data-next-toggle-card] [os-component="check"] { display: none; }
+  [data-next-toggle-card].next-in-cart [os-component="check"] { display: flex; }
+  .checkbox__icon { width: 16px; height: 16px; }
+
+  /* A switch-style toggle: an always-rendered decorative slider. It carries
+     aria-hidden and it is NOT a state marker — its rendering is the same
+     whether the toggle is on or off. */
+  .bump__switch { display: inline-block; width: 32px; height: 18px; background: #ddd; }
+</style>
+</head>
+<body>
+
+<!-- 1. Accepted bump. The aria-hidden input precedes the rendered tick in
+     document order, so a document-order query over a selector list ending in
+     [aria-hidden] resolves the input and can never read checked. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="4" id="bump-active">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
+    <div class="bump__header-content">
+      <div class="bump__checkbox">
+        <div os-component="check" class="checkbox__icon">
+          <svg aria-hidden="true" role="img" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="m6 10l-2 2l6 6L20 8l-2-2l-8 8z"></path></svg>
+        </div>
+      </div>
+      <div class="bump__title">Add-on offer A</div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. The same toggle, declined. The tick is not rendered, so the marker
+     correctly reads unchecked and agrees with the input. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="5" id="bump-inactive">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1">
+    <div class="bump__header-content">
+      <div class="bump__checkbox">
+        <div os-component="check" class="checkbox__icon">
+          <svg aria-hidden="true" role="img" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="m6 10l-2 2l6 6L20 8l-2-2l-8 8z"></path></svg>
+        </div>
+      </div>
+      <div class="bump__title">Add-on offer B</div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Accepted switch-style bump with no state-marker vocabulary at all: the
+     only aria-hidden node is the decorative slider. There is nothing to read,
+     so the check must resolve no marker rather than treat the slider as one. -->
+<div data-next-package-toggle>
+  <div class="bump-card bump-card--switch next-in-cart" data-next-toggle-card data-next-package-id="6" id="bump-switch">
+    <span class="bump__title">Add-on offer C</span>
+    <span class="bump__switch" aria-hidden="true"><span class="bump__switch-slider"></span></span>
+  </div>
+</div>
+
+</body>
+</html>

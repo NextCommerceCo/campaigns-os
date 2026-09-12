@@ -2,6 +2,42 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.9] - 2026-09-12
+
+### Fixed
+
+- `browser-order-bump-state` resolves a bump toggle's rendered state marker
+  instead of the toggle's own `aria-hidden` checkbox input (campaigns-os#323).
+  The marker selector list ended in a bare `[aria-hidden]`, and
+  `querySelector` returns document order rather than selector order, so on any
+  toggle whose visually hidden `<input type="checkbox" aria-hidden="true">`
+  precedes its tick, the input *was* the marker. An input has no `::after`, no
+  glyph and no fill, so `markerChecked` could never read true: every accepted
+  bump reported misaligned, the assertion failed at warn severity on every
+  run, and no bump run could read clean. The same clause also matched purely
+  decorative nodes, such as a switch variant's always-rendered slider, whose
+  rendering says nothing about the toggle's state.
+
+  The marker vocabulary is now the four families that mean "this is the tick"
+  (`.bump-check`, `[data-next-toggle-check]`, `[os-component="check"]`,
+  `.checkbox__icon`), tried in order so a generic match cannot outrank a
+  specific one by appearing earlier in the document; form controls and
+  `[hidden]` subtrees can never be a marker. The state signal is the marker's
+  own rendering, which is the mechanism the shared checkout CSS uses
+  (`[data-next-toggle-card] [os-component="check"] { display: none }`, restored
+  to `display: flex` on the active or in-cart card) — it replaces the
+  `::after`, check-glyph and hard-coded fill-colour proxies for it. A toggle
+  that expresses its state some other way (a tick that is recoloured rather
+  than shown and hidden, or a switch slider) resolves no marker and is read
+  from its input and active state alone, rather than being reported as a
+  disagreement. The verdict payload now records `markerResolved`,
+  `markerFamily` and `markerTag` so an operator reading a misaligned toggle can
+  see which element the harness picked.
+
+  The probe moves to `src/qa-order-bump.mjs` as an `evaluate()` body, the
+  shape `qa-cart-entry.mjs` already uses, so the real-browser proof over
+  `fixtures/qa-order-bump/` drives the same function the QA runner does.
+
 ## [1.25.0+agent.8] - 2026-09-12
 
 ### Fixed
