@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
@@ -146,12 +146,14 @@ test("start, build, and prepare-build keep their doctor / agent-context modes", 
   ];
   for (const { command, runDoctor, installContext } of expected) {
     withTempDir((dir) => {
-      // The example target ships a doctor-output.json sidecar, so presence
-      // cannot tell the modes apart; a doctor run rewrites it, no-doctor
-      // leaves it byte-identical.
+      // Seed a placeholder doctor sidecar so presence cannot tell the modes
+      // apart (a local checkout may carry a gitignored one; CI does not): a
+      // doctor run rewrites it, no-doctor leaves it byte-identical.
       const target = join(dir, "target");
       cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
       const sidecar = join(target, ".campaign-runtime/doctor-output.json");
+      mkdirSync(dirname(sidecar), { recursive: true });
+      writeFileSync(sidecar, "{\"placeholder\":true}\n");
       const sidecarBefore = readFileSync(sidecar);
       const run = runPrepare(dir, [], { command });
       const result = JSON.parse(run.stdout);
