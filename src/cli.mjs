@@ -2016,8 +2016,8 @@ function prepareBuild(args, options = {}) {
     prompts: sourceIntake.prompts,
     decisions: sourceIntake.decisions,
   };
-  if (manifestResult.warning) {
-    console.warn(`[campaigns-os prepare-build] ${manifestResult.warning}`);
+  for (const warning of manifestWarnings) {
+    console.warn(`[campaigns-os prepare-build] ${warning}`);
   }
   // Root-served campaigns: the spec may declare campaign.route_root "/"
   // (whole funnel served from the site root, no slug prefix). Canonicalize at
@@ -5681,6 +5681,9 @@ function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, 
   if (result.warning) {
     addIssue(warnings, "source_html.manifest", result.warning);
     return;
+  }
+  for (const warning of result.warnings || []) {
+    addIssue(warnings, "source_html.manifest", warning);
   }
   validateSourceProducerProvenance(result.manifest, { spec, errors, warnings, ready });
   ready.push(`Source-html manifest ${SOURCE_HTML_MANIFEST_SCHEMA} validated`);

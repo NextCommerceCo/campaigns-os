@@ -31,7 +31,7 @@
     "wrapper_policy": {
       "type": "string",
       "enum": ["strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown"],
-      "description": "Optional operator selection of the document-wrapper policy for this source, in the same vocabulary the Build Packet records at source_html.adapter_contract.wrapper_policy. prepare-build seeds the adapter contract from it, so declaring \"preserve_document_wrappers\" here reports source_html.prep.document_wrapper without blocking instead of requiring the wrappers to be stripped. The prepare-build --wrapper-policy flag overrides this key; with neither, the default is \"strip_document_wrappers\". See docs/source-adapters.md, section \"Source preparation check\"."
+      "description": "Optional operator selection of the document-wrapper policy for this source, in the same vocabulary the Build Packet records at source_html.adapter_contract.wrapper_policy. prepare-build seeds the adapter contract from it, so declaring \"preserve_document_wrappers\" here reports source_html.prep.document_wrapper without blocking instead of requiring the wrappers to be stripped. The prepare-build --wrapper-policy flag overrides this key; with neither, the default is \"strip_document_wrappers\". A value outside the enum does not invalidate the manifest: the key is ignored with a warning naming it, the value, and the accepted values, and the rest of the manifest is used as written. See docs/source-adapters.md, section \"Source preparation check\"."
     },
     "producer_provenance": {
       "type": "object",

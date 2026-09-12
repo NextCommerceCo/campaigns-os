@@ -152,8 +152,12 @@ for its CLI override and its spec hint (see
 resolved value is written to
 `source_html.adapter_contract.wrapper_policy` on the packet, and a non-default
 selection is echoed on stderr with the channel that set it. A value outside the
-vocabulary fails the run (flag) or invalidates the manifest (key), rather than
-being silently ignored.
+vocabulary fails the run when it comes from the flag. From the manifest key it
+does not: the manifest is used as written — `pages[]`, `producer_provenance`
+and `files[]` all survive — the key alone is ignored, the default policy
+applies, and one warning names the key, the value, and the accepted values.
+Dropping a whole manifest over one optional hint would cost far more than the
+hint is worth.
 
 Selecting `preserve_document_wrappers` does not silence the finding: the
 document wrappers are still reported on every page that carries them, as a

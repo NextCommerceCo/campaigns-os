@@ -22,9 +22,31 @@ Notable supported-surface changes are recorded here.
   Precedence follows the template-family rule — the flag wins over the declared
   manifest key, and with neither the default stays `strip_document_wrappers`, so
   a run that passes neither behaves exactly as before. A flag value outside the
-  vocabulary fails the run; a manifest value outside it fails manifest validation
-  and falls back to filesystem matching with the usual warning. A non-default
-  selection prints the value and the channel that set it on stderr.
+  vocabulary fails the run, before anything is written. A manifest value outside
+  it does not invalidate the manifest: the key is ignored with a warning naming
+  it, the value, and the accepted values, and `pages[]`, `producer_provenance`,
+  and `files[]` are used as written. A non-default selection prints the value
+  and the channel that set it on stderr.
+## [1.25.0+agent.9] - 2026-09-12
+
+### Fixed
+
+- A `qa run` that spends its `--max-order-creations` budget no longer reports
+  the stopped path as a blocker, and no longer finalizes `blocked`. The
+  budget-stop assertion was emitted with `status: fail` and
+  `severity: blocker` — byte-identical to a checkout the runner watched fail —
+  so `computeDisposition` turned any budgeted run whose budget ran out before
+  the last planned path into `blocked` (exit code `4`), and the only thing
+  separating a deliberate safety stop from a broken checkout was the assertion
+  text and an `evidence.order_creation_budget` key that no disposition code
+  read. Nothing is submitted for a budget-stopped path, so it is now recorded
+  as `manual_review` at `warn` severity, the vocabulary this runner already
+  uses for a hosted-checkout redirect: a path a human decides, not one the
+  runner proved either way. Such a run finalizes `ready_with_exceptions`, and
+  the unexercised path rides in `exceptions[]` so it can never be mistaken for
+  a clean `ready`. The assertion text and the `order_creation_budget` evidence
+  are unchanged, and a genuine order-creation failure is still a blocker that
+  blocks.
 
 ## [1.25.0+agent.8] - 2026-09-12
 

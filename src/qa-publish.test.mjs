@@ -1,36 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decidePublishVerdict, qaResolveNextProofLines, shouldPublishVerdict } from "./qa-node.mjs";
-
-// Publishing the QA verdict to the Campaign Map QA portal is the default shape:
-// LLM/agent UIs are the primary interface, so a run should land in the portal
-// without the operator needing to know a flag.
-
-test("publishes by default (no flags)", () => {
-  assert.equal(shouldPublishVerdict({}), true);
-});
-
-test("explicit --post-verdict still opts in", () => {
-  assert.equal(shouldPublishVerdict({ "post-verdict": true }), true);
-});
-
-test("--no-post-verdict opts out", () => {
-  assert.equal(shouldPublishVerdict({ "no-post-verdict": true }), false);
-});
-
-test("--local-only opts out", () => {
-  assert.equal(shouldPublishVerdict({ "local-only": true }), false);
-});
-
-test("--post-verdict false opts out", () => {
-  assert.equal(shouldPublishVerdict({ "post-verdict": "false" }), false);
-  assert.equal(shouldPublishVerdict({ "post-verdict": "off" }), false);
-  assert.equal(shouldPublishVerdict({ "post-verdict": "no" }), false);
-});
-
-test("unrelated flags do not affect the default", () => {
-  assert.equal(shouldPublishVerdict({ browser: true, "test-order": "common" }), true);
-});
+import { decidePublishVerdict, qaResolveNextProofLines } from "./qa-node.mjs";
 
 test("qa resolve names the next proof command when a base URL is known", () => {
   const lines = qaResolveNextProofLines({
@@ -139,4 +109,15 @@ test("garbage --post-verdict is never a silent opt-in: chain continues, flag_inv
 test("--post-verdict true-ish strings opt in explicitly", () => {
   assert.equal(decidePublishVerdict({ args: { "post-verdict": "true" }, portalManaged: false, consent: CONSENT_OFF }).publish, true);
   assert.equal(decidePublishVerdict({ args: { "post-verdict": "on" }, portalManaged: false, consent: CONSENT_OFF }).reason, "flag_opt_in");
+});
+
+test("--post-verdict false-ish strings and --local-only opt out explicitly", () => {
+  for (const value of ["false", "0", "no", "n", "off"]) {
+    const decision = decidePublishVerdict({ args: { "post-verdict": value }, portalManaged: true, consent: CONSENT_ON });
+    assert.equal(decision.publish, false);
+    assert.equal(decision.reason, "flag_opt_out");
+  }
+  const localOnly = decidePublishVerdict({ args: { "local-only": true }, portalManaged: true, consent: CONSENT_ON });
+  assert.equal(localOnly.publish, false);
+  assert.equal(localOnly.reason, "flag_opt_out");
 });
