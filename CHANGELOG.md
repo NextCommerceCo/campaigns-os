@@ -104,6 +104,51 @@ Notable supported-surface changes are recorded here.
   build; it now says it is a review warning that nothing blocks on. Severity,
   finding ids, detection, and every other message are unchanged.
 
+## [1.25.0+agent.11] - 2026-09-12
+
+### Added
+
+- `campaigns-os next` now says, from the build stage onward, that a campaign
+  with no brand tokens will block browser QA on the starter palette. The theme
+  gate passes such a campaign (`theme_gate.nothing_generatable`: nothing could
+  be generated, so nothing is applied) while QA reads that same pass as "a
+  brand layer is in place" and runs the template-residue checks at blocker
+  severity — so `qa run` blocks on `template-residue:<page>:style:*` rows for
+  the starter call-to-action colour. Both halves are unchanged and deliberate;
+  what was missing was that nothing in between said so, so the decision got
+  made after a blocked verdict instead of before one. `next` now carries a
+  non-required `theme_gate.starter_palette_blocks_qa` entry in `next_actions[]`
+  at the `build`, `polish`, `deploy` and `qa` stages naming both lanes that
+  clear it — `campaigns-os theme waive` (downgrades the rows to warn) or a
+  hand-authored `brand-theme.css` loaded after `next-core.css` — and the
+  non-JSON tiny prompt prints the same warning. No severity changed, nothing is
+  auto-waived, and a waived or applied gate emits nothing.
+- The warning is scoped to campaigns QA would actually block. It is emitted
+  only when the packet's `assembly.template_family` resolves to a brand
+  contract that carries both forbidden computed colors and commerce selectors
+  to inspect them on — the same predicate the browser runner uses, now shared
+  as `paletteResidueStyleChecks` / `contractHasPaletteResidueChecks` in
+  `template-brand-contract.mjs` rather than derived twice. A `custom` or
+  `undecided` family, or any family the catalog carries no contract for, emits
+  no `template-residue:*:style:*` rows at all, so those campaigns are not told
+  to clear a block that will never happen.
+- A second non-required action, `theme_gate.brand_contract_unreadable`, at the
+  same four stages, when the family's brand contract exists but fails to load
+  (`parse_error`, `schema_mismatch`, `extends_cycle`,
+  `extends_missing_parent`, `family_mismatch`). It names the family and the
+  error code and says browser QA rejects such a contract outright as a
+  `template-brand-contract:<family>` blocker that no waiver clears. A defect is
+  distinct from a family that resolves to no contract, and it is reported
+  regardless of the theme gate's outcome, because QA rejects the contract
+  whether or not the campaign has brand tokens. `next` still never throws over
+  a defective contract. Every value interpolated into that description is
+  bounded before it is printed or serialized: the family must match the
+  lowercase template-family slug (or it reads `unknown-family`), the code must
+  be one of the loader's own (or `unknown`), and the loader detail is folded to
+  one trimmed line with control characters stripped, Markdown escaped, and
+  length capped. The repair path names
+  `contracts/template-brand-contract.<family>.v0.json` only when that file is
+  on disk, and otherwise says the private fragment supplying it.
 ## [1.25.0+agent.10] - 2026-09-12
 
 ### Fixed
