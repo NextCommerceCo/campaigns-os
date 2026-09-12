@@ -53,6 +53,26 @@ Notable supported-surface changes are recorded here.
   already lives, and are re-exported from `src/cli.mjs` unchanged. One
   implementation, now reachable from the QA runner, which cannot import the
   CLI. No behaviour change.
+## [1.25.0+agent.9] - 2026-09-12
+
+### Fixed
+
+- A `qa run` that spends its `--max-order-creations` budget no longer reports
+  the stopped path as a blocker, and no longer finalizes `blocked`. The
+  budget-stop assertion was emitted with `status: fail` and
+  `severity: blocker` — byte-identical to a checkout the runner watched fail —
+  so `computeDisposition` turned any budgeted run whose budget ran out before
+  the last planned path into `blocked` (exit code `4`), and the only thing
+  separating a deliberate safety stop from a broken checkout was the assertion
+  text and an `evidence.order_creation_budget` key that no disposition code
+  read. Nothing is submitted for a budget-stopped path, so it is now recorded
+  as `manual_review` at `warn` severity, the vocabulary this runner already
+  uses for a hosted-checkout redirect: a path a human decides, not one the
+  runner proved either way. Such a run finalizes `ready_with_exceptions`, and
+  the unexercised path rides in `exceptions[]` so it can never be mistaken for
+  a clean `ready`. The assertion text and the `order_creation_budget` evidence
+  are unchanged, and a genuine order-creation failure is still a blocker that
+  blocks.
 
 ## [1.25.0+agent.8] - 2026-09-12
 

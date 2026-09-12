@@ -2,6 +2,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { shellToken } from "./shell-token.mjs";
+
 const CONTRACTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "contracts");
 const FIELD_CONTRACT_PATH = join(CONTRACTS_DIR, "campaign-cart-checkout-field-contract.v0.json");
 const SDK_POLICY_PATH = join(CONTRACTS_DIR, "campaign-cart-sdk-support-policy.v0.json");
@@ -656,7 +658,7 @@ function buildRemediation({ checkoutFields, versionPolicy, payment, root }) {
     clarification_needed: unique(clarification),
     product_or_merchant_risks: unique(risks),
     proof_commands: [
-      `campaigns-os standardize --target ${shellQuote(root)} --json`,
+      `campaigns-os standardize --target ${shellToken(root)} --json`,
     ],
   };
 }
@@ -783,8 +785,3 @@ function escapeRegExp(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function shellQuote(value) {
-  const raw = String(value || "");
-  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(raw)) return raw;
-  return `'${raw.replace(/'/g, "'\\''")}'`;
-}

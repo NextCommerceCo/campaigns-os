@@ -1,7 +1,6 @@
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-export { shellToken } from "./shell-token.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
@@ -2843,19 +2842,6 @@ function booleanArg(value, key) {
 export function forcedAnalyticsCorrectness(args) {
   if (args?.["analytics-correctness"] == null) return undefined;
   return booleanArg(args["analytics-correctness"], "analytics-correctness");
-}
-
-export function shouldPublishVerdict(args) {
-  // Publishing the QA verdict to the portal is the default shape. Opt out with
-  // --no-post-verdict, --local-only, or --post-verdict false (offline / dev / CI runs).
-  if (args["no-post-verdict"] === true || args["local-only"] === true) return false;
-  if ("post-verdict" in args) {
-    const value = args["post-verdict"];
-    if (value === true) return true;
-    const normalized = String(value).trim().toLowerCase();
-    if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
-  }
-  return true;
 }
 
 // #172: the default verdict POST sits inside the telemetry consent seam.
