@@ -125,6 +125,34 @@ in [docs/source-adapters.md](./source-adapters.md) for each code and its fix.
 
 ## Create The Packet
 
+> **Heads up — `start` turns on run telemetry, and remit is ON by default.**
+> `start` (and `prepare-build`) opens an ambient Run Session in the target repo.
+> When that session's Run Record is assembled — by a ready `qa run`, by
+> `campaigns-os run end`, or by the automatic closeout of a stale session — it is
+> **remitted to the canonical Next Commerce endpoint,
+> `https://campaign-map.nextcommerce.com`**, without asking again.
+>
+> What is sent: the Run Record (the run's own system signal and workflow
+> findings — stage timings, findings, tool/environment shape), plus the packet's
+> Campaigns API key in the `X-Campaign-Key` header so the record lands in your
+> tenant scope and you can read it back with `campaigns-os telemetry list
+> --packet <json>`. Campaigns API keys are public, browser-side,
+> domain-allowlisted keys by design, so this is attribution, not a secret.
+>
+> Why: those run records are what the toolkit learns from — they are how
+> templates, gates, and guidance get fixed.
+>
+> Three ways out, any of which is enough:
+>
+> - `campaigns-os telemetry off` — machine-level, sticks.
+> - `CAMPAIGNS_OS_TELEMETRY=off` — per shell or per CI job.
+> - `--no-remit` on the remitting command (`qa run`, `run-record`, `run end`).
+>
+> Consent gates remit only. Capture is always local, so opting out costs you
+> nothing locally. `--no-run-session` on `start` skips opening the session
+> altogether. Full contract:
+> [Run Telemetry](./workflow-findings-sidecar.md).
+
 ```bash
 npm run campaigns-os -- start \
   --spec path/to/campaign-spec.json \
