@@ -131,6 +131,54 @@ export function forbiddenComputedColors(contract) {
     .filter((entry) => entry.rgb);
 }
 
+// The page types template-residue inspection runs against at all. Lives here
+// rather than in the browser runner so a consumer that only wants to know
+// WHETHER residue checks apply does not have to import the runner.
+export const RESIDUE_PAGE_TYPES = ["checkout", "select", "upsell", "downsell", "receipt"];
+
+/**
+ * The computed-style (palette) residue checks that will actually run for one
+ * contract and page type — the single predicate behind "will QA block this
+ * campaign on the starter palette?".
+ *
+ * Both conditions are load-bearing and neither implies the other: a contract
+ * can list forbidden colors with no selector to inspect them on, and it can
+ * list selectors with no forbidden color to compare against. Either way the
+ * run produces no palette assertion, so anything that warns about one must ask
+ * this, not "does a contract exist".
+ */
+export function paletteResidueStyleChecks(contract, pageType) {
+  if (!forbiddenComputedColors(contract).length) return [];
+  return styleChecksForPageType(contract, pageType);
+}
+
+// The selector half, split out so a caller asking about every page type
+// normalizes the forbidden-color list once instead of per type.
+function styleChecksForPageType(contract, pageType) {
+  const type = String(pageType || "").toLowerCase();
+  if (!contract || !RESIDUE_PAGE_TYPES.includes(type)) return [];
+  return (contract.qa_inspection?.computed_style_checks || [])
+    .filter((check) => (check.page_types || []).includes(type));
+}
+
+/**
+ * Does this contract produce palette-residue checks on ANY commerce page type?
+ *
+ * A family outside the certified set — `custom`, `undecided`, or any family the
+ * catalog does not carry a contract for — resolves to no contract at all, so
+ * browser QA emits no `template-residue:*:style:*` rows for it and there is no
+ * starter palette to block on. Warning such an operator that QA will block, and
+ * recommending a waiver or a brand-layer rewrite to clear a block that will
+ * never happen, is worse than saying nothing.
+ */
+export function contractHasPaletteResidueChecks(contract) {
+  // Normalize the forbidden colors once for the whole sweep: they do not vary
+  // by page type, and normalizing a color list five times to answer one
+  // question is work nobody asked for.
+  if (!forbiddenComputedColors(contract).length) return false;
+  return RESIDUE_PAGE_TYPES.some((pageType) => styleChecksForPageType(contract, pageType).length > 0);
+}
+
 function escapeContractRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
