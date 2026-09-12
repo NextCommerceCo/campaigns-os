@@ -880,15 +880,6 @@ export function hashSerializedDesignSourcePackage(serialized) {
   return `${MATERIAL_FINGERPRINT_PREFIX}${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-export function serializeAndHashDesignSourcePackage(value) {
-  const serialized = serializeDesignSourcePackage(value);
-  return {
-    serialized,
-    sha256: hashSerializedDesignSourcePackage(serialized),
-    material_fingerprint: computeDesignSourcePackageMaterialFingerprint(value),
-  };
-}
-
 export function createDesignSourcePackageArtifactReference(value, {
   path = DESIGN_SOURCE_PACKAGE_REL_PATH,
   serialized = null,

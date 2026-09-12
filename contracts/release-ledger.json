@@ -1785,7 +1785,28 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.25.0+agent.9",
-      "changelog_sha256": "1420891044bf1d0a45d46bc5defc45ce41b72ec0459a89b3fa9953228e1a76da",
+      "changelog_sha256": "a4cbf993eb1946794c1417fa34ee8c153fb45dfba1a4db5d45a299dfbd77b5d6",
+      "agent_impact": "A qa run that spends its --max-order-creations budget changes disposition and exit code. The assertion for the path the budget stopped was status fail / severity blocker, indistinguishable from a checkout the runner watched fail, so every budgeted run whose budget ran out before the last planned path finalized blocked and exited 4. It is now status manual_review / severity warn, the same vocabulary a hosted-checkout redirect uses for a path a human must decide, and such a run finalizes ready_with_exceptions. A consumer that treated a browser-test-order blocker as a checkout defect worth dispatching a repair for will stop doing so for budget stops; one that gates on disposition blocked or exit code 4 will now see ready_with_exceptions for these runs and must read exceptions[], where the unexercised path is listed, rather than assuming an unblocked run proved every planned path. The assertion id, family, expected/actual text and evidence.order_creation_budget are unchanged, and a genuine order-creation failure is still a blocker that blocks.",
+      "compatibility": "compatible",
+      "migration": "none. If you gate on disposition or exit code, read exceptions[] (or assertion status manual_review in family browser-test-order) to see which planned paths were not exercised; do not read an unblocked verdict as proof that every planned path ran.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Records the status and severity a budget stop carries (manual_review / warn, never a blocker fail), and the disposition a run that spends its order-creation budget finalizes (ready_with_exceptions, with the unexercised path in exceptions[]), beside the existing --max-order-creations description."
+        }
+      ],
+      "entry_sha256": "b79a62ae2d0d204f19c43031329336110b81a85c0654663e901543f52524d12e"
+    },
+    {
+      "id": "RL-0038",
+      "sequence": 38,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.10",
+      "changelog_sha256": "ba6be1f71e255f5e05e673306cba1fbbbfff7f0296c077a9f6b00b2a88c77370",
       "agent_impact": "The run-record closeout command qa run prints as \"Required next\" carries --no-remit whenever the attempt does not end the run session - a BLOCKED verdict, or any disposition this version does not recognise - and says why. Such an attempt keeps the run session open, so an agent executing the printed command verbatim no longer spends the session run_id on the interim record; the session close (the later ready auto-end, or run end) is then the first and only POST for that id and lands remit_state ok instead of failed. A session-ending verdict is unchanged: it auto-ends the session in the same process, before the printed command can run, so the command mints its own run_id and remits, exactly as it does with no session. An agent that pattern-matches the closeout command string must accept an optional --no-remit between --qa-verdict and --json. Separately, an auto-end whose own remit does not close now says so on stderr and names the local record to keep; it does not print a re-send command, because run-record --run-id reassembles from current disk state rather than reloading the written record, and a session s QA attempt references are gone once the session is cleared - on a run repaired across several attempts that command replaces the stored record with a thinner one and sends that. The same caveat is now stated beside the run_record_remit_recovery action an agent may already be following. Re-sending a persisted record is not implemented. Remit itself is unchanged on the wire - the docs that called the endpoint an upsert now state that it keeps one record per run_id and refuses a repeat POST for a stored id with 409, so retrying a send that failed is safe and re-sending one that succeeded is not. Which dispositions end a session is one exported set, SESSION_ENDING_DISPOSITIONS, read by both the auto-end and the closeout it prints; membership is enumerated rather than excluded, so a disposition from a newer or foreign verdict keeps the session open on both sides instead of leaving them to disagree over who owns the run_id.",
       "compatibility": "compatible",
       "migration": "none. Read the closeout command from next_actions rather than reconstructing it, and treat --no-remit as expected whenever the attempt did not end the session. Do not treat run-record --run-id as a re-send of a stored record: for a multi-attempt run, prefer the local record file until reload-and-resend exists.",
@@ -1803,7 +1824,7 @@
           "summary": "States that the remit endpoint keeps one record per run_id and refuses a repeat POST for a stored id with 409 rather than upserting; records that the closeout printed for an attempt which does not end the session carries --no-remit because the session close owns that ids one accepted send, that a terminal verdict auto-ends first and so remits normally, and that the run_record_remit_recovery command reassembles rather than reloads, so it thins a multi-attempt record."
         }
       ],
-      "entry_sha256": "a69a5cd48c0666235a66595a01b1028ebee7445ff4c68eed2e899f9ee1c3c817"
+      "entry_sha256": "d52c413cef55bbadc772bf5d2e241a65c328c1787d1d4cbcf3f16adf7835a243"
     }
   ]
 }

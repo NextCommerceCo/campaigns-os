@@ -14,7 +14,7 @@
 // non-fatal. No network, no credentials.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 export const LIFECYCLE_SCHEMA = "campaigns-os-command-lifecycle/v0";
 export const LIFECYCLE_JOURNAL_REL_PATH = ".campaign-runtime/command-lifecycle.jsonl";
@@ -196,60 +196,6 @@ export function validateLifecycle(entry) {
   return { ok: errors.length === 0, errors };
 }
 
-// The exact fields the Run Record's `lifecycle` block allows (matches the
-// schema's lifecycle properties). Allowlisting on embed guarantees no extra
-// journal key leaks in and violates the schema's additionalProperties:false.
-const RUN_RECORD_LIFECYCLE_KEYS = [
-  "run_id",
-  "command",
-  "argv_shape",
-  "exit_status",
-  "started_at",
-  "completed_at",
-  "duration_ms",
-  "wall_clock_duration_ms",
-  "stages",
-  "repair_loop_count",
-];
-
-/**
- * Project a journal entry down to exactly the fields the Run Record's
- * `lifecycle` block allows — drops the journal `schema_version` and any other
- * key not in the schema, so an embedded block can never violate the published
- * schema's additionalProperties:false.
- */
-export function lifecycleForRunRecord(entry) {
-  if (!entry || typeof entry !== "object") return null;
-  const out = {};
-  for (const key of RUN_RECORD_LIFECYCLE_KEYS) {
-    if (entry[key] !== undefined) out[key] = entry[key];
-  }
-  // Normalize stage items to exactly {name, duration_ms}. FILTER (not map) so a
-  // stage missing its required `name` is dropped entirely rather than kept as an
-  // invalid `{}` — the schema requires `name`, and an unknown key can't survive.
-  if (Array.isArray(out.stages)) {
-    out.stages = out.stages
-      .filter((stage) => stage && typeof stage === "object" && !Array.isArray(stage) && typeof stage.name === "string")
-      .map((stage) => {
-        const normalized = { name: stage.name };
-        if (typeof stage.duration_ms === "number") normalized.duration_ms = stage.duration_ms;
-        return normalized;
-      });
-  }
-  return out;
-}
-
-// Flag > env > cwd-default journal path. NOTE: the CLI uses a session-aware
-// resolver (resolveLifecycleJournal in cli.mjs) that also consults the active
-// run session; this base resolver is retained for direct programmatic use.
-export function resolveLifecycleJournalPath(args = {}, cwd = process.cwd(), env = process.env) {
-  if (isNonEmptyString(args["lifecycle-journal"])) return resolve(args["lifecycle-journal"]);
-  // Honor the env opt-in so the journal a command WRITES (via the same resolver)
-  // is the journal run-record READS, even without an explicit flag.
-  if (isNonEmptyString(env?.CAMPAIGNS_OS_LIFECYCLE_LOG)) return resolve(env.CAMPAIGNS_OS_LIFECYCLE_LOG);
-  return join(resolve(cwd), LIFECYCLE_JOURNAL_REL_PATH);
-}
-
 /**
  * Append one validated lifecycle entry as one JSONL line. Throws on an invalid
  * entry so a bug is caught; callers that want non-fatal behavior (the CLI) wrap
@@ -296,25 +242,6 @@ export function readLifecycleJournal(journalPath) {
     }
   }
   return { entries, malformed };
-}
-
-/**
- * Select a single lifecycle entry for `runId`: the LAST matching journal entry
- * (most recent wins), skipping any command in `excludeCommands`. Returns null
- * when none match.
- *
- * NOTE: run-record now embeds the multi-entry AGGREGATE (aggregateLifecycleForRun)
- * rather than a single entry, so this single-entry selector is no longer on the
- * Run Record embed path; it (and lifecycleForRunRecord) are retained for direct
- * programmatic use and are covered by their own tests.
- */
-export function selectLifecycleForRun(journal, runId, { excludeCommands = [] } = {}) {
-  const entries = Array.isArray(journal?.entries) ? journal.entries : Array.isArray(journal) ? journal : [];
-  let match = null;
-  for (const entry of entries) {
-    if (entry && entry.run_id === runId && !excludeCommands.includes(entry.command)) match = entry;
-  }
-  return match ? lifecycleForRunRecord(match) : null;
 }
 
 function entriesForRun(journal, runId, excludeCommands) {
