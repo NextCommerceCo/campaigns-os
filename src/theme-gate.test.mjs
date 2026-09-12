@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { commercePagesFromScope, commerceScopeFromScope, evaluateThemeGate, themeWaiverFrom } from "./theme-gate.mjs";
+import { commerceScopeFromScope, evaluateThemeGate, themeWaiverFrom } from "./theme-gate.mjs";
 
 const COMMERCE_SCOPE = {
   built_pages: [
@@ -24,11 +24,11 @@ const GENERATABLE_CONTEXT_THEME = {
   generated: { can_generate: true },
 };
 
-test("commercePagesFromScope picks commerce types and runtime roles", () => {
-  const pages = commercePagesFromScope(COMMERCE_SCOPE);
+test("commerceScopeFromScope picks commerce types and runtime roles", () => {
+  const pages = commerceScopeFromScope(COMMERCE_SCOPE).all;
   assert.deepEqual(pages.map((page) => page.page_id), ["p_checkout", "p_upsell", "p_receipt"]);
-  assert.deepEqual(commercePagesFromScope(VISUAL_ONLY_SCOPE), []);
-  assert.deepEqual(commercePagesFromScope(null), []);
+  assert.deepEqual(commerceScopeFromScope(VISUAL_ONLY_SCOPE).all, []);
+  assert.deepEqual(commerceScopeFromScope(null).all, []);
 });
 
 test("gate blocks when a generatable theme is not applied to commerce pages", () => {
@@ -196,12 +196,12 @@ test("a campaign that genuinely ships no commerce page still retires the gate", 
   assert.deepEqual(gate.commerce_pages_out_of_scope, []);
 });
 
-test("commercePagesFromScope stays the flat union its callers already read", () => {
+test("commerceScopeFromScope.all stays the flat union its callers already read", () => {
   assert.deepEqual(
-    commercePagesFromScope({ built_pages: [RENEWALIFT_COMMERCE_PAGES[0]], out_of_scope_pages: [RENEWALIFT_COMMERCE_PAGES[1]] })
-      .map((page) => page.page_id),
+    commerceScopeFromScope({ built_pages: [RENEWALIFT_COMMERCE_PAGES[0]], out_of_scope_pages: [RENEWALIFT_COMMERCE_PAGES[1]] })
+      .all.map((page) => page.page_id),
     ["checkout", "upsell"],
   );
-  assert.deepEqual(commercePagesFromScope(null), []);
-  assert.deepEqual(commercePagesFromScope({}), []);
+  assert.deepEqual(commerceScopeFromScope(null).all, []);
+  assert.deepEqual(commerceScopeFromScope({}).all, []);
 });

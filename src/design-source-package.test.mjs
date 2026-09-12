@@ -20,7 +20,6 @@ import {
   generateDesignSourcePackageReadback,
   hashDesignSourcePackage,
   hashSerializedDesignSourcePackage,
-  serializeAndHashDesignSourcePackage,
   serializeDesignSourcePackage,
   synthesizeHtmlFunnelDesignSourcePackage,
   validateDesignSourcePackage,
@@ -1141,10 +1140,12 @@ test("serialization, full artifact hash, and artifact reference are canonical an
   const packageValue = readyHtmlPackage();
   const reordered = reverseObjectKeys(clone(packageValue));
   const serialized = serializeDesignSourcePackage(packageValue);
-  const result = serializeAndHashDesignSourcePackage(packageValue);
+  const result = {
+    sha256: hashSerializedDesignSourcePackage(serialized),
+    material_fingerprint: computeDesignSourcePackageMaterialFingerprint(packageValue),
+  };
 
   assert.equal(serialized, serializeDesignSourcePackage(reordered));
-  assert.equal(result.serialized, serialized);
   assert.equal(result.sha256, hashDesignSourcePackage(packageValue));
   assert.match(result.sha256, DESIGN_SOURCE_PACKAGE_FINGERPRINT_PATTERN);
   assert.equal(result.material_fingerprint, packageValue.material_fingerprint);
