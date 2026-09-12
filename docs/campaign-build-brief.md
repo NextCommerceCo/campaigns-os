@@ -65,10 +65,12 @@ Existing template residue, theme, pricing, and built-output checks continue to r
 ## Content Claims Are Reviewed, Not Enforced
 
 The doctor scans built output for content residue and raises some of it as
-warnings: invented counts and ratings (`content_residue.anti_pattern`, id
-`invented_counts`), "Verified Buyer" and similar review chrome
-(`verified_buyer_chrome`), and promo copy claiming a discount above the
-CampaignSpec maximum (`template_contract.discount_claim_residue`, or
+warnings: every content anti-pattern under the warning code
+`content_residue.anti_pattern` (the finding ids include `invented_counts`
+for invented counts and ratings, `verified_buyer_chrome` for "Verified
+Buyer" and similar review chrome, `byline_persona`, `borrowed_authority`,
+`press_marquee`, and `science_theater`; all of them are warning-only), and
+promo copy claiming a discount above the CampaignSpec maximum (`template_contract.discount_claim_residue`, or
 `template_contract.discount_claim_unverified` when the spec sets no maximum).
 
 These stay warnings on purpose, and nothing downstream reads them. There is no
