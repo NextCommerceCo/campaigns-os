@@ -165,11 +165,15 @@ test("a finding whose status moved since the previous run is caused by this chan
 
 test("a budget stop and a runner capture failure are test-environment, even when the previous run had them too", () => {
   const base = scratch();
+  // The shipped shape: a spent budget is manual_review/warn, not a blocker —
+  // still a finding, and still carrying the runner's own budget marker.
   const budget = finding({
     id: "browser-test-order:checkout",
     family: "browser-test-order",
     page: "checkout",
-    evidence: { order_creation_budget: { limit: 1, reserved: 1, note: "safety stop" } },
+    status: "manual_review",
+    severity: "warn",
+    evidence: { order_creation_budget: { limit: 1, reserved: 1, exhausted: true, note: "safety stop" } },
   });
   const runner = finding({ id: "analytics-correctness:runner", family: "analytics-correctness", page: "analytics" });
   writePriorRun(base, {
