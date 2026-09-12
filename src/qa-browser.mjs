@@ -2947,6 +2947,10 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     page, checkoutPage, entryPage, selectedPackages, args, budget,
   }), { timeoutMs: budget() });
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
+  // Responses captured from here on belong to the checkout the ladder drives.
+  // The guard's cart-API fallback must not read a cart call the entry page
+  // made before the hand-off.
+  const checkoutResponseOffset = events.responses.length;
 
   await ladder.run("opened_checkout", async () => {
     if (enteredViaLanding) {
@@ -3006,7 +3010,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       // timeout. Read the cart the page holds and refuse by name instead. This
       // runs BEFORE the reservation: nothing is clicked, nothing is spent, and
       // the classifier reads the failure as `not_created`.
-      cartBeforeSubmit = await cartStateBeforeSubmit(page, events);
+      cartBeforeSubmit = await cartStateBeforeSubmit(page, events, { responseOffset: checkoutResponseOffset, budget });
       if (cartBeforeSubmit.empty) {
         throw codedError(CART_ENTRY_CODES.CART_EMPTY_BEFORE_SUBMIT, cartEmptyMessage(cartBeforeSubmit));
       }
@@ -3209,11 +3213,9 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
     throw codedError(CART_ENTRY_CODES.ENTRY_CONTROL_MISSING, `${choice.reason} (entry page ${redactUrlQuery(entryPage.url)})`);
   }
   const control = choice.control;
-  // SDK controls come first in the evaluated list, so the index replays as
-  // nth() over the same selector; a checkout link is re-found by its href.
-  const target = control.kind === "add_to_cart"
-    ? page.locator(CART_ENTRY_CONTROL_SELECTOR).nth(control.index)
-    : page.locator(`a[href="${escapeCss(control.next_url)}"]`).first();
+  // The index is the control's position among what its own locator matches,
+  // so it replays with nth(); no selector is rebuilt from an attribute value.
+  const target = page.locator(control.kind === "add_to_cart" ? CART_ENTRY_CONTROL_SELECTOR : "a[href]").nth(control.index);
   await target.scrollIntoViewIfNeeded().catch(() => {});
   await target.click({ timeout: 8000 }).catch(async () => {
     await target.click({ force: true, timeout: 8000 });
@@ -3261,10 +3263,15 @@ async function waitForSdkReady(page, timeoutMs) {
 }
 
 // The cart as the page holds it at submit time. Public SDK API first, debug
-// stores second, the observed cart-API response third.
-async function cartStateBeforeSubmit(page, events) {
+// stores second, the observed cart-API response third. The SDK installs
+// `window.next` late in boot, so a page that is still mounting gets a bounded
+// wait before it is read as "no SDK here" — an unreadable cart lets the submit
+// proceed, and that must be earned, not hit by racing the mount.
+async function cartStateBeforeSubmit(page, events, { responseOffset = 0, budget = () => DEFAULT_SETTLE_TIMEOUT_MS } = {}) {
+  await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
   const snapshot = await page.evaluate(sdkCartSnapshotScript()).catch(() => ({ readable: false }));
-  return assessCartBeforeSubmit(snapshot, cartCreationEvidence(events));
+  const checkoutEvents = { ...events, responses: (events?.responses || []).slice(responseOffset) };
+  return assessCartBeforeSubmit(snapshot, cartCreationEvidence(checkoutEvents));
 }
 
 // Hosted checkout is platform-owned: reaching it is the terminal step for the
@@ -6165,6 +6172,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   createUpsellActionTrace,
   fillCheckoutFields,
   cartCreationEvidence,
+  cartStateBeforeSubmit,
   cartLineCount,
   requiredActionTimeout,
   recordTestOrderTerminalEvidence,

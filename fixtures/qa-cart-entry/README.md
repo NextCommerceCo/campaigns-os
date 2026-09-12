@@ -8,6 +8,7 @@ it reproduces only the cart read, the add-to-cart navigation, the
 | Fixture | Landing | Checkout | Expected ladder |
 |---|---|---|---|
 | `landing-entry` | `[data-next-action="add-to-cart"][data-next-package-id="1"][data-next-url="/x/checkout/"]` | cart display only | `entered_via_landing` ok, `order_submitted` ok with a non-empty cart |
+| `landing-link-entry` | no SDK control; a `?forcePackageId=1:1` link into the checkout, behind an anchor decoy and a hidden duplicate | cart display only | `entered_via_landing` ok with `control_kind: checkout_link`, the visible link clicked, cart pre-loaded on arrival |
 | `checkout-selector` | a plain link | `[data-next-bundle-selector]` with a pre-selected card | `entered_via_landing` skipped; the rest of the ladder is unchanged |
 | `landing-entry-empty-cart` | add-to-cart control with **no** package id | cart display only | `entered_via_landing` ok, then `cart_empty_before_submit` — no submit click, no reservation |
 | `no-entry-resolvable` | (none; topology carries only the checkout) | cart display only | `cart_entry_unresolved` at the entry step, not a step timeout |

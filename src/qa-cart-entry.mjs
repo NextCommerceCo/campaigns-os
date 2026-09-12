@@ -18,7 +18,7 @@
 // inferred from topology, and the inference is recorded on the ladder step so a
 // reader can see which page the runner chose and why.
 
-import { canonicalHttpUrl } from "./qa-test-order-topology.mjs";
+import { OFFER_PAGE_TYPES, RECEIPT_PAGE_TYPES, canonicalHttpUrl } from "./qa-test-order-topology.mjs";
 
 // Ladder step recorded before `opened_checkout`.
 export const CART_ENTRY_STEP = "entered_via_landing";
@@ -47,7 +47,9 @@ export const CART_ENTRY_CONTROL_SELECTOR =
 // entry. `select` is a real page type since #228; `product` is what the
 // shop-single-step landing declares; the rest are the entry-like types
 // `deriveEntryUrls` already recognises.
-const POST_CHECKOUT_PAGE_TYPES = new Set(["checkout", "upsell", "downsell", "receipt", "thankyou"]);
+// Pages that can only follow the checkout: the checkout itself plus the
+// topology module's own offer and receipt sets, so the two never drift.
+const POST_CHECKOUT_PAGE_TYPES = new Set(["checkout", ...OFFER_PAGE_TYPES, ...RECEIPT_PAGE_TYPES]);
 const PREFERRED_ENTRY_PAGE_TYPES = ["select", "landing", "product", "presell", "entry", "lander", "advertorial", "listicle", "review", "opt-in", "optin"];
 
 export function codedError(code, message) {
@@ -178,17 +180,27 @@ export function cartEntryControlsScript() {
       const card = element.closest("[data-next-package-id]");
       return card ? clean(card.getAttribute("data-next-package-id")) || null : null;
     };
-    const actions = Array.from(document.querySelectorAll(selector)).map((element) => ({
+    const readQuantity = (value) => {
+      const parsed = Number.parseInt(String(value || "").trim(), 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    };
+    // `index` is the control's position among the elements its own locator
+    // matches (the SDK-control selector, or every `a[href]`), so the caller
+    // can replay it with nth() instead of rebuilding a selector from the
+    // attribute value.
+    const actions = Array.from(document.querySelectorAll(selector)).map((element, index) => ({
       kind: "add_to_cart",
+      index,
       visible: isVisible(element),
       text: label(element),
       package_id: readPackageId(element),
+      quantity: readQuantity(element.getAttribute("data-next-quantity")),
       next_url: clean(element.getAttribute("data-next-url")) || null,
       tag: element.tagName.toLowerCase(),
     }));
     const checkout = canonical(checkoutUrl);
     const links = checkout
-      ? Array.from(document.querySelectorAll("a[href]")).flatMap((element) => {
+      ? Array.from(document.querySelectorAll("a[href]")).flatMap((element, index) => {
         const href = element.getAttribute("href");
         if (canonical(href) !== checkout) return [];
         let forced = null;
@@ -198,17 +210,20 @@ export function cartEntryControlsScript() {
           forced = null;
         }
         if (!forced) return [];
+        const [ref, qty] = forced.split(",")[0].split(":");
         return [{
           kind: "checkout_link",
+          index,
           visible: isVisible(element),
           text: label(element),
-          package_id: clean(forced.split(",")[0].split(":")[0]) || null,
+          package_id: clean(ref) || null,
+          quantity: readQuantity(qty),
           next_url: href,
           tag: "a",
         }];
       })
       : [];
-    return [...actions, ...links].map((control, index) => ({ index, ...control }));
+    return [...actions, ...links];
   };
 }
 
@@ -226,13 +241,26 @@ export function chooseCartEntryControl(controls = [], requested = []) {
       reason: `--select-package requested ${wanted.length} refs, but a landing-page entry can select at most one package before the SDK navigates to checkout`,
     };
   }
-  const pool = wanted.length
+  const byRef = wanted.length
     ? list.filter((control) => String(control.package_id) === String(wanted[0].packageId))
     : list;
-  if (!pool.length) {
+  if (!byRef.length) {
     return {
       control: null,
       reason: `--select-package ${wanted[0].packageId}: no cart-entry control on the entry page carries package ${wanted[0].packageId} (rendered: ${list.map((control) => control.package_id || "(none)").join(", ")})`,
+    };
+  }
+  // An explicit quantity is a claim about what the click adds. The control
+  // states its own quantity (data-next-quantity, or the forcePackageId
+  // `ref:qty`), so a request the control cannot satisfy is refused rather
+  // than silently downgraded to whatever the control adds.
+  const pool = wanted.length && wanted[0].quantityExplicit
+    ? byRef.filter((control) => Number(control.quantity ?? 1) === Number(wanted[0].quantity))
+    : byRef;
+  if (!pool.length) {
+    return {
+      control: null,
+      reason: `--select-package ${wanted[0].packageId}:${wanted[0].quantity}: the entry-page control(s) for package ${wanted[0].packageId} add quantity ${[...new Set(byRef.map((control) => control.quantity ?? 1))].join("/")}, not ${wanted[0].quantity}`,
     };
   }
   const byKind = (kind) => pool.filter((control) => control.kind === kind);

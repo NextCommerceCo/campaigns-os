@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landing (forcePackageId link entry)</title>
+<style>body{font-family:sans-serif;margin:24px} .card{border:1px solid #ccc;padding:12px;margin:8px 0} .card.next-selected{border-color:#000} iframe{width:200px;height:32px;border:1px solid #ccc}</style>
+</head>
+<body data-fixture-reset-cart>
+<main>
+  <h1>Landing (forcePackageId link entry)</h1>
+  <p>The cart is filled here. The checkout page only displays it.</p>
+  <nav><a href="#benefits">Benefits</a></nav>
+  <a href="/x/checkout/?forcePackageId=1:1" style="display:none">Hidden duplicate</a>
+  <a href="/x/checkout/?forcePackageId=1:1">Claim your 60% discount</a>
+</main>
+<script src="/sdk-shim.js"></script>
+</body>
+</html>

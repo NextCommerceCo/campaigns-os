@@ -147,6 +147,21 @@ browserTest("landing-entry: the runner enters through the landing page, the SDK 
   assert.equal(assertion.evidence.line_count, 1);
 });
 
+browserTest("landing-link-entry: a forcePackageId link is a cart entry; the visible link is the one clicked, by index, past a decoy and a hidden twin", async () => {
+  const { steps, assertion, server } = await runFixture("landing-link-entry");
+  const byName = stepsByName(steps);
+
+  assert.equal(byName.entered_via_landing.status, "ok");
+  assert.equal(byName.entered_via_landing.evidence.control_kind, "checkout_link");
+  assert.equal(byName.entered_via_landing.evidence.control_text, "Claim your 60% discount");
+  assert.equal(byName.entered_via_landing.evidence.package_id, "1");
+  assert.equal(byName.entered_via_landing.evidence.arrived_url, `${server.base}/x/checkout/`, "query-redacted arrival at the checkout URL");
+  assert.equal(byName.order_submitted.status, "ok");
+  assert.equal(byName.order_submitted.evidence.cart_before_submit.count, 1, "the SDK pre-loaded the cart from forcePackageId on arrival");
+  assert.equal(server.orders.length, 1);
+  assert.equal(assertion.status, "pass", assertion.actual);
+});
+
 browserTest("checkout-selector: a checkout that selects for itself skips the entry step and runs the ladder it always ran", async () => {
   const { steps, assertion, server } = await runFixture("checkout-selector");
   const [entry, ...rest] = steps;

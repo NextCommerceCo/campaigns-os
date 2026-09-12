@@ -740,7 +740,9 @@ renders. A visible SDK control is preferred over a visible link, and a hidden
 control is used only when nothing is visible. `--select-package <ref>` is strict
 here as it is on checkout: the control must carry that package id (own
 attribute, nearest card, or the `forcePackageId` ref) or the step fails by
-name, and only one ref can be selected before the SDK navigates away. The
+name; an explicit quantity (`--select-package 1:2`) must match what the
+control adds (`data-next-quantity`, or the `ref:qty` of the link) and is never
+downgraded; and only one ref can be selected before the SDK navigates away. The
 runner then **waits for the page to reach the checkout URL** — the SDK owns
 that navigation through `data-next-url`; the runner never opens the checkout
 itself after the click, because a fresh navigation is what would throw the
@@ -810,7 +812,11 @@ creation slot is reserved, so the failure classifies as `not_created` under the
 `package_ids`) on success and failure alike. A cart that cannot be read at all
 (`unreadable: true`, no SDK global and no cart call observed) is **not** treated
 as empty: the runner has no proof either way, the submit proceeds, and the
-platform decides. There is no flag to skip the guard.
+platform decides. The read waits briefly for the SDK global before concluding
+it is absent, and the cart-API fallback only considers responses captured
+after the checkout was reached — a cart call the entry page made before the
+hand-off says nothing about the checkout's cart. There is no flag to skip the
+guard.
 
 ### Package/bundle card selection and coupons
 

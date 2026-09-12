@@ -13,7 +13,7 @@ import {
 } from "./qa-cart-entry.mjs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
-const { classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER } = __qaBrowserTestHooks;
+const { cartStateBeforeSubmit, classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER } = __qaBrowserTestHooks;
 
 const BASE = "https://campaign.example";
 const checkout = { page_id: "checkout", page_type: "checkout", order: 3, url: `${BASE}/checkout/`, expected_next_url: `${BASE}/upsell-1/` };
@@ -66,9 +66,10 @@ test("multi-funnel: the checkout's own funnel supplies the entry page", () => {
   assert.equal(entry.page_id, "a-landing");
 });
 
-const visibleAction = { index: 0, kind: "add_to_cart", visible: true, text: "Claim", package_id: "1", next_url: "/checkout/" };
-const hiddenAction = { index: 1, kind: "add_to_cart", visible: false, text: "Hidden", package_id: "2", next_url: "/checkout/" };
-const link = { index: 2, kind: "checkout_link", visible: true, text: "Buy", package_id: "3", next_url: "/checkout/?forcePackageId=3:1" };
+const visibleAction = { index: 0, kind: "add_to_cart", visible: true, text: "Claim", package_id: "1", quantity: 1, next_url: "/checkout/" };
+const hiddenAction = { index: 1, kind: "add_to_cart", visible: false, text: "Hidden", package_id: "2", quantity: 1, next_url: "/checkout/" };
+const link = { index: 0, kind: "checkout_link", visible: true, text: "Buy", package_id: "3", quantity: 1, next_url: "/checkout/?forcePackageId=3:1" };
+const twoPack = { index: 2, kind: "add_to_cart", visible: true, text: "Two", package_id: "1", quantity: 2, next_url: "/checkout/" };
 
 test("control choice prefers a visible SDK control, then a visible checkout link, then anything", () => {
   assert.equal(chooseCartEntryControl([hiddenAction, link, visibleAction]).control, visibleAction);
@@ -88,6 +89,16 @@ test("--select-package is strict on the entry page: the control must carry the r
   assert.match(two.reason, /at most one package/);
 });
 
+test("an explicit --select-package quantity must match what the control adds; it is never downgraded", () => {
+  const explicit = [{ packageId: "1", quantity: 2, quantityExplicit: true }];
+  assert.equal(chooseCartEntryControl([visibleAction, twoPack], explicit).control, twoPack);
+  const miss = chooseCartEntryControl([visibleAction], explicit);
+  assert.equal(miss.control, null);
+  assert.match(miss.reason, /--select-package 1:2: the entry-page control\(s\) for package 1 add quantity 1, not 2/);
+  // A bare ref (no explicit quantity) still takes whatever the control adds.
+  assert.equal(chooseCartEntryControl([twoPack], [{ packageId: "1", quantity: 1, quantityExplicit: false }]).control, twoPack);
+});
+
 test("the pre-submit guard trusts the SDK read first, the cart API second, and never guesses", () => {
   assert.deepEqual(assessCartBeforeSubmit({ readable: true, source: "window.next", count: 0, line_count: 0, package_ids: [] }), {
     empty: true, source: "window.next", count: 0, line_count: 0, package_ids: [],
@@ -103,6 +114,21 @@ test("the pre-submit guard trusts the SDK read first, the cart API second, and n
   const unknown = assessCartBeforeSubmit({ readable: false }, null);
   assert.equal(unknown.empty, false, "an unreadable cart is not proof of an empty one; the submit proceeds and the platform decides");
   assert.equal(unknown.unreadable, true);
+});
+
+test("the guard's cart-API fallback reads only responses captured after the checkout was reached", async () => {
+  // A page with no SDK global at all: readable: false, and the runner's
+  // bounded SDK-ready wait times out rather than resolving.
+  const page = {
+    waitForFunction: async () => { throw new Error("timeout"); },
+    evaluate: async () => ({ readable: false }),
+  };
+  const cartCreate = (lineCount) => ({ status: 201, url: "https://api.example/api/v1/carts/", body: { lines: Array.from({ length: lineCount }, () => ({})) } });
+  const events = { requests: [], responses: [cartCreate(1), cartCreate(0)], failed: [] };
+  const stale = await cartStateBeforeSubmit(page, { ...events, responses: [cartCreate(1)] }, { responseOffset: 1, budget: () => 10 });
+  assert.equal(stale.unreadable, true, "the entry page's cart call is not evidence about the checkout's cart");
+  const fresh = await cartStateBeforeSubmit(page, events, { responseOffset: 1, budget: () => 10 });
+  assert.deepEqual({ empty: fresh.empty, source: fresh.source }, { empty: true, source: "cart_api_response" });
 });
 
 test("selection-surface summary names what was found", () => {
