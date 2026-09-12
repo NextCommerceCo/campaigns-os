@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.14] - 2026-09-12
+
+### Changed
+
+- `docs/design-source-package.md` states what happens to a page that is
+  template stock rather than a standalone design. `template_baseline` coverage
+  is the honest route and in v0 it has no operator-authored input: the manifest
+  carries no template-stock declaration, the package is not hand-edited, and
+  `checkpoint waive` registers no design-source gate. Policy: no operator
+  channel in v0 — template-stock pages are build-stage work, handled by
+  `next-campaigns-build`. The README Quick Start's
+  `DESIGN_SOURCE_PACKAGE_NOT_READY` note now says the same, so the example no
+  longer reads as though supplying screenshots is always the way through.
+  No gate, code, or schema changes.
+
 ## [1.25.0+agent.8] - 2026-09-12
 
 ### Fixed

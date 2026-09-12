@@ -478,6 +478,31 @@ hand-edited). A source that cannot be captured honestly therefore stays blocked
 at intake in v0. Hold there and escalate; do not attest a capture of something
 that was never a page.
 
+### Template-stock pages are build-stage work
+
+A third case is neither a standalone design nor an uncapturable one: the page
+has no bespoke design at all, because the design *is* the starter template
+family. There is nothing of the merchant's to screenshot, so a
+`source_screenshot` would be a capture of stock the toolkit already ships.
+
+`template_baseline` coverage is the honest route for such a page, and in v0 it
+is not an operator-authored one. It is emitted only from a Template Reference
+carrying an `id`, `family`, `version`, a `contract_path` or `artifact_path`, and
+linked `template_reference_screenshot` records for desktop and mobile (see
+[Template Reference behavior](#template-reference-behavior)). The manifest
+carries no key that declares "this page is template stock", the package is not
+hand-edited, and `checkpoint waive` registers no design-source gate — so an
+intake operator holding a template-stock page has no sanctioned way to clear
+`DESIGN_SOURCE_PACKAGE_NOT_READY` themselves.
+
+Policy for v0: **that is deliberate, and no operator channel is coming in v0.**
+Template-stock pages are handled in the build stage, by `next-campaigns-build`,
+which owns the family contracts and the template material. Do not attest a
+screenshot of stock template output to get past intake, and do not read the
+quick-start recovery sequence below as a path for this case — it is the
+recovery for a page that *does* have a standalone design whose proof was
+missing the first time.
+
 ### Recovery after a blocked first run
 
 A blocked run still emits the package, and `prepare-build` never refreshes a

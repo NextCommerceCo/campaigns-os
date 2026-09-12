@@ -1777,6 +1777,27 @@
         }
       ],
       "entry_sha256": "d2627d4422fcf5cc0f14f9c81a84ea3979e0a76f419c1b65dcc846dbdcaafd00"
+    },
+    {
+      "id": "RL-0042",
+      "sequence": 37,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.14",
+      "changelog_sha256": "eb264ca169c4ffaa1a6339c60f8a0b9409111a8e4350cdaf626f4fd57ff5edb4",
+      "agent_impact": "No behaviour change. An agent that hits DESIGN_SOURCE_PACKAGE_NOT_READY on a template-stock page should stop looking for an intake clear path: there is none in v0, by policy, and attesting a screenshot of stock template output to get past the gate is a false claim. Route the page to the build stage (next-campaigns-build) instead. Pages with a real standalone design are unaffected; the screenshot recovery sequence still applies to them.",
+      "compatibility": "compatible",
+      "migration": "none. Do not synthesize a source_screenshot for a page whose design is the starter template family; hand it to next-campaigns-build.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Adds \"Template-stock pages are build-stage work\": template_baseline coverage is the honest route for a page with no bespoke design, it has no operator-authored input channel in v0 (no manifest key, no hand-edited package, no registered design-source waive gate), and by policy none is coming in v0 — those pages are handled by next-campaigns-build. Warns against attesting a capture of stock template output and against reading the blocked-run recovery sequence as a path for this case."
+        }
+      ],
+      "entry_sha256": "183fd5269e549ba68118c7958ef2916e8d36fe40f0af78ae0086c890a30f7e2d"
     }
   ]
 }

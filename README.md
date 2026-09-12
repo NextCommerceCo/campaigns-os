@@ -41,6 +41,12 @@ through `pages[].screenshots[]` in
 [Clearing `DESIGN_SOURCE_PACKAGE_NOT_READY`](docs/design-source-package.md#clearing-design_source_package_not_ready),
 which also gives the recovery sequence for the package a blocked run left behind.
 
+That path assumes the pages carry a standalone design of the merchant's. If they
+are template stock instead — no bespoke design, the starter family *is* the
+design — there is no intake clear path in v0 and no screenshot to honestly
+supply; those pages are handled in the build stage by `next-campaigns-build`.
+See [Template-stock pages are build-stage work](docs/design-source-package.md#template-stock-pages-are-build-stage-work).
+
 The command writes these target-repo artifacts:
 
 - `campaign-runtime.build.json`
