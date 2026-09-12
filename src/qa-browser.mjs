@@ -5118,13 +5118,22 @@ function testOrderAssertion(page, plan, result, firstAttempt = null, creationRec
   // reading the verdict must not be able to confuse the two. It gets its own
   // text and its own evidence key, and it never carries a checkout failure
   // string it did not observe.
+  //
+  // It is also not a failure at all: nothing was submitted, so this path was
+  // never exercised and the checkout was neither proved nor disproved. That is
+  // the same shape as the hosted-checkout redirect below — manual_review at
+  // warn severity, the vocabulary this runner already uses for a path a human
+  // must decide. computeDisposition keeps such a run at
+  // `ready_with_exceptions`: the unexercised path is visible in exceptions[]
+  // and can never be mistaken for a clean `ready`, but a budget the operator
+  // set on purpose no longer reports `blocked` as though the checkout broke.
   if (result.budget_exhausted) {
     return assertion({
       id: `browser-test-order:${id}`,
       family: "browser-test-order",
       page,
-      status: STATUS.FAIL,
-      severity: SEVERITY.BLOCKER,
+      status: STATUS.MANUAL_REVIEW,
+      severity: SEVERITY.WARN,
       expected: "test order created through deployed checkout page",
       actual: `stopped before submit: this run's order-creation budget was already spent (${result.error || "budget exhausted"})`,
       evidence: {

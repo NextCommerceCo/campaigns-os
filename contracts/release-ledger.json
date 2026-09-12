@@ -1777,6 +1777,27 @@
         }
       ],
       "entry_sha256": "d2627d4422fcf5cc0f14f9c81a84ea3979e0a76f419c1b65dcc846dbdcaafd00"
+    },
+    {
+      "id": "RL-0037",
+      "sequence": 37,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.9",
+      "changelog_sha256": "a4cbf993eb1946794c1417fa34ee8c153fb45dfba1a4db5d45a299dfbd77b5d6",
+      "agent_impact": "A qa run that spends its --max-order-creations budget changes disposition and exit code. The assertion for the path the budget stopped was status fail / severity blocker, indistinguishable from a checkout the runner watched fail, so every budgeted run whose budget ran out before the last planned path finalized blocked and exited 4. It is now status manual_review / severity warn, the same vocabulary a hosted-checkout redirect uses for a path a human must decide, and such a run finalizes ready_with_exceptions. A consumer that treated a browser-test-order blocker as a checkout defect worth dispatching a repair for will stop doing so for budget stops; one that gates on disposition blocked or exit code 4 will now see ready_with_exceptions for these runs and must read exceptions[], where the unexercised path is listed, rather than assuming an unblocked run proved every planned path. The assertion id, family, expected/actual text and evidence.order_creation_budget are unchanged, and a genuine order-creation failure is still a blocker that blocks.",
+      "compatibility": "compatible",
+      "migration": "none. If you gate on disposition or exit code, read exceptions[] (or assertion status manual_review in family browser-test-order) to see which planned paths were not exercised; do not read an unblocked verdict as proof that every planned path ran.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Records the status and severity a budget stop carries (manual_review / warn, never a blocker fail), and the disposition a run that spends its order-creation budget finalizes (ready_with_exceptions, with the unexercised path in exceptions[]), beside the existing --max-order-creations description."
+        }
+      ],
+      "entry_sha256": "b79a62ae2d0d204f19c43031329336110b81a85c0654663e901543f52524d12e"
     }
   ]
 }
