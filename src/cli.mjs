@@ -6261,7 +6261,7 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
       addIssue(
         warnings,
         "content_residue.anti_pattern",
-        `Built output matches content anti-pattern "${id}" (${where}; e.g. "${finding.excerpt}"). ${finding.rule || "Remove it or route it through brief-sourced proof."} Detection fails closed: remove or evidence the claim, never make it more plausible.`,
+        `Built output matches content anti-pattern "${id}" (${where}; e.g. "${finding.excerpt}"). ${finding.rule || "Remove it or route it through brief-sourced proof."} This is a review warning and nothing downstream blocks on it: the claim is the operator's and the client's responsibility — remove or evidence it, never make it more plausible.`,
       );
     }
   }
