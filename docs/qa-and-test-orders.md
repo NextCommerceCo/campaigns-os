@@ -363,6 +363,106 @@ Routing meta tags are evaluated in runtime-resolved form. If the spec carries `n
 
 Upsell accept/decline route checks accept rendered SDK controls as static evidence when there is no `<a href>`: `data-next-upsell-action="add"` for accept and `data-next-upsell-action="skip"` for decline. The browser walkthrough still needs to click the actual controls.
 
+## Why a finding is there: the cause label
+
+A run that surfaces eleven findings, none of them caused by the change under
+test, reads on the report exactly like a run that broke eleven things. So every
+finding carries a **cause class**, and the report leads with the tally.
+
+| Class | Means |
+|---|---|
+| `caused_by_change` | This finding was not in the previous run for this campaign, or it was there with a different status. |
+| `pre_existing` | The identical finding, with the identical status, was in the previous run. The change under test did not introduce it. |
+| `test_environment` | The runner itself classified this as an environment outcome, not a campaign defect: the order-creation budget safety stop, or a `<leg>:runner` capture failure. |
+| `upstream_drift` | An already-detected disagreement between the SDK version the CampaignSpec pins and the version the target carries (`page_kit.sdk_version`, `page_kit.sdk_version.waived`, `page_kit.sdk_version.spec_conflict`). |
+| `unknown` | No class could be assigned from recorded data. `cause_reason` says why. |
+
+Two fields ride each finding: `cause` (one of the five) and `cause_reason` (a
+short machine-readable reason). Both are additive and optional — verdicts and
+doctor output emitted before this existed carry neither, and absence must never
+be read as "nothing was caused by the change".
+
+### The comparison rule
+
+Exactly one comparison, against exactly one earlier run:
+
+1. **Find the previous run.** The most recent Run Record under the Build
+   Packet's `.campaign-runtime/run-records/` whose `identity.map_id` matches
+   this campaign. Only the first match counts — walking further back to find a
+   record that happens to carry usable evidence would compare this run against
+   a non-adjacent one and report anything introduced in between as
+   pre-existing.
+2. **Read that run's findings.** For QA, through that Run Record's **last**
+   `qa_verdict` artifact reference. A run session that needed repair and
+   re-test carries one reference per attempt in session order, so the first is
+   typically the blocked attempt that triggered the repair; comparing against
+   it would report a defect that was fixed before that run closed, and
+   reintroduced now, as pre-existing. The last reference is the verdict the
+   run actually closed on. This does not widen the boundary — it is still the
+   final attempt of exactly one earlier run, never a merged view across runs.
+   For doctor, from the Run Record's `observations.doctor.error_codes` /
+   `warning_codes`.
+3. **Classify.** Environment and upstream drift are decided first, from the
+   finding itself, and win outright — a Chromium capture failure that also
+   happened last time is still not the campaign's fault. Everything else is
+   compared by fingerprint: same fingerprint and same status is
+   `pre_existing`; absent, or present with a different status, is
+   `caused_by_change`.
+
+The fingerprint is the identity the artifact already uses. For a QA assertion
+that is `family | id | page` — the same identity the exceptions projection
+carries, deliberately **without** the URL, so a campaign QA'd locally and then
+against its published deploy is compared like for like. For a doctor issue it
+is the `code`, because the code is what the Run Record stores; two distinct
+violations sharing a code are one finding to this comparison.
+
+### When the answer is `unknown`
+
+`cause_reason` names the gap, and never guesses past it:
+
+| `cause_reason` | What happened |
+|---|---|
+| `no_prior_run` | No Run Record for this campaign under the packet directory — including every packet-less run (`--site`, a raw map id), which has no Run Record home. |
+| `prior_run_without_qa_verdict` | The previous Run Record references no QA verdict artifact. |
+| `prior_run_verdict_unreadable` | It references one, but the file is gone or unparseable. |
+| `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
+
+Only the first of those means "run again and it will improve". The other three
+say a previous Run Record **does** exist and its evidence is missing or
+unreadable, which a second run will not fix on its own — so the report names
+that record rather than telling you to wait for one.
+
+The practical consequence: **the first run on a campaign labels everything
+`unknown`.** There is nothing to compare against, and that is the honest
+answer. The comparison starts working on the second run, once a Run Record
+exists — so `campaigns-os run-record` is what makes the next run's labels
+meaningful.
+
+### Where the labels appear
+
+- `qa run` — `cause` / `cause_reason` on every finding assertion and on every
+  derived exception; `cause_summary` (`{surface, total, counts, prior_run_id,
+  prior_qa_attempt_run_id, comparison}`) on the verdict; a summary line plus a
+  per-finding list on the human report. Passing assertions carry no cause: a
+  pass has no cause to explain.
+  `prior_run_id` is the previous **Run Record's** id on both surfaces, so the
+  two agree on which run was compared; the QA summary also carries
+  `prior_qa_attempt_run_id`, the final attempt within that record it actually
+  read, and its summary line says so.
+- The committed QA verdict sidecar — both fields survive the projection, and
+  so does `cause_summary`. They are a short enum and a reason code: no URL, no
+  order reference, no capture body.
+- Every doctor result — `cause` / `cause_reason` on every error and warning and
+  a `cause_summary` on the output, applied where the doctor result is produced
+  rather than in one command. Four producers persist
+  `.campaign-runtime/doctor-output.json` (`doctor`, `next`, `prepare-build` /
+  `start`, and the QA stage refresh), so the retained artifact keeps its labels
+  whichever one wrote it last: running QA after doctor no longer strips them.
+  The `doctor` human report adds the summary line and a cause tag after each
+  issue line; the existing `[code] message` shape is unchanged.
+  Non-packet doctor (`--built` / `--site`) has no Run Record home and is not
+  annotated.
+
 ## Offer Application QA
 
 When a checkout page declares `exit_intent.enabled`, QA should exercise the
