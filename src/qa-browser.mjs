@@ -932,7 +932,9 @@ async function inspectPrimaryCta(browserPage, expectedUrl) {
         try {
           return new URL(sdkRoute, location.origin).href;
         } catch {
-          return sdkRoute;
+          // An unparseable data-next-url is no route either; do not leak
+          // the raw value into evidence as if it were one.
+          return null;
         }
       }
       if (element instanceof HTMLAnchorElement && element.href) return element.href;

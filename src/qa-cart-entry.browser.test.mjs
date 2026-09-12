@@ -279,6 +279,8 @@ browserTest("primary-cta: data-next-url counts only on SDK controls, and a relat
     const page = await browser.newPage();
     await page.goto(`${server.base}/x/landing/`, { waitUntil: "load" });
     const evidence = await inspectPrimaryCta(page, `${server.base}/x/checkout/`);
+    const texts = evidence.candidates.map((candidate) => candidate.text);
+    assert.equal(new Set(texts).size, texts.length, `fixture CTA texts must be unique for a by-text lookup: ${texts.join(" | ")}`);
     const byText = Object.fromEntries(evidence.candidates.map((candidate) => [candidate.text, candidate]));
     assert.equal(new URL(byText["Relative anchor to checkout"].href).pathname, "/x/checkout/", "native <base href> resolution");
     assert.equal(byText["Relative anchor to checkout"].route_matches, true);
