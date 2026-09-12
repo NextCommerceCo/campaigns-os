@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>primary-cta-conflicts landing</title>
+  <!-- A base href: a relative anchor must resolve the way the browser does. -->
+  <base href="/x/">
+  <style>
+    .cta { display: inline-block; padding: 14px 28px; background: #1a1a1a; color: #ffffff; font-size: 18px; }
+  </style>
+</head>
+<body>
+  <h1>Conflicting route attributes</h1>
+  <!-- Native resolution: "checkout/" against <base href="/x/"> is /x/checkout/. -->
+  <a class="cta" href="checkout/">Relative anchor to checkout</a>
+  <!-- data-next-url on a plain anchor has no navigation semantics; href wins. -->
+  <a class="cta" href="/support/" data-next-url="/x/checkout/">Support (decoy data-next-url)</a>
+  <!-- An SDK control: data-next-url is the route, whatever href says. -->
+  <a class="cta" href="/support/" data-next-action="add-to-cart" data-next-package-id="1" data-next-url="/x/checkout/">SDK control with stray href</a>
+  <!-- An SDK control without data-next-url adds to the cart and stays put: no route, even though its href points at checkout. -->
+  <a class="cta" href="/x/checkout/" data-next-action="add-to-cart" data-next-package-id="1">SDK control without data-next-url</a>
+  <!-- The SDK resolves data-next-url against the origin, not <base href>: "checkout/" is /checkout/, not /x/checkout/. -->
+  <button class="cta" type="button" data-next-action="add-to-cart" data-next-package-id="1" data-next-url="checkout/">SDK control with origin-relative data-next-url</button>
+</body>
+</html>

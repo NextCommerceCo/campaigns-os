@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.8] - 2026-09-12
+
+### Fixed
+
+- `browser-primary-cta` recognises the Campaign Cart SDK's own add-to-cart
+  control as a route CTA (campaigns-os#321). A `<button
+  data-next-action="add-to-cart" data-next-url="/…/checkout/">` carries no
+  `href`, so the recogniser read it as "no CTA to the next route" while a
+  plain `<a href="/checkout/">` that bypasses the SDK cart passed — the
+  incentive was backwards. The primary-CTA assertion and the typed-card
+  ladder's `entered_via_landing` step now share one cart-entry vocabulary
+  (`CART_ENTRY_CONTROL_SELECTOR`, `CART_ENTRY_ROUTE_ATTRIBUTE` in
+  `qa-cart-entry.mjs`): on an SDK cart-entry control, `data-next-url` is the
+  route — resolved against the origin as the SDK does, and absent means no
+  route, since the SDK never lets such a control navigate by `href`; on any
+  other element the attribute has no navigation meaning and the anchor's own
+  browser-resolved `href` (so a `<base href>` is honoured) stays
+  authoritative. `advanceToCheckoutForm` locates through the same selector
+  instead of its own copy. Readability and size checks are unchanged.
+
 ## [1.25.0+agent.7] - 2026-09-12
 
 ### Removed
