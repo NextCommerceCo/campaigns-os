@@ -1978,6 +1978,27 @@
         }
       ],
       "entry_sha256": "a9dfeadb323accba231280df15ae22a41c4b516ec30b034ea2ac49c99b7d2bb9"
+    },
+    {
+      "id": "RL-0042",
+      "sequence": 44,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.14",
+      "changelog_sha256": "34705868038aa92e2937e6460614e36371ef2afaa4e4c1484d0b4954caae73d4",
+      "agent_impact": "No behaviour change. On DESIGN_SOURCE_PACKAGE_NOT_READY for a template-stock page, the available route now depends on the template family. If the family's catalog entry publishes a complete Template Reference (today apollo alone), declare the template-derived pages out of source scope — a per-page skip_reason manifest entry, or build_scope.mode \"partial\" — and synthesis emits template_baseline coverage for them; intake clears as a partial build, so prepare_build ends completed_partial, the pages sit under declared_out_of_scope and derived.scope, only mapped routes are previewable, and checkout launch and test-order proof stay blocked. For any other family there is no template_baseline to synthesize and no operator channel; by policy none is coming in v0, and the page is build-stage work for next-campaigns-build. In neither case is attesting a screenshot of stock template output acceptable.",
+      "compatibility": "compatible",
+      "migration": "none. Check whether the selected family publishes a complete Template Reference before deciding: if it does, declare the template-derived pages out of source scope and accept the partial-build limits; if it does not, hand the page to next-campaigns-build rather than synthesizing a source_screenshot.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Adds \"Template-stock pages: the family decides\". A family publishing complete Template Reference proof (today apollo) has a supported intake path — declare the template-derived pages out of source scope via a per-page skip_reason manifest entry or build_scope.mode \"partial\", and synthesis emits template_baseline coverage — documented together with its partial-build limits (completed_partial, declared_out_of_scope, previewable mapped routes only, checkout launch and test-order proof blocked). Reserves the no-operator-channel guidance for families with no applicable template proof, where the page is build-stage work for next-campaigns-build, and warns against attesting a capture of stock template output in either case."
+        }
+      ],
+      "entry_sha256": "992e47ca80b0a0e12e228f0a9cebd9b664fc1e7269427f3f93c82fc1ac089340"
     }
   ]
 }

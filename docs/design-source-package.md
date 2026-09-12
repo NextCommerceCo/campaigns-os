@@ -478,6 +478,59 @@ hand-edited). A source that cannot be captured honestly therefore stays blocked
 at intake in v0. Hold there and escalate; do not attest a capture of something
 that was never a page.
 
+### Template-stock pages: the family decides
+
+A third case is neither a standalone design nor an uncapturable one: the page
+has no bespoke design at all, because the design *is* the starter template
+family. There is nothing of the merchant's to screenshot, so a
+`source_screenshot` would be a capture of stock the toolkit already ships.
+
+`template_baseline` coverage is the honest route for such a page, and whether
+an intake operator can reach it depends entirely on the family. It is emitted
+only from a Template Reference carrying an `id`, `family`, `version`, a
+`contract_path` or `artifact_path`, and linked `template_reference_screenshot`
+records for desktop and mobile (see
+[Template Reference behavior](#template-reference-behavior)) — and that proof is
+published by the family's catalog entry, not authored by the operator.
+
+**Families that publish complete Template Reference proof — today `apollo`
+alone — have a supported intake path.** Declare each template-derived page out
+of source scope and the rest follows automatically: the catalog's Template
+Reference supplies the proof, synthesis emits `template_baseline` coverage for
+those pages, and they stop demanding screenshots that do not honestly exist.
+Two ways to declare it, both first-class:
+
+- a per-page `skip_reason` entry in the source-html manifest — a `pages[]` entry
+  carrying `page_id` and `skip_reason` and no `path` (a page entry takes exactly
+  one of the two);
+- `build_scope.mode: "partial"` on the CampaignSpec, when the whole scope is
+  partial rather than a few named pages.
+
+`src/partial-source-build.test.mjs` covers both declarations end to end against
+`apollo`, including a clean re-run.
+
+That path is a partial build, and it carries partial-build limits. Prepare
+reaches `stages.prepare_build.status: "completed_partial"`, not `completed`; the
+declared pages appear under `declared_out_of_scope` (with `declared_by`
+recording which mechanism declared them) and under `derived.scope`; doctor
+labels only the mapped routes as previewable; and checkout launch and
+test-order proof stay blocked while runtime pages are out of scope. You get a
+terminal, honest intake — not a fully proven campaign.
+
+**Every other family has no operator channel.** Without a published Template
+Reference there is no `template_baseline` to synthesize, the manifest carries no
+key that declares "this page is template stock", the package is not hand-edited,
+and `checkpoint waive` registers no design-source gate — so nothing the operator
+can write clears `DESIGN_SOURCE_PACKAGE_NOT_READY` for the page.
+
+Policy for v0: **that is deliberate, and no further operator channel is coming
+in v0.** Where no applicable template proof exists, template-stock pages are
+handled in the build stage, by `next-campaigns-build`, which owns the family
+contracts and the template material. Do not attest a screenshot of stock
+template output to get past intake, and do not read the recovery sequence below
+as a path for this case — it is the recovery for a page that *does* have a
+standalone design whose proof was missing the first time.
+
 ### Recovery after a blocked first run
 
 A blocked run still emits the package, and `prepare-build` never refreshes a

@@ -110,6 +110,28 @@ Notable supported-surface changes are recorded here.
   path. The trust stamps, the readback chokepoints, and every gate are
   unchanged; this is documentation of behaviour that already ships.
 
+## [1.25.0+agent.14] - 2026-09-12
+
+### Changed
+
+- `docs/design-source-package.md` states what happens to a page that is
+  template stock rather than a standalone design, and makes the answer
+  family-dependent. `template_baseline` coverage is the honest route, and the
+  proof behind it is published by the family's catalog entry. A family carrying
+  a complete Template Reference — today `apollo` alone — has a supported intake
+  path: declare the template-derived pages out of source scope (a per-page
+  `skip_reason` manifest entry, or `build_scope.mode: "partial"`) and synthesis
+  emits `template_baseline` coverage for them. That path is a partial build and
+  carries partial-build limits: `prepare_build` ends `completed_partial`, the
+  pages are recorded under `declared_out_of_scope` and `derived.scope`, only
+  mapped routes are previewable, and checkout launch and test-order proof stay
+  blocked. For every other family there is no `template_baseline` to synthesize
+  and no operator channel at all; policy: none is coming in v0, and those pages
+  are build-stage work handled by `next-campaigns-build`. The README Quick
+  Start's `DESIGN_SOURCE_PACKAGE_NOT_READY` note now says the same, so the
+  example neither promises screenshots as the universal way through nor hides
+  the `apollo` path. No gate, code, or schema changes.
+
 ## [1.25.0+agent.13] - 2026-09-12
 
 ### Changed
