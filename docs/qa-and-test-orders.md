@@ -427,6 +427,11 @@ violations sharing a code are one finding to this comparison.
 | `prior_run_verdict_unreadable` | It references one, but the file is gone or unparseable. |
 | `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
 
+Only the first of those means "run again and it will improve". The other three
+say a previous Run Record **does** exist and its evidence is missing or
+unreadable, which a second run will not fix on its own — so the report names
+that record rather than telling you to wait for one.
+
 The practical consequence: **the first run on a campaign labels everything
 `unknown`.** There is nothing to compare against, and that is the honest
 answer. The comparison starts working on the second run, once a Run Record
@@ -436,10 +441,14 @@ meaningful.
 ### Where the labels appear
 
 - `qa run` — `cause` / `cause_reason` on every finding assertion and on every
-  derived exception; `cause_summary` (`{total, counts, prior_run_id,
-  comparison}`) on the verdict; a summary line plus a per-finding list on the
-  human report. Passing assertions carry no cause: a pass has no cause to
-  explain.
+  derived exception; `cause_summary` (`{surface, total, counts, prior_run_id,
+  prior_qa_attempt_run_id, comparison}`) on the verdict; a summary line plus a
+  per-finding list on the human report. Passing assertions carry no cause: a
+  pass has no cause to explain.
+  `prior_run_id` is the previous **Run Record's** id on both surfaces, so the
+  two agree on which run was compared; the QA summary also carries
+  `prior_qa_attempt_run_id`, the final attempt within that record it actually
+  read, and its summary line says so.
 - The committed QA verdict sidecar — both fields survive the projection, and
   so does `cause_summary`. They are a short enum and a reason code: no URL, no
   order reference, no capture body.

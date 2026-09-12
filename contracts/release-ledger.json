@@ -1821,14 +1821,41 @@
       "entry_sha256": "6d3095850d55024a21f907b6d1c7e600d07052aa95ca63c7c58cc72a62cc3b7b"
     },
     {
-      "id": "RL-0040",
+      "id": "RL-0041",
       "sequence": 39,
       "date": "2026-09-12",
       "kind": "release",
       "surface_version": null,
+      "changelog_section": "1.25.0+agent.13",
+      "changelog_sha256": "9b571811478c581f30addb1da1bb11301b542f9abbc6f5a6eff798dde6f53e78",
+      "agent_impact": "No behaviour change. Content-claim findings (every content_residue.anti_pattern finding id, and the discount-claim residue codes) remain warning-only and nothing downstream gates on them; that posture is now documented rather than implied. An agent that read \"Detection fails closed\" in the content_residue.anti_pattern message as a promise that a later stage would block must stop doing so: no stage does. Consumers matching that message on its trailing sentence must re-read it.",
+      "compatibility": "compatible",
+      "migration": "none. Do not treat content_residue.anti_pattern, template_contract.discount_claim_residue, or template_contract.discount_claim_unverified as gates; the claims are the operator's and the client's responsibility.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Adds \"Content Claims Are Reviewed, Not Enforced\": every content anti-pattern under the content_residue.anti_pattern warning code (finding ids invented_counts, verified_buyer_chrome, byline_persona, borrowed_authority, press_marquee, science_theater) and the above-maximum discount findings are warnings with no blocker, blocked_stages entry, QA assertion or order gate behind them, and the operator and client own the claims. Separates the warning code from the finding ids, and names the two hard content checks that do block, so the boundary is explicit."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Rewrites the trailing sentence of the content_residue.anti_pattern warning message: it no longer says detection fails closed, and instead states that this is a review warning nothing downstream blocks on and that the claim is the operator's and the client's responsibility. Severity, finding ids, detection and all other doctor messages are unchanged."
+        }
+      ],
+      "entry_sha256": "878035808ae442f6141fca08e0b2071b082e68979c5199b79b032e6d2a9053c2"
+    },
+    {
+      "id": "RL-0040",
+      "sequence": 40,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
       "changelog_section": "1.25.0+agent.12",
-      "changelog_sha256": "7f116ef1b80d731c24f5da0ee95a8ec41044c6f00114781a1f8853e970fa50b7",
-      "agent_impact": "QA and doctor findings now carry a cause class, so a consumer can tell whether the change under test caused what a run surfaced instead of re-reading every finding by hand. Two additive optional fields ride each finding: cause (caused_by_change | pre_existing | test_environment | upstream_drift | unknown) and cause_reason (a short reason code). A cause_summary object ({total, counts, prior_run_id, comparison}) rides the QA verdict and the doctor output. The fields appear on the full verdict, on the derived exceptions, on the committed QA verdict sidecar, and on every doctor result — classification is applied where the doctor result is produced, so all four producers that persist .campaign-runtime/doctor-output.json leave the labels on the retained artifact. Passing assertions carry none, and non-packet doctor (--built / --site) is not annotated. Absence is not a claim: output emitted before this release carries neither field, and the first run on a campaign labels every finding unknown because there is no earlier run to compare against. The human reports gained a summary line and a per-finding tag; the doctor issue line keeps its existing \"[code] message\" shape with the tag appended.",
+      "changelog_sha256": "7014bddf53844c28e8d13c80094cafad2669c455fa3ef87497b15636e3a8f722",
+      "agent_impact": "QA and doctor findings now carry a cause class, so a consumer can tell whether the change under test caused what a run surfaced instead of re-reading every finding by hand. Two additive optional fields ride each finding: cause (caused_by_change | pre_existing | test_environment | upstream_drift | unknown) and cause_reason (a short reason code). A cause_summary object ({surface, total, counts, prior_run_id, comparison}, plus prior_qa_attempt_run_id on the QA side) rides the QA verdict and the doctor output; prior_run_id is the previous Run Record's id on both surfaces, and the QA summary additionally names the final attempt within that record it read. The fields appear on the full verdict, on the derived exceptions, on the committed QA verdict sidecar, and on every doctor result — classification is applied where the doctor result is produced, so all four producers that persist .campaign-runtime/doctor-output.json leave the labels on the retained artifact. Passing assertions carry none, and non-packet doctor (--built / --site) is not annotated. Absence is not a claim: output emitted before this release carries neither field, and the first run on a campaign labels every finding unknown because there is no earlier run to compare against. The human reports gained a summary line and a per-finding tag; the doctor issue line keeps its existing \"[code] message\" shape with the tag appended.",
       "compatibility": "additive",
       "migration": "none. Tolerate cause/cause_reason/cause_summary being absent, and never read an absent cause_summary as \"nothing was caused by the change\". A consumer that wants the labels to be meaningful must let campaigns-os run-record write a Run Record after each run, since the previous run is found through Run Record discovery.",
       "changes": [
@@ -1845,7 +1872,7 @@
           "summary": "Documents the cause-class vocabulary, the single previous-run comparison rule (including that QA compares against the prior run's last, final QA attempt) and its fingerprints, every unknown reason code including the first-run case, and where the labels appear across the verdict, the exceptions, the committed sidecar and every doctor producer."
         }
       ],
-      "entry_sha256": "ef82acddd43856b2b46c8082b9232b073531c39120998b2ff7a10515f5f9e75f"
+      "entry_sha256": "081b49b6aa5d54d965b6ca2a1ca819b9debb03ea074eaa0cdd1183be1bfe5ef1"
     }
   ]
 }

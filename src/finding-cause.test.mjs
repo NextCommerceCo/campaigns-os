@@ -13,6 +13,7 @@ import {
   doctorIssueFingerprint,
   doctorUpstreamDriftReason,
   findPriorRunRecord,
+  formatCauseBasisLine,
   formatCauseSummaryLine,
   formatCauseTag,
   loadPriorQaVerdict,
@@ -145,7 +146,8 @@ test("findings carried over from the previous run are pre-existing; a new one is
   assert.equal(summary.total, 3);
   assert.equal(summary.counts[CAUSE_CLASSES.PRE_EXISTING], 2);
   assert.equal(summary.counts[CAUSE_CLASSES.CAUSED_BY_CHANGE], 1);
-  assert.equal(summary.prior_run_id, "qa_prior");
+  assert.equal(summary.prior_run_id, "run_1757000000000_aaaaaaaa");
+  assert.equal(summary.prior_qa_attempt_run_id, "qa_prior");
   assert.equal(summary.comparison, "prior_run");
 });
 
@@ -304,12 +306,105 @@ test("the summary line leads with the count and names what it compared against",
   ]);
   assert.equal(summary.total, 3);
   assert.equal(
-    formatCauseSummaryLine(summary, { priorRunId: "qa_prior" }),
-    "Causes: 3 findings — 1 caused by this change, 2 pre-existing (compared against run qa_prior).",
+    formatCauseSummaryLine({ ...summary, surface: "doctor", comparison: "prior_run" }, { priorRunId: "run_1_a" }),
+    "Causes: 3 findings — 1 caused by this change, 2 pre-existing (compared against run run_1_a).",
+  );
+  // The QA line says which artifact of that record was read.
+  assert.equal(
+    formatCauseSummaryLine({ ...summary, surface: "qa", comparison: "prior_run" }, { priorRunId: "run_1_a" }),
+    "Causes: 3 findings — 1 caused by this change, 2 pre-existing (compared against the final QA attempt of run run_1_a).",
   );
   assert.match(formatCauseSummaryLine(summary), /no previous run to compare against/);
+  // A record id must never be presented as "compared against" when nothing was.
+  assert.match(
+    formatCauseSummaryLine({ ...summary, comparison: "prior_run_verdict_unreadable", prior_run_id: "run_1_a" }),
+    /no comparison was possible/,
+  );
   assert.equal(formatCauseSummaryLine({ total: 0, counts: {} }), "Causes: no findings.");
 });
+
+test("the comparison-basis line tells the truth for every reason, and names the record when there is one", () => {
+  // A comparison happened: no basis line at all.
+  assert.equal(formatCauseBasisLine({ comparison: "prior_run", prior_run_id: "run_1_a" }), null);
+
+  // No prior record: the labels really do improve once one exists.
+  const none = formatCauseBasisLine({ comparison: "no_prior_run", prior_run_id: null });
+  assert.match(none, /no previous run for this campaign/);
+  assert.match(none, /once a Run Record exists/);
+  assert.doesNotMatch(none, /run \(unidentified\)/);
+
+  // A prior record EXISTS in these three. Telling the operator to wait for a
+  // second run would be false, and would send them to re-run something that
+  // fails the same way — so each names the record and says what is missing.
+  for (const [reason, pattern] of [
+    ["prior_run_without_qa_verdict", /references no QA verdict/],
+    ["prior_run_verdict_unreadable", /QA verdict is missing or unreadable/],
+    ["prior_run_without_doctor_observations", /carries no doctor observations/],
+  ]) {
+    const line = formatCauseBasisLine({ comparison: reason, prior_run_id: "run_1_a" });
+    assert.match(line, new RegExp(`Comparison basis: ${reason}\\.`));
+    assert.match(line, /Previous run run_1_a exists/);
+    assert.match(line, pattern);
+    assert.doesNotMatch(line, /until a second run/);
+    assert.doesNotMatch(line, /starts working once/);
+  }
+
+  // An unrecognised reason still must not claim a second run will fix it.
+  const unknown = formatCauseBasisLine({ comparison: "something_new", prior_run_id: "run_1_a" });
+  assert.match(unknown, /No previous-run comparison was possible/);
+  assert.doesNotMatch(unknown, /once a Run Record exists/);
+});
+
+test("a stray file in the run-records directory is not a previous run", () => {
+  const base = scratch();
+  const recordsDir = join(base, ".campaign-runtime/run-records");
+  mkdirSync(recordsDir, { recursive: true });
+  // An operator note dropped beside the records. It is JSON, it names this
+  // campaign, and under an `endsWith(".json")` scan it is the only candidate —
+  // so it gets selected as THE previous run and its (absent) findings become
+  // the comparison set. A stray file must be invisible to the scan.
+  writeFileSync(
+    join(recordsDir, "notes.json"),
+    `${JSON.stringify({ run_id: "notes", identity: { map_id: "map-1" }, artifacts: [], observations: { doctor: { error_codes: [], warning_codes: [] } } })}\n`,
+  );
+  assert.equal(findPriorRunRecord({ baseDir: base, mapId: "map-1" }), null);
+
+  const errors = [{ code: "built_output.page_missing", message: "x" }];
+  const summary = annotateDoctorIssueCauses({ errors, warnings: [], baseDir: base, mapId: "map-1" });
+  assert.equal(summary.comparison, "no_prior_run");
+  assert.equal(errors[0].cause, CAUSE_CLASSES.UNKNOWN);
+
+  // A real record beside the stray one is still found.
+  writePriorRun(base, {
+    runId: "run_1757000000000_aaaaaaaa",
+    mapId: "map-1",
+    verdict: { run_id: "qa_prior", assertions: [] },
+  });
+  assert.equal(findPriorRunRecord({ baseDir: base, mapId: "map-1" }).run_id, "run_1757000000000_aaaaaaaa");
+});
+
+test("both surfaces report the same previous-run identity", () => {
+  const base = scratch();
+  writePriorRun(base, {
+    runId: "run_1757000000000_aaaaaaaa",
+    mapId: "map-1",
+    verdict: { run_id: "qa_prior", assertions: [] },
+  });
+  writePriorDoctorRun(base, {
+    runId: "run_1757000001000_bbbbbbbb",
+    mapId: "map-1",
+    errorCodes: ["built_output.page_missing"],
+  });
+  // Both read the newest record, and both name it the same way — the QA
+  // summary no longer reports a verdict id where doctor reports a record id.
+  const qa = annotateQaAssertionCauses([finding({ id: "http:checkout" })], { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  const doctor = annotateDoctorIssueCauses({ errors: [{ code: "built_output.page_missing", message: "x" }], warnings: [], baseDir: base, mapId: "map-1" });
+  assert.equal(qa.prior_run_id, "run_1757000001000_bbbbbbbb");
+  assert.equal(doctor.prior_run_id, "run_1757000001000_bbbbbbbb");
+  assert.equal(qa.surface, "qa");
+  assert.equal(doctor.surface, "doctor");
+});
+
 
 test("the per-finding tag reads as a label, not as a field dump", () => {
   assert.equal(
@@ -355,7 +450,11 @@ test("the comparison uses the prior run's FINAL QA attempt, not its first blocke
   assert.equal(assertions[0].cause, CAUSE_CLASSES.CAUSED_BY_CHANGE);
   assert.equal(assertions[0].cause_reason, "new_since_prior_run");
   assert.equal(assertions[1].cause, CAUSE_CLASSES.PRE_EXISTING);
-  assert.equal(summary.prior_run_id, "qa_final");
+  // prior_run_id is the Run Record's id — the same identity the doctor summary
+  // reports — and the attempt actually read rides alongside under its own name.
+  assert.equal(summary.prior_run_id, "run_1757000000000_aaaaaaaa");
+  assert.equal(summary.prior_qa_attempt_run_id, "qa_final");
+  assert.equal(summary.surface, "qa");
 });
 
 test("a multi-attempt prior run is still ONE record: the boundary does not widen to earlier runs", () => {
@@ -375,6 +474,7 @@ test("a multi-attempt prior run is still ONE record: the boundary does not widen
   });
   const assertions = [finding({ id: "http:receipt", page: "receipt" })];
   const summary = annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
-  assert.equal(summary.prior_run_id, "qa_final");
+  assert.equal(summary.prior_run_id, "run_1757000001000_bbbbbbbb");
+  assert.equal(summary.prior_qa_attempt_run_id, "qa_final");
   assert.equal(assertions[0].cause, CAUSE_CLASSES.CAUSED_BY_CHANGE);
 });

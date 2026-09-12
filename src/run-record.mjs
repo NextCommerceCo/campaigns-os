@@ -703,6 +703,15 @@ const RUN_RECORDS_SCAN_LIMIT = 5000;
 // "newest" silently. Parse the timestamp and compare it as a number; anything
 // unparseable sorts last, because a file that cannot say when it was written
 // must never displace one that can.
+// A Run Record file is one this toolkit minted: `run_<epoch-ms>_<suffix>.json`
+// (mintRunId's shape). Admitting every *.json in the directory means an
+// operator note, an editor backup, or any unrelated artifact that happens to
+// land there gets parsed as run state and, worse, can be selected as the
+// previous run. Filter at scan time rather than leaning on the orderer's
+// unstamped-sorts-last fallback: that fallback keeps ordering deterministic,
+// it does not make a stray file not a record.
+export const RUN_RECORD_FILE_NAME_PATTERN = /^run_\d+_.+\.json$/;
+
 export function orderRunRecordFileNames(names) {
   const stamp = (name) => {
     const match = /^run_(\d+)_/.exec(name);
@@ -728,7 +737,7 @@ export function readRunRecordsForTarget(baseDir) {
   try {
     const dir = join(resolve(baseDir), RUN_RECORDS_DIR_REL_PATH);
     if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
-    const names = orderRunRecordFileNames(readdirSync(dir).filter((name) => name.endsWith(".json")))
+    const names = orderRunRecordFileNames(readdirSync(dir).filter((name) => RUN_RECORD_FILE_NAME_PATTERN.test(name)))
       .slice(0, RUN_RECORDS_SCAN_LIMIT);
     const entries = [];
     for (const name of names) {

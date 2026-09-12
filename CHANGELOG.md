@@ -36,8 +36,14 @@ Notable supported-surface changes are recorded here.
   has nothing to compare against.
   The labels ride the full verdict, the derived exceptions, the committed QA
   verdict sidecar, and every doctor result; `cause_summary`
-  (`{total, counts, prior_run_id, comparison}`) rides the verdict and the
-  doctor output. Doctor classification is applied where the doctor result is
+  (`{surface, total, counts, prior_run_id, comparison}`, plus
+  `prior_qa_attempt_run_id` on the QA side) rides the verdict and the doctor
+  output. `prior_run_id` is the previous Run Record's id on both surfaces so
+  the two agree on which run was compared, and the QA summary names the final
+  attempt within that record it actually read. A report that could not compare
+  says which of the four reasons applied and names the record when one exists,
+  rather than telling an operator who already has a prior record to wait for a
+  second run. Doctor classification is applied where the doctor result is
   produced, not in one command, so all four producers that persist
   `.campaign-runtime/doctor-output.json` (`doctor`, `next`, `prepare-build` /
   `start`, and the QA stage refresh) leave the labels on the retained artifact
@@ -70,6 +76,25 @@ Notable supported-surface changes are recorded here.
   artifacts — and campaigns-os#329 tracks the attributed-publishing credential
   path. The trust stamps, the readback chokepoints, and every gate are
   unchanged; this is documentation of behaviour that already ships.
+
+## [1.25.0+agent.13] - 2026-09-12
+
+### Changed
+
+- Policy: fabricated social proof and over-maximum discount copy stay doctor
+  warnings, and the docs now say so plainly. `docs/campaign-build-brief.md`
+  gains a "Content Claims Are Reviewed, Not Enforced" section naming what is
+  warning-only (every content anti-pattern under the `content_residue.anti_pattern`
+  warning code — finding ids `invented_counts`, `verified_buyer_chrome`,
+  `byline_persona`, `borrowed_authority`, `press_marquee`, `science_theater` —
+  plus `template_contract.discount_claim_residue` /
+  `discount_claim_unverified`), stating that nothing downstream reads them — no
+  blocker, no `blocked_stages` entry, no QA assertion, no order gate — and that
+  responsibility for the claims sits with the operator and the client. The
+  `content_residue.anti_pattern` warning text no longer says "Detection fails
+  closed", which read as though something later in the ladder would stop the
+  build; it now says it is a review warning that nothing blocks on. Severity,
+  finding ids, detection, and every other message are unchanged.
 
 ## [1.25.0+agent.9] - 2026-09-12
 

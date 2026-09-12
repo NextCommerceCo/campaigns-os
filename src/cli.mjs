@@ -52,7 +52,7 @@ import {
 // call sites: `next` closeout here and cause classification in the QA runner,
 // which must not import this module).
 export { orderRunRecordFileNames, readRunRecordsForTarget } from "./run-record.mjs";
-import { annotateDoctorIssueCauses, formatCauseSummaryLine, formatCauseTag } from "./finding-cause.mjs";
+import { annotateDoctorIssueCauses, formatCauseBasisLine, formatCauseSummaryLine, formatCauseTag } from "./finding-cause.mjs";
 import {
   announceDefaultOnTelemetry,
   CANONICAL_REMIT_SCOPE,
@@ -6227,7 +6227,7 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
       addIssue(
         warnings,
         "content_residue.anti_pattern",
-        `Built output matches content anti-pattern "${id}" (${where}; e.g. "${finding.excerpt}"). ${finding.rule || "Remove it or route it through brief-sourced proof."} Detection fails closed: remove or evidence the claim, never make it more plausible.`,
+        `Built output matches content anti-pattern "${id}" (${where}; e.g. "${finding.excerpt}"). ${finding.rule || "Remove it or route it through brief-sourced proof."} This is a review warning and nothing downstream blocks on it: the claim is the operator's and the client's responsibility — remove or evidence it, never make it more plausible.`,
       );
     }
   }
@@ -10170,9 +10170,8 @@ function printResult(result) {
   }
   if (result.cause_summary) {
     console.log(formatCauseSummaryLine(result.cause_summary, { priorRunId: result.cause_summary.prior_run_id }));
-    if (result.cause_summary.comparison && result.cause_summary.comparison !== "prior_run") {
-      console.log(`  Comparison basis: ${result.cause_summary.comparison}. Every finding is labelled unknown until a previous run exists to compare against.`);
-    }
+    const basis = formatCauseBasisLine(result.cause_summary);
+    if (basis) console.log(basis);
   }
   if (result.errors?.length) {
     console.log("Errors:");

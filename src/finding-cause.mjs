@@ -233,15 +233,60 @@ export function summarizeCauses(findings = []) {
 
 /**
  * The one-line report header. Reads as prose, not as a JSON dump, and names
- * the previous run when there was one so the comparison is checkable.
+ * the previous Run Record when a comparison actually happened, so the answer
+ * is checkable.
+ *
+ * "Compared against" is claimed only when `comparison` says a comparison
+ * happened. A prior record that exists but carries no usable evidence has a
+ * run id, and naming it here would read as though it had been compared —
+ * formatCauseBasisLine is where that case gets explained.
  */
 export function formatCauseSummaryLine(summary, { priorRunId = null } = {}) {
   if (!summary || !summary.total) return "Causes: no findings.";
   const parts = CAUSE_CLASS_VOCABULARY
     .filter((cause) => summary.counts[cause] > 0)
     .map((cause) => `${summary.counts[cause]} ${CAUSE_CLASS_LABELS[cause]}`);
-  const compared = priorRunId ? ` (compared against run ${priorRunId})` : " (no previous run to compare against)";
+  const id = text(priorRunId) || text(summary.prior_run_id);
+  let compared = " (no previous run to compare against)";
+  if (summary.comparison === "prior_run" && id) {
+    // The QA comparison reads that record's FINAL QA attempt, which is not the
+    // same artifact as the record itself. Say so, or a reader checking the
+    // record by hand will look at the wrong attempt.
+    compared = summary.surface === "qa"
+      ? ` (compared against the final QA attempt of run ${id})`
+      : ` (compared against run ${id})`;
+  } else if (summary.comparison && summary.comparison !== "prior_run") {
+    compared = " (no comparison was possible)";
+  }
   return `Causes: ${summary.total} finding${summary.total === 1 ? "" : "s"} — ${parts.join(", ")}${compared}.`;
+}
+
+// Why no comparison happened, one sentence per reason. "No previous run" and
+// "a previous run whose evidence is missing" are different facts and need
+// different sentences: telling an operator who already has a prior record that
+// the labels will improve once a second run exists is simply untrue, and sends
+// them to re-run something that will fail the same way.
+const CAUSE_BASIS_SENTENCES = Object.freeze({
+  no_prior_run: () => "There is no previous run for this campaign to compare against, so every finding is labelled unknown. The comparison starts working once a Run Record exists.",
+  prior_run_without_qa_verdict: (id) => `Previous run ${id} exists but references no QA verdict, so there was nothing to compare against and every finding is labelled unknown.`,
+  prior_run_verdict_unreadable: (id) => `Previous run ${id} exists but its QA verdict is missing or unreadable, so there was nothing to compare against and every finding is labelled unknown.`,
+  prior_run_without_doctor_observations: (id) => `Previous run ${id} exists but carries no doctor observations, so there was nothing to compare against and every finding is labelled unknown.`,
+});
+
+/**
+ * The follow-up line explaining a missing comparison, or null when one
+ * happened. One formatter, used by both the QA and the doctor report, so the
+ * two commands can never explain the same state differently.
+ */
+export function formatCauseBasisLine(summary) {
+  if (!summary || !summary.comparison || summary.comparison === "prior_run") return null;
+  const reason = text(summary.comparison);
+  const id = text(summary.prior_run_id) || "(unidentified)";
+  const sentence = CAUSE_BASIS_SENTENCES[reason];
+  const explanation = sentence
+    ? sentence(id)
+    : "No previous-run comparison was possible, so every finding is labelled unknown.";
+  return `  Comparison basis: ${reason}. ${explanation}`;
 }
 
 /** The short per-finding tag the report prints beside each finding. */
@@ -379,9 +424,15 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, mapId = 
   const { total, counts } = summarizeCauses(findings);
   return {
     schema_version: CAUSE_SUMMARY_SCHEMA,
+    surface: "qa",
     total,
     counts,
-    prior_run_id: text(lookup.verdict?.run_id) || null,
+    // The RUN RECORD's id, the same identity the doctor summary reports, so
+    // "which previous run was this compared against" has one answer across
+    // both surfaces. The attempt actually read rides alongside under its own
+    // name rather than being conflated with it.
+    prior_run_id: text(lookup.record?.run_id) || null,
+    prior_qa_attempt_run_id: text(lookup.verdict?.run_id) || null,
     comparison: lookup.verdict ? "prior_run" : noPriorReason,
   };
 }
@@ -412,6 +463,7 @@ export function annotateDoctorIssueCauses({ errors = [], warnings = [], baseDir 
   const { total, counts } = summarizeCauses(findings);
   return {
     schema_version: CAUSE_SUMMARY_SCHEMA,
+    surface: "doctor",
     total,
     counts,
     prior_run_id: text(lookup.record?.run_id) || null,
