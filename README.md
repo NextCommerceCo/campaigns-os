@@ -43,9 +43,13 @@ which also gives the recovery sequence for the package a blocked run left behind
 
 That path assumes the pages carry a standalone design of the merchant's. If they
 are template stock instead — no bespoke design, the starter family *is* the
-design — there is no intake clear path in v0 and no screenshot to honestly
-supply; those pages are handled in the build stage by `next-campaigns-build`.
-See [Template-stock pages are build-stage work](docs/design-source-package.md#template-stock-pages-are-build-stage-work).
+design — there is no screenshot to honestly supply, and what to do next depends
+on the family. For a family that publishes complete Template Reference proof
+(today `apollo`), declare those pages out of source scope and intake clears on
+synthesized `template_baseline` coverage, as a partial build. For every other
+family there is no intake channel in v0; those pages are handled in the build
+stage by `next-campaigns-build`. See
+[Template-stock pages: the family decides](docs/design-source-package.md#template-stock-pages-the-family-decides).
 
 The command writes these target-repo artifacts:
 
