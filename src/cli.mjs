@@ -898,7 +898,10 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "qa") {
     const { runQaCli } = await import("./qa-node.mjs");
-    const result = await runQaCli(args);
+    // The ambient session is handed over, not re-discovered: the closeout
+    // command a QA run prints has to agree with the run_id this session will
+    // later close and remit under.
+    const result = await runQaCli(args, { ambient });
     if (args._[1] === "run" && result?.verdict) recordQaStageOutcome(args, result);
     if (sessionHolder) sessionHolder.qaResult = result;
     return;
@@ -9687,8 +9690,11 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
 
   const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
 
-  // Remit is consent-gated, non-fatal, bounded, and idempotent on run_id. Its
-  // outcome is stamped into the local record so a dropped send is visible, not silent.
+  // Remit is consent-gated, non-fatal, bounded, and keyed on run_id — the
+  // receiver holds one record per id and refuses a second POST for one it
+  // already has, so an id must not be spent on an interim record before the
+  // record that closes the run. Its outcome is stamped into the local record so
+  // a dropped send is visible, not silent.
   const campaignKey = remitDisabled ? null : resolveCampaignsApiKeyValue(packet, packetPath, process.env);
   const remitStatus = remitDisabled
     ? { attempted: false, ok: null, error: null, endpoint: null }

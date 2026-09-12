@@ -39,6 +39,30 @@ test("qa run closeout action is required, names the packet and verdict, and surv
   assert.match(closeout.description, /including blocked/);
 });
 
+// Remit is POST-only and the receiver holds one record per run_id, refusing a
+// second POST for an id it already has. A closeout run under an open session
+// inherits that session's run_id, and the session's own close remits that id —
+// so the printed command must not spend it first.
+test("with a run session active the printed closeout writes locally and leaves the remit to the session", () => {
+  const [closeout] = buildQaCloseoutActions({
+    packetPath: "/campaigns/demo/campaign-runtime.build.json",
+    localPath: "qa-output/demo/RUN1.json",
+    runSessionActive: true,
+  });
+  assert.match(closeout.command, /--no-remit/);
+  // The flag has to reach the command, not only the prose beside it.
+  assert.match(closeout.command, /--qa-verdict qa-output\/demo\/RUN1\.json --no-remit --json$/);
+  assert.match(closeout.description, /--no-remit/);
+});
+
+test("with no run session the printed closeout owns its run id and remits", () => {
+  const [closeout] = buildQaCloseoutActions({
+    packetPath: "/campaigns/demo/campaign-runtime.build.json",
+    localPath: "qa-output/demo/RUN1.json",
+  });
+  assert.doesNotMatch(closeout.command, /--no-remit/);
+});
+
 test("qa run closeout emits no action for packetless modes (site / parity)", () => {
   // run-record requires a Build Packet; a required-but-impossible command is
   // worse than none (Kilo review, PR #176).

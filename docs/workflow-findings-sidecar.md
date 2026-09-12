@@ -68,8 +68,11 @@ own schemas and evolve independently). Instead it carries:
 
 A single canonical `campaigns_os_run_id` is minted at the run boundary and
 threaded through the run so every artifact and finding correlates. It is also
-the **idempotency key**: re-running or retrying remit for the same `run_id` must
-not double-count downstream (the endpoint upserts on `run_id`).
+the **idempotency key**, enforced by refusal: the receiver holds one record per
+`run_id` and answers a second POST for an id it already stores with `409
+run_record_conflict`. Retrying a send that never landed is safe; the record that
+did land cannot be revised, so the id must not be spent on an interim record
+before the one that closes the run.
 
 Stage timings and repair-loop count are captured from the command lifecycle
 journal when a run session or explicit lifecycle journal is active. They remain
@@ -187,9 +190,11 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
 - **Consent-gated** — only sends when the resolver says yes.
 - **Non-fatal** — a failed POST never blocks or fails the run (mirrors "never
   fail the run if publish is unreachable").
-- **Idempotent** — payload carries `run_id`; the endpoint upserts so retries /
-  reruns do not double-count. Endpoint: `/api/runs` (implemented; receives at the
-  canonical remit scope).
+- **Keyed on `run_id`** — the payload carries it and the receiver stores one
+  record per id, rejecting a repeat POST for a stored id with 409. This client
+  POSTs only; there is no replace verb. So a failed send may be retried and a
+  succeeded one may not be re-sent. Endpoint: `/api/runs` (implemented; receives
+  at the canonical remit scope).
 - **Durable status** — the local Run Record records `remit_attempted`,
   `remit_ok`, and `error` so a dropped send is visible, not silent. No
   background retry daemon.
@@ -266,6 +271,11 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   attempt. A ready or ready-with-exceptions verdict auto-assembles the
   aggregated Run Record with references to every attempt, then clears the
   session. Pass `--no-remit` to skip remit for that local Run Record.
+  Because the session's close is what remits the session's `run_id`, the
+  `run-record` closeout command a QA run prints while a session is active
+  carries `--no-remit`: assembling an interim record is useful, spending the
+  session's one accepted POST on it is not. With no session open the printed
+  command mints its own `run_id` and remits normally.
 - An explicit absolute `--packet` associates commands and `run status` with the
   target campaign session even from the toolkit or another project directory.
   If cwd and packet resolve to different active sessions, the command fails
@@ -334,9 +344,10 @@ newer broken one.
 | `remit_incomplete` | the required `run_record_remit_recovery` |
 
 A failed or never-finished remit is **not** a missing record, and must not be
-answered by minting a second one — that would fork the run's identity. Because
-remit is idempotent on `run_id`, recovery re-runs `run-record` against the record
-already on disk:
+answered by minting a second one — that would fork the run's identity. A remit
+that failed left nothing stored under that `run_id`, so recovery re-runs
+`run-record` against the record already on disk and the send is the first one
+for that id:
 
 ```bash
 campaigns-os run-record --packet <packet> --run-id <existing-run-id> --json

@@ -1777,6 +1777,33 @@
         }
       ],
       "entry_sha256": "d2627d4422fcf5cc0f14f9c81a84ea3979e0a76f419c1b65dcc846dbdcaafd00"
+    },
+    {
+      "id": "RL-0037",
+      "sequence": 37,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.9",
+      "changelog_sha256": "248ed6fe5160ca7bc1b8ed4e55d22b30cce59846549f22f84d7ce8fe3f094c1a",
+      "agent_impact": "The run-record closeout command qa run prints as \"Required next\" now carries --no-remit whenever a run session is active, and says so in its description. An agent that executes the printed command verbatim no longer spends the session run_id on the interim record, so the session close (ready auto-end or run end) is the first and only POST for that id and lands with remit_state ok instead of failed. Nothing changes with no session open: the closeout mints its own run_id and remits. An agent that pattern-matches the closeout command string must accept the optional --no-remit between --qa-verdict and --json; one that relied on the interim record reaching the receiver must read the session closing record instead. Remit itself is unchanged on the wire - the docs that called the endpoint an upsert now state that it keeps one record per run_id and refuses a repeat POST for a stored id with 409, so retrying a send that failed is safe and re-sending one that succeeded is not.",
+      "compatibility": "compatible",
+      "migration": "none. Read the closeout command from next_actions rather than reconstructing it, and treat --no-remit as expected while a session is open.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "qa run receives the CLI ambient run session it already resolved, so the closeout command it prints is built against the same session whose run_id the close will remit under; with a session active that command is emitted with --no-remit."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "States that the remit endpoint keeps one record per run_id and refuses a repeat POST for a stored id with 409 rather than upserting, and records that the closeout command printed during an active session carries --no-remit because the session close owns that ids one accepted send."
+        }
+      ],
+      "entry_sha256": "4a9ba04dc5ceee994063db3648d32182114d3016b5c9053477c3ede8f2188088"
     }
   ]
 }

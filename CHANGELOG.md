@@ -2,6 +2,31 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.9] - 2026-09-12
+
+### Fixed
+
+- The `run-record` closeout `qa run` prints as `Required next:` now carries
+  `--no-remit` while a run session is active. Remit is a plain POST with no
+  replace verb, and the receiver keeps one record per `run_id`: a second POST
+  for an id it already holds comes back `409 run_record_conflict`. A
+  `run-record` run under an open session inherits that session's `run_id`, so
+  the command executed exactly as printed published the interim record and the
+  session's own close — the record carrying every QA attempt and the aggregated
+  lifecycle — was refused at the door. The run that mattered ended with
+  `remit_state: failed` locally while the canonical side kept the earlier,
+  thinner record. The session now owns the one accepted send for its id: the
+  printed command writes the local record and leaves the remit to the ready
+  auto-end or `run end`. With no session open nothing changes — the closeout
+  mints its own `run_id` and remits as before. A new test runs the printed
+  command through the CLI against a receiver that enforces the conflict, and
+  asserts the session's id is sent exactly once.
+- The comments and docs describing the remit endpoint as upserting on `run_id`
+  are corrected to what it does. Idempotency is enforced by refusal, not
+  replacement: a send that never landed can be retried (which is what the
+  `run_record_remit_recovery` action does), a send that landed cannot be
+  revised.
+
 ## [1.25.0+agent.8] - 2026-09-12
 
 ### Fixed
