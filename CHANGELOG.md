@@ -2,6 +2,39 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.7] - 2026-09-12
+
+### Removed
+
+- The undocumented `validate-build-packet` alias of `doctor`. It was never on
+  the supported surface (`docs/supported-surface.md` records it as unsupported),
+  had no skill, doc, fixture, or test reference, and `doctor` is the only
+  spelling the guides teach. Invoking it now gets the did-you-mean error every
+  unknown command gets. Known consumer: the private ops repo's `campaign-os`
+  shim and skill delegate the alias verbatim; retarget those to `doctor`
+  before bumping that repo's campaigns-os pin past this release.
+
+### Changed
+
+- `start`, `build`, and `prepare-build` share one dispatch body parameterised
+  by mode (`start` = prepare + doctor + agent context, `build` = prepare +
+  doctor, `prepare-build` = prepare only); `standardize` and
+  `standardization-report` share one branch. Behaviour, flags, output, and
+  the known-command list are unchanged — the three intake bodies were
+  byte-identical except for the two booleans.
+- Internal dead code removed on the strength of the 2026-09-12 architecture
+  review: the orphaned `packageCardSelectors` composer in the QA runner (its
+  only caller left in #307; best-effort `--cart` selection now composes its
+  selector through the same `packageCardClickSelector` the strict path uses),
+  seven alias re-exports in `design-source-package.mjs`, dead status enums in
+  `qa-route-probe`, `theme-gate`, `run-record-closeout`, and
+  `qa-analytics-parity`, the unused `commercialPageIds` helper in
+  `qa-commercial-parity`, and an unused import in the CLI. Three
+  polish-toolkit constants and one helper that nothing imported are no longer
+  exported, and `polish-node` now compares the browser-unavailable error
+  against the exported `POLISH_BROWSER_UNAVAILABLE_ERROR_CODE` instead of a
+  string literal. None of these is on the supported surface.
+
 ## [1.25.0+agent.6] - 2026-09-11
 
 ### Added
