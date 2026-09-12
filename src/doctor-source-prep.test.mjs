@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -229,6 +229,45 @@ test("the --wrapper-policy flag wins over the manifest key", () => {
     manifest: manifestWithWrapperPolicy("preserve_document_wrappers"),
     extraArgs: ["--wrapper-policy", "strip_document_wrappers"],
   });
+});
+
+test("a refused --wrapper-policy leaves no Design Source Package or build state behind", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-wrapper-policy-state-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(targetRepo, { recursive: true });
+    writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+    for (const [page, content] of Object.entries(PREPARED_PAGES)) {
+      writeFileSync(resolve(sourceRoot, `${page}.html`), content);
+    }
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
+
+    for (const badFlag of [["--wrapper-policy", "keep_them_i_guess"], ["--wrapper-policy"]]) {
+      assert.throws(() => execFileSync(process.execPath, [
+        CLI,
+        "prepare-build",
+        "--spec", specPath,
+        "--source", sourceRoot,
+        "--target", targetRepo,
+        "--template-family", "olympus",
+        ...badFlag,
+        "--no-run-session",
+        "--json",
+      ], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+
+      // The Design Source Package is published partway through prepare-build
+      // and is immutable once written: a later refusal would strand it, and
+      // the operator's retry through the manifest channel would then fail as
+      // stale against a package they never asked for.
+      assert.equal(existsSync(resolve(targetRepo, ".campaign-runtime")), false, `${badFlag.join(" ")} wrote build state`);
+      assert.equal(existsSync(resolve(targetRepo, "campaign-runtime.build.json")), false, `${badFlag.join(" ")} wrote a packet`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("an unrecognized --wrapper-policy value is refused with the accepted vocabulary", () => {

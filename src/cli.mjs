@@ -1850,12 +1850,11 @@ function designSourcePackageBlockers(prepared) {
   }));
 }
 
-// Document-wrapper policy, resolved for prepare-build from the two operator
-// channels. Same precedence the template family uses (docs/build-packet.md
-// "Authoring-Time Hints"): an explicit CLI flag beats a declared file hint,
-// and with neither the default stands. The vocabulary is the adapter
-// contract's own — there is no second policy list.
-function resolveWrapperPolicy({ args, manifest }) {
+// Document-wrapper policy, selected by an operator through two channels.
+// Split in two so the argv half is validated with the other up-front flag
+// checks — before prepare-build has written anything — and only the
+// precedence resolution waits on the manifest the intake read.
+function parseWrapperPolicyFlag(args) {
   const raw = args["wrapper-policy"];
   // A bare `--wrapper-policy` with no value parses as `true`. Falling through
   // to the manifest or the default there would silently ignore an operator's
@@ -1866,20 +1865,27 @@ function resolveWrapperPolicy({ args, manifest }) {
     );
   }
   const flag = optionalString(raw);
-  if (flag) {
-    if (!isWrapperPolicy(flag)) {
-      throw new Error(
-        `Unsupported --wrapper-policy ${JSON.stringify(flag)}. Accepted values: ${ADAPTER_WRAPPER_POLICIES.join(", ")}. ` +
-        `See docs/source-adapters.md "Source preparation check".`,
-      );
-    }
-    return { value: flag, source: "--wrapper-policy" };
+  if (flag && !isWrapperPolicy(flag)) {
+    throw new Error(
+      `Unsupported --wrapper-policy ${JSON.stringify(flag)}. Accepted values: ${ADAPTER_WRAPPER_POLICIES.join(", ")}. ` +
+      `See docs/source-adapters.md "Source preparation check".`,
+    );
   }
+  return flag;
+}
+
+// Same precedence the template family uses (docs/build-packet.md
+// "Authoring-Time Hints"): an explicit CLI flag beats a declared file hint,
+// and with neither the default stands. The vocabulary is the adapter
+// contract's own — there is no second policy list.
+function resolveWrapperPolicy({ flag, manifest }) {
+  if (flag) return { value: flag, source: "--wrapper-policy" };
   const declared = optionalString(manifest?.wrapper_policy);
-  if (declared) {
-    // An out-of-vocabulary manifest value never reaches here: the manifest
-    // validator rejects it and the manifest is dropped with a warning.
-    if (isWrapperPolicy(declared)) return { value: declared, source: "source-html manifest wrapper_policy" };
+  // An out-of-vocabulary manifest value never reaches here: the manifest
+  // validator rejects it at read time and the manifest is dropped with a
+  // warning, which also happens before anything is written.
+  if (declared && isWrapperPolicy(declared)) {
+    return { value: declared, source: "source-html manifest wrapper_policy" };
   }
   return { value: DEFAULT_WRAPPER_POLICY, source: "default" };
 }
@@ -1925,6 +1931,11 @@ function prepareBuild(args, options = {}) {
   if (sourceKind !== "html_funnel") {
     throw new Error(`Unsupported source adapter "${sourceKind}". Use html_funnel for the current prepared-HTML flow.`);
   }
+  // Validated here, with the other argv checks, rather than where the policy
+  // is consumed: prepare-build publishes an immutable Design Source Package
+  // partway through, so a flag that throws later would leave persistent state
+  // behind for a bad argument.
+  const wrapperPolicyFlag = parseWrapperPolicyFlag(args);
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
@@ -1993,6 +2004,13 @@ function prepareBuild(args, options = {}) {
     && !Array.isArray(spec.build_scope.reasons);
   const manifestResult = sourceIntake.manifestResult;
   const manifestWarnings = sourceIntake.manifestWarnings;
+  const wrapperPolicy = resolveWrapperPolicy({ flag: wrapperPolicyFlag, manifest: manifestResult.manifest });
+  if (wrapperPolicy.value !== DEFAULT_WRAPPER_POLICY) {
+    console.warn(
+      `[campaigns-os prepare-build] wrapper_policy "${wrapperPolicy.value}" selected by ${wrapperPolicy.source}; ` +
+      `recorded on the packet at source_html.adapter_contract.wrapper_policy.`,
+    );
+  }
   const matched = {
     mappings: sourceIntake.mappings,
     prompts: sourceIntake.prompts,
@@ -2101,16 +2119,8 @@ function prepareBuild(args, options = {}) {
   });
   const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
-  const wrapperPolicy = resolveWrapperPolicy({ args, manifest: manifestResult.manifest });
   const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
   const proofPolicy = createProofPolicy();
-
-  if (wrapperPolicy.value !== DEFAULT_WRAPPER_POLICY) {
-    console.warn(
-      `[campaigns-os prepare-build] wrapper_policy "${wrapperPolicy.value}" selected by ${wrapperPolicy.source}; ` +
-      `recorded on the packet at source_html.adapter_contract.wrapper_policy.`,
-    );
-  }
 
   const packet = {
     schema_version: PACKET_SCHEMA,
