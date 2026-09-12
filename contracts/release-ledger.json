@@ -1902,8 +1902,35 @@
       "entry_sha256": "e411bb411f0ec56348d83a216b2304fe2fe4b6d820b5dbb67e20d4b9998389b8"
     },
     {
-      "id": "RL-0044",
+      "id": "RL-0040",
       "sequence": 42,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.12",
+      "changelog_sha256": "7014bddf53844c28e8d13c80094cafad2669c455fa3ef87497b15636e3a8f722",
+      "agent_impact": "QA and doctor findings now carry a cause class, so a consumer can tell whether the change under test caused what a run surfaced instead of re-reading every finding by hand. Two additive optional fields ride each finding: cause (caused_by_change | pre_existing | test_environment | upstream_drift | unknown) and cause_reason (a short reason code). A cause_summary object ({surface, total, counts, prior_run_id, comparison}, plus prior_qa_attempt_run_id on the QA side) rides the QA verdict and the doctor output; prior_run_id is the previous Run Record's id on both surfaces, and the QA summary additionally names the final attempt within that record it read. The fields appear on the full verdict, on the derived exceptions, on the committed QA verdict sidecar, and on every doctor result — classification is applied where the doctor result is produced, so all four producers that persist .campaign-runtime/doctor-output.json leave the labels on the retained artifact. Passing assertions carry none, and non-packet doctor (--built / --site) is not annotated. Absence is not a claim: output emitted before this release carries neither field, and the first run on a campaign labels every finding unknown because there is no earlier run to compare against. The human reports gained a summary line and a per-finding tag; the doctor issue line keeps its existing \"[code] message\" shape with the tag appended.",
+      "compatibility": "additive",
+      "migration": "none. Tolerate cause/cause_reason/cause_summary being absent, and never read an absent cause_summary as \"nothing was caused by the change\". A consumer that wants the labels to be meaningful must let campaigns-os run-record write a Run Record after each run, since the previous run is found through Run Record discovery.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Every doctor result is stamped with cause and cause_reason per error and warning plus a cause_summary, applied where the result is produced rather than in the doctor command, so the retained doctor artifact keeps its labels whichever producer wrote it last. The comparison is against the previous Run Record's doctor code observations. The doctor human report prints the summary line and appends a cause tag to each issue line. The run-record discovery helpers moved to src/run-record.mjs and are re-exported here unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents the cause-class vocabulary, the single previous-run comparison rule (including that QA compares against the prior run's last, final QA attempt) and its fingerprints, every unknown reason code including the first-run case, and where the labels appear across the verdict, the exceptions, the committed sidecar and every doctor producer."
+        }
+      ],
+      "entry_sha256": "21cb3256e92a300751e026d6ba513658cfddaa03b89c7fae813ff0be9c0789eb"
+    },
+    {
+      "id": "RL-0044",
+      "sequence": 43,
       "date": "2026-09-12",
       "kind": "release",
       "surface_version": "1.26.0",
@@ -1950,7 +1977,7 @@
           "summary": "Documents the manifest wrapper_policy key and its precedence against the CLI flag in the Source HTML Manifest Auto-Population behavior list."
         }
       ],
-      "entry_sha256": "9d14fd36cd3e823d449b94d4be08037a633fb8656bc9effbb49737145301711b"
+      "entry_sha256": "a9dfeadb323accba231280df15ae22a41c4b516ec30b034ea2ac49c99b7d2bb9"
     }
   ]
 }

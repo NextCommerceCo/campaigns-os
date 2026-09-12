@@ -15,8 +15,13 @@ export const SIDECAR_RELATIVE_PATH = ".campaign-runtime/qa-verdict.json";
 
 // Assertion fields that survive projection. Everything else — url, expected,
 // actual, evidence, request/response captures — stays in the full verdict.
-const ASSERTION_FIELDS = ["id", "family", "page", "status", "severity", "blocked_by"];
-const EXCEPTION_FIELDS = ["id", "family", "page", "status", "severity"];
+// `cause`/`cause_reason` survive projection: they are a short enum plus a
+// mechanical reason code — no URL, no order reference, no capture body — and
+// the committed sidecar is the artifact a readback reads, so stripping them
+// would leave the one consumer that cannot re-run QA unable to tell a
+// pre-existing finding from a regression.
+const ASSERTION_FIELDS = ["id", "family", "page", "status", "severity", "blocked_by", "cause", "cause_reason"];
+const EXCEPTION_FIELDS = ["id", "family", "page", "status", "severity", "cause", "cause_reason"];
 
 function pick(source, fields) {
   const out = {};
@@ -87,6 +92,9 @@ export function projectVerdictForSidecar(verdict, { generatedAt }) {
     assertions,
     test_orders: [],
     exceptions,
+    ...(verdict.cause_summary && typeof verdict.cause_summary === "object" && !Array.isArray(verdict.cause_summary)
+      ? { cause_summary: verdict.cause_summary }
+      : {}),
   };
 }
 

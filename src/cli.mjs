@@ -42,10 +42,17 @@ import {
   RUN_RECORD_SURFACE_VERSION_PATTERN,
   RUN_RECORDS_DIR_REL_PATH,
   mintRunId,
+  orderRunRecordFileNames,
+  readRunRecordsForTarget,
   RUN_RECORD_SURFACES,
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
+// Re-exported from their new home in run-record.mjs (one implementation, two
+// call sites: `next` closeout here and cause classification in the QA runner,
+// which must not import this module).
+export { orderRunRecordFileNames, readRunRecordsForTarget } from "./run-record.mjs";
+import { annotateDoctorIssueCauses, formatCauseBasisLine, formatCauseSummaryLine, formatCauseTag } from "./finding-cause.mjs";
 import {
   announceDefaultOnTelemetry,
   CANONICAL_REMIT_SCOPE,
@@ -3200,7 +3207,28 @@ export function checkpointWaive(args) {
 }
 
 export function doctorPacket(packetPath, options = {}) {
-  return withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
+  const result = withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
+  // Per-finding cause classification lives HERE, at the single production
+  // boundary, and not in the doctor command. Four producers persist
+  // .campaign-runtime/doctor-output.json from a doctorPacket result — `doctor`,
+  // `next`, prepare-build/start, and the QA stage refresh — and annotating only
+  // one of them means running QA after doctor silently strips the labels back
+  // out of the retained artifact. Every consumer of a doctor result gets the
+  // same shape, whether or not it writes one.
+  //
+  // The comparison set is the previous Run Record's own doctor observations
+  // (error_codes / warning_codes), which every Run Record ever written already
+  // carries — so this works against existing history rather than needing a run
+  // to go by first. Code granularity, because that is the granularity the
+  // record stores. baseDir is the packet directory, the same root the Run
+  // Record writes under.
+  result.cause_summary = annotateDoctorIssueCauses({
+    errors: result.errors,
+    warnings: result.warnings,
+    baseDir: dirname(resolve(packetPath)),
+    mapId: result.derived?.map_id || null,
+  });
+  return result;
 }
 
 function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
@@ -7166,72 +7194,7 @@ function addPrepareBuildGateErrors(errors, report, gate = prepareBuildGateIssue(
  *   "doctor-blocked" and "done" need their own handling), then read
  *   `result.blocked === true` to detect the surfaced-blocker case.
  */
-// Run Records are machine-local (they are in the runtime-state ignore block), so
-// `next` reads them best-effort: an absent directory is the normal case, not an
-// error, and a slow or hostile records directory must never stall orchestration.
-// Bounded, but bounded well above any plausible per-target history rather than
-// at the working-set size. The old bound was 50, which is reachable on a
-// long-lived campaign, and truncation here is not a performance trade — it
-// silently changes the ANSWER: an older matching record outside the window
-// reads as `no_record` or `foreign_campaign`, which asks the operator to
-// re-make a record that already exists. That is the exact regression this
-// closeout work is closing, so the cap is now a runaway-directory guard and
-// nothing else. The parse cost stays tolerable because `readJson` failures are
-// swallowed per file, so a malformed record still costs one failed parse rather
-// than aborting the scan.
-const RUN_RECORDS_SCAN_LIMIT = 5000;
 const RUN_RECORD_QA_DIGEST_LIMIT = 8;
-
-// Run ids are `run_<epoch-ms>_<hex>`, and `readdirSync().sort().reverse()` only
-// ordered those correctly by accident: lexicographic order matches numeric order
-// only while every id has the same digit count. A 13-to-14 digit rollover (or a
-// hand-named file, or an id minted on a machine with a different clock) flips
-// "newest" silently. Parse the timestamp and compare it as a number; anything
-// unparseable sorts last, because a file that cannot say when it was written
-// must never displace one that can.
-export function orderRunRecordFileNames(names) {
-  const stamp = (name) => {
-    const match = /^run_(\d+)_/.exec(name);
-    if (!match) return null;
-    const value = Number(match[1]);
-    return Number.isSafeInteger(value) ? value : null;
-  };
-  return [...names].sort((a, b) => {
-    const left = stamp(a);
-    const right = stamp(b);
-    if (left !== right) {
-      if (left === null) return 1;
-      if (right === null) return -1;
-      return right - left;
-    }
-    // Same stamp, or both unstamped: fall back to a stable name comparison so
-    // the order is at least deterministic across platforms.
-    return a < b ? 1 : a > b ? -1 : 0;
-  });
-}
-
-export function readRunRecordsForTarget(baseDir) {
-  try {
-    const dir = join(resolve(baseDir), RUN_RECORDS_DIR_REL_PATH);
-    if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
-    const names = orderRunRecordFileNames(readdirSync(dir).filter((name) => name.endsWith(".json")))
-      .slice(0, RUN_RECORDS_SCAN_LIMIT);
-    const entries = [];
-    for (const name of names) {
-      const path = join(dir, name);
-      try {
-        entries.push({ path, record: readJson(path) });
-      } catch {
-        // One corrupt record must not hide a good one beside it. The assessor
-        // ignores unreadable entries rather than treating them as evidence.
-        entries.push({ path, record: null });
-      }
-    }
-    return entries;
-  } catch {
-    return [];
-  }
-}
 
 // Hash whatever QA verdict the report's qa stage currently points at, so a Run
 // Record can be checked against the evidence the report carries NOW rather than
@@ -10554,6 +10517,11 @@ function printResult(result) {
     console.log("Actions:");
     for (const action of result.actions) console.log(`- ${action}`);
   }
+  if (result.cause_summary) {
+    console.log(formatCauseSummaryLine(result.cause_summary, { priorRunId: result.cause_summary.prior_run_id }));
+    const basis = formatCauseBasisLine(result.cause_summary);
+    if (basis) console.log(basis);
+  }
   if (result.errors?.length) {
     console.log("Errors:");
     for (const issue of result.errors) console.log(`- ${formatIssueSummary(issue)}`);
@@ -10576,8 +10544,12 @@ function printResult(result) {
 
 function formatIssueSummary(issue) {
   if (typeof issue === "string") return issue;
-  if (issue?.code && issue?.message) return `[${issue.code}] ${issue.message}`;
-  if (issue?.message) return issue.message;
+  // The cause tag trails the message so the existing "[code] message" shape an
+  // operator (and every script grepping this output) already reads is unchanged.
+  const cause = formatCauseTag(issue);
+  const suffix = cause ? ` ${cause}` : "";
+  if (issue?.code && issue?.message) return `[${issue.code}] ${issue.message}${suffix}`;
+  if (issue?.message) return `${issue.message}${suffix}`;
   return String(issue);
 }
 

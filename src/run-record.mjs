@@ -10,7 +10,7 @@
 // has no network or credential dependencies.
 
 import { randomBytes } from "node:crypto";
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ADAPTER_DECISION_STRATEGY_FIELDS } from "./adapter-decision-contract.mjs";
 
@@ -679,4 +679,86 @@ export function writeRunRecord(record, { baseDir = process.cwd() } = {}) {
   writeFileSync(tmpPath, `${JSON.stringify(record, null, 2)}\n`);
   renameSync(tmpPath, path);
   return path;
+}
+
+// Run Records are machine-local (they are in the runtime-state ignore block), so
+// `next` reads them best-effort: an absent directory is the normal case, not an
+// error, and a slow or hostile records directory must never stall orchestration.
+// Bounded, but bounded well above any plausible per-target history rather than
+// at the working-set size. The old bound was 50, which is reachable on a
+// long-lived campaign, and truncation here is not a performance trade — it
+// silently changes the ANSWER: an older matching record outside the window
+// reads as `no_record` or `foreign_campaign`, which asks the operator to
+// re-make a record that already exists. That is the exact regression this
+// closeout work is closing, so the cap is now a runaway-directory guard and
+// nothing else. The parse cost stays tolerable because `readJson` failures are
+// swallowed per file, so a malformed record still costs one failed parse rather
+// than aborting the scan.
+const RUN_RECORDS_SCAN_LIMIT = 5000;
+
+// Run ids are `run_<epoch-ms>_<hex>`, and `readdirSync().sort().reverse()` only
+// ordered those correctly by accident: lexicographic order matches numeric order
+// only while every id has the same digit count. A 13-to-14 digit rollover (or a
+// hand-named file, or an id minted on a machine with a different clock) flips
+// "newest" silently. Parse the timestamp and compare it as a number; anything
+// unparseable sorts last, because a file that cannot say when it was written
+// must never displace one that can.
+// A Run Record file is named for its run id, which always carries the `run_`
+// prefix. Admitting every *.json in the directory means an operator note, an
+// editor backup, or any unrelated artifact that happens to land there gets
+// parsed as run state and — worse — can be selected as THE previous run.
+// Filter at scan time rather than leaning on the orderer's
+// unstamped-sorts-last fallback: that fallback keeps ordering deterministic,
+// it does not make a stray file not a record.
+//
+// Prefix, deliberately, and not the full minted `run_<epoch-ms>_<hex>` shape.
+// mintRunId produces that shape, but `--run-id` lets an operator supply their
+// own and writeRunRecord writes whatever it is given after sanitizing — so a
+// digits-required pattern would hide real records (the closeout suite writes
+// `run_synth_*` ones) and report a run that exists as missing. That failure is
+// worse than the one this filter closes.
+export const RUN_RECORD_FILE_NAME_PATTERN = /^run_.+\.json$/;
+
+export function orderRunRecordFileNames(names) {
+  const stamp = (name) => {
+    const match = /^run_(\d+)_/.exec(name);
+    if (!match) return null;
+    const value = Number(match[1]);
+    return Number.isSafeInteger(value) ? value : null;
+  };
+  return [...names].sort((a, b) => {
+    const left = stamp(a);
+    const right = stamp(b);
+    if (left !== right) {
+      if (left === null) return 1;
+      if (right === null) return -1;
+      return right - left;
+    }
+    // Same stamp, or both unstamped: fall back to a stable name comparison so
+    // the order is at least deterministic across platforms.
+    return a < b ? 1 : a > b ? -1 : 0;
+  });
+}
+
+export function readRunRecordsForTarget(baseDir) {
+  try {
+    const dir = join(resolve(baseDir), RUN_RECORDS_DIR_REL_PATH);
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
+    const names = orderRunRecordFileNames(readdirSync(dir).filter((name) => RUN_RECORD_FILE_NAME_PATTERN.test(name)))
+      .slice(0, RUN_RECORDS_SCAN_LIMIT);
+    const entries = [];
+    for (const name of names) {
+      const path = join(dir, name);
+      try {
+        entries.push({ path, record: JSON.parse(readFileSync(path, "utf8")) });
+      } catch {
+        // One corrupt record must not hide a good one beside it. The assessor
+        // ignores unreadable entries rather than treating them as evidence.
+        entries.push({ path, record: null });
+      }
+    }
+    return entries;
+  } catch {
+    return [];
+  }
 }

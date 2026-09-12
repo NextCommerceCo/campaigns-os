@@ -111,6 +111,7 @@ export function createVerdict({
   testOrders = [],
   exceptions = null,
   commercial = null,
+  causeSummary = null,
 }) {
   const normalizedExceptions = Array.isArray(exceptions)
     ? exceptions
@@ -144,6 +145,12 @@ export function createVerdict({
     ...(commercial && typeof commercial === "object" && !Array.isArray(commercial)
       ? { commercial }
       : {}),
+    // Additive, and absent on verdicts emitted before per-finding cause
+    // classification existed. Consumers must tolerate its absence rather than
+    // read a missing summary as "nothing was caused by the change".
+    ...(causeSummary && typeof causeSummary === "object" && !Array.isArray(causeSummary)
+      ? { cause_summary: causeSummary }
+      : {}),
   };
 }
 
@@ -153,16 +160,25 @@ function optionalString(value) {
   return text || null;
 }
 
+/**
+ * Is this assertion a FINDING — something the operator has to look at — rather
+ * than a clean pass? One definition, because the exception projection and the
+ * per-finding cause classification must count the same set: a summary that
+ * says "11 findings, 9 pre-existing" is unreadable if "finding" means one
+ * thing in the count and another in the list.
+ */
+export function isFindingAssertion(assertion) {
+  return assertion?.status === STATUS.FAIL
+    || assertion?.status === STATUS.WARN
+    || assertion?.status === STATUS.MANUAL_REVIEW
+    || assertion?.severity === SEVERITY.WARN
+    || assertion?.severity === SEVERITY.BLOCKER;
+}
+
 export function deriveExceptions(assertions = []) {
   if (!Array.isArray(assertions)) return [];
   return assertions
-    .filter((assertion) => (
-      assertion?.status === STATUS.FAIL
-      || assertion?.status === STATUS.WARN
-      || assertion?.status === STATUS.MANUAL_REVIEW
-      || assertion?.severity === SEVERITY.WARN
-      || assertion?.severity === SEVERITY.BLOCKER
-    ))
+    .filter((assertion) => isFindingAssertion(assertion))
     .map((assertion) => ({
       id: assertion.id || null,
       family: assertion.family || null,
@@ -172,6 +188,11 @@ export function deriveExceptions(assertions = []) {
       severity: assertion.severity || null,
       expected: assertion.expected,
       actual: assertion.actual,
+      // Cause rides the projection so the exceptions list — the quick read an
+      // operator or portal actually looks at — answers "was this us?" without
+      // re-joining back to the assertions array.
+      ...(assertion.cause !== undefined ? { cause: assertion.cause } : {}),
+      ...(assertion.cause_reason !== undefined ? { cause_reason: assertion.cause_reason } : {}),
     }));
 }
 

@@ -323,3 +323,33 @@ test("summarizePurchaseProof still counts a positive numeric id", () => {
   const summary = summarizePurchaseProof({ verdict: { test_orders: [{ next_order_id: 1001, is_test: true }] } });
   assert.equal(summary.orders_created, 1);
 });
+
+test("deriveExceptions carries the per-finding cause label through to the exception", () => {
+  const [exception] = deriveExceptions([
+    {
+      id: "http:checkout",
+      family: "funnel-flow",
+      page: "checkout",
+      status: STATUS.FAIL,
+      severity: SEVERITY.BLOCKER,
+      cause: "pre_existing",
+      cause_reason: "same_status_in_prior_run",
+    },
+  ]);
+  assert.equal(exception.cause, "pre_existing");
+  assert.equal(exception.cause_reason, "same_status_in_prior_run");
+});
+
+test("an assertion with no cause does not grow empty cause keys on the exception", () => {
+  const [exception] = deriveExceptions([
+    { id: "http:checkout", family: "funnel-flow", page: "checkout", status: STATUS.WARN, severity: SEVERITY.WARN },
+  ]);
+  assert.equal("cause" in exception, false);
+  assert.equal("cause_reason" in exception, false);
+});
+
+test("createVerdict carries a cause summary when one is supplied, and omits it otherwise", () => {
+  const summary = { schema_version: "campaigns-os-finding-cause/v0", total: 3, counts: { caused_by_change: 1, pre_existing: 2 }, prior_run_id: "qa_prior", comparison: "prior_run" };
+  assert.deepEqual(createVerdict({ ...baseVerdict, causeSummary: summary }).cause_summary, summary);
+  assert.equal("cause_summary" in createVerdict({ ...baseVerdict }), false);
+});
