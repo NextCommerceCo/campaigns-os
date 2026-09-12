@@ -14,6 +14,7 @@ import {
 } from "./polish-page-load.mjs";
 import {
   boundedPolishDeadline,
+  POLISH_BROWSER_UNAVAILABLE_ERROR_CODE,
   POLISH_CAPTURE_CELL_DEADLINE_MS,
   POLISH_CAPTURE_CLOSE_DEADLINE_MS,
   POLISH_CAPTURE_STARTUP_DEADLINE_MS,
@@ -540,7 +541,7 @@ export async function capturePolishPageLoad({
           );
           if (!isPlainObject(observation)) throw new Error("Browser adapter returned no route observation.");
         } catch (error) {
-          const browserUnavailable = error?.code === "POLISH_BROWSER_UNAVAILABLE";
+          const browserUnavailable = error?.code === POLISH_BROWSER_UNAVAILABLE_ERROR_CODE;
           const producerTimedOut = error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE;
           const producerCleanupFailed = error?.code === POLISH_PRODUCER_CLEANUP_ERROR_CODE;
           if (producerTimedOut) observedProducerTimeout = true;

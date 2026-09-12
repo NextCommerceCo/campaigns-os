@@ -16,9 +16,10 @@
 // resolves to "not satisfied", which emits the closeout action. A false demand
 // costs one idempotent command; a false silence loses the run's durable record.
 
-/**
- * Closed reason vocabulary. `satisfied` is the only value that suppresses the
- * required closeout action; every other value names why it must still fire.
+/*
+ * Closed reason vocabulary (`reason_code` on assessRunRecordCloseout's
+ * outcome). `satisfied` is the only value that suppresses the required
+ * closeout action; every other value names why it must still fire.
  *
  * - `satisfied`              a matching, current, closed record exists
  * - `no_record`              no readable record for this packet at all
@@ -31,15 +32,6 @@
  * - `remit_incomplete`       remit never reached a terminal state (pending, or
  *                            a state this version does not recognize)
  */
-export const RUN_RECORD_CLOSEOUT_REASONS = Object.freeze([
-  "satisfied",
-  "no_record",
-  "foreign_campaign",
-  "stale_predates_evidence",
-  "outdated_artifacts",
-  "remit_failed",
-  "remit_incomplete",
-]);
 
 // Remit outcomes that mean "this record is closed". `ok` is a completed remit.
 // `skipped` is the consent-off / --no-remit / local-only path: a deliberate

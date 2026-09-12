@@ -11,6 +11,7 @@ import {
 import {
   boundedPolishDeadline,
   POLISH_BROWSER_CELL_DEADLINE_MS,
+  POLISH_BROWSER_UNAVAILABLE_ERROR_CODE,
   POLISH_BROWSER_CLEANUP_DEADLINE_MS,
   POLISH_BROWSER_STARTUP_DEADLINE_MS,
   POLISH_PRODUCER_CLEANUP_ERROR_CODE,
@@ -34,8 +35,6 @@ const NETWORK_EVENTS = Object.freeze([
 
 const AUTH_COOKIE_ERROR = "Campaigns OS polish capture received a malformed or empty --auth-cookie value.";
 const COOKIE_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-export const POLISH_BROWSER_UNAVAILABLE_ERROR_CODE = "POLISH_BROWSER_UNAVAILABLE";
-
 function browserUnavailableError(message) {
   const error = new Error(message);
   error.code = POLISH_BROWSER_UNAVAILABLE_ERROR_CODE;

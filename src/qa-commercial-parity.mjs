@@ -153,10 +153,6 @@ export function commercialSpecPages(spec, { maxPages = Number.POSITIVE_INFINITY 
   return pages;
 }
 
-export function commercialPageIds(spec, options = {}) {
-  return new Set(commercialSpecPages(spec, options).filter((page) => present(page?.id)).map((page) => String(page.id)));
-}
-
 function captureFailure(page, code, error) {
   return {
     page_id: present(page?.page_id) ? String(page.page_id) : null,

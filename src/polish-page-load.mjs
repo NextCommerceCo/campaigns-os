@@ -28,7 +28,7 @@ export const HIDDEN_EAGER_MEDIA_SCOPE = "polish.hidden_eager_media";
 export const HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES = 1_048_576;
 export const POLISH_PAGE_LOAD_SCHEMA_VERSION = "campaigns-os-polish-page-load/v0";
 export const POLISH_PAGE_LOAD_PRODUCER = POLISH_CAPTURE_PRODUCER;
-export const MAX_HIDDEN_EAGER_MEDIA_FINDING_RESOURCES = 64;
+const MAX_HIDDEN_EAGER_MEDIA_FINDING_RESOURCES = 64;
 
 const RESOURCE_TYPES = new Set(POLISH_RESOURCE_TYPES);
 const PRELOAD_ATTRIBUTES = new Set(POLISH_PRELOAD_ATTRIBUTES);
@@ -78,7 +78,7 @@ export const POLISH_CAPTURE_PROBLEM_CODES = Object.freeze([
 ]);
 const CAPTURE_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
 const CAPTURE_WARNING_PROBLEM_CODES = new Set(POLISH_CAPTURE_WARNING_PROBLEM_CODES);
-export const MAX_CAPTURE_WARNING_ORIGINS = 32;
+const MAX_CAPTURE_WARNING_ORIGINS = 32;
 
 function normalizeString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -122,7 +122,7 @@ function emptyWaiverAssessment() {
   };
 }
 
-export function pageLoadCheckpointSubject({ buildFingerprint, slug, routeScope, routes, viewports } = {}) {
+function pageLoadCheckpointSubject({ buildFingerprint, slug, routeScope, routes, viewports } = {}) {
   const campaignSlug = normalizeString(slug);
   return {
     build_fingerprint: isSha256(buildFingerprint) ? buildFingerprint : null,
