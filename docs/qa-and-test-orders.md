@@ -497,6 +497,44 @@ npm run campaigns-os -- qa run \
   --base-url https://preview.example.com/campaign/
 ```
 
+## What a published anonymous record is
+
+A published verdict and a remitted Run Record are durable, but they are not
+attributed. The public runner carries no ingest credential, so the receiver
+stamps what it gets as `trusted: false` / `trust_level: "anonymous"` /
+`verified_at: null`, and a remitted Run Record lands in tenant scope without
+naming who produced it. Read the stamps before you rely on the record.
+
+**An anonymous published record is an unverified submitted claim.** It records
+what the submitter reported — not that a run happened, and not that the
+artifacts in it reflect real observations. The receiver accepts posts publicly
+after shape, size, and rate checks; it does not execute anything, witness
+anything, or verify anything it is told. Its contents — the step ladder and its
+per-step statuses, the assertions and their severities, order refs and
+line-item summaries, console and request evidence, timestamps — are claims in
+the submission, and they are exactly as good as the submitter.
+
+Nothing in such a record establishes even that it was produced by the toolkit.
+Anyone on the internet can post a shape-valid verdict, and a fabricated one
+passes every check the schema makes; `src/qa-verdict-schema.test.mjs` carries a
+forged, shape-valid, untrusted verdict as a standing negative control precisely
+to keep that fact from being forgotten.
+
+**So: any launch decision needs independent execution evidence.** The
+attributed local artifacts of the run itself — the emitted verdict in the
+operator's own checkout, the committed `.campaign-runtime/qa-verdict.json`, the
+local Run Record, CI or session logs — are what establish that a run happened
+and what it saw. A published anonymous record points at those; it does not
+substitute for them, and it is not verified launch evidence by the portal's
+standard. Do not present one as such — not in a handoff, not in a launch
+readiness claim, not to a merchant. Campaigns OS holds the same line at its own
+readback chokepoints: `qa promote` refuses an untrusted source verdict, and
+`run-record`'s QA-verdict inference excludes untrusted records.
+
+Attributed publishing — an ingest credential a named operator's runner can
+carry, so the receiver can stamp `trusted: true` — is tracked as
+campaigns-os#329 and is not available today.
+
 ## Cart-state verification: do not trust `cartLines`
 
 When QA needs to confirm the cart actually holds the expected items, **do not read
