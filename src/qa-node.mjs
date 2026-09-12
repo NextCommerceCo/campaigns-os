@@ -6,7 +6,8 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
-import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { annotateQaAssertionCauses, formatCauseSummaryLine, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
@@ -1839,6 +1840,18 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
   const testedUrls = deriveTestedUrlsFromAssertions(assertions, pageUrls);
+  // Per-finding cause classification happens BEFORE the verdict is assembled,
+  // so the assertions, the derived exceptions, the committed sidecar and the
+  // printed report all carry the same labels. The comparison root is the Build
+  // Packet directory — the same root the Run Record writes under — so the
+  // previous run is found through the existing Run Record discovery rather
+  // than a second scan of qa-output/.
+  const causeSummary = annotateQaAssertionCauses(assertions, {
+    baseDir: resolved.packetPath ? dirname(resolved.packetPath) : null,
+    mapId: resolved.mapId,
+    currentRunId: runId,
+    isFinding: isFindingAssertion,
+  });
   const verdict = createVerdict({
     runId,
     mapId: resolved.mapId,
@@ -1857,6 +1870,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     assertions,
     testOrders,
     commercial,
+    causeSummary,
   });
 
   const validationErrors = validateVerdict(verdict);
@@ -2569,6 +2583,7 @@ function output(value, args) {
     console.log(`Run ID: ${value.run_id}`);
     console.log(`Disposition: ${value.verdict.disposition}`);
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
+    printCauseLines(value.verdict);
     printThemeGateLines(value.theme_gate);
     if (value.commercial) {
       console.log(`Commercial parity: ${value.commercial.status} (${value.commercial.finding_count || 0} findings, ${value.commercial.checked_pages || 0} pages checked)`);
@@ -2665,6 +2680,28 @@ function printRouteProbeLines(routeProbe) {
   console.log("  Entry URLs that did not resolve:");
   for (const row of rows) {
     console.log(`    - ${row.url} (${row.outcome === "unresolved" ? `HTTP ${row.http_status}` : row.error})`);
+  }
+}
+
+// The cause read: one summary line, then one line per finding carrying its
+// class. This is the answer to "are these findings related to the change I am
+// testing?" — the question a bump run left unanswerable before the label
+// existed. Printed right under the status counts, above the gate lines,
+// because it is what the operator is looking for.
+function printCauseLines(verdict) {
+  const summary = verdict?.cause_summary;
+  if (!summary) return;
+  console.log(formatCauseSummaryLine(summary, { priorRunId: summary.prior_run_id }));
+  if (summary.comparison && summary.comparison !== "prior_run") {
+    console.log(`  Comparison basis: ${summary.comparison}. Every finding is labelled unknown until a second run exists to compare against.`);
+  }
+  const exceptions = Array.isArray(verdict.exceptions) ? verdict.exceptions : [];
+  if (!exceptions.length) return;
+  console.log("Findings:");
+  for (const exception of exceptions) {
+    const identity = [exception.id, exception.page].filter(Boolean).join(" @ ") || "(unidentified finding)";
+    const tag = formatCauseTag(exception);
+    console.log(`- ${identity} (${exception.status || "unknown"})${tag ? ` ${tag}` : ""}`);
   }
 }
 
