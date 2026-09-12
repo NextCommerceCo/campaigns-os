@@ -26,13 +26,31 @@
 // one document-order query), and form controls and `[hidden]` subtrees can
 // never be a marker.
 //
-// The state signal is the marker's own rendering. That is the mechanism the
-// shared checkout CSS actually uses: `[data-next-toggle-card] [os-component=
-// "check"] { display: none }` with the active/in-cart card restoring
-// `display: flex`. A tick that is rendered is a rendered tick. A toggle whose
-// tick is only recoloured rather than shown and hidden does not express its
-// state through this vocabulary; it resolves no marker, and the check falls
-// back to the input-versus-active reading instead of inventing a disagreement.
+// A rendered marker is then read for a positive state signal, and the signals
+// are alternatives rather than one replacing another, because the families
+// express state in genuinely different ways:
+//
+//   - `pseudo` — the marker is a persistent box and its `::after` carries the
+//     tick. The box renders in both states, so its visibility says nothing;
+//     the state is whether the pseudo-element is rendered. A marker whose
+//     `::after` has non-empty content belongs to this family by definition,
+//     and its checked reading comes from that pseudo-element alone.
+//   - `glyph` — the tick is literal text in the marker.
+//   - `fill` — the marker is filled with the accepted colour.
+//   - `display_toggled` — the marker *is* the tick and the CSS shows and hides
+//     it: `[data-next-toggle-card] [os-component="check"] { display: none }`
+//     with the active or in-cart card restoring `display: flex`. Only here is
+//     the marker's own rendering the state affordance.
+//
+// The last one is a claim about the page's CSS, so it is tested against the
+// page's CSS (`hiddenByAMatchingRule`) rather than assumed from the family
+// name. That is what keeps a persistent box out of it: a box nothing hides is
+// not display-toggled, and reading its visibility as "checked" would fail a
+// correctly declined bump.
+//
+// A rendered marker carrying no positive signal is reported as unresolved, not
+// as checked and not as unchecked. The harness cannot read that page's state
+// vocabulary, and saying so is honest; claiming a disagreement is not.
 
 // Bump toggle roots. Matches the SDK's toggle card and the older bump root.
 export const ORDER_BUMP_TOGGLE_SELECTOR = "[data-next-toggle-card], [data-next-bump]";
@@ -87,6 +105,66 @@ export function orderBumpEvidenceScript() {
     // control, not inside a subtree the author removed from rendering.
     const eligible = (element) => !element.matches(markerExcluded) && !element.closest("[hidden]");
 
+    // Does any stylesheet rule that matches this element remove it from
+    // rendering? That is the display-toggled family's signature: a base rule
+    // hides the tick and a state-scoped rule restores it, so the element
+    // matches the hiding rule in both states. A persistent box that nothing
+    // hides matches nothing here, which is exactly why its visibility must not
+    // be read as its state. A stylesheet the page cannot read (cross-origin,
+    // no CORS) is not evidence either way and is skipped.
+    const hiddenByAMatchingRule = (element) => {
+      const hides = (style) => style.getPropertyValue("display") === "none"
+        || style.getPropertyValue("visibility") === "hidden"
+        || Number.parseFloat(style.getPropertyValue("opacity") || "1") <= 0.5;
+      const walk = (rules) => {
+        for (const rule of rules) {
+          if (rule.cssRules && walk(Array.from(rule.cssRules))) return true;
+          if (!rule.selectorText || !rule.style || !hides(rule.style)) continue;
+          try {
+            // Pseudo-element selectors throw here; they are not this family.
+            if (element.matches(rule.selectorText)) return true;
+          } catch {
+            // unsupported selector: no evidence
+          }
+        }
+        return false;
+      };
+      for (const sheet of Array.from(document.styleSheets)) {
+        let rules;
+        try {
+          rules = Array.from(sheet.cssRules || []);
+        } catch {
+          continue;
+        }
+        if (walk(rules)) return true;
+      }
+      return false;
+    };
+
+    const hasContent = (value) => Boolean(value) && !["none", "normal", '""', "''"].includes(value);
+
+    // The positive signals, in the order that settles which vocabulary the
+    // marker speaks. Returns null when a rendered marker carries none.
+    const checkedSignal = (marker) => {
+      const style = getComputedStyle(marker);
+      const after = getComputedStyle(marker, "::after");
+      // A marker with pseudo-element content belongs to the pseudo family
+      // whatever else is true of it, and its state is that pseudo-element's
+      // rendering — never the box's.
+      if (hasContent(after.content)) {
+        return {
+          signal: "pseudo",
+          checked: after.display !== "none"
+            && after.visibility !== "hidden"
+            && Number.parseFloat(after.opacity || "1") > 0.5,
+        };
+      }
+      if (/check|\u2713/.test(marker.textContent || "")) return { signal: "glyph", checked: true };
+      if (style.backgroundColor === "rgb(45, 148, 127)") return { signal: "fill", checked: true };
+      if (hiddenByAMatchingRule(marker)) return { signal: "display_toggled", checked: true };
+      return null;
+    };
+
     // Families in order. A rendered candidate wins outright; otherwise the
     // first eligible candidate is kept so an off toggle still reports a marker
     // (which then correctly reads unchecked) rather than reporting none.
@@ -115,26 +193,38 @@ export function orderBumpEvidenceScript() {
         && rendered(marker)
         && Boolean(markerContainer)
         && rendered(markerContainer);
-      // The marker is the tick, and the tick's rendering is the state.
-      const markerChecked = markerVisible;
+      // A hidden marker is unchecked in every family, so it needs no signal.
+      // A rendered one is read for a positive signal, and a rendered marker
+      // with none is unresolved rather than checked.
+      const signal = marker && markerVisible ? checkedSignal(marker) : null;
+      const markerSignal = marker ? (markerVisible ? signal?.signal || null : "not_rendered") : null;
+      const markerChecked = Boolean(markerVisible && signal?.checked);
+      // Unresolved: the marker exists and renders, but nothing on it says
+      // which state it is in. Read like an absent marker, never as a
+      // disagreement.
+      const markerReadable = Boolean(marker) && (!markerVisible || Boolean(signal));
       const active = toggle.classList.contains("next-active")
         || toggle.classList.contains("next-in-cart")
         || toggle.classList.contains("next-selected")
         || toggle.getAttribute("aria-pressed") === "true";
       const inputChecked = input ? input.checked : null;
       const inputAgrees = inputChecked === null || inputChecked === active;
-      const markerAgrees = !marker || markerChecked === active;
+      const markerAgrees = !markerReadable || markerChecked === active;
       return {
         index,
         packageId: toggle.getAttribute("data-next-package-id") || null,
         active,
         inputChecked,
-        markerResolved: Boolean(marker),
+        markerResolved: markerReadable,
         // Which family matched and what it resolved to, so an operator reading
         // a misaligned verdict can see whether the harness found the right
         // element before concluding the page is wrong.
         markerFamily: resolved?.family || null,
         markerTag: marker ? marker.tagName.toLowerCase() : null,
+        // Which state vocabulary the marker was read through: "pseudo",
+        // "glyph", "fill", "display_toggled", "not_rendered", or null when the
+        // marker renders but says nothing.
+        markerSignal,
         markerChecked,
         inputAgrees,
         markerAgrees,

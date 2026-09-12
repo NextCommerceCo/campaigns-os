@@ -36,6 +36,22 @@
      aria-hidden and it is NOT a state marker — its rendering is the same
      whether the toggle is on or off. */
   .bump__switch { display: inline-block; width: 32px; height: 18px; background: #ddd; }
+
+  /* A pseudo-element family: the box renders in both states and the tick lives
+     in its ::after, revealed by the card's state class. The box's own
+     visibility says nothing about the state. */
+  .bump-check {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #9b9b9b;
+  }
+  .bump-check::after {
+    content: "\2713";
+    display: block;
+    opacity: 0;
+  }
+  [data-next-toggle-card].next-in-cart .bump-check::after { opacity: 1; }
 </style>
 </head>
 <body>
@@ -80,6 +96,26 @@
   <div class="bump-card bump-card--switch next-in-cart" data-next-toggle-card data-next-package-id="6" id="bump-switch">
     <span class="bump__title">Add-on offer C</span>
     <span class="bump__switch" aria-hidden="true"><span class="bump__switch-slider"></span></span>
+  </div>
+</div>
+
+<!-- 4. Declined bump in the pseudo-element family. The box renders; only its
+     ::after is hidden. Reading the box's visibility as the state would fail a
+     correctly declined bump. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="7" id="bump-pseudo-inactive">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1">
+    <span class="bump-check"></span>
+    <div class="bump__title">Add-on offer D</div>
+  </div>
+</div>
+
+<!-- 5. The same family, accepted: the ::after is revealed. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="8" id="bump-pseudo-active">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
+    <span class="bump-check"></span>
+    <div class="bump__title">Add-on offer E</div>
   </div>
 </div>
 

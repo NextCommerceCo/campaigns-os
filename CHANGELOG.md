@@ -22,17 +22,30 @@ Notable supported-surface changes are recorded here.
   (`.bump-check`, `[data-next-toggle-check]`, `[os-component="check"]`,
   `.checkbox__icon`), tried in order so a generic match cannot outrank a
   specific one by appearing earlier in the document; form controls and
-  `[hidden]` subtrees can never be a marker. The state signal is the marker's
-  own rendering, which is the mechanism the shared checkout CSS uses
+  `[hidden]` subtrees can never be a marker.
+
+  A rendered marker is then read for a positive state signal, and the signals
+  are alternatives, because the families express state differently. A marker
+  whose `::after` carries content belongs to the pseudo-element family and its
+  state is whether that pseudo-element renders — never whether its box does,
+  since the box renders in both states. Otherwise a check glyph in the marker,
+  or the accepted fill colour, reads as checked, as before. New alongside
+  those: a marker that the page's own CSS hides when unchecked
   (`[data-next-toggle-card] [os-component="check"] { display: none }`, restored
-  to `display: flex` on the active or in-cart card) — it replaces the
-  `::after`, check-glyph and hard-coded fill-colour proxies for it. A toggle
-  that expresses its state some other way (a tick that is recoloured rather
-  than shown and hidden, or a switch slider) resolves no marker and is read
-  from its input and active state alone, rather than being reported as a
-  disagreement. The verdict payload now records `markerResolved`,
-  `markerFamily` and `markerTag` so an operator reading a misaligned toggle can
-  see which element the harness picked.
+  to `display: flex` on the active or in-cart card) *is* the tick, so its own
+  rendering is the state — and that is settled by testing the page's style
+  rules against the element, not assumed from the family name, so a persistent
+  box that nothing hides can never be read that way.
+
+  A rendered marker carrying no signal at all is reported as unresolved rather
+  than guessed at, and read like an absent marker: the toggle falls back to its
+  input and active state instead of being reported as a disagreement. The same
+  applies to a toggle with no marker vocabulary, such as a switch variant whose
+  only `aria-hidden` node is its always-rendered slider. The verdict payload
+  now records `markerResolved`, `markerFamily`, `markerTag` and `markerSignal`
+  (`pseudo`, `glyph`, `fill`, `display_toggled`, `not_rendered`, or null) so an
+  operator reading a misaligned toggle can see which element the harness picked
+  and how it read it.
 
   The probe moves to `src/qa-order-bump.mjs` as an `evaluate()` body, the
   shape `qa-cart-entry.mjs` already uses, so the real-browser proof over
