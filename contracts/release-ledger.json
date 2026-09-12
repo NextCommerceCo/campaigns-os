@@ -1848,8 +1848,35 @@
       "entry_sha256": "878035808ae442f6141fca08e0b2071b082e68979c5199b79b032e6d2a9053c2"
     },
     {
-      "id": "RL-0042",
+      "id": "RL-0038",
       "sequence": 40,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.10",
+      "changelog_sha256": "ba6be1f71e255f5e05e673306cba1fbbbfff7f0296c077a9f6b00b2a88c77370",
+      "agent_impact": "The run-record closeout command qa run prints as \"Required next\" carries --no-remit whenever the attempt does not end the run session - a BLOCKED verdict, or any disposition this version does not recognise - and says why. Such an attempt keeps the run session open, so an agent executing the printed command verbatim no longer spends the session run_id on the interim record; the session close (the later ready auto-end, or run end) is then the first and only POST for that id and lands remit_state ok instead of failed. A session-ending verdict is unchanged: it auto-ends the session in the same process, before the printed command can run, so the command mints its own run_id and remits, exactly as it does with no session. An agent that pattern-matches the closeout command string must accept an optional --no-remit between --qa-verdict and --json. Separately, an auto-end whose own remit does not close now says so on stderr and names the local record to keep; it does not print a re-send command, because run-record --run-id reassembles from current disk state rather than reloading the written record, and a session s QA attempt references are gone once the session is cleared - on a run repaired across several attempts that command replaces the stored record with a thinner one and sends that. The same caveat is now stated beside the run_record_remit_recovery action an agent may already be following. Re-sending a persisted record is not implemented. Remit itself is unchanged on the wire - the docs that called the endpoint an upsert now state that it keeps one record per run_id and refuses a repeat POST for a stored id with 409, so retrying a send that failed is safe and re-sending one that succeeded is not. Which dispositions end a session is one exported set, SESSION_ENDING_DISPOSITIONS, read by both the auto-end and the closeout it prints; membership is enumerated rather than excluded, so a disposition from a newer or foreign verdict keeps the session open on both sides instead of leaving them to disagree over who owns the run_id.",
+      "compatibility": "compatible",
+      "migration": "none. Read the closeout command from next_actions rather than reconstructing it, and treat --no-remit as expected whenever the attempt did not end the session. Do not treat run-record --run-id as a re-send of a stored record: for a multi-attempt run, prefer the local record file until reload-and-resend exists.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "qa run receives the CLI ambient run session it already resolved, so the closeout command it prints is built against the same session whose run_id the close will remit under; whenever the attempt does not end that session - blocked, or a disposition this version does not recognise - the command is emitted with --no-remit, the auto-end reading the same exported set. Values interpolated into the auto-end stderr notice are flattened to one line first, so a path or run id carrying a newline or an ANSI escape cannot split or forge the operator s only remit-failure signal. An auto-end whose remit did not close now reports that and names the record to keep, rather than advertising a reassembling run-record --run-id as a recovery."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "States that the remit endpoint keeps one record per run_id and refuses a repeat POST for a stored id with 409 rather than upserting; records that the closeout printed for an attempt which does not end the session carries --no-remit because the session close owns that ids one accepted send, that a terminal verdict auto-ends first and so remits normally, and that the run_record_remit_recovery command reassembles rather than reloads, so it thins a multi-attempt record."
+        }
+      ],
+      "entry_sha256": "392d6d1cd2e36d659d941023b49f26da3757941792c2c4c94b2580f6a3c2652b"
+    },
+    {
+      "id": "RL-0042",
+      "sequence": 41,
       "date": "2026-09-12",
       "kind": "release",
       "surface_version": null,
@@ -1866,7 +1893,7 @@
           "summary": "Adds \"Template-stock pages: the family decides\". A family publishing complete Template Reference proof (today apollo) has a supported intake path — declare the template-derived pages out of source scope via a per-page skip_reason manifest entry or build_scope.mode \"partial\", and synthesis emits template_baseline coverage — documented together with its partial-build limits (completed_partial, declared_out_of_scope, previewable mapped routes only, checkout launch and test-order proof blocked). Reserves the no-operator-channel guidance for families with no applicable template proof, where the page is build-stage work for next-campaigns-build, and warns against attesting a capture of stock template output in either case."
         }
       ],
-      "entry_sha256": "71da411b272ac79ba3dc06ef8e448652786487613ba9ccfa596164fc37b2d069"
+      "entry_sha256": "db2529d19b3bda8a372473f657ab470180804a7e12a5059dad1dae5acbefa984"
     }
   ]
 }

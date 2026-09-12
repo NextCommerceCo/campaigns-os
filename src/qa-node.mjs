@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
-import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { createVerdict, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
@@ -169,7 +169,7 @@ Options:
   --analytics-hosts <h1,h2,...>   Extra third-party host patterns to intercept for tag-fire capture (comma-separated).
 `;
 
-export async function runQaCli(args) {
+export async function runQaCli(args, { ambient = null } = {}) {
   const subcommand = args._[1] || "help";
   if (subcommand === "help" || args.help) {
     console.log(HELP);
@@ -183,7 +183,7 @@ export async function runQaCli(args) {
     return result;
   }
   if (subcommand === "run") {
-    const result = await runQa(args);
+    const result = await runQa(args, { runSessionActive: Boolean(ambient?.session?.run_id) });
     output(result, args);
     process.exitCode = result.verdict.disposition === "blocked" ? 4 : 0;
     return result;
@@ -1426,17 +1426,42 @@ function resolveTargetBaseDir(packet, packetPath) {
 // Packetless modes (qa --site, parity fixtures) get no action: run-record
 // requires a Build Packet, and a required-but-impossible command is worse
 // than none (Kilo review, PR #176). Paths are shell-quoted when needed.
-export function buildQaCloseoutActions({ packetPath = null, localPath = null } = {}) {
+export function buildQaCloseoutActions({ packetPath = null, localPath = null, runSessionActive = false, disposition = null } = {}) {
   if (!packetPath) return [];
   const verdictRef = localPath ? ` --qa-verdict ${shellToken(localPath)}` : "";
+  // Will the session STILL hold this run_id by the time the operator runs the
+  // printed command? Only when this attempt does not end the session — a
+  // blocked one, which stays open for repair, or any disposition this version
+  // does not recognise. Both sides read SESSION_ENDING_DISPOSITIONS, so the
+  // answer here and the auto-end's own answer cannot drift apart.
+  // A session that stays open closes later — the eventual ready auto-end, or
+  // `run end` — assembling and remitting under this same run_id. Remit is a plain POST with no replace verb
+  // and the receiver refuses a second POST for a stored run_id with 409, so a
+  // command printed without `--no-remit` spends the id on the interim record
+  // and leaves the session's final record — the one carrying every QA attempt
+  // and the aggregated lifecycle — refused at the door.
+  //
+  // A session-ending disposition auto-ends the session IN THIS SAME PROCESS, before
+  // the operator can type anything: the record is already assembled and the
+  // session cleared, so the printed command mints its own run_id and there is
+  // nothing to collide with. Printing `--no-remit` there would be worse than
+  // useless — it would write a local-only record that never reaches the
+  // receiver, and if the auto-end's own remit had failed, that newer closed
+  // record would bury the failure the operator still has to recover from. The
+  // auto-end prints that recovery command itself; see autoEndCloseoutNotice.
+  const sessionRetainsRunId = runSessionActive && !SESSION_ENDING_DISPOSITIONS.has(disposition);
+  const remitRef = sessionRetainsRunId ? " --no-remit" : "";
+  const sessionNote = sessionRetainsRunId
+    ? " This attempt does not end the run session, so the session stays open and this writes the local record only (--no-remit): it shares the session's run id, and the session's own close is what remits that id once."
+    : "";
   return [
     {
       id: "run_record_closeout",
       kind: "command",
       required: true,
       stage: "qa",
-      command: `campaigns-os run-record --packet ${shellToken(packetPath)}${verdictRef} --json`,
-      description: "Assemble the durable Run Record closeout for this QA workflow, including blocked outcomes. If an active session remains open after a blocked attempt, repair and re-test first (or use run end to close manually); a ready attempt auto-assembles one record that references every attempt.",
+      command: `campaigns-os run-record --packet ${shellToken(packetPath)}${verdictRef}${remitRef} --json`,
+      description: `Assemble the durable Run Record closeout for this QA workflow, including blocked outcomes. If an active session remains open after a blocked attempt, repair and re-test first (or use run end to close manually); a ready attempt auto-assembles one record that references every attempt.${sessionNote}`,
     },
   ];
 }
@@ -1667,15 +1692,18 @@ async function runParityQa(args) {
   });
 }
 
-async function runQa(args) {
+async function runQa(args, options = {}) {
   // Fail-fast before anything resolves or launches. The authoritative check
   // lives on the creation budget itself, which every browser path builds.
   validatedOrderCreationLimit(args);
   const resolved = await resolveQaInputs(args);
-  return runResolvedQa(args, resolved);
+  return runResolvedQa(args, resolved, options);
 }
 
-async function runResolvedQa(args, resolved) {
+// `runSessionActive` is threaded in from the CLI's single ambient-session read
+// rather than re-discovered here, so the closeout command this run prints and
+// the run_id the session will close under come from the same observation.
+async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) {
   const startedAt = new Date().toISOString();
   const runId = generateRunId();
   const gate = resolved.themeGate;
@@ -1692,6 +1720,7 @@ async function runResolvedQa(args, resolved) {
       assertions: checkpointBlockedAssertions(checkpointGates, polishGate, gate),
       testOrders: [],
       commercial: unavailableCommercialReport("checkpoint_gate_blocked"),
+      runSessionActive,
     });
   }
   const checkpointAssertions = checkpointGates.map(checkpointGateAssertion);
@@ -1704,6 +1733,7 @@ async function runResolvedQa(args, resolved) {
       assertions: [...checkpointAssertions, ...polishBlockedAssertions(polishGate, gate).filter((item) => item.family !== "api-metadata")],
       testOrders: [],
       commercial: unavailableCommercialReport("polish_gate_blocked"),
+      runSessionActive,
     });
   }
   // Blocked theme gate refuses the whole run: the verdict carries the gate
@@ -1718,6 +1748,7 @@ async function runResolvedQa(args, resolved) {
       assertions: [...checkpointAssertions, ...themeBlockedAssertions(gate, polishGate).filter((item) => item.family !== "api-metadata")],
       testOrders: [],
       commercial: unavailableCommercialReport("theme_gate_blocked"),
+      runSessionActive,
     });
   }
 
@@ -1780,6 +1811,7 @@ async function runResolvedQa(args, resolved) {
     assertions,
     testOrders,
     commercial: commercialResult.commercial,
+    runSessionActive,
   });
 }
 
@@ -1834,7 +1866,7 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
   return result.orders;
 }
 
-async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null }) {
+async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false }) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
   const testedUrls = deriveTestedUrlsFromAssertions(assertions, pageUrls);
@@ -1917,7 +1949,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
     commercial: verdict.commercial || null,
-    next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath }),
+    next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath, runSessionActive, disposition: verdict.disposition }),
     verdict,
   };
 }
