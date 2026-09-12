@@ -31,6 +31,7 @@ import {
   sdkCartSnapshotScript,
   summarizeSelectionSurface,
 } from "./qa-cart-entry.mjs";
+import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
 import {
   demoAssetConfig,
   forbiddenComputedColors,
@@ -1134,7 +1135,7 @@ async function checkoutPaymentSurfaceAssertions(browserPage, page) {
       page,
       status: bumpOk ? STATUS.PASS : STATUS.FAIL,
       severity: bumpOk ? undefined : SEVERITY.WARN,
-      expected: "order bump visible checkbox state agrees with active/in-cart and hidden input state",
+      expected: "order bump rendered state marker and checkbox input agree with the toggle active/in-cart state",
       actual: `${bump.toggles.filter((toggle) => toggle.statesAgree).length}/${bump.toggles.length} bump toggle(s) aligned`,
       evidence: bump,
     }));
@@ -1379,52 +1380,9 @@ async function checkoutBundleSelectorEvidence(browserPage) {
 }
 
 async function checkoutOrderBumpEvidence(browserPage) {
-  return browserPage.evaluate(() => ({
-    toggles: Array.from(document.querySelectorAll("[data-next-toggle-card], [data-next-bump]")).filter((toggle) => {
-      const rect = toggle.getBoundingClientRect();
-      const style = getComputedStyle(toggle);
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-    }).map((toggle, index) => {
-      const input = toggle.querySelector('input[type="checkbox"]');
-      const marker = toggle.querySelector(".bump-check, [data-next-toggle-check], .checkbox__icon, [os-component='check'], [aria-hidden]");
-      const markerAfter = marker ? getComputedStyle(marker, "::after") : null;
-      const markerStyle = marker ? getComputedStyle(marker) : null;
-      const markerContainer = marker?.closest(".checkbox__icon, .bump-check, [data-next-toggle-check], [os-component='check']") || marker;
-      const markerContainerStyle = markerContainer ? getComputedStyle(markerContainer) : null;
-      const markerVisible = Boolean(marker) && [markerStyle, markerContainerStyle].every((style) => (
-        style
-        && style.display !== "none"
-        && style.visibility !== "hidden"
-        && Number(style.opacity || 1) > 0.5
-      ));
-      const markerAfterVisible = markerVisible
-        && markerAfter
-        && !["none", "normal", '""'].includes(markerAfter.content)
-        && Number(markerAfter.opacity || 0) > 0.5;
-      const markerChecked = Boolean(marker) && (
-        markerAfterVisible
-        || (markerVisible && /check|✓/.test(marker?.textContent || ""))
-        || (markerVisible && markerStyle?.backgroundColor === "rgb(45, 148, 127)")
-      );
-      const active = toggle.classList.contains("next-active")
-        || toggle.classList.contains("next-in-cart")
-        || toggle.classList.contains("next-selected")
-        || toggle.getAttribute("aria-pressed") === "true";
-      const inputChecked = input ? input.checked : null;
-      const inputAgrees = inputChecked === null || inputChecked === active;
-      const markerAgrees = !marker || markerChecked === active;
-      return {
-        index,
-        packageId: toggle.getAttribute("data-next-package-id") || null,
-        active,
-        inputChecked,
-        markerChecked,
-        inputAgrees,
-        markerAgrees,
-        statesAgree: inputAgrees && markerAgrees,
-      };
-    }),
-  })).catch(() => ({ toggles: [] }));
+  return browserPage
+    .evaluate(orderBumpEvidenceScript(), ORDER_BUMP_PROBE_INPUT)
+    .catch(() => ({ toggles: [] }));
 }
 
 // --- Declared checkout offer surfaces (exit_intent / promo_code_input) ---
