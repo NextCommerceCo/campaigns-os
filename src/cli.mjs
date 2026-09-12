@@ -7632,24 +7632,77 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
 // browser runner asks — `contractHasPaletteResidueChecks` in
 // template-brand-contract.mjs — rather than re-deriving it here.
 const THEME_STARTER_PALETTE_ACTION_ID = "theme_gate.starter_palette_blocks_qa";
+const BRAND_CONTRACT_DEFECT_ACTION_ID = "theme_gate.brand_contract_unreadable";
 const THEME_STARTER_PALETTE_STAGES = new Set(["build", "polish", "deploy", "qa"]);
 
-function familyHasPaletteResidueChecks(packet) {
+/**
+ * What the packet's template family means for palette residue, as three
+ * distinct answers rather than one boolean.
+ *
+ * The distinction that matters is between a family that HAS no contract and a
+ * family whose contract is BROKEN. `resolveTemplateBrandContract` separates
+ * them for us: it returns null when nothing resolved, and throws with a `code`
+ * (`parse_error`, `schema_mismatch`, `extends_cycle`, `extends_missing_parent`,
+ * `family_mismatch`) when a contract exists but is defective. Collapsing the
+ * throw into "no contract" hid a real defect behind silence — QA rejects such a
+ * contract outright with a `template-brand-contract:<family>` blocker, and the
+ * operator would have met that for the first time at `qa run`, which is the
+ * whole failure this lane exists to stop.
+ *
+ * Null is not a defect: it is "resolved to no contract", and it covers the
+ * unknown/uncertified family AND a privately allowlisted family whose fragment
+ * carries no `brandContract` at all. Both mean QA emits no residue rows.
+ *
+ * `next` never throws over this. A defect becomes its own advisory, in the same
+ * shape, naming the family and the error code.
+ */
+function familyPaletteResidueState(packet) {
   const family = optionalString(packet?.assembly?.template_family);
-  if (!family) return false;
+  if (!family) return { state: "no_family", family: null };
+  let contract = null;
   try {
-    return contractHasPaletteResidueChecks(resolveTemplateBrandContract(family));
-  } catch {
-    // An unloadable contract is its own QA blocker (template-brand-contract
-    // fails the run by name), and it tells us nothing about the palette. Stay
-    // silent rather than guess.
-    return false;
+    contract = resolveTemplateBrandContract(family);
+  } catch (error) {
+    return {
+      state: "defect",
+      family,
+      code: optionalString(error?.code) || "unknown",
+      detail: error instanceof Error ? error.message : String(error),
+    };
   }
+  // null is "resolved to no contract", never "something went wrong": no public
+  // contract file AND no private fragment carrying a `brandContract` — which
+  // includes a privately allowlisted family whose fragment declares a catalog
+  // entry but no brand contract, not only an unknown or uncertified family.
+  // Either way QA emits no residue rows for it. A defect throws instead, and is
+  // handled above; the two must not be collapsed.
+  if (!contract) return { state: "no_contract", family };
+  return { state: contractHasPaletteResidueChecks(contract) ? "inspected" : "no_palette_checks", family };
 }
 
-function themeStarterPaletteAdvisory(themeGate, packetPath, packet) {
+// A defective contract is not a palette problem and does not wait on the theme
+// gate: QA rejects the contract itself, for a family with brand tokens as
+// readily as one without. So this advisory is emitted on the contract state
+// alone — gating it on `nothing_generatable` would hide it from precisely the
+// campaigns that did generate a brand layer.
+function brandContractDefectAdvisory(residueState) {
+  if (residueState.state !== "defect") return null;
+  return {
+    id: BRAND_CONTRACT_DEFECT_ACTION_ID,
+    kind: "manual",
+    command: null,
+    description: `The template brand contract for family "${residueState.family}" exists but could not be read `
+      + `(${residueState.code}): ${residueState.detail} Browser QA rejects an unreadable contract outright — it records `
+      + `template-brand-contract:${residueState.family} as a blocker — so this will stop \`qa run\` regardless of the theme `
+      + "gate, and no waiver clears it. Repair contracts/template-brand-contract."
+      + `${residueState.family}.v0.json (or the private fragment supplying it) before QA. Until it is readable, whether this `
+      + "campaign also ships the starter palette on its commerce pages cannot be determined.",
+  };
+}
+
+function themeStarterPaletteAdvisory(themeGate, packetPath, residueState) {
   if (themeGate?.code !== "theme_gate.nothing_generatable") return null;
-  if (!familyHasPaletteResidueChecks(packet)) return null;
+  if (residueState.state !== "inspected") return null;
   const packetArg = shellToken(packetPath || "<packet>");
   return {
     id: THEME_STARTER_PALETTE_ACTION_ID,
@@ -7802,21 +7855,20 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after recording valid Polish evidence.");
     return actions;
   }
-  // Ahead of every stage that still has QA in front of it, say that a
-  // token-less build will block there and name the two lanes that clear it.
-  // Placed before the stage actions so it is read before `qa_run` rather than
-  // after it. The blocked-gate branches above return early and keep owning
-  // their own action lists: a blocked gate is a different code, and a blocked
-  // polish gate is a stop-and-fix state whose own actions come first — the
-  // advisory reappears on the next `next` once that gate clears.
-  const starterPaletteAdvisory = themeStarterPaletteAdvisory(themeGate, packetPath, packet);
-  if (starterPaletteAdvisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
-    push(
-      starterPaletteAdvisory.id,
-      starterPaletteAdvisory.kind,
-      starterPaletteAdvisory.command,
-      starterPaletteAdvisory.description,
-    );
+  // Ahead of every stage that still has QA in front of it, say what QA will do
+  // about the brand layer: that a token-less build blocks on the starter
+  // palette (and the two lanes that clear it), or that the family's brand
+  // contract cannot be read at all. Both are emitted before the stage actions,
+  // so the advisory precedes whatever stage-specific command the branch emits.
+  // The blocked-gate branches above return early and keep owning their own
+  // action lists: a blocked gate is a different code, and a blocked polish gate
+  // is a stop-and-fix state whose own actions come first — these reappear on
+  // the next `next` once that gate clears.
+  const residueState = familyPaletteResidueState(packet);
+  for (const advisory of [brandContractDefectAdvisory(residueState), themeStarterPaletteAdvisory(themeGate, packetPath, residueState)]) {
+    if (advisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
+      push(advisory.id, advisory.kind, advisory.command, advisory.description);
+    }
   }
   if (result.stage === "setup") {
     push("setup_skill", "skill", "next-campaigns-os-setup", "Prepare the target page-kit structure and agent context, then record stages.setup in the assembly report.");
@@ -10229,6 +10281,11 @@ export function nextTinyPromptLines(result) {
   // A passing-but-token-less theme gate is the case that used to say nothing
   // at all until QA blocked. It is not a blocker here, so it does not take the
   // prompt over — it is printed alongside whatever else this stage says.
+  const contractDefect = (result.next_actions || []).find((action) => action?.id === BRAND_CONTRACT_DEFECT_ACTION_ID);
+  if (contractDefect) {
+    lines.push("", "This family's template brand contract cannot be read, and browser QA will REJECT it:");
+    lines.push(`  - ${contractDefect.description}`);
+  }
   const starterPalette = (result.next_actions || []).find((action) => action?.id === THEME_STARTER_PALETTE_ACTION_ID);
   if (starterPalette) {
     lines.push("", "Theme gate passes with no brand layer, and browser QA will BLOCK on the starter palette:");

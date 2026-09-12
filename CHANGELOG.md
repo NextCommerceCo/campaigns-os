@@ -30,6 +30,16 @@ Notable supported-surface changes are recorded here.
   `undecided` family, or any family the catalog carries no contract for, emits
   no `template-residue:*:style:*` rows at all, so those campaigns are not told
   to clear a block that will never happen.
+- A second non-required action, `theme_gate.brand_contract_unreadable`, at the
+  same four stages, when the family's brand contract exists but fails to load
+  (`parse_error`, `schema_mismatch`, `extends_cycle`,
+  `extends_missing_parent`, `family_mismatch`). It names the family and the
+  error code and says browser QA rejects such a contract outright as a
+  `template-brand-contract:<family>` blocker that no waiver clears. A defect is
+  distinct from a family that resolves to no contract, and it is reported
+  regardless of the theme gate's outcome, because QA rejects the contract
+  whether or not the campaign has brand tokens. `next` still never throws over
+  a defective contract.
 ## [1.25.0+agent.9] - 2026-09-12
 
 ### Fixed

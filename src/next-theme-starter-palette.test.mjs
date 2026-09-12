@@ -19,6 +19,9 @@
 // this replaces.
 
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { buildNextActions, nextTinyPromptLines } from "./cli.mjs";
@@ -26,6 +29,7 @@ import { resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { contractHasPaletteResidueChecks } from "./template-brand-contract.mjs";
 
 const ADVISORY_ID = "theme_gate.starter_palette_blocks_qa";
+const DEFECT_ID = "theme_gate.brand_contract_unreadable";
 const PACKET = "/campaigns/demo/campaign-runtime.build.json";
 
 // A certified family: the catalog carries contracts/template-brand-contract.olympus.v0.json,
@@ -147,6 +151,126 @@ test("the advisory and the browser runner share one palette-residue predicate", 
   assert.equal(contractHasPaletteResidueChecks({ qa_inspection: { forbidden_computed_colors: [{ token: "--brand", rgb: "rgb(10, 38, 92)" }], computed_style_checks: [{ id: "cta", selector: ".b", page_types: ["checkout"] }] } }), true);
   // A page type residue inspection never runs against is not a reason to warn.
   assert.equal(contractHasPaletteResidueChecks({ qa_inspection: { forbidden_computed_colors: [{ token: "--brand", rgb: "rgb(10, 38, 92)" }], computed_style_checks: [{ id: "cta", selector: ".b", page_types: ["landing"] }] } }), false);
+});
+
+// A contract that EXISTS but cannot be read is not the same as no contract.
+// `resolveTemplateBrandContract` separates them — null for nothing resolved, a
+// throw carrying a `code` for a defect — and swallowing the throw would hand a
+// corrupted-contract operator silence here and a `template-brand-contract:*`
+// blocker at `qa run`, which is the exact shape of failure this lane exists to
+// stop. The fixtures below build a real defective contract through the private
+// allowlist rather than stubbing the resolver, so the error code is the
+// loader's own.
+
+function withTempDir(run) {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-next-palette-"));
+  try {
+    return run(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function withFixtureFamily(dir, family, brandContract, run) {
+  const sourcesRoot = join(dir, "root");
+  writeFileSync(
+    join(dir, "private-template-sources.json"),
+    JSON.stringify({
+      schema_version: "private-template-source/v0",
+      sources: { [family]: { repo: `some-org/${family}-templates`, contract_path: "contracts/family.json" } },
+    }),
+  );
+  const fragmentPath = join(sourcesRoot, `${family}-templates`, "contracts", "family.json");
+  mkdirSync(join(fragmentPath, ".."), { recursive: true });
+  writeFileSync(fragmentPath, JSON.stringify({
+    schema_version: "private-template-source-fragment/v0",
+    family,
+    catalog_family: {},
+    brand_contract: brandContract,
+  }));
+  const prevPath = process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+  const prevRoot = process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+  process.env.PRIVATE_TEMPLATE_SOURCES_PATH = join(dir, "private-template-sources.json");
+  process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = sourcesRoot;
+  try {
+    return run();
+  } finally {
+    if (prevPath === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+    else process.env.PRIVATE_TEMPLATE_SOURCES_PATH = prevPath;
+    if (prevRoot === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+    else process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = prevRoot;
+  }
+}
+
+// An older-schema contract: exactly the case Kilo named, and the loader's
+// `schema_mismatch`.
+const STALE_SCHEMA_CONTRACT = {
+  schema_version: "template-brand-contract/v0-beta",
+  family: "fixturefam",
+  qa_inspection: {
+    forbidden_computed_colors: [{ token: "--brand--primary", rgb: "rgb(10, 38, 92)" }],
+    computed_style_checks: [{ id: "checkout_submit_button", selector: ".submit-button", page_types: ["checkout"] }],
+  },
+};
+
+test("a contract that exists but cannot be read gets its own advisory, naming the family and the error code", () => {
+  withTempDir((dir) => {
+    withFixtureFamily(dir, "fixturefam", STALE_SCHEMA_CONTRACT, () => {
+      // The defect is the loader's, not the test's.
+      assert.throws(() => resolveTemplateBrandContract("fixturefam"), (error) => error.code === "schema_mismatch");
+      for (const stage of ["build", "polish", "deploy", "qa"]) {
+        const actions = actionsFor(NOTHING_GENERATABLE, stage, packetFor("fixturefam"));
+        const defect = actions.find((action) => action.id === DEFECT_ID);
+        assert.ok(defect, `stage ${stage} must surface an unreadable brand contract`);
+        assert.match(defect.description, /fixturefam/);
+        assert.match(defect.description, /schema_mismatch/);
+        assert.match(defect.description, /template-brand-contract:fixturefam/);
+        assert.notEqual(defect.required, true);
+        assert.equal(defect.command, null);
+        // A defect is not a palette finding: whether the starter palette also
+        // ships cannot be known while the contract is unreadable.
+        assert.equal(actions.find((action) => action.id === ADVISORY_ID), undefined);
+      }
+    });
+  });
+});
+
+test("a contract defect is reported even when the campaign HAS brand tokens", () => {
+  // QA rejects the contract itself; it does not wait on the theme gate. Gating
+  // this on nothing_generatable would hide it from every campaign that did
+  // generate a brand layer.
+  withTempDir((dir) => {
+    withFixtureFamily(dir, "fixturefam", STALE_SCHEMA_CONTRACT, () => {
+      const actions = actionsFor(APPLIED, "qa", packetFor("fixturefam"));
+      assert.ok(actions.find((action) => action.id === DEFECT_ID));
+    });
+  });
+});
+
+test("`next` does not throw on a defective contract", () => {
+  withTempDir((dir) => {
+    withFixtureFamily(dir, "fixturefam", STALE_SCHEMA_CONTRACT, () => {
+      assert.doesNotThrow(() => actionsFor(NOTHING_GENERATABLE, "qa", packetFor("fixturefam")));
+    });
+  });
+});
+
+test("a readable contract raises no defect advisory", () => {
+  for (const family of [CERTIFIED_FAMILY, "custom"]) {
+    const actions = actionsFor(NOTHING_GENERATABLE, "qa", packetFor(family));
+    assert.equal(actions.find((action) => action.id === DEFECT_ID), undefined, `${family} must raise no contract defect`);
+  }
+});
+
+test("the human prompt carries the contract defect too", () => {
+  withTempDir((dir) => {
+    withFixtureFamily(dir, "fixturefam", STALE_SCHEMA_CONTRACT, () => {
+      const next_actions = actionsFor(NOTHING_GENERATABLE, "qa", packetFor("fixturefam"));
+      const text = nextTinyPromptLines({ stage: "qa", gates: [{ id: "theme_gate", status: "pass" }], next_actions }).join("\n");
+      assert.match(text, /template brand contract cannot be read/);
+      assert.match(text, /schema_mismatch/);
+    });
+  });
 });
 
 test("stages with no QA ahead of them do not carry the warning", () => {

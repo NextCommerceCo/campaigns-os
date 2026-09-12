@@ -148,9 +148,15 @@ export const RESIDUE_PAGE_TYPES = ["checkout", "select", "upsell", "downsell", "
  * this, not "does a contract exist".
  */
 export function paletteResidueStyleChecks(contract, pageType) {
+  if (!forbiddenComputedColors(contract).length) return [];
+  return styleChecksForPageType(contract, pageType);
+}
+
+// The selector half, split out so a caller asking about every page type
+// normalizes the forbidden-color list once instead of per type.
+function styleChecksForPageType(contract, pageType) {
   const type = String(pageType || "").toLowerCase();
   if (!contract || !RESIDUE_PAGE_TYPES.includes(type)) return [];
-  if (!forbiddenComputedColors(contract).length) return [];
   return (contract.qa_inspection?.computed_style_checks || [])
     .filter((check) => (check.page_types || []).includes(type));
 }
@@ -166,7 +172,11 @@ export function paletteResidueStyleChecks(contract, pageType) {
  * never happen, is worse than saying nothing.
  */
 export function contractHasPaletteResidueChecks(contract) {
-  return RESIDUE_PAGE_TYPES.some((pageType) => paletteResidueStyleChecks(contract, pageType).length > 0);
+  // Normalize the forbidden colors once for the whole sweep: they do not vary
+  // by page type, and normalizing a color list five times to answer one
+  // question is work nobody asked for.
+  if (!forbiddenComputedColors(contract).length) return false;
+  return RESIDUE_PAGE_TYPES.some((pageType) => styleChecksForPageType(contract, pageType).length > 0);
 }
 
 function escapeContractRegExp(value) {
