@@ -235,6 +235,69 @@ browserTest("no-entry-resolvable: no selector on checkout and no entry page is a
 
 // Keep the topology helper honest: the runner reads entry from the same
 // resolved topology the rest of the ladder uses.
+// campaigns-os#321: the primary-CTA recogniser and the ladder's entry step
+// read the same cart-entry vocabulary, so the SDK's own add-to-cart button
+// (data-next-url, no href) is a route CTA — and a plain forcePackageId link
+// still is.
+browserTest("primary-cta: the SDK add-to-cart button and the forcePackageId link are both recognised as the route CTA", async () => {
+  const { inspectPrimaryCta } = __qaBrowserTestHooks;
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  try {
+    for (const [fixture, expectedText] of [["landing-entry", "Claim your offer"], ["landing-link-entry", "Claim your 60% discount"]]) {
+      const server = await serveFixture(fixture);
+      try {
+        const page = await browser.newPage();
+        await page.goto(`${server.base}/x/landing/`, { waitUntil: "load" });
+        const evidence = await inspectPrimaryCta(page, `${server.base}/x/checkout/`);
+        // Route recognition is what #321 is about; the unstyled fixture
+        // anchor legitimately trips the size rule, so assert on the route
+        // candidate rather than the overall verdict.
+        assert.notEqual(evidence.reason, "missing_route_cta", `${fixture}: ${JSON.stringify(evidence.candidates)}`);
+        assert.equal(evidence.primary?.route_matches, true, fixture);
+        assert.equal(evidence.primary.text, expectedText, fixture);
+        assert.equal(new URL(evidence.primary.href).pathname, "/x/checkout/", fixture);
+        await page.close();
+      } finally {
+        await server.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+// The two ways the shared rule can go wrong: honouring data-next-url on an
+// element the SDK does not drive, and losing the browser's own anchor
+// resolution (a <base href>) by re-parsing href attributes.
+browserTest("primary-cta: data-next-url counts only on SDK controls, and a relative anchor resolves against <base href>", async () => {
+  const { inspectPrimaryCta } = __qaBrowserTestHooks;
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  const server = await serveFixture("primary-cta-conflicts");
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${server.base}/x/landing/`, { waitUntil: "load" });
+    const evidence = await inspectPrimaryCta(page, `${server.base}/x/checkout/`);
+    const byText = Object.fromEntries(evidence.candidates.map((candidate) => [candidate.text, candidate]));
+    assert.equal(new URL(byText["Relative anchor to checkout"].href).pathname, "/x/checkout/", "native <base href> resolution");
+    assert.equal(byText["Relative anchor to checkout"].route_matches, true);
+    assert.equal(new URL(byText["Support (decoy data-next-url)"].href).pathname, "/support/", "a plain anchor's href wins over a decoy data-next-url");
+    assert.equal(byText["Support (decoy data-next-url)"].route_matches, false);
+    assert.equal(new URL(byText["SDK control with stray href"].href).pathname, "/x/checkout/", "an SDK control routes by data-next-url");
+    assert.equal(byText["SDK control with stray href"].route_matches, true);
+    assert.equal(byText["SDK control without data-next-url"].href, null, "an SDK control never navigates by href");
+    assert.equal(byText["SDK control without data-next-url"].route_matches, false);
+    assert.equal(new URL(byText["SDK control with origin-relative data-next-url"].href).pathname, "/checkout/", "data-next-url resolves against the origin, as the SDK does");
+    assert.equal(byText["SDK control with origin-relative data-next-url"].route_matches, false);
+    assert.equal(evidence.reason, "ok");
+    await page.close();
+  } finally {
+    await server.close();
+    await browser.close();
+  }
+});
+
 test("fixture topology resolves a checkout the runner can drive", () => {
   const plan = resolveTestOrderTopology(topologies("http://127.0.0.1:1")[0]);
   assert.equal(plan.checkout_url, "http://127.0.0.1:1/x/checkout/");

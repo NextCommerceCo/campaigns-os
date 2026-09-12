@@ -43,6 +43,17 @@ export const CART_ENTRY_CODES = Object.freeze({
 export const CART_ENTRY_CONTROL_SELECTOR =
   '[data-next-action="add-to-cart"], [data-next-checkout-action="add-to-cart"], [data-next-add-to-cart]';
 
+// The attribute an SDK cart-entry control (one matching
+// CART_ENTRY_CONTROL_SELECTOR) navigates by: the SDK adds the package and then
+// goes to `data-next-url` itself, so such a control carries no href. Only SDK
+// controls get this reading — on any other element `data-next-url` has no
+// navigation semantics and the href-shaped attributes stay authoritative
+// (campaigns-os#321: the primary-CTA recogniser used to read href-shaped
+// attributes only, so the SDK's own button on a landing page counted as "no
+// CTA to the next route" while a plain cart-bypassing <a href> passed). The
+// ladder's entry step and the primary-CTA assertion share this one rule.
+export const CART_ENTRY_ROUTE_ATTRIBUTE = "data-next-url";
+
 // Page types that, when they route into checkout, are preferred as the cart
 // entry. `select` is a real page type since #228; `product` is what the
 // shop-single-step landing declares; the rest are the entry-like types

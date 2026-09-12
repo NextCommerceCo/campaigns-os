@@ -18,6 +18,7 @@ import {
 import {
   CART_ENTRY_CODES,
   CART_ENTRY_CONTROL_SELECTOR,
+  CART_ENTRY_ROUTE_ATTRIBUTE,
   CART_ENTRY_STEP,
   assessCartBeforeSubmit,
   cartEmptyMessage,
@@ -842,16 +843,13 @@ function primaryCtaCheckEligible(page) {
   return !["checkout", "upsell", "downsell", "thankyou", "receipt"].includes(pageType);
 }
 
+// Candidate CTAs: anything clickable, plus every SDK cart-entry control (the
+// same locator set the ladder's entry step and advanceToCheckoutForm use).
+const PRIMARY_CTA_SELECTOR = ["a[href]", "button", "[role='button']", "[data-next-action]", "[data-next-checkout-action]", CART_ENTRY_CONTROL_SELECTOR].join(", ");
+
 async function inspectPrimaryCta(browserPage, expectedUrl) {
-  return browserPage.evaluate((routeUrl) => {
-    const CTA_SELECTOR = [
-      "a[href]",
-      "button",
-      "[role='button']",
-      "[data-next-action]",
-      "[data-next-checkout-action]",
-      "[data-next-add-to-cart]",
-    ].join(", ");
+  return browserPage.evaluate(({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute }) => {
+    const CTA_SELECTOR = ctaSelector;
 
     const trim = (value) => String(value || "").replace(/\s+/g, " ").trim();
     const compactPath = (value) => String(value || "").replace(/\/+$/, "") || "/";
@@ -918,7 +916,25 @@ async function inspectPrimaryCta(browserPage, expectedUrl) {
         .join("");
       return `${tag}${id}${classes}`;
     };
+    // The route a control leads to. An SDK cart-entry control navigates by
+    // data-next-url and nothing else: the SDK's click handler calls
+    // preventDefault() unconditionally, so its href never navigates, and it
+    // resolves the attribute against the origin (campaign-cart url-utils),
+    // not the document base. Without the attribute such a control adds to
+    // the cart and stays put — no route. Anywhere else data-next-url has no
+    // navigation semantics: the anchor's own resolved href (native, so a
+    // <base href> is honoured), then href-shaped attributes, then a wrapping
+    // form's action.
     const hrefFor = (element) => {
+      if (element.matches(cartEntrySelector)) {
+        const sdkRoute = String(element.getAttribute(cartEntryRouteAttribute) || "").trim();
+        if (!sdkRoute) return null;
+        try {
+          return new URL(sdkRoute, location.origin).href;
+        } catch {
+          return sdkRoute;
+        }
+      }
       if (element instanceof HTMLAnchorElement && element.href) return element.href;
       const attr = element.getAttribute("href")
         || element.getAttribute("data-href")
@@ -992,7 +1008,7 @@ async function inspectPrimaryCta(browserPage, expectedUrl) {
       primary,
       candidates: candidates.slice(0, 8),
     };
-  }, expectedUrl).catch((error) => ({
+  }, { routeUrl: expectedUrl, ctaSelector: PRIMARY_CTA_SELECTOR, cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR, cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE }).catch((error) => ({
     ok: false,
     reason: "inspection_error",
     expected_url: expectedUrl,
@@ -3978,7 +3994,7 @@ function round2(value) {
 
 async function advanceToCheckoutForm(page) {
   if (await hasVisibleCheckoutFields(page)) return;
-  const explicit = page.locator('[data-next-action="add-to-cart"], [data-next-checkout-action="add-to-cart"], [data-next-add-to-cart]').first();
+  const explicit = page.locator(CART_ENTRY_CONTROL_SELECTOR).first();
   if (await explicit.count().catch(() => 0)) {
     await explicit.click({ timeout: 8000 }).catch(() => {});
   } else {
@@ -6133,6 +6149,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   upsellActionStepFailures,
   commerceStructureAssertionFromEvidence,
   primaryCtaAssertionFromEvidence,
+  inspectPrimaryCta,
   isOrderUpsellsUrl,
   testEmail,
   testOrderPaths,
