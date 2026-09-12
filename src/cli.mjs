@@ -188,11 +188,7 @@ import {
   mergePolishPageLoadEvidence,
   planPolishCapture,
 } from "./polish-node.mjs";
-import {
-  evaluateHiddenEagerMediaCheckpoint,
-  HIDDEN_EAGER_MEDIA_SCOPE,
-  POLISH_CAPTURE_PROBLEM_CODES,
-} from "./polish-page-load.mjs";
+import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
 import { redactCaptureUrl } from "./polish-capture.mjs";
 import {
   appendCheckpointWaiver,
@@ -787,46 +783,38 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
   }
 }
 
+const PREPARE_MODES = Object.freeze({
+  start: { runDoctor: true, installContext: true },
+  build: { runDoctor: true, installContext: false },
+  "prepare-build": { runDoctor: false, installContext: false },
+});
+
 async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null, sessionHolder = null) {
   if (command === "help" || (args.help && command !== "qa")) {
     console.log(HELP);
     return;
   }
 
-  if (command === "start") {
+  if (command === "start" || command === "prepare-build" || command === "build") {
+    // One intake body, three modes: `start` = prepare + doctor + agent context,
+    // `build` = prepare + doctor, `prepare-build` = prepare only. The three
+    // literal string comparisons above stay so knownCommands() keeps deriving
+    // them from this function's source.
+    const mode = PREPARE_MODES[command];
+    if (!mode) throw new Error(`No intake mode registered for "${command}"; add it to PREPARE_MODES.`);
     // Tier 2: mark sub-phases so the lifecycle journal entry carries per-phase
     // timings (spec resolve vs the prepare+doctor+install build), which Tier 1
     // aggregates into `start:resolve-spec` / `start:prepare-build` stages.
     const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
     args.spec = resolved.specPath;
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: true, installContext: true }));
+    const result = await recorder.time("prepare-build", () => prepareBuild(args, mode));
     result.spec_source = resolved;
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
     return;
   }
 
-  if (command === "prepare-build") {
-    const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
-    args.spec = resolved.specPath;
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: false, installContext: false }));
-    result.spec_source = resolved;
-    autoStartRunSession(result, args, ambient, sessionHolder);
-    printPrepareResult(result, args);
-    return;
-  }
-
-  if (command === "build") {
-    const resolved = await recorder.time("resolve-spec", () => resolveSpecPath(args));
-    args.spec = resolved.specPath;
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { runDoctor: true, installContext: false }));
-    result.spec_source = resolved;
-    autoStartRunSession(result, args, ambient, sessionHolder);
-    printPrepareResult(result, args);
-    return;
-  }
-
-  if (command === "doctor" || command === "validate-build-packet") {
+  if (command === "doctor") {
     const result = doctorCommand(args);
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
@@ -845,13 +833,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     return;
   }
 
-  if (command === "standardize") {
-    const result = standardizationReportCommand(args);
-    writeStandardizationReportResult(result, args);
-    return;
-  }
-
-  if (command === "standardization-report") {
+  if (command === "standardize" || command === "standardization-report") {
     const result = standardizationReportCommand(args);
     writeStandardizationReportResult(result, args);
     return;
