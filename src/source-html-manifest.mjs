@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { ADAPTER_WRAPPER_POLICIES, isWrapperPolicy } from "./adapter-decision-contract.mjs";
+
 export const SOURCE_HTML_MANIFEST_REL_PATH = ".campaigns-os/source-html-manifest.json";
 export const SOURCE_HTML_MANIFEST_SCHEMA = "source-html-manifest/v0";
 
@@ -9,11 +11,13 @@ const FILE_ROLES = new Set(["page", "partial", "layout", "asset", "export_log", 
 
 export function validateSourceHtmlManifest(manifest) {
   const errors = [];
+  const warnings = [];
   const add = (code, message) => errors.push({ code, message });
+  const addWarning = (code, message) => warnings.push({ code, message });
 
   if (!isObject(manifest)) {
     add("manifest.type", "Source HTML manifest must be a JSON object.");
-    return { ok: false, errors };
+    return { ok: false, errors, warnings };
   }
 
   if (manifest.schema_version !== SOURCE_HTML_MANIFEST_SCHEMA) {
@@ -30,6 +34,20 @@ export function validateSourceHtmlManifest(manifest) {
   }
   if (manifest.root != null && !isNonEmptyString(manifest.root)) {
     add("manifest.root", "root must be a non-empty string when present.");
+  }
+  // Operator channel for the document-wrapper policy: the same vocabulary the
+  // adapter contract records, declared by whoever hands over the source rather
+  // than only by the build stage. An unrecognized value is a WARNING, not an
+  // error: rejecting the manifest over one optional hint would throw away
+  // pages[], producer_provenance, and files[] and silently drop the run back
+  // to filesystem matching — a far larger loss than the key itself. The key is
+  // treated as unset instead, so the default policy applies.
+  if (manifest.wrapper_policy != null && !isWrapperPolicy(manifest.wrapper_policy)) {
+    addWarning(
+      "manifest.wrapper_policy",
+      `wrapper_policy ${JSON.stringify(manifest.wrapper_policy)} is not one of ${ADAPTER_WRAPPER_POLICIES.join(", ")}; ` +
+        `the key is ignored and the default "strip_document_wrappers" applies. The rest of the manifest is used as written.`,
+    );
   }
   if (manifest.producer_provenance != null) {
     validateProducerProvenance(manifest.producer_provenance, add);
@@ -48,13 +66,13 @@ export function validateSourceHtmlManifest(manifest) {
     manifest.pages.forEach((entry, index) => validateManifestPage(entry, index, add));
   }
 
-  return { ok: errors.length === 0, errors };
+  return { ok: errors.length === 0, errors, warnings };
 }
 
 export function readSourceHtmlManifestFile(sourceRoot) {
   const manifestPath = resolve(sourceRoot, SOURCE_HTML_MANIFEST_REL_PATH);
   if (!existsSync(manifestPath) || !statSync(manifestPath).isFile()) {
-    return { manifest: null, path: null, warning: null, validation: null };
+    return { manifest: null, path: null, warning: null, warnings: [], validation: null };
   }
   let manifest;
   try {
@@ -64,6 +82,7 @@ export function readSourceHtmlManifestFile(sourceRoot) {
       manifest: null,
       path: manifestPath,
       warning: `Could not parse source-html manifest at ${manifestPath}: ${error.message}. Falling back to filesystem matching.`,
+      warnings: [],
       validation: null,
     };
   }
@@ -75,10 +94,16 @@ export function readSourceHtmlManifestFile(sourceRoot) {
       manifest: null,
       path: manifestPath,
       warning: `Source-html manifest at ${manifestPath} failed ${SOURCE_HTML_MANIFEST_SCHEMA} validation: ${detail}. Falling back to filesystem matching.`,
+      warnings: [],
       validation,
     };
   }
-  return { manifest, path: manifestPath, warning: null, validation };
+  // Non-fatal findings: the manifest is used as written and each one names the
+  // key, the value, and what happens instead.
+  const warnings = (validation.warnings || []).map(
+    (entry) => `Source-html manifest at ${manifestPath}: [${entry.code}] ${entry.message}`,
+  );
+  return { manifest, path: manifestPath, warning: null, warnings, validation };
 }
 
 function validateManifestPage(entry, index, add) {

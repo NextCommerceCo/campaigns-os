@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +39,7 @@ const PREPARED_PAGES = {
   receipt: '<section data-commerce-zone="receipt-summary">Receipt</section>',
 };
 
-function withStartedBuild(sourcePages, run) {
+function withStartedBuild(sourcePages, run, { extraArgs = [], manifest = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-source-prep-doctor-"));
   try {
     const sourceRoot = resolve(dir, "source-html");
@@ -53,6 +53,11 @@ function withStartedBuild(sourcePages, run) {
     const specPath = resolve(dir, "campaignspec.json");
     writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
 
+    if (manifest) {
+      mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+      writeJson(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"), manifest);
+    }
+
     runCliJson([
       "prepare-build",
       "--spec", specPath,
@@ -60,6 +65,7 @@ function withStartedBuild(sourcePages, run) {
       "--target", targetRepo,
       "--template-family", "olympus",
       "--no-run-session",
+      ...extraArgs,
       "--json",
     ]);
     const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
@@ -153,4 +159,206 @@ test("source edits after start are re-checked on the next doctor run", () => {
       true
     );
   });
+});
+
+// The wrapper policy has two operator channels — a source-html manifest key and
+// a prepare-build flag — because the policy is documented as a choice and was
+// previously selectable only by editing the packet the build stage writes.
+function manifestWithWrapperPolicy(wrapperPolicy) {
+  return {
+    schema_version: "source-html-manifest/v0",
+    generator: "fixture-producer@1.0.0",
+    ...(wrapperPolicy === null ? {} : { wrapper_policy: wrapperPolicy }),
+    pages: Object.keys(PREPARED_PAGES).map((page) => ({ page_id: page, path: `${page}.html` })),
+  };
+}
+
+const WRAPPED_LANDING = {
+  ...PREPARED_PAGES,
+  landing: readFileSync(resolve(UNPREPARED_FIXTURES, "full-document.html"), "utf8"),
+};
+
+test("a manifest wrapper_policy clears the document_wrapper gate at prepare-build", () => {
+  withStartedBuild(WRAPPED_LANDING, ({ packetPath }) => {
+    assert.equal(readJson(packetPath).source_html.adapter_contract.wrapper_policy, "preserve_document_wrappers");
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const errorCodes = new Set((doctor.errors || []).map((issue) => issue.code));
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(errorCodes.has("source_html.prep.document_wrapper"), false);
+    assert.equal(warningCodes.has("source_html.prep.document_wrapper"), true);
+  }, { manifest: manifestWithWrapperPolicy("preserve_document_wrappers") });
+});
+
+test("the same source without the manifest key still blocks on document wrappers", () => {
+  withStartedBuild(WRAPPED_LANDING, ({ packetPath }) => {
+    assert.equal(readJson(packetPath).source_html.adapter_contract.wrapper_policy, "strip_document_wrappers");
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    assert.equal(
+      (doctor.errors || []).some((issue) => issue.code === "source_html.prep.document_wrapper"),
+      true,
+    );
+  }, { manifest: manifestWithWrapperPolicy(null) });
+});
+
+test("the --wrapper-policy flag clears the document_wrapper gate with no manifest", () => {
+  withStartedBuild(WRAPPED_LANDING, ({ packetPath }) => {
+    assert.equal(readJson(packetPath).source_html.adapter_contract.wrapper_policy, "preserve_document_wrappers");
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const errorCodes = new Set((doctor.errors || []).map((issue) => issue.code));
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+
+    assert.equal(errorCodes.has("source_html.prep.document_wrapper"), false);
+    assert.equal(warningCodes.has("source_html.prep.document_wrapper"), true);
+  }, { extraArgs: ["--wrapper-policy", "preserve_document_wrappers"] });
+});
+
+test("the --wrapper-policy flag wins over the manifest key", () => {
+  withStartedBuild(WRAPPED_LANDING, ({ packetPath }) => {
+    assert.equal(readJson(packetPath).source_html.adapter_contract.wrapper_policy, "strip_document_wrappers");
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    assert.equal(
+      (doctor.errors || []).some((issue) => issue.code === "source_html.prep.document_wrapper"),
+      true,
+    );
+  }, {
+    manifest: manifestWithWrapperPolicy("preserve_document_wrappers"),
+    extraArgs: ["--wrapper-policy", "strip_document_wrappers"],
+  });
+});
+
+test("an unrecognized manifest wrapper_policy keeps the manifest and warns", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-wrapper-policy-manifest-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(targetRepo, { recursive: true });
+    writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+    for (const [page, content] of Object.entries(PREPARED_PAGES)) {
+      writeFileSync(resolve(sourceRoot, `${page}.html`), content);
+    }
+    // A manifest that binds pages by a path the filesystem matcher would never
+    // choose, so "the manifest was used" is provable rather than incidental.
+    writeFileSync(resolve(sourceRoot, "landing-v2.html"), PREPARED_PAGES.landing);
+    mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+    writeJson(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"), {
+      schema_version: "source-html-manifest/v0",
+      generator: "fixture-producer@1.0.0",
+      wrapper_policy: "keep_them_i_guess",
+      pages: [
+        { page_id: "landing", path: "landing-v2.html" },
+        ...Object.keys(PREPARED_PAGES).filter((page) => page !== "landing").map((page) => ({ page_id: page, path: `${page}.html` })),
+      ],
+    });
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
+
+    const run = execFileSync(process.execPath, [
+      CLI,
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--no-run-session",
+      "--json",
+    ], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CAMPAIGNS_API_KEY: "" } });
+    assert.ok(run);
+
+    const packet = readJson(resolve(targetRepo, "campaign-runtime.build.json"));
+    const landing = packet.source_html.pages.find((page) => page.page_id === "landing");
+    // The manifest survived: its pages[] still bound the source files.
+    assert.equal(landing.path, "landing-v2.html");
+    assert.equal(packet.source_html.pages.length, Object.keys(PREPARED_PAGES).length);
+    // The bad key was treated as unset, not as a reason to drop the manifest.
+    assert.equal(packet.source_html.adapter_contract.wrapper_policy, "strip_document_wrappers");
+
+    const doctor = runCliJson(["doctor", "--packet", resolve(targetRepo, "campaign-runtime.build.json"), "--json"]);
+    const manifestWarning = (doctor.warnings || []).find((issue) => issue.code === "source_html.manifest");
+    assert.ok(manifestWarning, "doctor should warn about the unrecognized wrapper_policy");
+    assert.match(manifestWarning.message, /wrapper_policy/);
+    assert.match(manifestWarning.message, /keep_them_i_guess/);
+    assert.match(manifestWarning.message, /preserve_document_wrappers/);
+    assert.doesNotMatch(manifestWarning.message, /Falling back to filesystem matching/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a refused --wrapper-policy leaves no Design Source Package or build state behind", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-wrapper-policy-state-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(targetRepo, { recursive: true });
+    writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+    for (const [page, content] of Object.entries(PREPARED_PAGES)) {
+      writeFileSync(resolve(sourceRoot, `${page}.html`), content);
+    }
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
+
+    for (const badFlag of [["--wrapper-policy", "keep_them_i_guess"], ["--wrapper-policy"]]) {
+      assert.throws(() => execFileSync(process.execPath, [
+        CLI,
+        "prepare-build",
+        "--spec", specPath,
+        "--source", sourceRoot,
+        "--target", targetRepo,
+        "--template-family", "olympus",
+        ...badFlag,
+        "--no-run-session",
+        "--json",
+      ], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+
+      // The Design Source Package is published partway through prepare-build
+      // and is immutable once written: a later refusal would strand it, and
+      // the operator's retry through the manifest channel would then fail as
+      // stale against a package they never asked for.
+      assert.equal(existsSync(resolve(targetRepo, ".campaign-runtime")), false, `${badFlag.join(" ")} wrote build state`);
+      assert.equal(existsSync(resolve(targetRepo, "campaign-runtime.build.json")), false, `${badFlag.join(" ")} wrote a packet`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unrecognized --wrapper-policy value is refused with the accepted vocabulary", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-wrapper-policy-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(targetRepo, { recursive: true });
+    writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+    for (const [page, content] of Object.entries(PREPARED_PAGES)) {
+      writeFileSync(resolve(sourceRoot, `${page}.html`), content);
+    }
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
+
+    assert.throws(() => execFileSync(process.execPath, [
+      CLI,
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--wrapper-policy", "keep_them_i_guess",
+      "--no-run-session",
+      "--json",
+    ], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }), (error) => {
+      assert.match(String(error.stderr), /Unsupported --wrapper-policy/);
+      assert.match(String(error.stderr), /preserve_document_wrappers/);
+      return true;
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
