@@ -27,6 +27,71 @@ Notable supported-surface changes are recorded here.
   it, the value, and the accepted values, and `pages[]`, `producer_provenance`,
   and `files[]` are used as written. A non-default selection prints the value
   and the channel that set it on stderr.
+## [1.25.0+agent.16] - 2026-09-12
+
+### Fixed
+
+- `browser-order-bump-state` resolves a bump toggle's rendered state marker
+  instead of the toggle's own `aria-hidden` checkbox input (campaigns-os#323).
+  The marker selector list ended in a bare `[aria-hidden]`, and
+  `querySelector` returns document order rather than selector order, so on any
+  toggle whose visually hidden `<input type="checkbox" aria-hidden="true">`
+  precedes its tick, the input *was* the marker. An input has no `::after`, no
+  glyph and no fill, so `markerChecked` could never read true: every accepted
+  bump reported misaligned, the assertion failed at warn severity on every
+  run, and no bump run could read clean. The same clause also matched purely
+  decorative nodes, such as a switch variant's always-rendered slider, whose
+  rendering says nothing about the toggle's state.
+
+  The marker vocabulary is now the four families that mean "this is the tick"
+  (`.bump-check`, `[data-next-toggle-check]`, `[os-component="check"]`,
+  `.checkbox__icon`), tried in order so a generic match cannot outrank a
+  specific one by appearing earlier in the document; form controls and
+  `[hidden]` subtrees can never be a marker.
+
+  A rendered marker is then read for a positive state signal, and the signals
+  are alternatives, because the families express state differently. A marker
+  whose `::after` carries content belongs to the pseudo-element family and its
+  state is whether that pseudo-element renders — never whether its box does,
+  since the box renders in both states. Otherwise a check glyph in the marker,
+  or the accepted fill colour, reads as checked, as before. New alongside
+  those: a marker that the page's own CSS hides when unchecked
+  (`[data-next-toggle-card] [os-component="check"] { display: none }`, restored
+  to `display: flex` on the active or in-cart card) *is* the tick, so its own
+  rendering is the state — and that is settled by testing the page's style
+  rules against the element, not assumed from the family name, so a persistent
+  box that nothing hides can never be read that way. Only rules that currently
+  apply count as evidence: a `@media print` or unsupported `@supports` block,
+  a stylesheet whose media attribute does not match, and a disabled sheet are
+  all skipped, since none of them describes what the buyer sees. An `@container`
+  block is skipped too, for a different reason — no browser API evaluates a
+  container query for an arbitrary element — so a tick hidden only inside one
+  reads as unresolved rather than being guessed at. And because an
+  absolutely positioned tick can render while its host box measures zero, a
+  zero-sized marker is checked for a rendered `::after` before its size is
+  allowed to disqualify it.
+
+  A rendered marker carrying no signal at all is reported as unresolved rather
+  than guessed at, and read like an absent marker: the toggle falls back to its
+  input and active state instead of being reported as a disagreement. The same
+  applies to a toggle with no marker vocabulary, such as a switch variant whose
+  only `aria-hidden` node is its always-rendered slider.
+
+  The verdict payload records how the toggle was read, so an operator looking at
+  a misaligned bump can see which element the harness picked and what it made of
+  it. `markerResolved` keeps its meaning — whether a marker element was found —
+  and the new `markerReadable` says whether that marker's state could actually
+  be read; only `markerAgrees` depends on the second. `markerSignal` names the
+  reading: `pseudo`, `glyph`, `fill` or `display_toggled` when a state vocabulary
+  was recognised, `not_rendered` when the marker is on the page but hidden,
+  `unresolved` when it renders but carries no state signal, and null only when
+  no marker was found at all. `markerFamily` and `markerTag` record which
+  selector matched and what it matched.
+
+  The probe moves to `src/qa-order-bump.mjs` as an `evaluate()` body, the
+  shape `qa-cart-entry.mjs` already uses, so the real-browser proof over
+  `fixtures/qa-order-bump/` drives the same function the QA runner does.
+
 ## [1.25.0+agent.15] - 2026-09-12
 
 ### Added

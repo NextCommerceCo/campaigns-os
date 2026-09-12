@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Order bump state marker fixture</title>
+<style>
+  body { margin: 0; font: 16px/1.4 system-ui, sans-serif; }
+  [data-next-toggle-card] { display: block; padding: 12px; border: 1px solid #ccc; }
+
+  /* The toggle's own state input is visually hidden and marked aria-hidden.
+     This is the element campaigns-os#323 resolved as the "marker". */
+  .bump__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .bump__checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #9b9b9b;
+  }
+
+  /* The rendered tick, driven by the card's state class. This is the shape the
+     shared checkout CSS uses for every toggle card. */
+  [data-next-toggle-card] [os-component="check"] { display: none; }
+  [data-next-toggle-card].next-in-cart [os-component="check"] { display: flex; }
+  .checkbox__icon { width: 16px; height: 16px; }
+
+  /* A switch-style toggle: an always-rendered decorative slider. It carries
+     aria-hidden and it is NOT a state marker — its rendering is the same
+     whether the toggle is on or off. */
+  .bump__switch { display: inline-block; width: 32px; height: 18px; background: #ddd; }
+
+  /* A pseudo-element family: the box renders in both states and the tick lives
+     in its ::after, revealed by the card's state class. The box's own
+     visibility says nothing about the state. */
+  .bump-check {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #9b9b9b;
+  }
+  .bump-check::after {
+    content: "\2713";
+    display: block;
+    opacity: 0;
+  }
+  [data-next-toggle-card].next-in-cart .bump-check::after { opacity: 1; }
+
+  /* A persistent marker that nothing hides on screen. The only rule that hides
+     it is print-only, which says nothing about what the buyer sees, so it must
+     not be read as a state-dependent tick. */
+  .pill { display: inline-block; width: 20px; height: 20px; background: #eee; }
+  @media print { .pill { display: none; } }
+  @supports (nonsense-property: nonsense-value) { .pill { visibility: hidden; } }
+
+  /* A pseudo-element tick on an empty, zero-sized host: the tick is positioned
+     out of flow, so the host box measures nothing while the tick is visible. */
+  .bump-check--floating {
+    position: relative;
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border: 0;
+  }
+  .bump-check--floating::after {
+    content: "\2713";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    opacity: 0;
+  }
+  [data-next-toggle-card].next-in-cart .bump-check--floating::after { opacity: 1; }
+
+  /* A tick hidden by visibility: collapse when unchecked, restored when the
+     card is active. Another way to say "display: none" for a state marker. */
+  .collapse-check { display: inline-block; width: 20px; height: 20px; background: #eee; }
+  [data-next-toggle-card] .collapse-check { visibility: collapse; }
+  [data-next-toggle-card].next-in-cart .collapse-check { visibility: visible; }
+
+  /* An unstyled tick on a zero-sized host: nothing gives the ::after a width or
+     a height, so its own content sizes it. */
+  .auto-check { position: relative; display: inline-block; width: 0; height: 0; }
+  .auto-check::after { content: "\2713"; opacity: 0; }
+  [data-next-toggle-card].next-in-cart .auto-check::after { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- 1. Accepted bump. The aria-hidden input precedes the rendered tick in
+     document order, so a document-order query over a selector list ending in
+     [aria-hidden] resolves the input and can never read checked. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="4" id="bump-active">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
+    <div class="bump__header-content">
+      <div class="bump__checkbox">
+        <div os-component="check" class="checkbox__icon">
+          <svg aria-hidden="true" role="img" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="m6 10l-2 2l6 6L20 8l-2-2l-8 8z"></path></svg>
+        </div>
+      </div>
+      <div class="bump__title">Add-on offer A</div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. The same toggle, declined. The tick is not rendered, so the marker
+     correctly reads unchecked and agrees with the input. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="5" id="bump-inactive">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1">
+    <div class="bump__header-content">
+      <div class="bump__checkbox">
+        <div os-component="check" class="checkbox__icon">
+          <svg aria-hidden="true" role="img" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="m6 10l-2 2l6 6L20 8l-2-2l-8 8z"></path></svg>
+        </div>
+      </div>
+      <div class="bump__title">Add-on offer B</div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Accepted switch-style bump with no state-marker vocabulary at all: the
+     only aria-hidden node is the decorative slider. There is nothing to read,
+     so the check must resolve no marker rather than treat the slider as one. -->
+<div data-next-package-toggle>
+  <div class="bump-card bump-card--switch next-in-cart" data-next-toggle-card data-next-package-id="6" id="bump-switch">
+    <span class="bump__title">Add-on offer C</span>
+    <span class="bump__switch" aria-hidden="true"><span class="bump__switch-slider"></span></span>
+  </div>
+</div>
+
+<!-- 4. Declined bump in the pseudo-element family. The box renders; only its
+     ::after is hidden. Reading the box's visibility as the state would fail a
+     correctly declined bump. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="7" id="bump-pseudo-inactive">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1">
+    <span class="bump-check"></span>
+    <div class="bump__title">Add-on offer D</div>
+  </div>
+</div>
+
+<!-- 5. The same family, accepted: the ::after is revealed. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="8" id="bump-pseudo-active">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
+    <span class="bump-check"></span>
+    <div class="bump__title">Add-on offer E</div>
+  </div>
+</div>
+
+<!-- 6. Declined bump whose persistent marker is hidden only by a print rule
+     and by an @supports block for a feature no browser has. Neither applies on
+     screen, so neither is evidence that this marker's visibility is its state. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="9" id="bump-print-rule">
+    <span data-next-toggle-check class="pill"></span>
+    <div class="bump__title">Add-on offer F</div>
+  </div>
+</div>
+
+<!-- 7. Accepted bump whose marker host is an empty zero-sized span; the tick is
+     an absolutely positioned ::after. The host measures nothing even though the
+     buyer can see the tick. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="10" id="bump-floating-pseudo">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
+    <span class="bump-check bump-check--floating"></span>
+    <div class="bump__title">Add-on offer G</div>
+  </div>
+</div>
+
+<!-- 8. Accepted bump whose tick is hidden by `visibility: collapse` when
+     unchecked. The rule walk has to understand collapse exactly as the
+     computed-style test does, or this reads unresolved. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="11" id="bump-collapse">
+    <span data-next-toggle-check class="collapse-check"></span>
+    <div class="bump__title">Add-on offer H</div>
+  </div>
+</div>
+
+<!-- 9. Accepted bump whose tick is an unstyled ::after on a zero-sized host.
+     Its computed width and height are `auto`; the content sizes the box. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="12" id="bump-auto-pseudo">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
+    <span data-next-toggle-check class="auto-check"></span>
+    <div class="bump__title">Add-on offer I</div>
+  </div>
+</div>
+
+</body>
+</html>
