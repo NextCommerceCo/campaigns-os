@@ -32,9 +32,11 @@ import {
   summarizeSelectionSurface,
 } from "./qa-cart-entry.mjs";
 import {
+  RESIDUE_PAGE_TYPES,
   demoAssetConfig,
   forbiddenComputedColors,
   normalizeCssColor,
+  paletteResidueStyleChecks,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
@@ -1682,7 +1684,6 @@ function promoCodeSurfaceAssertion({ page, declaration, evidence }) {
 // step: it is template-owned and SDK-driven, so the brand contracts already
 // scope logo and computed-style residue to it — that scoping was inert until
 // "select" became a real page type, because no spec-valid page could carry it.
-const RESIDUE_PAGE_TYPES = ["checkout", "select", "upsell", "downsell", "receipt"];
 
 function contractPageType(page) {
   const type = String(page?.page_type || "").toLowerCase();
@@ -1696,10 +1697,12 @@ async function templateResidueAssertions(browserPage, page, options = {}) {
   const severity = options.residueSeverity || SEVERITY.BLOCKER;
   const assertions = [];
 
+  // One predicate, shared with everything that needs to know whether palette
+  // residue applies to a family (see template-brand-contract.mjs): a second
+  // derivation is how a warning about this check drifts from the check.
   const forbidden = forbiddenComputedColors(contract);
-  const styleChecks = (contract.qa_inspection?.computed_style_checks || [])
-    .filter((check) => (check.page_types || []).includes(pageType));
-  if (forbidden.length && styleChecks.length) {
+  const styleChecks = paletteResidueStyleChecks(contract, pageType);
+  if (styleChecks.length) {
     const evidence = await collectComputedStyleEvidence(browserPage, styleChecks);
     assertions.push(...computedStyleResidueAssertions({ page, evidence, forbidden, severity }));
   }

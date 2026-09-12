@@ -21,6 +21,15 @@ Notable supported-surface changes are recorded here.
   hand-authored `brand-theme.css` loaded after `next-core.css` — and the
   non-JSON tiny prompt prints the same warning. No severity changed, nothing is
   auto-waived, and a waived or applied gate emits nothing.
+- The warning is scoped to campaigns QA would actually block. It is emitted
+  only when the packet's `assembly.template_family` resolves to a brand
+  contract that carries both forbidden computed colors and commerce selectors
+  to inspect them on — the same predicate the browser runner uses, now shared
+  as `paletteResidueStyleChecks` / `contractHasPaletteResidueChecks` in
+  `template-brand-contract.mjs` rather than derived twice. A `custom` or
+  `undecided` family, or any family the catalog carries no contract for, emits
+  no `template-residue:*:style:*` rows at all, so those campaigns are not told
+  to clear a block that will never happen.
 
 ## [1.25.0+agent.8] - 2026-09-12
 

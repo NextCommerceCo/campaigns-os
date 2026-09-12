@@ -122,6 +122,7 @@ import {
   readPageKitBuildSummary,
 } from "./page-kit-build-summary.mjs";
 import {
+  contractHasPaletteResidueChecks,
   demoAssetConfig,
   findForbiddenPriceHides,
   placeholderTextResidueConfig,
@@ -7621,11 +7622,34 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
 // before it — twice, two different ways. This advisory moves the decision
 // forward. It is informational by construction: no `required` flag, no
 // command to run, and it waives nothing on the operator's behalf.
+// The warning is only true for a family QA actually inspects. A campaign on
+// `custom`, `undecided`, or any family the catalog carries no brand contract
+// for resolves to no contract, so `templateResidueAssertions` returns before it
+// emits a single `template-residue:*:style:*` row and there is no starter
+// palette to block on. Telling that operator to waive a gate or hand-author a
+// brand layer to clear a block that will never happen is a worse failure than
+// the silence this replaces, so the advisory asks the same predicate the
+// browser runner asks — `contractHasPaletteResidueChecks` in
+// template-brand-contract.mjs — rather than re-deriving it here.
 const THEME_STARTER_PALETTE_ACTION_ID = "theme_gate.starter_palette_blocks_qa";
 const THEME_STARTER_PALETTE_STAGES = new Set(["build", "polish", "deploy", "qa"]);
 
-function themeStarterPaletteAdvisory(themeGate, packetPath) {
+function familyHasPaletteResidueChecks(packet) {
+  const family = optionalString(packet?.assembly?.template_family);
+  if (!family) return false;
+  try {
+    return contractHasPaletteResidueChecks(resolveTemplateBrandContract(family));
+  } catch {
+    // An unloadable contract is its own QA blocker (template-brand-contract
+    // fails the run by name), and it tells us nothing about the palette. Stay
+    // silent rather than guess.
+    return false;
+  }
+}
+
+function themeStarterPaletteAdvisory(themeGate, packetPath, packet) {
   if (themeGate?.code !== "theme_gate.nothing_generatable") return null;
+  if (!familyHasPaletteResidueChecks(packet)) return null;
   const packetArg = shellToken(packetPath || "<packet>");
   return {
     id: THEME_STARTER_PALETTE_ACTION_ID,
@@ -7785,7 +7809,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   // their own action lists: a blocked gate is a different code, and a blocked
   // polish gate is a stop-and-fix state whose own actions come first — the
   // advisory reappears on the next `next` once that gate clears.
-  const starterPaletteAdvisory = themeStarterPaletteAdvisory(themeGate, packetPath);
+  const starterPaletteAdvisory = themeStarterPaletteAdvisory(themeGate, packetPath, packet);
   if (starterPaletteAdvisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
     push(
       starterPaletteAdvisory.id,

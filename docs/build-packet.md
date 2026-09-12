@@ -198,7 +198,12 @@ severity, so `qa run` blocks on `template-residue:<page>:style:*` rows for the
 starter call-to-action colour. That is deliberate on both sides: a passing gate
 means "nothing could be generated", not "this palette was reviewed". Two lanes
 clear it, and `campaigns-os next` names them from the build stage onward so the
-choice is made before a blocked verdict forces it. Either record an explicit
+choice is made before a blocked verdict forces it — for the families this
+applies to. Palette residue is a certified-family check: it runs only where the
+selected `template_family` has a brand contract listing both the starter colours
+and the commerce selectors to inspect them on, so a `custom` or `undecided`
+family produces no `template-residue:*:style:*` rows and `next` stays quiet
+rather than asking for a waiver it does not need. Either record an explicit
 operator waiver (`campaigns-os theme waive --packet <packet> --reason "<why the
 starter palette is acceptable>"`), which downgrades those rows to warn severity
 and keeps the shipped palette visible in the verdict; or hand-author the brand
