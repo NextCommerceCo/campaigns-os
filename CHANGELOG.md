@@ -6,14 +6,18 @@ Notable supported-surface changes are recorded here.
 
 ### Added
 
-- `docs/qa-and-test-orders.md` gains "What a published record proves": a
-  published verdict and a remitted Run Record are durable but unattributed,
-  because the public runner carries no ingest credential. The section separates
-  what an anonymous record establishes (a run happened, on these pages, with
-  these artifacts) from what it cannot (who ran it — it is not verified launch
-  evidence by the portal's standard and must not be handed over as such), and
-  points at campaigns-os#329 for the attributed-publishing credential path. The
-  trust stamps themselves, the readback chokepoints, and every gate are
+- `docs/qa-and-test-orders.md` gains "What a published anonymous record is":
+  because the public runner carries no ingest credential, a published verdict
+  or remitted Run Record is stored `trusted: false` / anonymous, and such a
+  record is an **unverified submitted claim** — it records what the submitter
+  reported, not that a run happened or that its artifacts reflect real
+  observations. The receiver accepts posts publicly after shape, size, and rate
+  checks and verifies nothing it is told; a fabricated verdict passes every
+  schema check, as the standing negative control in
+  `src/qa-verdict-schema.test.mjs` demonstrates. Any launch decision therefore
+  needs independent execution evidence — the run's own attributed local
+  artifacts — and campaigns-os#329 tracks the attributed-publishing credential
+  path. The trust stamps, the readback chokepoints, and every gate are
   unchanged; this is documentation of behaviour that already ships.
 
 ## [1.25.0+agent.8] - 2026-09-12
