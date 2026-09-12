@@ -58,7 +58,10 @@ import {
   writeConsentConfig,
 } from "./consent.mjs";
 import {
+  ADAPTER_WRAPPER_POLICIES,
   createAdapterDecisions,
+  DEFAULT_WRAPPER_POLICY,
+  isWrapperPolicy,
   validateAdapterDecisionGates,
   validateAdapterDecisionShape,
   validateAdapterSourceFiles,
@@ -324,12 +327,15 @@ Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                             [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
                              [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]
   campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
+                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
@@ -370,6 +376,7 @@ Usage:
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
+  Wrapper policy: \`start\`/\`prepare-build\`/\`build\` seed source_html.adapter_contract.wrapper_policy from --wrapper-policy, else the source-html manifest's wrapper_policy key, else strip_document_wrappers. Selecting preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking, so raw-HTML source can be handed over without a wrapper-stripping pass (docs/source-adapters.md).
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
   Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
@@ -1843,6 +1850,40 @@ function designSourcePackageBlockers(prepared) {
   }));
 }
 
+// Document-wrapper policy, resolved for prepare-build from the two operator
+// channels. Same precedence the template family uses (docs/build-packet.md
+// "Authoring-Time Hints"): an explicit CLI flag beats a declared file hint,
+// and with neither the default stands. The vocabulary is the adapter
+// contract's own — there is no second policy list.
+function resolveWrapperPolicy({ args, manifest }) {
+  const raw = args["wrapper-policy"];
+  // A bare `--wrapper-policy` with no value parses as `true`. Falling through
+  // to the manifest or the default there would silently ignore an operator's
+  // explicit intent, so treat it as the malformed flag it is.
+  if (raw === true) {
+    throw new Error(
+      `--wrapper-policy needs a value. Accepted values: ${ADAPTER_WRAPPER_POLICIES.join(", ")}.`,
+    );
+  }
+  const flag = optionalString(raw);
+  if (flag) {
+    if (!isWrapperPolicy(flag)) {
+      throw new Error(
+        `Unsupported --wrapper-policy ${JSON.stringify(flag)}. Accepted values: ${ADAPTER_WRAPPER_POLICIES.join(", ")}. ` +
+        `See docs/source-adapters.md "Source preparation check".`,
+      );
+    }
+    return { value: flag, source: "--wrapper-policy" };
+  }
+  const declared = optionalString(manifest?.wrapper_policy);
+  if (declared) {
+    // An out-of-vocabulary manifest value never reaches here: the manifest
+    // validator rejects it and the manifest is dropped with a warning.
+    if (isWrapperPolicy(declared)) return { value: declared, source: "source-html manifest wrapper_policy" };
+  }
+  return { value: DEFAULT_WRAPPER_POLICY, source: "default" };
+}
+
 function prepareBuild(args, options = {}) {
   const specPath = resolve(requireArg(args, "spec"));
   const sourceRoot = resolve(requireArg(args, "source"));
@@ -2060,8 +2101,16 @@ function prepareBuild(args, options = {}) {
   });
   const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
-  const adapterDecisions = createAdapterDecisions({ commerceZoneFindings });
+  const wrapperPolicy = resolveWrapperPolicy({ args, manifest: manifestResult.manifest });
+  const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
   const proofPolicy = createProofPolicy();
+
+  if (wrapperPolicy.value !== DEFAULT_WRAPPER_POLICY) {
+    console.warn(
+      `[campaigns-os prepare-build] wrapper_policy "${wrapperPolicy.value}" selected by ${wrapperPolicy.source}; ` +
+      `recorded on the packet at source_html.adapter_contract.wrapper_policy.`,
+    );
+  }
 
   const packet = {
     schema_version: PACKET_SCHEMA,

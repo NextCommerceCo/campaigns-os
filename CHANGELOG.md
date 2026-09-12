@@ -2,6 +2,30 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0] - 2026-09-12
+
+### Added
+
+- An intake channel for the document-wrapper policy. `preserve_document_wrappers`
+  was documented as a choice but could only be selected by editing the Build
+  Packet the build stage writes, so whoever hands over raw HTML source had no way
+  to pick it and `source_html.prep.document_wrapper` blocked them at intake. Two
+  channels now select it, in the adapter contract's existing vocabulary
+  (`strip_document_wrappers`, `preserve_document_wrappers`, `not_required`,
+  `unknown`): an optional top-level `wrapper_policy` key in the
+  `source-html-manifest/v0` document, and a `--wrapper-policy` flag on
+  `prepare-build` (and on `start` / `build`, which run the same prepare step).
+  `prepare-build` seeds `source_html.adapter_contract.wrapper_policy` from the
+  resolved value, so a selected `preserve_document_wrappers` reports the wrappers
+  as a warning instead of blocking assembly.
+
+  Precedence follows the template-family rule — the flag wins over the declared
+  manifest key, and with neither the default stays `strip_document_wrappers`, so
+  a run that passes neither behaves exactly as before. A flag value outside the
+  vocabulary fails the run; a manifest value outside it fails manifest validation
+  and falls back to filesystem matching with the usual warning. A non-default
+  selection prints the value and the channel that set it on stderr.
+
 ## [1.25.0+agent.8] - 2026-09-12
 
 ### Fixed

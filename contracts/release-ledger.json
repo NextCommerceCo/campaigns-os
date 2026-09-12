@@ -1777,6 +1777,57 @@
         }
       ],
       "entry_sha256": "d2627d4422fcf5cc0f14f9c81a84ea3979e0a76f419c1b65dcc846dbdcaafd00"
+    },
+    {
+      "id": "RL-0037",
+      "sequence": 37,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": "1.26.0",
+      "changelog_section": "1.26.0",
+      "changelog_sha256": "d54f8aacb053155896ae74c0b04b749b5f162b91343a943f0607f3c413f15d8f",
+      "agent_impact": "The document-wrapper policy is now selectable before the build stage. source-html-manifest/v0 accepts an optional top-level wrapper_policy key (strip_document_wrappers, preserve_document_wrappers, not_required, unknown), and prepare-build / start / build accept a --wrapper-policy flag in the same vocabulary; prepare-build seeds source_html.adapter_contract.wrapper_policy from the resolved value, so a selected preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking. Precedence is flag, then manifest key, then the unchanged default strip_document_wrappers. A producer emitting a manifest wrapper_policy outside the vocabulary now fails manifest validation and falls back to filesystem matching with the usual warning.",
+      "compatibility": "additive",
+      "migration": "none. A run that passes no flag and a manifest carrying no wrapper_policy key behaves exactly as before.",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/source-html-manifest.v0.schema.json",
+          "surface_entry": "schemas/source-html-manifest.v0.schema.json",
+          "summary": "Declares the optional top-level wrapper_policy key with the adapter contract's four-value enum, naming the flag override and the default."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Adds --wrapper-policy to prepare-build (and to start / build, which run the same prepare step): resolves flag over manifest key over default, refuses an unrecognized or valueless flag, seeds the packet's adapter contract from the result, and echoes a non-default selection with its channel on stderr."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Records the new source-html-manifest schema hash and advances surface_version to 1.26.0 for the additive manifest key."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: records the surface version at generation time as 1.26.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: records the surface version at generation time as 1.26.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents the manifest wrapper_policy key and its precedence against the CLI flag in the Source HTML Manifest Auto-Population behavior list."
+        }
+      ],
+      "entry_sha256": "01dce54233776e69dda144986e6e91f2c7e7b770f392bf5d4b32fb0f6fbe4408"
     }
   ]
 }

@@ -73,7 +73,10 @@ work instead of relying on chat history:
 - `config_script_strategy`: records how campaign config scripts load
   (`campaign_asset`, `frontmatter_script`, `inline`, or `not_required`).
 - `wrapper_policy`: records whether document wrappers were stripped, preserved,
-  or not required.
+  or not required (`strip_document_wrappers`, `preserve_document_wrappers`,
+  `not_required`, `unknown`). Unlike the other decisions here, this one is
+  selectable before the build stage runs — see
+  [Selecting the wrapper policy at intake](#selecting-the-wrapper-policy-at-intake).
 - `frontmatter_policy`: records whether Page Kit YAML frontmatter was created,
   preserved, or intentionally not required.
 - `script_style_reference_policy`: records whether scripts/styles were moved to
@@ -111,9 +114,50 @@ page-kit ingestion expectations; it is not a general HTML linter.
 
 | Code | Severity | Meaning and fix |
 | --- | --- | --- |
-| `source_html.prep.document_wrapper` | error (warning under a recorded `wrapper_policy: "preserve_document_wrappers"`) | A mapped source page is still a full browser document. Strip `<!doctype>`, `<html>`, `<head>`, and `<body>` so the campaign layout can wrap the page (conversion step 2; [docs/quickstart.md](./quickstart.md) "Prepare Raw HTML Source"), or record `preserve_document_wrappers` as an explicit adapter decision. |
+| `source_html.prep.document_wrapper` | error (warning under a recorded `wrapper_policy: "preserve_document_wrappers"`) | A mapped source page is still a full browser document. Strip `<!doctype>`, `<html>`, `<head>`, and `<body>` so the campaign layout can wrap the page (conversion step 2; [docs/quickstart.md](./quickstart.md) "Prepare Raw HTML Source"), or record `preserve_document_wrappers` as an explicit adapter decision — the manifest `wrapper_policy` key or `--wrapper-policy`, see [Selecting the wrapper policy at intake](#selecting-the-wrapper-policy-at-intake). |
 | `source_html.prep.frontmatter_residue` | error | Leftover or broken YAML frontmatter: a leading `---` fence that never closes, or a frontmatter block (page-kit keys such as `page_type:`, `next_url:`) embedded below content where page-kit would render it literally. Keep exactly one closed frontmatter block at the very top of the file, or none when the packet's `page_kit.frontmatter` projection supplies it (conversion step 3). |
 | `source_html.prep.internal_link_unrooted` | warning | An internal link/CTA still targets a source file (`checkout.html`) instead of a CampaignSpec-derived route. Replace it, usually via `campaign_link` (conversion step 6). Warning rather than error because CTA rewrites are sanctioned build-stage work recorded under `cta_rewrite_policy`; the adapter gates own the completed-assembly block. |
+
+### Selecting the wrapper policy at intake
+
+`preserve_document_wrappers` is a real choice, so whoever hands over the source
+can make it — without editing the Build Packet the build stage writes. Two
+channels select it, both in the vocabulary above:
+
+**The source-html manifest.** Declare it once, next to the pages it applies to,
+in `.campaigns-os/source-html-manifest.json`:
+
+```json
+{
+  "schema_version": "source-html-manifest/v0",
+  "wrapper_policy": "preserve_document_wrappers",
+  "pages": [{ "page_id": "landing", "path": "landing.html" }]
+}
+```
+
+**The CLI flag.** Select it per run on the command that prepares the build:
+
+```bash
+campaigns-os prepare-build --spec <spec.json> --source <html-dir> \
+  --target <page-kit-dir> --template-family <family> \
+  --wrapper-policy preserve_document_wrappers
+```
+
+`start` and `build` take the same flag, since both run the prepare step.
+
+**Precedence.** The flag wins over the manifest key, and with neither the
+default is `strip_document_wrappers` — the same order the template family uses
+for its CLI override and its spec hint (see
+[docs/build-packet.md](./build-packet.md), "Authoring-Time Hints"). The
+resolved value is written to
+`source_html.adapter_contract.wrapper_policy` on the packet, and a non-default
+selection is echoed on stderr with the channel that set it. A value outside the
+vocabulary fails the run (flag) or invalidates the manifest (key), rather than
+being silently ignored.
+
+Selecting `preserve_document_wrappers` does not silence the finding: the
+document wrappers are still reported on every page that carries them, as a
+warning rather than a blocking error.
 
 Asset-path rooting (raw `/assets/...` references, missing or out-of-root
 files) stays owned by the prepare-build source asset crawl and its

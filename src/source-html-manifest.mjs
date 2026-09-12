@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { ADAPTER_WRAPPER_POLICIES, isWrapperPolicy } from "./adapter-decision-contract.mjs";
+
 export const SOURCE_HTML_MANIFEST_REL_PATH = ".campaigns-os/source-html-manifest.json";
 export const SOURCE_HTML_MANIFEST_SCHEMA = "source-html-manifest/v0";
 
@@ -30,6 +32,15 @@ export function validateSourceHtmlManifest(manifest) {
   }
   if (manifest.root != null && !isNonEmptyString(manifest.root)) {
     add("manifest.root", "root must be a non-empty string when present.");
+  }
+  // Operator channel for the document-wrapper policy: the same vocabulary the
+  // adapter contract records, declared by whoever hands over the source rather
+  // than only by the build stage.
+  if (manifest.wrapper_policy != null && !isWrapperPolicy(manifest.wrapper_policy)) {
+    add(
+      "manifest.wrapper_policy",
+      `wrapper_policy must be one of ${ADAPTER_WRAPPER_POLICIES.join(", ")} when present.`,
+    );
   }
   if (manifest.producer_provenance != null) {
     validateProducerProvenance(manifest.producer_provenance, add);
