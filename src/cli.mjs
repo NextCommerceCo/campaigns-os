@@ -125,10 +125,12 @@ import {
   readPageKitBuildSummary,
 } from "./page-kit-build-summary.mjs";
 import {
+  contractHasPaletteResidueChecks,
   demoAssetConfig,
   findForbiddenPriceHides,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
+  templateBrandContractPath,
 } from "./template-brand-contract.mjs";
 import {
   scanBuiltOutputContentResidue,
@@ -7737,6 +7739,181 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
   ];
 }
 
+// A token-less campaign passes the theme gate and then blocks browser QA.
+//
+// `evaluateThemeGate` returns pass/`theme_gate.nothing_generatable` when no
+// brand theme can be generated: there is nothing to apply, so there is nothing
+// to gate on. But `residueSeverityForThemeGate` reads that same pass as
+// "a brand layer is in place", and runs the template-residue checks at BLOCKER
+// severity — so the starter family's own palette on the commerce calls to
+// action lands as `template-residue:<page>:style:*` blockers at `qa run`. Only
+// a waiver downgrades those rows to warn.
+//
+// Both halves are deliberate and both stay as they are. What was missing is
+// that nothing between the passing gate and the blocked verdict said this
+// would happen, so the decision got made after a failed QA run rather than
+// before it — twice, two different ways. This advisory moves the decision
+// forward. It is informational by construction: no `required` flag, no
+// command to run, and it waives nothing on the operator's behalf.
+// The warning is only true for a family QA actually inspects. A campaign on
+// `custom`, `undecided`, or any family the catalog carries no brand contract
+// for resolves to no contract, so `templateResidueAssertions` returns before it
+// emits a single `template-residue:*:style:*` row and there is no starter
+// palette to block on. Telling that operator to waive a gate or hand-author a
+// brand layer to clear a block that will never happen is a worse failure than
+// the silence this replaces, so the advisory asks the same predicate the
+// browser runner asks — `contractHasPaletteResidueChecks` in
+// template-brand-contract.mjs — rather than re-deriving it here.
+const THEME_STARTER_PALETTE_ACTION_ID = "theme_gate.starter_palette_blocks_qa";
+const BRAND_CONTRACT_DEFECT_ACTION_ID = "theme_gate.brand_contract_unreadable";
+const THEME_STARTER_PALETTE_STAGES = new Set(["build", "polish", "deploy", "qa"]);
+
+/**
+ * What the packet's template family means for palette residue, as three
+ * distinct answers rather than one boolean.
+ *
+ * The distinction that matters is between a family that HAS no contract and a
+ * family whose contract is BROKEN. `resolveTemplateBrandContract` separates
+ * them for us: it returns null when nothing resolved, and throws with a `code`
+ * (`parse_error`, `schema_mismatch`, `extends_cycle`, `extends_missing_parent`,
+ * `family_mismatch`) when a contract exists but is defective. Collapsing the
+ * throw into "no contract" hid a real defect behind silence — QA rejects such a
+ * contract outright with a `template-brand-contract:<family>` blocker, and the
+ * operator would have met that for the first time at `qa run`, which is the
+ * whole failure this lane exists to stop.
+ *
+ * Null is not a defect: it is "resolved to no contract", and it covers the
+ * unknown/uncertified family AND a privately allowlisted family whose fragment
+ * carries no `brandContract` at all. Both mean QA emits no residue rows.
+ *
+ * `next` never throws over this. A defect becomes its own advisory, in the same
+ * shape, naming the family and the error code.
+ */
+// Everything below is interpolated into a description that prints to a
+// terminal and ships in next_actions[] JSON, and all three values ultimately
+// come from a packet and a file on disk. None of them is trusted prose.
+//
+// The family is a filename component (template-brand-contract.<family>.v0.json)
+// and every real family — the packet schema's enum and the commerce catalog
+// alike — is a lowercase slug, so anything else is not a family we can name.
+// The code is reduced to the loader's own enum. The detail is loader-authored
+// but quotes file content, so it is folded to one line, stripped of control
+// characters, escaped for Markdown, and bounded.
+const TEMPLATE_FAMILY_SLUG = /^[a-z0-9][a-z0-9-]*$/;
+const BRAND_CONTRACT_ERROR_CODES = new Set([
+  "parse_error",
+  "schema_mismatch",
+  "extends_cycle",
+  "extends_missing_parent",
+  "family_mismatch",
+]);
+const ADVISORY_DETAIL_MAX = 300;
+
+export function safeFamilyLabel(family) {
+  const value = optionalString(family);
+  return value && TEMPLATE_FAMILY_SLUG.test(value) ? value : "unknown-family";
+}
+
+export function safeBrandContractCode(code) {
+  const value = optionalString(code);
+  return value && BRAND_CONTRACT_ERROR_CODES.has(value) ? value : "unknown";
+}
+
+// One trimmed line, no control characters, no Markdown that could restyle the
+// rest of the description or a rendered bullet.
+//
+// The control-character half is `singleLineField`'s job and is not duplicated
+// here. Two things are added on top of it, because this input is different in
+// kind from a run id or a disposition: a loader message QUOTES FILE CONTENT,
+// so it can be long and can carry Markdown. Line breaks are turned into spaces
+// before the hand-off — a newline inside a quoted JSON fragment is a word
+// boundary, and rendering it as U+FFFD would read as mojibake — while ESC, DEL
+// and the rest still become the replacement character the rest of the CLI
+// uses, since those have no reading as text.
+export function singleLineDetail(detail, max = ADVISORY_DETAIL_MAX) {
+  const spaced = String(detail ?? "").replace(/[\r\n\t\v\f]+/g, " ");
+  const flattened = singleLineField(spaced)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[`*_[\]<>]/g, "\\$&");
+  if (!flattened) return "(no detail reported)";
+  return flattened.length > max ? `${flattened.slice(0, max - 1).trimEnd()}…` : flattened;
+}
+
+function familyPaletteResidueState(packet) {
+  const family = optionalString(packet?.assembly?.template_family);
+  if (!family) return { state: "no_family", family: null };
+  let contract = null;
+  try {
+    contract = resolveTemplateBrandContract(family);
+  } catch (error) {
+    return {
+      state: "defect",
+      family,
+      code: safeBrandContractCode(error?.code),
+      detail: singleLineDetail(error instanceof Error ? error.message : error),
+    };
+  }
+  // null is "resolved to no contract", never "something went wrong": no public
+  // contract file AND no private fragment carrying a `brandContract` — which
+  // includes a privately allowlisted family whose fragment declares a catalog
+  // entry but no brand contract, not only an unknown or uncertified family.
+  // Either way QA emits no residue rows for it. A defect throws instead, and is
+  // handled above; the two must not be collapsed.
+  if (!contract) return { state: "no_contract", family };
+  return { state: contractHasPaletteResidueChecks(contract) ? "inspected" : "no_palette_checks", family };
+}
+
+// A defective contract is not a palette problem and does not wait on the theme
+// gate: QA rejects the contract itself, for a family with brand tokens as
+// readily as one without. So this advisory is emitted on the contract state
+// alone — gating it on `nothing_generatable` would hide it from precisely the
+// campaigns that did generate a brand layer.
+function brandContractDefectAdvisory(residueState) {
+  if (residueState.state !== "defect") return null;
+  const family = safeFamilyLabel(residueState.family);
+  // A private-only family has no file at contracts/template-brand-contract.
+  // <family>.v0.json, so naming that path would send the operator to repair
+  // something that was never there. Name it only when it is actually on disk;
+  // otherwise point at the fragment that supplied the contract.
+  const publicPath = templateBrandContractPath(family);
+  const source = publicPath && existsSync(publicPath)
+    ? `contracts/template-brand-contract.${family}.v0.json`
+    : "the private fragment supplying it";
+  return {
+    id: BRAND_CONTRACT_DEFECT_ACTION_ID,
+    kind: "manual",
+    command: null,
+    description: `The contract source for family "${family}" exists but could not be read `
+      + `(${residueState.code}): ${residueState.detail} Browser QA rejects an unreadable contract outright — it records `
+      + `template-brand-contract:${family} as a blocker — so this will stop \`qa run\` regardless of the theme `
+      + `gate, and no waiver clears it. Repair ${source} before QA. Until it is readable, whether this `
+      + "campaign also ships the starter palette on its commerce pages cannot be determined.",
+  };
+}
+
+function themeStarterPaletteAdvisory(themeGate, packetPath, residueState) {
+  if (themeGate?.code !== "theme_gate.nothing_generatable") return null;
+  if (residueState.state !== "inspected") return null;
+  const packetArg = shellToken(packetPath || "<packet>");
+  return {
+    id: THEME_STARTER_PALETTE_ACTION_ID,
+    kind: "manual",
+    command: null,
+    description: "This campaign has no generatable brand tokens, so the theme gate passes "
+      + "(theme_gate.nothing_generatable) with no brand layer and the commerce pages keep the starter "
+      + "family's own palette. Browser QA does not read that as acceptable: with the gate unwaived it "
+      + "runs the template-residue checks at blocker severity, so `qa run` will block on "
+      + "template-residue:<page>:style:* rows for the starter call-to-action colour. Decide before QA, "
+      + "not after a blocked verdict. Either record an explicit operator waiver — "
+      + `\`campaigns-os theme waive --packet ${packetArg} --reason "<why the starter palette is acceptable>"\` `
+      + "— which downgrades those rows to warn severity and keeps the shipped palette visible in the "
+      + "verdict; or hand-author the brand layer (write brand-theme.css, list it after next-core.css in "
+      + "commerce-page frontmatter styles, rebuild, then record report.theme.status=applied with "
+      + "load_order=after-next-core), per docs/brand-theme-bridge.md. This notice waives nothing on its own.",
+  };
+}
+
 // Packet 03 (INV-5 first slice): the replacement recommendation when the
 // ledger and the artifacts disagree. Tells the operator to inspect and
 // decide — it resolves nothing, writes nothing, and never claims a stage is
@@ -7869,6 +8046,21 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     pushPolishCheckpointActions();
     push("recheck", "command", `campaigns-os next --packet ${packetPath} --json`, "Re-run next after recording valid Polish evidence.");
     return actions;
+  }
+  // Ahead of every stage that still has QA in front of it, say what QA will do
+  // about the brand layer: that a token-less build blocks on the starter
+  // palette (and the two lanes that clear it), or that the family's brand
+  // contract cannot be read at all. Both are emitted before the stage actions,
+  // so the advisory precedes whatever stage-specific command the branch emits.
+  // The blocked-gate branches above return early and keep owning their own
+  // action lists: a blocked gate is a different code, and a blocked polish gate
+  // is a stop-and-fix state whose own actions come first — these reappear on
+  // the next `next` once that gate clears.
+  const residueState = familyPaletteResidueState(packet);
+  for (const advisory of [brandContractDefectAdvisory(residueState), themeStarterPaletteAdvisory(themeGate, packetPath, residueState)]) {
+    if (advisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
+      push(advisory.id, advisory.kind, advisory.command, advisory.description);
+    }
   }
   if (result.stage === "setup") {
     push("setup_skill", "skill", "next-campaigns-os-setup", "Prepare the target page-kit structure and agent context, then record stages.setup in the assembly report.");
@@ -10265,24 +10457,46 @@ function printDoctorTinyPrompt(result, args) {
   console.log('Found workflow friction here? campaigns-os findings add --stage doctor --kind friction --summary "..."');
 }
 
-function printNextTinyPrompt(result, args) {
-  if (args.json) return;
+// The human half of `next`. Split out from the printer so the text an operator
+// actually reads is assertable without a subprocess: JSON output is covered by
+// next_actions[], and the prompt is the only place a non-JSON caller sees any
+// of it. Returns the lines to print, in order; an empty array prints nothing.
+export function nextTinyPromptLines(result) {
+  const lines = [];
   // A blocked gate owns the tiny prompt: print the exact commands so the
   // operator/agent acts on data, not on remembering doctrine.
   const blockedGate = (result.gates || []).find((gate) => gate.status === "blocked" && gate.id === "theme_gate");
   if (blockedGate) {
-    console.log("");
-    console.log("Theme gate is BLOCKING this stage. Resolve it with:");
+    lines.push("", "Theme gate is BLOCKING this stage. Resolve it with:");
     for (const action of result.next_actions || []) {
-      console.log(`  - ${action.command || action.description}`);
+      lines.push(`  - ${action.command || action.description}`);
     }
-    return;
+    return lines;
   }
-  if (result.stage !== "qa") return;
-  console.log("");
-  console.log("Next expected proof: browser QA + typed-card proof. Run: campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common");
-  console.log("Localhost on any port is a Development domain (SDK allowed, analytics suppressed). Non-localhost origins still need SDK allowlist confirmation.");
-  console.log('Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: campaigns-os findings add --stage qa --kind missing_prompt --summary "..."');
+  // A passing-but-token-less theme gate is the case that used to say nothing
+  // at all until QA blocked. It is not a blocker here, so it does not take the
+  // prompt over — it is printed alongside whatever else this stage says.
+  const contractDefect = (result.next_actions || []).find((action) => action?.id === BRAND_CONTRACT_DEFECT_ACTION_ID);
+  if (contractDefect) {
+    lines.push("", "This family's template brand contract cannot be read, and browser QA will REJECT it:");
+    lines.push(`  - ${contractDefect.description}`);
+  }
+  const starterPalette = (result.next_actions || []).find((action) => action?.id === THEME_STARTER_PALETTE_ACTION_ID);
+  if (starterPalette) {
+    lines.push("", "Theme gate passes with no brand layer, and browser QA will BLOCK on the starter palette:");
+    lines.push(`  - ${starterPalette.description}`);
+  }
+  if (result.stage !== "qa") return lines;
+  lines.push("");
+  lines.push("Next expected proof: browser QA + typed-card proof. Run: campaigns-os qa run --packet <packet> --base-url <url> --browser --test-order common");
+  lines.push("Localhost on any port is a Development domain (SDK allowed, analytics suppressed). Non-localhost origins still need SDK allowlist confirmation.");
+  lines.push('Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: campaigns-os findings add --stage qa --kind missing_prompt --summary "..."');
+  return lines;
+}
+
+function printNextTinyPrompt(result, args) {
+  if (args.json) return;
+  for (const line of nextTinyPromptLines(result)) console.log(line);
 }
 
 function printPrepareResult(result, args) {

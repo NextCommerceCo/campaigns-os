@@ -1875,8 +1875,35 @@
       "entry_sha256": "392d6d1cd2e36d659d941023b49f26da3757941792c2c4c94b2580f6a3c2652b"
     },
     {
-      "id": "RL-0044",
+      "id": "RL-0039",
       "sequence": 41,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.11",
+      "changelog_sha256": "fb56e401c46f2f2b41779340a46db5a184f8eca620f29b2641e05ab09b3529c5",
+      "agent_impact": "`next` gains one non-required advisory action, theme_gate.starter_palette_blocks_qa, in next_actions[] at the build, polish, deploy and qa stages. It is emitted when the theme gate's code is theme_gate.nothing_generatable (no brand tokens, nothing generated, gate passes) AND the packet's assembly.template_family resolves to a brand contract carrying both forbidden computed colors and commerce selectors to inspect them on — the same predicate the browser runner uses to decide whether template-residue:<page>:style:* rows are produced at all. It says browser QA will block on the starter palette and names the two lanes that clear it: `campaigns-os theme waive` (downgrades those rows to warn severity) or a hand-authored brand-theme.css loaded after next-core.css. A family outside the certified set (custom, undecided, or any family with no contract) produces no palette rows, so it is not warned. The non-JSON tiny prompt prints the same warning alongside, not instead of, the stage's existing prompt. No gate status, severity, or exit code changes, and nothing is waived automatically; a waived or applied gate emits nothing. A second non-required action, theme_gate.brand_contract_unreadable, appears at the same stages when the family's brand contract exists but fails to load (parse_error, schema_mismatch, extends_cycle, extends_missing_parent, family_mismatch): it names the family and the error code and says browser QA rejects such a contract outright as a template-brand-contract:<family> blocker that no waiver clears. That one does not depend on the theme gate outcome, because QA rejects the contract whether or not the campaign has brand tokens; a family that simply resolves to no contract is not a defect and emits nothing. next still never throws over a defective contract. Every value interpolated into that advisory is bounded before it is printed or serialized: the family must match the lowercase template-family slug or it reads unknown-family, the code must be one of the loader's own or it reads unknown, and the loader detail is folded to one trimmed line with control characters stripped, Markdown escaped, and length capped; the repair path names contracts/template-brand-contract.<family>.v0.json only when that file is on disk and otherwise names the private fragment supplying it. A consumer that treats every next_actions[] entry as a command to execute must read `command: null` / absent `required` as advisory, as it already must for purchase_proof_unknown and run_record_present.",
+      "compatibility": "additive",
+      "migration": "none. Consumers keying on action ids may add theme_gate.starter_palette_blocks_qa; ignoring it leaves previous behaviour unchanged.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "next emits a non-required theme_gate.starter_palette_blocks_qa action at build/polish/deploy/qa when the theme gate passes with code theme_gate.nothing_generatable, no waiver is recorded, and the packet's template family has applicable palette-residue checks, naming the QA consequence and both clearing lanes; a defective (unreadable) brand contract emits theme_gate.brand_contract_unreadable instead, naming the family and the loader's error code, independently of the theme gate; the tiny prompt is split into an assertable line builder and prints the same warning without displacing the stage prompt."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "States the token-less rule in the theme section: the gate passes with nothing to generate, browser QA then blocks on the starter palette at blocker severity, and the waiver or a hand-authored brand layer is the bypass."
+        }
+      ],
+      "entry_sha256": "e411bb411f0ec56348d83a216b2304fe2fe4b6d820b5dbb67e20d4b9998389b8"
+    },
+    {
+      "id": "RL-0044",
+      "sequence": 42,
       "date": "2026-09-12",
       "kind": "release",
       "surface_version": "1.26.0",
@@ -1923,7 +1950,7 @@
           "summary": "Documents the manifest wrapper_policy key and its precedence against the CLI flag in the Source HTML Manifest Auto-Population behavior list."
         }
       ],
-      "entry_sha256": "36f21e3e06fb1779afbad6064961d668a67943b6ea74706da4a621de0bdad7cf"
+      "entry_sha256": "9d14fd36cd3e823d449b94d4be08037a633fb8656bc9effbb49737145301711b"
     }
   ]
 }
