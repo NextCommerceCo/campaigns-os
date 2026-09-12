@@ -1785,25 +1785,25 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.25.0+agent.9",
-      "changelog_sha256": "f5cef5b6b708acf17e96bdafacbeafa9f79e62e04b0523dac1a81c0a922fa6e3",
-      "agent_impact": "The run-record closeout command qa run prints as \"Required next\" carries --no-remit after a BLOCKED verdict, and says why. A blocked verdict keeps the run session open, so an agent executing the printed command verbatim no longer spends the session run_id on the interim record; the session close (the later ready auto-end, or run end) is then the first and only POST for that id and lands remit_state ok instead of failed. A terminal verdict is unchanged: it auto-ends the session in the same process, before the printed command can run, so the command mints its own run_id and remits, exactly as it does with no session. An agent that pattern-matches the closeout command string must accept an optional --no-remit between --qa-verdict and --json. Separately, when an auto-end assembles its record but the remit does not close, the auto-end now writes the recovery command for that run_id to stderr: the session is cleared at that point, so no later bare run-record can repair that record. Remit itself is unchanged on the wire - the docs that called the endpoint an upsert now state that it keeps one record per run_id and refuses a repeat POST for a stored id with 409, so retrying a send that failed is safe and re-sending one that succeeded is not.",
+      "changelog_sha256": "6f0a1997abb50622f1e516be2f85322f631b27f1fd54aa0400d6402f02288760",
+      "agent_impact": "The run-record closeout command qa run prints as \"Required next\" carries --no-remit after a BLOCKED verdict, and says why. A blocked verdict keeps the run session open, so an agent executing the printed command verbatim no longer spends the session run_id on the interim record; the session close (the later ready auto-end, or run end) is then the first and only POST for that id and lands remit_state ok instead of failed. A terminal verdict is unchanged: it auto-ends the session in the same process, before the printed command can run, so the command mints its own run_id and remits, exactly as it does with no session. An agent that pattern-matches the closeout command string must accept an optional --no-remit between --qa-verdict and --json. Separately, an auto-end whose own remit does not close now says so on stderr and names the local record to keep; it does not print a re-send command, because run-record --run-id reassembles from current disk state rather than reloading the written record, and a session s QA attempt references are gone once the session is cleared - on a run repaired across several attempts that command replaces the stored record with a thinner one and sends that. The same caveat is now stated beside the run_record_remit_recovery action an agent may already be following. Re-sending a persisted record is not implemented. Remit itself is unchanged on the wire - the docs that called the endpoint an upsert now state that it keeps one record per run_id and refuses a repeat POST for a stored id with 409, so retrying a send that failed is safe and re-sending one that succeeded is not.",
       "compatibility": "compatible",
-      "migration": "none. Read the closeout command from next_actions rather than reconstructing it, and treat --no-remit as expected after a blocked verdict.",
+      "migration": "none. Read the closeout command from next_actions rather than reconstructing it, and treat --no-remit as expected after a blocked verdict. Do not treat run-record --run-id as a re-send of a stored record: for a multi-attempt run, prefer the local record file until reload-and-resend exists.",
       "changes": [
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "qa",
-          "summary": "qa run receives the CLI ambient run session it already resolved, so the closeout command it prints is built against the same session whose run_id the close will remit under; after a blocked verdict, which keeps that session open, the command is emitted with --no-remit. The auto-end reports a remit that did not close by printing the recovery command for its run_id, which is otherwise unrecoverable once the session is cleared."
+          "summary": "qa run receives the CLI ambient run session it already resolved, so the closeout command it prints is built against the same session whose run_id the close will remit under; after a blocked verdict, which keeps that session open, the command is emitted with --no-remit. An auto-end whose remit did not close now reports that and names the record to keep, rather than advertising a reassembling run-record --run-id as a recovery."
         },
         {
           "class": "named_surface",
           "path": "docs/workflow-findings-sidecar.md",
           "surface_entry": "docs/workflow-findings-sidecar.md",
-          "summary": "States that the remit endpoint keeps one record per run_id and refuses a repeat POST for a stored id with 409 rather than upserting; records that the closeout printed after a blocked verdict carries --no-remit because the session close owns that ids one accepted send, that a terminal verdict auto-ends first and so remits normally, and that a failed auto-end remit is surfaced with its recovery command."
+          "summary": "States that the remit endpoint keeps one record per run_id and refuses a repeat POST for a stored id with 409 rather than upserting; records that the closeout printed after a blocked verdict carries --no-remit because the session close owns that ids one accepted send, that a terminal verdict auto-ends first and so remits normally, and that the run_record_remit_recovery command reassembles rather than reloads, so it thins a multi-attempt record."
         }
       ],
-      "entry_sha256": "2775d2216ff83c9026173770fc048631a2366717959edace2e518cd7f1466577"
+      "entry_sha256": "686133016e5d5fb5eaf172ab054cec295d61725097e4ffd15a9c8e4d25ca98b7"
     }
   ]
 }

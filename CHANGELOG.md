@@ -20,10 +20,14 @@ Notable supported-surface changes are recorded here.
   before the printed command can run, so that command mints its own `run_id` and
   remits — as it does with no session at all.
 - When a session's auto-end assembles its record but the remit does not close,
-  the auto-end now prints the recovery command naming that `run_id`. The session
-  is cleared at that point, so from the next command onwards a bare `run-record`
-  mints a fresh id and cannot repair the record that failed to send; this is the
-  last moment the operator is looking at it.
+  the auto-end now says so and names the local record to keep. It deliberately
+  does not print a re-send command: `run-record --run-id <id>` reassembles the
+  record from current disk state rather than reloading the one already written,
+  and a session's QA attempt references survive only on the session, which the
+  auto-end has cleared. On a run repaired across several QA attempts that
+  command therefore replaces the stored record with a thinner one and sends
+  that. The same caveat is now stated beside the `run_record_remit_recovery`
+  action in the remit docs. Re-sending a persisted record is not implemented.
 - The comments and docs describing the remit endpoint as upserting on `run_id`
   are corrected to what it does. Idempotency is enforced by refusal, not
   replacement: a send that never landed can be retried (which is what the

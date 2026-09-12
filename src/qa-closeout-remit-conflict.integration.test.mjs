@@ -27,6 +27,7 @@ import { promisify } from "node:util";
 import { buildQaCloseoutActions } from "./qa-node.mjs";
 import { autoEndCloseoutNotice } from "./cli.mjs";
 import { assessRunRecordCloseout } from "./run-record-closeout.mjs";
+import { buildRunSession, writeRunSession } from "./run-session.mjs";
 
 // Async on purpose: the receiver below lives in THIS process, so a synchronous
 // child-process call would block the event loop that has to accept its request.
@@ -218,22 +219,92 @@ test("a failed session remit stays recoverable: the closeout does not print a lo
   const [action] = buildQaCloseoutActions({ packetPath, localPath: null, runSessionActive: true, disposition: "ready" });
   assert.doesNotMatch(action.command, /--no-remit/);
 
-  // The auto-end is where that failure is surfaced, naming the existing id.
+  // The auto-end is where that failure is surfaced. It names the file to keep
+  // and does NOT advertise a reassembling "recovery" — see the next test.
   const notice = autoEndCloseoutNotice({
     runId: sessionRunId,
-    packetPath,
     recordPath: "/t/record.json",
     remitState: sessionRecord.remit_state,
     remitError: sessionRecord.remit_error,
   });
-  assert.match(notice, new RegExp(`run-record --packet ${packetPath} --run-id ${sessionRunId} --json`));
-  assert.doesNotMatch(notice, /--no-remit/);
+  assert.match(notice, /remit did not complete/);
+  assert.match(notice, /\/t\/record\.json/);
+  assert.doesNotMatch(notice, /--run-id/);
 });
 
 test("the auto-end notice stays quiet when the remit closed", () => {
   for (const remitState of ["ok", "skipped"]) {
-    const notice = autoEndCloseoutNotice({ runId: "run_1_abcd", packetPath: "/t/packet.json", recordPath: "/t/r.json", remitState });
+    const notice = autoEndCloseoutNotice({ runId: "run_1_abcd", recordPath: "/t/r.json", remitState });
     assert.doesNotMatch(notice, /--run-id/);
     assert.match(notice, /auto-ended after qa run/);
   }
+});
+
+// Why the auto-end notice names a file to keep instead of a command to run.
+//
+// `run-record --run-id <id>` REASSEMBLES; it does not reload the record already
+// written under that id. A session's QA attempt references reach the record
+// only through ambient.session.qa_attempts, and a failed auto-end has already
+// cleared the session — so on a session with more than one attempt the command
+// that looks like a recovery overwrites the complete record with a thinner one
+// and would send that instead.
+//
+// This is a characterization test: it pins the behaviour that makes the advice
+// correct today. If reload-and-resend of the persisted record ever lands, this
+// test SHOULD fail — update it then, and the notice with it.
+test("re-running run-record against a cleared session's id reassembles, and thins a multi-attempt record", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-recovery-thinning-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const refusing = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      response.writeHead(500, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "receiver_unavailable" }));
+    });
+  });
+  await new Promise((done) => refusing.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => refusing.close(done)));
+  const accepting = await startConflictingReceiver();
+  t.after(() => accepting.close());
+
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "recovery-thinning", private: true }));
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  cpSync(join(ROOT, "examples/build-packet.basic.json"), packetPath);
+
+  // Two QA attempts, the shape a repaired run leaves: one blocked, then ready.
+  const attemptPaths = ["attempt-blocked.json", "attempt-ready.json"].map((name, index) => {
+    const path = join(dir, name);
+    writeFileSync(path, JSON.stringify({
+      schema_version: "campaigns-os-qa-verdict/v1",
+      run_id: `qa_${index}`,
+      disposition: index === 0 ? "blocked" : "ready",
+    }));
+    return path;
+  });
+
+  const runId = "run_1789300000000_multiattempt";
+  const session = buildRunSession({ runId, lifecycleJournal: join(dir, ".campaign-runtime/command-lifecycle.jsonl"), packet: packetPath });
+  writeRunSession(dir, {
+    ...session,
+    qa_attempts: attemptPaths.map((path, index) => ({ path, disposition: index === 0 ? "blocked" : "ready", run_id: `qa_${index}` })),
+  });
+
+  // The session close assembles the complete record; its remit is refused.
+  await runCli(["run", "end", "--packet", packetPath, "--proxy-base", `http://127.0.0.1:${refusing.address().port}`, "--json"], { cwd: dir });
+  const assembled = readRecords(dir).find((record) => record.run_id === runId);
+  const qaRefs = (record) => record.artifacts.filter((artifact) => artifact.kind === "qa_verdict").length;
+  assert.equal(assembled.remit_state, "failed");
+  assert.equal(qaRefs(assembled), 2, "the session's record carries both attempts");
+
+  // Now the command that looks like a recovery, against a receiver that accepts.
+  await runCli(["run-record", "--packet", packetPath, "--run-id", runId, "--proxy-base", accepting.base, "--json"], { cwd: dir });
+  const after = readRecords(dir).find((record) => record.run_id === runId);
+
+  assert.equal(after.remit_state, "ok", "the send itself succeeds — which is what makes the loss quiet");
+  assert.ok(
+    qaRefs(after) < 2,
+    "the reassembled record drops the session's attempt references; if this now holds both, reload-and-resend has landed and the notice can advertise it",
+  );
+  assert.equal(accepting.posts.length, 1, "and the thinner record is what reached the receiver");
 });

@@ -728,16 +728,26 @@ export function recordQaStageOutcome(args, result) {
 
 // What the auto-end says once it has assembled the record and cleared the
 // session. The clearing is why the remit outcome has to be reported HERE: from
-// the next command onwards there is no session, so a bare `run-record` mints a
-// fresh run_id and cannot repair this record's send. If the remit did not
-// close, the only command that recovers it is one naming this run_id, and this
-// is the last moment the operator is looking at it. `skipped` is a deliberate
-// non-remit (consent off, --no-remit, local-only), not a failure.
-export function autoEndCloseoutNotice({ runId, packetPath, recordPath = null, remitState = null, remitError = null }) {
+// the next command onwards there is no session, so nothing knows this run_id.
+// `skipped` is a deliberate non-remit (consent off, --no-remit, local-only),
+// not a failure.
+//
+// It deliberately does NOT print `run-record --run-id <id>` as a recovery.
+// That command REASSEMBLES the record from what is on disk at the time it runs;
+// it does not reload the one already written. The session's QA attempt
+// references come only from ambient.session.qa_attempts (see runRecordCommand),
+// and the session is gone by then — so on a session with more than one attempt
+// the "recovery" would replace a complete record with a thinner one and send
+// that instead. Resending the persisted file is the right fix and is follow-up
+// work; until it exists the honest advice is to keep the file.
+export function autoEndCloseoutNotice({ runId, recordPath = null, remitState = null, remitError = null }) {
   const assembled = `[campaigns-os] Run session ${runId} auto-ended after qa run; Run Record ${recordPath || "assembled"}.\n`;
   if (remitState === "ok" || remitState === "skipped") return assembled;
   const why = remitError ? ` (${remitError})` : "";
-  return `${assembled}[campaigns-os] That record's remit did not complete${why}. Recover it against the SAME run id — minting a second record would fork the run's identity:\n  campaigns-os run-record --packet ${shellToken(packetPath)} --run-id ${shellToken(runId)} --json\n`;
+  const kept = recordPath
+    ? `The complete record is on disk at ${recordPath} — it holds every QA attempt this session collected. Keep it.`
+    : "No local record path was reported for this run, so there is nothing on disk to keep.";
+  return `${assembled}[campaigns-os] That record's remit did not complete${why}. ${kept} There is no retry-from-file path yet: re-running run-record against this run id reassembles the record from current disk state, without the session's attempt references, so it would overwrite this one with less than it has.\n`;
 }
 
 async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown) {
@@ -791,7 +801,6 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
     sessionHolder.current = null;
     process.stderr.write(autoEndCloseoutNotice({
       runId: updatedFound.session.run_id,
-      packetPath: packet,
       recordPath: summary?.record_path || null,
       remitState: optionalString(summary?.record?.remit_state),
       remitError: optionalString(summary?.record?.remit_error),

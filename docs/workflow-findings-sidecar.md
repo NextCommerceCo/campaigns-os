@@ -278,9 +278,10 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   accepted POST on it is not. A terminal verdict auto-ends the session in the
   same process, before the printed command can run, so there the command mints
   its own `run_id` and remits normally — as it does with no session at all. When
-  an auto-end's own remit does not close, the auto-end prints the recovery
-  command for that `run_id`, because once the session is cleared no later
-  `run-record` can repair that record without being told the id.
+  an auto-end's own remit does not close, the auto-end says so and names the
+  local record to keep. It does not print a re-send command: `run-record
+  --run-id` reassembles rather than reloads (see below), and the session whose
+  attempt references the record carries is already cleared.
 - An explicit absolute `--packet` associates commands and `run status` with the
   target campaign session even from the toolkit or another project directory.
   If cwd and packet resolve to different active sessions, the command fails
@@ -357,6 +358,15 @@ for that id:
 ```bash
 campaigns-os run-record --packet <packet> --run-id <existing-run-id> --json
 ```
+
+Read that command for what it is: it **reassembles** the record under that
+`run_id`, it does not reload and re-send the file already written. Anything the
+record held that came only from the run session — the QA attempt references a
+repaired run collects across several attempts — is gone once the session is
+cleared, so on a multi-attempt run this replaces the stored record with a
+thinner one and sends that. Re-sending the persisted record is not implemented.
+Until it is, treat the local file as the durable artifact and recover the remit
+only for a run whose record the current disk state can still reproduce.
 
 An active run session still wins: with an ambient session open, `done` emits the
 required `run end` exactly as before, satisfied or not.
