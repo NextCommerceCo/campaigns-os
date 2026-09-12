@@ -1,5 +1,5 @@
-const OFFER_PAGE_TYPES = new Set(["upsell", "downsell"]);
-const RECEIPT_PAGE_TYPES = new Set(["receipt", "thankyou"]);
+export const OFFER_PAGE_TYPES = new Set(["upsell", "downsell"]);
+export const RECEIPT_PAGE_TYPES = new Set(["receipt", "thankyou"]);
 const ACTIONS = Object.freeze([
   ["decline", "expected_decline_url"],
   ["accept", "expected_accept_url"],
@@ -177,7 +177,7 @@ function dedupeTerminals(terminals) {
   return deduped;
 }
 
-function canonicalHttpUrl(value) {
+export function canonicalHttpUrl(value) {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const url = new URL(value.trim());

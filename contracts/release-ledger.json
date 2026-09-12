@@ -1723,6 +1723,27 @@
         }
       ],
       "entry_sha256": "57b151bef12832d81b0e7515dbff537fed2e5b6a6a23e1528da23cec54a50155"
+    },
+    {
+      "id": "RL-0035",
+      "sequence": 35,
+      "date": "2026-09-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.6",
+      "changelog_sha256": "c2fb662c77d12b68895efaedbebd27fda18a24cb6f3e303155e994ccc29e3dcd",
+      "agent_impact": "The typed-card ladder gains a first step, entered_via_landing, before opened_checkout. A checkout that carries its own package selection surface records it as skipped and the rest of the ladder is unchanged; a checkout that carries none is entered through the funnel landing/entry page (SDK add-to-cart control or forcePackageId checkout link, --select-package honoured strictly) and the SDK navigation to checkout is awaited, so the shop-single-step family can now be proved by the runner. order_submitted refuses a zero-item SDK cart with cart_empty_before_submit before any reservation or click; it classifies as not_created and keeps its bounded re-run. New named failure codes: cart_entry_unresolved, cart_entry_control_missing, cart_entry_no_navigation, cart_empty_before_submit. A consumer reading the ladder by index must not assume opened_checkout is steps[0]; one matching a 45 s order_submitted timeout on an empty-cart funnel will now see the named code instead.",
+      "compatibility": "additive",
+      "migration": "none. Read ladder steps by name, not by index. Treat the four new codes as pre-submit failures (not_created).",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents the entered_via_landing cart entry step (probe, entry-page resolution, control choice, SDK-owned navigation, evidence, failure codes) and the order_submitted empty-cart guard (read order, cart_empty_before_submit, budget semantics, unreadable-cart rule); adds the runner refusals to the not_created classification row."
+        }
+      ],
+      "entry_sha256": "97943be6f346451c2b20c4329f1c32e7e38d071e7c928f77284ae5cd8a69f812"
     }
   ]
 }

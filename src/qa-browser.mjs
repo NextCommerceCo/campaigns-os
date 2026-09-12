@@ -7,6 +7,7 @@ import { attachAnalyticsCapture, diffAnalyticsParity } from "./qa-analytics-pari
 import { assessAnalyticsInventory } from "./qa-analytics-correctness.mjs";
 import { redactUrlQuery } from "./qa-url-privacy.mjs";
 import {
+  canonicalHttpUrl,
   commonTestOrderPaths,
   fullTestOrderPaths,
   pageAtUrl,
@@ -14,6 +15,21 @@ import {
   resolveTestOrderTopology,
   terminalAtUrl,
 } from "./qa-test-order-topology.mjs";
+import {
+  CART_ENTRY_CODES,
+  CART_ENTRY_CONTROL_SELECTOR,
+  CART_ENTRY_STEP,
+  assessCartBeforeSubmit,
+  cartEmptyMessage,
+  cartEntryControlsScript,
+  checkoutSelectionSurfaceScript,
+  chooseCartEntryControl,
+  codedError,
+  isCartEntryCode,
+  resolveCartEntryPage,
+  sdkCartSnapshotScript,
+  summarizeSelectionSurface,
+} from "./qa-cart-entry.mjs";
 import {
   demoAssetConfig,
   forbiddenComputedColors,
@@ -137,7 +153,9 @@ export async function runBrowserTestOrders(topologies, args = {}, runId = "local
       checkoutPage,
       args,
       runId,
-      options: { ...options, creationBudget },
+      // The topologies travel with the options so each attempt can resolve the
+      // funnel's cart-entry page for the checkout it drives (campaigns-os#206).
+      options: { ...options, creationBudget, topologies },
     });
     return {
       orders: dispatched.orders,
@@ -2297,6 +2315,7 @@ function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount }) {
 // 446s-hang-then-exit-1-with-nothing failure mode is structurally impossible.
 
 const TEST_ORDER_STEP_LADDER = Object.freeze([
+  CART_ENTRY_STEP,
   "opened_checkout",
   "selected_bundle",
   "bump_state",
@@ -2781,6 +2800,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
   let orderDeadline = null;
   let events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
   const email = testEmail(planArgs);
+  const entryPage = resolveCartEntryPage(options.topologies, checkoutPage);
   // Reserved immediately before the submit click, never reconciled afterwards:
   // an accounting check that runs after the purchase is not a budget. The same
   // call records that this attempt did submit, which is what lets a later
@@ -2844,6 +2864,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         email,
         ladder,
         checkoutPage,
+        entryPage,
         topologyPlan: normalizedPlan.topology_plan,
         path,
         args: planArgs,
@@ -2907,16 +2928,44 @@ function stablePrivateCaptureError(value) {
   return projectAnalyticsCaptureError(value, { fallbackKind: "unreadable" });
 }
 
-async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, topologyPlan, path, args, deadline, reserveOrderCreation = null }) {
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null }) {
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
   const selectedPackages = parseCart(args["select-package"]);
   let checkoutDisplay = null;
+  let cartBeforeSubmit = null;
 
-  await ladder.run("opened_checkout", () => gotoAndSettle(page, checkoutPage.url, args), { timeoutMs: budget() });
+  // Cart entry (campaigns-os#206). A checkout that carries its own selection
+  // surface fills the cart on the page the ladder is about to open, and the
+  // step is skipped so those families run exactly as before. A checkout that
+  // carries none was filled upstream: the runner enters through the funnel's
+  // landing page, clicks the SDK add-to-cart control, and lets the SDK land on
+  // checkout. `opened_checkout` then confirms the arrival instead of
+  // re-navigating, which is what would throw the cart away.
+  const entry = await ladder.run(CART_ENTRY_STEP, () => enterCartViaLanding({
+    page, checkoutPage, entryPage, selectedPackages, args, budget,
+  }), { timeoutMs: budget() });
+  const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
+  // Responses captured from here on belong to the checkout the ladder drives.
+  // The guard's cart-API fallback must not read a cart call the entry page
+  // made before the hand-off.
+  const checkoutResponseOffset = events.responses.length;
+
+  await ladder.run("opened_checkout", async () => {
+    if (enteredViaLanding) {
+      await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+      return "arrived from the entry page via SDK navigation; not re-opened";
+    }
+    await gotoAndSettle(page, checkoutPage.url, args);
+  }, { timeoutMs: budget() });
   await ladder.run("selected_bundle", async () => {
-    const strictSelection = await selectRequestedPackages(page, selectedPackages);
+    // The requested package was selected on the entry page, where the cards
+    // live; checkout renders none, so re-running strict selection here would
+    // fail for the wrong reason.
+    const strictSelection = enteredViaLanding && selectedPackages.length
+      ? `selected on entry page: ${entry.package_id || "(no package id on control)"}`
+      : await selectRequestedPackages(page, selectedPackages);
     await selectRequestedCart(page, args);
     await advanceToCheckoutForm(page);
     if (strictSelection) return `selected requested package card(s): ${strictSelection}`;
@@ -2956,12 +3005,21 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       // not as its own ladder step so the step contract is unchanged; the
       // collector never throws, so it cannot cost the one canonical order.
       checkoutDisplay = await checkoutDisplayEvidence(page);
+      // Empty-cart guard (campaigns-os#206). The SDK never posts an order for
+      // an empty cart, so clicking submit here can only end in the step
+      // timeout. Read the cart the page holds and refuse by name instead. This
+      // runs BEFORE the reservation: nothing is clicked, nothing is spent, and
+      // the classifier reads the failure as `not_created`.
+      cartBeforeSubmit = await cartStateBeforeSubmit(page, events, { responseOffset: checkoutResponseOffset, budget });
+      if (cartBeforeSubmit.empty) {
+        throw codedError(CART_ENTRY_CODES.CART_EMPTY_BEFORE_SUBMIT, cartEmptyMessage(cartBeforeSubmit));
+      }
       // Last gate before a real purchase. It throws rather than clicking, so an
       // exhausted budget can never be discovered by counting orders afterwards.
       if (typeof reserveOrderCreation === "function") reserveOrderCreation();
       await submitCheckout(page);
       await waitForCheckoutResult(page, events);
-    }, { timeoutMs: budget() });
+    }, { timeoutMs: budget(), evidence: () => (cartBeforeSubmit ? { cart_before_submit: cartBeforeSubmit } : null) });
   } catch (error) {
     if (error?.code === ORDER_CREATION_BUDGET_EXHAUSTED) throw error;
     const hosted = error?.hostedRedirect || hostedNow();
@@ -3125,6 +3183,97 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   };
 }
 
+// The entry step body. Resolves to `{ skip }` when the checkout selects for
+// itself, to `{ entered: true, ... }` when the runner came in through the entry
+// page, and throws a coded error (never a bare timeout) when it cannot.
+async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget }) {
+  // Probe the checkout first: whether it carries a selection surface is a fact
+  // about the rendered page, not about the spec (the spec cannot say it yet —
+  // that is the design half of #206).
+  await gotoAndSettle(page, checkoutPage.url, args);
+  const surface = await page.evaluate(checkoutSelectionSurfaceScript()).catch(() => ({ count: 0, kinds: {}, excluded: 0 }));
+  if (surface.count > 0) {
+    return {
+      skip: `checkout carries its own package selection surface (${summarizeSelectionSurface(surface)}); cart is entered on checkout`,
+      evidence: { checkout_selection_surface: surface },
+    };
+  }
+  if (!entryPage?.url) {
+    throw codedError(
+      CART_ENTRY_CODES.ENTRY_UNRESOLVED,
+      "checkout carries no package selection surface and no landing/entry page resolves from the funnel topology to fill the cart from; the checkout would submit an empty cart",
+    );
+  }
+
+  await gotoAndSettle(page, entryPage.url, args);
+  const sdkReady = await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
+  const controls = await page.evaluate(cartEntryControlsScript(), { selector: CART_ENTRY_CONTROL_SELECTOR, checkoutUrl: checkoutPage.url }).catch(() => []);
+  const choice = chooseCartEntryControl(controls, selectedPackages);
+  if (!choice.control) {
+    throw codedError(CART_ENTRY_CODES.ENTRY_CONTROL_MISSING, `${choice.reason} (entry page ${redactUrlQuery(entryPage.url)})`);
+  }
+  const control = choice.control;
+  // The index is the control's position among what its own locator matches,
+  // so it replays with nth(); no selector is rebuilt from an attribute value.
+  const target = page.locator(control.kind === "add_to_cart" ? CART_ENTRY_CONTROL_SELECTOR : "a[href]").nth(control.index);
+  await target.scrollIntoViewIfNeeded().catch(() => {});
+  await target.click({ timeout: 8000 }).catch(async () => {
+    await target.click({ force: true, timeout: 8000 });
+  });
+
+  // The SDK owns the navigation (data-next-url, or the link the SDK reads
+  // forcePackageId from on arrival). Waiting for the URL is what proves the
+  // hand-off happened; a goto here would be the runner faking it.
+  const atCheckout = (value) => canonicalHttpUrl(String(value)) === canonicalHttpUrl(checkoutPage.url);
+  const navigationTimeout = Math.max(1000, Math.min(budget(), numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS)));
+  await page.waitForURL((url) => atCheckout(url.toString()), { timeout: navigationTimeout }).catch(() => {
+    throw codedError(
+      CART_ENTRY_CODES.ENTRY_NO_NAVIGATION,
+      `clicked "${control.text || "(no text)"}" on the entry page but the page did not reach ${redactUrlQuery(checkoutPage.url)} within ${navigationTimeout}ms (now at ${redactUrlQuery(safePageUrl(page)) || "(unknown)"})`,
+    );
+  });
+  await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await page.waitForTimeout(750);
+
+  return {
+    entered: true,
+    package_id: control.package_id || null,
+    detail: `entered via ${entryPage.page_type || "entry"} page: clicked "${control.text || "(no text)"}"${control.package_id ? ` (package ${control.package_id})` : ""}, SDK navigated to checkout`,
+    evidence: {
+      landing_url: redactUrlQuery(entryPage.url),
+      landing_page_id: entryPage.page_id,
+      landing_page_type: entryPage.page_type,
+      landing_resolution: entryPage.resolution,
+      control_text: control.text || null,
+      control_kind: control.kind,
+      package_id: control.package_id || null,
+      sdk_ready: sdkReady,
+      arrived_url: redactUrlQuery(safePageUrl(page)),
+      checkout_selection_surface: surface,
+    },
+  };
+}
+
+// The SDK installs `window.next` late in boot. Bounded and tolerant: a page
+// without the SDK (a plain forcePackageId link) still has a cart entry.
+async function waitForSdkReady(page, timeoutMs) {
+  return page.waitForFunction(() => typeof window.next?.getCartCount === "function", null, { timeout: Math.max(250, timeoutMs) })
+    .then(() => true)
+    .catch(() => false);
+}
+
+// The cart as the page holds it at submit time. Public SDK API first, debug
+// stores second, the observed cart-API response third. The SDK installs
+// `window.next` late in boot, so a page that is still mounting gets a bounded
+// wait before it is read as "no SDK here" — an unreadable cart lets the submit
+// proceed, and that must be earned, not hit by racing the mount.
+async function cartStateBeforeSubmit(page, events, { responseOffset = 0, budget = () => DEFAULT_SETTLE_TIMEOUT_MS } = {}) {
+  await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
+  const snapshot = await page.evaluate(sdkCartSnapshotScript()).catch(() => ({ readable: false }));
+  const checkoutEvents = { ...events, responses: (events?.responses || []).slice(responseOffset) };
+  return assessCartBeforeSubmit(snapshot, cartCreationEvidence(checkoutEvents));
+}
+
 // Hosted checkout is platform-owned: reaching it is the terminal step for the
 // path in v0 — recorded as manual_review, not a hard fail.
 async function hostedRedirectOutcome({ page, events, email, checkoutPage, args, path, ladder, hosted }) {
@@ -3164,6 +3313,10 @@ function failedTestOrderResult({ path, email, error, events, ladder, page }) {
     ok: false,
     error: message,
     ...(error?.code === ORDER_CREATION_BUDGET_EXHAUSTED ? { budget_exhausted: true } : {}),
+    // A refusal the runner authored itself (cart entry, empty-cart guard) is
+    // named on the result so a verdict reader can match the code rather than
+    // the message.
+    ...(isCartEntryCode(error?.code) ? { failure_code: error.code } : {}),
     order: {
       path,
       ok: false,
@@ -6019,6 +6172,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   createUpsellActionTrace,
   fillCheckoutFields,
   cartCreationEvidence,
+  cartStateBeforeSubmit,
   cartLineCount,
   requiredActionTimeout,
   recordTestOrderTerminalEvidence,
