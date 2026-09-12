@@ -25,7 +25,7 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 
 import { buildQaCloseoutActions } from "./qa-node.mjs";
-import { autoEndCloseoutNotice } from "./cli.mjs";
+import { autoEndCloseoutNotice, sessionKeptOpenNotice } from "./cli.mjs";
 import { assessRunRecordCloseout } from "./run-record-closeout.mjs";
 import { buildRunSession, writeRunSession } from "./run-session.mjs";
 
@@ -338,6 +338,38 @@ test("the auto-end notice keeps one clean line per field", () => {
   assert.match(notice, /run_1_abcd�/);
   assert.match(notice, /\/t\/records�/);
   assert.match(notice, /remit did not complete \(boom�/);
+});
+
+// The session-kept-open line has the same exposure and the same one-line
+// contract. Its disposition is the value least likely to be tame: this branch
+// runs precisely when the toolkit did not recognise it.
+test("the session-kept-open notice keeps one clean line per field", () => {
+  const LF = String.fromCharCode(10);
+  const CR = String.fromCharCode(13);
+  const ESC = String.fromCharCode(27);
+  const notice = sessionKeptOpenNotice({
+    attemptRunId: ["qa_0001", "[campaigns-os] session cleared"].join(LF),
+    disposition: [`${ESC}[2Kquarantined`, "ready"].join(CR),
+    sessionRunId: ["run_1_abcd", "[campaigns-os] all is well"].join(LF),
+  });
+
+  const lines = notice.trimEnd().split(LF);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^\[campaigns-os\] QA attempt /);
+  for (const control of [CR, ESC]) {
+    assert.ok(!notice.includes(control), `notice must not carry ${JSON.stringify(control)}`);
+  }
+  // Replaced, not dropped, and still recognisably the value that arrived.
+  assert.match(notice, /qa_0001\uFFFD/);
+  assert.match(notice, /run_1_abcd\uFFFD/);
+  assert.match(notice, /carries no session-ending disposition \(\uFFFD\[2Kquarantined\uFFFDready\)/);
+});
+
+// A mangled disposition must not be able to impersonate the blocked wording,
+// and an absent one still reads as a sentence.
+test("the session-kept-open notice names blocked and absent dispositions plainly", () => {
+  assert.match(sessionKeptOpenNotice({ attemptRunId: "qa_1", disposition: "blocked", sessionRunId: "run_1" }), /qa_1 is blocked; run session run_1 /);
+  assert.match(sessionKeptOpenNotice({ disposition: null, sessionRunId: null }), /QA attempt recorded carries no session-ending disposition \(none recorded\); run session \(unnamed run\) /);
 });
 
 test("the auto-end notice survives a missing run id and record path", () => {

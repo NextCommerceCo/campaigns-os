@@ -726,20 +726,6 @@ export function recordQaStageOutcome(args, result) {
   }
 }
 
-// What the auto-end says once it has assembled the record and cleared the
-// session. The clearing is why the remit outcome has to be reported HERE: from
-// the next command onwards there is no session, so nothing knows this run_id.
-// `skipped` is a deliberate non-remit (consent off, --no-remit, local-only),
-// not a failure.
-//
-// It deliberately does NOT print `run-record --run-id <id>` as a recovery.
-// That command REASSEMBLES the record from what is on disk at the time it runs;
-// it does not reload the one already written. The session's QA attempt
-// references come only from ambient.session.qa_attempts (see runRecordCommand),
-// and the session is gone by then — so on a session with more than one attempt
-// the "recovery" would replace a complete record with a thinner one and send
-// that instead. Resending the persisted file is the right fix and is follow-up
-// work; until it exists the honest advice is to keep the file.
 // One line, no control characters. The notice below is the operator's only
 // signal that a remit failed, and it is multi-line by construction - a run id
 // or path carrying a newline, a carriage return, or an ANSI escape could split
@@ -755,6 +741,37 @@ function singleLineField(value, fallback = "") {
   return raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, "\uFFFD");
 }
 
+// What the auto-end says when the attempt does NOT end the session. Every
+// interpolated value is flattened first, for the same reason the closeout
+// notice flattens its own: none of the three is toolkit-authored. The run ids
+// come off the verdict and the session file, and the disposition is whatever
+// the verdict carried — including, on this branch of the check, a value this
+// toolkit does not recognise, which is exactly the case where it is least
+// likely to be a tame identifier.
+export function sessionKeptOpenNotice({ attemptRunId = null, disposition = null, sessionRunId = null }) {
+  const safeDisposition = singleLineField(disposition);
+  const why = safeDisposition === "blocked"
+    ? "is blocked"
+    : `carries no session-ending disposition (${safeDisposition || "none recorded"})`;
+  const attempt = singleLineField(attemptRunId, "recorded");
+  const session = singleLineField(sessionRunId, "(unnamed run)");
+  return `[campaigns-os] QA attempt ${attempt} ${why}; run session ${session} remains active for repair and re-test.\n`;
+}
+
+// What the auto-end says once it has assembled the record and cleared the
+// session. The clearing is why the remit outcome has to be reported HERE: from
+// the next command onwards there is no session, so nothing knows this run_id.
+// `skipped` is a deliberate non-remit (consent off, --no-remit, local-only),
+// not a failure.
+//
+// It deliberately does NOT print `run-record --run-id <id>` as a recovery.
+// That command REASSEMBLES the record from what is on disk at the time it runs;
+// it does not reload the one already written. The session's QA attempt
+// references come only from ambient.session.qa_attempts (see runRecordCommand),
+// and the session is gone by then — so on a session with more than one attempt
+// the "recovery" would replace a complete record with a thinner one and send
+// that instead. Resending the persisted file is the right fix and is follow-up
+// work; until it exists the honest advice is to keep the file.
 export function autoEndCloseoutNotice({ runId, recordPath = null, remitState = null, remitError = null }) {
   const safeRunId = singleLineField(runId, "(unnamed run)");
   const safeRecordPath = singleLineField(recordPath);
@@ -796,12 +813,11 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
   // closeout command printed moments ago read the same set, so the two can
   // never disagree about whether the session still holds this run_id.
   if (!SESSION_ENDING_DISPOSITIONS.has(attempt.disposition)) {
-    const why = attempt.disposition === "blocked"
-      ? "is blocked"
-      : `carries no session-ending disposition (${attempt.disposition || "none recorded"})`;
-    process.stderr.write(
-      `[campaigns-os] QA attempt ${attempt.run_id || "recorded"} ${why}; run session ${found.session.run_id} remains active for repair and re-test.\n`,
-    );
+    process.stderr.write(sessionKeptOpenNotice({
+      attemptRunId: attempt.run_id,
+      disposition: attempt.disposition,
+      sessionRunId: found.session.run_id,
+    }));
     return;
   }
 
