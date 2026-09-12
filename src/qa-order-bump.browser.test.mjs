@@ -54,7 +54,7 @@ if (!available) {
 
 browserTest("an accepted bump resolves its rendered tick, not the toggle's own aria-hidden checkbox, and reads checked", async () => {
   const { toggles } = await bumpEvidence();
-  assert.equal(toggles.length, 5, "all five visible toggles are read");
+  assert.equal(toggles.length, 7, "all seven visible toggles are read");
 
   const accepted = toggles.find((toggle) => toggle.packageId === "4");
   assert.equal(accepted.active, true, "the card carries next-in-cart");
@@ -121,6 +121,39 @@ browserTest("an accepted pseudo-element bump reads checked from its ::after, not
   assert.equal(accepted.markerFamily, ".bump-check");
   assert.equal(accepted.markerSignal, "pseudo");
   assert.equal(accepted.markerChecked, true, "a rendered ::after reads checked");
+  assert.equal(accepted.statesAgree, true);
+});
+
+browserTest("a rule that does not apply on screen is not evidence of a state-toggled tick", async () => {
+  const { toggles } = await bumpEvidence();
+  const declined = toggles.find((toggle) => toggle.packageId === "9");
+
+  assert.equal(declined.active, false);
+  assert.equal(declined.markerFamily, "[data-next-toggle-check]");
+  assert.equal(declined.markerTag, "span");
+  // A print-only hiding rule, and an @supports block for a feature no browser
+  // has, say nothing about what the buyer sees. Counting either would read this
+  // visible, unchecked box as a rendered tick.
+  assert.notEqual(declined.markerSignal, "display_toggled", "a print-only rule is not a state affordance");
+  assert.equal(declined.markerSignal, null, "nothing on this marker says which state it is in");
+  assert.equal(declined.markerResolved, false, "an unreadable marker is reported, not guessed at");
+  assert.equal(declined.markerChecked, false);
+  assert.equal(declined.markerAgrees, true);
+  assert.equal(declined.statesAgree, true);
+});
+
+browserTest("an absolutely positioned tick is read even when its host box measures zero", async () => {
+  const { toggles } = await bumpEvidence();
+  const accepted = toggles.find((toggle) => toggle.packageId === "10");
+
+  assert.equal(accepted.active, true);
+  assert.equal(accepted.inputChecked, true);
+  assert.equal(accepted.markerFamily, ".bump-check");
+  assert.equal(accepted.markerResolved, true);
+  // The host span is 0x0; the tick is out of flow and visible. A size test on
+  // the host alone would disqualify the marker before its state was read.
+  assert.equal(accepted.markerSignal, "pseudo", "the zero-sized host is still inspected for its tick");
+  assert.equal(accepted.markerChecked, true);
   assert.equal(accepted.statesAgree, true);
 });
 

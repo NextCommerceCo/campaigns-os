@@ -14,9 +14,13 @@ by the card's state class.
 | `aria-hidden-checkbox` | `#bump-switch` (package 6, `next-in-cart`) | no tick vocabulary; the only `aria-hidden` node is an always-rendered switch slider | no marker resolved, no disagreement claimed |
 | `aria-hidden-checkbox` | `#bump-pseudo-inactive` (package 7) | persistent `.bump-check` box, tick in its `::after`, declined so the `::after` is hidden | `markerSignal` `pseudo`, `markerChecked` false — the box renders but says nothing |
 | `aria-hidden-checkbox` | `#bump-pseudo-active` (package 8, `next-in-cart`) | same family, accepted, `::after` revealed | `markerSignal` `pseudo`, `markerChecked` true |
+| `aria-hidden-checkbox` | `#bump-print-rule` (package 9) | visible persistent marker, declined; hidden only by `@media print` and an `@supports` block for a feature no browser has | no signal, `markerResolved` false — neither rule applies on screen |
+| `aria-hidden-checkbox` | `#bump-floating-pseudo` (package 10, `next-in-cart`) | empty `0 x 0` host span; the tick is an absolutely positioned `::after` | `markerSignal` `pseudo`, `markerChecked` true — the host's size is not the tick's |
 
 Before the fix, the first two resolved the `<input>` as the marker and the
 third resolved the slider, so an accepted bump could never read checked. The
-last two are the other direction: a box whose visibility is read as its state
+next two are the other direction: a box whose visibility is read as its state
 fails a correctly declined bump, so the two families have to be told apart
-rather than collapsed.
+rather than collapsed. The last two pin the two ways that family test can be
+fooled — a hiding rule that does not apply on screen, and a host box whose size
+is not the tick's.

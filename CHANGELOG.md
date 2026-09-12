@@ -35,7 +35,13 @@ Notable supported-surface changes are recorded here.
   to `display: flex` on the active or in-cart card) *is* the tick, so its own
   rendering is the state — and that is settled by testing the page's style
   rules against the element, not assumed from the family name, so a persistent
-  box that nothing hides can never be read that way.
+  box that nothing hides can never be read that way. Only rules that currently
+  apply count as evidence: a `@media print` or unsupported `@supports` block,
+  a stylesheet whose media attribute does not match, and a disabled sheet are
+  all skipped, since none of them describes what the buyer sees. And because an
+  absolutely positioned tick can render while its host box measures zero, a
+  zero-sized marker is checked for a rendered `::after` before its size is
+  allowed to disqualify it.
 
   A rendered marker carrying no signal at all is reported as unresolved rather
   than guessed at, and read like an absent marker: the toggle falls back to its

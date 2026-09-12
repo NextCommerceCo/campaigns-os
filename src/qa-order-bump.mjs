@@ -90,6 +90,28 @@ export const ORDER_BUMP_PROBE_INPUT = Object.freeze({
 // can drive the same function the QA runner does, instead of a copy of it.
 export function orderBumpEvidenceScript() {
   return ({ toggleSelector, markerFamilies, markerContainers, markerExcluded }) => {
+    const hasContent = (value) => Boolean(value) && !["none", "normal", '""', "''"].includes(value);
+
+    // The marker's `::after`, read once for both jobs it does here. A tick that
+    // is absolutely positioned can render while its host box measures zero, so
+    // a zero-sized host is not on its own proof that the tick is hidden — the
+    // pseudo-element has to be looked at before the size test disqualifies the
+    // marker. Returns null when the element has no generated content at all.
+    const pseudoTick = (element) => {
+      const after = getComputedStyle(element, "::after");
+      if (!hasContent(after.content)) return null;
+      const size = (value) => {
+        const parsed = Number.parseFloat(value || "0");
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+      return {
+        shown: after.display !== "none"
+          && after.visibility !== "hidden"
+          && Number.parseFloat(after.opacity || "1") > 0.5,
+        boxed: size(after.width) > 0 && size(after.height) > 0,
+      };
+    };
+
     const rendered = (element) => {
       if (!(element instanceof Element) || element.hidden) return false;
       if (element.closest("[hidden]")) return false;
@@ -98,27 +120,65 @@ export function orderBumpEvidenceScript() {
       if (style.visibility === "hidden" || style.visibility === "collapse") return false;
       if (Number.parseFloat(style.opacity || "1") <= 0.5) return false;
       const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 && element.getClientRects().length > 0;
+      if (rect.width > 0 && rect.height > 0 && element.getClientRects().length > 0) return true;
+      // Zero-sized host, rendered tick: the marker is on the page after all.
+      const tick = pseudoTick(element);
+      return Boolean(tick && tick.shown && tick.boxed);
     };
 
     // A candidate must be a plausible marker at all: not the toggle's own form
     // control, not inside a subtree the author removed from rendering.
     const eligible = (element) => !element.matches(markerExcluded) && !element.closest("[hidden]");
 
-    // Does any stylesheet rule that matches this element remove it from
-    // rendering? That is the display-toggled family's signature: a base rule
-    // hides the tick and a state-scoped rule restores it, so the element
-    // matches the hiding rule in both states. A persistent box that nothing
-    // hides matches nothing here, which is exactly why its visibility must not
-    // be read as its state. A stylesheet the page cannot read (cross-origin,
-    // no CORS) is not evidence either way and is skipped.
+    // Does any stylesheet rule that *currently applies* and matches this element
+    // remove it from rendering? That is the display-toggled family's signature:
+    // a base rule hides the tick and a state-scoped rule restores it, so the
+    // element matches the hiding rule in both states. A persistent box that
+    // nothing hides matches nothing here, which is exactly why its visibility
+    // must not be read as its state.
+    //
+    // "Currently applies" is load-bearing. A rule inside `@media print`, or
+    // inside an `@supports` block for a feature this browser lacks, says
+    // nothing about what the buyer sees on screen; counting it would read a
+    // visible, unchecked box as a hidden tick and fail a correctly declined
+    // bump. So a conditional group is descended into only while its condition
+    // holds, a stylesheet whose own media attribute does not match is skipped,
+    // and so is a disabled one. A stylesheet the page cannot read
+    // (cross-origin, no CORS) is not evidence either way and is skipped too.
     const hiddenByAMatchingRule = (element) => {
       const hides = (style) => style.getPropertyValue("display") === "none"
         || style.getPropertyValue("visibility") === "hidden"
         || Number.parseFloat(style.getPropertyValue("opacity") || "1") <= 0.5;
+      const mediaApplies = (query) => {
+        if (!query || query === "all") return true;
+        try {
+          return window.matchMedia(query).matches;
+        } catch {
+          return false;
+        }
+      };
+      const groupApplies = (rule) => {
+        // CSSMediaRule carries `.media`; CSSSupportsRule carries only a
+        // condition. Anything else grouping (a layer, a nested style rule) has
+        // no condition to fail and applies.
+        if (rule.media && typeof rule.media.mediaText === "string") {
+          return mediaApplies(rule.conditionText || rule.media.mediaText);
+        }
+        if (typeof rule.conditionText === "string") {
+          try {
+            return CSS.supports(rule.conditionText);
+          } catch {
+            return false;
+          }
+        }
+        return true;
+      };
       const walk = (rules) => {
         for (const rule of rules) {
-          if (rule.cssRules && walk(Array.from(rule.cssRules))) return true;
+          if (rule.cssRules) {
+            if (!groupApplies(rule)) continue;
+            if (walk(Array.from(rule.cssRules))) return true;
+          }
           if (!rule.selectorText || !rule.style || !hides(rule.style)) continue;
           try {
             // Pseudo-element selectors throw here; they are not this family.
@@ -130,6 +190,8 @@ export function orderBumpEvidenceScript() {
         return false;
       };
       for (const sheet of Array.from(document.styleSheets)) {
+        if (sheet.disabled) continue;
+        if (!mediaApplies(sheet.media?.mediaText)) continue;
         let rules;
         try {
           rules = Array.from(sheet.cssRules || []);
@@ -141,24 +203,16 @@ export function orderBumpEvidenceScript() {
       return false;
     };
 
-    const hasContent = (value) => Boolean(value) && !["none", "normal", '""', "''"].includes(value);
 
     // The positive signals, in the order that settles which vocabulary the
     // marker speaks. Returns null when a rendered marker carries none.
     const checkedSignal = (marker) => {
       const style = getComputedStyle(marker);
-      const after = getComputedStyle(marker, "::after");
       // A marker with pseudo-element content belongs to the pseudo family
       // whatever else is true of it, and its state is that pseudo-element's
       // rendering — never the box's.
-      if (hasContent(after.content)) {
-        return {
-          signal: "pseudo",
-          checked: after.display !== "none"
-            && after.visibility !== "hidden"
-            && Number.parseFloat(after.opacity || "1") > 0.5,
-        };
-      }
+      const tick = pseudoTick(marker);
+      if (tick) return { signal: "pseudo", checked: tick.shown };
       if (/check|\u2713/.test(marker.textContent || "")) return { signal: "glyph", checked: true };
       if (style.backgroundColor === "rgb(45, 148, 127)") return { signal: "fill", checked: true };
       if (hiddenByAMatchingRule(marker)) return { signal: "display_toggled", checked: true };

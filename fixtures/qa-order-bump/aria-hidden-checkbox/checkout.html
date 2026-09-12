@@ -52,6 +52,33 @@
     opacity: 0;
   }
   [data-next-toggle-card].next-in-cart .bump-check::after { opacity: 1; }
+
+  /* A persistent marker that nothing hides on screen. The only rule that hides
+     it is print-only, which says nothing about what the buyer sees, so it must
+     not be read as a state-dependent tick. */
+  .pill { display: inline-block; width: 20px; height: 20px; background: #eee; }
+  @media print { .pill { display: none; } }
+  @supports (nonsense-property: nonsense-value) { .pill { visibility: hidden; } }
+
+  /* A pseudo-element tick on an empty, zero-sized host: the tick is positioned
+     out of flow, so the host box measures nothing while the tick is visible. */
+  .bump-check--floating {
+    position: relative;
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border: 0;
+  }
+  .bump-check--floating::after {
+    content: "\2713";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    opacity: 0;
+  }
+  [data-next-toggle-card].next-in-cart .bump-check--floating::after { opacity: 1; }
 </style>
 </head>
 <body>
@@ -116,6 +143,27 @@
     <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
     <span class="bump-check"></span>
     <div class="bump__title">Add-on offer E</div>
+  </div>
+</div>
+
+<!-- 6. Declined bump whose persistent marker is hidden only by a print rule
+     and by an @supports block for a feature no browser has. Neither applies on
+     screen, so neither is evidence that this marker's visibility is its state. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="9" id="bump-print-rule">
+    <span data-next-toggle-check class="pill"></span>
+    <div class="bump__title">Add-on offer F</div>
+  </div>
+</div>
+
+<!-- 7. Accepted bump whose marker host is an empty zero-sized span; the tick is
+     an absolutely positioned ::after. The host measures nothing even though the
+     buyer can see the tick. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="10" id="bump-floating-pseudo">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
+    <span class="bump-check bump-check--floating"></span>
+    <div class="bump__title">Add-on offer G</div>
   </div>
 </div>
 
