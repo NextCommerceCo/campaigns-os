@@ -303,7 +303,10 @@ test("an unrecognized error code is reported as unknown, not echoed", () => {
   // an empty detail named rather than rendered as a gap.
   assert.equal(singleLineDetail("a\nb\tc\r\nd"), "a b c d");
   assert.equal(singleLineDetail("has `code` and [a](b)"), "has \\`code\\` and \\[a\\](b)");
-  assert.equal(singleLineDetail("bellstring"), "bell string");
+  // Line breaks become spaces (a newline inside quoted JSON is a word
+  // boundary); everything else control-shaped becomes the replacement
+  // character `singleLineField` already uses everywhere else in this CLI.
+  assert.equal(singleLineDetail("bellstring"), "�bell�string");
   assert.equal(singleLineDetail("   "), "(no detail reported)");
   assert.equal(singleLineDetail(undefined), "(no detail reported)");
   const long = singleLineDetail("x".repeat(500));

@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { recordProducerStageOutcome } from "./stage-ledger.mjs";
-import { summarizePurchaseProof } from "./qa-verdict.mjs";
+import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
   appendFinding,
@@ -728,6 +728,64 @@ export function recordQaStageOutcome(args, result) {
   }
 }
 
+// One line, no control characters. The notice below is the operator's only
+// signal that a remit failed, and it is multi-line by construction - a run id
+// or path carrying a newline, a carriage return, or an ANSI escape could split
+// it, overwrite it, or dress a fabricated line up as toolkit output. Neither
+// value is toolkit-authored: the path comes from a packet-derived target
+// directory and the id can be handed in with --run-id. Replaced, never dropped,
+// so a mangled value stays visible as mangled rather than silently shortening
+// the message.
+function singleLineField(value, fallback = "") {
+  const raw = typeof value === "string" ? value : value == null ? "" : String(value);
+  if (!raw) return fallback;
+  // C0, DEL and C1, which covers CR, LF, TAB and the ESC that starts ANSI.
+  return raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, "\uFFFD");
+}
+
+// What the auto-end says when the attempt does NOT end the session. Every
+// interpolated value is flattened first, for the same reason the closeout
+// notice flattens its own: none of the three is toolkit-authored. The run ids
+// come off the verdict and the session file, and the disposition is whatever
+// the verdict carried — including, on this branch of the check, a value this
+// toolkit does not recognise, which is exactly the case where it is least
+// likely to be a tame identifier.
+export function sessionKeptOpenNotice({ attemptRunId = null, disposition = null, sessionRunId = null }) {
+  const safeDisposition = singleLineField(disposition);
+  const why = safeDisposition === "blocked"
+    ? "is blocked"
+    : `carries no session-ending disposition (${safeDisposition || "none recorded"})`;
+  const attempt = singleLineField(attemptRunId, "recorded");
+  const session = singleLineField(sessionRunId, "(unnamed run)");
+  return `[campaigns-os] QA attempt ${attempt} ${why}; run session ${session} remains active for repair and re-test.\n`;
+}
+
+// What the auto-end says once it has assembled the record and cleared the
+// session. The clearing is why the remit outcome has to be reported HERE: from
+// the next command onwards there is no session, so nothing knows this run_id.
+// `skipped` is a deliberate non-remit (consent off, --no-remit, local-only),
+// not a failure.
+//
+// It deliberately does NOT print `run-record --run-id <id>` as a recovery.
+// That command REASSEMBLES the record from what is on disk at the time it runs;
+// it does not reload the one already written. The session's QA attempt
+// references come only from ambient.session.qa_attempts (see runRecordCommand),
+// and the session is gone by then — so on a session with more than one attempt
+// the "recovery" would replace a complete record with a thinner one and send
+// that instead. Resending the persisted file is the right fix and is follow-up
+// work; until it exists the honest advice is to keep the file.
+export function autoEndCloseoutNotice({ runId, recordPath = null, remitState = null, remitError = null }) {
+  const safeRunId = singleLineField(runId, "(unnamed run)");
+  const safeRecordPath = singleLineField(recordPath);
+  const assembled = `[campaigns-os] Run session ${safeRunId} auto-ended after qa run; Run Record ${safeRecordPath || "assembled"}.\n`;
+  if (remitState === "ok" || remitState === "skipped") return assembled;
+  const why = remitError ? ` (${singleLineField(remitError)})` : "";
+  const kept = safeRecordPath
+    ? `The complete record is on disk at ${safeRecordPath} — it holds every QA attempt this session collected. Keep it.`
+    : "No local record path was reported for this run, so there is nothing on disk to keep.";
+  return `${assembled}[campaigns-os] That record's remit did not complete${why}. ${kept} There is no retry-from-file path yet: re-running run-record against this run id reassembles the record from current disk state, without the session's attempt references, so it would overwrite this one with less than it has.\n`;
+}
+
 async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, thrown) {
   if (command !== "qa" || args._[1] !== "run" || thrown) return;
   const found = sessionHolder?.current;
@@ -752,10 +810,16 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
   writeRunSession(found.dir, updatedFound.session);
   sessionHolder.current = updatedFound;
 
-  if (attempt.disposition === "blocked") {
-    process.stderr.write(
-      `[campaigns-os] QA attempt ${attempt.run_id || "recorded"} is blocked; run session ${found.session.run_id} remains active for repair and re-test.\n`,
-    );
+  // Enumerated, not excluded: a disposition this version does not recognise
+  // keeps the session open rather than silently closing and remitting it. The
+  // closeout command printed moments ago read the same set, so the two can
+  // never disagree about whether the session still holds this run_id.
+  if (!SESSION_ENDING_DISPOSITIONS.has(attempt.disposition)) {
+    process.stderr.write(sessionKeptOpenNotice({
+      attemptRunId: attempt.run_id,
+      disposition: attempt.disposition,
+      sessionRunId: found.session.run_id,
+    }));
     return;
   }
 
@@ -777,9 +841,12 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
     const summary = await runRecordCommand(endArgs, updatedFound, { silent: true, promptForConsent: false });
     clearRunSession(updatedFound.path);
     sessionHolder.current = null;
-    process.stderr.write(
-      `[campaigns-os] Run session ${updatedFound.session.run_id} auto-ended after qa run; Run Record ${summary?.record_path || "assembled"}.\n`,
-    );
+    process.stderr.write(autoEndCloseoutNotice({
+      runId: updatedFound.session.run_id,
+      recordPath: summary?.record_path || null,
+      remitState: optionalString(summary?.record?.remit_state),
+      remitError: optionalString(summary?.record?.remit_error),
+    }));
   } catch (error) {
     process.stderr.write(`[campaigns-os] run session auto-end skipped after QA: ${error.message}\n`);
   }
@@ -900,7 +967,10 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
 
   if (command === "qa") {
     const { runQaCli } = await import("./qa-node.mjs");
-    const result = await runQaCli(args);
+    // The ambient session is handed over, not re-discovered: the closeout
+    // command a QA run prints has to agree with the run_id this session will
+    // later close and remit under.
+    const result = await runQaCli(args, { ambient });
     if (args._[1] === "run" && result?.verdict) recordQaStageOutcome(args, result);
     if (sessionHolder) sessionHolder.qaResult = result;
     return;
@@ -7689,10 +7759,18 @@ export function safeBrandContractCode(code) {
 
 // One trimmed line, no control characters, no Markdown that could restyle the
 // rest of the description or a rendered bullet.
+//
+// The control-character half is `singleLineField`'s job and is not duplicated
+// here. Two things are added on top of it, because this input is different in
+// kind from a run id or a disposition: a loader message QUOTES FILE CONTENT,
+// so it can be long and can carry Markdown. Line breaks are turned into spaces
+// before the hand-off — a newline inside a quoted JSON fragment is a word
+// boundary, and rendering it as U+FFFD would read as mojibake — while ESC, DEL
+// and the rest still become the replacement character the rest of the CLI
+// uses, since those have no reading as text.
 export function singleLineDetail(detail, max = ADVISORY_DETAIL_MAX) {
-  const flattened = String(detail ?? "")
-    // eslint-disable-next-line no-control-regex
-    .replace(/[ --]+/g, " ")
+  const spaced = String(detail ?? "").replace(/[\r\n\t\v\f]+/g, " ");
+  const flattened = singleLineField(spaced)
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[`*_[\]<>]/g, "\\$&");
@@ -9871,8 +9949,11 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
 
   const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
 
-  // Remit is consent-gated, non-fatal, bounded, and idempotent on run_id. Its
-  // outcome is stamped into the local record so a dropped send is visible, not silent.
+  // Remit is consent-gated, non-fatal, bounded, and keyed on run_id — the
+  // receiver holds one record per id and refuses a second POST for one it
+  // already has, so an id must not be spent on an interim record before the
+  // record that closes the run. Its outcome is stamped into the local record so
+  // a dropped send is visible, not silent.
   const campaignKey = remitDisabled ? null : resolveCampaignsApiKeyValue(packet, packetPath, process.env);
   const remitStatus = remitDisabled
     ? { attempted: false, ok: null, error: null, endpoint: null }

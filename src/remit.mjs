@@ -6,9 +6,14 @@
 // `remit()` is the low-level transport: it throws on transport/HTTP errors,
 // just as the original postVerdict did — the caller decides fatality.
 // `remitRunRecord()` is the run-level wrapper: consent-gated, NON-FATAL (a
-// failed or unreachable send never blocks or fails the run), and IDEMPOTENT on
-// run_id (the endpoint upserts, so retries/reruns never double-count). There is
-// no background retry daemon — a dropped send is recorded locally, not queued.
+// failed or unreachable send never blocks or fails the run), and keyed on
+// run_id. The keying is enforced by REFUSAL, not by replacement: this client
+// only ever POSTs, and the receiver answers a second POST for a run_id it
+// already holds with 409 run_record_conflict. So a run_id gets exactly one
+// successful send — a send that never landed may be retried, one that landed
+// cannot be revised. Callers that will close a run under an id must not spend
+// that id on an interim record first. There is no background retry daemon — a
+// dropped send is recorded locally, not queued.
 
 export const DEFAULT_RUNS_ENDPOINT = "/api/runs";
 export const DEFAULT_REMIT_TIMEOUT_MS = 10_000;
@@ -119,7 +124,9 @@ export async function remit(path, payload, proxyBase, {
  *
  * - Consent OFF (or unresolved) → no network call at all.
  * - Network/HTTP error → swallowed; the run continues. `ok: false` + `error`.
- * - The payload carries `run_id`, so the upsert endpoint is idempotent.
+ * - The payload carries `run_id`. The receiver keeps one record per run_id and
+ *   rejects a repeat POST for a stored id (409), so retrying a send that failed
+ *   is safe while re-sending a send that succeeded is not.
  */
 export async function remitRunRecord(record, {
   proxyBase,
