@@ -104,6 +104,63 @@ Notable supported-surface changes are recorded here.
   build; it now says it is a review warning that nothing blocks on. Severity,
   finding ids, detection, and every other message are unchanged.
 
+## [1.25.0+agent.12] - 2026-09-12
+
+### Added
+
+- Every QA and doctor finding now carries a cause class, so a run can say
+  whether the change under test caused what it surfaced. `cause` is one of
+  `caused_by_change`, `pre_existing`, `test_environment`, `upstream_drift`, or
+  `unknown`, and `cause_reason` carries a short machine-readable reason. Both
+  are additive and optional: output emitted before this carries neither, and
+  absence is not a claim that nothing was caused by the change.
+  The classification is mechanical and uses only what the toolkit already
+  records. The previous run is found through the existing Run Record discovery
+  — the most recent record under the Build Packet's
+  `.campaign-runtime/run-records/` whose `identity.map_id` matches, and only
+  the first match, so nothing is ever compared against a non-adjacent run. QA
+  findings are compared against that record's LAST `qa_verdict` artifact: a run
+  that needed repair and re-test carries one reference per attempt in session
+  order, and the first is typically the blocked attempt, so comparing against it
+  would report a defect fixed before that run closed and reintroduced now as
+  pre-existing. Doctor findings compare against the record's
+  `observations.doctor` code lists, which every Run Record already carries. The fingerprint is the identity each artifact already uses:
+  `family | id | page` for a QA assertion (no URL, so a local run and a
+  published run compare like for like) and the `code` for a doctor issue.
+  Same fingerprint and same status is `pre_existing`; absent, or present with a
+  different status, is `caused_by_change`. Two classes are decided from the
+  finding alone and win outright: the runner's own environment outcomes (the
+  order-creation budget safety stop, a `<leg>:runner` capture failure) are
+  `test_environment`, and an already-detected SDK-pin disagreement
+  (`page_kit.sdk_version`, `.waived`, `.spec_conflict`) is `upstream_drift`.
+  Anything that cannot be classified from recorded data is `unknown` with the
+  reason stated — including every finding of a first run on a campaign, which
+  has nothing to compare against.
+  The labels ride the full verdict, the derived exceptions, the committed QA
+  verdict sidecar, and every doctor result; `cause_summary`
+  (`{surface, total, counts, prior_run_id, comparison}`, plus
+  `prior_qa_attempt_run_id` on the QA side) rides the verdict and the doctor
+  output. `prior_run_id` is the previous Run Record's id on both surfaces so
+  the two agree on which run was compared, and the QA summary names the final
+  attempt within that record it actually read. A report that could not compare
+  says which of the four reasons applied and names the record when one exists,
+  rather than telling an operator who already has a prior record to wait for a
+  second run. Doctor classification is applied where the doctor result is
+  produced, not in one command, so all four producers that persist
+  `.campaign-runtime/doctor-output.json` (`doctor`, `next`, `prepare-build` /
+  `start`, and the QA stage refresh) leave the labels on the retained artifact
+  — running QA after doctor no longer strips them back out. Non-packet doctor
+  (`--built` / `--site`) has no Run Record home and is not annotated. The human
+  reports lead with a one-line tally and tag each finding. Passing assertions
+  carry no cause — a pass has no cause to explain.
+
+### Changed
+
+- `readRunRecordsForTarget` and `orderRunRecordFileNames` moved from
+  `src/cli.mjs` to `src/run-record.mjs`, where the records directory constant
+  already lives, and are re-exported from `src/cli.mjs` unchanged. One
+  implementation, now reachable from the QA runner, which cannot import the
+  CLI. No behaviour change.
 ## [1.25.0+agent.11] - 2026-09-12
 
 ### Added
