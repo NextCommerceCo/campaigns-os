@@ -406,6 +406,37 @@ npm run campaigns-os -- qa run \
   --base-url https://preview.example.com/campaign/
 ```
 
+## What a published record proves
+
+A published verdict and a remitted Run Record are durable, but they are not
+attributed. The public runner carries no ingest credential, so the receiver
+stamps what it gets as `trusted: false` / `trust_level: "anonymous"` /
+`verified_at: null`, and a remitted Run Record lands in tenant scope without
+naming who produced it. Read the stamps before you rely on the record.
+
+**What it proves.** A run happened, on these pages, at this base URL, producing
+these artifacts: the step ladder with its per-step status, the assertions and
+their severities, the order refs and line-item summaries for any typed-card
+orders, console and request evidence, and the timestamps. That content is
+shape-valid, complete, and durable.
+
+**What it does not prove.** Who ran it. Nothing in an anonymous record ties it
+to an operator, a machine, or an authorization — anyone on the internet can post
+a shape-valid verdict, and a forged one passes every check the schema makes. By
+the portal's own standard it is therefore **not verified launch evidence**, and
+it must not be presented as such: not in a handoff, not in a launch readiness
+claim, not to a merchant. Campaigns OS enforces the same line at its own
+readback chokepoints — `qa promote` refuses an untrusted source verdict, and
+`run-record`'s QA-verdict inference excludes untrusted records.
+
+A published anonymous record is good evidence *that the toolkit ran and what it
+saw*, offered by the operator who says they ran it. It is not the portal
+vouching for that operator.
+
+Attributed publishing — an ingest credential a named operator's runner can
+carry, so the receiver can stamp `trusted: true` — is tracked as
+campaigns-os#329 and is not available today.
+
 ## Cart-state verification: do not trust `cartLines`
 
 When QA needs to confirm the cart actually holds the expected items, **do not read

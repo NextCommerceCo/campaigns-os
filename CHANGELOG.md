@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.15] - 2026-09-12
+
+### Added
+
+- `docs/qa-and-test-orders.md` gains "What a published record proves": a
+  published verdict and a remitted Run Record are durable but unattributed,
+  because the public runner carries no ingest credential. The section separates
+  what an anonymous record establishes (a run happened, on these pages, with
+  these artifacts) from what it cannot (who ran it — it is not verified launch
+  evidence by the portal's standard and must not be handed over as such), and
+  points at campaigns-os#329 for the attributed-publishing credential path. The
+  trust stamps themselves, the readback chokepoints, and every gate are
+  unchanged; this is documentation of behaviour that already ships.
+
 ## [1.25.0+agent.8] - 2026-09-12
 
 ### Fixed

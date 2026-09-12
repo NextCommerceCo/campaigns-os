@@ -1777,6 +1777,27 @@
         }
       ],
       "entry_sha256": "d2627d4422fcf5cc0f14f9c81a84ea3979e0a76f419c1b65dcc846dbdcaafd00"
+    },
+    {
+      "id": "RL-0043",
+      "sequence": 37,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.15",
+      "changelog_sha256": "d4e860d3ac3c4019d469e040a1f2bccc50fccaac01cef9ba74dee45abab45e28",
+      "agent_impact": "No behaviour change. An agent or operator holding a published verdict or a remitted Run Record from the public runner should not present it as verified launch evidence: it is stamped trusted:false / anonymous because the runner carries no ingest credential, and it establishes that a run happened with these artifacts, not who ran it. The existing readback rules are unchanged (qa promote refuses an untrusted source verdict; run-record's QA-verdict inference excludes untrusted records). Attributed publishing is tracked as campaigns-os#329 and does not exist today.",
+      "compatibility": "compatible",
+      "migration": "none. Keep filtering readback on trusted, and do not quote an anonymous published record as launch evidence in a handoff or a merchant-facing claim.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Adds \"What a published record proves\": an anonymous published verdict or remitted Run Record proves a run happened on these pages with these artifacts, and does not prove who ran it, so it is not verified launch evidence by the portal's standard; restates the two readback chokepoints and names campaigns-os#329 as where attributed publishing is tracked."
+        }
+      ],
+      "entry_sha256": "dd44c80c151c859eed326f22020e61d52d14085972c0687527783788e9b4da1c"
     }
   ]
 }
