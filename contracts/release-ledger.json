@@ -1927,6 +1927,57 @@
         }
       ],
       "entry_sha256": "21cb3256e92a300751e026d6ba513658cfddaa03b89c7fae813ff0be9c0789eb"
+    },
+    {
+      "id": "RL-0044",
+      "sequence": 43,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": "1.26.0",
+      "changelog_section": "1.26.0",
+      "changelog_sha256": "9be66bba8d477f018ce1f2e3cf16c0cf79f6b0e6ae1bbaafa83bfd8eb56472ea",
+      "agent_impact": "The document-wrapper policy is now selectable before the build stage. source-html-manifest/v0 accepts an optional top-level wrapper_policy key (strip_document_wrappers, preserve_document_wrappers, not_required, unknown), and prepare-build / start / build accept a --wrapper-policy flag in the same vocabulary; prepare-build seeds source_html.adapter_contract.wrapper_policy from the resolved value, so a selected preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking. Precedence is flag, then manifest key, then the unchanged default strip_document_wrappers. A manifest wrapper_policy outside the vocabulary does not invalidate the manifest: the key is ignored with a warning naming it, the value, and the accepted values, and pages[], producer_provenance, and files[] are used as written. An unrecognized or valueless flag refuses the run before prepare-build writes anything, so a bad argument strands no Design Source Package.",
+      "compatibility": "additive",
+      "migration": "none. A run that passes no flag and a manifest carrying no wrapper_policy key behaves exactly as before.",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/source-html-manifest.v0.schema.json",
+          "surface_entry": "schemas/source-html-manifest.v0.schema.json",
+          "summary": "Declares the optional top-level wrapper_policy key with the adapter contract's four-value enum, naming the flag override, the default, and the non-fatal handling of an out-of-enum value."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Adds --wrapper-policy to prepare-build (and to start / build, which run the same prepare step): validates the flag with the other up-front argv checks so a bad value refuses before any output is written, resolves flag over manifest key over default, seeds the packet's adapter contract from the result, and echoes a non-default selection and any non-fatal manifest warning with its channel on stderr."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Records the new source-html-manifest schema hash and advances surface_version to 1.26.0 for the additive manifest key."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: records the surface version at generation time as 1.26.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: records the surface version at generation time as 1.26.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents the manifest wrapper_policy key and its precedence against the CLI flag in the Source HTML Manifest Auto-Population behavior list."
+        }
+      ],
+      "entry_sha256": "a9dfeadb323accba231280df15ae22a41c4b516ec30b034ea2ac49c99b7d2bb9"
     }
   ]
 }

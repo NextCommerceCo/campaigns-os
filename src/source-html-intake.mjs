@@ -45,7 +45,10 @@ export function createSourceHtmlIntake({
 
   return {
     manifestResult,
-    manifestWarnings: manifestResult.warning ? [manifestResult.warning] : [],
+    manifestWarnings: [
+      ...(manifestResult.warning ? [manifestResult.warning] : []),
+      ...(manifestResult.warnings || []),
+    ],
     mappings,
     prompts: [...matched.prompts, ...targetPrompts],
     decisions: [...matched.decisions, ...projectionDecisions],

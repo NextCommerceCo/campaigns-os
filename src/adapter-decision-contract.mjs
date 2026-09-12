@@ -45,13 +45,36 @@ const ROUTE_REWRITE_POLICIES = new Set(["campaignspec_routes_via_campaign_link",
 const CONFIG_SCRIPT_STRATEGIES = new Set(["campaign_asset", "frontmatter_script", "inline", "not_required", "unknown"]);
 const COMMERCE_SHELL_ADOPTIONS = new Set(["not_required", "template_clone_first_required", "template_clone_first_verified", "sdk_surfaces_preserved", "custom_html_experimental"]);
 const TEMPLATE_FILES_COPIED_STATUSES = new Set(["pending", "complete", "verified_existing_slice", "partial", "not_applicable"]);
-const WRAPPER_POLICIES = new Set(["strip_document_wrappers", "preserve_document_wrappers", "not_required", "unknown"]);
+// The single wrapper-policy vocabulary. Every channel that can select a
+// policy — the adapter contract on the packet, the source-html manifest key,
+// and the prepare-build CLI flag — reads this list, so there is exactly one
+// value set and one spelling of each value.
+export const ADAPTER_WRAPPER_POLICIES = Object.freeze([
+  "strip_document_wrappers",
+  "preserve_document_wrappers",
+  "not_required",
+  "unknown",
+]);
+export const DEFAULT_WRAPPER_POLICY = "strip_document_wrappers";
+const WRAPPER_POLICIES = new Set(ADAPTER_WRAPPER_POLICIES);
+
+export function isWrapperPolicy(value) {
+  return typeof value === "string" && WRAPPER_POLICIES.has(value);
+}
 const FRONTMATTER_POLICIES = new Set(["pagekit_yaml_frontmatter", "raw_passthrough", "not_required", "unknown"]);
 const SCRIPT_STYLE_REFERENCE_POLICIES = new Set(["frontmatter_or_campaign_asset", "frontmatter", "campaign_asset", "inline", "raw_passthrough", "not_required", "unknown"]);
 const CTA_REWRITE_POLICIES = ROUTE_REWRITE_POLICIES;
 const LAYOUT_CHOICES = new Set(["campaign_layout", "page_layout", "raw_passthrough", "not_applicable", "unknown"]);
 
-export function createAdapterDecisions({ commerceZoneFindings = [] } = {}) {
+/**
+ * Seeds the adapter decision record written onto a new Build Packet.
+ *
+ * `wrapperPolicy` is the operator-selected document-wrapper policy resolved by
+ * the caller (prepare-build) from the CLI flag and the source-html manifest.
+ * An unrecognized or absent value falls back to the default, so a caller that
+ * does not resolve one keeps the previous behavior exactly.
+ */
+export function createAdapterDecisions({ commerceZoneFindings = [], wrapperPolicy = null } = {}) {
   const shellRequired = commerceZoneFindings.some((finding) => finding?.requires_template_shell === true);
   return {
     raw_html_conversion_status: "pending",
@@ -59,7 +82,7 @@ export function createAdapterDecisions({ commerceZoneFindings = [] } = {}) {
     route_rewrite_policy: "campaignspec_routes_via_campaign_link",
     config_script_strategy: "campaign_asset",
     commerce_shell_adoption: shellRequired ? "template_clone_first_required" : "not_required",
-    wrapper_policy: "strip_document_wrappers",
+    wrapper_policy: isWrapperPolicy(wrapperPolicy) ? wrapperPolicy : DEFAULT_WRAPPER_POLICY,
     frontmatter_policy: "pagekit_yaml_frontmatter",
     script_style_reference_policy: "frontmatter_or_campaign_asset",
     cta_rewrite_policy: "campaignspec_routes_via_campaign_link",
