@@ -62,6 +62,33 @@ Doctor warns when generated guided drafts still need answers, a brief allows pay
 
 Existing template residue, theme, pricing, and built-output checks continue to run. The brief gives those checks business intent instead of replacing them.
 
+## Content Claims Are Reviewed, Not Enforced
+
+The doctor scans built output for content residue and raises some of it as
+warnings: invented counts and ratings (`content_residue.anti_pattern`, id
+`invented_counts`), "Verified Buyer" and similar review chrome
+(`verified_buyer_chrome`), and promo copy claiming a discount above the
+CampaignSpec maximum (`template_contract.discount_claim_residue`, or
+`template_contract.discount_claim_unverified` when the spec sets no maximum).
+
+These stay warnings on purpose, and nothing downstream reads them. There is no
+blocker, no `blocked_stages` entry, no QA assertion, and no test-order gate
+keyed on any of them. A build carrying all of them can pass doctor, pass QA,
+and deploy.
+
+The toolkit flags the copy; it does not adjudicate it. **Responsibility for
+every claim on the page — proof counts, review chrome, discount percentages,
+and the rest — sits with the operator and the client, not with Campaigns OS.**
+Use the brief to record which claims are approved and which language is
+forbidden (see the high-impact questions above), and treat a content warning as
+a prompt to check the brief, not as a gate that will stop the build if you
+ignore it.
+
+The hard content checks are separate and do block: the needs-merchant-input
+marker (`content_residue.needs_merchant_input`) and countdown chrome rendered
+without verified offer urgency on a brief-backed build
+(`content_residue.unverified_urgency`).
+
 ## QA Policy Scope
 
 `qa_policy` records business expectations for the proof pass, such as desktop/mobile screenshots, checkout flow coverage, post-purchase coverage, visible-placeholder handling, and runtime-data comparison. It is not the doctor/QA enforcement contract by itself.

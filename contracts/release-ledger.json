@@ -1777,6 +1777,33 @@
         }
       ],
       "entry_sha256": "d2627d4422fcf5cc0f14f9c81a84ea3979e0a76f419c1b65dcc846dbdcaafd00"
+    },
+    {
+      "id": "RL-0041",
+      "sequence": 37,
+      "date": "2026-09-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.13",
+      "changelog_sha256": "f97e60516728ef31f554800a86b3e658986dbf2d5cd5dcc4f0d0938b4647b1f0",
+      "agent_impact": "No behaviour change. Content-claim findings (invented_counts, verified_buyer_chrome, and the discount-claim residue codes) remain warning-only and nothing downstream gates on them; that posture is now documented rather than implied. An agent that read \"Detection fails closed\" in the content_residue.anti_pattern message as a promise that a later stage would block must stop doing so: no stage does. Consumers matching that message on its trailing sentence must re-read it.",
+      "compatibility": "compatible",
+      "migration": "none. Do not treat content_residue.anti_pattern, template_contract.discount_claim_residue, or template_contract.discount_claim_unverified as gates; the claims are the operator's and the client's responsibility.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Adds \"Content Claims Are Reviewed, Not Enforced\": the doctor's invented-count, verified-buyer-chrome and above-maximum discount findings are warnings with no blocker, blocked_stages entry, QA assertion or order gate behind them, and the operator and client own the claims. Names the two hard content checks that do block, so the boundary is explicit."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Rewrites the trailing sentence of the content_residue.anti_pattern warning message: it no longer says detection fails closed, and instead states that this is a review warning nothing downstream blocks on and that the claim is the operator's and the client's responsibility. Severity, finding ids, detection and all other doctor messages are unchanged."
+        }
+      ],
+      "entry_sha256": "44786c1f73952a7a4a089146d620bb1f3e6ea1fba36a472a1cdf1fcc17500c25"
     }
   ]
 }

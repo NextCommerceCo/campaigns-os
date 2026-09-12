@@ -2,6 +2,24 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.25.0+agent.13] - 2026-09-12
+
+### Changed
+
+- Policy: fabricated social proof and over-maximum discount copy stay doctor
+  warnings, and the docs now say so plainly. `docs/campaign-build-brief.md`
+  gains a "Content Claims Are Reviewed, Not Enforced" section naming the three
+  findings that are warning-only (`invented_counts` and `verified_buyer_chrome`
+  under `content_residue.anti_pattern`, plus
+  `template_contract.discount_claim_residue` /
+  `discount_claim_unverified`), stating that nothing downstream reads them — no
+  blocker, no `blocked_stages` entry, no QA assertion, no order gate — and that
+  responsibility for the claims sits with the operator and the client. The
+  `content_residue.anti_pattern` warning text no longer says "Detection fails
+  closed", which read as though something later in the ladder would stop the
+  build; it now says it is a review warning that nothing blocks on. Severity,
+  finding ids, detection, and every other message are unchanged.
+
 ## [1.25.0+agent.8] - 2026-09-12
 
 ### Fixed
