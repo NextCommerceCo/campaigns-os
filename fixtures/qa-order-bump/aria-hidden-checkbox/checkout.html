@@ -79,6 +79,18 @@
     opacity: 0;
   }
   [data-next-toggle-card].next-in-cart .bump-check--floating::after { opacity: 1; }
+
+  /* A tick hidden by visibility: collapse when unchecked, restored when the
+     card is active. Another way to say "display: none" for a state marker. */
+  .collapse-check { display: inline-block; width: 20px; height: 20px; background: #eee; }
+  [data-next-toggle-card] .collapse-check { visibility: collapse; }
+  [data-next-toggle-card].next-in-cart .collapse-check { visibility: visible; }
+
+  /* An unstyled tick on a zero-sized host: nothing gives the ::after a width or
+     a height, so its own content sizes it. */
+  .auto-check { position: relative; display: inline-block; width: 0; height: 0; }
+  .auto-check::after { content: "\2713"; opacity: 0; }
+  [data-next-toggle-card].next-in-cart .auto-check::after { opacity: 1; }
 </style>
 </head>
 <body>
@@ -164,6 +176,26 @@
     <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
     <span class="bump-check bump-check--floating"></span>
     <div class="bump__title">Add-on offer G</div>
+  </div>
+</div>
+
+<!-- 8. Accepted bump whose tick is hidden by `visibility: collapse` when
+     unchecked. The rule walk has to understand collapse exactly as the
+     computed-style test does, or this reads unresolved. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="11" id="bump-collapse">
+    <span data-next-toggle-check class="collapse-check"></span>
+    <div class="bump__title">Add-on offer H</div>
+  </div>
+</div>
+
+<!-- 9. Accepted bump whose tick is an unstyled ::after on a zero-sized host.
+     Its computed width and height are `auto`; the content sizes the box. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="12" id="bump-auto-pseudo">
+    <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
+    <span data-next-toggle-check class="auto-check"></span>
+    <div class="bump__title">Add-on offer I</div>
   </div>
 </div>
 

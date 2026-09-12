@@ -16,6 +16,8 @@ by the card's state class.
 | `aria-hidden-checkbox` | `#bump-pseudo-active` (package 8, `next-in-cart`) | same family, accepted, `::after` revealed | `markerSignal` `pseudo`, `markerChecked` true |
 | `aria-hidden-checkbox` | `#bump-print-rule` (package 9) | visible persistent marker, declined; hidden only by `@media print` and an `@supports` block for a feature no browser has | `markerSignal` `unresolved` — found and rendered, but neither rule applies on screen, so nothing says which state it is in |
 | `aria-hidden-checkbox` | `#bump-floating-pseudo` (package 10, `next-in-cart`) | empty `0 x 0` host span; the tick is an absolutely positioned `::after` | `markerSignal` `pseudo`, `markerChecked` true — the host's size is not the tick's |
+| `aria-hidden-checkbox` | `#bump-collapse` (package 11, `next-in-cart`) | tick hidden by `visibility: collapse` when unchecked, restored when active | `markerSignal` `display_toggled` — collapse hides a tick exactly as `display: none` does |
+| `aria-hidden-checkbox` | `#bump-auto-pseudo` (package 12, `next-in-cart`) | unstyled `::after` on a `0 x 0` host; computed width and height are `auto` | `markerSignal` `pseudo`, `markerChecked` true — the content sizes the box |
 
 Before the fix, the first two resolved the `<input>` as the marker and the
 third resolved the slider, so an accepted bump could never read checked. The
@@ -38,3 +40,16 @@ harness cannot interpret goes quiet instead of claiming a disagreement.
 | `not_rendered` | the marker is on the page but hidden, so it reads unchecked |
 | `unresolved` | the marker renders but carries no state signal |
 | null | no marker element was found at all |
+
+### What the probe cannot see
+
+Two shapes are read as `unresolved` rather than guessed at, both by design:
+
+- **A tick hidden only inside an `@container` block.** A container query is
+  evaluated against a specific element's nearest container, and no browser API
+  answers that for an arbitrary element — `CSS.supports` rejects a container
+  condition outright. So `@container` blocks are skipped explicitly.
+- **A tick whose governing rule lives in a cross-origin stylesheet served
+  without CORS.** Its `cssRules` cannot be read at all.
+
+In both cases the check goes quiet instead of claiming a disagreement.

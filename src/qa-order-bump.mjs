@@ -92,6 +92,18 @@ export function orderBumpEvidenceScript() {
   return ({ toggleSelector, markerFamilies, markerContainers, markerExcluded }) => {
     const hasContent = (value) => Boolean(value) && !["none", "normal", '""', "''"].includes(value);
 
+    // The one list of declarations that remove an element from view. Both the
+    // computed-style test and the stylesheet-rule walk ask through this, so a
+    // way of hiding a tick can never be understood by one and missed by the
+    // other — `visibility: collapse` was rejected by the computed-style test
+    // and invisible to the rule walk, which left a tick hidden that way
+    // unreadable instead of state-toggled. Reads through getPropertyValue
+    // because a rule's own style leaves unset properties empty, which every
+    // test below treats as "not hidden".
+    const hiddenBy = (style) => style.getPropertyValue("display") === "none"
+      || ["hidden", "collapse"].includes(style.getPropertyValue("visibility"))
+      || Number.parseFloat(style.getPropertyValue("opacity") || "1") <= 0.5;
+
     // The marker's `::after`, read once for both jobs it does here. A tick that
     // is absolutely positioned can render while its host box measures zero, so
     // a zero-sized host is not on its own proof that the tick is hidden — the
@@ -100,15 +112,19 @@ export function orderBumpEvidenceScript() {
     const pseudoTick = (element) => {
       const after = getComputedStyle(element, "::after");
       if (!hasContent(after.content)) return null;
-      const size = (value) => {
-        const parsed = Number.parseFloat(value || "0");
-        return Number.isFinite(parsed) ? parsed : 0;
+      // An unstyled tick is sized by its own content, and its computed width
+      // and height come back as `auto` rather than a length. Only an explicit
+      // zero means the tick occupies nothing; `auto` means the content decides,
+      // and the content is non-empty or we would not be here.
+      const boxed = (value) => {
+        const raw = String(value ?? "").trim();
+        if (raw === "" || raw === "auto") return true;
+        const parsed = Number.parseFloat(raw);
+        return Number.isFinite(parsed) ? parsed > 0 : true;
       };
       return {
-        shown: after.display !== "none"
-          && after.visibility !== "hidden"
-          && Number.parseFloat(after.opacity || "1") > 0.5,
-        boxed: size(after.width) > 0 && size(after.height) > 0,
+        shown: !hiddenBy(after),
+        boxed: boxed(after.width) && boxed(after.height),
       };
     };
 
@@ -122,10 +138,7 @@ export function orderBumpEvidenceScript() {
       if (!(element instanceof Element) || element.hidden) return null;
       if (element.closest("[hidden]")) return null;
       const style = getComputedStyle(element);
-      if (style.display === "none") return null;
-      if (style.visibility === "hidden" || style.visibility === "collapse") return null;
-      if (Number.parseFloat(style.opacity || "1") <= 0.5) return null;
-      return style;
+      return hiddenBy(style) ? null : style;
     };
 
     const hasBox = (element) => {
@@ -164,9 +177,6 @@ export function orderBumpEvidenceScript() {
     // and so is a disabled one. A stylesheet the page cannot read
     // (cross-origin, no CORS) is not evidence either way and is skipped too.
     const hiddenByAMatchingRule = (element) => {
-      const hides = (style) => style.getPropertyValue("display") === "none"
-        || style.getPropertyValue("visibility") === "hidden"
-        || Number.parseFloat(style.getPropertyValue("opacity") || "1") <= 0.5;
       const mediaApplies = (query) => {
         if (!query || query === "all") return true;
         try {
@@ -176,6 +186,14 @@ export function orderBumpEvidenceScript() {
         }
       };
       const groupApplies = (rule) => {
+        // A container query is evaluated against a specific element's nearest
+        // container, and there is no API that answers that question for an
+        // arbitrary element — `CSS.supports` rejects a container condition
+        // outright. So an `@container` block is skipped deliberately rather
+        // than by accident: a tick hidden only inside one reads as unresolved,
+        // which is quiet, instead of being guessed at. Recorded as a known
+        // limit in fixtures/qa-order-bump/README.md.
+        if (typeof CSSContainerRule !== "undefined" && rule instanceof CSSContainerRule) return false;
         // CSSMediaRule carries `.media`; CSSSupportsRule carries only a
         // condition. Anything else grouping (a layer, a nested style rule) has
         // no condition to fail and applies.
@@ -197,7 +215,7 @@ export function orderBumpEvidenceScript() {
             if (!groupApplies(rule)) continue;
             if (walk(Array.from(rule.cssRules))) return true;
           }
-          if (!rule.selectorText || !rule.style || !hides(rule.style)) continue;
+          if (!rule.selectorText || !rule.style || !hiddenBy(rule.style)) continue;
           try {
             // Pseudo-element selectors throw here; they are not this family.
             if (element.matches(rule.selectorText)) return true;

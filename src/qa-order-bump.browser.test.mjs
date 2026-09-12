@@ -68,7 +68,7 @@ if (!available) {
 
 browserTest("an accepted bump resolves its rendered tick, not the toggle's own aria-hidden checkbox, and reads checked", async () => {
   const { toggles } = await bumpEvidence();
-  assert.equal(toggles.length, 7, "all seven visible toggles are read");
+  assert.equal(toggles.length, 9, "all nine visible toggles are read");
 
   const accepted = toggles.find((toggle) => toggle.packageId === "4");
   assert.equal(accepted.active, true, "the card carries next-in-cart");
@@ -171,6 +171,35 @@ browserTest("an absolutely positioned tick is read even when its host box measur
   // The host span is 0x0; the tick is out of flow and visible. A size test on
   // the host alone would disqualify the marker before its state was read.
   assert.equal(accepted.markerSignal, "pseudo", "the zero-sized host is still inspected for its tick");
+  assert.equal(accepted.markerChecked, true);
+  assert.equal(accepted.statesAgree, true);
+});
+
+browserTest("a tick hidden by visibility: collapse is a state-toggled tick", async () => {
+  const { toggles } = await bumpEvidence();
+  const accepted = toggles.find((toggle) => toggle.packageId === "11");
+
+  assert.equal(accepted.active, true);
+  assert.equal(accepted.markerFamily, "[data-next-toggle-check]");
+  assert.equal(accepted.markerResolved, true);
+  // The rule walk has to understand every way of hiding a tick that the
+  // computed-style test does, or a collapse-hidden marker reads unresolved.
+  assert.equal(accepted.markerSignal, "display_toggled", "collapse hides a tick exactly as display: none does");
+  assert.equal(accepted.markerReadable, true);
+  assert.equal(accepted.markerChecked, true);
+  assert.equal(accepted.statesAgree, true);
+});
+
+browserTest("an unstyled tick sized by its own content is read on a zero-sized host", async () => {
+  const { toggles } = await bumpEvidence();
+  const accepted = toggles.find((toggle) => toggle.packageId === "12");
+
+  assert.equal(accepted.active, true);
+  assert.equal(accepted.inputChecked, true);
+  assert.equal(accepted.markerResolved, true);
+  // Nothing gives this ::after a width or a height, so both compute to `auto`.
+  // Reading `auto` as zero would call a visible tick not_rendered.
+  assert.equal(accepted.markerSignal, "pseudo", "an auto-sized tick still occupies a box");
   assert.equal(accepted.markerChecked, true);
   assert.equal(accepted.statesAgree, true);
 });

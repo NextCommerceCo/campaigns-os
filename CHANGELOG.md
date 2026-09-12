@@ -38,7 +38,10 @@ Notable supported-surface changes are recorded here.
   box that nothing hides can never be read that way. Only rules that currently
   apply count as evidence: a `@media print` or unsupported `@supports` block,
   a stylesheet whose media attribute does not match, and a disabled sheet are
-  all skipped, since none of them describes what the buyer sees. And because an
+  all skipped, since none of them describes what the buyer sees. An `@container`
+  block is skipped too, for a different reason — no browser API evaluates a
+  container query for an arbitrary element — so a tick hidden only inside one
+  reads as unresolved rather than being guessed at. And because an
   absolutely positioned tick can render while its host box measures zero, a
   zero-sized marker is checked for a rendered `::after` before its size is
   allowed to disqualify it.
