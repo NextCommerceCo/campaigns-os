@@ -979,7 +979,12 @@ export function buildPolishPageLoadEvidence({
   };
 }
 
-function nonwaivableBlock(code, reason, subject) {
+// A block carries the recomputed measurement when it has one, so a verdict
+// reader can see which route and viewport failed and on which problem code
+// without opening the assembly report. The measurement is the deterministic
+// projection this module already computes (routes, viewports, problem codes,
+// origin-only warning hosts); it names no URL.
+function nonwaivableBlock(code, reason, subject, measurement = null) {
   return {
     id: HIDDEN_EAGER_MEDIA_SCOPE,
     scope: HIDDEN_EAGER_MEDIA_SCOPE,
@@ -993,6 +998,7 @@ function nonwaivableBlock(code, reason, subject) {
     state: null,
     state_fingerprint: null,
     findings: [],
+    measurement,
     waiver: null,
     waiver_assessment: emptyWaiverAssessment(),
   };
@@ -1039,6 +1045,7 @@ export function evaluateHiddenEagerMediaCheckpoint({
       "polish.hidden_eager_media.capture_incomplete",
       "Page-load capture failed or lacks complete route and viewport measurement; incomplete capture evidence cannot be waived.",
       subject,
+      recomputed.measurement,
     );
   }
   if (canonicalJson(pageLoad.measurement) !== canonicalJson(recomputed.measurement)

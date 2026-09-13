@@ -22,7 +22,7 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, relative, reso
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-import { recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { producerStageOutcomeUnchanged, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -367,7 +367,7 @@ Usage:
   campaigns-os next deploy --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
-  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir qa-output] [--json]
+  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
@@ -2719,7 +2719,13 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
       if (assemblyReportMatchesPacket(report, packet)) {
         const command = `campaigns-os ${args._[0] || "doctor"}`;
         const updatedReport = recordDoctorStageOutcome(report, result, { command, doctorOutPath });
-        writeJsonAtomic(reportPath, updatedReport);
+        // A re-run that restates the outcome already on disk is a re-record,
+        // not a new chapter: the only bytes that would move are the stage
+        // timestamps, and rewriting them makes a Run Record's digest of this
+        // file stale for no information. A changed outcome still writes.
+        if (!producerStageOutcomeUnchanged(report, updatedReport, "doctor")) {
+          writeJsonAtomic(reportPath, updatedReport);
+        }
       }
     }
     writeJson(doctorOutPath, result);
