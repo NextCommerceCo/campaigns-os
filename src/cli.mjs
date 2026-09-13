@@ -152,7 +152,7 @@ import {
   defaultSdkSupportPolicy,
   renderTemplateFreshness,
 } from "./template-freshness.mjs";
-import { isUnresolvedTemplateFamily, resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
+import { isUnresolvedTemplateFamily, resolveTemplateFamilyDesignSource, resolveTemplateFamilySelection } from "./template-reference.mjs";
 import {
   resolveBuiltSiteScope,
   synthesizeMinimalBuildPacket,
@@ -235,6 +235,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";
 const CONTEXT_SCHEMA = "campaign-runtime-build-context/v0";
 const REPORT_SCHEMA = "campaign-runtime-assembly-report/v0";
+// Assembly-report warning code for the template-family precedence notice, so
+// the stderr line and the report entry can never drift apart.
+const TEMPLATE_FAMILY_HINT_OVERRIDDEN = "TEMPLATE_FAMILY_HINT_OVERRIDDEN";
 const PROOF_POLICY_REQUIRED_FIELDS = Object.freeze([
   "browser_qa_required",
   "typed_card_depth",
@@ -2043,7 +2046,11 @@ function prepareBuild(args, options = {}) {
   const htmlFiles = collectHtmlFiles(sourceRoot);
   const explicitTemplateFamily = optionalString(args["template-family"]);
   const hintedTemplateFamily = preferredTemplateFamily(spec);
-  const templateFamily = explicitTemplateFamily || hintedTemplateFamily || "undecided";
+  const templateSelection = resolveTemplateFamilySelection({
+    flag: explicitTemplateFamily,
+    hint: hintedTemplateFamily,
+  });
+  const templateFamily = templateSelection.value;
   // The DSP is upstream source/design context, so a CampaignSpec preference
   // remains its template input even when Build locks a different CLI override.
   // With no source hint, the explicit family is the only honest DSP input.
@@ -2106,6 +2113,17 @@ function prepareBuild(args, options = {}) {
     && !Array.isArray(spec.build_scope.reasons);
   const manifestResult = sourceIntake.manifestResult;
   const manifestWarnings = sourceIntake.manifestWarnings;
+  // Template-family precedence, said out loud. The flag has always beaten the
+  // CampaignSpec hint; printing the losing value is what keeps an operator
+  // from reading a packet built on the flag as agreement with the spec.
+  // stderr keeps --json stdout clean, as with the freshness line above.
+  if (templateSelection.overridden) {
+    console.warn(
+      `[campaigns-os prepare-build] template family "${templateSelection.flag}" selected by ${templateSelection.source}; ` +
+      `CampaignSpec preferred_template_family "${templateSelection.hint}" is a hint and was overridden. ` +
+      `Recorded on the assembly report as warning ${TEMPLATE_FAMILY_HINT_OVERRIDDEN}.`,
+    );
+  }
   const wrapperPolicy = resolveWrapperPolicy({ flag: wrapperPolicyFlag, manifest: manifestResult.manifest });
   if (wrapperPolicy.value !== DEFAULT_WRAPPER_POLICY) {
     console.warn(
@@ -2423,6 +2441,7 @@ function prepareBuild(args, options = {}) {
     designSourcePackage,
     declaredScopeSkips,
     buildScopeReasonsInvalid,
+    templateSelection,
   });
 
   publishPrepareBuildJsonOutputs([
@@ -2561,6 +2580,7 @@ function createAssemblyReport({
   designSourcePackage,
   declaredScopeSkips = [],
   buildScopeReasonsInvalid = false,
+  templateSelection = null,
 }) {
   const scaffoldRequired = context.scaffold.required;
   const portable = (path) => relFromDir(targetRepo, path);
@@ -2613,6 +2633,13 @@ function createAssemblyReport({
     evidence: [],
     blockers,
     warnings: [
+      ...(templateSelection?.overridden
+        ? [{
+            code: TEMPLATE_FAMILY_HINT_OVERRIDDEN,
+            stage: "prepare_build",
+            message: `Template family "${templateSelection.flag}" came from ${templateSelection.source} and overrode the CampaignSpec preferred_template_family hint "${templateSelection.hint}". The flag wins by design; re-run without --template-family to build on the spec hint, or update the spec so the two agree.`,
+          }]
+        : []),
       ...(buildScopeReasonsInvalid
         ? [{
             code: "SOURCE_SCOPE_REASONS_IGNORED",
