@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.26.0+agent.20] - 2026-09-13
+## [1.26.0+agent.21] - 2026-09-13
 
 ### Fixed
 
@@ -28,6 +28,11 @@ Notable supported-surface changes are recorded here.
   sidecar's allowlist projection, and `--json` runs receive the stamp in the
   emitted verdict instead of the stderr line. `docs/qa-and-test-orders.md`
   states the behaviour.
+
+## [1.26.0+agent.20] - 2026-09-13
+
+### Fixed
+
 - `campaigns-os validate-assembly-report` now fails an Assembly Report that
   declares a Design Source Package material fingerprint but records no
   `stages.assembly.source_package_material_fingerprint`. The ladder already
