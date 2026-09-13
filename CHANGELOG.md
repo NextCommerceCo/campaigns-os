@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.2] - 2026-09-13
+
+### Fixed
+
+- The QA verdict now says which route and viewport failed a polish capture and
+  on which problem code. A `polish.hidden_eager_media.capture_incomplete`
+  block was built from the code, reason and subject alone, so the per-cell
+  `measurement.incomplete[]` the checkpoint had just recomputed was discarded
+  one layer before the verdict projector could read it; the verdict carried
+  the full `routes` list, `state: { findings: [] }` and nothing else, and a
+  reader had to open the assembly report to learn which of the cells failed.
+  The blocked checkpoint now carries `measurement` (the recomputed `status`,
+  counts, and the `missing[]`, `duplicate[]`, `unexpected[]` and
+  `incomplete[]` cells with their `problem_codes[]`), and the verdict's
+  `polish.hidden_eager_media` assertion projects it as `evidence.measurement`
+  with path-only routes, the closed viewport vocabulary and the closed
+  problem-code vocabulary, bounded to the full supported capture matrix with
+  any excess counted in `omitted_cell_count`. Other block codes carry
+  `measurement: null`. No
+  schema, problem code or verdict field outside that assertion's evidence
+  changes.
+
 ## [1.26.0] - 2026-09-12
 
 ### Added

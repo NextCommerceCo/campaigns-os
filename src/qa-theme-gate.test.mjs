@@ -225,6 +225,81 @@ test("hidden eager-media checkpoint summary and assertion expose only the safe f
   assert.doesNotMatch(JSON.stringify(assertion), /private-/);
 });
 
+test("a capture-incomplete checkpoint carries its per-cell measurement into the verdict evidence", () => {
+  const gate = {
+    id: "polish.hidden_eager_media",
+    scope: "polish.hidden_eager_media",
+    status: "blocked",
+    code: "polish.hidden_eager_media.capture_incomplete",
+    reason: "Page-load capture failed or lacks complete route and viewport measurement; incomplete capture evidence cannot be waived.",
+    waivable: false,
+    subject: {
+      build_fingerprint: "sha256:build",
+      campaign_slug: "merchant",
+      route_scope: "campaign",
+      routes: ["/merchant/", "/merchant/landing/"],
+      viewports: ["desktop", "mobile"],
+    },
+    state: null,
+    state_fingerprint: null,
+    findings: [],
+    measurement: {
+      status: "incomplete",
+      expected_capture_count: 4,
+      captured_count: 3,
+      missing: [{ route: "/merchant/", viewport: "mobile" }],
+      duplicate: [],
+      unexpected: [{ route: "https://private-host.example.test/unexpected/?token=private-secret", viewport: "desktop" }],
+      incomplete: [{
+        route: "/merchant/landing/",
+        viewport: "desktop",
+        problem_codes: ["resource_url_unresolvable", "private-not-a-code", "dependency_request_failed"],
+      }],
+      warnings: [{ route: "/merchant/", viewport: "desktop", failed_origins: ["https://private-beacon.example"] }],
+    },
+    waiver: null,
+    waiver_assessment: { inert_counts: { stale: 0, foreign: 0, malformed: 0, expired: 0 } },
+    required_actions: [],
+  };
+
+  const summary = checkpointGateSummary(gate);
+  assert.deepEqual(summary.measurement, {
+    status: "incomplete",
+    expected_capture_count: 4,
+    captured_count: 3,
+    missing: [{ route: "/merchant/", viewport: "mobile" }],
+    duplicate: [],
+    unexpected: [{ route: "/unexpected/", viewport: "desktop" }],
+    incomplete: [{
+      route: "/merchant/landing/",
+      viewport: "desktop",
+      problem_codes: ["dependency_request_failed", "resource_url_unresolvable"],
+    }],
+    omitted_cell_count: 0,
+  });
+  const assertion = hiddenEagerMediaGateAssertion(gate);
+  assert.equal(assertion.status, "fail");
+  assert.deepEqual(assertion.evidence.measurement.incomplete, summary.measurement.incomplete);
+  assert.doesNotMatch(JSON.stringify(assertion), /private-/);
+
+  const withoutMeasurement = checkpointGateSummary({ ...gate, measurement: undefined });
+  assert.equal(withoutMeasurement.measurement, null);
+
+  // The full supported matrix (128 routes x 2 viewports) fits; past it the
+  // omission is counted, never silent.
+  const fullMatrix = Array.from({ length: 256 }, (_, index) => ({
+    route: `/merchant/route-${index}/`,
+    viewport: index % 2 ? "mobile" : "desktop",
+    problem_codes: ["producer_failed"],
+  }));
+  const atLimit = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, incomplete: fullMatrix } });
+  assert.equal(atLimit.measurement.incomplete.length, 256);
+  assert.equal(atLimit.measurement.omitted_cell_count, 0);
+  const overLimit = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, incomplete: [...fullMatrix, ...fullMatrix.slice(0, 3)] } });
+  assert.equal(overLimit.measurement.incomplete.length, 256);
+  assert.equal(overLimit.measurement.omitted_cell_count, 3);
+});
+
 test("blocked theme gate maps to a single blocker assertion with reason and required actions", () => {
   // The recovery-relief-stack-v1 dogfood shape: generatable theme, never applied.
   const gate = evaluateThemeGate({

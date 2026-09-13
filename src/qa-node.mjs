@@ -24,7 +24,7 @@ import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
-import { HIDDEN_EAGER_MEDIA_SCOPE } from "./polish-page-load.mjs";
+import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
 import {
   normalizePageLoadRoute,
   POLISH_PRELOAD_ATTRIBUTES,
@@ -1019,6 +1019,59 @@ function hiddenEagerMediaFindings(gate) {
       || (left.element_index ?? -1) - (right.element_index ?? -1));
 }
 
+const HIDDEN_EAGER_MEDIA_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
+// planPolishCapture allows 128 routes; two viewports per route is the full
+// supported matrix, so a run inside the limits never truncates. Anything past
+// the bound is counted, never dropped silently.
+const MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS = 256;
+
+function hiddenEagerMediaMeasurementCell(cell, { withProblemCodes = false } = {}) {
+  const route = normalizePageLoadRoute(cell?.route);
+  const viewport = stringArg(cell?.viewport)?.toLowerCase();
+  const projected = {
+    route,
+    viewport: HIDDEN_EAGER_MEDIA_VIEWPORTS.has(viewport) ? viewport : null,
+  };
+  if (withProblemCodes) {
+    projected.problem_codes = [...new Set((Array.isArray(cell?.problem_codes) ? cell.problem_codes : [])
+      .filter((code) => HIDDEN_EAGER_MEDIA_PROBLEM_CODES.has(code)))].sort();
+  }
+  return projected;
+}
+
+function hiddenEagerMediaMeasurementCells(cells, options) {
+  const valid = (Array.isArray(cells) ? cells : []).filter(isPlainObject);
+  return {
+    cells: valid
+      .slice(0, MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS)
+      .map((cell) => hiddenEagerMediaMeasurementCell(cell, options)),
+    omitted: Math.max(0, valid.length - MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS),
+  };
+}
+
+// The per-route, per-viewport measurement a blocked checkpoint carries: which
+// cells are missing, duplicated, unexpected, or incomplete and on which
+// problem codes. Routes are path-only, viewports and codes come from the
+// closed vocabularies, so nothing here can carry a URL or an operator string.
+function hiddenEagerMediaMeasurement(gate) {
+  const measurement = gate?.measurement;
+  if (!isPlainObject(measurement)) return null;
+  const missing = hiddenEagerMediaMeasurementCells(measurement.missing);
+  const duplicate = hiddenEagerMediaMeasurementCells(measurement.duplicate);
+  const unexpected = hiddenEagerMediaMeasurementCells(measurement.unexpected);
+  const incomplete = hiddenEagerMediaMeasurementCells(measurement.incomplete, { withProblemCodes: true });
+  return {
+    status: measurement.status === "complete" ? "complete" : "incomplete",
+    expected_capture_count: safeNonnegativeInteger(measurement.expected_capture_count),
+    captured_count: safeNonnegativeInteger(measurement.captured_count),
+    missing: missing.cells,
+    duplicate: duplicate.cells,
+    unexpected: unexpected.cells,
+    incomplete: incomplete.cells,
+    omitted_cell_count: missing.omitted + duplicate.omitted + unexpected.omitted + incomplete.omitted,
+  };
+}
+
 function hiddenEagerMediaGateAssertion(gate) {
   const summary = checkpointGateSummary(gate);
   const page = { page_id: "campaign" };
@@ -1352,6 +1405,7 @@ function checkpointGateSummary(gate) {
       ...summary,
       state: { findings },
       findings,
+      measurement: hiddenEagerMediaMeasurement(gate),
     };
   }
   if (gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) {
