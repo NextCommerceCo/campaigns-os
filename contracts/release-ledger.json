@@ -2236,6 +2236,33 @@
         }
       ],
       "entry_sha256": "7f8072738a6200727ea172cbed10685f768e1d70f50b998aa067c3137cee9bd6"
+    },
+    {
+      "id": "RL-0054",
+      "sequence": 54,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.15",
+      "changelog_sha256": "229d9ade49d65ec6aee4483972b99c7cfcecc4a4aae750216c927662675c8431",
+      "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. This is the same condition the polish gate already blocked on as polish.assembly_source_package_fingerprint_missing, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "validate-assembly-report",
+          "summary": "validateAssemblyReport fails a report that declares a design-source-package material fingerprint with no stages.assembly.source_package_material_fingerprint, reusing the polish gate's predicate; doctor's shape check opts out so the gate's finding is not duplicated."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "The freshness-lifecycle section says validate-assembly-report applies the same missing-fingerprint condition as the polish gate."
+        }
+      ],
+      "entry_sha256": "2ef3ac9d033ca099727ea8eed6abf42703afa97455afc1b52d153e7ee4d68b53"
     }
   ]
 }

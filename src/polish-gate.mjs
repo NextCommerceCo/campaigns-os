@@ -67,6 +67,17 @@ export function assemblySourcePackageMaterialFingerprint(report) {
     || null;
 }
 
+// One predicate for "this report claims a Design Source Package but Build never
+// tied itself to it". The polish gate, `doctor`/`next` (through the gate) and
+// the standalone `validate-assembly-report` all answer that question from here,
+// so the three paths cannot drift: before this existed the gate blocked and the
+// validator stayed silent on the same report.
+export function assemblySourcePackageFingerprintMissing(report, now = Date.now()) {
+  if (!currentSourcePackageMaterialFingerprint(report)) return false;
+  if (assemblySourcePackageMaterialFingerprint(report)) return false;
+  return !assessAssemblySourcePackageFreshnessWaivers(report, now).active;
+}
+
 export function assessAssemblySourcePackageFreshnessWaivers(report, now = Date.now()) {
   const candidates = [
     ...(Array.isArray(report?.waivers) ? report.waivers : []),
@@ -403,7 +414,7 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
     };
   }
 
-  if (currentSourcePackageFingerprint && !assemblySourcePackageFingerprint && !sourcePackageFreshnessWaiver) {
+  if (assemblySourcePackageFingerprintMissing(report, now)) {
     return {
       status: "blocked",
       code: "polish.assembly_source_package_fingerprint_missing",

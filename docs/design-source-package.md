@@ -612,7 +612,10 @@ If a current package exists but Assembly's source-package fingerprint is
 missing or different, the Polish gate returns
 `polish.assembly_source_package_fingerprint_missing` or
 `polish.assembly_source_package_stale`, and `campaigns-os next` routes back to
-Build. If Assembly is current but Polish's build or source-package fingerprint
+Build. `campaigns-os validate-assembly-report` applies the same missing-
+fingerprint condition and fails with
+`stages.assembly.source_package_material_fingerprint`, so a hand-authored
+report cannot pass the standalone validator and then block the ladder. If Assembly is current but Polish's build or source-package fingerprint
 is missing or stale, the route is back to Polish. A legacy report with no
 current Design Source Package material fingerprint keeps build-only Polish
 freshness and emits a warning.

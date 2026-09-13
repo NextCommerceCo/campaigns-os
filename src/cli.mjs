@@ -189,7 +189,7 @@ import {
   NEXT_STAGE_ORDER,
   reportKeyForCliStage,
 } from "./orchestration-stage-contract.mjs";
-import { evaluatePolishGate } from "./polish-gate.mjs";
+import { assemblySourcePackageFingerprintMissing, evaluatePolishGate } from "./polish-gate.mjs";
 import {
   assertPolishCaptureBindingUnchanged,
   capturePolishPageLoad,
@@ -6873,13 +6873,17 @@ export function validateCommerceZoneFindings(findings, warnings, ready) {
 }
 
 function validateAssemblyReportShape(report, errors, warnings, ready) {
-  const result = validateAssemblyReport(report);
+  // Doctor already reports the source-package freshness finding from
+  // derived.polish_gate, so the shape check leaves it out here and the same
+  // finding is not listed twice in one doctor run. The standalone
+  // `validate-assembly-report` has no gate behind it, so it keeps the check.
+  const result = validateAssemblyReport(report, { checkSourcePackageFreshness: false });
   for (const error of result.errors) errors.push(error);
   for (const warning of result.warnings) warnings.push(warning);
   ready.push(...result.ready);
 }
 
-function validateAssemblyReport(report) {
+function validateAssemblyReport(report, { checkSourcePackageFreshness = true } = {}) {
   const errors = [];
   const warnings = [];
   const ready = [];
@@ -6918,6 +6922,13 @@ function validateAssemblyReport(report) {
   ready.push(...themeResult.ready);
   validateAdapterDecisionShape(report.adapter_decisions, "report.adapter_decisions", warnings, ready, { addIssue });
   validateAssemblyProofPolicy(report.proof_policy, warnings, ready);
+  if (checkSourcePackageFreshness && assemblySourcePackageFingerprintMissing(report)) {
+    addIssue(
+      errors,
+      "stages.assembly.source_package_material_fingerprint",
+      "Report declares a Design Source Package material fingerprint, so stages.assembly.source_package_material_fingerprint is required: without it nothing proves the build consumed the current source context. Re-run Build against the current Design Source Package, or record a source freshness waiver.",
+    );
+  }
   const status = errors.length ? "blocked" : warnings.length ? "ready_with_warnings" : "ready";
   return { ok: errors.length === 0, status, errors, warnings, ready };
 }
