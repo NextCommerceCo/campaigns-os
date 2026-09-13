@@ -3402,9 +3402,13 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
           polish_gate: evaluatePolishGate({ report: gateReport, hiddenEagerMediaGate: polishCheckpointGate }),
         };
       })();
+  // Explicit sidecar paths are carried as given (resolved, absolute): doctor
+  // and next both resolve --context / --report against the working
+  // directory, so a path rebased onto the packet directory would read a
+  // different file when the command is run from where the operator stands.
   const sidecarArgs = [
-    ...(typeof contextPath === "string" ? [` --context ${shellToken(relFromDir(dirname(packetPath), contextPath))}`] : []),
-    ...(typeof reportPath === "string" ? [` --report ${shellToken(relFromDir(dirname(packetPath), reportPath))}`] : []),
+    ...(typeof contextPath === "string" ? [` --context ${shellToken(contextPath)}`] : []),
+    ...(typeof reportPath === "string" ? [` --report ${shellToken(reportPath)}`] : []),
   ].join("");
   const next = buildNextStep(errors, warnings, derivedForPicker, gateReport, packet, prepareBuildGate, { sidecarArgs });
   const status = errors.length
