@@ -15,6 +15,7 @@ import {
   ORDER_BUMP_MARKER_EXCLUDED,
   ORDER_BUMP_MARKER_FAMILIES,
   ORDER_BUMP_PROBE_INPUT,
+  orderBumpEvidenceScript,
 } from "./qa-order-bump.mjs";
 
 // The vocabulary as it stood when the families and the containers were two
@@ -64,4 +65,12 @@ test("the accepted fill is written the way getComputedStyle serialises a colour"
   // compare unequal against every page and silently retire the family.
   assert.match(ORDER_BUMP_ACCEPTED_FILL_COLOR, /^rgb\(\d{1,3}, \d{1,3}, \d{1,3}\)$/);
   assert.equal(ORDER_BUMP_ACCEPTED_FILL_COLOR, "rgb(45, 148, 127)");
+});
+
+test("the evaluate body refuses an input that omits the accepted fill colour", () => {
+  const body = orderBumpEvidenceScript();
+  const { acceptedFillColor, ...withoutColour } = ORDER_BUMP_PROBE_INPUT;
+  assert.equal(typeof acceptedFillColor, "string");
+  assert.throws(() => body(withoutColour), /acceptedFillColor/);
+  assert.throws(() => body({ ...withoutColour, acceptedFillColor: "" }), /acceptedFillColor/);
 });

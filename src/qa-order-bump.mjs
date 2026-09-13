@@ -108,6 +108,13 @@ export const ORDER_BUMP_PROBE_INPUT = Object.freeze({
 // can drive the same function the QA runner does, instead of a copy of it.
 export function orderBumpEvidenceScript() {
   return ({ toggleSelector, markerFamilies, markerContainers, markerExcluded, acceptedFillColor }) => {
+    // The evaluate body is serialised into the page, so it cannot read the
+    // module constant; the colour arrives through the probe input. A caller
+    // that omits it would compare every fill against undefined and read each
+    // fill-family marker as unresolved with no signal, so refuse instead.
+    if (typeof acceptedFillColor !== "string" || !acceptedFillColor) {
+      throw new Error("order-bump evidence script needs acceptedFillColor in its input (use ORDER_BUMP_PROBE_INPUT)");
+    }
     const hasContent = (value) => Boolean(value) && !["none", "normal", '""', "''"].includes(value);
 
     // The one list of declarations that remove an element from view. Both the
@@ -127,9 +134,9 @@ export function orderBumpEvidenceScript() {
       || ["hidden", "collapse"].includes(style.getPropertyValue("visibility"))
       || opacityHides(Number.parseFloat(style.getPropertyValue("opacity") || "1"));
 
-    // What the buyer can see. An element faded to a fifth of its colour is not
-    // something a buyer reads a tick off, so the rendered test treats anything
-    // at or below half opacity as hidden. The threshold is a judgement about
+    // What the buyer can see. An element faded to half its colour or less is
+    // not something a buyer reads a tick off, so the rendered test treats
+    // anything at or below half opacity as hidden. The threshold is a judgement about
     // legibility, which is why it belongs only here.
     const FADED_OUT_AT_OR_BELOW = 0.5;
     const hiddenFromView = (style) => hiddenBy(style, (value) => value <= FADED_OUT_AT_OR_BELOW);
