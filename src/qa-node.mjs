@@ -1674,6 +1674,42 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze(
   QA_ASSERTION_FAMILY_VOCABULARY.filter((family) => family !== "theme_gate"),
 );
 
+// A requested browser pass a blocked gate refused.
+//
+// `qa run --browser` behind a blocked gate finalizes the blocked verdict before
+// any page is rendered — the gate decision is the point, and neither it nor the
+// exit code changes here. What used to be missing is any trace of the
+// downgrade: the verdict was byte-identical to the same run without the flag
+// (no browser-runtime assertions, `tested_urls: []`), and stderr said nothing,
+// so an operator who asked for browser QA got none and had no way to tell.
+// The stamp below rides the verdict for machine readers and
+// `reportBrowserSkippedByGate` says it once for the human.
+export const BROWSER_SKIPPED_GATE_BLOCKED = "skipped_gate_blocked";
+
+function browserSkippedByGate({ args, blockedBy, gateLabel, clears }) {
+  // No flag, no claim: a run that never asked for a browser pass is not
+  // "skipping" one, and stamping it would make the field unreadable.
+  if (args?.browser !== true) return null;
+  const codes = (Array.isArray(blockedBy) ? blockedBy : [blockedBy])
+    .filter((code) => typeof code === "string" && code.length > 0);
+  const named = codes.length ? ` (${codes.join(", ")})` : "";
+  return {
+    requested: true,
+    status: BROWSER_SKIPPED_GATE_BLOCKED,
+    blocked_by: codes,
+    reason: `Browser QA was requested with --browser but no browser launched: the ${gateLabel}${named} blocked this run before any page was rendered. ${clears}`,
+  };
+}
+
+// One stderr line, on the same seam as reportCommercialRunnerError: suppressed
+// under --json, where the stamp itself is already in the emitted verdict.
+function reportBrowserSkippedByGate(args, browser, write = (message) => process.stderr.write(message)) {
+  if (!browser || browser.status !== BROWSER_SKIPPED_GATE_BLOCKED) return false;
+  if (args?.json === true) return false;
+  write(`[campaigns-os] ${browser.reason}\n`);
+  return true;
+}
+
 function parityReplayEvidence(bundle) {
   const order = bundle?.order || bundle?.orders?.[0] || null;
   const capture = bundle?.capture || bundle?.candidate_capture || bundle?.captures?.candidate || null;
@@ -1784,6 +1820,12 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
       testOrders: [],
       commercial: unavailableCommercialReport("checkpoint_gate_blocked"),
       runSessionActive,
+      browser: browserSkippedByGate({
+        args,
+        blockedBy: checkpointGates.filter((checkpoint) => checkpoint.status === "blocked").map((checkpoint) => checkpoint.id),
+        gateLabel: "checkpoint gate",
+        clears: "Clear the checkpoint blocker — or record a bounded waiver with `campaigns-os checkpoint waive --gate <gate-id>` — then re-run with --browser.",
+      }),
     });
   }
   const checkpointAssertions = checkpointGates.map(checkpointGateAssertion);
@@ -1797,6 +1839,12 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
       testOrders: [],
       commercial: unavailableCommercialReport("polish_gate_blocked"),
       runSessionActive,
+      browser: browserSkippedByGate({
+        args,
+        blockedBy: [polishGate.code],
+        gateLabel: "polish gate",
+        clears: "Re-run Polish against the current build so the polish gate passes, then re-run with --browser.",
+      }),
     });
   }
   // Blocked theme gate refuses the whole run: the verdict carries the gate
@@ -1812,6 +1860,12 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
       testOrders: [],
       commercial: unavailableCommercialReport("theme_gate_blocked"),
       runSessionActive,
+      browser: browserSkippedByGate({
+        args,
+        blockedBy: [gate.code],
+        gateLabel: "theme gate",
+        clears: "Generate the brand layer (`campaigns-os theme generate --packet <packet>`) or waive the gate with --theme-waive, then re-run with --browser.",
+      }),
     });
   }
 
@@ -1929,7 +1983,7 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
   return result.orders;
 }
 
-async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false }) {
+async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false, browser = null }) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
   const testedUrls = deriveTestedUrlsFromAssertions(assertions, pageUrls);
@@ -1964,10 +2018,15 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     testOrders,
     commercial,
     causeSummary,
+    browser,
   });
 
   const validationErrors = validateVerdict(verdict);
   if (validationErrors.length) throw new Error(`QA verdict failed local validation:\n- ${validationErrors.join("\n- ")}`);
+  // Said before the verdict is written and published: a publish that hangs or
+  // fails must not be what decides whether the operator hears about the
+  // downgrade they asked for.
+  reportBrowserSkippedByGate(args, verdict.browser);
   // The full verdict lands beside the campaign, not beside the caller. The
   // Run Record reads verdicts back from <target-repo>/qa-output/<slug>/ by
   // convention, so a default rooted at cwd wrote the file where nothing
@@ -2034,6 +2093,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
+    browser: verdict.browser || null,
     commercial: verdict.commercial || null,
     next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath, runSessionActive, disposition: verdict.disposition }),
     verdict,
@@ -3331,4 +3391,6 @@ export const __qaNodeTestHooks = Object.freeze({
   isRoutingMetaTag,
   unsupportedSdkMetaHint,
   reportCommercialRunnerError,
+  browserSkippedByGate,
+  reportBrowserSkippedByGate,
 });
