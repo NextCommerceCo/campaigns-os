@@ -2059,6 +2059,33 @@
         }
       ],
       "entry_sha256": "1c8207a60152f8c01906f5c69658012aac42b0c486975bc3a5ae831ea3ffc36a"
+    },
+    {
+      "id": "RL-0047",
+      "sequence": 47,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.6",
+      "changelog_sha256": "a80821c4e81c46cef3266d7fc549d7f2cbb6fb8547cd9411e0159d923e570d60",
+      "agent_impact": "A repeated start, prepare-build or build against a target with an open run session joins that session from any cwd: its command-lifecycle entry is appended to the session's journal under the session's run_id, so a Run Record minted later carries every intake attempt (stage timings, exit statuses and repair_loop_count include the retries). Previously only a re-run from inside the target, or the very first run, was recorded. Adoption requires the session to be bound to this packet or to none. --no-run-session is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none. Consumers reading lifecycle.stages from a Run Record should expect repeated start:* stages when intake was retried.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "start, prepare-build and build adopt the target's open run session (when bound to this packet or none) instead of resolving no session and dropping their lifecycle entry."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "States that intake commands find the target's session by --target and that a repeated intake joins it from any cwd."
+        }
+      ],
+      "entry_sha256": "7f4319223839f083b78c745bc61c01436b9bd68deb7063e528b7fc95545ebb13"
     }
   ]
 }
