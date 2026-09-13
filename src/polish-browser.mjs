@@ -49,8 +49,16 @@ function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value !== ""))];
 }
 
+// A non-http(s) URL (data:, blob:, about:, an extension scheme) is kept as
+// its scheme alone: the payload of a data: URL is page content, not a
+// network address, and bounding it by length would misreport a long inline
+// image as an overflow instead of what it is.
+const URL_SCHEME_PATTERN = /^([a-z][a-z0-9+.-]*):/i;
+
 function boundedCaptureUrl(value) {
   if (typeof value !== "string") return null;
+  const scheme = URL_SCHEME_PATTERN.exec(value)?.[1]?.toLowerCase();
+  if (scheme && scheme !== "http" && scheme !== "https") return `${scheme}:`;
   return value.length > MAX_POLISH_CAPTURE_URL_LENGTH ? "[url-too-long]" : value;
 }
 

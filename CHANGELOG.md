@@ -22,6 +22,31 @@ Notable supported-surface changes are recorded here.
   (assembly not tied to the current Design Source Package, re-run Build) and
   `polish.evidence_missing` (no Polish stage, run Polish) are different
   conditions with different next actions and stay distinct.
+||||||| 42ba452
+## [1.26.0+agent.1] - 2026-09-13
+
+### Fixed
+
+- `polish capture` no longer blocks on a `data:`, `blob:` or `about:` response.
+  The response aggregator treated every non-http(s) response URL as
+  `resource_url_unresolvable`, which makes the route's capture incomplete and
+  raises `polish.hidden_eager_media.capture_incomplete` — the unwaivable block
+  built for browser crashes and missing routes. A page with a `<video controls>`
+  element or an inline `data:` image produces several such responses on every
+  load, so the block reproduced on every capture of that route, the repair
+  instruction (fix an unresolvable resource URL) pointed at nothing an operator
+  could change, and `checkpoint waive` refused it by design. A non-http(s)
+  response is not a network resource: nothing was transferred and there is
+  nothing to attribute to the resource ledger. It is now counted under
+  `response_collection.unattributed_response_count` (evidence) and raises no
+  problem; `resource_url_unresolvable` is reserved for a malformed or over-long
+  URL and for a non-http(s) load that failed (a revoked `blob:` URL behind a
+  script or image is still a dependency the page could not load). The browser
+  collector records a non-http(s) response URL as its scheme
+  alone (`data:`), so a long inline image is neither persisted nor misreported
+  as `url_length_overflow`. Capture shape, problem-code vocabulary and the
+  measurement invariants are unchanged; a capture blocked this way needs a fresh
+  `polish capture`, which it needed anyway.
 
 ## [1.26.0] - 2026-09-12
 
