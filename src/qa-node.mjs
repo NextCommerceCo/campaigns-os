@@ -24,7 +24,7 @@ import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
-import { HIDDEN_EAGER_MEDIA_SCOPE } from "./polish-page-load.mjs";
+import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
 import {
   normalizePageLoadRoute,
   POLISH_PRELOAD_ATTRIBUTES,
@@ -770,6 +770,7 @@ function polishGateAssertion(gate) {
     assembly_source_package_material_fingerprint: gate.assembly_source_package_material_fingerprint || null,
     performed_by: gate.performed_by || null,
     waiver: gate.waiver || null,
+    expired_waiver: gate.expired_waiver || null,
     scope_source: gate.scope_source || null,
   };
   if (gate.status === "blocked") {
@@ -781,14 +782,12 @@ function polishGateAssertion(gate) {
       severity: SEVERITY.BLOCKER,
       expected: "current structured Polish evidence produced by next-campaigns-polish",
       actual: gate.reason,
+      // blocked carries the same evidence as pass/waived, plus reason/problems/actions
       evidence: {
+        ...evidence,
         reason: gate.reason,
-        build_fingerprint: gate.build_fingerprint || null,
-        source_build_fingerprint: gate.source_build_fingerprint || null,
-        performed_by: gate.performed_by || null,
         problems: gate.problems || [],
         required_actions: gate.required_actions || [],
-        scope_source: gate.scope_source || null,
       },
     });
   }
@@ -1019,6 +1018,66 @@ function hiddenEagerMediaFindings(gate) {
     .sort((left, right) => String(left.route).localeCompare(String(right.route))
       || String(left.viewport).localeCompare(String(right.viewport))
       || (left.element_index ?? -1) - (right.element_index ?? -1));
+}
+
+const HIDDEN_EAGER_MEDIA_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
+// planPolishCapture allows 128 routes; two viewports per route is the full
+// supported matrix, so a run inside the limits never truncates. The cap is
+// applied once across all four cell lists together; anything past it, and
+// any record that does not conform to the closed vocabularies, is counted
+// per list, never dropped silently.
+const MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS = 256;
+const HIDDEN_EAGER_MEDIA_MEASUREMENT_LISTS = Object.freeze(["missing", "duplicate", "unexpected", "incomplete"]);
+
+// A cell is kept only when it conforms: a path-only route and a viewport
+// from the closed vocabulary. Anything else is omitted and counted.
+function hiddenEagerMediaMeasurementCell(cell, { withProblemCodes = false } = {}) {
+  if (!isPlainObject(cell)) return null;
+  const route = normalizePageLoadRoute(cell.route);
+  const viewport = stringArg(cell.viewport)?.toLowerCase();
+  if (!route || !HIDDEN_EAGER_MEDIA_VIEWPORTS.has(viewport)) return null;
+  const projected = { route, viewport };
+  if (withProblemCodes) {
+    projected.problem_codes = [...new Set((Array.isArray(cell.problem_codes) ? cell.problem_codes : [])
+      .filter((code) => HIDDEN_EAGER_MEDIA_PROBLEM_CODES.has(code)))].sort();
+  }
+  return projected;
+}
+
+// The per-route, per-viewport measurement a blocked checkpoint carries: which
+// cells are missing, duplicated, unexpected, or incomplete and on which
+// problem codes. Routes are path-only, viewports and codes come from the
+// closed vocabularies, so nothing here can carry a URL or an operator string.
+// Counts are integers (0 when the input carries none).
+function hiddenEagerMediaMeasurement(gate) {
+  const measurement = gate?.measurement;
+  if (!isPlainObject(measurement)) return null;
+  const lists = {};
+  const omittedByList = {};
+  let budget = MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS;
+  for (const name of HIDDEN_EAGER_MEDIA_MEASUREMENT_LISTS) {
+    const cells = [];
+    let omitted = 0;
+    for (const raw of (Array.isArray(measurement[name]) ? measurement[name] : [])) {
+      const cell = hiddenEagerMediaMeasurementCell(raw, { withProblemCodes: name === "incomplete" });
+      if (!cell || budget === 0) {
+        omitted += 1;
+        continue;
+      }
+      cells.push(cell);
+      budget -= 1;
+    }
+    lists[name] = cells;
+    omittedByList[name] = omitted;
+  }
+  return {
+    status: measurement.status === "complete" ? "complete" : "incomplete",
+    expected_capture_count: safeNonnegativeInteger(measurement.expected_capture_count) ?? 0,
+    captured_count: safeNonnegativeInteger(measurement.captured_count) ?? 0,
+    ...lists,
+    omitted_cell_count: Object.values(omittedByList).reduce((total, count) => total + count, 0),
+    omitted_cell_count_by_list: omittedByList,
+  };
 }
 
 function hiddenEagerMediaGateAssertion(gate) {
@@ -1354,6 +1413,7 @@ function checkpointGateSummary(gate) {
       ...summary,
       state: { findings },
       findings,
+      measurement: hiddenEagerMediaMeasurement(gate),
     };
   }
   if (gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) {

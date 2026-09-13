@@ -22,7 +22,7 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, relative, reso
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-import { recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { producerStageOutcomeUnchanged, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -2694,7 +2694,13 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
       if (assemblyReportMatchesPacket(report, packet)) {
         const command = `campaigns-os ${args._[0] || "doctor"}`;
         const updatedReport = recordDoctorStageOutcome(report, result, { command, doctorOutPath });
-        writeJsonAtomic(reportPath, updatedReport);
+        // A re-run that restates the outcome already on disk is a re-record,
+        // not a new chapter: the only bytes that would move are the stage
+        // timestamps, and rewriting them makes a Run Record's digest of this
+        // file stale for no information. A changed outcome still writes.
+        if (!producerStageOutcomeUnchanged(report, updatedReport, "doctor")) {
+          writeJsonAtomic(reportPath, updatedReport);
+        }
       }
     }
     writeJson(doctorOutPath, result);
