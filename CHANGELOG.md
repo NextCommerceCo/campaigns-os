@@ -2,6 +2,47 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.22] - 2026-09-13
+
+### Fixed
+
+- Credentials on the telemetry rails are now shape-checked and their
+  destination vetted before a socket is opened. Two holes closed. First,
+  `--proxy-base` only ever had a transport rule on `telemetry list`; the remit
+  rail and the QA verdict publish took whatever origin they were given, so
+  `--proxy-base http://some-proxy.example` put `X-Campaign-Key` on the wire in
+  the clear. Every credential-bearing request now goes through one gate
+  (`assertSecureProxyBase` in `src/remit.mjs`): `https:` passes; a loopback
+  host (`localhost`, `127.0.0.1`, `[::1]`) may be plain http for a local
+  receiver and prints one stderr warning per request that the credential
+  travels in clear; any other plain-http base — and any base that is not a URL
+  — is refused before the request, so nothing is sent. A remit or publish
+  aimed at a plain-http remote proxy therefore now fails rather than leaking;
+  on the remit rail that failure stays non-fatal and lands in `remit_error`,
+  as an unreachable receiver always has. The ops admin key keeps its stricter
+  rule on top (canonical scope, loopback, or an explicit
+  `--trust-proxy-base`). Point a plain-http staging proxy at `--proxy-base`
+  and only the credential-free spec fetch still works; give it TLS, or run it
+  on loopback, to keep remit and publish.
+- Second, a campaign key that was present but malformed — a quoted key, a
+  pasted JSON blob, a URL, a value with whitespace — was silently discarded
+  and reported as if no key had been configured at all, so an operator whose
+  `api_key_source` env var held the wrong thing was told to go add one. The
+  resolver now separates "absent" from "refused" and names the refused
+  **source** (the env var, the packet field, or the CampaignSpec) while never
+  printing the value. `telemetry list --packet` fails fast on such a value and
+  makes no request. `run-record` warns on stderr and says "the declared
+  Campaigns API key was refused on shape" instead of "no Campaigns API key
+  found", then attempts the send without a tenant scope — the remit rail is
+  non-fatal by contract, so a bad credential must not fail the run it is
+  reporting. The warning belongs to a send: under consent-off or `--no-remit`
+  the key is never read and nothing is said about it. A malformed key in the
+  packet also no longer falls through to a different source: an explicit value
+  that fails the shape gate is refused where it was declared. `api_key_source`
+  keeps its existing restriction to variable names that name a campaign key,
+  and now says so by name when it refuses one, without reading that
+  variable's value.
+
 ## [1.26.0+agent.21] - 2026-09-13
 
 ### Fixed

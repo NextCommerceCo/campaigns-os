@@ -80,7 +80,7 @@ import {
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
-import { boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
+import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -255,6 +255,9 @@ const PROOF_POLICY_REQUIRED_FIELDS = Object.freeze([
 // (campaign-map.nextcommerce.com) is fronted by a backend service that
 // exposes `/api/spec/<map-id>` returning the canonical saved CampaignSpec.
 // Override via `--proxy-base` for staging environments or a local backend.
+// The same flag aims the credential-bearing rails (remit, verdict publish,
+// `telemetry list`), and those require https unless the host is loopback —
+// see assertSecureProxyBase in src/remit.mjs.
 const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 
 const KNOWN_TEMPLATE_FAMILIES = new Set([
@@ -383,7 +386,7 @@ Usage:
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
-  campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY)
+  campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd)
@@ -10034,15 +10037,35 @@ function campaignKeyOrNull(value) {
   return CAMPAIGN_KEY_SHAPE.test(trimmed) ? trimmed : null;
 }
 
-export function resolveCampaignsApiKeyValue(packet, packetPath, env = process.env) {
-  const packetKey = campaignKeyOrNull(firstNonEmptyString(packet?.campaign?.campaigns_api_key, packet?.campaign?.api_key));
-  if (packetKey) return packetKey;
+// Resolve the key AND why a present value was refused. A value that is there
+// but the wrong shape is a different operator problem from no value at all —
+// a typo, a quoted key, a whole JSON blob pasted into the env var, the wrong
+// secret exported under a campaign-key name — and the caller must be able to
+// say which, naming the SOURCE (the env var, or the packet field) and never
+// the value. `rejected` is null when nothing was refused.
+export function resolveCampaignsApiKeySource(packet, packetPath, env = process.env) {
+  const packetRaw = firstNonEmptyString(packet?.campaign?.campaigns_api_key, packet?.campaign?.api_key);
+  if (isNonEmptyString(packetRaw)) {
+    const packetKey = campaignKeyOrNull(packetRaw);
+    if (packetKey) return { key: packetKey, origin: packet?.campaign?.campaigns_api_key ? "packet.campaign.campaigns_api_key" : "packet.campaign.api_key", rejected: null };
+    return { key: null, origin: null, rejected: { kind: "malformed", source: packet?.campaign?.campaigns_api_key ? "packet.campaign.campaigns_api_key" : "packet.campaign.api_key" } };
+  }
   try {
     const localSpecPath = packet?.spec?.local_path;
     if (isNonEmptyString(localSpecPath) && isNonEmptyString(packetPath)) {
       const spec = readJsonIfExists(resolveFromFile(packetPath, localSpecPath));
-      const specKey = campaignKeyOrNull(firstNonEmptyString(spec?.campaign?.campaigns_api_key, spec?.campaigns_api_key, spec?.campaign?.api_key));
-      if (specKey) return specKey;
+      // Name the field the value actually came from: a refused source the
+      // operator cannot find in their CampaignSpec is worse than no name.
+      const specField = [
+        ["campaign.campaigns_api_key", spec?.campaign?.campaigns_api_key],
+        ["campaigns_api_key", spec?.campaigns_api_key],
+        ["campaign.api_key", spec?.campaign?.api_key],
+      ].find(([, value]) => isNonEmptyString(value));
+      if (specField) {
+        const specKey = campaignKeyOrNull(specField[1]);
+        if (specKey) return { key: specKey, origin: `the packet-local CampaignSpec ${specField[0]}`, rejected: null };
+        return { key: null, origin: null, rejected: { kind: "malformed", source: `the packet-local CampaignSpec ${specField[0]}` } };
+      }
     }
   } catch {
     // unreadable spec — fall through to env
@@ -10050,9 +10073,33 @@ export function resolveCampaignsApiKeyValue(packet, packetPath, env = process.en
   const source = optionalString(packet?.campaign?.api_key_source);
   if (source && source.startsWith("env:")) {
     const envName = source.slice("env:".length).trim();
-    if (CAMPAIGN_KEY_ENV_NAME.test(envName)) return campaignKeyOrNull(env?.[envName]);
+    if (!CAMPAIGN_KEY_ENV_NAME.test(envName)) {
+      return { key: null, origin: null, rejected: { kind: "unsupported_env_name", source: `api_key_source "env:${envName}"` } };
+    }
+    const raw = env?.[envName];
+    if (isNonEmptyString(raw)) {
+      const envKey = campaignKeyOrNull(raw);
+      if (envKey) return { key: envKey, origin: `env:${envName}`, rejected: null };
+      return { key: null, origin: null, rejected: { kind: "malformed", source: `env:${envName}` } };
+    }
   }
-  return null;
+  return { key: null, origin: null, rejected: null };
+}
+
+// Back-compat shape: the key value or null, for callers that only need the
+// header value.
+export function resolveCampaignsApiKeyValue(packet, packetPath, env = process.env) {
+  return resolveCampaignsApiKeySource(packet, packetPath, env).key;
+}
+
+// One sentence an operator can act on, naming the refused source and never
+// its value. `null` when nothing was refused.
+export function describeCampaignKeyRejection(rejected) {
+  if (!rejected) return null;
+  if (rejected.kind === "unsupported_env_name") {
+    return `${rejected.source} does not name a campaign key, so its value was not read (an api_key_source env var must match ${CAMPAIGN_KEY_ENV_NAME.source}). No credential was taken from it.`;
+  }
+  return `the Campaigns API key from ${rejected.source} is not a campaign-key shape (expected ${CAMPAIGN_KEY_SHAPE.source} — 8-256 chars of letters, digits, dot, dash, underscore, one line, no whitespace) and was refused before any request. Fix the value at that source; it is not printed here.`;
 }
 
 // Run Telemetry capture + remit. Thin dispatch: read this run's artifacts with
@@ -10207,7 +10254,20 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // already has, so an id must not be spent on an interim record before the
   // record that closes the run. Its outcome is stamped into the local record so
   // a dropped send is visible, not silent.
-  const campaignKey = remitDisabled ? null : resolveCampaignsApiKeyValue(packet, packetPath, process.env);
+  // The key is only resolved when a send will actually be attempted: under
+  // consent-off or --no-remit nothing goes out, so nothing is read and nothing
+  // is said about a credential.
+  const keySource = shouldAttemptRemit ? resolveCampaignsApiKeySource(packet, packetPath, process.env) : { key: null, rejected: null };
+  const campaignKey = keySource.key;
+  // A refused key is not a missing key. Say so on stderr, naming the source
+  // and not the value, so the operator fixes the credential instead of reading
+  // the unscoped remit below as "no key was configured". The remit rail stays
+  // non-fatal by contract, so this warns and attempts the send without a
+  // tenant scope rather than failing the run. It claims nothing about the
+  // send's outcome, which is only known below; the credential itself never
+  // leaves the machine.
+  const keyRejection = describeCampaignKeyRejection(keySource.rejected);
+  if (keyRejection) process.stderr.write(`[campaigns-os] run-record: ${keyRejection} This run's remit is attempted without a tenant scope.\n`);
   const remitStatus = remitDisabled
     ? { attempted: false, ok: null, error: null, endpoint: null }
     : await remitRunRecord(record, { proxyBase, consent, campaignKey });
@@ -10231,7 +10291,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
   if (record.remit_attempted) {
-    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : " (unscoped: no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source — the receiver lists this record only via the admin listing or by run_id)"}`);
+    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : ` (unscoped: ${keyRejection ? "the declared Campaigns API key was refused on shape — see the warning above" : "no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source"} — the receiver lists this record only via the admin listing or by run_id)`}`);
   } else {
     console.log(`Remit: skipped (consent ${record.consent_state}${remitDisabled ? ", disabled for this run" : ""}).`);
   }
@@ -10561,25 +10621,27 @@ const TELEMETRY_LIST_TIMEOUT_MS = 15_000;
 
 const TELEMETRY_LIST_MAX_BODY_BYTES = 4_000_000; // the receiver caps a listing at 500 summaries
 
-function isLoopbackProxyBase(url) {
-  return ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
-}
-
 async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("Global fetch is not available. Upgrade to Node 18+.");
-  const proxyBase = String(optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE).replace(/\/+$/, "");
-  let proxyUrl;
-  try { proxyUrl = new URL(proxyBase); } catch { throw new Error(`telemetry list: --proxy-base is not a URL: ${proxyBase}`); }
-  const loopback = isLoopbackProxyBase(proxyUrl);
-  if (proxyUrl.protocol !== "https:" && !loopback) {
-    throw new Error(`telemetry list: --proxy-base must be https (or loopback for local testing); refusing to send a key over ${proxyUrl.protocol}//${proxyUrl.host}.`);
-  }
+  // Same transport gate the remit rail uses: https, or a loopback host with a
+  // loud warning that the credential is in clear. Anything else throws here,
+  // before a credential is attached to a request. The gate's own normalized
+  // base is what the consent scope and the request URL below are built from,
+  // so one string decides both.
+  const { url: proxyUrl, base: proxyBase, loopback } = assertSecureProxyBase(
+    optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE,
+    { label: "telemetry list", credential: "the listing credential (the ops admin key, or the packet's campaign key)" },
+  );
   const headers = { Accept: "application/json" };
   let scope;
   if (optionalString(args.packet)) {
     const packetPath = resolve(args.packet);
     const packet = readJson(packetPath);
-    const key = resolveCampaignsApiKeyValue(packet, packetPath, process.env);
+    const { key, rejected } = resolveCampaignsApiKeySource(packet, packetPath, process.env);
+    const rejection = describeCampaignKeyRejection(rejected);
+    // Fail fast, before a request: a refused credential names its source so
+    // the operator can fix it, and nothing is sent in the meantime.
+    if (rejection) throw new Error(`telemetry list --packet: ${rejection}`);
     if (!key) throw new Error(`telemetry list --packet: no Campaigns API key found in ${packetPath}, its local CampaignSpec, or the declared env source; pass a packet that carries one, or list cross-tenant with the admin key instead.`);
     headers["X-Campaign-Key"] = key;
     scope = "tenant";

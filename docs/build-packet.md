@@ -441,7 +441,7 @@ Retrieval behavior:
 
 - **Re-fetch by default.** Every `start` / `prepare-build` invocation re-fetches from KV. KV is the source of truth; the cache file is a debug/inspection artifact, not a performance optimization.
 - **`--cached-spec`** reuses the cache without a network call. Use for offline iteration or when the proxy is temporarily unreachable.
-- **`--proxy-base <url>`** overrides the default origin. Use for staging environments or local Worker dev (`wrangler dev`).
+- **`--proxy-base <url>`** overrides the default origin. Use for staging environments or local Worker dev (`wrangler dev`). Spec retrieval carries no credential, so any reachable origin works here — but the same flag also aims the credential-bearing rails (Run Telemetry remit, QA verdict publish, `telemetry list`), and those require `https:` unless the host is loopback (`localhost`, `127.0.0.1`, `[::1]`), which is allowed over plain http with a stderr warning. A plain-http remote proxy is refused before the request. See docs/workflow-findings-sidecar.md (Remit Channel).
 - Failure modes (HTTP error, `{ok: false}` response, network timeout) surface as clean CLI errors before any packet is written.
 
 The fetched spec is treated identically to a `--spec`-supplied local file from this point forward — same identity validation, same `prepareBuild` pipeline, same idempotency semantics. Re-running `start --map-id` on the same campaign re-fetches the spec, regenerates the packet, and re-runs doctor. If `design_source` was newly populated since the last run, the doctor's design_source-aware blocker logic surfaces it; if nothing changed, the run is a no-op as far as downstream stages are concerned.

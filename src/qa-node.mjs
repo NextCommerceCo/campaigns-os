@@ -2714,7 +2714,10 @@ async function fetchSpec(mapId, proxyBase) {
 // non-2xx so the caller's "never fail the run if publish is unreachable"
 // try/catch still applies.
 async function postVerdict(verdict, proxyBase) {
-  return remit("/api/qa/verdicts", verdict, proxyBase);
+  // This publish attaches no credential, so it says so: the transport gate
+  // still requires https (or a loopback host) for the verdict payload, but it
+  // must not tell an operator a credential is travelling in clear.
+  return remit("/api/qa/verdicts", verdict, proxyBase, { label: "QA verdict publish", credential: null });
 }
 
 // Packet 04 Stage A / IC-2 dispatch table for the analytics-correctness leg.

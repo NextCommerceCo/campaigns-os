@@ -19,6 +19,58 @@ export const DEFAULT_RUNS_ENDPOINT = "/api/runs";
 export const DEFAULT_REMIT_TIMEOUT_MS = 10_000;
 export const DEFAULT_REMIT_MAX_BODY_BYTES = 4_096;
 
+// Hosts for which plain http is a local-development fact, not a network hop.
+// Kept as the literal authority forms `new URL().hostname` produces (an IPv6
+// literal keeps its brackets), so the check is an exact match, not a parse.
+export const LOOPBACK_HOSTNAMES = Object.freeze(["localhost", "127.0.0.1", "[::1]"]);
+
+export function isLoopbackHostname(hostname) {
+  return LOOPBACK_HOSTNAMES.includes(String(hostname));
+}
+
+function writeWarning(line) {
+  process.stderr.write(`[campaigns-os] ${line}\n`);
+}
+
+/**
+ * The transport gate every credential-bearing request goes through before a
+ * socket is opened. A proxy base is only ever a trusted destination when TLS
+ * carries it: `X-Campaign-Key` on the remit rail and the ops admin key on the
+ * `telemetry list` rail are both request credentials, and a plain-http hop
+ * hands them to anything on the path.
+ *
+ * - `https:` — allowed, silently.
+ * - plain http to a loopback host — allowed for local receivers, with one loud
+ *   stderr warning per request that the credential travels in clear.
+ * - anything else (plain http to a real host, a non-URL, an empty base) —
+ *   THROWS, before any request is made. Nothing is sent.
+ *
+ * `credential` names what would travel, for both messages; it must name the
+ * credential's KIND, never its value. Pass `null` when the request attaches
+ * none (a QA verdict publish, say) — the wording then claims no credential
+ * rather than inventing one.
+ *
+ * Returns `{ url, base, loopback }`; `base` is the trailing-slash-trimmed
+ * string callers append their path to.
+ */
+export function assertSecureProxyBase(proxyBase, { label = "Remit", credential = "request credential", warn = writeWarning } = {}) {
+  const base = String(proxyBase ?? "").replace(/\/+$/, "");
+  let url;
+  try {
+    url = new URL(base);
+  } catch {
+    throw new Error(`${label}: --proxy-base is not a URL: ${base || "(empty)"}`);
+  }
+  const loopback = isLoopbackHostname(url.hostname);
+  if (url.protocol === "https:") return { url, base, loopback };
+  const subject = credential || "this request and its payload";
+  if (loopback) {
+    warn(`${label}: ${url.origin} is plain http — ${subject} ${credential ? "travels" : "travel"} in clear to a local proxy${credential ? "" : " (no credential is attached)"}. Use https for anything that is not a loopback receiver.`);
+    return { url, base, loopback };
+  }
+  throw new Error(`${label}: --proxy-base must be https (or a loopback host for local testing); declining to send ${subject} over ${url.protocol}//${url.host}.`);
+}
+
 function byteLength(value) {
   return Buffer.byteLength(String(value), "utf8");
 }
@@ -86,18 +138,36 @@ export async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REM
 /**
  * POST `payload` as JSON to `proxyBase` + `path`. Returns the parsed response
  * body (or `{ ok: true }` for an empty 2xx). Throws on a non-2xx response or a
- * transport error — mirrors qa-node.mjs postVerdict exactly.
+ * transport error — mirrors qa-node.mjs postVerdict exactly — and also throws
+ * BEFORE any request when the proxy base fails `assertSecureProxyBase`.
+ * `label` and `credential` are passed straight to that gate: name the
+ * credential this request attaches, or `null` when it attaches none.
  */
+// The request headers that carry a secret on these rails. The in-clear
+// warning is inferred from these alone when a caller does not name its
+// credential.
+const CREDENTIAL_HEADER_NAMES = new Set(["x-campaign-key", "authorization", "x-api-key"]);
+
 export async function remit(path, payload, proxyBase, {
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_REMIT_TIMEOUT_MS,
   maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES,
   headers = {},
+  label = "Remit",
+  credential = undefined,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
   }
-  const base = String(proxyBase || "").replace(/\/+$/, "");
+  // What the gate says must match what this request actually carries. A caller
+  // that names its credential wins; otherwise infer it from the headers this
+  // module knows carry one (never from a bare Accept or Content-Type), so a
+  // credential-free POST (the QA verdict publish) is never described as
+  // leaking one.
+  const resolvedCredential = credential === undefined
+    ? (Object.keys(headers).some((name) => CREDENTIAL_HEADER_NAMES.has(name.toLowerCase())) ? "the request credential" : null)
+    : credential;
+  const { base } = assertSecureProxyBase(proxyBase, { label, credential: resolvedCredential });
   const suffix = String(path || "").startsWith("/") ? path : `/${path}`;
   const controller = typeof AbortController === "function" ? new AbortController() : null;
   let response;
@@ -149,7 +219,14 @@ export async function remitRunRecord(record, {
   // tenant-scoped its listing. Campaign keys are public-by-design.
   const headers = typeof campaignKey === "string" && campaignKey.trim() ? { "X-Campaign-Key": campaignKey.trim() } : {};
   try {
-    await remit(endpoint, record, proxyBase, { fetchImpl, timeoutMs, maxBodyBytes, headers });
+    await remit(endpoint, record, proxyBase, {
+      fetchImpl,
+      timeoutMs,
+      maxBodyBytes,
+      headers,
+      label: "Run Telemetry remit",
+      credential: headers["X-Campaign-Key"] ? "the campaign key" : null,
+    });
     return { attempted: true, ok: true, error: null, endpoint };
   } catch (error) {
     return { attempted: true, ok: false, error: error instanceof Error ? error.message : String(error), endpoint };
