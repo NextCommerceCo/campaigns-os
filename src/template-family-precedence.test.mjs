@@ -63,9 +63,13 @@ test("a --template-family flag that contradicts the spec hint warns and names bo
   assert.match(warning.message, /demeter/, "the warning must name the overridden hint");
   assert.match(warning.message, /olympus-mv-two-step/, "the warning must name the winning flag");
 
-  assert.match(run.stderr, /olympus-mv-two-step/);
-  assert.match(run.stderr, /demeter/);
-  assert.match(run.stderr, /--template-family/);
+  // Pin the precedence line itself: the template-freshness line also prints the
+  // resolved family and the flag name, so those alone would not catch a
+  // regression that silences only this notice.
+  const precedenceLine = run.stderr.split("\n").find((line) => line.includes(WARNING_CODE));
+  assert.ok(precedenceLine, "stderr must carry the precedence notice naming the warning code");
+  assert.match(precedenceLine, /"olympus-mv-two-step" selected by --template-family/);
+  assert.match(precedenceLine, /preferred_template_family "demeter"/);
 });
 
 test("a --template-family flag that repeats the spec hint stays quiet", () => {
