@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.4] - 2026-09-13
+
+### Changed
+
+- `qa run` writes the full verdict beside the campaign, not beside the caller.
+  The local verdict directory defaulted to `qa-output/` under the current
+  working directory, so a run started from anywhere but the target repo left
+  the verdict where nothing would find it; the Run Record, which reads verdicts
+  back from `<target-repo>/qa-output/<slug>/` by convention, then recorded
+  `external:qa_verdict` with no path at all. The default is now `qa-output/`
+  under the packet's target repo (`assembly.target_repo`, else the packet's
+  directory); `--output-dir` still wins, and a packet-less run (`--site`, raw
+  map-id) keeps the current-directory default. Because full verdicts carry
+  live storefront URLs and order references, `qa-output/` joins the managed
+  ignore block `start`, `prepare-build`, `install-agent-context` and
+  `run start` write into the target's `.gitignore`. A target whose block predates
+  the entry gains it on the next of those commands (the block stays the
+  operator's to edit otherwise; an entry placed elsewhere in the file counts);
+  the committed form remains
+  the `.campaign-runtime/qa-verdict.json` projection, which is unchanged. The
+  `external:<kind>` sentinel on an out-of-root artifact is deliberate and stays.
+
 ## [1.26.0] - 2026-09-12
 
 ### Added
