@@ -143,6 +143,11 @@ export async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REM
  * `label` and `credential` are passed straight to that gate: name the
  * credential this request attaches, or `null` when it attaches none.
  */
+// The request headers that carry a secret on these rails. The in-clear
+// warning is inferred from these alone when a caller does not name its
+// credential.
+const CREDENTIAL_HEADER_NAMES = new Set(["x-campaign-key", "authorization", "x-api-key"]);
+
 export async function remit(path, payload, proxyBase, {
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_REMIT_TIMEOUT_MS,
@@ -155,11 +160,12 @@ export async function remit(path, payload, proxyBase, {
     throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
   }
   // What the gate says must match what this request actually carries. A caller
-  // that names its credential wins; otherwise infer it from the headers, so a
+  // that names its credential wins; otherwise infer it from the headers this
+  // module knows carry one (never from a bare Accept or Content-Type), so a
   // credential-free POST (the QA verdict publish) is never described as
   // leaking one.
   const resolvedCredential = credential === undefined
-    ? (Object.keys(headers).length > 0 ? "the request credential" : null)
+    ? (Object.keys(headers).some((name) => CREDENTIAL_HEADER_NAMES.has(name.toLowerCase())) ? "the request credential" : null)
     : credential;
   const { base } = assertSecureProxyBase(proxyBase, { label, credential: resolvedCredential });
   const suffix = String(path || "").startsWith("/") ? path : `/${path}`;

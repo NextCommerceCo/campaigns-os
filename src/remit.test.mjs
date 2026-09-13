@@ -289,17 +289,21 @@ test("remit: the loopback warning describes what the request actually carries", 
     // no headers → no credential claimed
     const bare = recordingFetch(fakeResponse({ body: "" }));
     await remit("/api/qa/verdicts", { run_id: "r" }, "http://127.0.0.1:8787", { fetchImpl: bare.fetchImpl });
-    // a header → the request carries a credential, and the warning says so
+    // a non-credential header alone claims nothing either
+    const accepting = recordingFetch(fakeResponse({ body: "" }));
+    await remit("/api/qa/verdicts", { run_id: "r" }, "http://127.0.0.1:8787", { fetchImpl: accepting.fetchImpl, headers: { Accept: "application/json" } });
+    // a credential header → the request carries a credential, and the warning says so
     const keyed = recordingFetch(fakeResponse({ body: "" }));
     await remit("/api/runs", { run_id: "r" }, "http://127.0.0.1:8787", { fetchImpl: keyed.fetchImpl, headers: { "X-Campaign-Key": "pk_live_abcdefgh" } });
     assert.equal(bare.calls.length, 1);
+    assert.equal(accepting.calls.length, 1);
     assert.equal(keyed.calls.length, 1);
   } finally {
     process.stderr.write = original;
   }
   const text = stderr.join("");
-  assert.match(text, /this request and its payload travel in clear/);
-  assert.match(text, /the request credential travels in clear/);
+  assert.equal((text.match(/this request and its payload travel in clear/g) || []).length, 2);
+  assert.equal((text.match(/the request credential travels in clear/g) || []).length, 1);
   assert.doesNotMatch(text, /pk_live_abcdefgh/);
 });
 
