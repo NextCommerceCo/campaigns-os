@@ -182,6 +182,48 @@ test("doctorRequiredActionLines never appends a second --report to a command tha
   assert.equal(lines[1].match(/--report/g).length, 1);
 });
 
+test("doctorRequiredActionLines inserts a packet path containing $ sequences literally", () => {
+  // `$&` and `$$` are replacement patterns to String.prototype.replace with a
+  // string replacement; the path must survive verbatim inside the quoting.
+  const packetPath = "/srv/example/camp$&$$1/campaign-runtime.build.json";
+  const lines = doctorRequiredActionLines({
+    derived: {
+      packet_path: packetPath,
+      target_repo: "/srv/example/camp$&$$1",
+      assembly_report_path: "/srv/example/camp$&$$1/.campaign-runtime/assembly-report.json",
+      checkpoint_gates: [{
+        id: "page_kit.sdk_version",
+        required_actions: [{ id: "waive_checkpoint", command: "campaigns-os checkpoint waive --packet <packet> --gate page_kit.sdk_version" }],
+      }],
+    },
+  });
+  assert.deepEqual(lines, [
+    "Required actions:",
+    `- [page_kit.sdk_version] campaigns-os checkpoint waive --packet '${packetPath}' --gate page_kit.sdk_version`,
+  ]);
+});
+
+test("doctorRequiredActionLines reads the command template, not the substituted path, for --report", () => {
+  // A packet directory literally named "...--report-review" must not be read
+  // as an action that already declared --report.
+  const packetPath = "/srv/example/campaign--report-review/campaign-runtime.build.json";
+  const lines = doctorRequiredActionLines({
+    derived: {
+      packet_path: packetPath,
+      target_repo: "/srv/example/campaign--report-review",
+      assembly_report_path: "/srv/example/reports/custom-report.json",
+      checkpoint_gates: [{
+        id: "page_kit.sdk_version",
+        required_actions: [{ id: "waive_checkpoint", command: "campaigns-os checkpoint waive --packet <packet>" }],
+      }],
+    },
+  });
+  assert.deepEqual(lines, [
+    "Required actions:",
+    `- [page_kit.sdk_version] campaigns-os checkpoint waive --packet ${packetPath} --report /srv/example/reports/custom-report.json`,
+  ]);
+});
+
 test("doctorRequiredActionLines keeps the placeholder when the report carries no packet path", () => {
   const lines = doctorRequiredActionLines({
     derived: {

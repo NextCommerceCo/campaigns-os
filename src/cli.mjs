@@ -10653,13 +10653,20 @@ export function doctorRequiredActionLines(result) {
   const lines = [];
   for (const gate of gates) {
     for (const action of gate?.required_actions || []) {
-      let command = typeof action?.command === "string" ? action.command : null;
-      if (command && packetPath) command = command.replace("--packet <packet>", `--packet ${shellToken(packetPath)}`);
+      const template = typeof action?.command === "string" ? action.command : null;
+      // The two decisions below read the TEMPLATE, never the substituted
+      // string: a packet path that happens to contain "--report" (or
+      // "--packet") must not be mistaken for an option the action declared.
+      const packetScoped = Boolean(template?.includes("--packet"));
+      const namesReport = Boolean(template?.includes("--report"));
+      // A function replacement, so `$&` / `$$` / `$1` inside the path are
+      // inserted literally instead of being read as replacement patterns.
+      let command = template && packetPath
+        ? template.replace("--packet <packet>", () => `--packet ${shellToken(packetPath)}`)
+        : template;
       // Only packet-scoped commands read a report sidecar, and a command that
       // already names one is left alone.
-      if (command && reportArg && command.includes("--packet") && !command.includes("--report")) {
-        command = `${command}${reportArg}`;
-      }
+      if (command && reportArg && packetScoped && !namesReport) command = `${command}${reportArg}`;
       const text = command || action?.description;
       if (!text) continue;
       lines.push(`- [${gate.id}] ${text}`);
