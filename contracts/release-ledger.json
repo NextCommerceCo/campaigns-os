@@ -2283,7 +2283,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.16",
-      "changelog_sha256": "5e62476941ef7172d7309669d086b4917eb0f3e7ae0c335e471e73e5c929cdca",
+      "changelog_sha256": "94ed9c0906b7e41ac0b3a52dcee40c62ee9014c82629e4bfb7c0744729bd3bff",
       "agent_impact": "A source-html manifest screenshot record that fails one of the three field tests (viewport, evidence pointer, kind) is still dropped, but is now reported: manifest validation emits one warning per unusable record naming pages[i].screenshots[j], its page_id, and the failing field. start/prepare-build/build print it and doctor carries it as an extra source_html.manifest warning. No schema change, no new codes, and the manifest is still accepted and used as written; an agent that reasoned about a page blocked for missing desktop/mobile proof can now read the warning instead of guessing which record was ignored.",
       "compatibility": "compatible",
       "migration": "None.",
@@ -2295,7 +2295,7 @@
           "summary": "The record-shape section no longer says a record that fails one of the three field tests produces no diagnostic; it states that start/prepare-build and doctor warn once per bad record, naming the record, its page_id, and the failing field."
         }
       ],
-      "entry_sha256": "3985d169ec9960410600491f9f3c8423883b91f789fb34987bd179b99656ceea"
+      "entry_sha256": "691941e3848d02dd14c8bf31954229fb21e92bcdfff66925f90e92d1ccb137ac"
     }
   ]
 }
