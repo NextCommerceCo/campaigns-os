@@ -464,6 +464,18 @@ export function aggregateCdpResponses(responses, {
 
   for (const { record, chain } of prepared) {
     const resolved = resolvedResource(record?.url, { baseUrl: documentUrl });
+    if (resolved.status === "non_http" && record?.failed !== true) {
+      // A data:, blob: or about: response is not a network resource: nothing
+      // was transferred, so there is nothing to attribute to the ledger and
+      // nothing the operator could repair. It is counted as unattributed
+      // (evidence) and is not a problem. Video controls, inline icons and
+      // authored data: images produce these on ordinary pages. A non-http
+      // load that failed (a revoked blob: URL behind a script or image) is
+      // still a dependency the page could not load; it has no ledger entry
+      // to carry the failure, so it stays an unresolvable response below.
+      unattributedRequestCount += 1;
+      continue;
+    }
     if (resolved.status !== "http") {
       if (resolved.status === "too_long") addProblemCount(problemCounts, "url_length_overflow");
       addProblemCount(problemCounts, "resource_url_unresolvable");

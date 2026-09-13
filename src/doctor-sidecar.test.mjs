@@ -65,6 +65,42 @@ test("standalone doctor owns the matching Assembly Report stage ledger", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a doctor re-run that restates the same outcome leaves the Assembly Report bytes unchanged", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  const reportPath = join(dir, ".campaign-runtime/assembly-report.json");
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  writeFileSync(reportPath, JSON.stringify({
+    identity: { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug },
+    stages: {},
+  }));
+
+  // Two runs settle the report: the first creates the doctor stage, the
+  // second no longer finds "doctor stage is required" among its blockers.
+  doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const settled = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const afterSettled = readFileSync(reportPath, "utf8");
+  assert.equal(JSON.parse(afterSettled).stages.doctor.checked_at, settled.generated_at);
+
+  // Same packet, same outcome: the digest a Run Record took of this file
+  // must still verify after the re-run.
+  const rerun = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  assert.deepEqual(rerun.errors.map((issue) => issue.message), settled.errors.map((issue) => issue.message));
+  assert.equal(readFileSync(reportPath, "utf8"), afterSettled);
+
+  const afterFirst = afterSettled;
+
+  // A changed outcome is a new chapter and still writes.
+  const stale = JSON.parse(afterFirst);
+  stale.stages.doctor.blockers = ["a blocker this run no longer finds"];
+  writeFileSync(reportPath, JSON.stringify(stale));
+  const third = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const afterThird = JSON.parse(readFileSync(reportPath, "utf8"));
+  assert.notDeepEqual(afterThird.stages.doctor.blockers, stale.stages.doctor.blockers);
+  assert.equal(afterThird.stages.doctor.checked_at, third.generated_at);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("standalone doctor executes its packet inspection once when updating the stage ledger", () => {
   const { dir, packetPath } = selfTargetPacketFixture();
   const packet = JSON.parse(readFileSync(packetPath, "utf8"));
