@@ -2668,10 +2668,14 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     return doctorBuiltOutput(args);
   }
   const packetPath = resolve(requireArg(args, "packet"));
-  const explicitSidecarArgs = Boolean(args.context || args.report);
+  // A sidecar the operator did not name is inferred the way `next` infers
+  // it (the context's recorded report path, else the default location).
+  // Naming one used to switch the other off, so `doctor --context C`
+  // validated with no report while `next` read the inferred one; the two
+  // then disagreed on the next stage over the same packet.
   const doctorOptions = {
-    contextPath: args.context ? resolve(args.context) : explicitSidecarArgs ? null : undefined,
-    reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
+    contextPath: args.context ? resolve(args.context) : undefined,
+    reportPath: args.report ? resolve(args.report) : undefined,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   };
   const result = runDoctor(packetPath, doctorOptions);

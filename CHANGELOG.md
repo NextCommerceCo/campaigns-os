@@ -23,7 +23,10 @@ Notable supported-surface changes are recorded here.
   on `collect-inputs` should key on `doctor-blocked` / `prepare-build`; on
   `assembly`, `build`; on `complete`, `done`. The `next-campaigns-os` skill
   (1.0.9) and the build-flow, design-source-package and source-adapters docs
-  say so.
+  say so. `doctor --packet <p> --context <c>` (or `--report` alone) now
+  infers the sidecar it was not given the way `next` does, instead of
+  validating with that sidecar switched off, so the two commands read the
+  same artifacts.
 
 ## [1.26.0] - 2026-09-12
 
