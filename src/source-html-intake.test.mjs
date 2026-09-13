@@ -201,6 +201,74 @@ test("source-html manifest validator rejects missing page paths", () => {
   assert.equal(validation.errors.some((error) => error.code === "manifest.pages[0].path"), true);
 });
 
+test("a screenshot record that fails a field test warns per record and names the field", () => {
+  const validation = validateSourceHtmlManifest({
+    schema_version: "source-html-manifest/v0",
+    pages: [
+      {
+        page_id: "landing",
+        path: "landing.html",
+        screenshots: [
+          { id: "landing-desktop", viewport: "desktop", path: "shots/landing-desktop.png" },
+          { id: "landing-mobile", viewport: "mobil", path: "shots/landing-mobile.png" },
+        ],
+      },
+      { page_id: "checkout", path: "checkout.html" },
+    ],
+  });
+
+  // The manifest is still valid: a typo in optional proof must not throw away
+  // pages[], which would silently drop the run to filesystem matching.
+  assert.equal(validation.ok, true);
+  assert.equal(validation.warnings.length, 1, JSON.stringify(validation.warnings));
+  const [warning] = validation.warnings;
+  assert.equal(warning.code, "manifest.pages[0].screenshots[1].viewport");
+  assert.match(warning.message, /manifest\.pages\[0\]\.screenshots\[1\]/);
+  assert.match(warning.message, /page_id "landing"/);
+  assert.match(warning.message, /"mobil"/);
+  assert.match(warning.message, /desktop, mobile, tablet/);
+});
+
+test("each unusable screenshot field test gets its own named diagnostic", () => {
+  const cases = [
+    [{ id: "a", path: "shots/a.png" }, "viewport"],
+    [{ id: "b", viewport: "desktop" }, "path"],
+    [{ id: "c", viewport: "desktop", availability: "unavailable" }, "unavailable_reason"],
+    [{ id: "d", viewport: "desktop", path: "shots/d.png", kind: "render_reference" }, "kind"],
+  ];
+  for (const [record, field] of cases) {
+    const validation = validateSourceHtmlManifest({
+      schema_version: "source-html-manifest/v0",
+      pages: [{ page_id: "landing", path: "landing.html", screenshot_refs: [record] }],
+    });
+    assert.equal(validation.ok, true);
+    assert.deepEqual(
+      validation.warnings.map((entry) => entry.code),
+      [`manifest.pages[0].screenshot_refs[0].${field}`],
+      JSON.stringify({ record, warnings: validation.warnings }),
+    );
+  }
+});
+
+test("well-formed screenshot records produce no diagnostic", () => {
+  const validation = validateSourceHtmlManifest({
+    schema_version: "source-html-manifest/v0",
+    pages: [{
+      page_id: "landing",
+      path: "landing.html",
+      screenshots: [
+        { id: "landing-desktop", viewport: "desktop", path: "shots/landing-desktop.png" },
+        { id: "landing-mobile", viewport: "MOBILE", url: "https://source.example.test/landing" },
+        { id: "landing-tablet", viewport: "tablet", availability: "unavailable", unavailable_reason: "never captured" },
+        "landing-desktop",
+      ],
+    }],
+  });
+
+  assert.equal(validation.ok, true);
+  assert.deepEqual(validation.warnings, []);
+});
+
 test("source-html manifest validator accepts producer provenance and file inventory", () => {
   const validation = validateSourceHtmlManifest({
     schema_version: "source-html-manifest/v0",

@@ -432,8 +432,10 @@ Three fields decide whether a record counts toward the gate:
 
 You need one qualifying `desktop` record and one qualifying `mobile` record per
 renderable page. `tablet` is optional in v0. A record that fails any of the three
-tests produces no diagnostic: it is registered (or dropped) silently and the page
-stays blocked, so check the three fields first when a rerun blocks again.
+tests is still dropped rather than rejecting the manifest, but it no longer goes
+unreported: `start`/`prepare-build` and `doctor` warn once per bad record, naming
+the record (`pages[i].screenshots[j]`), its `page_id`, and the field that failed,
+so a typo shows up as a warning instead of as a page that silently stays blocked.
 
 Everything else in the record is metadata that is retained but not required:
 `id` (otherwise derived from the page surface, viewport, and a content digest),
