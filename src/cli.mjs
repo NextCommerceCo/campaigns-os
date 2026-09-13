@@ -8478,7 +8478,7 @@ function readinessStatus(warnings, derived) {
 // (collect-inputs / assembly / complete) and its own gating, which knew
 // neither purchase proof nor the prepare-build gate, and listed the stage it
 // recommended inside blocked_stages.
-const DOCTOR_NEXT_STAGE_OWNERS = Object.freeze({
+export const DOCTOR_NEXT_STAGE_OWNERS = Object.freeze({
   "prepare-build": { owner: "operator", default_skill: "next-campaigns-os" },
   "doctor-blocked": { owner: "operator", default_skill: "next-campaigns-os" },
   setup: { owner: "setup", default_skill: "next-campaigns-os-setup" },
@@ -8574,6 +8574,12 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   const doctor = { ok: errors.length === 0, errors, warnings, derived };
   const purchaseProof = report ? assessPurchaseProofCoverage({ packet, report }) : null;
   const picked = pickNextStage(report, doctor, prepareBuildGate, purchaseProof);
+  // The picker's vocabulary and this table must not drift apart: a stage the
+  // table does not know would otherwise be relabelled as an operator step and
+  // sliced into the whole ladder. Fail loudly instead.
+  if (!Object.hasOwn(DOCTOR_NEXT_STAGE_OWNERS, picked.stage)) {
+    throw new Error(`Doctor has no owner for next stage "${picked.stage}"; add it to DOCTOR_NEXT_STAGE_OWNERS.`);
+  }
   const actions = doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate });
   const deployStatus = String(report?.stages?.deploy?.status || "");
   const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
@@ -8589,11 +8595,15 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
     || (picked.stage === "qa" && qaNeedsUrl)
     || (picked.stage === "build" && derived.scaffold_required === true)
     || (picked.stage === "done" && codes.has("scope.runtime_qa_blocked"));
+  // Stages behind the picked one. done has none; the two pre-ladder states
+  // block the whole ladder; a ladder stage blocks what follows it.
   const later = picked.stage === "done"
     ? []
     : picked.stage === "doctor-blocked" || picked.stage === "prepare-build"
       ? [...NEXT_STAGE_ORDER]
-      : NEXT_STAGE_ORDER.slice(NEXT_STAGE_ORDER.indexOf(picked.stage) + 1);
+      : NEXT_STAGE_ORDER.includes(picked.stage)
+        ? NEXT_STAGE_ORDER.slice(NEXT_STAGE_ORDER.indexOf(picked.stage) + 1)
+        : [];
   // Scope markers that are not ladder stages but that readers key on: a
   // partial runtime scope blocks checkout launch readiness and test orders
   // whatever stage comes next, and unconfirmed allowed domains block the
@@ -8607,7 +8617,7 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
     // QA cannot run against no URL: `next qa` refuses with next.qa.deploy_url.
     ...(qaNeedsUrl ? ["qa"] : []),
   ];
-  const owners = DOCTOR_NEXT_STAGE_OWNERS[picked.stage] || DOCTOR_NEXT_STAGE_OWNERS["doctor-blocked"];
+  const owners = DOCTOR_NEXT_STAGE_OWNERS[picked.stage];
   const packetRef = derived.packet_path || "<packet>";
   // prepare-build is not a `next <stage>` argument: the stage-less `next`
   // is what prints the recovery actions for it, and it is also the right

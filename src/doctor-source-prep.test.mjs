@@ -6,6 +6,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { DOCTOR_NEXT_STAGE_OWNERS } from "./cli.mjs";
+import { NEXT_STAGE_ORDER } from "./orchestration-stage-contract.mjs";
+
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 const UNPREPARED_FIXTURES = resolve(ROOT, "fixtures/source-prep/unprepared");
@@ -74,6 +77,12 @@ function withStartedBuild(sourcePages, run, { extraArgs = [], manifest = null } 
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+test("every stage the next picker can name has a doctor owner", () => {
+  // The picker's vocabulary: the two pre-ladder states, the ladder, and done.
+  const pickerStages = ["prepare-build", "doctor-blocked", ...NEXT_STAGE_ORDER, "done"];
+  assert.deepEqual(Object.keys(DOCTOR_NEXT_STAGE_OWNERS).sort(), [...pickerStages].sort());
+});
 
 test("doctor blocks unprepared source with actionable preparation codes", () => {
   const unprepared = {
