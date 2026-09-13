@@ -1478,6 +1478,40 @@ test("oversized DOM and CDP URLs are replaced before crossing the adapter bounda
   assert.ok(serialized.length < 20_000, String(serialized.length));
 });
 
+test("non-http response URLs are recorded as their scheme alone, whatever their length", async () => {
+  const inlineImage = `data:image/svg+xml;base64,${"PRIVATE_PAYLOAD".repeat(2_000)}`;
+  const fake = fakeChromium([{
+    evaluate: (callback, argument) => executeDomEvaluator(callback, [], {}, argument),
+    async navigate({ emit }) {
+      emit("Network.requestWillBeSent", { requestId: "inline-image", type: "Image", request: { url: inlineImage } });
+      emit("Network.responseReceived", {
+        requestId: "inline-image",
+        type: "Image",
+        response: { url: inlineImage, status: 200, mimeType: "image/svg+xml" },
+      });
+      emit("Network.loadingFinished", { requestId: "inline-image", encodedDataLength: 0 });
+      emit("Network.requestWillBeSent", { requestId: "blob-media", type: "Media", request: { url: "blob:https://shop.example.test/PRIVATE-uuid" } });
+      emit("Network.responseReceived", {
+        requestId: "blob-media",
+        type: "Media",
+        response: { url: "blob:https://shop.example.test/PRIVATE-uuid", status: 200, mimeType: "video/mp4" },
+      });
+      emit("Network.loadingFinished", { requestId: "blob-media", encodedDataLength: 0 });
+    },
+  }]);
+  const adapter = await createPolishBrowserAdapter({ chromium: fake.chromium });
+
+  const result = await adapter.captureRoute({
+    url: "https://shop.example.test/landing/",
+    viewport: { key: "desktop", width: 1_440, height: 1_200 },
+  });
+  await adapter.close();
+  assert.deepEqual(result.responses.map((response) => response.url).sort(), ["blob:", "data:"]);
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes("PRIVATE"), false);
+  assert.ok(serialized.length < 5_000, String(serialized.length));
+});
+
 test("capture drains queued CDP lifecycle events before deciding whether transfers are unfinished", async () => {
   const pageUrl = "https://shop.example.test/landing/";
   const fake = fakeChromium([{

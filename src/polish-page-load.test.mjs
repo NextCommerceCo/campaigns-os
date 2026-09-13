@@ -441,6 +441,15 @@ test("resource-type ambiguity remains a structurally valid but nonwaivably incom
   const gate = evaluate(evidence);
   assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
   assert.equal(gate.waivable, false);
+  // The block names the failing cell and its problem code, so a verdict
+  // reader does not have to open the assembly report to find it.
+  assert.equal(gate.measurement.status, "incomplete");
+  assert.deepEqual(gate.measurement.incomplete, [{
+    route: "/landing/",
+    viewport: "desktop",
+    problem_codes: ["resource_type_ambiguous"],
+  }]);
+  assert.deepEqual(gate.measurement.missing, []);
 });
 
 function blockingEvidence({

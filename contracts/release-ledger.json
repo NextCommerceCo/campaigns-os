@@ -2006,6 +2006,156 @@
       "date": "2026-09-13",
       "kind": "release",
       "surface_version": null,
+      "changelog_section": "1.26.0+agent.3",
+      "changelog_sha256": "3997d149734a9b1dd4390c046eee69f64da709827062797fdfb3ed686d8cc3bd",
+      "agent_impact": "campaigns-os doctor no longer rewrites the Assembly Report when its restated outcome matches what stages.doctor already carries, ignoring only that stage's checked_at and completed_at. A Run Record's assembly_report sha256 therefore keeps verifying across repeated doctor runs that reach the same outcome; a changed outcome still rewrites the report and breaks the digest, which is the attestation working. doctor-output.json is still refreshed on every run. stages.doctor.checked_at now reads as the time the current outcome was last established, not the time doctor last ran. The stage ledger exports producerStageOutcomeUnchanged(previousReport, nextReport, stage).",
+      "compatibility": "compatible",
+      "migration": "none. A consumer that used stages.doctor.checked_at as 'when did doctor last run' should read doctor-output.json generated_at instead.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor skips the Assembly Report write when the restated doctor stage differs from the report on disk only in its own checked_at / completed_at; a changed outcome still writes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents that doctor restates stages.doctor and leaves the report's bytes unchanged on a same-outcome re-run, so a Run Record's assembly_report digest keeps verifying."
+        }
+      ],
+      "entry_sha256": "58ae36e5d7dea5b5124577fc3b9ece5ff3aab70e1060a68e3684e7c07a1a9937"
+    },
+    {
+      "id": "RL-0046",
+      "sequence": 46,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.4",
+      "changelog_sha256": "8fa6dd132a94a8809118d5eaad10c56a7ee02f97d70cfa08426a75ecb455b27d",
+      "agent_impact": "qa run now writes its full verdict under <target-repo>/qa-output/<slug>/ by default (assembly.target_repo, else the packet's directory) instead of qa-output/ under the current working directory, so the Run Record's qa_verdict artifact carries a relative path instead of external:qa_verdict when qa runs from outside the target. --output-dir is unchanged and still wins; packet-less runs keep the cwd default. qa-output/ is added to the managed ignore block written into the target's .gitignore. The committed .campaign-runtime/qa-verdict.json sidecar is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none for callers that pass --output-dir or run from the target repo. A caller that relied on finding qa-output/ under its own working directory after running from elsewhere should read local_path from the JSON result or pass --output-dir. A target whose managed ignore block predates this entry gains qa-output/ on its next start, prepare-build, install-agent-context or run start (ensureRuntimeStateIgnored reports action updated); nothing else in the block is touched.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "qa",
+          "summary": "qa run defaults --output-dir to qa-output under the packet's target repo; the usage line no longer names qa-output as the literal default."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "States the verdict default root (target repo, packet directory fallback, --output-dir override, packet-less cwd default) and that qa-output/ is in the target's managed ignore block."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Adds the target's qa-output/ full verdicts to the machine-local set the managed ignore block covers."
+        }
+      ],
+      "entry_sha256": "1c8207a60152f8c01906f5c69658012aac42b0c486975bc3a5ae831ea3ffc36a"
+    },
+    {
+      "id": "RL-0047",
+      "sequence": 47,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.6",
+      "changelog_sha256": "a80821c4e81c46cef3266d7fc549d7f2cbb6fb8547cd9411e0159d923e570d60",
+      "agent_impact": "A repeated start, prepare-build or build against a target with an open run session joins that session from any cwd: its command-lifecycle entry is appended to the session's journal under the session's run_id, so a Run Record minted later carries every intake attempt (stage timings, exit statuses and repair_loop_count include the retries). Previously only a re-run from inside the target, or the very first run, was recorded. Adoption requires the session to be bound to this packet or to none. --no-run-session is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none. Consumers reading lifecycle.stages from a Run Record should expect repeated start:* stages when intake was retried.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "start",
+          "summary": "start, prepare-build and build adopt the target's open run session (when bound to this packet or none) instead of resolving no session and dropping their lifecycle entry."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "States that intake commands find the target's session by --target and that a repeated intake joins it from any cwd."
+        }
+      ],
+      "entry_sha256": "7f4319223839f083b78c745bc61c01436b9bd68deb7063e528b7fc95545ebb13"
+    },
+    {
+      "id": "RL-0048",
+      "sequence": 48,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.8",
+      "changelog_sha256": "63e382f0ec9c42ed8190b4fe2d81b410ba1bc24e23c7bddc903fad431267d808",
+      "agent_impact": "doctor ready[] prints 'Theme gate passed: ' followed by derived.theme_gate.reason instead of a fixed 'brand layer applied after next-core.css on commerce pages.' sentence, so on theme_gate.nothing_generatable the line says no generatable brand theme was found. Gate codes, statuses and reasons are unchanged; consumers should read derived.theme_gate, not the ready line.",
+      "compatibility": "compatible",
+      "migration": "none. A consumer matching the ready line on its full previous wording should match the 'Theme gate passed:' prefix or read derived.theme_gate.code.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "The passing theme-gate ready line carries the gate's reason; the fixed 'brand layer applied' sentence no longer prints on the nothing_generatable branch."
+        }
+      ],
+      "entry_sha256": "0b86927e5de584338d34e9bcc0905129d57f8d9871beeba3f8e6e83187aa05c9"
+    },
+    {
+      "id": "RL-0049",
+      "sequence": 49,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.9",
+      "changelog_sha256": "e80fcfaae69a5475922a32cd1f3fd8ca97a6f0f0942aa4a7197ee8531c4ec5cf",
+      "agent_impact": "No behaviour change. src/cli.mjs no longer re-exports orderRunRecordFileNames and readRunRecordsForTarget; both remain exported from src/run-record.mjs. Neither symbol is on the supported surface (package_exports lists subpaths), so no consumer contract moves; an in-repo importer of the old re-export must import from src/run-record.mjs.",
+      "compatibility": "compatible",
+      "migration": "none for supported consumers. Anything importing the two names from src/cli.mjs directly imports them from src/run-record.mjs.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "Internal shim removed: the run-record helpers the next closeout uses are imported from src/run-record.mjs and no longer re-exported from src/cli.mjs. No command, flag or output changes."
+        }
+      ],
+      "entry_sha256": "d3382257d46e809b3595b824787d54e6a5dca93c3c64b6205a8aad971e3432dd"
+    },
+    {
+      "id": "RL-0050",
+      "sequence": 50,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.10",
+      "changelog_sha256": "578da842f6c31add93b3322d2492bea9d70c2c82133ca770525de7ddd4f35f75",
+      "agent_impact": "Docs only; no behaviour change. docs/qa-and-test-orders.md now lists schema_version among cause_summary fields (the code always emitted it) and states that the verdict's spec_hash is the CampaignSpec material hash pairing with the Assembly Report's identity.spec_material_hash, and that campaign_ref_id is copied from the spec's campaign.ref_id (shared by specs exported from one platform campaign; null when absent). Consumers joining verdicts to reports should key on spec_material_hash, and should not treat campaign_ref_id as a per-build identity.",
+      "compatibility": "compatible",
+      "migration": "none.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Adds schema_version to the documented cause_summary shape and a paragraph on spec_hash (material hash) and campaign_ref_id (spec-sourced) in the verdict schema section."
+        }
+      ],
+      "entry_sha256": "60b163de3b27f41583ea82f745cec9d08957ec99df4493b1a2ba584df15ab8f0"
+    },
+    {
+      "id": "RL-0051",
+      "sequence": 51,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
       "changelog_section": "1.26.0+agent.12",
       "changelog_sha256": "4c19b83f509f44276126310f4cda2dcddfe6754f9449dd5c74c442bb0a42b3d7",
       "agent_impact": "No behaviour or output change. The doctor human report prints its cause summary and comparison-basis lines through the shared formatCauseReportLines; the text is byte-identical to before. Internal exports of src/finding-cause.mjs and one alias in src/polish-gate.mjs were removed; none is on the supported surface.",
@@ -2019,7 +2169,7 @@
           "summary": "The doctor human report prints its cause lines via formatCauseReportLines; output unchanged."
         }
       ],
-      "entry_sha256": "88af1556613e43dd36901d84fb6fb59d1ff5894555f17b78fb3485a802392757"
+      "entry_sha256": "b45eee79ca11d8c42e47383f13894f5250a0acff246a2f97e18fd0cd42a5c5df"
     }
   ]
 }

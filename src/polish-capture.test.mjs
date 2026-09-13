@@ -948,15 +948,47 @@ test("duplicate response identities and unresolvable response URLs cannot produc
   const result = aggregateCdpResponses([
     { request_id: "duplicate", url: "https://cdn.example.test/video.mp4?one=private", resource_type: "Media", status: 206, encoded_data_length: 10 },
     { request_id: "duplicate", url: "https://cdn.example.test/video.mp4?two=private", resource_type: "Media", status: 206, encoded_data_length: 20 },
-    { request_id: "", url: "data:video/mp4;base64,PRIVATE", resource_type: "Media", status: 200, encoded_data_length: 30 },
+    { request_id: "", url: "http://[malformed/PRIVATE", resource_type: "Media", status: 200, encoded_data_length: 30 },
+    { request_id: "overflow", url: "[url-too-long]", resource_type: "Script", status: 200, encoded_data_length: 5 },
   ], { documentUrl: "https://shop.example.test/landing/" });
 
   assert.equal(result.measurement_status, "incomplete");
   assert.deepEqual(result.problems, [
     { code: "duplicate_request_identity", count: 1 },
     { code: "request_identity_invalid", count: 1 },
-    { code: "resource_url_unresolvable", count: 1 },
+    { code: "resource_url_unresolvable", count: 2 },
+    { code: "url_length_overflow", count: 1 },
   ]);
+  assert.equal(result.unattributed_request_count, 2);
+  assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
+});
+
+test("non-http responses (data:, blob:, about:) are unattributed evidence, not an unresolvable-URL problem", () => {
+  const result = aggregateCdpResponses([
+    { request_id: "doc", url: "https://shop.example.test/landing/", resource_type: "Document", status: 200, mime_type: "text/html", encoded_data_length: 1_000 },
+    { request_id: "icon", url: "data:image/svg+xml;base64,PRIVATE", resource_type: "Image", status: 200, encoded_data_length: 0 },
+    { request_id: "controls", url: "data:", resource_type: "Image", status: 200, encoded_data_length: 0 },
+    { request_id: "blob", url: "blob:https://shop.example.test/PRIVATE-uuid", resource_type: "Media", status: 200, encoded_data_length: 0 },
+    { request_id: "about", url: "about:blank", resource_type: "Document", status: 200, encoded_data_length: 0 },
+  ], { documentUrl: "https://shop.example.test/landing/" });
+
+  assert.equal(result.measurement_status, "complete");
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.unattributed_request_count, 4);
+  assert.equal(result.resources.length, 1);
+  assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
+});
+
+test("a failed non-http load is still an unresolvable response and keeps the capture incomplete", () => {
+  const result = aggregateCdpResponses([
+    { request_id: "doc", url: "https://shop.example.test/landing/", resource_type: "Document", status: 200, mime_type: "text/html", encoded_data_length: 1_000 },
+    { request_id: "revoked", url: "blob:https://shop.example.test/PRIVATE-uuid", resource_type: "Script", failed: true },
+    { request_id: "icon", url: "data:image/svg+xml;base64,PRIVATE", resource_type: "Image", status: 200, encoded_data_length: 0 },
+  ], { documentUrl: "https://shop.example.test/landing/" });
+
+  assert.equal(result.measurement_status, "incomplete");
+  assert.deepEqual(result.problems, [{ code: "resource_url_unresolvable", count: 1 }]);
+  assert.equal(result.unattributed_request_count, 2);
   assert.equal(JSON.stringify(result).includes("PRIVATE"), false);
 });
 

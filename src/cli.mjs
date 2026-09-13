@@ -22,7 +22,7 @@ import { basename, delimiter, dirname, extname, isAbsolute, join, relative, reso
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-import { recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { producerStageOutcomeUnchanged, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -48,10 +48,6 @@ import {
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
-// Re-exported from their new home in run-record.mjs (one implementation, two
-// call sites: `next` closeout here and cause classification in the QA runner,
-// which must not import this module).
-export { orderRunRecordFileNames, readRunRecordsForTarget } from "./run-record.mjs";
 import { annotateDoctorIssueCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import {
   announceDefaultOnTelemetry,
@@ -367,7 +363,7 @@ Usage:
   campaigns-os next deploy --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
-  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir qa-output] [--json]
+  campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
@@ -500,7 +496,7 @@ export async function main(argv) {
   // prepare-build auto-open a run session mid-command, they publish it here
   // so onFinish persists this command's own lifecycle entry into the new
   // session — without two interleaved invocations ever sharing a session.
-  const sessionHolder = { current: ambient, autoStarted: false, qaResult: null, sweptStale };
+  const sessionHolder = { current: ambient, autoStarted: false, adopted: false, qaResult: null, sweptStale };
   await withCommandLifecycle(
     {
       command,
@@ -581,7 +577,32 @@ function autoStartRunSession(prepareResult, args, ambient, sessionHolder) {
     const packetPath = prepareResult?.packetPath;
     const targetRepo = optionalString(args.target) ? resolve(args.target) : null;
     if (!packetPath || !targetRepo) return null;
-    if (findRunSession(targetRepo)) return null;
+    const existing = findRunSession(targetRepo);
+    if (existing) {
+      // A repeated start against a target whose session is already open
+      // joins that session rather than opening a second one. `start` has no
+      // --packet, so main() could only find a session by cwd; a re-run from
+      // anywhere else used to resolve no session and its lifecycle entry was
+      // never written, which left the journal with the first blocked start
+      // and none of the retries, including the one that produced the packet
+      // every later stage used. Adopt only when the session is bound to this
+      // packet (or to none); a session bound elsewhere is a conflict for the
+      // operator to end, not something to write into silently.
+      const boundPacket = optionalString(existing.session?.packet);
+      const thisPacket = canonicalExistingPath(resolve(packetPath));
+      const samePacket = !boundPacket || canonicalExistingPath(resolve(boundPacket)) === thisPacket;
+      const runId = singleLineField(existing.session?.run_id, "(unnamed)");
+      if (!samePacket) {
+        process.stderr.write(`[campaigns-os] run session ${runId} is bound to ${singleLineField(boundPacket)}, not this packet; not joined (this command's lifecycle entry is not recorded). End it with \`campaigns-os run end\` or run from its packet.\n`);
+        return null;
+      }
+      if (sessionHolder) {
+        sessionHolder.current = existing;
+        sessionHolder.adopted = true;
+      }
+      process.stderr.write(`[campaigns-os] Run session ${runId} joined (already open for ${singleLineField(targetRepo)}; run telemetry is ambient).\n`);
+      return sessionHolder?.current || null;
+    }
     const runId = mintSessionRunId();
     const session = {
       ...buildRunSession({
@@ -639,7 +660,7 @@ function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
   // autoStartRunSession: if that call ever moves out of dispatch, the
   // holder stays the single handoff point.
   let entry = lifecycle;
-  if (sessionHolder?.autoStarted && !entry.run_id && ambient?.session?.run_id) {
+  if ((sessionHolder?.autoStarted || sessionHolder?.adopted) && !entry.run_id && ambient?.session?.run_id) {
     entry = { ...entry, run_id: ambient.session.run_id };
   }
   const journalPath = resolveLifecycleJournal(args, { ambient });
@@ -2694,7 +2715,13 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
       if (assemblyReportMatchesPacket(report, packet)) {
         const command = `campaigns-os ${args._[0] || "doctor"}`;
         const updatedReport = recordDoctorStageOutcome(report, result, { command, doctorOutPath });
-        writeJsonAtomic(reportPath, updatedReport);
+        // A re-run that restates the outcome already on disk is a re-record,
+        // not a new chapter: the only bytes that would move are the stage
+        // timestamps, and rewriting them makes a Run Record's digest of this
+        // file stale for no information. A changed outcome still writes.
+        if (!producerStageOutcomeUnchanged(report, updatedReport, "doctor")) {
+          writeJsonAtomic(reportPath, updatedReport);
+        }
       }
     }
     writeJson(doctorOutPath, result);
@@ -3297,7 +3324,11 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   } else if (themeGate.status === "waived") {
     ready.push(`Theme gate waived: ${themeGate.waiver?.reason || "(no reason recorded)"}`);
   } else if (themeGate.status === "pass") {
-    ready.push("Theme gate passed: brand layer applied after next-core.css on commerce pages.");
+    // The gate passes on two different facts (a brand layer applied, or no
+    // generatable brand theme at all); print the one it found, never the
+    // other. An operator reading ready[] on a token-less campaign must not
+    // believe brand styling shipped.
+    ready.push(`Theme gate passed: ${themeGate.reason}`);
   }
   runPricingCssHideCheck({ packet, derived, warnings, ready, report });
 
