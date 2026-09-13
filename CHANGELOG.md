@@ -29,6 +29,57 @@ Notable supported-surface changes are recorded here.
   prints nothing extra, so clean runs are unchanged. `--json` output is byte-for-byte
   unchanged — this is text-only, like the existing tiny prompts — so no
   machine reader needs to adapt.
+## [1.26.0+agent.17] - 2026-09-13
+
+### Changed
+
+- `start`, `prepare-build` and `build` now say which template family won when
+  the `--template-family` flag and the CampaignSpec
+  `preferred_template_family` hint disagree. The precedence itself is
+  unchanged and was always documented — the flag beats the hint — but it
+  resolved in silence, so an operator whose spec hinted one certified family
+  and whose flag named another got a packet built on the flag with nothing on
+  stderr and nothing on the assembly report to show the hint had been
+  discarded; the packet read as agreement with the spec. A disagreement now
+  prints one stderr line naming both values and the channel each came from,
+  and adds a `prepare_build` warning with code
+  `TEMPLATE_FAMILY_HINT_OVERRIDDEN` to the assembly report's `warnings[]`,
+  beside the existing `SOURCE_SCOPE_PARTIAL` and
+  `AMBIGUOUS_SOURCE_HTML_CANDIDATES` entries. A flag that repeats the hint is
+  agreement, not an override, and stays quiet, as does a hint with no flag.
+  Nothing about the packet changes and no gate is added: the warning is
+  advisory, exit codes are unaffected, and an agent that ignores unknown
+  warning codes keeps working. A reader that wants the spec hint to win should
+  drop the flag; a reader that wants the disagreement gone should update the
+  spec. docs/build-packet.md "Authoring-Time Hints" documents both the
+  precedence and the notice.
+## [1.26.0+agent.16] - 2026-09-13
+
+### Changed
+
+- The `browser-order-bump-state` marker vocabulary now lives in one list, and
+  the stylesheet-rule walk no longer reads a dimmed marker as a hidden one.
+  Two exported constants held the same four marker selectors — the ordered
+  family list and the container list a nested tick's wrapper is matched
+  against — so a family added to one and not the other would resolve a marker
+  and then judge it by the wrong box; `ORDER_BUMP_MARKER_CONTAINERS` is now
+  derived from `ORDER_BUMP_MARKER_FAMILIES` rather than repeating it (order is
+  immaterial to a container list, which is joined into a single `closest()`
+  query). Separately, one `opacity <= 0.5` threshold served both the rendered
+  read and the rule walk, which are asking different questions: the rendered
+  read asks whether a buyer can see the marker, and half opacity or less is
+  too faint to read a tick off; the rule walk asks whether a rule removes the
+  marker from rendering, which is the display-toggled family's signature. A
+  rule dimming a marker to `opacity: 0.4` leaves it on screen, so counting it
+  reported a correctly declined bump as misaligned. The rule walk now requires
+  an exact `opacity: 0`; the rendered read keeps its threshold. The
+  accepted-state fill is now the documented `ORDER_BUMP_ACCEPTED_FILL_COLOR`
+  constant, passed through the probe input instead of sitting inline as a bare
+  colour literal, and the fixture README records both sides of the new rule
+  threshold. No evidence field changed name or meaning, so nothing a reader of
+  the order-bump evidence consumes needs adapting; a page that dims a state
+  marker without hiding it now reads `unresolved` where it used to read
+  `display_toggled`, which is the false misalignment going away.
 
 ## [1.26.0+agent.15] - 2026-09-13
 
