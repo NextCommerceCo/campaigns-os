@@ -2283,7 +2283,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.16",
-      "changelog_sha256": "9b7f6a77435afaf77c42d10d9c7b6fa8278131d3b0637179318df0b961f9549f",
+      "changelog_sha256": "622ab5ccfae5664a1d4a0f655f496434a4bb134c6fa0bfa6ed7eaf26c613f50f",
       "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. This is the same condition the polish gate already blocked on as polish.assembly_source_package_fingerprint_missing, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report whose Assembly is still pending or that carries no build fingerprint yet is outside the finding, exactly as the gate is not_applicable there, so freshly prepared reports from prepare-build and start still validate. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice.",
       "compatibility": "compatible",
       "migration": "None.",
@@ -2301,7 +2301,7 @@
           "summary": "The freshness-lifecycle section says validate-assembly-report applies the same missing-fingerprint condition as the polish gate."
         }
       ],
-      "entry_sha256": "fce4a68da88c741f9f39b62b2496a76edc4aeea55b077ce108570b5382eedc46"
+      "entry_sha256": "13c0a4c6535dc40eb751e0f26eb215da92fda96aae2344668603abd71f484d28"
     }
   ]
 }
