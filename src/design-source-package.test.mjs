@@ -16,6 +16,7 @@ import {
   computeDesignSourcePackageMaterialFingerprint,
   createDesignSourcePackageArtifactReference,
   designSourcePackageMaterialProjection,
+  diagnoseSourceScreenshotRecord,
   evaluateDesignSourcePackageReadiness,
   generateDesignSourcePackageReadback,
   hashDesignSourcePackage,
@@ -993,6 +994,44 @@ test("schema and runtime agree on nullable-string boundaries and administrative 
       `${label}: runtime should reject`,
     );
   }
+});
+
+test("the per-record screenshot diagnostic agrees exactly with what the package accepts", () => {
+  // Each record is either accepted as source proof or dropped. The operator
+  // diagnostic must fire on exactly the dropped ones, so the warning an
+  // operator reads can never disagree with the package that was built.
+  const records = [
+    { id: "ok-desktop", viewport: "desktop", path: "captures/desktop.png" },
+    { id: "ok-mobile", viewport: "MOBILE", url: "https://source.example.test/landing" },
+    { id: "ok-unavailable", viewport: "tablet", availability: "unavailable", unavailable_reason: "never captured" },
+    { id: "bad-viewport", viewport: "mobil", path: "captures/mobile.png" },
+    { id: "bad-missing-viewport", path: "captures/orphan.png" },
+    { id: "bad-no-evidence", viewport: "desktop" },
+    { id: "bad-unavailable-unexplained", viewport: "desktop", availability: "unavailable" },
+    { id: "bad-kind", viewport: "desktop", path: "captures/ref.png", kind: "render_reference" },
+  ];
+  const packageValue = readyHtmlPackage({
+    mappings: [{ ...sourcePageMapping({ screenshots: false }), screenshots: records }],
+  });
+  const accepted = new Set(packageValue.contributions[0].screenshot_refs.map((ref) => ref.id));
+  const diagnosed = records.filter((record) => diagnoseSourceScreenshotRecord(record) !== null).map((record) => record.id);
+
+  assert.deepEqual([...accepted].sort(), ["ok-desktop", "ok-mobile", "ok-unavailable"]);
+  assert.deepEqual(diagnosed.sort(), [
+    "bad-kind",
+    "bad-missing-viewport",
+    "bad-no-evidence",
+    "bad-unavailable-unexplained",
+    "bad-viewport",
+  ]);
+  for (const record of records) {
+    assert.equal(
+      diagnoseSourceScreenshotRecord(record) === null,
+      accepted.has(record.id),
+      `${record.id}: diagnostic and acceptance disagree`,
+    );
+  }
+  assert.equal(diagnoseSourceScreenshotRecord("landing-desktop")?.field, "record");
 });
 
 test("ID-less explicit source screenshots deduplicate and fingerprint independently of input order", () => {

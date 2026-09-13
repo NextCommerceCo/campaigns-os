@@ -2,12 +2,16 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { ADAPTER_WRAPPER_POLICIES, isWrapperPolicy } from "./adapter-decision-contract.mjs";
+import { diagnoseSourceScreenshotRecord } from "./design-source-package.mjs";
 
 export const SOURCE_HTML_MANIFEST_REL_PATH = ".campaigns-os/source-html-manifest.json";
 export const SOURCE_HTML_MANIFEST_SCHEMA = "source-html-manifest/v0";
 
 export const SOURCE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const FILE_ROLES = new Set(["page", "partial", "layout", "asset", "export_log", "support"]);
+// The per-page keys the Design Source Package reads as source screenshot
+// proof (see design-source-package.mjs visualCandidatesFrom).
+const SCREENSHOT_RECORD_KEYS = Object.freeze(["screenshot_refs", "source_screenshot_refs", "screenshots"]);
 
 export function validateSourceHtmlManifest(manifest) {
   const errors = [];
@@ -63,7 +67,7 @@ export function validateSourceHtmlManifest(manifest) {
   if (!Array.isArray(manifest.pages)) {
     add("manifest.pages", "pages must be an array.");
   } else {
-    manifest.pages.forEach((entry, index) => validateManifestPage(entry, index, add));
+    manifest.pages.forEach((entry, index) => validateManifestPage(entry, index, add, addWarning));
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -106,7 +110,7 @@ export function readSourceHtmlManifestFile(sourceRoot) {
   return { manifest, path: manifestPath, warning: null, warnings, validation };
 }
 
-function validateManifestPage(entry, index, add) {
+function validateManifestPage(entry, index, add, addWarning = () => {}) {
   const location = `manifest.pages[${index}]`;
   if (!isObject(entry)) {
     add(location, `${location} must be an object.`);
@@ -134,6 +138,35 @@ function validateManifestPage(entry, index, add) {
     if (!isNonEmptyString(entry.source_hash) || !SOURCE_HASH_PATTERN.test(entry.source_hash)) {
       add(`${location}.source_hash`, `${location}.source_hash must be a 64-character lowercase sha256 hex string when present.`);
     }
+  }
+  warnOnUnusableScreenshotRecords(entry, location, addWarning);
+}
+
+// Screenshot records are optional proof, so a malformed one is not a reason to
+// reject the manifest and fall the run back to filesystem matching. It is,
+// however, a reason to say something: without this the Design Source Package
+// drops the record and the operator sees a page missing desktop/mobile proof
+// with no hint that a record for it was authored. Same channel as the
+// wrapper_policy warning above, one warning per record naming the page, the
+// record index, the field, and what happens instead. The accept/reject test itself lives with the package builder, so
+// the warning cannot drift from the behaviour it describes.
+function warnOnUnusableScreenshotRecords(entry, location, addWarning) {
+  const pageId = isNonEmptyString(entry.page_id) ? entry.page_id : null;
+  for (const key of SCREENSHOT_RECORD_KEYS) {
+    const records = entry[key];
+    if (!Array.isArray(records)) continue;
+    records.forEach((record, index) => {
+      if (typeof record === "string") return;
+      const rejection = diagnoseSourceScreenshotRecord(record);
+      if (!rejection) return;
+      const recordLocation = `${location}.${key}[${index}]`;
+      addWarning(
+        `${recordLocation}.${rejection.field}`,
+        `${recordLocation}${pageId ? ` (page_id ${JSON.stringify(pageId)})` : ""} is ignored as source screenshot proof: ` +
+          `${rejection.detail}. ${rejection.fix}, or the page counts as having no source proof for that viewport. ` +
+          `The rest of the manifest is used as written.`,
+      );
+    });
   }
 }
 
