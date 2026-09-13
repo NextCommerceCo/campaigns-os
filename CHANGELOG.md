@@ -2,6 +2,43 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0] - 2026-09-13
+
+### Added
+
+- A `./text-safety` package export, so a consumer rendering a toolkit-derived
+  value into its own single-line notice can flatten it the way the CLI does
+  instead of reimplementing the escape set. It publishes the two functions that
+  already did that work inside `src/cli.mjs`: `singleLineField(value,
+  fallback)` replaces every C0, DEL and C1 character with U+FFFD — replaced,
+  never dropped, so a mangled run id or target path stays visibly mangled
+  rather than silently shortening the line it lands in — and
+  `singleLineDetail(detail, max)` adds what a quoted loader message needs on
+  top of that: line breaks become spaces rather than replacement characters (a
+  newline inside a quoted JSON fragment is a word boundary, and U+FFFD there
+  reads as mojibake), runs of whitespace collapse, Markdown that could restyle
+  the rest of a rendered bullet is backslash-escaped, and the result is cut to
+  `max` characters (default 300) with a trailing ellipsis. An empty detail
+  reports `(no detail reported)`. The functions moved to a new leaf module,
+  `src/text-safety.mjs`, with no change to either behaviour; the CLI imports
+  them from there and every existing notice reads as before.
+
+### Removed
+
+- The `standardization-report` CLI command, a second spelling of `standardize`
+  that dispatched to the same code with the same flags, the same output and the
+  same exit codes. Two supported names for one command is surface a consumer
+  has to reconcile for nothing, and the shorter name is the documented one, so
+  the redundant spelling is gone rather than kept for symmetry.
+  `campaigns-os standardization-report` now returns the standard
+  unknown-command error and points at `campaigns-os --help`, mirroring how the
+  `validate-build-packet` alias of `doctor` was removed in 1.25.0+agent.7.
+  `standardize` itself is untouched, including
+  `--sdk-support-policy`/`--field-contract`, the `--no-doctor` behaviour, and
+  the report's own `campaign-standardization-report/v0` `schema_version`. A
+  caller still using the old spelling retargets it at `standardize` and
+  changes nothing else. This removes a supported command, which is why
+  `surface_version` advances to 1.27.0 and the ledger entry is breaking.
 ## [1.26.0+agent.11] - 2026-09-13
 
 ### Changed

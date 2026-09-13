@@ -123,6 +123,7 @@ import {
   createStandardizationReport,
   formatStandardizationReportMarkdown,
 } from "./standardization-report.mjs";
+import { singleLineDetail, singleLineField } from "./text-safety.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import {
   evaluatePageKitBuildSummary,
@@ -348,7 +349,6 @@ Usage:
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
-  campaigns-os standardization-report --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]   # alias for standardize
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
   campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
@@ -765,21 +765,6 @@ export function recordQaStageOutcome(args, result) {
   }
 }
 
-// One line, no control characters. The notice below is the operator's only
-// signal that a remit failed, and it is multi-line by construction - a run id
-// or path carrying a newline, a carriage return, or an ANSI escape could split
-// it, overwrite it, or dress a fabricated line up as toolkit output. Neither
-// value is toolkit-authored: the path comes from a packet-derived target
-// directory and the id can be handed in with --run-id. Replaced, never dropped,
-// so a mangled value stays visible as mangled rather than silently shortening
-// the message.
-function singleLineField(value, fallback = "") {
-  const raw = typeof value === "string" ? value : value == null ? "" : String(value);
-  if (!raw) return fallback;
-  // C0, DEL and C1, which covers CR, LF, TAB and the ESC that starts ANSI.
-  return raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, "\uFFFD");
-}
-
 // What the auto-end says when the attempt does NOT end the session. Every
 // interpolated value is flattened first, for the same reason the closeout
 // notice flattens its own: none of the three is toolkit-authored. The run ids
@@ -939,7 +924,7 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
     return;
   }
 
-  if (command === "standardize" || command === "standardization-report") {
+  if (command === "standardize") {
     const result = standardizationReportCommand(args);
     writeStandardizationReportResult(result, args);
     return;
@@ -7880,7 +7865,6 @@ const BRAND_CONTRACT_ERROR_CODES = new Set([
   "extends_missing_parent",
   "family_mismatch",
 ]);
-const ADVISORY_DETAIL_MAX = 300;
 
 export function safeFamilyLabel(family) {
   const value = optionalString(family);
@@ -7890,27 +7874,6 @@ export function safeFamilyLabel(family) {
 export function safeBrandContractCode(code) {
   const value = optionalString(code);
   return value && BRAND_CONTRACT_ERROR_CODES.has(value) ? value : "unknown";
-}
-
-// One trimmed line, no control characters, no Markdown that could restyle the
-// rest of the description or a rendered bullet.
-//
-// The control-character half is `singleLineField`'s job and is not duplicated
-// here. Two things are added on top of it, because this input is different in
-// kind from a run id or a disposition: a loader message QUOTES FILE CONTENT,
-// so it can be long and can carry Markdown. Line breaks are turned into spaces
-// before the hand-off — a newline inside a quoted JSON fragment is a word
-// boundary, and rendering it as U+FFFD would read as mojibake — while ESC, DEL
-// and the rest still become the replacement character the rest of the CLI
-// uses, since those have no reading as text.
-export function singleLineDetail(detail, max = ADVISORY_DETAIL_MAX) {
-  const spaced = String(detail ?? "").replace(/[\r\n\t\v\f]+/g, " ");
-  const flattened = singleLineField(spaced)
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[`*_[\]<>]/g, "\\$&");
-  if (!flattened) return "(no detail reported)";
-  return flattened.length > max ? `${flattened.slice(0, max - 1).trimEnd()}…` : flattened;
 }
 
 function familyPaletteResidueState(packet) {
