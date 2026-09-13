@@ -7,7 +7,7 @@
 // way instead of reimplementing the escape set and drifting from it.
 
 // One line, no control characters. The operator notices these values land in
-// are multi-line by construction - a run id or a path carrying a newline, a
+// are single-line by construction, and a run id or a path carrying a newline, a
 // carriage return, or an ANSI escape could split a notice, overwrite it, or
 // dress a fabricated line up as toolkit output. Neither value is
 // toolkit-authored: the path comes from a packet-derived target directory and
@@ -40,5 +40,8 @@ export function singleLineDetail(detail, max = ADVISORY_DETAIL_MAX) {
     .trim()
     .replace(/[`*_[\]<>]/g, "\\$&");
   if (!flattened) return "(no detail reported)";
-  return flattened.length > max ? `${flattened.slice(0, max - 1).trimEnd()}\u2026` : flattened;
+  // A published export: a derived or mistaken max below one would otherwise
+  // slice to nothing and fabricate a lone ellipsis, so the budget floors at one.
+  const limit = Number.isFinite(max) ? Math.max(1, Math.floor(max)) : ADVISORY_DETAIL_MAX;
+  return flattened.length > limit ? `${flattened.slice(0, limit - 1).trimEnd()}\u2026` : flattened;
 }

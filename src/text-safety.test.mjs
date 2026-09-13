@@ -114,3 +114,11 @@ test("singleLineDetail reports absence rather than an empty string", () => {
   assert.equal(singleLineDetail(""), "(no detail reported)");
   assert.equal(singleLineDetail("   \n\t "), "(no detail reported)");
 });
+
+test("singleLineDetail floors a non-positive or invalid max at one character", () => {
+  assert.equal(singleLineDetail("abc", 0), "\u2026");
+  assert.equal(singleLineDetail("abc", -5), "\u2026");
+  assert.equal(singleLineDetail("abc", 1), "\u2026");
+  assert.equal(singleLineDetail("abc", 2), "a\u2026");
+  assert.equal(singleLineDetail("abc", Number.NaN), "abc");
+});
