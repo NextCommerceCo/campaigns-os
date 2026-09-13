@@ -3406,9 +3406,13 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   // and next both resolve --context / --report against the working
   // directory, so a path rebased onto the packet directory would read a
   // different file when the command is run from where the operator stands.
+  // Portable output (outputBaseDir set: start's generated doctor output,
+  // doctor --strip-paths) rebases them onto that base like every other path
+  // in the output, so a relocated handoff does not name the original machine.
+  const sidecarArg = (path) => shellToken(outputBaseDir ? relFromDir(outputBaseDir, path) : path);
   const sidecarArgs = [
-    ...(typeof contextPath === "string" ? [` --context ${shellToken(contextPath)}`] : []),
-    ...(typeof reportPath === "string" ? [` --report ${shellToken(reportPath)}`] : []),
+    ...(typeof contextPath === "string" ? [` --context ${sidecarArg(contextPath)}`] : []),
+    ...(typeof reportPath === "string" ? [` --report ${sidecarArg(reportPath)}`] : []),
   ].join("");
   const next = buildNextStep(errors, warnings, derivedForPicker, gateReport, packet, prepareBuildGate, { sidecarArgs });
   const status = errors.length
