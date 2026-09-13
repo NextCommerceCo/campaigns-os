@@ -20,6 +20,88 @@ Notable supported-surface changes are recorded here.
   `doctor-output.json` is refreshed on every run as before. The helper is
   exported from the stage ledger as `producerStageOutcomeUnchanged` for the QA
   producer to adopt.
+## [1.26.0+agent.13] - 2026-09-13
+
+### Changed
+
+- Internal consolidation, no output change. The repository-scan helpers the
+  two campaign scanners (`campaign-ecosystem.mjs`, `standardization-report.mjs`)
+  each carried — the file walk, the skip rule, the version compare and
+  extract, and the small string helpers (`normalizeString`, `relPath`,
+  `rootId`, `unique`, `escapeRegExp`) — now live once in `src/repo-scan.mjs`;
+  each scanner keeps only its own skip-directory set and passes it in. The
+  build-brief extractor's `escapeRegExp` copy is folded in too (the `cli.mjs`
+  copy stays: it stringifies `null` differently and its callers rely on that).
+  `standardize` output over the example target is byte-identical before and
+  after, timestamps aside.
+## [1.26.0+agent.5] - 2026-09-13
+
+### Fixed
+
+- A blocked polish gate's QA verdict evidence now carries the same fields the
+  doctor's `derived.polish_gate` carries. The blocked branch of the verdict
+  projection built a hand-picked subset (`reason`, `build_fingerprint`,
+  `source_build_fingerprint`, `performed_by`, `problems`, `required_actions`,
+  `scope_source`), so on `polish.assembly_source_package_fingerprint_missing`
+  and `polish.assembly_source_package_stale` the verdict dropped the
+  `source_package_material_fingerprint` and
+  `assembly_source_package_material_fingerprint` the reason names, showed
+  `source_build_fingerprint: null` beside it, and omitted the `waiver` and
+  `expired_waiver` the other branches carry. The blocked branch now uses the
+  shared evidence object plus `reason`, `problems` and `required_actions`;
+  `expired_waiver` joins the shared set. Gate codes, reasons and required
+  actions are unchanged: `polish.assembly_source_package_fingerprint_missing`
+  (assembly not tied to the current Design Source Package, re-run Build) and
+  `polish.evidence_missing` (no Polish stage, run Polish) are different
+  conditions with different next actions and stay distinct.
+## [1.26.0+agent.2] - 2026-09-13
+
+### Fixed
+
+- The QA verdict now says which route and viewport failed a polish capture and
+  on which problem code. A `polish.hidden_eager_media.capture_incomplete`
+  block was built from the code, reason and subject alone, so the per-cell
+  `measurement.incomplete[]` the checkpoint had just recomputed was discarded
+  one layer before the verdict projector could read it; the verdict carried
+  the full `routes` list, `state: { findings: [] }` and nothing else, and a
+  reader had to open the assembly report to learn which of the cells failed.
+  The blocked checkpoint now carries `measurement` (the recomputed `status`,
+  counts, and the `missing[]`, `duplicate[]`, `unexpected[]` and
+  `incomplete[]` cells with their `problem_codes[]`), and the verdict's
+  `polish.hidden_eager_media` assertion projects it as `evidence.measurement`
+  with path-only routes, the closed viewport vocabulary and the closed
+  problem-code vocabulary, bounded by one 256-cell budget across the four
+  lists (the full supported capture matrix) with any excess, and any record
+  outside the closed vocabularies, counted in `omitted_cell_count` and per
+  list in `omitted_cell_count_by_list`; counts are always integers. Other block codes carry
+  `measurement: null`. No
+  schema, problem code or verdict field outside that assertion's evidence
+  changes.
+||||||| 42ba452
+## [1.26.0+agent.1] - 2026-09-13
+
+### Fixed
+
+- `polish capture` no longer blocks on a `data:`, `blob:` or `about:` response.
+  The response aggregator treated every non-http(s) response URL as
+  `resource_url_unresolvable`, which makes the route's capture incomplete and
+  raises `polish.hidden_eager_media.capture_incomplete` — the unwaivable block
+  built for browser crashes and missing routes. A page with a `<video controls>`
+  element or an inline `data:` image produces several such responses on every
+  load, so the block reproduced on every capture of that route, the repair
+  instruction (fix an unresolvable resource URL) pointed at nothing an operator
+  could change, and `checkpoint waive` refused it by design. A non-http(s)
+  response is not a network resource: nothing was transferred and there is
+  nothing to attribute to the resource ledger. It is now counted under
+  `response_collection.unattributed_response_count` (evidence) and raises no
+  problem; `resource_url_unresolvable` is reserved for a malformed or over-long
+  URL and for a non-http(s) load that failed (a revoked `blob:` URL behind a
+  script or image is still a dependency the page could not load). The browser
+  collector records a non-http(s) response URL as its scheme
+  alone (`data:`), so a long inline image is neither persisted nor misreported
+  as `url_length_overflow`. Capture shape, problem-code vocabulary and the
+  measurement invariants are unchanged; a capture blocked this way needs a fresh
+  `polish capture`, which it needed anyway.
 
 ## [1.26.0] - 2026-09-12
 

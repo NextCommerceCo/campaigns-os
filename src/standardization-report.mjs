@@ -2,6 +2,18 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 
 import { shellToken } from "./shell-token.mjs";
+import {
+  compareVersions,
+  escapeRegExp,
+  extractVersion,
+  listFiles as scanFiles,
+  normalizeString,
+  relPath,
+  rootId,
+  safeReadDir,
+  shouldSkipDir as skipDir,
+  unique,
+} from "./repo-scan.mjs";
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import {
   detectFrameworks,
@@ -33,6 +45,9 @@ const SKIP_DIRS = new Set([
   "qa-output",
   "dist",
 ]);
+
+const listFiles = (root, options = {}) => scanFiles(root, { ...options, skipDirs: SKIP_DIRS });
+const shouldSkipDir = (name) => skipDir(name, SKIP_DIRS);
 const STRUCTURE_EXTENSIONS = new Set([".html", ".liquid"]);
 const TEXT_EXTENSIONS = new Set([".html", ".liquid", ".js", ".css"]);
 const RAW_BLOCK_PATTERN = /{%-?\s*raw\s*-?%}/g;
@@ -1070,37 +1085,6 @@ function sample(rootPath, file, content, index, match) {
   };
 }
 
-function listFiles(root, options = {}) {
-  const includeRuntime = options.includeRuntime === true;
-  const files = [];
-  if (!existsSync(root) || !statSync(root).isDirectory()) return files;
-  function walk(dir) {
-    for (const entry of safeReadDir(dir)) {
-      if (entry.isDirectory()) {
-        if (!includeRuntime && shouldSkipDir(entry.name)) continue;
-        if (entry.name === ".git" || entry.name === "node_modules") continue;
-        walk(join(dir, entry.name));
-      } else if (entry.isFile()) {
-        files.push(join(dir, entry.name));
-      }
-    }
-  }
-  walk(root);
-  return files.sort();
-}
-
-function shouldSkipDir(name) {
-  return SKIP_DIRS.has(name) || (name.startsWith(".") && name !== ".campaigns-os");
-}
-
-function safeReadDir(dir) {
-  try {
-    return readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-}
-
 function safeReadText(path) {
   try {
     return { ok: true, value: readFileSync(path, "utf8") };
@@ -1153,23 +1137,6 @@ function dedupeFindings(root) {
   });
 }
 
-function compareVersions(a, b) {
-  const left = extractVersion(a);
-  const right = extractVersion(b);
-  if (!left || !right) return 0;
-  for (let index = 0; index < 3; index += 1) {
-    const diff = left[index] - right[index];
-    if (diff !== 0) return diff > 0 ? 1 : -1;
-  }
-  return 0;
-}
-
-function extractVersion(value) {
-  const match = String(value || "").match(/(\d+)\.(\d+)\.(\d+)/);
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
 function firstStringAt(object, paths) {
   for (const path of paths) {
     let cursor = object;
@@ -1178,23 +1145,6 @@ function firstStringAt(object, paths) {
     if (value) return value;
   }
   return null;
-}
-
-function normalizeString(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function relPath(from, to) {
-  const rel = relative(resolve(from), resolve(to)).split(sep).join("/");
-  return rel || ".";
-}
-
-function rootId(targetRepo, rootPath) {
-  return relPath(targetRepo, rootPath).replace(/[^A-Za-z0-9_.-]+/g, "-") || ".";
-}
-
-function unique(values) {
-  return [...new Set(values.filter((value) => value !== null && value !== undefined && value !== ""))];
 }
 
 function sumMap(map) {
@@ -1216,6 +1166,3 @@ function appendList(lines, label, items) {
   for (const item of items) lines.push(`- ${item}`);
 }
 
-function escapeRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}

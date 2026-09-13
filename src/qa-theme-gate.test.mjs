@@ -225,6 +225,103 @@ test("hidden eager-media checkpoint summary and assertion expose only the safe f
   assert.doesNotMatch(JSON.stringify(assertion), /private-/);
 });
 
+test("a capture-incomplete checkpoint carries its per-cell measurement into the verdict evidence", () => {
+  const gate = {
+    id: "polish.hidden_eager_media",
+    scope: "polish.hidden_eager_media",
+    status: "blocked",
+    code: "polish.hidden_eager_media.capture_incomplete",
+    reason: "Page-load capture failed or lacks complete route and viewport measurement; incomplete capture evidence cannot be waived.",
+    waivable: false,
+    subject: {
+      build_fingerprint: "sha256:build",
+      campaign_slug: "merchant",
+      route_scope: "campaign",
+      routes: ["/merchant/", "/merchant/landing/"],
+      viewports: ["desktop", "mobile"],
+    },
+    state: null,
+    state_fingerprint: null,
+    findings: [],
+    measurement: {
+      status: "incomplete",
+      expected_capture_count: 4,
+      captured_count: 3,
+      missing: [{ route: "/merchant/", viewport: "mobile" }],
+      duplicate: [],
+      unexpected: [{ route: "https://private-host.example.test/unexpected/?token=private-secret", viewport: "desktop" }],
+      incomplete: [{
+        route: "/merchant/landing/",
+        viewport: "desktop",
+        problem_codes: ["resource_url_unresolvable", "private-not-a-code", "dependency_request_failed"],
+      }],
+      warnings: [{ route: "/merchant/", viewport: "desktop", failed_origins: ["https://private-beacon.example"] }],
+    },
+    waiver: null,
+    waiver_assessment: { inert_counts: { stale: 0, foreign: 0, malformed: 0, expired: 0 } },
+    required_actions: [],
+  };
+
+  const summary = checkpointGateSummary(gate);
+  assert.deepEqual(summary.measurement, {
+    status: "incomplete",
+    expected_capture_count: 4,
+    captured_count: 3,
+    missing: [{ route: "/merchant/", viewport: "mobile" }],
+    duplicate: [],
+    unexpected: [{ route: "/unexpected/", viewport: "desktop" }],
+    incomplete: [{
+      route: "/merchant/landing/",
+      viewport: "desktop",
+      problem_codes: ["dependency_request_failed", "resource_url_unresolvable"],
+    }],
+    omitted_cell_count: 0,
+    omitted_cell_count_by_list: { missing: 0, duplicate: 0, unexpected: 0, incomplete: 0 },
+  });
+  // A cell outside the closed vocabularies is omitted and counted, never
+  // emitted with a null field.
+  const nonConforming = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, missing: [
+    { route: "/merchant/", viewport: "tablet" },
+    { route: "", viewport: "desktop" },
+    { route: "/merchant/", viewport: "mobile" },
+  ] } });
+  assert.deepEqual(nonConforming.measurement.missing, [{ route: "/merchant/", viewport: "mobile" }]);
+  assert.equal(nonConforming.measurement.omitted_cell_count_by_list.missing, 2);
+  assert.equal(nonConforming.measurement.omitted_cell_count, 2);
+  // Missing counts read as 0, never null.
+  const noCounts = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, expected_capture_count: undefined, captured_count: "x" } });
+  assert.equal(noCounts.measurement.expected_capture_count, 0);
+  assert.equal(noCounts.measurement.captured_count, 0);
+  const assertion = hiddenEagerMediaGateAssertion(gate);
+  assert.equal(assertion.status, "fail");
+  assert.deepEqual(assertion.evidence.measurement.incomplete, summary.measurement.incomplete);
+  assert.doesNotMatch(JSON.stringify(assertion), /private-/);
+
+  const withoutMeasurement = checkpointGateSummary({ ...gate, measurement: undefined });
+  assert.equal(withoutMeasurement.measurement, null);
+
+  // The full supported matrix (128 routes x 2 viewports) fits; past it the
+  // omission is counted, never silent.
+  const fullMatrix = Array.from({ length: 256 }, (_, index) => ({
+    route: `/merchant/route-${index}/`,
+    viewport: index % 2 ? "mobile" : "desktop",
+    problem_codes: ["producer_failed"],
+  }));
+  const empty = { missing: [], duplicate: [], unexpected: [] };
+  const atLimit = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, ...empty, incomplete: fullMatrix } });
+  assert.equal(atLimit.measurement.incomplete.length, 256);
+  assert.equal(atLimit.measurement.omitted_cell_count, 0);
+  const overLimit = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, ...empty, incomplete: [...fullMatrix, ...fullMatrix.slice(0, 3)] } });
+  assert.equal(overLimit.measurement.incomplete.length, 256);
+  assert.equal(overLimit.measurement.omitted_cell_count, 3);
+  // The cap is one budget across all four lists: 200 missing cells leave 56 for incomplete.
+  const acrossLists = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, ...empty, missing: fullMatrix.slice(0, 200), incomplete: fullMatrix } });
+  assert.equal(acrossLists.measurement.missing.length, 200);
+  assert.equal(acrossLists.measurement.incomplete.length, 56);
+  assert.deepEqual(acrossLists.measurement.omitted_cell_count_by_list, { missing: 0, duplicate: 0, unexpected: 0, incomplete: 200 });
+  assert.equal(acrossLists.measurement.omitted_cell_count, 200);
+});
+
 test("blocked theme gate maps to a single blocker assertion with reason and required actions", () => {
   // The recovery-relief-stack-v1 dogfood shape: generatable theme, never applied.
   const gate = evaluateThemeGate({
@@ -268,6 +365,41 @@ test("blocked theme gate still records current polish gate evidence", () => {
   assert.equal(polishAssertion.status, "pass");
   assert.equal(assertions.some((assertion) => assertion.family === "polish_gate" && assertion.status === "skipped"), false);
   assert.equal(assertions.some((assertion) => assertion.family === "theme_gate" && assertion.status === "fail"), true);
+});
+
+test("a blocked polish gate assertion carries the fingerprints and waiver its reason names", () => {
+  const gate = {
+    status: "blocked",
+    code: "polish.assembly_source_package_fingerprint_missing",
+    reason: "Assembly is not tied to the current Design Source Package material fingerprint. Re-run Build before Polish.",
+    build_fingerprint: "sha256:build",
+    source_package_material_fingerprint: "sha256:source-package",
+    expired_waiver: { expires_at: "2026-09-01T00:00:00.000Z" },
+    required_actions: [{ id: "rerun_build", kind: "skill", command: "next-campaigns-build", description: "Re-run Build." }],
+  };
+  const blocked = polishGateAssertion(gate);
+  assert.equal(blocked.status, "fail");
+  assert.equal(blocked.severity, "blocker");
+  // The doctor's derived.polish_gate and the verdict's copy name the same fields.
+  assert.equal(blocked.evidence.build_fingerprint, "sha256:build");
+  assert.equal(blocked.evidence.source_package_material_fingerprint, "sha256:source-package");
+  assert.equal(blocked.evidence.source_build_fingerprint, null);
+  assert.deepEqual(blocked.evidence.expired_waiver, gate.expired_waiver);
+  assert.equal(blocked.evidence.reason, gate.reason);
+  assert.deepEqual(blocked.evidence.required_actions, gate.required_actions);
+  assert.deepEqual(blocked.evidence.problems, []);
+
+  const stale = polishGateAssertion({
+    status: "blocked",
+    code: "polish.assembly_source_package_stale",
+    reason: "The Design Source Package changed after Build.",
+    build_fingerprint: "sha256:build",
+    source_package_material_fingerprint: "sha256:current",
+    assembly_source_package_material_fingerprint: "sha256:assembled",
+    required_actions: [],
+  });
+  assert.equal(stale.evidence.source_package_material_fingerprint, "sha256:current");
+  assert.equal(stale.evidence.assembly_source_package_material_fingerprint, "sha256:assembled");
 });
 
 test("polish gate assertion keeps pass, waived, and not-applicable distinct", () => {
