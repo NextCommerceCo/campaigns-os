@@ -2236,6 +2236,45 @@
         }
       ],
       "entry_sha256": "7f8072738a6200727ea172cbed10685f768e1d70f50b998aa067c3137cee9bd6"
+    },
+    {
+      "id": "RL-0054",
+      "sequence": 54,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.15",
+      "changelog_sha256": "3501424e1ad955b96f6ba3944fc26cdf7fb4e8ccabeda9231d839221e1c2a782",
+      "agent_impact": "start / prepare-build / build now report the template-family precedence they always applied. When --template-family and the CampaignSpec preferred_template_family hint name different families, the flag still wins (packet.assembly.template_family and template_lock are unchanged), but the run prints one stderr line naming both values and their channels, and the assembly report's warnings[] gains an advisory entry { code: \"TEMPLATE_FAMILY_HINT_OVERRIDDEN\", stage: \"prepare_build\", message } naming the winning flag and the overridden hint. A flag equal to the hint, a hint with no flag, and a flag with no hint all stay silent. No exit code, blocker, or gate changes; an agent that ignores unknown warning codes is unaffected. An agent that wants the spec hint honoured must omit the flag.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Template-family precedence is resolved through resolveTemplateFamilySelection and announced: a flag/hint disagreement prints an stderr line and adds the TEMPLATE_FAMILY_HINT_OVERRIDDEN prepare_build warning to the assembly report."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "start",
+          "summary": "start shares the prepare-build intake body, so it emits the same template-family precedence notice."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "build",
+          "summary": "build shares the prepare-build intake body, so it emits the same template-family precedence notice."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Authoring-Time Hints states that a flag/hint disagreement prints the precedence line and records TEMPLATE_FAMILY_HINT_OVERRIDDEN on the assembly report, and how to make the hint win."
+        }
+      ],
+      "entry_sha256": "877faddcc1a29ca525b8490e2fb4544e7f11706d5fca832f773288e83c01eb32"
     }
   ]
 }
