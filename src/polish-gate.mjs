@@ -118,10 +118,6 @@ export function assessAssemblySourcePackageFreshnessWaivers(report, now = Date.n
   return assessment;
 }
 
-export function assemblySourcePackageFreshnessWaiver(report, now = Date.now()) {
-  return assessAssemblySourcePackageFreshnessWaivers(report, now).active;
-}
-
 function polishEvidence(stage, report) {
   if (isObject(stage?.evidence)) return stage.evidence;
   if (isObject(report?.polish?.evidence)) return report.polish.evidence;

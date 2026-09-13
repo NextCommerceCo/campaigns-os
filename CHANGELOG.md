@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.12] - 2026-09-13
+
+### Changed
+
+- Internal consolidation, no output change. The cause block the `doctor` and
+  `qa run` human reports print (summary line, then the comparison-basis line
+  when no comparison happened) is one function, `formatCauseReportLines`,
+  instead of the same three lines written in each command; the doctor
+  fingerprint used for the prior-run comparison is computed by
+  `doctorIssueFingerprint` at both sites instead of once as a function and
+  once as a string literal; and `formatCauseSummaryLine` drops a `priorRunId`
+  option that both callers passed with the value the function already read
+  from the summary. Eight `finding-cause.mjs` symbols with no importer outside
+  the module are no longer exported; none is on the supported surface.
+
+### Removed
+
+- `assemblySourcePackageFreshnessWaiver` from `src/polish-gate.mjs`: a
+  three-line alias over `assessAssemblySourcePackageFreshnessWaivers(...).active`
+  with no caller in `src/` or `scripts/`. Not on the supported surface.
 ## [1.26.0+agent.10] - 2026-09-13
 
 ### Removed

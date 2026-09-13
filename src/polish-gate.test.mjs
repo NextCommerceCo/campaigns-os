@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { assemblySourcePackageFreshnessWaiver, evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
+import { evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
 
 const FINGERPRINT = "sha256:build-current";
 const SOURCE_PACKAGE_FINGERPRINT = "sha256:source-package-current";
@@ -245,14 +245,6 @@ test("polish gate honors a valid waiver regardless of its position among expired
   }
 });
 
-test("assemblySourcePackageFreshnessWaiver returns the effective waiver or null", () => {
-  const expired = { ...sourceFreshnessWaiver(), expires_at: "1970-01-01T00:00:00.000Z" };
-  const invalid = { ...sourceFreshnessWaiver(), expires_at: "next week" };
-  const current = { ...sourceFreshnessWaiver(), expires_at: "2026-09-01T00:00:00.000Z" };
-  assert.equal(assemblySourcePackageFreshnessWaiver({ waivers: [expired] }, WAIVER_GATE_NOW), null);
-  assert.equal(assemblySourcePackageFreshnessWaiver({ waivers: [invalid] }, WAIVER_GATE_NOW), null);
-  assert.equal(assemblySourcePackageFreshnessWaiver({ waivers: [current] }, WAIVER_GATE_NOW), current);
-});
 
 test("polish gate blocks missing source package fingerprint when current source package exists", () => {
   const report = sourceAwareReport(validPolish());

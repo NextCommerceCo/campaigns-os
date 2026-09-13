@@ -48,7 +48,7 @@ import {
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
-import { annotateDoctorIssueCauses, formatCauseBasisLine, formatCauseSummaryLine, formatCauseTag } from "./finding-cause.mjs";
+import { annotateDoctorIssueCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import {
   announceDefaultOnTelemetry,
   CANONICAL_REMIT_SCOPE,
@@ -10548,11 +10548,7 @@ function printResult(result) {
     console.log("Actions:");
     for (const action of result.actions) console.log(`- ${action}`);
   }
-  if (result.cause_summary) {
-    console.log(formatCauseSummaryLine(result.cause_summary, { priorRunId: result.cause_summary.prior_run_id }));
-    const basis = formatCauseBasisLine(result.cause_summary);
-    if (basis) console.log(basis);
-  }
+  for (const line of formatCauseReportLines(result.cause_summary)) console.log(line);
   if (result.errors?.length) {
     console.log("Errors:");
     for (const issue of result.errors) console.log(`- ${formatIssueSummary(issue)}`);
