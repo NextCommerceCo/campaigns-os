@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.26.0+agent.15] - 2026-09-13
+## [1.26.0+agent.16] - 2026-09-13
 
 ### Changed
 
@@ -29,6 +29,39 @@ Notable supported-surface changes are recorded here.
   the order-bump evidence consumes needs adapting; a page that dims a state
   marker without hiding it now reads `unresolved` where it used to read
   `display_toggled`, which is the false misalignment going away.
+- Five documentation gaps that each cost an operator or a contributor a wrong
+  conclusion are now written down. `docs/qa-and-test-orders.md` states that a
+  checkpoint gate's `status` is the blocking axis alone: `page_kit.store_profile`
+  reports `status: pass` with `code: page_kit.store_profile.target_only` when the
+  target declares a governed field the CampaignSpec leaves empty, and `qa resolve`
+  decides `ready` against `warning_fields[]` rather than `status`, so a reader who
+  treated `pass` as clean was reading the wrong field.
+  `docs/release-ledger-authoring-guide.md` and the generated
+  `docs/orientation-contract-reference.md` separate `sequence` from `id`:
+  `sequence` is the entry's position in `entries[]` and the authoritative order,
+  `id` is an immutable label that is never renumbered, and the two diverge
+  legitimately once concurrent pull requests restamp on merge — as they already do
+  in this ledger. The authoring guide also records the norm for a fix that lives
+  entirely in policy-ignored paths (`src/` other than `src/cli.mjs`, `scripts/`,
+  tests): a same-surface CHANGELOG section and no ledger entry, because the gate
+  refuses a change item that maps to no classified path, while any `src/cli.mjs`
+  change is `cli_surface` and owes one.
+  `docs/design-source-package.md` documents the read-only source root: intake
+  only ever reads under the source root and writes its artifacts under the target
+  repository, and `screenshots[]` records may carry a `url` instead of a `path`,
+  so the gate clears from a writable target repo with no work copy of the source
+  and no capture bytes in the source tree — with the fixed manifest path and the
+  packet-relative `source_html.root` as the two mechanics to plan around. Finally,
+  `README.md` gains a "Review standards" section stating the two review rules
+  contributors kept rediscovering: a guard test includes the failing case and
+  prefers parsed-module assertions to source-substring matching, and a `catch`
+  branches on the condition it claims to handle instead of swallowing every
+  error. No behaviour changed; no command, schema, or artifact moved.
+
+## [1.26.0+agent.15] - 2026-09-13
+
+### Changed
+
 - Five documentation gaps that each cost an operator or a contributor a wrong
   conclusion are now written down. `docs/qa-and-test-orders.md` states that a
   checkpoint gate's `status` is the blocking axis alone: `page_kit.store_profile`
