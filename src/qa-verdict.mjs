@@ -112,6 +112,7 @@ export function createVerdict({
   exceptions = null,
   commercial = null,
   causeSummary = null,
+  browser = null,
 }) {
   const normalizedExceptions = Array.isArray(exceptions)
     ? exceptions
@@ -144,6 +145,15 @@ export function createVerdict({
     exceptions: normalizedExceptions,
     ...(commercial && typeof commercial === "object" && !Array.isArray(commercial)
       ? { commercial }
+      : {}),
+    // Additive, and present ONLY when the run has something to say about a
+    // requested browser pass it did not perform — today, a --browser run a
+    // blocked gate finalized before any page was rendered. Absence therefore
+    // means "this verdict makes no claim about the browser pass", not "the
+    // browser pass ran": consumers read the browser-runtime assertions and
+    // tested_urls for that, exactly as they did before the field existed.
+    ...(browser && typeof browser === "object" && !Array.isArray(browser)
+      ? { browser }
       : {}),
     // Additive, and absent on verdicts emitted before per-finding cause
     // classification existed. Consumers must tolerate its absence rather than

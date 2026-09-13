@@ -208,6 +208,31 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
 - **Readable back** — `campaigns-os telemetry list --packet <json>` lists the
   tenant scope; `campaigns-os telemetry list` with `CAMPAIGN_OPS_ADMIN_KEY` set
   (or `--admin-key-env <VAR>`) lists cross-tenant, unscoped records included.
+- **Shape-checked before it leaves the machine** — a credential is validated,
+  and its destination vetted, before a socket is opened:
+  - The resolved campaign key must look like a campaign key: 8-256 characters
+    of letters, digits, dot, dash, and underscore, one line, no whitespace.
+    A value that is *present but malformed* (a quoted key, a pasted JSON blob,
+    a URL) is refused, and the refusal names its **source** — the env var, the
+    packet field, or the CampaignSpec — and never its value. `telemetry list
+    --packet` fails fast on such a value and sends nothing; the remit rail,
+    which is non-fatal by contract, warns on stderr and sends without a tenant
+    scope. That is now distinguishable in the output from "no key was
+    configured". Consent gates the whole thing: with no send attempted
+    (consent off, or `--no-remit`) the key is never read and nothing is said.
+    `api_key_source` must additionally name a variable matching
+    `^[A-Z][A-Z0-9_]*CAMPAIGN[A-Z0-9_]*$`, so a packet cannot route an
+    arbitrary secret into the header; a variable outside that shape is refused
+    by name and its value is never read.
+  - `--proxy-base` must be `https:`. A loopback host (`localhost`,
+    `127.0.0.1`, `[::1]`) may be plain http for a local receiver, and each
+    such request prints one stderr warning that the credential travels in
+    clear. Any other plain-http base is refused before the request — so a
+    remit or verdict publish aimed at a plain-http remote proxy now fails
+    (non-fatally, recorded in `remit_error`) instead of sending the key in the
+    clear. The ops admin key keeps its stricter rule on top of this: it goes
+    only to the canonical scope, a loopback receiver, or a base the operator
+    vouched for with `--trust-proxy-base`.
 
 The public package only emits and remits; it does not cluster, route, summarize
 across runs, or create issues.

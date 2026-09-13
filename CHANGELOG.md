@@ -39,6 +39,134 @@ Notable supported-surface changes are recorded here.
   caller still using the old spelling retargets it at `standardize` and
   changes nothing else. This removes a supported command, which is why
   `surface_version` advances to 1.27.0 and the ledger entry is breaking.
+## [1.26.0+agent.23] - 2026-09-13
+
+### Fixed
+
+- The human `campaigns-os doctor` report now prints each checkpoint gate's
+  `required_actions[]`, so the remediation is on the surface an operator
+  actually reads. `doctor --json` has always carried the exact repair command
+  (or manual step) and the waiver command for every gate that still owes work,
+  and docs/build-packet.md documents them, but the text report printed only the
+  finding: an operator whose target page-kit pinned a newer campaign-cart SDK
+  than the CampaignSpec saw `Target SDK version ... does not match the
+  CampaignSpec pin ...` and no way forward, and had to re-run with `--json` or
+  read the docs to learn that a one-field pin repair or a recorded waiver
+  clears it. The report gains a `Required actions:` block below `Errors:` and
+  `Warnings:` and above `Next:`, one `- [<gate id>] <command or description>`
+  line per action, covering the same gate set `next` aggregates (the three
+  registered checkpoint gates plus the polish checkpoint gate); `--packet
+  <packet>` is substituted with the packet the run read, as the QA resolve
+  printer already does. A run whose Assembly Report is not the packet-inferred
+  default (`--report`, or a context `report_path` binding) also gets
+  `--report <inspected report>` appended to the packet-scoped commands, so the
+  remediation acts on the report the inspection read rather than on
+  `.campaign-runtime/assembly-report.json`, which `checkpoint waive` and
+  `polish capture` would otherwise resolve. A report whose gates are all clear
+  prints nothing extra, so clean runs are unchanged. `--json` output is byte-for-byte
+  unchanged — this is text-only, like the existing tiny prompts — so no
+  machine reader needs to adapt.
+
+## [1.26.0+agent.22] - 2026-09-13
+
+### Fixed
+
+- Credentials on the telemetry rails are now shape-checked and their
+  destination vetted before a socket is opened. Two holes closed. First,
+  `--proxy-base` only ever had a transport rule on `telemetry list`; the remit
+  rail and the QA verdict publish took whatever origin they were given, so
+  `--proxy-base http://some-proxy.example` put `X-Campaign-Key` on the wire in
+  the clear. Every credential-bearing request now goes through one gate
+  (`assertSecureProxyBase` in `src/remit.mjs`): `https:` passes; a loopback
+  host (`localhost`, `127.0.0.1`, `[::1]`) may be plain http for a local
+  receiver and prints one stderr warning per request that the credential
+  travels in clear; any other plain-http base — and any base that is not a URL
+  — is refused before the request, so nothing is sent. A remit or publish
+  aimed at a plain-http remote proxy therefore now fails rather than leaking;
+  on the remit rail that failure stays non-fatal and lands in `remit_error`,
+  as an unreachable receiver always has. The ops admin key keeps its stricter
+  rule on top (canonical scope, loopback, or an explicit
+  `--trust-proxy-base`). Point a plain-http staging proxy at `--proxy-base`
+  and only the credential-free spec fetch still works; give it TLS, or run it
+  on loopback, to keep remit and publish.
+- Second, a campaign key that was present but malformed — a quoted key, a
+  pasted JSON blob, a URL, a value with whitespace — was silently discarded
+  and reported as if no key had been configured at all, so an operator whose
+  `api_key_source` env var held the wrong thing was told to go add one. The
+  resolver now separates "absent" from "refused" and names the refused
+  **source** (the env var, the packet field, or the CampaignSpec) while never
+  printing the value. `telemetry list --packet` fails fast on such a value and
+  makes no request. `run-record` warns on stderr and says "the declared
+  Campaigns API key was refused on shape" instead of "no Campaigns API key
+  found", then attempts the send without a tenant scope — the remit rail is
+  non-fatal by contract, so a bad credential must not fail the run it is
+  reporting. The warning belongs to a send: under consent-off or `--no-remit`
+  the key is never read and nothing is said about it. A malformed key in the
+  packet also no longer falls through to a different source: an explicit value
+  that fails the shape gate is refused where it was declared. `api_key_source`
+  keeps its existing restriction to variable names that name a campaign key,
+  and now says so by name when it refuses one, without reading that
+  variable's value.
+
+## [1.26.0+agent.21] - 2026-09-13
+
+### Fixed
+
+- `qa run --browser` behind a blocked gate now says that the browser pass did
+  not happen. A blocked checkpoint, polish, or theme gate finalizes the verdict
+  before any page is rendered, which is the point of the gate — but the
+  resulting verdict was byte-identical to the same run without the flag (no
+  `browser-runtime` assertions, `tested_urls: []`) and stderr was empty, so an
+  operator who asked for browser QA got none and had nothing telling them so.
+  Such a run now stamps the verdict with
+  `browser: { requested: true, status: "skipped_gate_blocked", blocked_by:
+  [<gate codes>], reason }` and prints that reason once on stderr, naming the
+  gate that blocked and what clears it. That repair guidance is quoted from the
+  blocking gate's own `required_actions` rather than written at the notice, so
+  it cannot send an operator into a second blocked run — a
+  `polish.assembly_source_package_stale` blocker asks for a fresh Build, not
+  another Polish, and a waive command appears only for a state its gate
+  actually lets an operator waive. The gate decision, the assertion set and the
+  exit code are unchanged: a blocked verdict still exits `4`. A reader adapts by treating the field as additive
+  and present only for that case — its absence means the verdict makes no claim
+  about a browser pass, not that one ran, so keep reading `browser-runtime`
+  assertions and `tested_urls` for that. The field is not in the committed
+  sidecar's allowlist projection, and `--json` runs receive the stamp in the
+  emitted verdict instead of the stderr line. `docs/qa-and-test-orders.md`
+  states the behaviour.
+
+## [1.26.0+agent.20] - 2026-09-13
+
+### Fixed
+
+- `campaigns-os validate-assembly-report` now fails an Assembly Report that
+  declares a Design Source Package material fingerprint but records no
+  `stages.assembly.source_package_material_fingerprint`. The ladder already
+  refused that report: `doctor` and `next` blocked on the polish gate's
+  `polish.assembly_source_package_fingerprint_missing` and routed back to
+  Build, while the standalone validator called the same file valid, so an
+  operator or agent validating a hand-authored report got a green answer and
+  then hit a hard stop one command later. The condition is no longer written
+  twice: the gate and the validator both read
+  `assemblySourcePackageFingerprintMissing()` in `src/polish-gate.mjs`, which
+  keeps the existing carve-outs intact — a report whose Assembly is still
+  pending (the shape `prepare-build` and `start` emit, which records the
+  package fingerprint before any build has consumed it) or that has no build
+  fingerprint yet is outside the finding, a report with no design source
+  package at all is untouched, and an active Source Freshness Waiver still
+  passes. The new error codes are
+  `stages.assembly.source_package_material_fingerprint` and, for a waiver
+  record whose `expires_at` does not parse, the malformed-record condition the
+  gate blocks on as `polish.waiver_expires_at_invalid`,
+  `stages.assembly.waiver_expires_at_invalid`. The validator stops at a
+  malformed waiver record the way the gate does, so that report carries that
+  one error and the freshness question waits until the record is repaired. A
+  report that previously validated clean may now fail; record the fingerprint Build
+  consumed (or a structured waiver in `waivers[]`) exactly as the polish gate
+  already required. `doctor` output is unchanged: it reports this finding from
+  its polish gate as before, and does not list it twice. `polish capture`'s
+  report check is unchanged too: it is a shape check, and the polish gate
+  reports source freshness on the way out.
 
 ## [1.26.0+agent.19] - 2026-09-13
 

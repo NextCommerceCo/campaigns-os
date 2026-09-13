@@ -121,6 +121,20 @@ waiver), not `status`, when it chooses between `ready` and
 assertion. So read a gate's `code` and `warning_fields[]` rather than treating
 `pass` as clean.
 
+A blocked gate downgrades a requested browser pass visibly. When `--browser` was
+passed and a blocked checkpoint, polish, or theme gate finalized the run before
+any page was rendered, the verdict carries
+`browser: { requested: true, status: "skipped_gate_blocked", blocked_by: [<gate
+codes>], reason }` and the run prints that reason once on stderr, naming the
+gate and quoting that gate's own `required_actions` for what clears it (so a
+stale-assembly polish blocker asks for a fresh Build, and a waive command
+appears only where the gate is waivable). The gate decision and the exit code are unchanged (`4`, blocked);
+only the silence is. The field is emitted for that case alone, so its absence
+means the verdict makes no claim about a browser pass — read the
+`browser-runtime` assertions and `tested_urls` to tell whether one ran. It is
+not part of the committed sidecar's allowlist projection, and `--json` runs get
+the stamp in the emitted verdict instead of the stderr line.
+
 `qa resolve` remains a diagnostic command and always exits 0: it reports
 `ok: false` and `status: blocked`, prints all four gates and their safe
 repair/waiver projections, and suppresses the runtime
