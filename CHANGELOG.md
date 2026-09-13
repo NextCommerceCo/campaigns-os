@@ -240,6 +240,20 @@ is gone.
   measurement invariants are unchanged; a capture blocked this way needs a fresh
   `polish capture`, which it needed anyway.
 
+## [1.26.0+agent.14] - 2026-09-13
+
+### Fixed
+
+- `shellToken` prints a falsy value as itself. It stringified `value || ""`, so
+  a count or flag of `0`, `false` or `NaN` vanished from a printed command;
+  only `null` and `undefined` now read as no value. Review follow-up on the
+  shell-token test; the charset test pins the new cases.
+
+### Changed
+
+- The two campaign scanners drop an import left dead by the repo-scan
+  consolidation. No behaviour change.
+
 ## [1.26.0] - 2026-09-12
 
 ### Added
