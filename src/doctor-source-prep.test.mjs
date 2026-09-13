@@ -95,6 +95,9 @@ test("the Next block does not order a wrapper strip the accepted wrapper policy 
     const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
     assert.ok(doctor.next.actions.some((action) => action.includes("strip document wrappers")));
     assert.ok(!doctor.next.actions.some((action) => action.includes("repair leftover frontmatter")), "names only the repairs the findings ask for");
+  });
+});
+
 test("the theme-gate ready line states the fact the gate passed on, never the other one", () => {
   // A token-less campaign: the gate passes on theme_gate.nothing_generatable,
   // so ready[] must not say a brand layer was applied.
