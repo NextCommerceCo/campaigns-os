@@ -39,6 +39,7 @@ Notable supported-surface changes are recorded here.
   caller still using the old spelling retargets it at `standardize` and
   changes nothing else. This removes a supported command, which is why
   `surface_version` advances to 1.27.0 and the ledger entry is breaking.
+
 ## [1.26.0+agent.19] - 2026-09-13
 
 ### Changed
@@ -72,6 +73,7 @@ Notable supported-surface changes are recorded here.
   recorded measurement has to equal the projection for a hand-edited
   measurement to be catchable, and accepting a warning that does not name the
   roles it forgave would re-open the gap this change closes.
+
 ## [1.26.0+agent.18] - 2026-09-13
 
 ### Fixed
@@ -95,6 +97,7 @@ Notable supported-surface changes are recorded here.
   `warnings[]` entries under an existing code. The accept/reject test now
   lives in one place beside the package builder, so the warning cannot drift
   from the behaviour it describes.
+
 ## [1.26.0+agent.17] - 2026-09-13
 
 ### Changed
@@ -119,6 +122,7 @@ Notable supported-surface changes are recorded here.
   drop the flag; a reader that wants the disagreement gone should update the
   spec. docs/build-packet.md "Authoring-Time Hints" documents both the
   precedence and the notice.
+
 ## [1.26.0+agent.16] - 2026-09-13
 
 ### Changed
