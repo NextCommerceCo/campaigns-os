@@ -199,7 +199,7 @@ import {
   planPolishCapture,
 } from "./polish-node.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
-import { redactCaptureUrl } from "./polish-capture.mjs";
+import { POLISH_BEACON_RESOURCE_TYPES, redactCaptureUrl } from "./polish-capture.mjs";
 import {
   appendCheckpointWaiver,
   createCheckpointRegistry,
@@ -9275,8 +9275,11 @@ const POLISH_CAPTURE_TEXT_SOURCE_LIMIT = 16;
 const POLISH_CAPTURE_TEXT_INCOMPLETE_LIMIT = 64;
 const POLISH_CAPTURE_TEXT_PROBLEM_LIMIT = 16;
 const POLISH_CAPTURE_TEXT_RAW_PROBLEM_LIMIT = 64;
+const POLISH_CAPTURE_TEXT_RESOURCE_TYPE_LIMIT = 32;
 const POLISH_CAPTURE_TEXT_ACTION_LIMIT = 8;
 const SAFE_POLISH_CAPTURE_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
+// The field is documented as drawn from the beacon allowlist, so the renderer prints nothing outside it.
+const SAFE_POLISH_RESOURCE_TYPES = new Set(POLISH_BEACON_RESOURCE_TYPES);
 const SAFE_POLISH_CHECKPOINT_REASONS = new Map([
   ["polish.hidden_eager_media.capture_malformed", "Package-owned page-load evidence or its governing authority is missing, malformed, or inconsistent."],
   ["polish.hidden_eager_media.capture_stale", "Package-owned page-load evidence is stale for the current build, campaign, routes, or viewports."],
@@ -9392,9 +9395,15 @@ export function formatPolishCaptureText(result) {
       const origins = [...new Set((Array.isArray(cell?.failed_origins)
         ? cell.failed_origins.slice(0, POLISH_CAPTURE_TEXT_SOURCE_LIMIT)
         : []).map(safePolishFailedOrigin).filter(Boolean))];
+      // Which resource roles the warning class forgave. Printed beside the
+      // codes so the demotion is readable here, not only in the JSON.
+      const resourceTypes = [...new Set((Array.isArray(cell?.resource_types)
+        ? cell.resource_types.slice(0, POLISH_CAPTURE_TEXT_RESOURCE_TYPE_LIMIT)
+        : []).filter((value) => SAFE_POLISH_RESOURCE_TYPES.has(value)))].sort();
       lines.push(`- Route: ${safePolishFindingRoute(cell?.route)}`);
       lines.push(`  Viewport: ${viewport}`);
       lines.push(`  Problem codes: ${problemCodes.length ? problemCodes.join(", ") : "unavailable"}`);
+      lines.push(`  Resource types: ${resourceTypes.length ? resourceTypes.join(", ") : "unavailable"}`);
       const originTotal = Number.isSafeInteger(cell?.failed_origin_count) && cell.failed_origin_count >= 0
         ? cell.failed_origin_count
         : null;
