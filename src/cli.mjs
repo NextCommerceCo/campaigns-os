@@ -2709,10 +2709,19 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     );
     const packet = readJson(packetPath);
     const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
+    // The stage write-back targets the report the operator named, else the
+    // default location. It does not follow a recorded report_path: a report
+    // of another run of the same campaign matches on map id and slug alone,
+    // and restating this doctor's outcome into it would corrupt that run's
+    // evidence. Inspection and the stage decision above do follow it.
     const reportPath = args.report
       ? resolve(args.report)
       : join(targetRepo, ".campaign-runtime/assembly-report.json");
-    if (existsSync(reportPath)) {
+    // Restate the outcome only into the report the inspection actually read.
+    const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
+    const inspectedIsTarget = !inspectedReportPath
+      || canonicalExistingPath(resolve(dirname(packetPath), inspectedReportPath)) === canonicalExistingPath(reportPath);
+    if (inspectedIsTarget && existsSync(reportPath)) {
       const report = readJson(reportPath);
       if (assemblyReportMatchesPacket(report, packet)) {
         const command = `campaigns-os ${args._[0] || "doctor"}`;
@@ -3260,18 +3269,40 @@ export function doctorPacket(packetPath, options = {}) {
   return result;
 }
 
+// The assembly report a packet is bound to when no --report is given: the
+// path the Build Context recorded (prepare-build --report-out), resolved
+// against the target repo, else the default sidecar. `next`, packet doctor
+// and doctor's stage write-back all resolve it here so they read and write
+// the same file.
+function boundAssemblyReportPath(packet, packetPath, context, defaultPath) {
+  const recorded = optionalString(context?.report_path);
+  if (!recorded) return defaultPath;
+  const targetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+  return resolve(targetRepo, recorded);
+}
+
 function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
   const packet = readJson(packetPath);
   const sidecars = inferredBuildSidecarPaths(packet, packetPath);
   const resolvedContextPath = contextPath === undefined ? sidecars.contextPath : contextPath;
-  const resolvedReportPath = reportPath === undefined ? sidecars.reportPath : reportPath;
   const context = readJsonIfExists(resolvedContextPath);
+  // The Build Context records where prepare-build wrote the report
+  // (--report-out). `next` follows that pointer when no --report is given;
+  // doctor reads the same report so its gates and its next block cannot
+  // disagree with the ladder over which report is the campaign's.
+  const resolvedReportPath = reportPath !== undefined
+    ? reportPath
+    : boundAssemblyReportPath(packet, packetPath, context, sidecars.reportPath);
   const report = readJsonIfExists(resolvedReportPath);
   const errors = [];
   const warnings = [];
   const ready = [];
   const derived = {
     packet_path: packetPath,
+    // The report this inspection read (null when the caller switched the
+    // report off), so a writer can refuse to restate the outcome into a
+    // different file.
+    assembly_report_path: typeof resolvedReportPath === "string" ? resolvedReportPath : null,
     map_id: packet?.spec?.map_id || null,
     public_route_slug: packet?.campaign?.public_route_slug || null,
     template_family: packet?.assembly?.template_family || null,
@@ -3373,7 +3404,53 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     ready.push("Hidden eager-media checkpoint not applicable before completed assembly.");
   }
 
-  const next = buildNextStep(errors, warnings, derived, report);
+  // The same fully resolved prepare-build gate the `next` command evaluates:
+  // DSP-required packets, the recorded report path and the context/report
+  // binding checks. A weaker gate here would let doctor name setup or build
+  // while `next` still answers prepare-build.
+  // With no context on hand (doctor --report alone) the binding checks have
+  // nothing to compare and are skipped; the report itself was resolved
+  // above the way `next` resolves it.
+  // The stage decision runs over exactly the artifacts the checks ran over.
+  // A caller that named one sidecar and not the other (doctor --context C)
+  // is inspecting, and its report checks are deliberately off; its next
+  // block decides without the report too, and says so in `reason`. The
+  // ladder decision is `next`'s, which always reads the bound report.
+  const gateTargetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+  const prepareBuildGate = prepareBuildGateIssue(report, {
+    required: isObject(packet?.design_source_package),
+    reportPath: resolvedReportPath,
+    bindingIssues: isObject(packet) && context
+      ? nextPrepareBuildBindingIssues({
+          packet,
+          packetPath,
+          context,
+          contextPath: resolvedContextPath,
+          report,
+          reportPath: resolvedReportPath,
+          targetRepo: gateTargetRepo,
+          explicitReport: typeof reportPath === "string",
+        })
+      : [],
+  });
+  // Portable output (outputBaseDir set: start's generated doctor output,
+  // doctor --strip-paths) rebases them onto that base like every other path
+  // in the output, so a relocated handoff does not name the original machine.
+  const sidecarArg = (path) => shellToken(outputBaseDir ? relFromDir(outputBaseDir, path) : path);
+  const sidecarArgs = [
+    ...(typeof contextPath === "string" ? [` --context ${sidecarArg(contextPath)}`] : []),
+    ...(typeof reportPath === "string" ? [` --report ${sidecarArg(reportPath)}`] : []),
+  ].join("");
+  const next = buildNextStep(errors, warnings, derived, report, packet, prepareBuildGate, { sidecarArgs });
+  // Portable output: a sidecar path the picker's reason names is rebased
+  // like every other path in the output.
+  if (outputBaseDir && typeof next?.reason === "string") {
+    for (const path of [resolvedContextPath, resolvedReportPath]) {
+      if (typeof path === "string" && next.reason.includes(path)) {
+        next.reason = next.reason.split(path).join(relFromDir(outputBaseDir, path));
+      }
+    }
+  }
   const status = errors.length
     ? "blocked"
     : checkpointExceptionPresent(derived)
@@ -5772,7 +5849,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
 // Source preparation check (#262). Runs at every doctor evaluation — start and
 // build embed doctor, so this is the start preflight the issue asks for while
 // staying re-checkable after source edits. Blocking findings surface as doctor
-// errors, which drive status "blocked" and next.stage "collect-inputs" exactly
+// errors, which drive status "blocked" and a doctor-blocked / prepare-build next stage exactly
 // like other unprepared-input states. Detection and severity policy live in
 // src/source-prep.mjs; the codes and fixes are documented in
 // docs/source-adapters.md "Source preparation check".
@@ -8461,34 +8538,34 @@ function sourcePreparationAction(errors, warnings) {
   return `Prepare the mapped source HTML for page-kit ingestion — ${listed} (docs/quickstart.md "Prepare Raw HTML Source") — then rerun campaigns-os doctor.`;
 }
 
-function buildNextStep(errors, warnings, derived, report = null) {
+// Owner and skill for each stage the picker can name. The doctor's `next`
+// block is a projection of the same picker the `next` command runs
+// (pickNextStage), so the two can no longer disagree about which stage comes
+// next: doctor used to carry its own decider with its own vocabulary
+// (collect-inputs / assembly / complete) and its own gating, which knew
+// neither purchase proof nor the prepare-build gate, and listed the stage it
+// recommended inside blocked_stages.
+export const DOCTOR_NEXT_STAGE_OWNERS = Object.freeze({
+  "prepare-build": { owner: "operator", default_skill: "next-campaigns-os" },
+  "doctor-blocked": { owner: "operator", default_skill: "next-campaigns-os" },
+  setup: { owner: "setup", default_skill: "next-campaigns-os-setup" },
+  build: { owner: "build", default_skill: "next-campaigns-build" },
+  polish: { owner: "polish", default_skill: "next-campaigns-polish" },
+  deploy: { owner: "operator", default_skill: "next-campaigns-os" },
+  qa: { owner: "qa", default_skill: "next-campaigns-qa" },
+  done: { owner: "qa", default_skill: "next-campaigns-os" },
+});
+
+// The code -> action strings doctor prints under `Next:`. They describe the
+// repairs the findings ask for and are independent of which stage the picker
+// names, so they survive the picker consolidation unchanged.
+function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packetRef = derived.packet_path || "<packet>" }) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
-  const assemblyStatus = report?.stages?.assembly?.status || "";
-  const deployStatus = report?.stages?.deploy?.status || "";
-  const qaStatus = report?.stages?.qa?.status || "";
-  const assemblyComplete = assemblyStatus.startsWith("completed");
-  const polishGate = derived.polish_gate || evaluatePolishGate({ report });
-  const polishCheckpointGate = derived.polish_checkpoint_gate || null;
-  const polishBlocked = assemblyComplete
-    && (polishGate.status === "blocked" || polishCheckpointGate?.status === "blocked");
-  const polishSatisfied = assemblyComplete
-    && ["pass", "waived"].includes(polishGate.status)
-    && ["pass", "waived"].includes(polishCheckpointGate?.status);
   const onlyPolishErrors = doctorErrorsAreOnlyPolishGate(errors);
-  const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
-    || Boolean(deployUrlFromReportOutputs(report));
-  const qaRecorded = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => qaStatus.startsWith(prefix));
-  const blockedStages = [];
   const actions = [];
   if (errors.length && !onlyPolishErrors) {
     actions.push("Resolve packet blockers before assembly.");
   }
-  if (codes.has("deploy.preview_url") && !deploySatisfied) blockedStages.push("qa");
-  if (codes.has("scope.runtime_qa_blocked")) {
-    blockedStages.push("checkout-launch-ready");
-    blockedStages.push("test-orders");
-  }
-  if (codes.has("campaign.allowed_domains_confirmed")) blockedStages.push("runtime-sdk-verification");
   if (codes.has("assembly.template_lock")) actions.push("Lock a template family before commerce wiring.");
   if (codes.has("spec.page_url_html_extension")) {
     actions.push("Update CampaignSpec page_url values to Page Kit public routes such as landing/ or checkout/, not source filenames like landing.html.");
@@ -8531,11 +8608,13 @@ function buildNextStep(errors, warnings, derived, report = null) {
   if (codes.has("scope.runtime_qa_blocked")) {
     actions.push("Keep checkout/order-proof QA blocked until the out-of-scope runtime pages are built or explicitly delegated to an existing downstream URL.");
   }
-
+  // A recorded setup is not a live scaffold. The picker still names build
+  // (and `next build` refuses with next.build.setup), so the recovery is
+  // spelled out here rather than by disagreeing with the picker.
+  if (codes.has("page_kit.scaffold_required")) {
+    actions.push(`Target campaign output directory is missing; run campaigns-os next setup --packet ${packetRef} before build.`);
+  }
   if (polishBlocked) {
-    blockedStages.push("polish");
-    blockedStages.push("deploy");
-    blockedStages.push("qa");
     if (polishGate.status === "blocked") {
       actions.push(`${polishGate.reason} Run next-campaigns-polish and record structured evidence before deploy/QA handoff.`);
     }
@@ -8543,75 +8622,98 @@ function buildNextStep(errors, warnings, derived, report = null) {
       actions.push(`${polishCheckpointGate.reason} Run campaigns-os polish capture before marking Polish complete.`);
     }
   }
+  return actions;
+}
 
-  if (errors.length && !onlyPolishErrors) {
-    return {
-      stage: "collect-inputs",
-      status: "blocked",
-      owner: "operator",
-      default_skill: "next-campaigns-os",
-      actions,
-      blocked_stages: ["assembly", "polish", "deploy", "qa"],
-    };
+// Doctor's `next` block: the `next` command's picker, projected. `stage` and
+// `reason` come from pickNextStage over the same report, doctor result and
+// purchase-proof summary the `next` command reads; `blocked_stages` lists the
+// stages AFTER the picked one that cannot run until it clears, never the
+// picked stage itself; `command` is always present.
+function buildNextStep(errors, warnings, derived, report = null, packet = null, prepareBuildGate = prepareBuildGateIssue(report), { sidecarArgs = "" } = {}) {
+  const polishGate = derived.polish_gate || evaluatePolishGate({ report });
+  const polishCheckpointGate = derived.polish_checkpoint_gate || null;
+  const assemblyComplete = String(report?.stages?.assembly?.status || "").startsWith("completed");
+  const polishBlocked = assemblyComplete
+    && (polishGate.status === "blocked" || polishCheckpointGate?.status === "blocked");
+  const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
+  const doctor = { ok: errors.length === 0, errors, warnings, derived };
+  const purchaseProof = report ? assessPurchaseProofCoverage({ packet, report }) : null;
+  const picked = pickNextStage(report, doctor, prepareBuildGate, purchaseProof);
+  // The picker's vocabulary and this table must not drift apart: a stage the
+  // table does not know would otherwise be relabelled as an operator step and
+  // sliced into the whole ladder. Fail loudly instead.
+  if (!Object.hasOwn(DOCTOR_NEXT_STAGE_OWNERS, picked.stage)) {
+    throw new Error(`Doctor has no owner for next stage "${picked.stage}"; add it to DOCTOR_NEXT_STAGE_OWNERS.`);
   }
-  if (polishBlocked) {
-    return {
-      stage: "polish",
-      status: "blocked",
-      owner: "polish",
-      default_skill: "next-campaigns-polish",
-      command: `campaigns-os next polish --packet ${derived.packet_path}`,
-      actions,
-      blocked_stages: [...new Set(blockedStages)],
-    };
-  }
-  if (assemblyComplete && polishSatisfied) {
-    const needsDeploy = codes.has("deploy.preview_url") && !deploySatisfied;
-    if (!needsDeploy && qaRecorded) {
-      return {
-        stage: blockedStages.includes("test-orders") ? "test-orders" : "complete",
-        status: blockedStages.includes("test-orders") ? "blocked" : readinessStatus(warnings, derived),
-        owner: blockedStages.includes("test-orders") ? "operator" : "qa",
-        default_skill: blockedStages.includes("test-orders") ? "next-campaigns-qa" : "next-campaigns-os",
-        command: blockedStages.includes("test-orders")
-          ? `campaigns-os next qa --packet ${derived.packet_path} --test-order common`
-          : undefined,
-        actions: actions.length
-          ? actions
-          : blockedStages.includes("test-orders")
-            ? ["Out-of-scope runtime pages block checkout/order proof. Build or delegate those pages first; test orders themselves need no permission (test cards bypass the gateway)."]
-            : ["Campaign assembly, polish, deploy, and QA checkpoints are recorded."],
-        blocked_stages: [...new Set(blockedStages)],
-      };
-    }
-    return {
-      stage: needsDeploy ? "deploy" : "qa",
-      status: readinessStatus(warnings, derived),
-      owner: needsDeploy ? "operator" : "qa",
-      default_skill: needsDeploy ? "next-campaigns-os" : "next-campaigns-qa",
-      command: needsDeploy
-        ? `Create a deploy preview for packet ${derived.packet_path}`
-        : `campaigns-os next qa --packet ${derived.packet_path}`,
-      actions: actions.length
-        ? actions
-        : needsDeploy
-          ? ["Create a preview or production URL, then run QA resolve before posting a verdict."]
-          : ["Run next-campaigns-qa against the deployed campaign URL."],
-      blocked_stages: [...new Set(blockedStages)],
-    };
-  }
+  // An explicit --context / --report is carried into every recommended
+  // command, so a recovery reads the same artifacts the recommendation did.
+  const packetRef = `${derived.packet_path || "<packet>"}${sidecarArgs}`;
+  const actions = doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packetRef });
+  const deployStatus = String(report?.stages?.deploy?.status || "");
+  const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
+    || Boolean(deployUrlFromReportOutputs(report));
+  // qa is not runnable without a URL to test (`next qa` refuses with
+  // next.qa.deploy_url), so a picked qa with no deploy URL is blocked too.
+  const qaNeedsUrl = codes.has("deploy.preview_url") && !deploySatisfied;
+  // build is not runnable over a missing scaffold either (`next build`
+  // refuses with next.build.setup); the action list names the setup step.
+  // done is not ready while the runtime scope is partial: checkout launch
+  // and test orders are still owed, whatever the ladder's stages say.
+  const blocked = picked.stage === "doctor-blocked" || picked.stage === "prepare-build" || picked.blocked === true
+    || (picked.stage === "qa" && qaNeedsUrl)
+    || (picked.stage === "build" && derived.scaffold_required === true)
+    || (picked.stage === "done" && codes.has("scope.runtime_qa_blocked"));
+  // Stages behind the picked one. done has none; the two pre-ladder states
+  // block the whole ladder; a ladder stage blocks what follows it.
+  const later = picked.stage === "done"
+    ? []
+    : picked.stage === "doctor-blocked" || picked.stage === "prepare-build"
+      ? [...NEXT_STAGE_ORDER]
+      : NEXT_STAGE_ORDER.includes(picked.stage)
+        ? NEXT_STAGE_ORDER.slice(NEXT_STAGE_ORDER.indexOf(picked.stage) + 1)
+        : [];
+  // Scope markers that are not ladder stages but that readers key on: a
+  // partial runtime scope blocks checkout launch readiness and test orders
+  // whatever stage comes next, and unconfirmed allowed domains block the
+  // runtime SDK verification.
+  const scopeMarkers = [
+    ...(codes.has("scope.runtime_qa_blocked") ? ["checkout-launch-ready", "test-orders"] : []),
+    ...(codes.has("campaign.allowed_domains_confirmed") ? ["runtime-sdk-verification"] : []),
+  ];
+  const gateBlocked = [
+    ...(polishBlocked ? NEXT_STAGE_ORDER.slice(NEXT_STAGE_ORDER.indexOf("polish")) : []),
+    // QA cannot run against no URL: `next qa` refuses with next.qa.deploy_url.
+    ...(qaNeedsUrl ? ["qa"] : []),
+  ];
+  const owners = DOCTOR_NEXT_STAGE_OWNERS[picked.stage];
+  // An explicit --context / --report is carried into the recommended
+  // command, so the recovery reads the same artifacts the recommendation did.
+
+  // prepare-build is not a `next <stage>` argument: the stage-less `next`
+  // is what prints the recovery actions for it, and it is also the right
+  // call after a doctor-blocked repair or at done.
+  const command = picked.stage === "doctor-blocked"
+    ? `campaigns-os doctor --packet ${packetRef}`
+    : picked.stage === "prepare-build" || picked.stage === "done"
+      ? `campaigns-os next --packet ${packetRef}`
+      : `campaigns-os next ${picked.stage} --packet ${packetRef}`;
+  const fallbackAction = picked.stage === "done"
+    ? "All stages are recorded as terminal; run campaigns-os next to confirm the closeout actions."
+    : `Run ${command}.`;
   return {
-    stage: derived.scaffold_required ? "setup" : "assembly",
-    status: readinessStatus(warnings, derived),
-    owner: derived.scaffold_required ? "setup" : "build",
-    default_skill: derived.scaffold_required ? "next-campaigns-os-setup" : "next-campaigns-build",
-    command: `campaigns-os next ${derived.scaffold_required ? "setup" : "build"} --packet ${derived.packet_path}`,
-    actions: actions.length ? actions : [
-      derived.scaffold_required
-        ? "Run next-campaigns-os-setup, then next-campaigns-build, polish, deploy, and QA."
-        : "Run next-campaigns-build, then polish, deploy, and QA.",
-    ],
-    blocked_stages: [...new Set(blockedStages)],
+    stage: picked.stage,
+    status: blocked ? "blocked" : readinessStatus(warnings, derived),
+    owner: owners.owner,
+    default_skill: owners.default_skill,
+    command,
+    reason: picked.reason,
+    actions: actions.length ? actions : [fallbackAction],
+    // Gate-blocked stages stay listed even when the recommended stage is
+    // runnable (a Design Source Package change after assembly names build,
+    // which is allowed, while polish, deploy and qa stay refused).
+    blocked_stages: [...new Set([...(blocked ? later : []), ...gateBlocked, ...scopeMarkers])]
+      .filter((stage) => stage !== picked.stage),
   };
 }
 

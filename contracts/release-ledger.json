@@ -2191,6 +2191,51 @@
         }
       ],
       "entry_sha256": "38bafcb82e76c3cecc274d2ee010c9846ebbe544b574b45f597adda4f1a48a68"
+    },
+    {
+      "id": "RL-0053",
+      "sequence": 53,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.11",
+      "changelog_sha256": "3318781a52646b5a8285d324f8c7f7e07886cda61be03b0578be88c59b97aa80",
+      "agent_impact": "doctor --json next.stage now uses the same vocabulary and decision as campaigns-os next (prepare-build, doctor-blocked, setup, build, polish, deploy, qa, done) instead of collect-inputs / assembly / complete; next.command is always present; next.blocked_stages never contains next.stage; next.reason carries the picker's reason. A reader that branched on next.stage === 'collect-inputs' must branch on 'doctor-blocked' or 'prepare-build'; on 'assembly', 'build'; on 'complete', 'done'. Everything else on the block (owner, default_skill, status, actions[]) keeps its meaning. doctor invoked with only --context or only --report decides its next block over the artifacts it checked (the other sidecar stays off, as before); read campaigns-os next for the ladder decision over the bound report.",
+      "compatibility": "breaking",
+      "migration": "Rename the stage literals in any doctor.next consumer: collect-inputs -> doctor-blocked | prepare-build, assembly -> build, complete -> done. Or read campaigns-os next --json, which is now what doctor.next projects. Consumers of next.command: prepare-build and done recommend the stage-less campaigns-os next --packet <packet>.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor's next block is a projection of pickNextStage: picker vocabulary, command always present, blocked_stages excludes the picked stage, reason from the picker."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Steps 7 and 8 read doctor's next block by the picker's stage names (doctor-blocked / prepare-build; build). Version 1.0.9."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os 1.0.8 -> 1.0.9."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Step 3 names doctor-blocked / prepare-build instead of collect-inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "The no-proof routing paragraph says next and doctor.next both route to prepare-build."
+        }
+      ],
+      "entry_sha256": "7f8072738a6200727ea172cbed10685f768e1d70f50b998aa067c3137cee9bd6"
     }
   ]
 }

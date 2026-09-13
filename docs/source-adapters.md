@@ -108,8 +108,9 @@ slot in the Doctor Check Registry (phase `source`) on every mapped
 `source_html.pages[].path` file, so `start` and `build` — which embed doctor —
 gate on it before assembly, and a plain `campaigns-os doctor` re-checks the
 current files after source edits. Blocking findings are doctor **errors**: they
-set status `blocked` and `next.stage: "collect-inputs"` like any other
-unprepared input. The check is scoped to the certified template families'
+set status `blocked` and make doctor's `next` block name the same stage the
+`next` command would (`prepare-build` while the prepare-build stage records
+the blockers, `doctor-blocked` otherwise), like any other unprepared input. The check is scoped to the certified template families'
 page-kit ingestion expectations; it is not a general HTML linter.
 
 | Code | Severity | Meaning and fix |

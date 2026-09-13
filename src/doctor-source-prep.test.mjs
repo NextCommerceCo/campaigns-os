@@ -6,6 +6,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { DOCTOR_NEXT_STAGE_OWNERS } from "./cli.mjs";
+import { NEXT_STAGE_ORDER } from "./orchestration-stage-contract.mjs";
+
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 const UNPREPARED_FIXTURES = resolve(ROOT, "fixtures/source-prep/unprepared");
@@ -75,6 +78,12 @@ function withStartedBuild(sourcePages, run, { extraArgs = [], manifest = null } 
   }
 }
 
+test("every stage the next picker can name has a doctor owner", () => {
+  // The picker's vocabulary: the two pre-ladder states, the ladder, and done.
+  const pickerStages = ["prepare-build", "doctor-blocked", ...NEXT_STAGE_ORDER, "done"];
+  assert.deepEqual(Object.keys(DOCTOR_NEXT_STAGE_OWNERS).sort(), [...pickerStages].sort());
+});
+
 test("the Next block does not order a wrapper strip the accepted wrapper policy makes wrong", () => {
   const wrapped = {
     ...PREPARED_PAGES,
@@ -130,8 +139,13 @@ test("doctor blocks unprepared source with actionable preparation codes", () => 
     assert.equal(errorCodes.has("source_html.prep.frontmatter_residue"), true);
     assert.equal(warningCodes.has("source_html.prep.internal_link_unrooted"), true);
 
-    assert.equal(doctor.next.stage, "collect-inputs");
+    // Doctor's next block is a projection of the `next` command's picker, so
+    // the two name the same stage for the same packet.
+    const next = runCliJson(["next", "--packet", packetPath, "--json"]);
+    assert.equal(doctor.next.stage, next.stage);
     assert.equal(doctor.next.status, "blocked");
+    assert.equal(typeof doctor.next.command, "string");
+    assert.ok(!doctor.next.blocked_stages.includes(doctor.next.stage), "the picked stage is never inside its own blocked_stages");
     assert.ok(doctor.next.actions.some((action) => action.includes("Prepare Raw HTML Source")));
 
     const wrapperError = doctor.errors.find((issue) => issue.code === "source_html.prep.document_wrapper");

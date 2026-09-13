@@ -4,7 +4,7 @@ The happy path is intentionally tight:
 
 1. Export a saved local CampaignSpec JSON from Campaign Map Builder, including Map ID and public route slug.
 2. Run `campaigns-os start` with the CampaignSpec, prepared source files, target page-kit repo, and template family.
-3. Treat doctor as the first gate. If it returns `collect-inputs`, stop and resolve the named blocker.
+3. Treat doctor as the first gate. If its `next` block says `doctor-blocked` or `prepare-build` (the same stage names `campaigns-os next` uses), stop and resolve the named blocker.
 4. Run setup when doctor asks for setup; otherwise continue to assembly.
 5. Assemble the page-kit campaign from starter-template contracts, not from copied demo commerce values.
 6. Run page-kit build plus SDK/template lint and record results in the assembly report.

@@ -416,9 +416,13 @@ test("polish lifecycle gate blocks doctor, next, and qa until distinct evidence 
     assert.equal(doctor.derived?.polish_gate?.status, "blocked");
     assert.match((doctor.errors || []).find((issue) => issue.code === "polish.evidence_missing").message, /Polish evidence missing for current build/);
     assert.equal(doctor.next?.status, "blocked");
-    assert.equal((doctor.next?.blocked_stages || []).includes("polish"), true);
+    // The picked stage is the one to run, so it is never inside its own
+    // blocked_stages; the stages behind it are.
+    assert.equal(doctor.next?.stage, "polish");
+    assert.equal((doctor.next?.blocked_stages || []).includes("polish"), false);
     assert.equal((doctor.next?.blocked_stages || []).includes("deploy"), true);
     assert.equal((doctor.next?.blocked_stages || []).includes("qa"), true);
+    assert.equal(typeof doctor.next?.command, "string");
 
     const next = runCliJson(["next", "--packet", packetPath, "--report", reportPath, "--json"]);
     assert.equal(next.ok, true);

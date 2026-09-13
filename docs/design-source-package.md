@@ -356,7 +356,7 @@ qualifying primary-design claim with linked `desktop` and `mobile`
 `DESIGN_SOURCE_PACKAGE_NOT_READY` error per blocking reason; the blocked
 `capture-<surface>-<viewport>` Source TODOs are themselves blocking reasons, so a
 four-page funnel with no proof reports twelve. `next` routes back to
-`collect-inputs`. Nothing is wrong with the run: the package is coherent and
+`prepare-build`, and doctor's `next` block says the same. Nothing is wrong with the run: the package is coherent and
 durable, and it is telling you that the source material arrived without visual
 proof.
 

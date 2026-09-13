@@ -101,6 +101,23 @@ test("a doctor re-run that restates the same outcome leaves the Assembly Report 
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("standalone doctor does not restate its outcome into a report it did not inspect", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  const identity = { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug };
+  // The context records a custom report; a same-campaign report also sits at the default location.
+  writeFileSync(join(dir, ".campaign-runtime/build-context.json"), JSON.stringify({ report_path: "custom-report.json" }));
+  writeFileSync(join(dir, "custom-report.json"), JSON.stringify({ identity, stages: {} }));
+  const defaultReport = JSON.stringify({ identity, stages: { doctor: { stage: "doctor", status: "pending", inputs: [], outputs: [], commands: [], blockers: [], warnings: [] } } });
+  writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), defaultReport);
+
+  doctorCommand({ packet: packetPath, _: ["doctor"] });
+  assert.equal(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"), defaultReport, "the default report is untouched");
+  assert.equal(JSON.parse(readFileSync(join(dir, "custom-report.json"), "utf8")).stages.doctor, undefined, "the inspected custom report is not written either");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("standalone doctor executes its packet inspection once when updating the stage ledger", () => {
   const { dir, packetPath } = selfTargetPacketFixture();
   const packet = JSON.parse(readFileSync(packetPath, "utf8"));
