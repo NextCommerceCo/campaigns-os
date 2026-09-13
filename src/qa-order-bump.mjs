@@ -46,7 +46,11 @@
 // page's CSS (`hiddenByAMatchingRule`) rather than assumed from the family
 // name. That is what keeps a persistent box out of it: a box nothing hides is
 // not display-toggled, and reading its visibility as "checked" would fail a
-// correctly declined bump.
+// correctly declined bump. For the same reason that walk counts only rules
+// that hide outright: a rule dimming a marker to `opacity: 0.4` leaves it on
+// screen, so it is a style and not a state affordance. The rendered read still
+// treats a faded marker as too faint to read a tick off; the two questions
+// differ, and only the rule walk demands an exact `opacity: 0`.
 //
 // A rendered marker carrying no positive signal is reported as unresolved, not
 // as checked and not as unchecked. The harness cannot read that page's state
@@ -66,30 +70,44 @@ export const ORDER_BUMP_MARKER_FAMILIES = Object.freeze([
 ]);
 
 // Containers a marker may be nested in; the container must render too, so a tick
-// inside a collapsed wrapper is not read as shown.
-export const ORDER_BUMP_MARKER_CONTAINERS = Object.freeze([
-  ".checkbox__icon",
-  ".bump-check",
-  "[data-next-toggle-check]",
-  "[os-component='check']",
-]);
+// inside a collapsed wrapper is not read as shown. A marker's wrapper is drawn
+// from the same vocabulary as the marker itself — a `.checkbox__icon` box
+// holding an `[os-component="check"]` tick is the shape this exists for — so
+// this is the family list, not a second copy of it: two copies drifted apart
+// once already, and a family added to one but not the other would resolve a
+// nested tick and then judge it by the wrong box. Order is immaterial here,
+// unlike in the family list: the selectors are joined into one `closest()`
+// query, which resolves by tree position rather than by selector order.
+export const ORDER_BUMP_MARKER_CONTAINERS = ORDER_BUMP_MARKER_FAMILIES;
 
 // Elements that can never be a state marker, whatever they match: the toggle's
 // own form control (read separately as `inputChecked`) and anything the author
 // removed from rendering outright.
 export const ORDER_BUMP_MARKER_EXCLUDED = "input, select, textarea, option";
 
+// The accepted-state fill used by the shared checkout CSS, as a computed
+// `background-color` string — `getComputedStyle` always reports an opaque
+// colour in this `rgb(r, g, b)` form, so the comparison is a string equality
+// and the constant has to be written the way the browser serialises it. It is
+// the `fill` family's whole vocabulary: a marker painted this colour is a
+// ticked marker. Deliberately a constant of this module rather than a value
+// read from a brand contract — the check is asking what the checkout CSS in
+// front of the buyer actually paints, and sourcing it from a theme would make
+// the answer move whenever the theme does.
+export const ORDER_BUMP_ACCEPTED_FILL_COLOR = "rgb(45, 148, 127)";
+
 export const ORDER_BUMP_PROBE_INPUT = Object.freeze({
   toggleSelector: ORDER_BUMP_TOGGLE_SELECTOR,
   markerFamilies: ORDER_BUMP_MARKER_FAMILIES,
   markerContainers: ORDER_BUMP_MARKER_CONTAINERS,
   markerExcluded: ORDER_BUMP_MARKER_EXCLUDED,
+  acceptedFillColor: ORDER_BUMP_ACCEPTED_FILL_COLOR,
 });
 
 // Returns the `page.evaluate` body. Exported as a factory so the browser proof
 // can drive the same function the QA runner does, instead of a copy of it.
 export function orderBumpEvidenceScript() {
-  return ({ toggleSelector, markerFamilies, markerContainers, markerExcluded }) => {
+  return ({ toggleSelector, markerFamilies, markerContainers, markerExcluded, acceptedFillColor }) => {
     const hasContent = (value) => Boolean(value) && !["none", "normal", '""', "''"].includes(value);
 
     // The one list of declarations that remove an element from view. Both the
@@ -100,9 +118,31 @@ export function orderBumpEvidenceScript() {
     // unreadable instead of state-toggled. Reads through getPropertyValue
     // because a rule's own style leaves unset properties empty, which every
     // test below treats as "not hidden".
-    const hiddenBy = (style) => style.getPropertyValue("display") === "none"
+    //
+    // `opacity` is the one declaration the two callers must weigh differently,
+    // so it is passed in rather than fixed here. `display` and `visibility`
+    // have no middle ground; opacity does, and the two callers are asking
+    // different questions about it (see the two wrappers below).
+    const hiddenBy = (style, opacityHides) => style.getPropertyValue("display") === "none"
       || ["hidden", "collapse"].includes(style.getPropertyValue("visibility"))
-      || Number.parseFloat(style.getPropertyValue("opacity") || "1") <= 0.5;
+      || opacityHides(Number.parseFloat(style.getPropertyValue("opacity") || "1"));
+
+    // What the buyer can see. An element faded to a fifth of its colour is not
+    // something a buyer reads a tick off, so the rendered test treats anything
+    // at or below half opacity as hidden. The threshold is a judgement about
+    // legibility, which is why it belongs only here.
+    const FADED_OUT_AT_OR_BELOW = 0.5;
+    const hiddenFromView = (style) => hiddenBy(style, (value) => value <= FADED_OUT_AT_OR_BELOW);
+
+    // What a stylesheet rule *declares*. The rule walk is not asking whether
+    // the buyer can see the element; it is asking whether a rule removes the
+    // element from rendering, because that is the display-toggled family's
+    // signature. `opacity: 0.4` is a dimmed style, not a hiding one — a
+    // greyed-out but perfectly visible marker would otherwise be read as a
+    // state-toggled tick and report a correctly declined bump as misaligned.
+    // Only `opacity: 0` removes a tick the way `display: none` does, so only
+    // an exact zero counts here.
+    const hiddenByDeclaration = (style) => hiddenBy(style, (value) => value === 0);
 
     // The marker's `::after`, read once for both jobs it does here. A tick that
     // is absolutely positioned can render while its host box measures zero, so
@@ -123,7 +163,7 @@ export function orderBumpEvidenceScript() {
         return Number.isFinite(parsed) ? parsed > 0 : true;
       };
       return {
-        shown: !hiddenBy(after),
+        shown: !hiddenFromView(after),
         boxed: boxed(after.width) && boxed(after.height),
       };
     };
@@ -138,7 +178,7 @@ export function orderBumpEvidenceScript() {
       if (!(element instanceof Element) || element.hidden) return null;
       if (element.closest("[hidden]")) return null;
       const style = getComputedStyle(element);
-      return hiddenBy(style) ? null : style;
+      return hiddenFromView(style) ? null : style;
     };
 
     const hasBox = (element) => {
@@ -215,7 +255,7 @@ export function orderBumpEvidenceScript() {
             if (!groupApplies(rule)) continue;
             if (walk(Array.from(rule.cssRules))) return true;
           }
-          if (!rule.selectorText || !rule.style || !hiddenBy(rule.style)) continue;
+          if (!rule.selectorText || !rule.style || !hiddenByDeclaration(rule.style)) continue;
           try {
             // Pseudo-element selectors throw here; they are not this family.
             if (element.matches(rule.selectorText)) return true;
@@ -250,7 +290,7 @@ export function orderBumpEvidenceScript() {
       const tick = pseudoTick(marker);
       if (tick) return { signal: "pseudo", checked: tick.shown };
       if (/check|\u2713/.test(marker.textContent || "")) return { signal: "glyph", checked: true };
-      if (style.backgroundColor === "rgb(45, 148, 127)") return { signal: "fill", checked: true };
+      if (style.backgroundColor === acceptedFillColor) return { signal: "fill", checked: true };
       if (hiddenByAMatchingRule(marker)) return { signal: "display_toggled", checked: true };
       return null;
     };

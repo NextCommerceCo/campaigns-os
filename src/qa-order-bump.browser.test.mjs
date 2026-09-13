@@ -68,7 +68,7 @@ if (!available) {
 
 browserTest("an accepted bump resolves its rendered tick, not the toggle's own aria-hidden checkbox, and reads checked", async () => {
   const { toggles } = await bumpEvidence();
-  assert.equal(toggles.length, 9, "all nine visible toggles are read");
+  assert.equal(toggles.length, 11, "all eleven visible toggles are read");
 
   const accepted = toggles.find((toggle) => toggle.packageId === "4");
   assert.equal(accepted.active, true, "the card carries next-in-cart");
@@ -200,6 +200,40 @@ browserTest("an unstyled tick sized by its own content is read on a zero-sized h
   // Nothing gives this ::after a width or a height, so both compute to `auto`.
   // Reading `auto` as zero would call a visible tick not_rendered.
   assert.equal(accepted.markerSignal, "pseudo", "an auto-sized tick still occupies a box");
+  assert.equal(accepted.markerChecked, true);
+  assert.equal(accepted.statesAgree, true);
+});
+
+browserTest("a rule that only dims a marker is not evidence of a state-toggled tick", async () => {
+  const { toggles } = await bumpEvidence();
+  const declined = toggles.find((toggle) => toggle.packageId === "13");
+
+  assert.equal(declined.active, false);
+  assert.equal(declined.markerFamily, "[data-next-toggle-check]");
+  assert.equal(declined.markerTag, "span");
+  // A base rule dims this marker to `opacity: 0.4` and a more specific rule
+  // restores it, so the marker is plainly visible on screen. Reading the dim
+  // declaration as a way of hiding a tick makes this declined bump report a
+  // rendered tick and therefore a misalignment that is not there.
+  assert.notEqual(declined.markerSignal, "display_toggled", "dimming a marker is a style, not a state affordance");
+  assert.equal(declined.markerSignal, "unresolved", "found and rendered, but nothing says which state it is in");
+  assert.equal(declined.markerReadable, false);
+  assert.equal(declined.markerChecked, false);
+  assert.equal(declined.markerAgrees, true);
+  assert.equal(declined.statesAgree, true);
+});
+
+browserTest("a tick faded out entirely by a rule is a state-toggled tick", async () => {
+  const { toggles } = await bumpEvidence();
+  const accepted = toggles.find((toggle) => toggle.packageId === "14");
+
+  assert.equal(accepted.active, true);
+  assert.equal(accepted.markerFamily, "[data-next-toggle-check]");
+  // The other side of the same threshold: `opacity: 0` removes a tick as
+  // completely as `display: none` does, so tightening the rule walk to an
+  // exact zero must not stop reading this one.
+  assert.equal(accepted.markerSignal, "display_toggled", "opacity: 0 hides a tick outright");
+  assert.equal(accepted.markerReadable, true);
   assert.equal(accepted.markerChecked, true);
   assert.equal(accepted.statesAgree, true);
 });

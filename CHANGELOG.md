@@ -2,6 +2,34 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.15] - 2026-09-13
+
+### Changed
+
+- The `browser-order-bump-state` marker vocabulary now lives in one list, and
+  the stylesheet-rule walk no longer reads a dimmed marker as a hidden one.
+  Two exported constants held the same four marker selectors — the ordered
+  family list and the container list a nested tick's wrapper is matched
+  against — so a family added to one and not the other would resolve a marker
+  and then judge it by the wrong box; `ORDER_BUMP_MARKER_CONTAINERS` is now
+  derived from `ORDER_BUMP_MARKER_FAMILIES` rather than repeating it (order is
+  immaterial to a container list, which is joined into a single `closest()`
+  query). Separately, one `opacity <= 0.5` threshold served both the rendered
+  read and the rule walk, which are asking different questions: the rendered
+  read asks whether a buyer can see the marker, and half opacity or less is
+  too faint to read a tick off; the rule walk asks whether a rule removes the
+  marker from rendering, which is the display-toggled family's signature. A
+  rule dimming a marker to `opacity: 0.4` leaves it on screen, so counting it
+  reported a correctly declined bump as misaligned. The rule walk now requires
+  an exact `opacity: 0`; the rendered read keeps its threshold. The
+  accepted-state fill is now the documented `ORDER_BUMP_ACCEPTED_FILL_COLOR`
+  constant, passed through the probe input instead of sitting inline as a bare
+  colour literal, and the fixture README records both sides of the new rule
+  threshold. No evidence field changed name or meaning, so nothing a reader of
+  the order-bump evidence consumes needs adapting; a page that dims a state
+  marker without hiding it now reads `unresolved` where it used to read
+  `display_toggled`, which is the false misalignment going away.
+
 ## [1.26.0+agent.11] - 2026-09-13
 
 ### Changed
