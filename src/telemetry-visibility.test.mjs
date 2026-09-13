@@ -165,8 +165,20 @@ test("resolveCampaignsApiKeySource: reports the refused source for a present-but
     const badPacket = resolveCampaignsApiKeySource({ campaign: { campaigns_api_key: "has space in it" } }, packetPath, {});
     assert.equal(badPacket.rejected.source, "packet.campaign.campaigns_api_key");
     assert.doesNotMatch(describeCampaignKeyRejection(badPacket.rejected), /has space in it/);
+    // and a CampaignSpec source names the field the value actually came from,
+    // not whichever field is checked first
     const badSpec = resolveCampaignsApiKeySource({ campaign: {}, spec: { local_path: "./spec.json" } }, packetPath, {});
-    assert.match(badSpec.rejected.source, /CampaignSpec/);
+    assert.equal(badSpec.rejected.source, "the packet-local CampaignSpec campaign.campaigns_api_key");
+    writeFileSync(join(dir, "top.json"), JSON.stringify({ campaigns_api_key: "not a key at all" }));
+    const badSpecTop = resolveCampaignsApiKeySource({ campaign: {}, spec: { local_path: "./top.json" } }, packetPath, {});
+    assert.equal(badSpecTop.rejected.source, "the packet-local CampaignSpec campaigns_api_key");
+    writeFileSync(join(dir, "legacy.json"), JSON.stringify({ campaign: { api_key: "not a key at all" } }));
+    const badSpecLegacy = resolveCampaignsApiKeySource({ campaign: {}, spec: { local_path: "./legacy.json" } }, packetPath, {});
+    assert.equal(badSpecLegacy.rejected.source, "the packet-local CampaignSpec campaign.api_key");
+    writeFileSync(join(dir, "good-legacy.json"), JSON.stringify({ campaign: { api_key: "pk_spec_legacy" } }));
+    const goodSpecLegacy = resolveCampaignsApiKeySource({ campaign: {}, spec: { local_path: "./good-legacy.json" } }, packetPath, {});
+    assert.equal(goodSpecLegacy.key, "pk_spec_legacy");
+    assert.equal(goodSpecLegacy.origin, "the packet-local CampaignSpec campaign.api_key");
 
     // an api_key_source pointed at a variable that does not name a campaign
     // key is refused by NAME, and its value is never read

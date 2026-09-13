@@ -9979,11 +9979,17 @@ export function resolveCampaignsApiKeySource(packet, packetPath, env = process.e
     const localSpecPath = packet?.spec?.local_path;
     if (isNonEmptyString(localSpecPath) && isNonEmptyString(packetPath)) {
       const spec = readJsonIfExists(resolveFromFile(packetPath, localSpecPath));
-      const specRaw = firstNonEmptyString(spec?.campaign?.campaigns_api_key, spec?.campaigns_api_key, spec?.campaign?.api_key);
-      if (isNonEmptyString(specRaw)) {
-        const specKey = campaignKeyOrNull(specRaw);
-        if (specKey) return { key: specKey, origin: "the packet-local CampaignSpec", rejected: null };
-        return { key: null, origin: null, rejected: { kind: "malformed", source: "the packet-local CampaignSpec campaign.campaigns_api_key" } };
+      // Name the field the value actually came from: a refused source the
+      // operator cannot find in their CampaignSpec is worse than no name.
+      const specField = [
+        ["campaign.campaigns_api_key", spec?.campaign?.campaigns_api_key],
+        ["campaigns_api_key", spec?.campaigns_api_key],
+        ["campaign.api_key", spec?.campaign?.api_key],
+      ].find(([, value]) => isNonEmptyString(value));
+      if (specField) {
+        const specKey = campaignKeyOrNull(specField[1]);
+        if (specKey) return { key: specKey, origin: `the packet-local CampaignSpec ${specField[0]}`, rejected: null };
+        return { key: null, origin: null, rejected: { kind: "malformed", source: `the packet-local CampaignSpec ${specField[0]}` } };
       }
     }
   } catch {
@@ -10542,11 +10548,15 @@ const TELEMETRY_LIST_MAX_BODY_BYTES = 4_000_000; // the receiver caps a listing 
 
 async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("Global fetch is not available. Upgrade to Node 18+.");
-  const proxyBase = String(optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE).replace(/\/+$/, "");
   // Same transport gate the remit rail uses: https, or a loopback host with a
   // loud warning that the credential is in clear. Anything else throws here,
-  // before a credential is attached to a request.
-  const { url: proxyUrl, loopback } = assertSecureProxyBase(proxyBase, { label: "telemetry list", credential: "the listing credential (the ops admin key, or the packet's campaign key)" });
+  // before a credential is attached to a request. The gate's own normalized
+  // base is what the consent scope and the request URL below are built from,
+  // so one string decides both.
+  const { url: proxyUrl, base: proxyBase, loopback } = assertSecureProxyBase(
+    optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE,
+    { label: "telemetry list", credential: "the listing credential (the ops admin key, or the packet's campaign key)" },
+  );
   const headers = { Accept: "application/json" };
   let scope;
   if (optionalString(args.packet)) {

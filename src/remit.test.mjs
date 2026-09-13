@@ -268,6 +268,41 @@ test("assertSecureProxyBase: loopback http passes with exactly one warning namin
   }
 });
 
+test("assertSecureProxyBase: a credential-free request is not described as leaking one", () => {
+  const warnings = [];
+  assertSecureProxyBase("http://127.0.0.1:8787", { label: "QA verdict publish", credential: null, warn: (line) => warnings.push(line) });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /this request and its payload travel in clear/);
+  assert.match(warnings[0], /no credential is attached/);
+  assert.doesNotMatch(warnings[0], /credential travels in clear/);
+  assert.throws(
+    () => assertSecureProxyBase("http://proxy.example.invalid", { label: "QA verdict publish", credential: null, warn: () => {} }),
+    /declining to send this request and its payload/,
+  );
+});
+
+test("remit: the loopback warning describes what the request actually carries", async () => {
+  const stderr = [];
+  const original = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk) => { stderr.push(String(chunk)); return true; };
+  try {
+    // no headers → no credential claimed
+    const bare = recordingFetch(fakeResponse({ body: "" }));
+    await remit("/api/qa/verdicts", { run_id: "r" }, "http://127.0.0.1:8787", { fetchImpl: bare.fetchImpl });
+    // a header → the request carries a credential, and the warning says so
+    const keyed = recordingFetch(fakeResponse({ body: "" }));
+    await remit("/api/runs", { run_id: "r" }, "http://127.0.0.1:8787", { fetchImpl: keyed.fetchImpl, headers: { "X-Campaign-Key": "pk_live_abcdefgh" } });
+    assert.equal(bare.calls.length, 1);
+    assert.equal(keyed.calls.length, 1);
+  } finally {
+    process.stderr.write = original;
+  }
+  const text = stderr.join("");
+  assert.match(text, /this request and its payload travel in clear/);
+  assert.match(text, /the request credential travels in clear/);
+  assert.doesNotMatch(text, /pk_live_abcdefgh/);
+});
+
 test("assertSecureProxyBase: plain http to a real host, and a non-URL base, both throw", () => {
   const warnings = [];
   const warn = (line) => warnings.push(line);
