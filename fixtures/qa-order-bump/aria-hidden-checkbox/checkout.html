@@ -86,6 +86,19 @@
   [data-next-toggle-card] .collapse-check { visibility: collapse; }
   [data-next-toggle-card].next-in-cart .collapse-check { visibility: visible; }
 
+  /* A persistent marker that a base rule only dims. The marker stays on screen
+     — a later, more specific rule restores full opacity — so the dimming rule
+     is a style, not a way of hiding a tick, and must not be read as a state
+     affordance. */
+  .dim-pill { display: inline-block; width: 20px; height: 20px; background: #eee; opacity: 0.4; }
+  [data-next-toggle-card] .dim-pill { opacity: 1; }
+
+  /* A tick the base rule hides outright with opacity: 0, restored when the
+     card is active. This one really is a state-toggled tick. */
+  .fade-check { display: inline-block; width: 20px; height: 20px; background: #eee; }
+  [data-next-toggle-card] .fade-check { opacity: 0; }
+  [data-next-toggle-card].next-in-cart .fade-check { opacity: 1; }
+
   /* An unstyled tick on a zero-sized host: nothing gives the ::after a width or
      a height, so its own content sizes it. */
   .auto-check { position: relative; display: inline-block; width: 0; height: 0; }
@@ -196,6 +209,27 @@
     <input class="bump__input" type="checkbox" aria-hidden="true" tabindex="-1" checked>
     <span data-next-toggle-check class="auto-check"></span>
     <div class="bump__title">Add-on offer I</div>
+  </div>
+</div>
+
+<!-- 10. Declined bump whose persistent marker is only dimmed by a base rule,
+     with a more specific rule restoring full opacity. The marker is visible;
+     an `opacity: 0.4` declaration is not a way of hiding a tick, so it is no
+     evidence that this marker's rendering is its state. -->
+<div data-next-package-toggle>
+  <div class="bump-card" data-next-toggle-card data-next-package-id="13" id="bump-dimmed-rule">
+    <span data-next-toggle-check class="dim-pill"></span>
+    <div class="bump__title">Add-on offer J</div>
+  </div>
+</div>
+
+<!-- 11. Accepted bump whose tick the base rule hides with `opacity: 0`, the
+     active card restoring it. Fading a tick all the way out hides it exactly
+     as `display: none` does, so this one is state-toggled. -->
+<div data-next-package-toggle>
+  <div class="bump-card next-in-cart" data-next-toggle-card data-next-package-id="14" id="bump-opacity-toggled">
+    <span data-next-toggle-check class="fade-check"></span>
+    <div class="bump__title">Add-on offer K</div>
   </div>
 </div>
 
