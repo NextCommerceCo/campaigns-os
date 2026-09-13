@@ -1021,54 +1021,61 @@ function hiddenEagerMediaFindings(gate) {
 
 const HIDDEN_EAGER_MEDIA_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
 // planPolishCapture allows 128 routes; two viewports per route is the full
-// supported matrix, so a run inside the limits never truncates. Anything past
-// the bound is counted, never dropped silently.
+// supported matrix, so a run inside the limits never truncates. The cap is
+// applied once across all four cell lists together; anything past it, and
+// any record that does not conform to the closed vocabularies, is counted
+// per list, never dropped silently.
 const MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS = 256;
+const HIDDEN_EAGER_MEDIA_MEASUREMENT_LISTS = Object.freeze(["missing", "duplicate", "unexpected", "incomplete"]);
 
+// A cell is kept only when it conforms: a path-only route and a viewport
+// from the closed vocabulary. Anything else is omitted and counted.
 function hiddenEagerMediaMeasurementCell(cell, { withProblemCodes = false } = {}) {
-  const route = normalizePageLoadRoute(cell?.route);
-  const viewport = stringArg(cell?.viewport)?.toLowerCase();
-  const projected = {
-    route,
-    viewport: HIDDEN_EAGER_MEDIA_VIEWPORTS.has(viewport) ? viewport : null,
-  };
+  if (!isPlainObject(cell)) return null;
+  const route = normalizePageLoadRoute(cell.route);
+  const viewport = stringArg(cell.viewport)?.toLowerCase();
+  if (!route || !HIDDEN_EAGER_MEDIA_VIEWPORTS.has(viewport)) return null;
+  const projected = { route, viewport };
   if (withProblemCodes) {
-    projected.problem_codes = [...new Set((Array.isArray(cell?.problem_codes) ? cell.problem_codes : [])
+    projected.problem_codes = [...new Set((Array.isArray(cell.problem_codes) ? cell.problem_codes : [])
       .filter((code) => HIDDEN_EAGER_MEDIA_PROBLEM_CODES.has(code)))].sort();
   }
   return projected;
-}
-
-function hiddenEagerMediaMeasurementCells(cells, options) {
-  const valid = (Array.isArray(cells) ? cells : []).filter(isPlainObject);
-  return {
-    cells: valid
-      .slice(0, MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS)
-      .map((cell) => hiddenEagerMediaMeasurementCell(cell, options)),
-    omitted: Math.max(0, valid.length - MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS),
-  };
 }
 
 // The per-route, per-viewport measurement a blocked checkpoint carries: which
 // cells are missing, duplicated, unexpected, or incomplete and on which
 // problem codes. Routes are path-only, viewports and codes come from the
 // closed vocabularies, so nothing here can carry a URL or an operator string.
+// Counts are integers (0 when the input carries none).
 function hiddenEagerMediaMeasurement(gate) {
   const measurement = gate?.measurement;
   if (!isPlainObject(measurement)) return null;
-  const missing = hiddenEagerMediaMeasurementCells(measurement.missing);
-  const duplicate = hiddenEagerMediaMeasurementCells(measurement.duplicate);
-  const unexpected = hiddenEagerMediaMeasurementCells(measurement.unexpected);
-  const incomplete = hiddenEagerMediaMeasurementCells(measurement.incomplete, { withProblemCodes: true });
+  const lists = {};
+  const omittedByList = {};
+  let budget = MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS;
+  for (const name of HIDDEN_EAGER_MEDIA_MEASUREMENT_LISTS) {
+    const cells = [];
+    let omitted = 0;
+    for (const raw of (Array.isArray(measurement[name]) ? measurement[name] : [])) {
+      const cell = hiddenEagerMediaMeasurementCell(raw, { withProblemCodes: name === "incomplete" });
+      if (!cell || budget === 0) {
+        omitted += 1;
+        continue;
+      }
+      cells.push(cell);
+      budget -= 1;
+    }
+    lists[name] = cells;
+    omittedByList[name] = omitted;
+  }
   return {
     status: measurement.status === "complete" ? "complete" : "incomplete",
-    expected_capture_count: safeNonnegativeInteger(measurement.expected_capture_count),
-    captured_count: safeNonnegativeInteger(measurement.captured_count),
-    missing: missing.cells,
-    duplicate: duplicate.cells,
-    unexpected: unexpected.cells,
-    incomplete: incomplete.cells,
-    omitted_cell_count: missing.omitted + duplicate.omitted + unexpected.omitted + incomplete.omitted,
+    expected_capture_count: safeNonnegativeInteger(measurement.expected_capture_count) ?? 0,
+    captured_count: safeNonnegativeInteger(measurement.captured_count) ?? 0,
+    ...lists,
+    omitted_cell_count: Object.values(omittedByList).reduce((total, count) => total + count, 0),
+    omitted_cell_count_by_list: omittedByList,
   };
 }
 

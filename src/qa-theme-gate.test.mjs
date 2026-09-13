@@ -276,7 +276,22 @@ test("a capture-incomplete checkpoint carries its per-cell measurement into the 
       problem_codes: ["dependency_request_failed", "resource_url_unresolvable"],
     }],
     omitted_cell_count: 0,
+    omitted_cell_count_by_list: { missing: 0, duplicate: 0, unexpected: 0, incomplete: 0 },
   });
+  // A cell outside the closed vocabularies is omitted and counted, never
+  // emitted with a null field.
+  const nonConforming = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, missing: [
+    { route: "/merchant/", viewport: "tablet" },
+    { route: "", viewport: "desktop" },
+    { route: "/merchant/", viewport: "mobile" },
+  ] } });
+  assert.deepEqual(nonConforming.measurement.missing, [{ route: "/merchant/", viewport: "mobile" }]);
+  assert.equal(nonConforming.measurement.omitted_cell_count_by_list.missing, 2);
+  assert.equal(nonConforming.measurement.omitted_cell_count, 2);
+  // Missing counts read as 0, never null.
+  const noCounts = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, expected_capture_count: undefined, captured_count: "x" } });
+  assert.equal(noCounts.measurement.expected_capture_count, 0);
+  assert.equal(noCounts.measurement.captured_count, 0);
   const assertion = hiddenEagerMediaGateAssertion(gate);
   assert.equal(assertion.status, "fail");
   assert.deepEqual(assertion.evidence.measurement.incomplete, summary.measurement.incomplete);
@@ -292,12 +307,19 @@ test("a capture-incomplete checkpoint carries its per-cell measurement into the 
     viewport: index % 2 ? "mobile" : "desktop",
     problem_codes: ["producer_failed"],
   }));
-  const atLimit = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, incomplete: fullMatrix } });
+  const empty = { missing: [], duplicate: [], unexpected: [] };
+  const atLimit = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, ...empty, incomplete: fullMatrix } });
   assert.equal(atLimit.measurement.incomplete.length, 256);
   assert.equal(atLimit.measurement.omitted_cell_count, 0);
-  const overLimit = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, incomplete: [...fullMatrix, ...fullMatrix.slice(0, 3)] } });
+  const overLimit = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, ...empty, incomplete: [...fullMatrix, ...fullMatrix.slice(0, 3)] } });
   assert.equal(overLimit.measurement.incomplete.length, 256);
   assert.equal(overLimit.measurement.omitted_cell_count, 3);
+  // The cap is one budget across all four lists: 200 missing cells leave 56 for incomplete.
+  const acrossLists = checkpointGateSummary({ ...gate, measurement: { ...gate.measurement, ...empty, missing: fullMatrix.slice(0, 200), incomplete: fullMatrix } });
+  assert.equal(acrossLists.measurement.missing.length, 200);
+  assert.equal(acrossLists.measurement.incomplete.length, 56);
+  assert.deepEqual(acrossLists.measurement.omitted_cell_count_by_list, { missing: 0, duplicate: 0, unexpected: 0, incomplete: 200 });
+  assert.equal(acrossLists.measurement.omitted_cell_count, 200);
 });
 
 test("blocked theme gate maps to a single blocker assertion with reason and required actions", () => {

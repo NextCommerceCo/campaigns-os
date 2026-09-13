@@ -18,8 +18,10 @@ Notable supported-surface changes are recorded here.
   `incomplete[]` cells with their `problem_codes[]`), and the verdict's
   `polish.hidden_eager_media` assertion projects it as `evidence.measurement`
   with path-only routes, the closed viewport vocabulary and the closed
-  problem-code vocabulary, bounded to the full supported capture matrix with
-  any excess counted in `omitted_cell_count`. Other block codes carry
+  problem-code vocabulary, bounded by one 256-cell budget across the four
+  lists (the full supported capture matrix) with any excess, and any record
+  outside the closed vocabularies, counted in `omitted_cell_count` and per
+  list in `omitted_cell_count_by_list`; counts are always integers. Other block codes carry
   `measurement: null`. No
   schema, problem code or verdict field outside that assertion's evidence
   changes.
