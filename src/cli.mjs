@@ -10173,15 +10173,20 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // already has, so an id must not be spent on an interim record before the
   // record that closes the run. Its outcome is stamped into the local record so
   // a dropped send is visible, not silent.
-  const keySource = remitDisabled ? { key: null, rejected: null } : resolveCampaignsApiKeySource(packet, packetPath, process.env);
+  // The key is only resolved when a send will actually be attempted: under
+  // consent-off or --no-remit nothing goes out, so nothing is read and nothing
+  // is said about a credential.
+  const keySource = shouldAttemptRemit ? resolveCampaignsApiKeySource(packet, packetPath, process.env) : { key: null, rejected: null };
   const campaignKey = keySource.key;
   // A refused key is not a missing key. Say so on stderr, naming the source
   // and not the value, so the operator fixes the credential instead of reading
   // the unscoped remit below as "no key was configured". The remit rail stays
-  // non-fatal by contract, so this warns and sends unscoped rather than
-  // failing the run; the credential itself never leaves the machine.
+  // non-fatal by contract, so this warns and attempts the send without a
+  // tenant scope rather than failing the run. It claims nothing about the
+  // send's outcome, which is only known below; the credential itself never
+  // leaves the machine.
   const keyRejection = describeCampaignKeyRejection(keySource.rejected);
-  if (keyRejection) process.stderr.write(`[campaigns-os] run-record: ${keyRejection} This record is remitted unscoped.\n`);
+  if (keyRejection) process.stderr.write(`[campaigns-os] run-record: ${keyRejection} This run's remit is attempted without a tenant scope.\n`);
   const remitStatus = remitDisabled
     ? { attempted: false, ok: null, error: null, endpoint: null }
     : await remitRunRecord(record, { proxyBase, consent, campaignKey });

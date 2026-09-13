@@ -33,8 +33,10 @@ Notable supported-surface changes are recorded here.
   printing the value. `telemetry list --packet` fails fast on such a value and
   makes no request. `run-record` warns on stderr and says "the declared
   Campaigns API key was refused on shape" instead of "no Campaigns API key
-  found", then remits unscoped — the remit rail is non-fatal by contract, so a
-  bad credential must not fail the run it is reporting. A malformed key in the
+  found", then attempts the send without a tenant scope — the remit rail is
+  non-fatal by contract, so a bad credential must not fail the run it is
+  reporting. The warning belongs to a send: under consent-off or `--no-remit`
+  the key is never read and nothing is said about it. A malformed key in the
   packet also no longer falls through to a different source: an explicit value
   that fails the shape gate is refused where it was declared. `api_key_source`
   keeps its existing restriction to variable names that name a campaign key,

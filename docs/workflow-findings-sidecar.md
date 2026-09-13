@@ -216,8 +216,10 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
     a URL) is refused, and the refusal names its **source** — the env var, the
     packet field, or the CampaignSpec — and never its value. `telemetry list
     --packet` fails fast on such a value and sends nothing; the remit rail,
-    which is non-fatal by contract, warns on stderr and remits unscoped. That
-    is now distinguishable in the output from "no key was configured".
+    which is non-fatal by contract, warns on stderr and sends without a tenant
+    scope. That is now distinguishable in the output from "no key was
+    configured". Consent gates the whole thing: with no send attempted
+    (consent off, or `--no-remit`) the key is never read and nothing is said.
     `api_key_source` must additionally name a variable matching
     `^[A-Z][A-Z0-9_]*CAMPAIGN[A-Z0-9_]*$`, so a packet cannot route an
     arbitrary secret into the header; a variable outside that shape is refused

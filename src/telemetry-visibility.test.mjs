@@ -251,6 +251,31 @@ test("CLI: run-record remit with no resolvable key sends no X-Campaign-Key and s
   });
 });
 
+// The credential warning belongs to a send. Under consent-off or --no-remit
+// there is no send, so the key is never read and nothing is said about it —
+// an opted-out operator must not be told anything travelled.
+test("CLI: run-record says nothing about a refused key when no remit is attempted", () => {
+  withTempDir((dir) => {
+    const packetPath = seedPacket(dir, (packet) => {
+      const campaign = { ...packet.campaign, api_key_source: "env:MY_CAMPAIGN_KEY" };
+      delete campaign.campaigns_api_key;
+      delete campaign.api_key;
+      return { ...packet, campaign, spec: { ...packet.spec, local_path: "./missing-spec.json" } };
+    });
+    const env = { ...isolatedEnv(dir, "off"), MY_CAMPAIGN_KEY: "pk live secretish" };
+    const off = runCli(dir, ["run-record", "--packet", packetPath, "--journal", join(dir, "wf.jsonl"), "--run-id", "run_offkey"], env);
+    assert.equal(off.status, 0, off.stderr);
+    assert.doesNotMatch(off.stderr, /MY_CAMPAIGN_KEY/);
+    assert.doesNotMatch(off.stderr, /campaign-key shape/);
+    assert.match(off.stdout, /Remit: skipped/);
+
+    const noRemit = runCli(dir, ["run-record", "--packet", packetPath, "--journal", join(dir, "wf2.jsonl"), "--run-id", "run_norem_key", "--no-remit"], { ...env, CAMPAIGNS_OS_TELEMETRY: "on" });
+    assert.equal(noRemit.status, 0, noRemit.stderr);
+    assert.doesNotMatch(noRemit.stderr, /MY_CAMPAIGN_KEY/);
+    assert.match(noRemit.stdout, /Remit: skipped/);
+  });
+});
+
 test("CLI: run-record warns that a declared key was refused on shape, names the env var, and remits unscoped", async () => {
   await withTempDirAsync(async (dir) => {
     const packetPath = seedPacket(dir, (packet) => {
@@ -271,6 +296,7 @@ test("CLI: run-record warns that a declared key was refused on shape, names the 
       assert.equal(requests.length, 1);
       assert.equal("x-campaign-key" in requests[0].headers, false);
       assert.match(run.stdout, /refused on shape/);
+      assert.match(run.stderr, /remit is attempted without a tenant scope/);
       assert.doesNotMatch(run.stdout, /no Campaigns API key found/);
     });
   });
