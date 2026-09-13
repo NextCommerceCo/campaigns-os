@@ -6,8 +6,8 @@ import { shellToken } from "./shell-token.mjs";
 
 // The characters that pass through bare are exactly the POSIX-safe set the
 // helper documents; everything else is single-quoted with the embedded
-// quote escaped. Three modules print commands through this helper, so the
-// charset is asserted once, here, rather than once per caller.
+// quote escaped. Every module that prints an operator command goes through
+// this helper, so the charset is asserted once, here, rather than per caller.
 test("bare tokens: the safe charset passes through unchanged", () => {
   for (const value of [
     "campaign-runtime.build.json",
@@ -53,10 +53,16 @@ test("an embedded single quote closes, escapes and reopens the quoting", () => {
   assert.equal(shellToken("a'b'c"), "'a'\\''b'\\''c'");
 });
 
-test("null and undefined print as an empty quoted token, numbers as their digits", () => {
+test("null and undefined print as an empty quoted token; every other value prints as itself", () => {
   assert.equal(shellToken(null), "''");
   assert.equal(shellToken(undefined), "''");
   assert.equal(shellToken(42), "42");
+  // Falsy values are still values: a count or flag of zero must not vanish
+  // from the printed command.
+  assert.equal(shellToken(0), "0");
+  assert.equal(shellToken(-1.5), "-1.5");
+  assert.equal(shellToken(false), "false");
+  assert.equal(shellToken(NaN), "NaN");
 });
 
 // The quoting is only correct if a POSIX shell reads the token back as the
