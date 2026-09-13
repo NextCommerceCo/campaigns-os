@@ -17,10 +17,16 @@ const FRESHNESS_CODE = "stages.assembly.source_package_material_fingerprint";
 
 // A completed-assembly report shaped the way the polish gate reads one, so the
 // gate and the standalone validator are asked about the same artifact.
-function buildReport({ sourcePackage = true, assemblyFingerprint = null, waivers = null } = {}) {
+function buildReport({
+  sourcePackage = true,
+  assemblyFingerprint = null,
+  waivers = null,
+  assemblyStatus = "completed",
+  buildFingerprint = BUILD_FINGERPRINT,
+} = {}) {
   const report = JSON.parse(readFileSync(EXAMPLE_REPORT, "utf8"));
-  report.stages.assembly.status = "completed";
-  report.stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
+  report.stages.assembly.status = assemblyStatus;
+  if (buildFingerprint) report.stages.assembly.build_fingerprint = buildFingerprint;
   if (sourcePackage) {
     report.design_source_package = {
       schema_version: "campaign-design-source-package/v0",
@@ -81,6 +87,19 @@ test("validate-assembly-report honors an active source freshness waiver", () => 
   assert.equal(result.ok, true);
 });
 
+// The shape `prepare-build` and `start` emit: the package fingerprint is
+// recorded before any build has consumed it, and Assembly is still pending.
+test("validate-assembly-report accepts a prepared report whose assembly is still pending", () => {
+  const result = validate(buildReport({ assemblyStatus: "pending", buildFingerprint: null }));
+  assert.ok(!errorCodes(result).includes(FRESHNESS_CODE), errorCodes(result).join(", "));
+  assert.equal(result.ok, true);
+});
+
+test("validate-assembly-report does not raise the freshness error before a build fingerprint exists", () => {
+  const result = validate(buildReport({ buildFingerprint: null }));
+  assert.ok(!errorCodes(result).includes(FRESHNESS_CODE), errorCodes(result).join(", "));
+});
+
 // The point of the shared predicate: whatever makes the ladder block must make
 // the validator fail, on the same report, for every variant above.
 test("the polish gate and the validator agree on the source-freshness condition", () => {
@@ -88,6 +107,8 @@ test("the polish gate and the validator agree on the source-freshness condition"
     buildReport(),
     buildReport({ assemblyFingerprint: SOURCE_FINGERPRINT }),
     buildReport({ sourcePackage: false }),
+    buildReport({ assemblyStatus: "pending", buildFingerprint: null }),
+    buildReport({ buildFingerprint: null }),
     buildReport({
       waivers: [{
         scope: "assembly_source_package_freshness",

@@ -2244,8 +2244,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.15",
-      "changelog_sha256": "229d9ade49d65ec6aee4483972b99c7cfcecc4a4aae750216c927662675c8431",
-      "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. This is the same condition the polish gate already blocked on as polish.assembly_source_package_fingerprint_missing, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice.",
+      "changelog_sha256": "34d07c577d024ed67dafa34621ae49c2129c60d26de4827c3703e7080d5d77a8",
+      "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. This is the same condition the polish gate already blocked on as polish.assembly_source_package_fingerprint_missing, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report whose Assembly is still pending or that carries no build fingerprint yet is outside the finding, exactly as the gate is not_applicable there, so freshly prepared reports from prepare-build and start still validate. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice.",
       "compatibility": "compatible",
       "migration": "None.",
       "changes": [
@@ -2262,7 +2262,7 @@
           "summary": "The freshness-lifecycle section says validate-assembly-report applies the same missing-fingerprint condition as the polish gate."
         }
       ],
-      "entry_sha256": "2ef3ac9d033ca099727ea8eed6abf42703afa97455afc1b52d153e7ee4d68b53"
+      "entry_sha256": "5a91d70c5e9719a5895cb8d05f71544e74aec0e49d66900aaee54c9c67d99c7d"
     }
   ]
 }

@@ -72,7 +72,18 @@ export function assemblySourcePackageMaterialFingerprint(report) {
 // the standalone `validate-assembly-report` all answer that question from here,
 // so the three paths cannot drift: before this existed the gate blocked and the
 // validator stayed silent on the same report.
+//
+// It carries the gate's own preconditions, not just the fingerprint
+// comparison. A report still pending Assembly (the shape `prepare-build` and
+// `start` emit, which records the package fingerprint before any build has
+// consumed it) and a report with no build fingerprint yet are both outside
+// this finding: the gate answers not_applicable or blocks on
+// polish.build_fingerprint_missing there, and so the validator must not fail
+// them on freshness. A malformed waiver record is deliberately not modelled
+// here — that is the gate's own polish.waiver_expires_at_invalid finding.
 export function assemblySourcePackageFingerprintMissing(report, now = Date.now()) {
+  if (!terminalAssembly(report)) return false;
+  if (!currentBuildFingerprint(report)) return false;
   if (!currentSourcePackageMaterialFingerprint(report)) return false;
   if (assemblySourcePackageMaterialFingerprint(report)) return false;
   return !assessAssemblySourcePackageFreshnessWaivers(report, now).active;

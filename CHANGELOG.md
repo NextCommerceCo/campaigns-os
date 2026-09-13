@@ -16,7 +16,10 @@ Notable supported-surface changes are recorded here.
   then hit a hard stop one command later. The condition is no longer written
   twice: the gate and the validator both read
   `assemblySourcePackageFingerprintMissing()` in `src/polish-gate.mjs`, which
-  keeps the existing carve-outs intact — a report with no design source
+  keeps the existing carve-outs intact — a report whose Assembly is still
+  pending (the shape `prepare-build` and `start` emit, which records the
+  package fingerprint before any build has consumed it) or that has no build
+  fingerprint yet is outside the finding, a report with no design source
   package at all is untouched, and an active Source Freshness Waiver still
   passes. The new error code is
   `stages.assembly.source_package_material_fingerprint`. A report that
