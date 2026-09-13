@@ -2007,8 +2007,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.11",
-      "changelog_sha256": "d980e71db485bd95b2f5b73d63a4b41623b8bd09876b304483f44eeb57545edd",
-      "agent_impact": "doctor --json next.stage now uses the same vocabulary and decision as campaigns-os next (prepare-build, doctor-blocked, setup, build, polish, deploy, qa, done) instead of collect-inputs / assembly / complete; next.command is always present; next.blocked_stages never contains next.stage; next.reason carries the picker's reason. A reader that branched on next.stage === 'collect-inputs' must branch on 'doctor-blocked' or 'prepare-build'; on 'assembly', 'build'; on 'complete', 'done'. Everything else on the block (owner, default_skill, status, actions[]) keeps its meaning.",
+      "changelog_sha256": "3318781a52646b5a8285d324f8c7f7e07886cda61be03b0578be88c59b97aa80",
+      "agent_impact": "doctor --json next.stage now uses the same vocabulary and decision as campaigns-os next (prepare-build, doctor-blocked, setup, build, polish, deploy, qa, done) instead of collect-inputs / assembly / complete; next.command is always present; next.blocked_stages never contains next.stage; next.reason carries the picker's reason. A reader that branched on next.stage === 'collect-inputs' must branch on 'doctor-blocked' or 'prepare-build'; on 'assembly', 'build'; on 'complete', 'done'. Everything else on the block (owner, default_skill, status, actions[]) keeps its meaning. doctor invoked with only --context or only --report decides its next block over the artifacts it checked (the other sidecar stays off, as before); read campaigns-os next for the ladder decision over the bound report.",
       "compatibility": "breaking",
       "migration": "Rename the stage literals in any doctor.next consumer: collect-inputs -> doctor-blocked | prepare-build, assembly -> build, complete -> done. Or read campaigns-os next --json, which is now what doctor.next projects. Consumers of next.command: prepare-build and done recommend the stage-less campaigns-os next --packet <packet>.",
       "changes": [
@@ -2043,7 +2043,7 @@
           "summary": "The no-proof routing paragraph says next and doctor.next both route to prepare-build."
         }
       ],
-      "entry_sha256": "878427397298e5e620a4b27944fd150352eca9cdb074477e29ceea378d72752e"
+      "entry_sha256": "a424878692f7337c176ae745cbb25b08be046284e50250a9d0cd763d09221327"
     }
   ]
 }

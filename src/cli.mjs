@@ -2668,14 +2668,10 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     return doctorBuiltOutput(args);
   }
   const packetPath = resolve(requireArg(args, "packet"));
-  // A sidecar the operator did not name is inferred the way `next` infers
-  // it (the context's recorded report path, else the default location).
-  // Naming one used to switch the other off, so `doctor --context C`
-  // validated with no report while `next` read the inferred one; the two
-  // then disagreed on the next stage over the same packet.
+  const explicitSidecarArgs = Boolean(args.context || args.report);
   const doctorOptions = {
-    contextPath: args.context ? resolve(args.context) : undefined,
-    reportPath: args.report ? resolve(args.report) : undefined,
+    contextPath: args.context ? resolve(args.context) : explicitSidecarArgs ? null : undefined,
+    reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
     outputBaseDir: args["strip-paths"] === true ? dirname(packetPath) : null,
   };
   const result = runDoctor(packetPath, doctorOptions);
@@ -3370,55 +3366,42 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   // With no context on hand (doctor --report alone) the binding checks have
   // nothing to compare and are skipped; the report itself was resolved
   // above the way `next` resolves it.
-  // A caller that suppresses the report checks (reportPath: null) still gets
-  // a stage decision over the bound report, the same one `next` reads.
-  const gateReportPath = reportPath === null
-    ? boundAssemblyReportPath(packet, packetPath, context, sidecars.reportPath)
-    : resolvedReportPath;
-  const gateReport = reportPath === null ? readJsonIfExists(gateReportPath) : report;
+  // The stage decision runs over exactly the artifacts the checks ran over.
+  // A caller that named one sidecar and not the other (doctor --context C)
+  // is inspecting, and its report checks are deliberately off; its next
+  // block decides without the report too, and says so in `reason`. The
+  // ladder decision is `next`'s, which always reads the bound report.
   const gateTargetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
-  const prepareBuildGate = prepareBuildGateIssue(gateReport, {
+  const prepareBuildGate = prepareBuildGateIssue(report, {
     required: isObject(packet?.design_source_package),
-    reportPath: gateReportPath,
+    reportPath: resolvedReportPath,
     bindingIssues: isObject(packet) && context
       ? nextPrepareBuildBindingIssues({
           packet,
           packetPath,
           context,
           contextPath: resolvedContextPath,
-          report: gateReport,
-          reportPath: gateReportPath,
+          report,
+          reportPath: resolvedReportPath,
           targetRepo: gateTargetRepo,
           explicitReport: typeof reportPath === "string",
         })
       : [],
   });
-  // The picker prefers the derived gates over re-evaluating the report, so
-  // when the stage decision runs over a different report than the checks
-  // did, the gates it reads are recomputed over that report.
-  const derivedForPicker = gateReport === report
-    ? derived
-    : (() => {
-        const polishCheckpointGate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report: gateReport });
-        return {
-          ...derived,
-          polish_checkpoint_gate: polishCheckpointGate,
-          polish_gate: evaluatePolishGate({ report: gateReport, hiddenEagerMediaGate: polishCheckpointGate }),
-        };
-      })();
-  // Explicit sidecar paths are carried as given (resolved, absolute): doctor
-  // and next both resolve --context / --report against the working
-  // directory, so a path rebased onto the packet directory would read a
-  // different file when the command is run from where the operator stands.
-  // Portable output (outputBaseDir set: start's generated doctor output,
-  // doctor --strip-paths) rebases them onto that base like every other path
-  // in the output, so a relocated handoff does not name the original machine.
-  const sidecarArg = (path) => shellToken(outputBaseDir ? relFromDir(outputBaseDir, path) : path);
   const sidecarArgs = [
     ...(typeof contextPath === "string" ? [` --context ${sidecarArg(contextPath)}`] : []),
     ...(typeof reportPath === "string" ? [` --report ${sidecarArg(reportPath)}`] : []),
   ].join("");
-  const next = buildNextStep(errors, warnings, derivedForPicker, gateReport, packet, prepareBuildGate, { sidecarArgs });
+  const next = buildNextStep(errors, warnings, derived, report, packet, prepareBuildGate, { sidecarArgs });
+  // Portable output: a sidecar path the picker's reason names is rebased
+  // like every other path in the output.
+  if (outputBaseDir && typeof next?.reason === "string") {
+    for (const path of [resolvedContextPath, resolvedReportPath]) {
+      if (typeof path === "string" && next.reason.includes(path)) {
+        next.reason = next.reason.split(path).join(relFromDir(outputBaseDir, path));
+      }
+    }
+  }
   const status = errors.length
     ? "blocked"
     : checkpointExceptionPresent(derived)
