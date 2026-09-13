@@ -80,6 +80,9 @@ import {
 import {
   evaluateSourcePreparation,
   SOURCE_PREP_CODES,
+  SOURCE_PREP_DOCUMENT_WRAPPER,
+  SOURCE_PREP_FRONTMATTER_RESIDUE,
+  SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
@@ -8409,6 +8412,25 @@ function readinessStatus(warnings, derived) {
   return warnings.length ? "ready_with_warnings" : "ready";
 }
 
+// The source-preparation action names only the repairs the findings ask for.
+// A document-wrapper finding reported as a warning is the accepted
+// preserve_document_wrappers adapter decision (src/source-prep.mjs decides
+// the severity from the packet's wrapper_policy); ordering a wrapper strip
+// there would undo the decision that cleared the gate, so the strip step is
+// offered only when the finding is an error.
+function sourcePreparationAction(errors, warnings) {
+  const errorCodes = new Set(errors.map((issue) => issue.code));
+  const warningCodes = new Set(warnings.map((issue) => issue.code));
+  const present = (code) => errorCodes.has(code) || warningCodes.has(code);
+  const steps = [];
+  if (errorCodes.has(SOURCE_PREP_DOCUMENT_WRAPPER)) steps.push("strip document wrappers");
+  if (present(SOURCE_PREP_FRONTMATTER_RESIDUE)) steps.push("repair leftover frontmatter");
+  if (present(SOURCE_PREP_INTERNAL_LINK_UNROOTED)) steps.push("route internal links through campaign_link/CampaignSpec routes");
+  if (!steps.length) return null;
+  const listed = steps.length === 1 ? steps[0] : `${steps.slice(0, -1).join(", ")}, and ${steps[steps.length - 1]}`;
+  return `Prepare the mapped source HTML for page-kit ingestion — ${listed} (docs/quickstart.md "Prepare Raw HTML Source") — then rerun campaigns-os doctor.`;
+}
+
 function buildNextStep(errors, warnings, derived, report = null) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const assemblyStatus = report?.stages?.assembly?.status || "";
@@ -8474,9 +8496,8 @@ function buildNextStep(errors, warnings, derived, report = null) {
   if (codes.has("scope.partial_build")) {
     actions.push("Build and deploy only the mapped partial-scope pages; label the preview as route/visual-testable, not full-funnel launch-ready.");
   }
-  if (SOURCE_PREP_CODES.some((code) => codes.has(code))) {
-    actions.push("Prepare the mapped source HTML for page-kit ingestion — strip document wrappers, repair leftover frontmatter, and route internal links through campaign_link/CampaignSpec routes (docs/quickstart.md \"Prepare Raw HTML Source\") — then rerun campaigns-os doctor.");
-  }
+  const sourcePrepAction = sourcePreparationAction(errors, warnings);
+  if (sourcePrepAction) actions.push(sourcePrepAction);
   if (codes.has("scope.runtime_qa_blocked")) {
     actions.push("Keep checkout/order-proof QA blocked until the out-of-scope runtime pages are built or explicitly delegated to an existing downstream URL.");
   }
