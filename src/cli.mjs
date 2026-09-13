@@ -2709,26 +2709,14 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     );
     const packet = readJson(packetPath);
     const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
-    const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
-    const defaultReportPath = join(targetRepo, ".campaign-runtime/assembly-report.json");
-    // The context is read only to infer a report the operator did not name.
-    const context = args.report ? null : readJsonIfExists(contextPath);
-    const boundReportPath = args.report ? resolve(args.report) : boundAssemblyReportPath(packet, packetPath, context, defaultReportPath);
-    // A recorded report_path is followed for the write-back only when the
-    // context/report binding checks pass: a report of another run of the
-    // same campaign matches on map id and slug alone, and restating this
-    // doctor's outcome into it would corrupt that run's evidence.
-    const boundReportSafe = args.report || boundReportPath === defaultReportPath || nextPrepareBuildBindingIssues({
-      packet,
-      packetPath,
-      context,
-      contextPath,
-      report: readJsonIfExists(boundReportPath),
-      reportPath: boundReportPath,
-      targetRepo,
-      explicitReport: false,
-    }).length === 0;
-    const reportPath = boundReportSafe ? boundReportPath : defaultReportPath;
+    // The stage write-back targets the report the operator named, else the
+    // default location. It does not follow a recorded report_path: a report
+    // of another run of the same campaign matches on map id and slug alone,
+    // and restating this doctor's outcome into it would corrupt that run's
+    // evidence. Inspection and the stage decision above do follow it.
+    const reportPath = args.report
+      ? resolve(args.report)
+      : join(targetRepo, ".campaign-runtime/assembly-report.json");
     if (existsSync(reportPath)) {
       const report = readJson(reportPath);
       if (assemblyReportMatchesPacket(report, packet)) {
