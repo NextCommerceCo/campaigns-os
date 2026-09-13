@@ -2283,7 +2283,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.16",
-      "changelog_sha256": "3c18f0102520628866dd5aae09ce814e7dbf7f5d5fc92675ce23c5c2779dbffe",
+      "changelog_sha256": "467a0ec4bd0418c9ab57265b8c5048fd876c1842f8251b9037764b29a6c99761",
       "agent_impact": "start / prepare-build / build now report the template-family precedence they always applied. When --template-family and the CampaignSpec preferred_template_family hint name different families, the flag still wins (packet.assembly.template_family and template_lock are unchanged), but the run prints one stderr line naming both values and their channels, and the assembly report's warnings[] gains an advisory entry { code: \"TEMPLATE_FAMILY_HINT_OVERRIDDEN\", stage: \"prepare_build\", message } naming the winning flag and the overridden hint. A flag equal to the hint, a hint with no flag, and a flag with no hint all stay silent. No exit code, blocker, or gate changes; an agent that ignores unknown warning codes is unaffected. An agent that wants the spec hint honoured must omit the flag.",
       "compatibility": "compatible",
       "migration": "None.",
@@ -2313,7 +2313,7 @@
           "summary": "Authoring-Time Hints states that a flag/hint disagreement prints the precedence line and records TEMPLATE_FAMILY_HINT_OVERRIDDEN on the assembly report, and how to make the hint win."
         }
       ],
-      "entry_sha256": "735912b4afda5197f8b5b63309a39eafb855df41acf2945a29688bfc945923a0"
+      "entry_sha256": "f23b2e981ee0de2390ab9525f18f7e1961ba8c472b10c883c38aeafec49f860e"
     }
   ]
 }
