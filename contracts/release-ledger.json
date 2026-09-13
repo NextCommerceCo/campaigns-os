@@ -2364,31 +2364,46 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.20",
-      "changelog_sha256": "5828a95eb6399d0f1f51526d8cc861a8f0fee63b98c00bc2fe5f60922b377e7a",
-      "agent_impact": "Credential-bearing requests on the telemetry rails now validate before any socket opens, so two silent behaviours change for an agent. (1) --proxy-base must be https on every rail that carries a credential (Run Telemetry remit, QA verdict publish, telemetry list), not just on telemetry list: a loopback host (localhost, 127.0.0.1, [::1]) is still allowed over plain http and now prints one stderr warning per request that the credential travels in clear, while any other plain-http base \u2014 or a base that is not a URL \u2014 is refused before the request, so nothing is sent. An agent that pointed a remit or publish at a plain-http remote proxy will see it fail: on the remit rail non-fatally, with the reason in remit_error / remit_ok false; on telemetry list as a non-zero exit. Spec retrieval by --map-id carries no credential and is unaffected. (2) A campaign key that is present but malformed is now reported as refused rather than missing. resolveCampaignsApiKeySource() returns { key, origin, rejected } and describeCampaignKeyRejection() renders a sentence naming the refused SOURCE (env:VAR, the packet field, or the CampaignSpec) and never the value. telemetry list --packet exits non-zero on such a value and makes no request; run-record warns on stderr and its human summary now says the declared key was refused on shape instead of 'no Campaigns API key found', then attempts the send without a tenant scope (the remit rail stays non-fatal); with no send attempted (consent off, or --no-remit) the key is not read and nothing is said about it. A malformed explicit packet value no longer falls through to another source. resolveCampaignsApiKeyValue() keeps its old signature and returns the key or null.",
+      "changelog_sha256": "60f1f47de9f8603e3f8396d182bbd92bf246b8f37cd2766d33794cc890b8c3f6",
+      "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. It also returns the error code stages.assembly.waiver_expires_at_invalid for a Source Freshness Waiver record whose expires_at does not parse, which the gate refuses to honor and blocks on as polish.waiver_expires_at_invalid; like the gate, the validator reports only that error for such a report and asks the freshness question once the record is repaired. Both are conditions the polish gate already blocked on, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report whose Assembly is still pending or that carries no build fingerprint yet is outside the finding, exactly as the gate is not_applicable there, so freshly prepared reports from prepare-build and start still validate. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice. campaigns-os polish capture is unaffected: its report check stays a shape check, since the polish gate reports source freshness on the way out.",
       "compatibility": "compatible",
-      "migration": "None for https or loopback proxy bases. A plain-http remote --proxy-base now fails on the credential-bearing rails: give that proxy TLS, or run it on a loopback host, or drop the override. If a remit started reporting a refused key, fix the value at the source the warning names (its shape must be 8-256 characters of letters, digits, dot, dash, underscore, one line, no whitespace).",
+      "migration": "None.",
       "changes": [
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
-          "surface_entry": "telemetry",
-          "summary": "telemetry list shares the remit rail's transport gate (https, or loopback over http with an in-clear warning); both telemetry list --packet and run-record now separate a present-but-malformed campaign key from a missing one, naming the refused source and never the value \u2014 telemetry list fails fast and makes no request, run-record warns and sends without a tenant scope, and says nothing at all when no send is attempted."
+          "surface_entry": "validate-assembly-report",
+          "summary": "validateAssemblyReport fails a report that declares a design-source-package material fingerprint with no stages.assembly.source_package_material_fingerprint, and one whose source freshness waiver has an unparseable expires_at, reusing the polish gate's predicate and waiver assessment; doctor's shape check and polish capture's report check opt out so the gate's findings are not duplicated or moved earlier."
         },
         {
           "class": "named_surface",
-          "path": "docs/workflow-findings-sidecar.md",
-          "surface_entry": "docs/workflow-findings-sidecar.md",
-          "summary": "Remit Channel states the credential shape gate and the https/loopback proxy-base rule."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/build-packet.md",
-          "surface_entry": "docs/build-packet.md",
-          "summary": "--proxy-base note distinguishes credential-free spec retrieval from the credential-bearing rails and their https/loopback rule."
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "The freshness-lifecycle section says validate-assembly-report applies the same missing-fingerprint and malformed-waiver conditions as the polish gate."
         }
       ],
-      "entry_sha256": "eb0c3984c0b6105a84e55c3fbc5ba78344e6354a7b44d203ab087ae92e668654"
+      "entry_sha256": "b15c95b9fb48715af4990316bf5d294ec6328f0f9f42fa401b32a346c7b6e816"
+    },
+    {
+      "id": "RL-0059",
+      "sequence": 59,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.21",
+      "changelog_sha256": "204784a15f4544303484ec14c5ecae755e9fb21191595ac0a2b3ac64a70844eb",
+      "agent_impact": "A `qa run --browser` that a blocked checkpoint, polish, or theme gate finalized before any page was rendered now stamps the verdict with browser: { requested: true, status: \"skipped_gate_blocked\", blocked_by: [<gate codes>], reason } and prints that reason once on stderr. The reason names the gate and quotes that gate's own required_actions for what clears it, so the guidance matches the exact blocking state (a stale-assembly polish blocker asks for a fresh Build, and a waive command appears only where the gate is waivable). Nothing else moves: the assertion set, the disposition and the exit code (4, blocked) are what they were, and no browser is launched. Treat the field as additive and emitted only for that case \u2014 its absence means the verdict makes no claim about a browser pass, not that one ran, so keep reading the browser-runtime assertions and tested_urls to tell whether a browser pass happened. The field is not part of the committed .campaign-runtime/qa-verdict.json allowlist projection, and a --json run receives the stamp in the emitted verdict instead of the stderr line.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The checkpoint-preflight section states the visible downgrade: the browser stamp a gate-blocked --browser run carries, the single stderr line whose repair guidance comes from the gate's required_actions, the unchanged exit code, and that the field's absence is not evidence a browser pass ran."
+        }
+      ],
+      "entry_sha256": "7edce38b19097d44225ad85c6ca19eb4d3e564dd7f25759a3266f1d47ad98d5d"
     }
   ]
 }
