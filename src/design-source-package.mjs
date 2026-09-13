@@ -1902,12 +1902,13 @@ function createVisualReferenceRegistry(defaultKind) {
 // { field, detail } naming the first field that fails.
 function visualReferenceRejection(raw, contextualKinds = null) {
   if (!isObject(raw)) {
-    return { field: "record", detail: "the record is not a JSON object" };
+    return { field: "record", detail: "the record is not a JSON object", fix: "Replace the record with an object" };
   }
   if (contextualKinds && isNonEmptyString(raw.kind) && !contextualKinds.has(raw.kind)) {
     return {
       field: "kind",
       detail: `kind ${JSON.stringify(raw.kind)} is not one of ${[...contextualKinds].sort().join(", ")}`,
+      fix: "Fix kind on that record",
     };
   }
   const viewport = optionalString(raw.viewport || raw.viewport_key)?.toLowerCase();
@@ -1917,19 +1918,23 @@ function visualReferenceRejection(raw, contextualKinds = null) {
       detail: viewport
         ? `viewport ${JSON.stringify(viewport)} is not one of ${[...VIEWPORTS].sort().join(", ")}`
         : `viewport is missing; it must be one of ${[...VIEWPORTS].sort().join(", ")}`,
+      fix: "Fix viewport on that record",
     };
   }
   const availability = visualReferenceAvailability(raw);
   if (!availability) {
     return {
+      // "evidence" is a synthetic field: the fix names the three real keys.
       field: "evidence",
-      detail: "the record declares no path, no url, and no unavailable_reason, so it points at no evidence; set one of them",
+      detail: "the record declares no path, no url, and no unavailable_reason, so it points at no evidence",
+      fix: "Set path, url, or unavailable_reason on that record",
     };
   }
   if (availability === "unavailable" && !visualReferenceUnavailableReason(raw)) {
     return {
       field: "unavailable_reason",
       detail: 'availability is "unavailable" without an unavailable_reason explaining what is missing',
+      fix: "Add unavailable_reason to that record",
     };
   }
   return null;

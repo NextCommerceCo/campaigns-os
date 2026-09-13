@@ -163,7 +163,7 @@ function warnOnUnusableScreenshotRecords(entry, location, addWarning) {
       addWarning(
         `${recordLocation}.${rejection.field}`,
         `${recordLocation}${pageId ? ` (page_id ${JSON.stringify(pageId)})` : ""} is ignored as source screenshot proof: ` +
-          `${rejection.detail}. ${rejection.field === "evidence" ? "Set path, url, or unavailable_reason on that record" : `Fix ${rejection.field} on that record`}, or the page counts as having no source proof for that viewport. ` +
+          `${rejection.detail}. ${rejection.fix}, or the page counts as having no source proof for that viewport. ` +
           `The rest of the manifest is used as written.`,
       );
     });
