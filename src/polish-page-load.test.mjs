@@ -1109,6 +1109,7 @@ test("a failed cross-origin ping leaves the capture complete, passes the checkpo
     route: "/landing/",
     viewport: "desktop",
     problem_codes: ["cross_origin_request_failed"],
+    resource_types: ["ping"],
     failed_origins: ["https://attribution.example.invalid"],
     failed_origin_count: 1,
   }]);
@@ -1116,6 +1117,42 @@ test("a failed cross-origin ping leaves the capture complete, passes the checkpo
   assert.equal(gate.code, "polish.hidden_eager_media.pass");
   assert.equal(gate.status, "pass");
   assert.equal(JSON.stringify(evidence).includes("cid=private"), false);
+});
+
+// The warning class is a trade-off: a demoted failure is forgiven because of
+// the role it was made in. A warning that named only its origins hid which
+// roles were forgiven, so the entry aggregates the demoted roles too.
+test("a capture warning names every demoted beacon role once, sorted", () => {
+  const capture = attributionCapture([
+    okResponse("app", "https://shop.example.test/assets/app.js", "Script"),
+    { request_id: "ping", url: "https://attribution.example.invalid/ping", resource_type: "Ping", failed: true },
+    { request_id: "ping2", url: "https://attribution.example.invalid/ping2", resource_type: "Ping", failed: true },
+    { request_id: "beacon", url: "https://metrics.example.invalid/collect", resource_type: "Fetch", failed: true },
+  ]);
+
+  assert.equal(capture.measurement_status, "complete");
+  const evidence = evidenceForCapture(capture);
+  assert.deepEqual(evidence.measurement.warnings, [{
+    route: "/landing/",
+    viewport: "desktop",
+    problem_codes: ["cross_origin_request_failed"],
+    resource_types: ["fetch", "ping"],
+    failed_origins: ["https://attribution.example.invalid", "https://metrics.example.invalid"],
+    failed_origin_count: 2,
+  }]);
+  assert.equal(evaluate(evidence).status, "pass");
+});
+
+// The failing half of the guard: a capture with nothing demoted must carry no
+// warning at all, so the new field can never be read as "no roles demoted".
+test("a capture with no demoted failure carries no warning entry to name roles on", () => {
+  const capture = attributionCapture([
+    okResponse("app", "https://shop.example.test/assets/app.js", "Script"),
+    okResponse("pixel", "https://attribution.example.test/pixel.gif", "Ping"),
+  ]);
+
+  assert.equal(capture.measurement_status, "complete");
+  assert.deepEqual(evidenceForCapture(capture).measurement.warnings, []);
 });
 
 test("a failed first-party image still fails the collection and blocks unwaivably", () => {

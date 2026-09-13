@@ -2236,6 +2236,27 @@
         }
       ],
       "entry_sha256": "7f8072738a6200727ea172cbed10685f768e1d70f50b998aa067c3137cee9bd6"
+    },
+    {
+      "id": "RL-0054",
+      "sequence": 54,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.15",
+      "changelog_sha256": "511ec0adf77b8243134f8fbb95b087663c7913b98469dc1de906ad418095b34b",
+      "agent_impact": "Each entry in polish page-load evidence measurement.warnings[] now carries resource_types[] \u2014 the sorted, unique beacon-class resource roles whose failures were demoted to the cross_origin_request_failed warning (drawn from ping, fetch, xhr, other, preflight, so at most five values) \u2014 and campaigns-os polish text output prints them as a Resource types: line inside its Capture warnings (not blocking) block. An agent reading a warning can now tell which roles the demotion forgave instead of only which origins failed. The beacon allowlist, the problem codes, measurement.status, the resource ledger and the checkpoint verdict are unchanged: nothing that blocked before warns now, and nothing that warned before blocks. An agent comparing a warning entry against a fixed key set must accept the new key; one that reads only the fields it names needs no change.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "polish",
+          "summary": "polish text output prints a Resource types: line for each capture warning, filtered to the known resource-type vocabulary."
+        }
+      ],
+      "entry_sha256": "8a9cbe2d168d78f5a9d9dddbb2f7588ed050233a8122acb2a81e5f7d8e39e5d3"
     }
   ]
 }

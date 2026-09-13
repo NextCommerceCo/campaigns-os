@@ -2,6 +2,29 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.15] - 2026-09-13
+
+### Changed
+
+- A polish capture warning now names the resource roles whose failures were
+  demoted to it. `cross_origin_request_failed` exists because a failed
+  cross-origin request in a beacon-class role (`ping`, `fetch`, `xhr`,
+  `other`, `preflight`) says nothing about what the page renders, so it is
+  recorded without making the capture incomplete. That demotion is a
+  trade-off, not a fact about the page, and the warning entry did not say
+  which roles it had been applied to: an operator reading
+  `measurement.warnings[]` could see the failing origins but not whether a
+  stale tracking `ping` had been forgiven or a `fetch` the page may have
+  depended on. Each warning entry now carries `resource_types[]` — sorted,
+  unique, drawn from the beacon allowlist, so at most five values — and
+  `campaigns-os polish` prints the same list as `Resource types:` in its
+  `Capture warnings (not blocking)` block. The beacon allowlist itself is
+  unchanged, so nothing that blocked before is forgiven now and nothing that
+  warned before blocks; `measurement.status`, the problem codes, the resource
+  ledger and the checkpoint verdict are untouched. A consumer that compared a
+  warning entry against a fixed key set should accept the new key; one that
+  only reads fields it names needs no change. `docs/polish-evidence.md`
+  records the field and why the roles are named.
 ## [1.26.0+agent.11] - 2026-09-13
 
 ### Changed
