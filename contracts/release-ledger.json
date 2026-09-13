@@ -2281,57 +2281,39 @@
       "sequence": 55,
       "date": "2026-09-13",
       "kind": "release",
-      "surface_version": "1.27.0",
-      "changelog_section": "1.27.0",
-      "changelog_sha256": "fd0e0946572ae8c8920977fe1be441c8ee1e414f544fe708c1a7d11a1d0b3d1d",
-      "agent_impact": "Two surface moves in one version. The standardization-report command is removed: it was a second spelling of standardize with identical flags, output and exit codes, and an agent or script still spelling it now gets the unknown-command error pointing at campaigns-os --help. Use standardize; its flags (--target, --family, --slug, --sdk-support-policy, --field-contract, --no-doctor, --json), its output, and the report's own campaign-standardization-report/v0 schema_version are unchanged. Newly available: the ./text-safety package export publishes singleLineField(value, fallback) and singleLineDetail(detail, max), the flatteners the CLI uses before printing a value it did not author, so a consumer rendering a run id, a target path or a quoted loader message into its own single-line notice can apply the same escape set instead of reimplementing it. singleLineField replaces C0, DEL and C1 with U+FFFD without dropping characters; singleLineDetail additionally turns line breaks into spaces, collapses whitespace, backslash-escapes Markdown, and truncates to max (default 300) with an ellipsis, reporting (no detail reported) for an empty value. Both moved to src/text-safety.mjs with no behaviour change.",
-      "compatibility": "breaking",
-      "migration": "Replace campaigns-os standardization-report with campaigns-os standardize; every flag, the output and the exit codes are identical, so nothing else changes. A consumer pinning cli_commands drops standardization-report from its pinned list, and may add the ./text-safety package export.",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.17",
+      "changelog_sha256": "8c656cd52cb91230cfb9e1854814c16ccd8170ce1489baaacb5dec73bce043b4",
+      "agent_impact": "start / prepare-build / build now report the template-family precedence they always applied. When --template-family and the CampaignSpec preferred_template_family hint name different families, the flag still wins (packet.assembly.template_family and template_lock are unchanged), but the run prints one stderr line naming both values and their channels, and the assembly report's warnings[] gains an advisory entry { code: \"TEMPLATE_FAMILY_HINT_OVERRIDDEN\", stage: \"prepare_build\", message } naming the winning flag and the overridden hint. A flag equal to the hint, a hint with no flag, and a flag with no hint all stay silent. No exit code, blocker, or gate changes; an agent that ignores unknown warning codes is unaffected. An agent that wants the spec hint honoured must omit the flag.",
+      "compatibility": "compatible",
+      "migration": "None.",
       "changes": [
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
-          "surface_entry": "standardize",
-          "summary": "Removes the standardization-report dispatch branch and its usage line, so that spelling falls through to the unknown-command error; standardize keeps the branch and every flag, output and exit code. (The item names standardize because the removed spelling is no longer declared in the supported surface and the ledger gate requires a declared surface_entry - the same shape RL-0036 used when the validate-build-packet alias of doctor was removed.) Also moves singleLineField and singleLineDetail into src/text-safety.mjs and imports them, with no change to any notice the CLI prints."
+          "surface_entry": "prepare-build",
+          "summary": "Template-family precedence is resolved through resolveTemplateFamilySelection and announced: a flag/hint disagreement prints an stderr line and adds the TEMPLATE_FAMILY_HINT_OVERRIDDEN prepare_build warning to the assembly report."
         },
         {
-          "class": "package_export",
-          "path": "package.json",
-          "surface_entry": "./text-safety",
-          "summary": "Declares the ./text-safety subpath export (import and default) pointing at src/text-safety.mjs, already covered by files[] via src."
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "start",
+          "summary": "start shares the prepare-build intake body, so it emits the same template-family precedence notice."
         },
         {
-          "class": "compatibility_policy",
-          "path": "contracts/supported-surface.json",
-          "surface_entry": "contracts/supported-surface.json",
-          "summary": "Advances surface_version to 1.27.0, drops standardization-report from cli_commands, and adds ./text-safety to package_exports."
-        },
-        {
-          "class": "compatibility_policy",
-          "path": "docs/supported-surface.md",
-          "surface_entry": "docs/supported-surface.md",
-          "summary": "Removes standardization-report from the supported CLI command list, records that the spelling was removed at 1.27.0 and returns the unknown-command error, and adds the ./text-safety package export row."
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "build",
+          "summary": "build shares the prepare-build intake body, so it emits the same template-family precedence notice."
         },
         {
           "class": "named_surface",
-          "path": "docs/campaign-standardization-report.md",
-          "surface_entry": "docs/campaign-standardization-report.md",
-          "summary": "Uses standardize in both example invocations and in the injectable-contract note, and states that the standardization-report spelling was removed at 1.27.0 while the report's schema_version is unaffected."
-        },
-        {
-          "class": "documentation",
-          "path": "docs/orientation-contract-reference.md",
-          "surface_entry": "docs/orientation-contract-reference.md",
-          "summary": "Regenerates orientation context for supported surface 1.27.0, without standardization-report in the supported command list."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/runtime-readiness.md",
-          "surface_entry": "docs/runtime-readiness.md",
-          "summary": "Regenerates supported-surface context for 1.27.0; the runtime recipe is unchanged."
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Authoring-Time Hints states that a flag/hint disagreement prints the precedence line and records TEMPLATE_FAMILY_HINT_OVERRIDDEN on the assembly report, and how to make the hint win."
         }
       ],
-      "entry_sha256": "35d3456faa0550d97a496118809082a12975968e079d0427b97a3c3c668234ec"
+      "entry_sha256": "e7e9cd25dd2fb29c09044c7ff7fc40d0482b78cc77be8b0739f772ec2cbb3c26"
     }
   ]
 }
