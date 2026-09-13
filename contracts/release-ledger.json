@@ -2282,20 +2282,38 @@
       "date": "2026-09-13",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.26.0+agent.16",
-      "changelog_sha256": "94ed9c0906b7e41ac0b3a52dcee40c62ee9014c82629e4bfb7c0744729bd3bff",
-      "agent_impact": "A source-html manifest screenshot record that fails one of the three field tests (viewport, evidence pointer, kind) is still dropped, but is now reported: manifest validation emits one warning per unusable record naming pages[i].screenshots[j], its page_id, and the failing field. start/prepare-build/build print it and doctor carries it as an extra source_html.manifest warning. No schema change, no new codes, and the manifest is still accepted and used as written; an agent that reasoned about a page blocked for missing desktop/mobile proof can now read the warning instead of guessing which record was ignored.",
+      "changelog_section": "1.26.0+agent.17",
+      "changelog_sha256": "8c656cd52cb91230cfb9e1854814c16ccd8170ce1489baaacb5dec73bce043b4",
+      "agent_impact": "start / prepare-build / build now report the template-family precedence they always applied. When --template-family and the CampaignSpec preferred_template_family hint name different families, the flag still wins (packet.assembly.template_family and template_lock are unchanged), but the run prints one stderr line naming both values and their channels, and the assembly report's warnings[] gains an advisory entry { code: \"TEMPLATE_FAMILY_HINT_OVERRIDDEN\", stage: \"prepare_build\", message } naming the winning flag and the overridden hint. A flag equal to the hint, a hint with no flag, and a flag with no hint all stay silent. No exit code, blocker, or gate changes; an agent that ignores unknown warning codes is unaffected. An agent that wants the spec hint honoured must omit the flag.",
       "compatibility": "compatible",
       "migration": "None.",
       "changes": [
         {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Template-family precedence is resolved through resolveTemplateFamilySelection and announced: a flag/hint disagreement prints an stderr line and adds the TEMPLATE_FAMILY_HINT_OVERRIDDEN prepare_build warning to the assembly report."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "start",
+          "summary": "start shares the prepare-build intake body, so it emits the same template-family precedence notice."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "build",
+          "summary": "build shares the prepare-build intake body, so it emits the same template-family precedence notice."
+        },
+        {
           "class": "named_surface",
-          "path": "docs/design-source-package.md",
-          "surface_entry": "docs/design-source-package.md",
-          "summary": "The record-shape section no longer says a record that fails one of the three field tests produces no diagnostic; it states that start/prepare-build and doctor warn once per bad record, naming the record, its page_id, and the failing field."
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Authoring-Time Hints states that a flag/hint disagreement prints the precedence line and records TEMPLATE_FAMILY_HINT_OVERRIDDEN on the assembly report, and how to make the hint win."
         }
       ],
-      "entry_sha256": "691941e3848d02dd14c8bf31954229fb21e92bcdfff66925f90e92d1ccb137ac"
+      "entry_sha256": "e7e9cd25dd2fb29c09044c7ff7fc40d0482b78cc77be8b0739f772ec2cbb3c26"
     }
   ]
 }

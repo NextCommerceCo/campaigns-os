@@ -583,6 +583,18 @@ Resolution order:
 4. `spec.preferred_template_family` (legacy fallback).
 5. `"undecided"`.
 
+When the flag and the hint disagree, the flag wins and `prepare-build` says
+so rather than resolving in silence: it prints one stderr line naming the
+winning flag value, the overridden `preferred_template_family` value, and
+which channel each came from, and records the same thing on the assembly
+report as a `prepare_build` warning with code
+`TEMPLATE_FAMILY_HINT_OVERRIDDEN`. An operator reading the report
+therefore sees that the packet's family was an override rather than agreement
+with the spec. A flag that merely repeats the hint is agreement, not an
+override, and stays quiet. To build on the spec hint instead, re-run without
+`--template-family`; to remove the disagreement, update the spec so the two
+match.
+
 When the hint wins, `template_lock.locked` stays `false` — the family is set as the default but not locked, so a downstream stage (or a follow-up operator pass) can override without contradiction. `template_decision_notes` records the hint source. `template.candidates` in the build context lists the hint with `source: "CampaignSpec preferred_template_family"` for provenance.
 
 **Per-page:** `Page.upsell_template_pattern` declares the UI variant

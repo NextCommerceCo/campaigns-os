@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   isUnresolvedTemplateFamily,
   resolveTemplateFamilyDesignSource,
+  resolveTemplateFamilySelection,
+  TEMPLATE_FAMILY_FLAG_SOURCE,
+  TEMPLATE_FAMILY_HINT_SOURCE,
   UNRESOLVED_TEMPLATE_FAMILIES,
 } from "./template-reference.mjs";
 
@@ -51,4 +54,31 @@ test("mismatched catalog proof fails closed", () => {
     }, "apollo"),
     /does not match selected family/,
   );
+});
+
+test("template-family precedence resolves the flag over the spec hint and reports the override", () => {
+  const overridden = resolveTemplateFamilySelection({ flag: "olympus-mv-two-step", hint: "demeter" });
+  assert.equal(overridden.value, "olympus-mv-two-step");
+  assert.equal(overridden.source, TEMPLATE_FAMILY_FLAG_SOURCE);
+  assert.equal(overridden.hint, "demeter");
+  assert.equal(overridden.overridden, true);
+
+  const agreeing = resolveTemplateFamilySelection({ flag: "demeter", hint: " demeter " });
+  assert.equal(agreeing.value, "demeter");
+  assert.equal(agreeing.overridden, false, "a flag that repeats the hint confirms it");
+
+  const hintOnly = resolveTemplateFamilySelection({ hint: "demeter" });
+  assert.equal(hintOnly.value, "demeter");
+  assert.equal(hintOnly.source, TEMPLATE_FAMILY_HINT_SOURCE);
+  assert.equal(hintOnly.overridden, false);
+
+  const flagOnly = resolveTemplateFamilySelection({ flag: "demeter" });
+  assert.equal(flagOnly.value, "demeter");
+  assert.equal(flagOnly.overridden, false);
+
+  const neither = resolveTemplateFamilySelection();
+  assert.equal(neither.value, "undecided");
+  assert.equal(neither.source, "default");
+  assert.equal(neither.overridden, false);
+  assert.equal(isUnresolvedTemplateFamily(neither.value), true);
 });
