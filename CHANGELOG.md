@@ -2,6 +2,33 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.21] - 2026-09-13
+
+### Fixed
+
+- `qa run --browser` behind a blocked gate now says that the browser pass did
+  not happen. A blocked checkpoint, polish, or theme gate finalizes the verdict
+  before any page is rendered, which is the point of the gate — but the
+  resulting verdict was byte-identical to the same run without the flag (no
+  `browser-runtime` assertions, `tested_urls: []`) and stderr was empty, so an
+  operator who asked for browser QA got none and had nothing telling them so.
+  Such a run now stamps the verdict with
+  `browser: { requested: true, status: "skipped_gate_blocked", blocked_by:
+  [<gate codes>], reason }` and prints that reason once on stderr, naming the
+  gate that blocked and what clears it. That repair guidance is quoted from the
+  blocking gate's own `required_actions` rather than written at the notice, so
+  it cannot send an operator into a second blocked run — a
+  `polish.assembly_source_package_stale` blocker asks for a fresh Build, not
+  another Polish, and a waive command appears only for a state its gate
+  actually lets an operator waive. The gate decision, the assertion set and the
+  exit code are unchanged: a blocked verdict still exits `4`. A reader adapts by treating the field as additive
+  and present only for that case — its absence means the verdict makes no claim
+  about a browser pass, not that one ran, so keep reading `browser-runtime`
+  assertions and `tested_urls` for that. The field is not in the committed
+  sidecar's allowlist projection, and `--json` runs receive the stamp in the
+  emitted verdict instead of the stderr line. `docs/qa-and-test-orders.md`
+  states the behaviour.
+
 ## [1.26.0+agent.20] - 2026-09-13
 
 ### Fixed

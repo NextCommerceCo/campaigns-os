@@ -1674,6 +1674,97 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze(
   QA_ASSERTION_FAMILY_VOCABULARY.filter((family) => family !== "theme_gate"),
 );
 
+// A requested browser pass a blocked gate refused.
+//
+// `qa run --browser` behind a blocked gate finalizes the blocked verdict before
+// any page is rendered — the gate decision is the point, and neither it nor the
+// exit code changes here. What used to be missing is any trace of the
+// downgrade: the verdict was byte-identical to the same run without the flag
+// (no browser-runtime assertions, `tested_urls: []`), and stderr said nothing,
+// so an operator who asked for browser QA got none and had no way to tell.
+// The stamp below rides the verdict for machine readers and
+// `reportBrowserSkippedByGate` says it once for the human.
+export const BROWSER_SKIPPED_GATE_BLOCKED = "skipped_gate_blocked";
+
+// How many of a gate's required actions the one-line notice quotes before it
+// defers to the verdict. Exported so a test pins the number rather than
+// re-deriving it from the behaviour it governs.
+export const MAX_BROWSER_SKIP_ACTIONS = 3;
+
+// What actually clears this gate, taken from the gate itself.
+//
+// Deliberately not prose written here: "re-run Polish" is wrong for
+// polish.assembly_source_package_stale (only a fresh Build refreshes the
+// assembly fingerprint), and "record a waiver" is wrong for every non-waivable
+// checkpoint state — checkpointWaive refuses those outright. The evaluators
+// already publish the correct repair for the exact state they blocked on, and
+// the waive command appears among them only when the gate is waivable, so the
+// notice quotes required_actions and invents nothing.
+function gateClearingHint(gates) {
+  const actions = (Array.isArray(gates) ? gates : [gates])
+    .filter(isPlainObject)
+    .flatMap((gate) => (Array.isArray(gate.required_actions) ? gate.required_actions.filter(isPlainObject) : []));
+  const unique = [];
+  for (const action of actions) {
+    // Prefer the runnable command; fall back to the manual instruction, which
+    // is what a kind: "manual" action carries instead of one.
+    const text = flattenForNotice(action.command) || flattenForNotice(action.description);
+    if (text && !unique.includes(text)) unique.push(text);
+  }
+  // Deduplicated BEFORE the cap, and truncation is measured against that count:
+  // two identical actions are one repair, and claiming a "rest" the reader
+  // would not find on the verdict is worse than saying nothing.
+  const named = unique.slice(0, MAX_BROWSER_SKIP_ACTIONS);
+  if (!named.length) {
+    // Two different silences. A gate that published nothing has nothing for the
+    // reader to look up beyond its own reason; a gate that published actions
+    // this notice could not render (no command, no readable description) has
+    // repair steps ON the verdict, and calling that "no actions" would hide
+    // them.
+    return actions.length
+      ? "The gate published repair steps this notice could not render; read its required_actions on the verdict for what clears it, then re-run with --browser."
+      : "Read the gate's own reason and required_actions on the verdict for what clears it, then re-run with --browser.";
+  }
+  const more = unique.length > named.length ? " (and the rest of the gate's required_actions on the verdict)" : "";
+  return `The gate's required actions clear it: ${named.join("; ")}${more}. Then re-run with --browser.`;
+}
+
+// Gate reasons and required actions carry subject-derived values (slugs,
+// target paths, timestamps), and this text becomes one stderr line, so a
+// newline or an ANSI escape in it could split or dress up toolkit output.
+// cli.mjs flattens its own notices for the same reason; its helper is not
+// importable here (cli.mjs imports this module, not the reverse), and this one
+// also collapses runs of whitespace, because the values are being folded into
+// a sentence rather than printed as their own field.
+function flattenForNotice(value) {
+  if (typeof value !== "string") return "";
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function browserSkippedByGate({ args, blockedBy, gateLabel, gates }) {
+  // No flag, no claim: a run that never asked for a browser pass is not
+  // "skipping" one, and stamping it would make the field unreadable.
+  if (args?.browser !== true) return null;
+  const codes = (Array.isArray(blockedBy) ? blockedBy : [blockedBy])
+    .filter((code) => typeof code === "string" && code.length > 0);
+  const named = codes.length ? ` (${codes.join(", ")})` : "";
+  return {
+    requested: true,
+    status: BROWSER_SKIPPED_GATE_BLOCKED,
+    blocked_by: codes,
+    reason: `Browser QA was requested with --browser but no browser launched: the ${gateLabel}${named} blocked this run before any page was rendered. ${gateClearingHint(gates)}`,
+  };
+}
+
+// One stderr line, on the same seam as reportCommercialRunnerError: suppressed
+// under --json, where the stamp itself is already in the emitted verdict.
+function reportBrowserSkippedByGate(args, browser, write = (message) => process.stderr.write(message)) {
+  if (!browser || browser.status !== BROWSER_SKIPPED_GATE_BLOCKED) return false;
+  if (args?.json === true) return false;
+  write(`[campaigns-os] ${browser.reason}\n`);
+  return true;
+}
+
 function parityReplayEvidence(bundle) {
   const order = bundle?.order || bundle?.orders?.[0] || null;
   const capture = bundle?.capture || bundle?.candidate_capture || bundle?.captures?.candidate || null;
@@ -1774,7 +1865,8 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
   const checkpointGates = Array.isArray(resolved.checkpointGates)
     ? resolved.checkpointGates
     : nonPacketCheckpointGates(resolved.publicRouteSlug);
-  if (checkpointGates.some((checkpoint) => checkpoint.status === "blocked")) {
+  const blockedCheckpoints = checkpointGates.filter((checkpoint) => checkpoint?.status === "blocked");
+  if (blockedCheckpoints.length) {
     return finalizeQaRun({
       args,
       resolved,
@@ -1784,6 +1876,12 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
       testOrders: [],
       commercial: unavailableCommercialReport("checkpoint_gate_blocked"),
       runSessionActive,
+      browser: browserSkippedByGate({
+        args,
+        blockedBy: blockedCheckpoints.map((checkpoint) => checkpoint.id),
+        gateLabel: "checkpoint gate",
+        gates: blockedCheckpoints,
+      }),
     });
   }
   const checkpointAssertions = checkpointGates.map(checkpointGateAssertion);
@@ -1797,6 +1895,12 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
       testOrders: [],
       commercial: unavailableCommercialReport("polish_gate_blocked"),
       runSessionActive,
+      browser: browserSkippedByGate({
+        args,
+        blockedBy: [polishGate.code],
+        gateLabel: "polish gate",
+        gates: [polishGate],
+      }),
     });
   }
   // Blocked theme gate refuses the whole run: the verdict carries the gate
@@ -1812,6 +1916,12 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
       testOrders: [],
       commercial: unavailableCommercialReport("theme_gate_blocked"),
       runSessionActive,
+      browser: browserSkippedByGate({
+        args,
+        blockedBy: [gate.code],
+        gateLabel: "theme gate",
+        gates: [gate],
+      }),
     });
   }
 
@@ -1929,7 +2039,7 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions }, 
   return result.orders;
 }
 
-async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false }) {
+async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false, browser = null }) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
   const testedUrls = deriveTestedUrlsFromAssertions(assertions, pageUrls);
@@ -1964,10 +2074,15 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     testOrders,
     commercial,
     causeSummary,
+    browser,
   });
 
   const validationErrors = validateVerdict(verdict);
   if (validationErrors.length) throw new Error(`QA verdict failed local validation:\n- ${validationErrors.join("\n- ")}`);
+  // Said before the verdict is written and published: a publish that hangs or
+  // fails must not be what decides whether the operator hears about the
+  // downgrade they asked for.
+  reportBrowserSkippedByGate(args, verdict.browser);
   // The full verdict lands beside the campaign, not beside the caller. The
   // Run Record reads verdicts back from <target-repo>/qa-output/<slug>/ by
   // convention, so a default rooted at cwd wrote the file where nothing
@@ -2034,6 +2149,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),
     polish_gate: polishGateSummary(resolved.polishGate),
+    browser: verdict.browser || null,
     commercial: verdict.commercial || null,
     next_actions: buildQaCloseoutActions({ packetPath: resolved.packetPath, localPath, runSessionActive, disposition: verdict.disposition }),
     verdict,
@@ -3331,4 +3447,7 @@ export const __qaNodeTestHooks = Object.freeze({
   isRoutingMetaTag,
   unsupportedSdkMetaHint,
   reportCommercialRunnerError,
+  browserSkippedByGate,
+  reportBrowserSkippedByGate,
+  gateClearingHint,
 });
