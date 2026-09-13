@@ -2,6 +2,30 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.17] - 2026-09-13
+
+### Changed
+
+- `start`, `prepare-build` and `build` now say which template family won when
+  the `--template-family` flag and the CampaignSpec
+  `preferred_template_family` hint disagree. The precedence itself is
+  unchanged and was always documented — the flag beats the hint — but it
+  resolved in silence, so an operator whose spec hinted one certified family
+  and whose flag named another got a packet built on the flag with nothing on
+  stderr and nothing on the assembly report to show the hint had been
+  discarded; the packet read as agreement with the spec. A disagreement now
+  prints one stderr line naming both values and the channel each came from,
+  and adds a `prepare_build` warning with code
+  `TEMPLATE_FAMILY_HINT_OVERRIDDEN` to the assembly report's `warnings[]`,
+  beside the existing `SOURCE_SCOPE_PARTIAL` and
+  `AMBIGUOUS_SOURCE_HTML_CANDIDATES` entries. A flag that repeats the hint is
+  agreement, not an override, and stays quiet, as does a hint with no flag.
+  Nothing about the packet changes and no gate is added: the warning is
+  advisory, exit codes are unaffected, and an agent that ignores unknown
+  warning codes keeps working. A reader that wants the spec hint to win should
+  drop the flag; a reader that wants the disagreement gone should update the
+  spec. docs/build-packet.md "Authoring-Time Hints" documents both the
+  precedence and the notice.
 ## [1.26.0+agent.16] - 2026-09-13
 
 ### Changed
