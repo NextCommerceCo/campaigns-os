@@ -2,6 +2,34 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.2] - 2026-09-13
+
+### Added
+
+- `singleLineFragment(value, fallback)` on the `./text-safety` package export,
+  beside `singleLineField` and `singleLineDetail`. It is the flattener for a
+  value folded into a sentence rather than printed as its own field — a
+  gate's repair command or manual instruction quoted in a notice: line breaks
+  and tabs become spaces, runs of whitespace collapse, the ends are trimmed,
+  and every other control character becomes U+FFFD, with no Markdown escaping
+  and no length cap, so a command stays pasteable. This is the folding step
+  `singleLineDetail` already performed inside itself; `singleLineDetail` is
+  now built on it and its output is unchanged byte for byte.
+
+### Fixed
+
+- The QA runner's browser-skipped notice (`Browser QA was requested with
+  --browser but no browser launched ... The gate's required actions clear
+  it: ...`) flattens each quoted `required_actions[]` command through that
+  shared function instead of a private copy inside the runner whose comment
+  said the CLI's helper was not importable from there (it has been since the
+  helpers moved to `src/text-safety.mjs` at 1.27.0). One visible difference
+  on hostile input only: an ANSI escape or other non-whitespace control
+  character inside a published command is now replaced with U+FFFD, the
+  reading every other CLI notice gives it, rather than folded into a space.
+  Line breaks and tabs inside a command still read as one space, as before.
+  `docs/supported-surface.md` describes the third function beside the two.
+
 ## [1.27.0] - 2026-09-13
 
 ### Added
