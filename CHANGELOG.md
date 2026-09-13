@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.26.0+agent.20] - 2026-09-13
+## [1.26.0+agent.23] - 2026-09-13
 
 ### Fixed
 
@@ -29,6 +29,7 @@ Notable supported-surface changes are recorded here.
   prints nothing extra, so clean runs are unchanged. `--json` output is byte-for-byte
   unchanged — this is text-only, like the existing tiny prompts — so no
   machine reader needs to adapt.
+
 ## [1.26.0+agent.22] - 2026-09-13
 
 ### Fixed
