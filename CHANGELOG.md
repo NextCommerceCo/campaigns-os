@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.26.0+agent.16] - 2026-09-13
+## [1.26.0+agent.17] - 2026-09-13
 
 ### Changed
 
@@ -26,6 +26,10 @@ Notable supported-surface changes are recorded here.
   drop the flag; a reader that wants the disagreement gone should update the
   spec. docs/build-packet.md "Authoring-Time Hints" documents both the
   precedence and the notice.
+## [1.26.0+agent.16] - 2026-09-13
+
+### Changed
+
 - The `browser-order-bump-state` marker vocabulary now lives in one list, and
   the stylesheet-rule walk no longer reads a dimmed marker as a hidden one.
   Two exported constants held the same four marker selectors — the ordered
