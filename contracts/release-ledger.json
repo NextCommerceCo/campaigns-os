@@ -2236,6 +2236,45 @@
         }
       ],
       "entry_sha256": "7f8072738a6200727ea172cbed10685f768e1d70f50b998aa067c3137cee9bd6"
+    },
+    {
+      "id": "RL-0054",
+      "sequence": 54,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.15",
+      "changelog_sha256": "b79a80fe0bae025a4381a6cfaf1ad9baeb8e3d88b571b236db4346151b3e27a1",
+      "agent_impact": "Four documented facts a consumer may have been getting wrong, with no behaviour change behind them. First, a checkpoint gate's status is the blocking axis only: page_kit.store_profile returns status pass with code page_kit.store_profile.target_only and the affected fields in warning_fields[] when the target declares a governed Store Profile field the CampaignSpec leaves empty, and qa resolve chooses between ready and ready_with_exceptions from warning_fields[] (or an active waiver), not from status \u2014 so read code and warning_fields[], never status alone, to decide whether a gate is clean. Second, sequence is the authoritative order of contracts/release-ledger.json (it is the entry's position in entries[], and the gate derives the expected value from that position) while id is an immutable label that is never reused or renumbered; the two diverge legitimately when concurrent pull requests restamp sequence on merge, so order by sequence and identify by id and infer neither from the other. Third, a change that lives entirely in policy-ignored paths carries a same-surface CHANGELOG section and no ledger entry, because every change item must map to a classified changed path in the range; any src/cli.mjs change is cli_surface and owes an entry. Fourth, Design Source Package intake only reads under the source root and writes every artifact under the target repository, and a screenshots[] record is available with a url as well as a path, so the readiness gate can clear against a source root the operator cannot write and with no capture bytes in the source tree; the manifest path is fixed and source_html.root is stored relative to the packet, so a packet resolves its source from where it was written.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The checkpoint-preflight section now states that a gate's status is the blocking axis only: a pass can carry non-blocking findings in warning_fields[] (page_kit.store_profile.target_only), which is what qa resolve and the packet QA assertion read."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/release-ledger-authoring-guide.md",
+          "surface_entry": "docs/release-ledger-authoring-guide.md",
+          "summary": "Adds the sequence-versus-id rule (position is the authoritative order; ids are never renumbered and may diverge after concurrent merges) and a subsection recording that a fix confined to policy-ignored paths carries a CHANGELOG section and no ledger entry, while any src/cli.mjs change owes one."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "New generated section \"Ledger order and entry identity\" states that sequence is the authoritative ledger order and id is an immutable label that may legitimately diverge from it."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Documents the read-only source root: intake reads under the source root and writes its artifacts under the target repository, url-only screenshot records satisfy desktop/mobile proof, and the fixed manifest path plus the packet-relative source_html.root are the mechanics to plan around."
+        }
+      ],
+      "entry_sha256": "346816d158a7b0dd8eb7348bf9c509c422accd064eca61572941e58d8aa19cd4"
     }
   ]
 }
