@@ -18,14 +18,21 @@ by the card's state class.
 | `aria-hidden-checkbox` | `#bump-floating-pseudo` (package 10, `next-in-cart`) | empty `0 x 0` host span; the tick is an absolutely positioned `::after` | `markerSignal` `pseudo`, `markerChecked` true — the host's size is not the tick's |
 | `aria-hidden-checkbox` | `#bump-collapse` (package 11, `next-in-cart`) | tick hidden by `visibility: collapse` when unchecked, restored when active | `markerSignal` `display_toggled` — collapse hides a tick exactly as `display: none` does |
 | `aria-hidden-checkbox` | `#bump-auto-pseudo` (package 12, `next-in-cart`) | unstyled `::after` on a `0 x 0` host; computed width and height are `auto` | `markerSignal` `pseudo`, `markerChecked` true — the content sizes the box |
+| `aria-hidden-checkbox` | `#bump-dimmed-rule` (package 13) | visible persistent marker, declined; a base rule dims it to `opacity: 0.4` and a more specific rule restores full opacity | `markerSignal` `unresolved` — a dimming declaration is a style, not a way of hiding a tick, so nothing says which state it is in |
+| `aria-hidden-checkbox` | `#bump-opacity-toggled` (package 14, `next-in-cart`) | tick hidden by `opacity: 0` when unchecked, restored when active | `markerSignal` `display_toggled` — fading a tick all the way out hides it exactly as `display: none` does |
 
 Before the fix, the first two resolved the `<input>` as the marker and the
 third resolved the slider, so an accepted bump could never read checked. The
 next two are the other direction: a box whose visibility is read as its state
 fails a correctly declined bump, so the two families have to be told apart
-rather than collapsed. The last two pin the two ways that family test can be
+rather than collapsed. The next two pin two ways that family test can be
 fooled — a hiding rule that does not apply on screen, and a host box whose size
-is not the tick's.
+is not the tick's. The last two are the two sides of one threshold: the rule
+walk counts a declaration only when it hides the marker outright, so a marker
+dimmed to `opacity: 0.4` is still visible and still unreadable, while a tick
+faded to `opacity: 0` is state-toggled. The rendered read keeps its own, looser
+threshold — a marker faded to half opacity or less is too faint to read a tick
+off — because it is answering a different question.
 
 ## Reading the evidence
 
