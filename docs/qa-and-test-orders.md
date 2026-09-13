@@ -110,6 +110,7 @@ assertions remain visible when gates disagree, so waiving or correcting one
 never suppresses another. Store Profile and SDK use the `api-metadata` family;
 the hidden eager-media assertion uses `polish_gate`.
 
+<<<<<<< HEAD
 A blocked gate downgrades a requested browser pass visibly. When `--browser` was
 passed and a blocked checkpoint, polish, or theme gate finalized the run before
 any page was rendered, the verdict carries
@@ -123,6 +124,19 @@ means the verdict makes no claim about a browser pass — read the
 `browser-runtime` assertions and `tested_urls` to tell whether one ran. It is
 not part of the committed sidecar's allowlist projection, and `--json` runs get
 the stamp in the emitted verdict instead of the stderr line.
+||||||| 3838ad3
+=======
+A gate's `status` is the blocking axis only, not a cleanliness signal. A gate
+can report `status: pass` and still carry non-blocking findings: when the target
+`_data/campaigns.json` entry declares a governed Store Profile field the
+CampaignSpec leaves empty, `page_kit.store_profile` passes with
+`code: page_kit.store_profile.target_only` and names those fields in
+`warning_fields[]`. `qa resolve` reads `warning_fields[]` (and an active
+waiver), not `status`, when it chooses between `ready` and
+`ready_with_exceptions`, and packet QA turns the same array into a WARN
+assertion. So read a gate's `code` and `warning_fields[]` rather than treating
+`pass` as clean.
+>>>>>>> origin/main
 
 `qa resolve` remains a diagnostic command and always exits 0: it reports
 `ok: false` and `status: blocked`, prints all four gates and their safe

@@ -207,6 +207,22 @@ Developer preview. Build output still needs the normal proof gates: build/lint e
 
 Launch readiness is separate from Campaigns OS proof. Before real shoppers see a campaign, confirm the production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration.
 
+## Review standards
+
+Two rules reviewers apply to every patch, beyond the gates in
+`npm run check`:
+
+- **A guard test includes the failing case.** A test that passes against the
+  unfixed code guards nothing, so assert the behaviour that was broken and check
+  that it fails without the fix. Prefer assertions against the parsed module or
+  its output — call the function, read the value — over matching substrings of
+  source text, which passes on a comment and breaks on a rename.
+- **A `catch` branches on the condition it claims to handle.** Test
+  `error.code` (or whatever specific condition the comment justifies), handle
+  that case, and journal or rethrow everything else. A bare `catch` that
+  swallows every error turns a typo, a permission failure, and an expected
+  absence into the same silent success.
+
 ## Issue tracking
 
 Work in this repo is tracked with GitHub Issues and coordinated on the
