@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.26.0+agent.18] - 2026-09-13
+## [1.26.0+agent.19] - 2026-09-13
 
 ### Changed
 
@@ -35,6 +35,8 @@ Notable supported-surface changes are recorded here.
   recorded measurement has to equal the projection for a hand-edited
   measurement to be catchable, and accepting a warning that does not name the
   roles it forgave would re-open the gap this change closes.
+## [1.26.0+agent.18] - 2026-09-13
+
 ### Fixed
 
 - A source-html manifest `pages[].screenshots[]` record that fails one of the
