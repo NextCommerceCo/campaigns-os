@@ -780,11 +780,7 @@ function polishGateAssertion(gate) {
       severity: SEVERITY.BLOCKER,
       expected: "current structured Polish evidence produced by next-campaigns-polish",
       actual: gate.reason,
-      // The same fields the pass and waived branches carry, plus the block's
-      // own reason, problems and actions. A blocked gate names the current
-      // Design Source Package fingerprint and the assembly's in its reason;
-      // the verdict copy must carry what the reason names, or the record a
-      // reader has in hand says less than the doctor output it summarizes.
+      // blocked carries the same evidence as pass/waived, plus reason/problems/actions
       evidence: {
         ...evidence,
         reason: gate.reason,
