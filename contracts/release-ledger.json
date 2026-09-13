@@ -1999,6 +1999,27 @@
         }
       ],
       "entry_sha256": "992e47ca80b0a0e12e228f0a9cebd9b664fc1e7269427f3f93c82fc1ac089340"
+    },
+    {
+      "id": "RL-0045",
+      "sequence": 45,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.12",
+      "changelog_sha256": "4c19b83f509f44276126310f4cda2dcddfe6754f9449dd5c74c442bb0a42b3d7",
+      "agent_impact": "No behaviour or output change. The doctor human report prints its cause summary and comparison-basis lines through the shared formatCauseReportLines; the text is byte-identical to before. Internal exports of src/finding-cause.mjs and one alias in src/polish-gate.mjs were removed; none is on the supported surface.",
+      "compatibility": "compatible",
+      "migration": "none.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "The doctor human report prints its cause lines via formatCauseReportLines; output unchanged."
+        }
+      ],
+      "entry_sha256": "88af1556613e43dd36901d84fb6fb59d1ff5894555f17b78fb3485a802392757"
     }
   ]
 }

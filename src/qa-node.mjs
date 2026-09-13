@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
-import { annotateQaAssertionCauses, formatCauseBasisLine, formatCauseSummaryLine, formatCauseTag } from "./finding-cause.mjs";
+import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
@@ -2720,14 +2720,10 @@ function printRouteProbeLines(routeProbe) {
 // existed. Printed right under the status counts, above the gate lines,
 // because it is what the operator is looking for.
 function printCauseLines(verdict) {
-  const summary = verdict?.cause_summary;
-  if (!summary) return;
-  console.log(formatCauseSummaryLine(summary, { priorRunId: summary.prior_run_id }));
   // One formatter, shared with the doctor report: a prior record that exists
   // but has no usable QA verdict is not the same state as no prior record, and
   // the two commands must not describe it differently.
-  const basis = formatCauseBasisLine(summary);
-  if (basis) console.log(basis);
+  for (const line of formatCauseReportLines(verdict?.cause_summary)) console.log(line);
   const exceptions = Array.isArray(verdict.exceptions) ? verdict.exceptions : [];
   if (!exceptions.length) return;
   console.log("Findings:");
