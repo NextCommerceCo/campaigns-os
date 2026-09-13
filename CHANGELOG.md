@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.9] - 2026-09-13
+
+### Changed
+
+- `src/cli.mjs` no longer re-exports `orderRunRecordFileNames` and
+  `readRunRecordsForTarget`; both live in `src/run-record.mjs`, which was
+  already the only implementation and the module the QA runner imports them
+  from. Neither name is on the supported surface (`package_exports` lists
+  subpaths, not these symbols), so this removes an internal shim only; the
+  one in-repo importer (a test) now imports from `src/run-record.mjs`.
+
 ## [1.26.0] - 2026-09-12
 
 ### Added

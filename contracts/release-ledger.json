@@ -1999,6 +1999,27 @@
         }
       ],
       "entry_sha256": "992e47ca80b0a0e12e228f0a9cebd9b664fc1e7269427f3f93c82fc1ac089340"
+    },
+    {
+      "id": "RL-0045",
+      "sequence": 45,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.9",
+      "changelog_sha256": "e80fcfaae69a5475922a32cd1f3fd8ca97a6f0f0942aa4a7197ee8531c4ec5cf",
+      "agent_impact": "No behaviour change. src/cli.mjs no longer re-exports orderRunRecordFileNames and readRunRecordsForTarget; both remain exported from src/run-record.mjs. Neither symbol is on the supported surface (package_exports lists subpaths), so no consumer contract moves; an in-repo importer of the old re-export must import from src/run-record.mjs.",
+      "compatibility": "compatible",
+      "migration": "none for supported consumers. Anything importing the two names from src/cli.mjs directly imports them from src/run-record.mjs.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "Internal shim removed: the run-record helpers the next closeout uses are imported from src/run-record.mjs and no longer re-exported from src/cli.mjs. No command, flag or output changes."
+        }
+      ],
+      "entry_sha256": "9061ef246c992fdcc387728662c1399ca6be5819ced0900a753263614c27e196"
     }
   ]
 }

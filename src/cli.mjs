@@ -48,10 +48,6 @@ import {
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
-// Re-exported from their new home in run-record.mjs (one implementation, two
-// call sites: `next` closeout here and cause classification in the QA runner,
-// which must not import this module).
-export { orderRunRecordFileNames, readRunRecordsForTarget } from "./run-record.mjs";
 import { annotateDoctorIssueCauses, formatCauseBasisLine, formatCauseSummaryLine, formatCauseTag } from "./finding-cause.mjs";
 import {
   announceDefaultOnTelemetry,
