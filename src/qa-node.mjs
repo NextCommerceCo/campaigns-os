@@ -64,7 +64,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
-  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--no-remit] [--json]
+  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
