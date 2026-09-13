@@ -35,6 +35,12 @@ const QA_OWNED_FIELDS = Object.freeze(["verdict_run_id", "evidence", "purchase_p
 // enough that a couple of repair attempts do not evict the state a reviewer
 // came looking for.
 export const PRODUCER_STAGE_HISTORY_LIMIT = 5;
+// The fields a producer restates on every run even when nothing else moved.
+// A re-run that reaches the same outcome differs from the previous report in
+// these alone, and rewriting the file for them makes every digest taken of
+// the report (a Run Record's assembly_report sha256, for one) go stale for
+// no information.
+const PRODUCER_STAGE_TIMESTAMP_FIELDS = Object.freeze(["checked_at", "completed_at"]);
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -102,6 +108,26 @@ function archivePreviousIdentity(previous, incoming) {
   if (hadIdentity) entry.verdict_run_id = hadIdentity;
   if (hadEvidence) entry.evidence = JSON.parse(JSON.stringify(hadEvidence));
   return entry;
+}
+
+function withoutStageTimestamps(report, stage) {
+  const copy = JSON.parse(JSON.stringify(report ?? null));
+  const stageValue = copy?.stages?.[stage];
+  if (isPlainObject(stageValue)) {
+    for (const field of PRODUCER_STAGE_TIMESTAMP_FIELDS) delete stageValue[field];
+  }
+  return copy;
+}
+
+/**
+ * True when `nextReport` restates exactly the outcome `previousReport` already
+ * carries for `stage`, differing only in that stage's timestamps. A producer
+ * that sees this has nothing to write: the report on disk already says what
+ * this run found, and leaving its bytes alone keeps every digest of it valid.
+ */
+export function producerStageOutcomeUnchanged(previousReport, nextReport, stage) {
+  if (!PRODUCER_STAGES.has(stage)) throw new Error("Producer stage must be doctor or qa.");
+  return sameJson(withoutStageTimestamps(previousReport, stage), withoutStageTimestamps(nextReport, stage));
 }
 
 /**

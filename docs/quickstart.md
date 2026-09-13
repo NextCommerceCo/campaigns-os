@@ -76,7 +76,7 @@ the mapped `exit_intent.offer_ref_id` / `exit_intent.offer_code` or
 
 Campaigns API keys are public, browser-side, domain-allowlisted keys. If your exported CampaignSpec includes `campaign.campaigns_api_key`, `doctor` uses it directly and does not require a `CAMPAIGNS_API_KEY` shell env var.
 
-The Store Profile is operator-entered campaign metadata, not Campaigns API data. `doctor` requires `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present.
+The Store Profile is operator-entered campaign metadata, not Campaigns API data. Before the target is scaffolded, `doctor` requires only `campaign.store_url`; `store_name`, `store_terms`, `store_privacy`, `store_contact`, `store_returns`, `store_shipping`, `store_phone`, and `store_phone_tel` are optional storefront/legal metadata used by templates when present. Once the target's `campaigns.json` entry exists, `page_kit.store_profile` checks every one of those fields the CampaignSpec provides against the target: a field the spec carries that the target lacks, or carries with a different value, blocks (the spec is the authority; fix the target entry or the spec, then re-run `doctor`), a field present only in the target warns as `target_only` — unless the value is starter demo residue (a placeholder storefront URL or phone number), which blocks as `demo_residue` whatever the spec says — and a field absent from both is clean. So a spec that fills all nine fields makes all nine required after scaffold. A discrepancy the spec cannot yet resolve can be recorded with `campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate page_kit.store_profile --reason "<why>" --waived-by "<named human>" --review-condition "<trigger>"` (or `--expires-at <ISO timestamp>` instead of the review condition; see [docs/build-packet.md](./build-packet.md), "Page Kit Store Profile checkpoint").
 
 Packages should identify products or variants, while Offers set the customer's final price. Do not create separate `1x` / `2x` / `3x` packages just to express tier pricing, and do not rely on package Retail Price/Quantity fields unless the campaign explicitly uses that older compatibility setup.
 
@@ -122,6 +122,14 @@ Doctor checks this preparation deterministically: unstripped document wrappers
 and leftover/broken frontmatter block with `source_html.prep.*` error codes,
 and source-file internal links warn. See the "Source preparation check" section
 in [docs/source-adapters.md](./source-adapters.md) for each code and its fix.
+If the source is meant to stay a full browser document (raw HTML handed over
+as-is, or pages whose `source_screenshot` proof must be of the standalone
+document), do not strip it: record the decision instead with
+`--wrapper-policy preserve_document_wrappers` on `start` / `prepare-build`, or
+`wrapper_policy` in the source-html manifest, and the wrapper finding becomes a
+warning that names the decision. Choose before capturing screenshots or
+computing `source_hash`; the "Selecting the wrapper policy at intake" section of
+[docs/source-adapters.md](./source-adapters.md) gives the order of operations.
 
 ## Create The Packet
 
@@ -149,9 +157,15 @@ in [docs/source-adapters.md](./source-adapters.md) for each code and its fix.
 > - `--no-remit` on the remitting command (`qa run`, `run-record`, `run end`).
 >
 > Consent gates remit only. Capture is always local, so opting out costs you
-> nothing locally. `--no-run-session` on `start` skips opening the session
-> altogether. Full contract:
-> [Run Telemetry](./workflow-findings-sidecar.md).
+> nothing locally: sessions, journals and Run Records are still written and
+> the Run Record's `remit_state` reads `skipped`. Turning consent off at the
+> machine or environment level (`telemetry off`, `CAMPAIGNS_OS_TELEMETRY=off`)
+> also makes `qa run` default to a local-only verdict unless the campaign is
+> portal-managed or `--post-verdict` is passed; `--no-remit` does not — it
+> skips this command's remit only, and the verdict still publishes. To keep
+> one verdict local, pass `--no-post-verdict` (or `--local-only`) to `qa run`.
+> `--no-run-session` on `start` skips opening the session altogether. Full
+> contract: [Run Telemetry](./workflow-findings-sidecar.md).
 
 ```bash
 npm run campaigns-os -- start \

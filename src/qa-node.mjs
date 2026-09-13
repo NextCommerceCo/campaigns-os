@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { runAnalyticsCorrectnessChecks, runAnalyticsParityChecks, runBrowserChecks, runBrowserTestOrders, testEmail, validatedOrderCreationLimit } from "./qa-browser.mjs";
 import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
-import { annotateQaAssertionCauses, formatCauseBasisLine, formatCauseSummaryLine, formatCauseTag } from "./finding-cause.mjs";
+import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
 import { remit } from "./remit.mjs";
 // Shared outgoing-edge resolver, so QA expectations and build-time wiring
@@ -24,7 +24,7 @@ import { resolveCommerceCatalog, resolveTemplateBrandContract } from "./private-
 import { resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
-import { HIDDEN_EAGER_MEDIA_SCOPE } from "./polish-page-load.mjs";
+import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
 import {
   normalizePageLoadRoute,
   POLISH_PRELOAD_ATTRIBUTES,
@@ -64,7 +64,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
-  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir qa-output] [--no-remit] [--json]
+  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
@@ -96,7 +96,9 @@ Options:
                                   degrades to status ready_unprobed rather than failing — so use this only
                                   for hermetic runs that must make no outbound request at all.
   --probe-timeout-ms <ms>         qa resolve: per-URL reachability probe timeout. Default: 5000.
-  --output-dir <path>             Local verdict directory. Default: qa-output.
+  --output-dir <path>             Local verdict directory. Default: qa-output under the packet's
+                                  target repo (assembly.target_repo, else the packet's directory);
+                                  qa-output under the current directory for packet-less runs.
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
                                   Publishing is automatic; this flag is retained for clarity.
@@ -768,6 +770,7 @@ function polishGateAssertion(gate) {
     assembly_source_package_material_fingerprint: gate.assembly_source_package_material_fingerprint || null,
     performed_by: gate.performed_by || null,
     waiver: gate.waiver || null,
+    expired_waiver: gate.expired_waiver || null,
     scope_source: gate.scope_source || null,
   };
   if (gate.status === "blocked") {
@@ -779,14 +782,12 @@ function polishGateAssertion(gate) {
       severity: SEVERITY.BLOCKER,
       expected: "current structured Polish evidence produced by next-campaigns-polish",
       actual: gate.reason,
+      // blocked carries the same evidence as pass/waived, plus reason/problems/actions
       evidence: {
+        ...evidence,
         reason: gate.reason,
-        build_fingerprint: gate.build_fingerprint || null,
-        source_build_fingerprint: gate.source_build_fingerprint || null,
-        performed_by: gate.performed_by || null,
         problems: gate.problems || [],
         required_actions: gate.required_actions || [],
-        scope_source: gate.scope_source || null,
       },
     });
   }
@@ -1017,6 +1018,66 @@ function hiddenEagerMediaFindings(gate) {
     .sort((left, right) => String(left.route).localeCompare(String(right.route))
       || String(left.viewport).localeCompare(String(right.viewport))
       || (left.element_index ?? -1) - (right.element_index ?? -1));
+}
+
+const HIDDEN_EAGER_MEDIA_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
+// planPolishCapture allows 128 routes; two viewports per route is the full
+// supported matrix, so a run inside the limits never truncates. The cap is
+// applied once across all four cell lists together; anything past it, and
+// any record that does not conform to the closed vocabularies, is counted
+// per list, never dropped silently.
+const MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS = 256;
+const HIDDEN_EAGER_MEDIA_MEASUREMENT_LISTS = Object.freeze(["missing", "duplicate", "unexpected", "incomplete"]);
+
+// A cell is kept only when it conforms: a path-only route and a viewport
+// from the closed vocabulary. Anything else is omitted and counted.
+function hiddenEagerMediaMeasurementCell(cell, { withProblemCodes = false } = {}) {
+  if (!isPlainObject(cell)) return null;
+  const route = normalizePageLoadRoute(cell.route);
+  const viewport = stringArg(cell.viewport)?.toLowerCase();
+  if (!route || !HIDDEN_EAGER_MEDIA_VIEWPORTS.has(viewport)) return null;
+  const projected = { route, viewport };
+  if (withProblemCodes) {
+    projected.problem_codes = [...new Set((Array.isArray(cell.problem_codes) ? cell.problem_codes : [])
+      .filter((code) => HIDDEN_EAGER_MEDIA_PROBLEM_CODES.has(code)))].sort();
+  }
+  return projected;
+}
+
+// The per-route, per-viewport measurement a blocked checkpoint carries: which
+// cells are missing, duplicated, unexpected, or incomplete and on which
+// problem codes. Routes are path-only, viewports and codes come from the
+// closed vocabularies, so nothing here can carry a URL or an operator string.
+// Counts are integers (0 when the input carries none).
+function hiddenEagerMediaMeasurement(gate) {
+  const measurement = gate?.measurement;
+  if (!isPlainObject(measurement)) return null;
+  const lists = {};
+  const omittedByList = {};
+  let budget = MAX_HIDDEN_EAGER_MEDIA_MEASUREMENT_CELLS;
+  for (const name of HIDDEN_EAGER_MEDIA_MEASUREMENT_LISTS) {
+    const cells = [];
+    let omitted = 0;
+    for (const raw of (Array.isArray(measurement[name]) ? measurement[name] : [])) {
+      const cell = hiddenEagerMediaMeasurementCell(raw, { withProblemCodes: name === "incomplete" });
+      if (!cell || budget === 0) {
+        omitted += 1;
+        continue;
+      }
+      cells.push(cell);
+      budget -= 1;
+    }
+    lists[name] = cells;
+    omittedByList[name] = omitted;
+  }
+  return {
+    status: measurement.status === "complete" ? "complete" : "incomplete",
+    expected_capture_count: safeNonnegativeInteger(measurement.expected_capture_count) ?? 0,
+    captured_count: safeNonnegativeInteger(measurement.captured_count) ?? 0,
+    ...lists,
+    omitted_cell_count: Object.values(omittedByList).reduce((total, count) => total + count, 0),
+    omitted_cell_count_by_list: omittedByList,
+  };
 }
 
 function hiddenEagerMediaGateAssertion(gate) {
@@ -1352,6 +1413,7 @@ function checkpointGateSummary(gate) {
       ...summary,
       state: { findings },
       findings,
+      measurement: hiddenEagerMediaMeasurement(gate),
     };
   }
   if (gate?.id === PAGE_KIT_STORE_PROFILE_SCOPE) {
@@ -1906,7 +1968,17 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
 
   const validationErrors = validateVerdict(verdict);
   if (validationErrors.length) throw new Error(`QA verdict failed local validation:\n- ${validationErrors.join("\n- ")}`);
-  const outputDir = resolve(args["output-dir"] || "qa-output");
+  // The full verdict lands beside the campaign, not beside the caller. The
+  // Run Record reads verdicts back from <target-repo>/qa-output/<slug>/ by
+  // convention, so a default rooted at cwd wrote the file where nothing
+  // would find it and left the record with no path. Packet-less runs
+  // (--site / raw map-id) have no target repo and keep the cwd default;
+  // --output-dir is explicit and always wins.
+  const outputDir = args["output-dir"]
+    ? resolve(args["output-dir"])
+    : resolved.packetPath
+      ? join(resolveTargetBaseDir(resolved.packet, resolved.packetPath), "qa-output")
+      : resolve("qa-output");
   const localPath = writeLocalVerdict(verdict, outputDir);
   // The committed sidecar lands beside the Build Packet regardless of
   // --output-dir, for every finalized disposition including blocked: it is
@@ -2720,14 +2792,10 @@ function printRouteProbeLines(routeProbe) {
 // existed. Printed right under the status counts, above the gate lines,
 // because it is what the operator is looking for.
 function printCauseLines(verdict) {
-  const summary = verdict?.cause_summary;
-  if (!summary) return;
-  console.log(formatCauseSummaryLine(summary, { priorRunId: summary.prior_run_id }));
   // One formatter, shared with the doctor report: a prior record that exists
   // but has no usable QA verdict is not the same state as no prior record, and
   // the two commands must not describe it differently.
-  const basis = formatCauseBasisLine(summary);
-  if (basis) console.log(basis);
+  for (const line of formatCauseReportLines(verdict?.cause_summary)) console.log(line);
   const exceptions = Array.isArray(verdict.exceptions) ? verdict.exceptions : [];
   if (!exceptions.length) return;
   console.log("Findings:");

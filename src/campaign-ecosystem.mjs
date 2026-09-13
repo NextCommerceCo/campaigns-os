@@ -3,6 +3,17 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 import { fileURLToPath } from "node:url";
 
 import { shellToken } from "./shell-token.mjs";
+import {
+  compareVersions,
+  escapeRegExp,
+  extractVersion,
+  listFiles as scanFiles,
+  normalizeString,
+  relPath,
+  rootId,
+  shouldSkipDir as skipDir,
+  unique,
+} from "./repo-scan.mjs";
 
 const CONTRACTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "contracts");
 const FIELD_CONTRACT_PATH = join(CONTRACTS_DIR, "campaign-cart-checkout-field-contract.v0.json");
@@ -17,6 +28,9 @@ const SKIP_DIRS = new Set([
   "dist",
   "build",
 ]);
+
+const listFiles = (root, options = {}) => scanFiles(root, { ...options, skipDirs: SKIP_DIRS });
+const shouldSkipDir = (name) => skipDir(name, SKIP_DIRS);
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 const SCRIPT_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts"]);
 const MAX_SAMPLE_COUNT = 8;
@@ -690,35 +704,6 @@ function dedupeBy(entries, keyOf) {
   return result;
 }
 
-function listFiles(root, options = {}) {
-  const includeRuntime = options.includeRuntime === true;
-  const files = [];
-  if (!existsSync(root) || !statSync(root).isDirectory()) return files;
-  const walk = (dir) => {
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (!includeRuntime && shouldSkipDir(entry.name)) continue;
-        if (entry.name === ".git" || entry.name === "node_modules") continue;
-        walk(join(dir, entry.name));
-      } else if (entry.isFile()) {
-        files.push(join(dir, entry.name));
-      }
-    }
-  };
-  walk(root);
-  return files.sort();
-}
-
-function shouldSkipDir(name) {
-  return SKIP_DIRS.has(name) || (name.startsWith(".") && name !== ".campaigns-os");
-}
-
 function safeReadText(path) {
   try {
     return readFileSync(path, "utf8");
@@ -743,45 +728,7 @@ function lineOf(content, index) {
   return content.slice(0, Math.max(0, index)).split(/\r?\n/).length;
 }
 
-function compareVersions(a, b) {
-  const left = extractVersion(a);
-  const right = extractVersion(b);
-  if (!left || !right) return 0;
-  for (let index = 0; index < 3; index += 1) {
-    const diff = left[index] - right[index];
-    if (diff !== 0) return diff > 0 ? 1 : -1;
-  }
-  return 0;
-}
-
-function extractVersion(value) {
-  const match = String(value || "").match(/(\d+)\.(\d+)\.(\d+)/);
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
 function withGlobal(pattern) {
   return new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
-}
-
-function normalizeString(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function relPath(from, to) {
-  const rel = relative(resolve(from), resolve(to)).split(sep).join("/");
-  return rel || ".";
-}
-
-function rootId(targetRepo, rootPath) {
-  return relPath(targetRepo, rootPath).replace(/[^A-Za-z0-9_.-]+/g, "-") || ".";
-}
-
-function unique(values) {
-  return [...new Set(values.filter((value) => value !== null && value !== undefined && value !== ""))];
-}
-
-function escapeRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

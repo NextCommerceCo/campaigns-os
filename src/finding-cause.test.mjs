@@ -306,12 +306,12 @@ test("the summary line leads with the count and names what it compared against",
   ]);
   assert.equal(summary.total, 3);
   assert.equal(
-    formatCauseSummaryLine({ ...summary, surface: "doctor", comparison: "prior_run" }, { priorRunId: "run_1_a" }),
+    formatCauseSummaryLine({ ...summary, surface: "doctor", comparison: "prior_run", prior_run_id: "run_1_a" }),
     "Causes: 3 findings — 1 caused by this change, 2 pre-existing (compared against run run_1_a).",
   );
   // The QA line says which artifact of that record was read.
   assert.equal(
-    formatCauseSummaryLine({ ...summary, surface: "qa", comparison: "prior_run" }, { priorRunId: "run_1_a" }),
+    formatCauseSummaryLine({ ...summary, surface: "qa", comparison: "prior_run", prior_run_id: "run_1_a" }),
     "Causes: 3 findings — 1 caused by this change, 2 pre-existing (compared against the final QA attempt of run run_1_a).",
   );
   assert.match(formatCauseSummaryLine(summary), /no previous run to compare against/);

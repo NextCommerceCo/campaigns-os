@@ -5,7 +5,8 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { assessPurchaseProofCoverage, buildNextActions, orderRunRecordFileNames, readRunRecordsForTarget } from "./cli.mjs";
+import { assessPurchaseProofCoverage, buildNextActions } from "./cli.mjs";
+import { orderRunRecordFileNames, readRunRecordsForTarget } from "./run-record.mjs";
 import { buildQaCloseoutActions } from "./qa-node.mjs";
 import { SESSION_ENDING_DISPOSITIONS } from "./qa-verdict.mjs";
 
