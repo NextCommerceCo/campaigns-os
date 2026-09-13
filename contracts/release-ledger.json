@@ -2170,6 +2170,27 @@
         }
       ],
       "entry_sha256": "b45eee79ca11d8c42e47383f13894f5250a0acff246a2f97e18fd0cd42a5c5df"
+    },
+    {
+      "id": "RL-0052",
+      "sequence": 52,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.7",
+      "changelog_sha256": "9b08152614c0b2182a3498c16409dcc4e5395e439d1915964b66d249a81f0b9b",
+      "agent_impact": "doctor next.actions[] no longer includes 'strip document wrappers' when source_html.prep.document_wrapper is reported as a warning under wrapper_policy preserve_document_wrappers; the source-preparation action lists only the repairs present among the source-preparation findings (wrapper strip only when the wrapper finding is an error; frontmatter repair and internal-link routing when those findings are present). An agent following next.actions[] literally no longer undoes an accepted adapter decision. Codes, severities and finding messages are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none. A consumer matching the source-preparation action on its full previous wording should match on the 'Prepare the mapped source HTML for page-kit ingestion' prefix.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "The source-preparation next action is composed from the findings present and omits the wrapper strip when the wrapper finding is a policy-downgraded warning."
+        }
+      ],
+      "entry_sha256": "38bafcb82e76c3cecc274d2ee010c9846ebbe544b574b45f597adda4f1a48a68"
     }
   ]
 }

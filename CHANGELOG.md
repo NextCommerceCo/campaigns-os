@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.7] - 2026-09-13
+
+### Fixed
+
+- The doctor `Next:` block no longer orders a document-wrapper strip that the
+  run's accepted `preserve_document_wrappers` adapter decision makes wrong.
+  The source-preparation action fired on any source-preparation code in
+  errors or warnings and always listed all three repairs, so a run whose
+  `source_html.prep.document_wrapper` finding had been downgraded to a warning
+  by the recorded wrapper policy still told the operator to strip wrappers,
+  while the warning beside it said the decision was accepted; following the
+  block literally undid what cleared the gate. The action now names only the
+  repairs the findings ask for, and offers the wrapper strip only when the
+  wrapper finding is an error. Codes, severities and the warning text are
+  unchanged.
 ## [1.26.0+agent.12] - 2026-09-13
 
 ### Changed
