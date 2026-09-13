@@ -117,7 +117,7 @@ copied between builds, or repaired in place. Its stable projection is:
 | `measurement.status` | `complete` only when the subject is valid and every expected route/viewport has exactly one complete capture. |
 | `measurement.expected_capture_count`, `measurement.captured_count` | Planned and recorded capture totals. |
 | `measurement.missing[]`, `measurement.duplicate[]`, `measurement.unexpected[]`, `measurement.incomplete[]` | Route/viewport coverage defects. Each incomplete entry carries its sorted `problem_codes[]`. |
-| `measurement.warnings[]` | Complete captures that still carry warning-class problems (today only `cross_origin_request_failed`). Each entry carries the route, viewport, the warning `problem_codes[]`, the bounded sorted `failed_origins[]` (at most 32) and the full `failed_origin_count`. Warnings never change `measurement.status`; they are evidence for the operator and the merchant. |
+| `measurement.warnings[]` | Complete captures that still carry warning-class problems (today only `cross_origin_request_failed`). Each entry carries the route, viewport, the warning `problem_codes[]`, the sorted unique `resource_types[]` the demotion applied to (the beacon allowlist, so at most five values), the bounded sorted `failed_origins[]` (at most 32) and the full `failed_origin_count`. Warnings never change `measurement.status`; they are evidence for the operator and the merchant. |
 | `captures[]` | One deterministic package projection per route and viewport; see the per-capture map below. |
 | `findings[]` | Observed hidden eager-media findings. Each records `code`, route, viewport, tag and element index, bounded `sources[]` / `resource_ids[]` with their full counts, a fingerprint over the complete resource-identity set, transferred and threshold bytes, preload state, and `hidden_by[]`. |
 
@@ -161,7 +161,13 @@ the final document and by its role:
   complete and the checkpoint is evaluated on its merits. The failure is still
   recorded on the ledger entry (`failed_request_count`, with
   `cross_origin_request_count` naming the origin relation) and surfaced in
-  `measurement.warnings[]` with the failing origin.
+  `measurement.warnings[]` with the failing origin and with the beacon roles
+  the demotion applied to in `resource_types[]`. The roles are named because
+  the demotion is a trade-off rather than a fact about the page: an operator
+  reading the warning can see whether a failed `ping` was forgiven or a failed
+  `fetch` that the page may have depended on, without opening the resource
+  ledger. `campaigns-os polish` prints the same list as `Resource types:` in
+  its `Capture warnings (not blocking)` block.
 - `dependency_request_failed` — everything else: the document response, any
   first-party resource of any role, and any cross-origin resource outside the
   beacon allowlist — `document`, `script`, `stylesheet`, `image`, `font`,

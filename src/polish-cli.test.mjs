@@ -277,6 +277,7 @@ test("polish capture text prints non-blocking capture warnings with safe origins
         route: "/landing/?private=route-secret",
         viewport: "desktop",
         problem_codes: ["cross_origin_request_failed", "PRIVATE_PROBLEM"],
+        resource_types: ["ping", "fetch", "PRIVATE_TYPE"],
         failed_origins: [
           "https://attribution.example.invalid",
           "https://attribution.example.invalid/path?token=secret",
@@ -296,9 +297,54 @@ test("polish capture text prints non-blocking capture warnings with safe origins
   assert.match(output, /Capture warnings \(not blocking\):/);
   assert.match(output, /Route: \/landing\//);
   assert.match(output, /Problem codes: cross_origin_request_failed/);
+  assert.match(output, /Resource types: fetch, ping$/m);
   assert.match(output, /Failed origins: https:\/\/attribution\.example\.invalid \(1 shown of 4\)$/m);
   assert.match(output, /Checkpoint: Package-owned page-load evidence has no blocking hidden eager media/);
   assert.doesNotMatch(output, /PRIVATE|private=|token=secret|javascript:/);
+});
+
+test("polish capture text reports unavailable resource types when the warning carries none", () => {
+  const output = formatPolishCaptureText({
+    status: "ready",
+    measurement: {
+      status: "complete",
+      incomplete: [],
+      warnings: [{
+        route: "/landing/",
+        viewport: "desktop",
+        problem_codes: ["cross_origin_request_failed"],
+        failed_origins: ["https://attribution.example.invalid"],
+        failed_origin_count: 1,
+      }],
+    },
+    checkpoint: { code: "polish.hidden_eager_media.pass", findings: [], required_actions: [] },
+    observed_findings: [],
+  });
+
+  assert.match(output, /Resource types: unavailable$/m);
+});
+
+test("polish capture text prints only beacon-class resource types from a warning", () => {
+  const output = formatPolishCaptureText({
+    status: "ready",
+    measurement: {
+      status: "complete",
+      incomplete: [],
+      warnings: [{
+        route: "/landing/",
+        viewport: "desktop",
+        problem_codes: ["cross_origin_request_failed"],
+        failed_origins: ["https://attribution.example.invalid"],
+        failed_origin_count: 1,
+        resource_types: ["script", "ping", "stylesheet", "xhr"],
+      }],
+    },
+    checkpoint: { code: "polish.hidden_eager_media.pass", findings: [], required_actions: [] },
+    observed_findings: [],
+  });
+
+  assert.match(output, /Resource types: ping, xhr$/m);
+  assert.doesNotMatch(output, /script|stylesheet/);
 });
 
 test("missing Chromium persists browser_unavailable and prints the install-browser action", async () => {
