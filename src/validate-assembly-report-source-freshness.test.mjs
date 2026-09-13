@@ -120,9 +120,10 @@ test("validate-assembly-report reports a waiver whose expires_at does not parse"
   const result = validate(buildReport({ waivers: [MALFORMED_WAIVER] }));
   assert.equal(result.ok, false);
   assert.ok(errorCodes(result).includes("stages.assembly.waiver_expires_at_invalid"), errorCodes(result).join(", "));
-  // A malformed record is not an active waiver, so the freshness error stands
-  // beside it; the gate names only the first of the two, as it always has.
-  assert.ok(errorCodes(result).includes(FRESHNESS_CODE), errorCodes(result).join(", "));
+  // The gate stops at the malformed record and so does the validator: one
+  // finding each, the same one, so a consumer mapping codes sees no extra
+  // freshness error until the waiver is repaired.
+  assert.ok(!errorCodes(result).includes(FRESHNESS_CODE), errorCodes(result).join(", "));
   const gate = evaluatePolishGate({ report: buildReport({ waivers: [MALFORMED_WAIVER] }) });
   assert.equal(gate.code, "polish.waiver_expires_at_invalid");
 });

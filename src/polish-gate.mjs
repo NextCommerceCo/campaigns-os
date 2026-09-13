@@ -84,9 +84,10 @@ export function assemblySourcePackageMaterialFingerprint(report) {
 // Callers that have already assessed the freshness waivers pass that
 // assessment in rather than paying for a second scan of the same records; the
 // gate does. A malformed waiver is a separate finding — the gate's
-// polish.waiver_expires_at_invalid, mirrored by the validator — so it is not
-// silently treated as "no waiver" here either: a report whose only waiver
-// record is malformed still fails, on that finding, not on freshness.
+// polish.waiver_expires_at_invalid, mirrored by the validator — and both
+// callers report it before asking this question, so a report whose only
+// waiver record is malformed fails on that finding alone. Asked directly, this
+// predicate treats a malformed record as no active waiver.
 export function assemblySourcePackageFingerprintMissing(report, now = Date.now(), waiverAssessment = null) {
   if (!terminalAssembly(report)) return false;
   if (!currentBuildFingerprint(report)) return false;

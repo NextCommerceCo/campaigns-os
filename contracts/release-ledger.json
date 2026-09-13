@@ -2335,6 +2335,33 @@
         }
       ],
       "entry_sha256": "24e5c09c001958bdbfde009b65d494586260c2d9e3b6d26c1dd2d515e18f6374"
+    },
+    {
+      "id": "RL-0057",
+      "sequence": 57,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.19",
+      "changelog_sha256": "651dca938fd25ab6ebc580187e936b23d57502e1edd566a1785b4f33ae27f391",
+      "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. It also returns the error code stages.assembly.waiver_expires_at_invalid for a Source Freshness Waiver record whose expires_at does not parse, which the gate refuses to honor and blocks on as polish.waiver_expires_at_invalid; like the gate, the validator reports only that error for such a report and asks the freshness question once the record is repaired. Both are conditions the polish gate already blocked on, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report whose Assembly is still pending or that carries no build fingerprint yet is outside the finding, exactly as the gate is not_applicable there, so freshly prepared reports from prepare-build and start still validate. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice. campaigns-os polish capture is unaffected: its report check stays a shape check, since the polish gate reports source freshness on the way out.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "validate-assembly-report",
+          "summary": "validateAssemblyReport fails a report that declares a design-source-package material fingerprint with no stages.assembly.source_package_material_fingerprint, and one whose source freshness waiver has an unparseable expires_at, reusing the polish gate's predicate and waiver assessment; doctor's shape check and polish capture's report check opt out so the gate's findings are not duplicated or moved earlier."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "The freshness-lifecycle section says validate-assembly-report applies the same missing-fingerprint and malformed-waiver conditions as the polish gate."
+        }
+      ],
+      "entry_sha256": "e4ce8628500e543c6b34a1793efec3a45afe71c69fd3364cc2f2807217055e3a"
     }
   ]
 }

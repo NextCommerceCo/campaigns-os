@@ -6964,7 +6964,10 @@ function validateAssemblyReport(report, { checkSourcePackageFreshness = true } =
 
 // The two source-freshness conditions the polish gate blocks on that a
 // standalone report validation can answer from the report alone. Both read the
-// gate's own helpers, and the waiver records are scanned once for both.
+// gate's own helpers, and the waiver records are scanned once for both. The
+// order mirrors the gate: a malformed waiver record is reported on its own and
+// the freshness question is not asked until it is fixed, so the validator and
+// the gate name the same single finding for that report.
 function validateAssemblySourcePackageFreshness(report, errors) {
   const waiverAssessment = assessAssemblySourcePackageFreshnessWaivers(report);
   if (waiverAssessment.invalid.length) {
@@ -6974,6 +6977,7 @@ function validateAssemblySourcePackageFreshness(report, errors) {
       "stages.assembly.waiver_expires_at_invalid",
       `Source freshness waiver has an unparseable expires_at (${JSON.stringify(invalid.expires_at)}). Record a valid ISO 8601 timestamp, or remove the malformed waiver record: the polish gate refuses to honor it either way.`,
     );
+    return;
   }
   if (assemblySourcePackageFingerprintMissing(report, Date.now(), waiverAssessment)) {
     addIssue(

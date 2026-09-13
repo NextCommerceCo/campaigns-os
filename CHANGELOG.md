@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.26.0+agent.18] - 2026-09-13
+## [1.26.0+agent.19] - 2026-09-13
 
 ### Fixed
 
@@ -25,13 +25,20 @@ Notable supported-surface changes are recorded here.
   `stages.assembly.source_package_material_fingerprint` and, for a waiver
   record whose `expires_at` does not parse, the malformed-record condition the
   gate blocks on as `polish.waiver_expires_at_invalid`,
-  `stages.assembly.waiver_expires_at_invalid`. A report that
-  previously validated clean may now fail; record the fingerprint Build
+  `stages.assembly.waiver_expires_at_invalid`. The validator stops at a
+  malformed waiver record the way the gate does, so that report carries that
+  one error and the freshness question waits until the record is repaired. A
+  report that previously validated clean may now fail; record the fingerprint Build
   consumed (or a structured waiver in `waivers[]`) exactly as the polish gate
   already required. `doctor` output is unchanged: it reports this finding from
   its polish gate as before, and does not list it twice. `polish capture`'s
   report check is unchanged too: it is a shape check, and the polish gate
   reports source freshness on the way out.
+
+## [1.26.0+agent.18] - 2026-09-13
+
+### Fixed
+
 - A source-html manifest `pages[].screenshots[]` record that fails one of the
   three field tests is now reported per record instead of disappearing. The
   package build dropped a record whose `viewport` was unrecognized, whose
@@ -51,6 +58,7 @@ Notable supported-surface changes are recorded here.
   `warnings[]` entries under an existing code. The accept/reject test now
   lives in one place beside the package builder, so the warning cannot drift
   from the behaviour it describes.
+
 ## [1.26.0+agent.17] - 2026-09-13
 
 ### Changed
@@ -75,6 +83,7 @@ Notable supported-surface changes are recorded here.
   drop the flag; a reader that wants the disagreement gone should update the
   spec. docs/build-packet.md "Authoring-Time Hints" documents both the
   precedence and the notice.
+
 ## [1.26.0+agent.16] - 2026-09-13
 
 ### Changed
