@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   CART_ENTRY_CODES,
+  CART_ENTRY_CONTROL_SELECTOR,
   CART_ENTRY_STEP,
   assessCartBeforeSubmit,
   chooseCartEntryControl,
@@ -21,6 +22,15 @@ const checkout = { page_id: "checkout", page_type: "checkout", order: 3, url: `$
 function topology(pages) {
   return [{ funnel_id: "default", pages }];
 }
+
+// The cart-entry vocabulary is the SDK's activation selector for its
+// add-to-cart feature and nothing more. This pins it without a browser, so a
+// spelling the SDK does not instantiate on cannot creep back in as an entry
+// the runner would click.
+test("the cart-entry control selector is exactly the SDK's add-to-cart activation selector", () => {
+  const members = CART_ENTRY_CONTROL_SELECTOR.split(",").map((member) => member.trim());
+  assert.deepEqual(members, ['[data-next-action="add-to-cart"]']);
+});
 
 test("the entry step is the first rung of the ladder", () => {
   assert.equal(TEST_ORDER_STEP_LADDER[0], CART_ENTRY_STEP);

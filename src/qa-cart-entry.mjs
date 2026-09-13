@@ -40,8 +40,13 @@ export const CART_ENTRY_CODES = Object.freeze({
   CART_EMPTY_BEFORE_SUBMIT: "cart_empty_before_submit",
 });
 
-export const CART_ENTRY_CONTROL_SELECTOR =
-  '[data-next-action="add-to-cart"], [data-next-checkout-action="add-to-cart"], [data-next-add-to-cart]';
+// The SDK's own activation selector for its add-to-cart feature, and nothing
+// else: the SDK instantiates the feature on `data-next-action="add-to-cart"`
+// only, so any other attribute spelling is a control the SDK never wires. A
+// page carrying one of those must read as "no cart-entry control", not as an
+// entry the runner can click, or the ladder claims an activation the SDK
+// does not have.
+export const CART_ENTRY_CONTROL_SELECTOR = '[data-next-action="add-to-cart"]';
 
 // The attribute an SDK cart-entry control (one matching
 // CART_ENTRY_CONTROL_SELECTOR) navigates by: the SDK adds the package and then
