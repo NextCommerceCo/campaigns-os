@@ -2128,6 +2128,27 @@
         }
       ],
       "entry_sha256": "d3382257d46e809b3595b824787d54e6a5dca93c3c64b6205a8aad971e3432dd"
+    },
+    {
+      "id": "RL-0050",
+      "sequence": 50,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.10",
+      "changelog_sha256": "578da842f6c31add93b3322d2492bea9d70c2c82133ca770525de7ddd4f35f75",
+      "agent_impact": "Docs only; no behaviour change. docs/qa-and-test-orders.md now lists schema_version among cause_summary fields (the code always emitted it) and states that the verdict's spec_hash is the CampaignSpec material hash pairing with the Assembly Report's identity.spec_material_hash, and that campaign_ref_id is copied from the spec's campaign.ref_id (shared by specs exported from one platform campaign; null when absent). Consumers joining verdicts to reports should key on spec_material_hash, and should not treat campaign_ref_id as a per-build identity.",
+      "compatibility": "compatible",
+      "migration": "none.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Adds schema_version to the documented cause_summary shape and a paragraph on spec_hash (material hash) and campaign_ref_id (spec-sourced) in the verdict schema section."
+        }
+      ],
+      "entry_sha256": "60b163de3b27f41583ea82f745cec9d08957ec99df4493b1a2ba584df15ab8f0"
     }
   ]
 }

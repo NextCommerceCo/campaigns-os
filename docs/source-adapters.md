@@ -145,6 +145,19 @@ campaigns-os prepare-build --spec <spec.json> --source <html-dir> \
 
 `start` and `build` take the same flag, since both run the prepare step.
 
+**Order of operations.** Decide the wrapper policy before you capture
+`source_screenshot` proof or record `source_hash`, because both describe the
+file as it is handed over. `source_hash` is the sha256 of the source file at
+manifest generation time; `doctor` recomputes it and reports
+`source_html.pages.source_hash` when the file no longer matches. So under the
+default `strip_document_wrappers` policy, strip first, then capture the
+screenshots and compute the hashes of the stripped files. Under
+`preserve_document_wrappers` nothing is stripped, the existing screenshots and
+hashes stay valid, and the design-source gate and the preparation check read
+the same file. Stripping after the manifest was written invalidates its hashes
+and its screenshots, and a stripped page is no longer the standalone document
+its `source_screenshot` proof was captured from.
+
 **Precedence.** The flag wins over the manifest key, and with neither the
 default is `strip_document_wrappers` — the same order the template family uses
 for its CLI override and its spec hint (see
