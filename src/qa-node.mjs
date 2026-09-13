@@ -768,6 +768,7 @@ function polishGateAssertion(gate) {
     assembly_source_package_material_fingerprint: gate.assembly_source_package_material_fingerprint || null,
     performed_by: gate.performed_by || null,
     waiver: gate.waiver || null,
+    expired_waiver: gate.expired_waiver || null,
     scope_source: gate.scope_source || null,
   };
   if (gate.status === "blocked") {
@@ -779,14 +780,12 @@ function polishGateAssertion(gate) {
       severity: SEVERITY.BLOCKER,
       expected: "current structured Polish evidence produced by next-campaigns-polish",
       actual: gate.reason,
+      // blocked carries the same evidence as pass/waived, plus reason/problems/actions
       evidence: {
+        ...evidence,
         reason: gate.reason,
-        build_fingerprint: gate.build_fingerprint || null,
-        source_build_fingerprint: gate.source_build_fingerprint || null,
-        performed_by: gate.performed_by || null,
         problems: gate.problems || [],
         required_actions: gate.required_actions || [],
-        scope_source: gate.scope_source || null,
       },
     });
   }

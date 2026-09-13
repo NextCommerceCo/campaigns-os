@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.5] - 2026-09-13
+
+### Fixed
+
+- A blocked polish gate's QA verdict evidence now carries the same fields the
+  doctor's `derived.polish_gate` carries. The blocked branch of the verdict
+  projection built a hand-picked subset (`reason`, `build_fingerprint`,
+  `source_build_fingerprint`, `performed_by`, `problems`, `required_actions`,
+  `scope_source`), so on `polish.assembly_source_package_fingerprint_missing`
+  and `polish.assembly_source_package_stale` the verdict dropped the
+  `source_package_material_fingerprint` and
+  `assembly_source_package_material_fingerprint` the reason names, showed
+  `source_build_fingerprint: null` beside it, and omitted the `waiver` and
+  `expired_waiver` the other branches carry. The blocked branch now uses the
+  shared evidence object plus `reason`, `problems` and `required_actions`;
+  `expired_waiver` joins the shared set. Gate codes, reasons and required
+  actions are unchanged: `polish.assembly_source_package_fingerprint_missing`
+  (assembly not tied to the current Design Source Package, re-run Build) and
+  `polish.evidence_missing` (no Polish stage, run Polish) are different
+  conditions with different next actions and stay distinct.
 ## [1.26.0+agent.2] - 2026-09-13
 
 ### Fixed
