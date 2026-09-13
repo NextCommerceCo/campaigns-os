@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { resolveCampaignsApiKeyValue } from "./cli.mjs";
+import { describeCampaignKeyRejection, resolveCampaignsApiKeySource, resolveCampaignsApiKeyValue } from "./cli.mjs";
 import { buildRunSession, findRunSession, findStaleRunSession, resolveRunSessionPath, writeRunSession } from "./run-session.mjs";
 import { resolveRunRecordPath } from "./run-record.mjs";
 
@@ -134,6 +134,84 @@ test("resolveCampaignsApiKeyValue: packet, then packet-local CampaignSpec, then 
   });
 });
 
+// A value that is present but the wrong shape is a different operator problem
+// from no value at all, and the caller has to be able to say which — naming
+// the SOURCE (the env var, or the packet field) and never the value.
+test("resolveCampaignsApiKeySource: reports the refused source for a present-but-malformed key, never its value", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    writeFileSync(join(dir, "spec.json"), JSON.stringify({ campaign: { campaigns_api_key: "not a key at all" } }));
+
+    const good = resolveCampaignsApiKeySource({ campaign: { api_key_source: "env:MY_CAMPAIGN_KEY" } }, packetPath, { MY_CAMPAIGN_KEY: "pk_env_key" });
+    assert.equal(good.key, "pk_env_key");
+    assert.equal(good.rejected, null);
+    assert.equal(describeCampaignKeyRejection(good.rejected), null);
+
+    // env source present but malformed → refused, and the message names the var
+    const badEnv = resolveCampaignsApiKeySource({ campaign: { api_key_source: "env:MY_CAMPAIGN_KEY" } }, packetPath, { MY_CAMPAIGN_KEY: '{"key":"pk_live_x"}' });
+    assert.equal(badEnv.key, null);
+    assert.equal(badEnv.rejected.kind, "malformed");
+    assert.equal(badEnv.rejected.source, "env:MY_CAMPAIGN_KEY");
+    const envMessage = describeCampaignKeyRejection(badEnv.rejected);
+    assert.match(envMessage, /env:MY_CAMPAIGN_KEY/);
+    assert.doesNotMatch(envMessage, /pk_live_x/);
+
+    // absent is NOT refused — it stays the "no key configured" case
+    const absent = resolveCampaignsApiKeySource({ campaign: { api_key_source: "env:MY_CAMPAIGN_KEY" } }, packetPath, {});
+    assert.equal(absent.key, null);
+    assert.equal(absent.rejected, null);
+
+    // packet field and CampaignSpec sources name themselves too
+    const badPacket = resolveCampaignsApiKeySource({ campaign: { campaigns_api_key: "has space in it" } }, packetPath, {});
+    assert.equal(badPacket.rejected.source, "packet.campaign.campaigns_api_key");
+    assert.doesNotMatch(describeCampaignKeyRejection(badPacket.rejected), /has space in it/);
+    const badSpec = resolveCampaignsApiKeySource({ campaign: {}, spec: { local_path: "./spec.json" } }, packetPath, {});
+    assert.match(badSpec.rejected.source, /CampaignSpec/);
+
+    // an api_key_source pointed at a variable that does not name a campaign
+    // key is refused by NAME, and its value is never read
+    const foreign = resolveCampaignsApiKeySource({ campaign: { api_key_source: "env:AWS_SECRET_ACCESS_KEY" } }, packetPath, { AWS_SECRET_ACCESS_KEY: "not-a-campaign-key-000001" });
+    assert.equal(foreign.key, null);
+    assert.equal(foreign.rejected.kind, "unsupported_env_name");
+    assert.doesNotMatch(describeCampaignKeyRejection(foreign.rejected), /not-a-campaign-key-000001/);
+  });
+});
+
+test("CLI: telemetry list --packet refuses a malformed declared key by naming the env var, and makes no request", async () => {
+  await withTempDirAsync(async (dir) => {
+    const packetPath = seedPacket(dir, (packet) => ({
+      ...packet,
+      campaign: { ...packet.campaign, campaigns_api_key: undefined, api_key: undefined, api_key_source: "env:MY_CAMPAIGN_KEY" },
+    }));
+    await withServer(() => ({ status: 200, body: { ok: true, runs: [] } }), async (base, requests) => {
+      const env = { ...isolatedEnv(dir), MY_CAMPAIGN_KEY: '{"key": "pk_live_secretish"}' };
+      const run = await runCliAsync(dir, ["telemetry", "list", "--packet", packetPath, "--proxy-base", base], env);
+      assert.notEqual(run.status, 0);
+      assert.match(run.stderr, /env:MY_CAMPAIGN_KEY/);
+      assert.match(run.stderr, /not a campaign-key shape/);
+      assert.doesNotMatch(run.stderr, /pk_live_secretish/); // the value never appears
+      assert.equal(requests.length, 0); // refused before any request
+    });
+  });
+});
+
+test("CLI: telemetry list warns that the credential is in clear over loopback http, and says nothing on https", async () => {
+  await withTempDirAsync(async (dir) => {
+    await withServer(() => ({ status: 200, body: { ok: true, scope: "admin", runs: [], total: 0 } }), async (base) => {
+      const env = { ...isolatedEnv(dir), CAMPAIGN_OPS_ADMIN_KEY: "admin_secret" };
+      const loopback = await runCliAsync(dir, ["telemetry", "list", "--proxy-base", base, "--json"], env);
+      assert.equal(loopback.status, 0, loopback.stderr);
+      assert.match(loopback.stderr, /is plain http/);
+      assert.match(loopback.stderr, /travels in clear to a local proxy/);
+      assert.doesNotMatch(loopback.stderr, /admin_secret/);
+      // https: the gate is silent. The canonical base is https, so this run
+      // gets past the gate and fails later on the network instead.
+      const secure = runCli(dir, ["telemetry", "list", "--proxy-base", "https://proxy.example.invalid", "--trust-proxy-base"], env);
+      assert.doesNotMatch(secure.stderr, /is plain http/);
+    });
+  });
+});
+
 // --- remit header ---------------------------------------------------------
 
 test("CLI: run-record remit carries X-Campaign-Key from the packet and never puts the key in the body", async () => {
@@ -169,6 +247,31 @@ test("CLI: run-record remit with no resolvable key sends no X-Campaign-Key and s
       assert.equal(requests.length, 1);
       assert.equal("x-campaign-key" in requests[0].headers, false);
       assert.match(text, /Remit: ok -> \/api\/runs \(unscoped/);
+    });
+  });
+});
+
+test("CLI: run-record warns that a declared key was refused on shape, names the env var, and remits unscoped", async () => {
+  await withTempDirAsync(async (dir) => {
+    const packetPath = seedPacket(dir, (packet) => {
+      const campaign = { ...packet.campaign, api_key_source: "env:MY_CAMPAIGN_KEY" };
+      delete campaign.campaigns_api_key;
+      delete campaign.api_key;
+      return { ...packet, campaign, spec: { ...packet.spec, local_path: "./missing-spec.json" } };
+    });
+    await withServer(() => ({ status: 200, body: { ok: true } }), async (base, requests) => {
+      const env = { ...isolatedEnv(dir, "on"), MY_CAMPAIGN_KEY: "pk live secretish" }; // whitespace: not a key shape
+      const run = await runCliAsync(dir, ["run-record", "--packet", packetPath, "--journal", join(dir, "wf.jsonl"), "--run-id", "run_badkey", "--proxy-base", base], env);
+      assert.equal(run.status, 0, run.stderr); // the remit rail stays non-fatal
+      assert.match(run.stderr, /env:MY_CAMPAIGN_KEY/);
+      assert.match(run.stderr, /not a campaign-key shape/);
+      assert.doesNotMatch(run.stderr, /secretish/); // the value never appears
+      // the record still goes, but without the credential, and the summary
+      // says the key was refused rather than "no key found"
+      assert.equal(requests.length, 1);
+      assert.equal("x-campaign-key" in requests[0].headers, false);
+      assert.match(run.stdout, /refused on shape/);
+      assert.doesNotMatch(run.stdout, /no Campaigns API key found/);
     });
   });
 });
