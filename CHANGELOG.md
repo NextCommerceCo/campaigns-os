@@ -39,6 +39,7 @@ Notable supported-surface changes are recorded here.
   caller still using the old spelling retargets it at `standardize` and
   changes nothing else. This removes a supported command, which is why
   `surface_version` advances to 1.27.0 and the ledger entry is breaking.
+
 ## [1.26.0+agent.23] - 2026-09-13
 
 ### Fixed
