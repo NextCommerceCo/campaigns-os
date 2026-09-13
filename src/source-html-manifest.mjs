@@ -146,9 +146,9 @@ function validateManifestPage(entry, index, add, addWarning = () => {}) {
 // reject the manifest and fall the run back to filesystem matching. It is,
 // however, a reason to say something: without this the Design Source Package
 // drops the record and the operator sees a page missing desktop/mobile proof
-// with no hint that a record for it was authored. Same shape as the
-// wrapper_policy warning above — name the record, the field, and what happens
-// instead. The accept/reject test itself lives with the package builder, so
+// with no hint that a record for it was authored. Same channel as the
+// wrapper_policy warning above, one warning per record naming the page, the
+// record index, the field, and what happens instead. The accept/reject test itself lives with the package builder, so
 // the warning cannot drift from the behaviour it describes.
 function warnOnUnusableScreenshotRecords(entry, location, addWarning) {
   const pageId = isNonEmptyString(entry.page_id) ? entry.page_id : null;

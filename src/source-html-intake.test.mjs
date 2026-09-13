@@ -232,7 +232,7 @@ test("a screenshot record that fails a field test warns per record and names the
 test("each unusable screenshot field test gets its own named diagnostic", () => {
   const cases = [
     [{ id: "a", path: "shots/a.png" }, "viewport"],
-    [{ id: "b", viewport: "desktop" }, "path"],
+    [{ id: "b", viewport: "desktop" }, "evidence"],
     [{ id: "c", viewport: "desktop", availability: "unavailable" }, "unavailable_reason"],
     [{ id: "d", viewport: "desktop", path: "shots/d.png", kind: "render_reference" }, "kind"],
   ];

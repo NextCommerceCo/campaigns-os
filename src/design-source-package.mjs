@@ -1922,8 +1922,8 @@ function visualReferenceRejection(raw, contextualKinds = null) {
   const availability = visualReferenceAvailability(raw);
   if (!availability) {
     return {
-      field: "path",
-      detail: "the record declares no path, no url, and no unavailable_reason, so it points at no evidence",
+      field: "evidence",
+      detail: "the record declares no path, no url, and no unavailable_reason, so it points at no evidence; set one of them",
     };
   }
   if (availability === "unavailable" && !visualReferenceUnavailableReason(raw)) {
