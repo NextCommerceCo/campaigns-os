@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.26.0+agent.19] - 2026-09-13
+## [1.26.0+agent.20] - 2026-09-13
 
 ### Fixed
 
@@ -35,6 +35,8 @@ Notable supported-surface changes are recorded here.
   report check is unchanged too: it is a shape check, and the polish gate
   reports source freshness on the way out.
 
+## [1.26.0+agent.19] - 2026-09-13
+
 ### Changed
 
 - A polish capture warning now names the resource roles whose failures were
@@ -66,6 +68,7 @@ Notable supported-surface changes are recorded here.
   recorded measurement has to equal the projection for a hand-edited
   measurement to be catchable, and accepting a warning that does not name the
   roles it forgave would re-open the gap this change closes.
+
 ## [1.26.0+agent.18] - 2026-09-13
 
 ### Fixed
