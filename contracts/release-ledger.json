@@ -2364,19 +2364,25 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.20",
-      "changelog_sha256": "337737f8bb39a51110098fa7a4626dd4026edabb7014ba1984294b753a4969bb",
-      "agent_impact": "A `qa run --browser` that a blocked checkpoint, polish, or theme gate finalized before any page was rendered now stamps the verdict with browser: { requested: true, status: \"skipped_gate_blocked\", blocked_by: [<gate codes>], reason } and prints that reason once on stderr. The reason names the gate and quotes that gate's own required_actions for what clears it, so the guidance matches the exact blocking state (a stale-assembly polish blocker asks for a fresh Build, and a waive command appears only where the gate is waivable). Nothing else moves: the assertion set, the disposition and the exit code (4, blocked) are what they were, and no browser is launched. Treat the field as additive and emitted only for that case \u2014 its absence means the verdict makes no claim about a browser pass, not that one ran, so keep reading the browser-runtime assertions and tested_urls to tell whether a browser pass happened. The field is not part of the committed .campaign-runtime/qa-verdict.json allowlist projection, and a --json run receives the stamp in the emitted verdict instead of the stderr line.",
+      "changelog_sha256": "60f1f47de9f8603e3f8396d182bbd92bf246b8f37cd2766d33794cc890b8c3f6",
+      "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. It also returns the error code stages.assembly.waiver_expires_at_invalid for a Source Freshness Waiver record whose expires_at does not parse, which the gate refuses to honor and blocks on as polish.waiver_expires_at_invalid; like the gate, the validator reports only that error for such a report and asks the freshness question once the record is repaired. Both are conditions the polish gate already blocked on, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report whose Assembly is still pending or that carries no build fingerprint yet is outside the finding, exactly as the gate is not_applicable there, so freshly prepared reports from prepare-build and start still validate. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice. campaigns-os polish capture is unaffected: its report check stays a shape check, since the polish gate reports source freshness on the way out.",
       "compatibility": "compatible",
       "migration": "None.",
       "changes": [
         {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "validate-assembly-report",
+          "summary": "validateAssemblyReport fails a report that declares a design-source-package material fingerprint with no stages.assembly.source_package_material_fingerprint, and one whose source freshness waiver has an unparseable expires_at, reusing the polish gate's predicate and waiver assessment; doctor's shape check and polish capture's report check opt out so the gate's findings are not duplicated or moved earlier."
+        },
+        {
           "class": "named_surface",
-          "path": "docs/qa-and-test-orders.md",
-          "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "The checkpoint-preflight section states the visible downgrade: the browser stamp a gate-blocked --browser run carries, the single stderr line whose repair guidance comes from the gate's required_actions, the unchanged exit code, and that the field's absence is not evidence a browser pass ran."
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "The freshness-lifecycle section says validate-assembly-report applies the same missing-fingerprint and malformed-waiver conditions as the polish gate."
         }
       ],
-      "entry_sha256": "2497168a2c2b1c3eb51e0dfd627f58c002caa24909d33d42c4b8cfe88a5587c4"
+      "entry_sha256": "b15c95b9fb48715af4990316bf5d294ec6328f0f9f42fa401b32a346c7b6e816"
     }
   ]
 }

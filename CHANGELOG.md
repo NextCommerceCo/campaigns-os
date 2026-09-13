@@ -28,6 +28,34 @@ Notable supported-surface changes are recorded here.
   sidecar's allowlist projection, and `--json` runs receive the stamp in the
   emitted verdict instead of the stderr line. `docs/qa-and-test-orders.md`
   states the behaviour.
+- `campaigns-os validate-assembly-report` now fails an Assembly Report that
+  declares a Design Source Package material fingerprint but records no
+  `stages.assembly.source_package_material_fingerprint`. The ladder already
+  refused that report: `doctor` and `next` blocked on the polish gate's
+  `polish.assembly_source_package_fingerprint_missing` and routed back to
+  Build, while the standalone validator called the same file valid, so an
+  operator or agent validating a hand-authored report got a green answer and
+  then hit a hard stop one command later. The condition is no longer written
+  twice: the gate and the validator both read
+  `assemblySourcePackageFingerprintMissing()` in `src/polish-gate.mjs`, which
+  keeps the existing carve-outs intact — a report whose Assembly is still
+  pending (the shape `prepare-build` and `start` emit, which records the
+  package fingerprint before any build has consumed it) or that has no build
+  fingerprint yet is outside the finding, a report with no design source
+  package at all is untouched, and an active Source Freshness Waiver still
+  passes. The new error codes are
+  `stages.assembly.source_package_material_fingerprint` and, for a waiver
+  record whose `expires_at` does not parse, the malformed-record condition the
+  gate blocks on as `polish.waiver_expires_at_invalid`,
+  `stages.assembly.waiver_expires_at_invalid`. The validator stops at a
+  malformed waiver record the way the gate does, so that report carries that
+  one error and the freshness question waits until the record is repaired. A
+  report that previously validated clean may now fail; record the fingerprint Build
+  consumed (or a structured waiver in `waivers[]`) exactly as the polish gate
+  already required. `doctor` output is unchanged: it reports this finding from
+  its polish gate as before, and does not list it twice. `polish capture`'s
+  report check is unchanged too: it is a shape check, and the polish gate
+  reports source freshness on the way out.
 
 ## [1.26.0+agent.19] - 2026-09-13
 
