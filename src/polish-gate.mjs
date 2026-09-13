@@ -67,6 +67,36 @@ export function assemblySourcePackageMaterialFingerprint(report) {
     || null;
 }
 
+// One predicate for "this report claims a Design Source Package but Build never
+// tied itself to it". The polish gate, `doctor`/`next` (through the gate) and
+// the standalone `validate-assembly-report` all answer that question from here,
+// so the three paths cannot drift: before this existed the gate blocked and the
+// validator stayed silent on the same report.
+//
+// It carries the gate's own preconditions, not just the fingerprint
+// comparison. A report still pending Assembly (the shape `prepare-build` and
+// `start` emit, which records the package fingerprint before any build has
+// consumed it) and a report with no build fingerprint yet are both outside
+// this finding: the gate answers not_applicable or blocks on
+// polish.build_fingerprint_missing there, and so the validator must not fail
+// them on freshness.
+//
+// Callers that have already assessed the freshness waivers pass that
+// assessment in rather than paying for a second scan of the same records; the
+// gate does. A malformed waiver is a separate finding — the gate's
+// polish.waiver_expires_at_invalid, mirrored by the validator — and both
+// callers report it before asking this question, so a report whose only
+// waiver record is malformed fails on that finding alone. Asked directly, this
+// predicate treats a malformed record as no active waiver.
+export function assemblySourcePackageFingerprintMissing(report, now = Date.now(), waiverAssessment = null) {
+  if (!terminalAssembly(report)) return false;
+  if (!currentBuildFingerprint(report)) return false;
+  if (!currentSourcePackageMaterialFingerprint(report)) return false;
+  if (assemblySourcePackageMaterialFingerprint(report)) return false;
+  const assessment = waiverAssessment || assessAssemblySourcePackageFreshnessWaivers(report, now);
+  return !assessment.active;
+}
+
 export function assessAssemblySourcePackageFreshnessWaivers(report, now = Date.now()) {
   const candidates = [
     ...(Array.isArray(report?.waivers) ? report.waivers : []),
@@ -403,7 +433,7 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
     };
   }
 
-  if (currentSourcePackageFingerprint && !assemblySourcePackageFingerprint && !sourcePackageFreshnessWaiver) {
+  if (assemblySourcePackageFingerprintMissing(report, now, waiverAssessment)) {
     return {
       status: "blocked",
       code: "polish.assembly_source_package_fingerprint_missing",

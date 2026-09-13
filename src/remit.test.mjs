@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { remit, remitRunRecord } from "./remit.mjs";
+import { assertSecureProxyBase, remit, remitRunRecord } from "./remit.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -240,4 +240,107 @@ test("CLI: --no-remit skips the send even with consent ON", () => {
     assert.equal(out.record.consent_state, "on"); // consent is still reported truthfully
     assert.equal(out.record.remit_attempted, false); // but no send happened
   });
+});
+
+// --- transport gate -------------------------------------------------------
+// Every credential-bearing request goes through assertSecureProxyBase before a
+// socket is opened: X-Campaign-Key on this rail and the ops admin key on the
+// `telemetry list` rail are request credentials, and a plain-http hop to a
+// real host hands them to whatever sits on the path. https passes silently,
+// loopback http passes with a warning, everything else never reaches fetch.
+
+test("assertSecureProxyBase: https passes with no warning", () => {
+  const warnings = [];
+  const gate = assertSecureProxyBase("https://proxy.test/", { warn: (line) => warnings.push(line) });
+  assert.equal(gate.base, "https://proxy.test");
+  assert.equal(gate.loopback, false);
+  assert.deepEqual(warnings, []);
+});
+
+test("assertSecureProxyBase: loopback http passes with exactly one warning naming the credential kind, not a value", () => {
+  for (const base of ["http://127.0.0.1:8787", "http://localhost:8787", "http://[::1]:8787"]) {
+    const warnings = [];
+    const gate = assertSecureProxyBase(base, { label: "Remit", credential: "the campaign key", warn: (line) => warnings.push(line) });
+    assert.equal(gate.loopback, true);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /plain http/);
+    assert.match(warnings[0], /the campaign key travels in clear/);
+  }
+});
+
+test("assertSecureProxyBase: a credential-free request is not described as leaking one", () => {
+  const warnings = [];
+  assertSecureProxyBase("http://127.0.0.1:8787", { label: "QA verdict publish", credential: null, warn: (line) => warnings.push(line) });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /this request and its payload travel in clear/);
+  assert.match(warnings[0], /no credential is attached/);
+  assert.doesNotMatch(warnings[0], /credential travels in clear/);
+  assert.throws(
+    () => assertSecureProxyBase("http://proxy.example.invalid", { label: "QA verdict publish", credential: null, warn: () => {} }),
+    /declining to send this request and its payload/,
+  );
+});
+
+test("remit: the loopback warning describes what the request actually carries", async () => {
+  const stderr = [];
+  const original = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (chunk) => { stderr.push(String(chunk)); return true; };
+  try {
+    // no headers → no credential claimed
+    const bare = recordingFetch(fakeResponse({ body: "" }));
+    await remit("/api/qa/verdicts", { run_id: "r" }, "http://127.0.0.1:8787", { fetchImpl: bare.fetchImpl });
+    // a non-credential header alone claims nothing either
+    const accepting = recordingFetch(fakeResponse({ body: "" }));
+    await remit("/api/qa/verdicts", { run_id: "r" }, "http://127.0.0.1:8787", { fetchImpl: accepting.fetchImpl, headers: { Accept: "application/json" } });
+    // a credential header → the request carries a credential, and the warning says so
+    const keyed = recordingFetch(fakeResponse({ body: "" }));
+    await remit("/api/runs", { run_id: "r" }, "http://127.0.0.1:8787", { fetchImpl: keyed.fetchImpl, headers: { "X-Campaign-Key": "pk_live_abcdefgh" } });
+    assert.equal(bare.calls.length, 1);
+    assert.equal(accepting.calls.length, 1);
+    assert.equal(keyed.calls.length, 1);
+  } finally {
+    process.stderr.write = original;
+  }
+  const text = stderr.join("");
+  assert.equal((text.match(/this request and its payload travel in clear/g) || []).length, 2);
+  assert.equal((text.match(/the request credential travels in clear/g) || []).length, 1);
+  assert.doesNotMatch(text, /pk_live_abcdefgh/);
+});
+
+test("assertSecureProxyBase: plain http to a real host, and a non-URL base, both throw", () => {
+  const warnings = [];
+  const warn = (line) => warnings.push(line);
+  assert.throws(() => assertSecureProxyBase("http://proxy.example.invalid", { warn }), /must be https/);
+  assert.throws(() => assertSecureProxyBase("http://proxy.example.invalid", { warn }), /http:\/\/proxy\.example\.invalid/);
+  assert.throws(() => assertSecureProxyBase("not a url", { warn }), /is not a URL/);
+  assert.throws(() => assertSecureProxyBase("", { warn }), /is not a URL: \(empty\)/);
+  assert.deepEqual(warnings, []); // a refusal is not a warning
+});
+
+test("remit: a plain-http non-loopback proxy base is refused before any request", async () => {
+  const { fetchImpl, calls } = recordingFetch();
+  await assert.rejects(() => remit("/api/runs", { run_id: "r" }, "http://proxy.example.invalid", { fetchImpl }), /must be https/);
+  assert.equal(calls.length, 0); // nothing was sent
+});
+
+test("remitRunRecord: a plain-http non-loopback proxy base fails non-fatally and sends nothing", async () => {
+  const { fetchImpl, calls } = recordingFetch();
+  const status = await remitRunRecord({ run_id: "run_http" }, {
+    proxyBase: "http://proxy.example.invalid",
+    consent: { state: "on" },
+    campaignKey: "pk_live_abcdefgh",
+    fetchImpl,
+  });
+  assert.equal(calls.length, 0);
+  assert.equal(status.attempted, true);
+  assert.equal(status.ok, false);
+  assert.match(status.error, /must be https/);
+  assert.doesNotMatch(status.error, /pk_live_abcdefgh/); // never the credential value
+});
+
+test("remit: an https proxy base still reaches fetch", async () => {
+  const { fetchImpl, calls } = recordingFetch(fakeResponse({ body: JSON.stringify({ ok: true }) }));
+  await remit("/api/runs", { run_id: "r" }, "https://proxy.test", { fetchImpl });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://proxy.test/api/runs");
 });
