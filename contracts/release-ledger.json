@@ -2275,6 +2275,39 @@
         }
       ],
       "entry_sha256": "346816d158a7b0dd8eb7348bf9c509c422accd064eca61572941e58d8aa19cd4"
+    },
+    {
+      "id": "RL-0055",
+      "sequence": 55,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.16",
+      "changelog_sha256": "284defeea7e2276eafc8b647d385c462c84a00b6d31e6c819293618e3f600d4a",
+      "agent_impact": "Credential-bearing requests on the telemetry rails now validate before any socket opens, so two silent behaviours change for an agent. (1) --proxy-base must be https on every rail that carries a credential (Run Telemetry remit, QA verdict publish, telemetry list), not just on telemetry list: a loopback host (localhost, 127.0.0.1, [::1]) is still allowed over plain http and now prints one stderr warning per request that the credential travels in clear, while any other plain-http base \u2014 or a base that is not a URL \u2014 is refused before the request, so nothing is sent. An agent that pointed a remit or publish at a plain-http remote proxy will see it fail: on the remit rail non-fatally, with the reason in remit_error / remit_ok false; on telemetry list as a non-zero exit. Spec retrieval by --map-id carries no credential and is unaffected. (2) A campaign key that is present but malformed is now reported as refused rather than missing. resolveCampaignsApiKeySource() returns { key, origin, rejected } and describeCampaignKeyRejection() renders a sentence naming the refused SOURCE (env:VAR, the packet field, or the CampaignSpec) and never the value. telemetry list --packet exits non-zero on such a value and makes no request; run-record warns on stderr and its human summary now says the declared key was refused on shape instead of 'no Campaigns API key found', then attempts the send without a tenant scope (the remit rail stays non-fatal); with no send attempted (consent off, or --no-remit) the key is not read and nothing is said about it. A malformed explicit packet value no longer falls through to another source. resolveCampaignsApiKeyValue() keeps its old signature and returns the key or null.",
+      "compatibility": "compatible",
+      "migration": "None for https or loopback proxy bases. A plain-http remote --proxy-base now fails on the credential-bearing rails: give that proxy TLS, or run it on a loopback host, or drop the override. If a remit started reporting a refused key, fix the value at the source the warning names (its shape must be 8-256 characters of letters, digits, dot, dash, underscore, one line, no whitespace).",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "telemetry",
+          "summary": "telemetry list shares the remit rail's transport gate (https, or loopback over http with an in-clear warning); both telemetry list --packet and run-record now separate a present-but-malformed campaign key from a missing one, naming the refused source and never the value \u2014 telemetry list fails fast and makes no request, run-record warns and sends without a tenant scope, and says nothing at all when no send is attempted."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Remit Channel states the credential shape gate and the https/loopback proxy-base rule."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "--proxy-base note distinguishes credential-free spec retrieval from the credential-bearing rails and their https/loopback rule."
+        }
+      ],
+      "entry_sha256": "270adb6b2faa619db634b82c512f11786f4154981afda53f7050a74c96901c36"
     }
   ]
 }

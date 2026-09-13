@@ -72,6 +72,16 @@ in a fixed, total order:
 }
 ```
 
+`sequence` and `id` are two different things. `sequence` is the entry's
+position in the array and must equal that position: the checker derives the
+expected value from the index, not from the previous entry's claim, so it is the
+authoritative order. `id` is a unique, immutable label (`RL-NNNN`) that is never
+reused and never renumbered; nothing requires its number to match `sequence`.
+The two therefore diverge legitimately, and already do in this ledger: when two
+PRs are open at once, the second to merge restamps its `sequence` to sit after
+the first while keeping the id it was written with. Read order from `sequence`
+and identity from `id`; never renumber an id to close the gap.
+
 Two hashes, two jobs. `changelog_sha256` catches a changelog section edited
 after the fact. `entry_sha256` catches a historical entry edited in place, even
 in a squashed history where the diff is gone.
@@ -104,6 +114,22 @@ A CLI flag has no file of its own. Record it with `"path": null` and name the
 affected `surface_entry` (the command). The gate still requires that some
 classified path of the same class changed in the range, so a flag change cannot
 be recorded without the bytes actually moving somewhere.
+
+### Fixes that touch only policy-ignored paths
+
+A fix living entirely in paths the policy ignores — `src/` other than
+`src/cli.mjs`, `scripts/`, tests and fixtures — carries a same-surface CHANGELOG
+section (`X.Y.Z+agent.N`) and **no ledger entry**. There is nothing for an entry
+to claim: every change item must map to a classified changed path in the range,
+and an ignored path is never classified, so an entry written for such a PR is
+refused by the backward direction of the gate rather than merely unnecessary. A
+path-less item fails the same way, because no classified change of its class
+exists in the range. The ignore list and its stated reasons are in
+[`contracts/agent-relevant-change-policy.v1.json`](../contracts/agent-relevant-change-policy.v1.json).
+
+The dividing line inside `src/` is `src/cli.mjs`: an explicit rule classifies it
+as `cli_surface`, so any change to it is agent-relevant and owes an entry, even
+when the behaviour change originates in a helper module beside it.
 
 ### Amendments
 
