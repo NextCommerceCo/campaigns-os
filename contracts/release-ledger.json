@@ -2282,20 +2282,38 @@
       "date": "2026-09-13",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.26.0+agent.16",
-      "changelog_sha256": "04877c9983993cda073dc1793b4de7216743c515af6369ac65e31eef533d7ea3",
-      "agent_impact": "A `qa run --browser` that a blocked checkpoint, polish, or theme gate finalized before any page was rendered now stamps the verdict with browser: { requested: true, status: \"skipped_gate_blocked\", blocked_by: [<gate codes>], reason } and prints that reason once on stderr. The reason names the gate and quotes that gate's own required_actions for what clears it, so the guidance matches the exact blocking state (a stale-assembly polish blocker asks for a fresh Build, and a waive command appears only where the gate is waivable). Nothing else moves: the assertion set, the disposition and the exit code (4, blocked) are what they were, and no browser is launched. Treat the field as additive and emitted only for that case \u2014 its absence means the verdict makes no claim about a browser pass, not that one ran, so keep reading the browser-runtime assertions and tested_urls to tell whether a browser pass happened. The field is not part of the committed .campaign-runtime/qa-verdict.json allowlist projection, and a --json run receives the stamp in the emitted verdict instead of the stderr line.",
+      "changelog_section": "1.26.0+agent.17",
+      "changelog_sha256": "8c656cd52cb91230cfb9e1854814c16ccd8170ce1489baaacb5dec73bce043b4",
+      "agent_impact": "start / prepare-build / build now report the template-family precedence they always applied. When --template-family and the CampaignSpec preferred_template_family hint name different families, the flag still wins (packet.assembly.template_family and template_lock are unchanged), but the run prints one stderr line naming both values and their channels, and the assembly report's warnings[] gains an advisory entry { code: \"TEMPLATE_FAMILY_HINT_OVERRIDDEN\", stage: \"prepare_build\", message } naming the winning flag and the overridden hint. A flag equal to the hint, a hint with no flag, and a flag with no hint all stay silent. No exit code, blocker, or gate changes; an agent that ignores unknown warning codes is unaffected. An agent that wants the spec hint honoured must omit the flag.",
       "compatibility": "compatible",
       "migration": "None.",
       "changes": [
         {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "Template-family precedence is resolved through resolveTemplateFamilySelection and announced: a flag/hint disagreement prints an stderr line and adds the TEMPLATE_FAMILY_HINT_OVERRIDDEN prepare_build warning to the assembly report."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "start",
+          "summary": "start shares the prepare-build intake body, so it emits the same template-family precedence notice."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "build",
+          "summary": "build shares the prepare-build intake body, so it emits the same template-family precedence notice."
+        },
+        {
           "class": "named_surface",
-          "path": "docs/qa-and-test-orders.md",
-          "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "The checkpoint-preflight section states the visible downgrade: the browser stamp a gate-blocked --browser run carries, the single stderr line whose repair guidance comes from the gate's required_actions, the unchanged exit code, and that the field's absence is not evidence a browser pass ran."
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Authoring-Time Hints states that a flag/hint disagreement prints the precedence line and records TEMPLATE_FAMILY_HINT_OVERRIDDEN on the assembly report, and how to make the hint win."
         }
       ],
-      "entry_sha256": "4e14f7f9ed40ddae8f34cabc3e372a267b96e19e8275cd869179892aef2b3e81"
+      "entry_sha256": "e7e9cd25dd2fb29c09044c7ff7fc40d0482b78cc77be8b0739f772ec2cbb3c26"
     }
   ]
 }
