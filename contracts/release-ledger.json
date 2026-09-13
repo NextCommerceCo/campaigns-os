@@ -2275,6 +2275,27 @@
         }
       ],
       "entry_sha256": "346816d158a7b0dd8eb7348bf9c509c422accd064eca61572941e58d8aa19cd4"
+    },
+    {
+      "id": "RL-0055",
+      "sequence": 55,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.16",
+      "changelog_sha256": "b2149738fdee589ddf469f08f9a287c8462d7d85d5bbd36b1dfc2404e770620e",
+      "agent_impact": "Each entry in polish page-load evidence measurement.warnings[] now carries resource_types[] \u2014 the sorted, unique beacon-class resource roles whose failures were demoted to the cross_origin_request_failed warning (drawn from ping, fetch, xhr, other, preflight, so at most five values) \u2014 and campaigns-os polish text output prints them as a Resource types: line inside its Capture warnings (not blocking) block. An agent reading a warning can now tell which roles the demotion forgave instead of only which origins failed. The beacon allowlist, the problem codes, measurement.status, the resource ledger and the checkpoint verdict are unchanged: nothing that blocked before warns now, and nothing that warned before blocks. Two consumer-visible consequences: an agent comparing a warning entry against a fixed key set must accept the new key, and page-load evidence recorded before this change whose measurement carries a warning no longer equals the recomputed projection, so evaluateHiddenEagerMediaCheckpoint blocks it as polish.hidden_eager_media.capture_malformed until the route is recaptured.",
+      "compatibility": "breaking",
+      "migration": "Re-run campaigns-os polish for any Assembly Report whose recorded page-load measurement carries a capture warning; its recorded measurement predates the resource_types[] field and now reads as capture_malformed. Evidence with no capture warning, and any evidence captured with this version, needs nothing.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "polish",
+          "summary": "polish text output prints a Resource types: line for each capture warning, filtered to the known resource-type vocabulary."
+        }
+      ],
+      "entry_sha256": "42a17a2793f32139a97869bb0a137c90746df3b8f973d3f0048fc5e0c2948ffe"
     }
   ]
 }
