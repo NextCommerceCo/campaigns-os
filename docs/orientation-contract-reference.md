@@ -51,6 +51,16 @@ an unknown value fails closed at the consumer.
 | `freshness_unknown` | [`contracts/fixtures/orientation/envelope/freshness_unknown.json`](../contracts/fixtures/orientation/envelope/freshness_unknown.json) |
 | `refused` | [`contracts/fixtures/orientation/envelope/refused.json`](../contracts/fixtures/orientation/envelope/refused.json) |
 
+## Ledger order and entry identity
+
+`sequence` is the authoritative order of `contracts/release-ledger.json`: it is the entry's
+position in `entries[]` (1-based) and the repository gate derives the expected value from that
+position, so a consumer reading history in array order reads it in `sequence` order.
+`id` is a unique, immutable label that is never reused and never renumbered, and nothing binds
+its number to `sequence`; the two diverge legitimately, because when concurrent pull requests
+land the later one restamps its `sequence` to follow the earlier while keeping the id it was
+written with. Order by `sequence`, identify by `id`, and do not infer one from the other.
+
 ## Release-ledger digest canonicalization
 
 The rules below are normative. The supported self-check vector at [`contracts/fixtures/orientation/canonicalization/v1.json`](../contracts/fixtures/orientation/canonicalization/v1.json)
