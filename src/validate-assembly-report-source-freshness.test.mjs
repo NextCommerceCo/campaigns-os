@@ -6,7 +6,11 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { assemblySourcePackageFingerprintMissing, evaluatePolishGate } from "./polish-gate.mjs";
+import {
+  assemblySourcePackageFingerprintMissing,
+  assessAssemblySourcePackageFreshnessWaivers,
+  evaluatePolishGate,
+} from "./polish-gate.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -14,6 +18,13 @@ const EXAMPLE_REPORT = resolve(ROOT, "examples/assembly-report.example.json");
 const SOURCE_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 const BUILD_FINGERPRINT = `sha256:${"b".repeat(64)}`;
 const FRESHNESS_CODE = "stages.assembly.source_package_material_fingerprint";
+const ACTIVE_WAIVER = Object.freeze({
+  scope: "assembly_source_package_freshness",
+  reason: "Source package changed after build; re-build is scheduled.",
+  waived_by: "release-owner",
+  waived_at: "2026-09-13T00:00:00.000Z",
+  expires_at: "2099-01-01T00:00:00.000Z",
+});
 
 // A completed-assembly report shaped the way the polish gate reads one, so the
 // gate and the standalone validator are asked about the same artifact.
@@ -75,13 +86,7 @@ test("validate-assembly-report leaves a report without any design source package
 
 test("validate-assembly-report honors an active source freshness waiver", () => {
   const result = validate(buildReport({
-    waivers: [{
-      scope: "assembly_source_package_freshness",
-      reason: "Source package changed after build; re-build is scheduled.",
-      waived_by: "release-owner",
-      waived_at: "2026-09-13T00:00:00.000Z",
-      expires_at: "2099-01-01T00:00:00.000Z",
-    }],
+    waivers: [ACTIVE_WAIVER],
   }));
   assert.ok(!errorCodes(result).includes(FRESHNESS_CODE), errorCodes(result).join(", "));
   assert.equal(result.ok, true);
@@ -100,6 +105,52 @@ test("validate-assembly-report does not raise the freshness error before a build
   assert.ok(!errorCodes(result).includes(FRESHNESS_CODE), errorCodes(result).join(", "));
 });
 
+const MALFORMED_WAIVER = Object.freeze({
+  scope: "assembly_source_package_freshness",
+  reason: "Source package changed after build; re-build is scheduled.",
+  waived_by: "release-owner",
+  waived_at: "2026-09-13T00:00:00.000Z",
+  expires_at: "whenever",
+});
+
+// The gate refuses to honor a waiver whose expires_at does not parse and
+// blocks on polish.waiver_expires_at_invalid. The validator must not read that
+// record as "no waiver, but otherwise fine" and pass the report.
+test("validate-assembly-report reports a waiver whose expires_at does not parse", () => {
+  const result = validate(buildReport({ waivers: [MALFORMED_WAIVER] }));
+  assert.equal(result.ok, false);
+  assert.ok(errorCodes(result).includes("stages.assembly.waiver_expires_at_invalid"), errorCodes(result).join(", "));
+  // A malformed record is not an active waiver, so the freshness error stands
+  // beside it; the gate names only the first of the two, as it always has.
+  assert.ok(errorCodes(result).includes(FRESHNESS_CODE), errorCodes(result).join(", "));
+  const gate = evaluatePolishGate({ report: buildReport({ waivers: [MALFORMED_WAIVER] }) });
+  assert.equal(gate.code, "polish.waiver_expires_at_invalid");
+});
+
+// A report too broken to have stages cannot be asked whether Assembly consumed
+// the package: it must fail on the structure and say nothing about freshness.
+test("a structurally broken report fails on structure only", () => {
+  const report = buildReport();
+  delete report.stages;
+  const result = validate(report);
+  assert.equal(result.ok, false);
+  assert.ok(errorCodes(result).includes("stages"), errorCodes(result).join(", "));
+  assert.ok(!errorCodes(result).includes(FRESHNESS_CODE), errorCodes(result).join(", "));
+  assert.ok(!errorCodes(result).includes("stages.assembly.waiver_expires_at_invalid"), errorCodes(result).join(", "));
+});
+
+// The predicate takes a pre-computed waiver assessment so the gate does not
+// scan the same records twice; the answer must not depend on which it gets.
+test("the predicate accepts a pre-computed waiver assessment", () => {
+  for (const report of [buildReport(), buildReport({ waivers: [ACTIVE_WAIVER] })]) {
+    const assessment = assessAssemblySourcePackageFreshnessWaivers(report);
+    assert.equal(
+      assemblySourcePackageFingerprintMissing(report, Date.now(), assessment),
+      assemblySourcePackageFingerprintMissing(report),
+    );
+  }
+});
+
 // The point of the shared predicate: whatever makes the ladder block must make
 // the validator fail, on the same report, for every variant above.
 test("the polish gate and the validator agree on the source-freshness condition", () => {
@@ -110,13 +161,7 @@ test("the polish gate and the validator agree on the source-freshness condition"
     buildReport({ assemblyStatus: "pending", buildFingerprint: null }),
     buildReport({ buildFingerprint: null }),
     buildReport({
-      waivers: [{
-        scope: "assembly_source_package_freshness",
-        reason: "Source package changed after build; re-build is scheduled.",
-        waived_by: "release-owner",
-        waived_at: "2026-09-13T00:00:00.000Z",
-        expires_at: "2099-01-01T00:00:00.000Z",
-      }],
+      waivers: [ACTIVE_WAIVER],
     }),
   ];
   for (const report of cases) {

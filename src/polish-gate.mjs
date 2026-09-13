@@ -79,14 +79,21 @@ export function assemblySourcePackageMaterialFingerprint(report) {
 // consumed it) and a report with no build fingerprint yet are both outside
 // this finding: the gate answers not_applicable or blocks on
 // polish.build_fingerprint_missing there, and so the validator must not fail
-// them on freshness. A malformed waiver record is deliberately not modelled
-// here — that is the gate's own polish.waiver_expires_at_invalid finding.
-export function assemblySourcePackageFingerprintMissing(report, now = Date.now()) {
+// them on freshness.
+//
+// Callers that have already assessed the freshness waivers pass that
+// assessment in rather than paying for a second scan of the same records; the
+// gate does. A malformed waiver is a separate finding — the gate's
+// polish.waiver_expires_at_invalid, mirrored by the validator — so it is not
+// silently treated as "no waiver" here either: a report whose only waiver
+// record is malformed still fails, on that finding, not on freshness.
+export function assemblySourcePackageFingerprintMissing(report, now = Date.now(), waiverAssessment = null) {
   if (!terminalAssembly(report)) return false;
   if (!currentBuildFingerprint(report)) return false;
   if (!currentSourcePackageMaterialFingerprint(report)) return false;
   if (assemblySourcePackageMaterialFingerprint(report)) return false;
-  return !assessAssemblySourcePackageFreshnessWaivers(report, now).active;
+  const assessment = waiverAssessment || assessAssemblySourcePackageFreshnessWaivers(report, now);
+  return !assessment.active;
 }
 
 export function assessAssemblySourcePackageFreshnessWaivers(report, now = Date.now()) {
@@ -425,7 +432,7 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
     };
   }
 
-  if (assemblySourcePackageFingerprintMissing(report, now)) {
+  if (assemblySourcePackageFingerprintMissing(report, now, waiverAssessment)) {
     return {
       status: "blocked",
       code: "polish.assembly_source_package_fingerprint_missing",

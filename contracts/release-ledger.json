@@ -2283,8 +2283,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.16",
-      "changelog_sha256": "622ab5ccfae5664a1d4a0f655f496434a4bb134c6fa0bfa6ed7eaf26c613f50f",
-      "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. This is the same condition the polish gate already blocked on as polish.assembly_source_package_fingerprint_missing, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report whose Assembly is still pending or that carries no build fingerprint yet is outside the finding, exactly as the gate is not_applicable there, so freshly prepared reports from prepare-build and start still validate. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice.",
+      "changelog_sha256": "39789c602debe4b53321e0300a6f38ccf6a21606eeb52a7be5582e85c62a4fe7",
+      "agent_impact": "campaigns-os validate-assembly-report now returns ok:false with the error code stages.assembly.source_package_material_fingerprint when the report declares a Design Source Package material fingerprint (design_source_package.material_fingerprint or an equivalent) but records no stages.assembly.source_package_material_fingerprint. It also returns the error code stages.assembly.waiver_expires_at_invalid for a Source Freshness Waiver record whose expires_at does not parse, which the gate refuses to honor and blocks on as polish.waiver_expires_at_invalid. Both are conditions the polish gate already blocked on, so an agent that validated a hand-authored or hand-patched report and got a clean answer no longer hits a hard stop at doctor or next one command later. A hand-authored report that previously validated may now fail: record the material fingerprint Build consumed, or a structured Source Freshness Waiver in waivers[], exactly as the ladder already required. A report whose Assembly is still pending or that carries no build fingerprint yet is outside the finding, exactly as the gate is not_applicable there, so freshly prepared reports from prepare-build and start still validate. A report with no design source package at all is unaffected, an active waiver still passes, and doctor output is unchanged because doctor keeps reporting this finding from its polish gate and does not list it twice. campaigns-os polish capture is unaffected: its report check stays a shape check, since the polish gate reports source freshness on the way out.",
       "compatibility": "compatible",
       "migration": "None.",
       "changes": [
@@ -2292,16 +2292,16 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "validate-assembly-report",
-          "summary": "validateAssemblyReport fails a report that declares a design-source-package material fingerprint with no stages.assembly.source_package_material_fingerprint, reusing the polish gate's predicate; doctor's shape check opts out so the gate's finding is not duplicated."
+          "summary": "validateAssemblyReport fails a report that declares a design-source-package material fingerprint with no stages.assembly.source_package_material_fingerprint, and one whose source freshness waiver has an unparseable expires_at, reusing the polish gate's predicate and waiver assessment; doctor's shape check and polish capture's report check opt out so the gate's findings are not duplicated or moved earlier."
         },
         {
           "class": "named_surface",
           "path": "docs/design-source-package.md",
           "surface_entry": "docs/design-source-package.md",
-          "summary": "The freshness-lifecycle section says validate-assembly-report applies the same missing-fingerprint condition as the polish gate."
+          "summary": "The freshness-lifecycle section says validate-assembly-report applies the same missing-fingerprint and malformed-waiver conditions as the polish gate."
         }
       ],
-      "entry_sha256": "13c0a4c6535dc40eb751e0f26eb215da92fda96aae2344668603abd71f484d28"
+      "entry_sha256": "8420b16bcdd4c669939491ed676ef41b77e251ff40fc5ddd38d3873fdc23f6ba"
     }
   ]
 }

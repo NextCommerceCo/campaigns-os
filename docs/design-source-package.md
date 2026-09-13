@@ -642,8 +642,10 @@ missing or different, the Polish gate returns
 `polish.assembly_source_package_stale`, and `campaigns-os next` routes back to
 Build. `campaigns-os validate-assembly-report` applies the same missing-
 fingerprint condition and fails with
-`stages.assembly.source_package_material_fingerprint`, so a hand-authored
-report cannot pass the standalone validator and then block the ladder. If Assembly is current but Polish's build or source-package fingerprint
+`stages.assembly.source_package_material_fingerprint`, and reports a waiver
+whose `expires_at` does not parse as
+`stages.assembly.waiver_expires_at_invalid`, so a hand-authored report cannot
+pass the standalone validator and then block the ladder. If Assembly is current but Polish's build or source-package fingerprint
 is missing or stale, the route is back to Polish. A legacy report with no
 current Design Source Package material fingerprint keeps build-only Polish
 freshness and emits a warning.

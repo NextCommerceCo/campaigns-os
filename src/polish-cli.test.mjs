@@ -165,6 +165,38 @@ test("polish capture merges onto the latest report, preserves unrelated fields, 
   }
 });
 
+// `validate-assembly-report` blocks a completed-Assembly report that declares
+// a Design Source Package material fingerprint and records no consumption
+// fingerprint. `polish capture` must not inherit that refusal: its report
+// check is a shape check, and the polish gate reports the freshness finding on
+// the way out.
+test("polish capture accepts a report the source-freshness validation refuses", async () => {
+  const f = fixture();
+  try {
+    const seeded = readJson(f.reportPath);
+    seeded.design_source_package = {
+      schema_version: "campaign-design-source-package/v0",
+      material_fingerprint: `sha256:${"c".repeat(64)}`,
+    };
+    delete seeded.stages.assembly.source_package_material_fingerprint;
+    writeJson(f.reportPath, seeded);
+
+    const result = await polishCaptureCommand(commandArgs(f), {
+      createBrowserAdapter: successfulAdapter(),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "ready");
+    const persisted = readJson(f.reportPath);
+    assert.equal(persisted.stages.polish.evidence.visual_review.page_load.performed_by, "campaigns-os polish capture");
+    // The condition the standalone validator is now loud about is still there.
+    assert.equal(persisted.design_source_package.material_fingerprint, `sha256:${"c".repeat(64)}`);
+    assert.equal(persisted.stages.assembly.source_package_material_fingerprint, undefined);
+  } finally {
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
 test("polish capture supports an explicit report path and persists blocked incomplete evidence", async () => {
   const f = fixture({ explicitReport: true });
   try {

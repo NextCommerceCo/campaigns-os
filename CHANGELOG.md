@@ -21,12 +21,17 @@ Notable supported-surface changes are recorded here.
   package fingerprint before any build has consumed it) or that has no build
   fingerprint yet is outside the finding, a report with no design source
   package at all is untouched, and an active Source Freshness Waiver still
-  passes. The new error code is
-  `stages.assembly.source_package_material_fingerprint`. A report that
+  passes. The new error codes are
+  `stages.assembly.source_package_material_fingerprint` and, for a waiver
+  record whose `expires_at` does not parse, the malformed-record condition the
+  gate blocks on as `polish.waiver_expires_at_invalid`,
+  `stages.assembly.waiver_expires_at_invalid`. A report that
   previously validated clean may now fail; record the fingerprint Build
   consumed (or a structured waiver in `waivers[]`) exactly as the polish gate
   already required. `doctor` output is unchanged: it reports this finding from
-  its polish gate as before, and does not list it twice.
+  its polish gate as before, and does not list it twice. `polish capture`'s
+  report check is unchanged too: it is a shape check, and the polish gate
+  reports source freshness on the way out.
 
 ## [1.26.0+agent.15] - 2026-09-13
 
