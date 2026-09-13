@@ -3388,6 +3388,10 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
         })
       : [],
   });
+  // Portable output (outputBaseDir set: start's generated doctor output,
+  // doctor --strip-paths) rebases them onto that base like every other path
+  // in the output, so a relocated handoff does not name the original machine.
+  const sidecarArg = (path) => shellToken(outputBaseDir ? relFromDir(outputBaseDir, path) : path);
   const sidecarArgs = [
     ...(typeof contextPath === "string" ? [` --context ${sidecarArg(contextPath)}`] : []),
     ...(typeof reportPath === "string" ? [` --report ${sidecarArg(reportPath)}`] : []),
