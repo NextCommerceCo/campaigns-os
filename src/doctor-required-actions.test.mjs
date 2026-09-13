@@ -96,6 +96,92 @@ test("doctorRequiredActionLines substitutes the packet and falls back to the des
   ]);
 });
 
+test("doctorRequiredActionLines carries a non-default inspected report into packet-scoped commands", () => {
+  const lines = doctorRequiredActionLines({
+    derived: {
+      packet_path: "/srv/example/campaign/campaign-runtime.build.json",
+      target_repo: "/srv/example/campaign",
+      // Not the packet-inferred default, so `checkpoint waive` / `polish
+      // capture` would resolve a different report than the one inspected.
+      assembly_report_path: "/srv/example/reports/custom-report.json",
+      checkpoint_gates: [{
+        id: "page_kit.sdk_version",
+        required_actions: [
+          { id: "repair_target", command: null, description: "Repair the target pin." },
+          { id: "waive_checkpoint", command: "campaigns-os checkpoint waive --packet <packet> --gate page_kit.sdk_version" },
+        ],
+      }],
+      polish_checkpoint_gate: {
+        id: "polish.hidden_eager_media",
+        required_actions: [
+          { id: "capture", command: "campaigns-os polish capture --packet <packet> --base-url <url>" },
+          { id: "run_polish", command: "next-campaigns-polish", description: "Run Polish." },
+        ],
+      },
+    },
+  });
+  assert.deepEqual(lines, [
+    "Required actions:",
+    // No --packet, so no report sidecar to carry.
+    "- [page_kit.sdk_version] Repair the target pin.",
+    "- [page_kit.sdk_version] campaigns-os checkpoint waive --packet /srv/example/campaign/campaign-runtime.build.json --gate page_kit.sdk_version --report /srv/example/reports/custom-report.json",
+    "- [polish.hidden_eager_media] campaigns-os polish capture --packet /srv/example/campaign/campaign-runtime.build.json --base-url <url> --report /srv/example/reports/custom-report.json",
+    // A skill name is not a packet-scoped command.
+    "- [polish.hidden_eager_media] next-campaigns-polish",
+  ]);
+});
+
+test("doctorRequiredActionLines omits the report arg when the inspected report is the inferred default", () => {
+  const lines = doctorRequiredActionLines({
+    derived: {
+      packet_path: "/srv/example/campaign/campaign-runtime.build.json",
+      target_repo: "/srv/example/campaign",
+      assembly_report_path: "/srv/example/campaign/.campaign-runtime/assembly-report.json",
+      checkpoint_gates: [{
+        id: "page_kit.sdk_version",
+        required_actions: [{ id: "waive_checkpoint", command: "campaigns-os checkpoint waive --packet <packet>" }],
+      }],
+    },
+  });
+  assert.deepEqual(lines, [
+    "Required actions:",
+    "- [page_kit.sdk_version] campaigns-os checkpoint waive --packet /srv/example/campaign/campaign-runtime.build.json",
+  ]);
+});
+
+test("doctorRequiredActionLines carries the report when the target repo is unknown", () => {
+  // target_repo unresolved: the inferred default cannot be computed, so the
+  // inspected report is named rather than assumed.
+  const lines = doctorRequiredActionLines({
+    derived: {
+      packet_path: "/srv/example/campaign/campaign-runtime.build.json",
+      target_repo: null,
+      assembly_report_path: "/srv/example/campaign/.campaign-runtime/assembly-report.json",
+      checkpoint_gates: [{
+        id: "page_kit.store_profile",
+        required_actions: [{ id: "waive_checkpoint", command: "campaigns-os checkpoint waive --packet <packet>" }],
+      }],
+    },
+  });
+  assert.match(lines[1], / --report \/srv\/example\/campaign\/\.campaign-runtime\/assembly-report\.json$/);
+});
+
+test("doctorRequiredActionLines never appends a second --report to a command that names one", () => {
+  const lines = doctorRequiredActionLines({
+    derived: {
+      packet_path: "/srv/example/campaign/campaign-runtime.build.json",
+      target_repo: "/srv/example/campaign",
+      assembly_report_path: "/srv/example/reports/custom-report.json",
+      checkpoint_gates: [{
+        id: "page_kit.store_profile",
+        required_actions: [{ id: "waive_checkpoint", command: "campaigns-os checkpoint waive --packet <packet> --report /srv/example/reports/custom-report.json" }],
+      }],
+    },
+  });
+  assert.equal(lines.filter((line) => line.includes("--report")).length, 1);
+  assert.equal(lines[1].match(/--report/g).length, 1);
+});
+
 test("doctorRequiredActionLines keeps the placeholder when the report carries no packet path", () => {
   const lines = doctorRequiredActionLines({
     derived: {

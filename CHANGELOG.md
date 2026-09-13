@@ -20,8 +20,13 @@ Notable supported-surface changes are recorded here.
   line per action, covering the same gate set `next` aggregates (the three
   registered checkpoint gates plus the polish checkpoint gate); `--packet
   <packet>` is substituted with the packet the run read, as the QA resolve
-  printer already does. A report whose gates are all clear prints nothing
-  extra, so clean runs are unchanged. `--json` output is byte-for-byte
+  printer already does. A run whose Assembly Report is not the packet-inferred
+  default (`--report`, or a context `report_path` binding) also gets
+  `--report <inspected report>` appended to the packet-scoped commands, so the
+  remediation acts on the report the inspection read rather than on
+  `.campaign-runtime/assembly-report.json`, which `checkpoint waive` and
+  `polish capture` would otherwise resolve. A report whose gates are all clear
+  prints nothing extra, so clean runs are unchanged. `--json` output is byte-for-byte
   unchanged — this is text-only, like the existing tiny prompts — so no
   machine reader needs to adapt.
 

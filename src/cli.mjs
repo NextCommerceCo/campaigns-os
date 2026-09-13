@@ -10632,12 +10632,34 @@ export function doctorRequiredActionLines(result) {
     ...(derived?.polish_checkpoint_gate ? [derived.polish_checkpoint_gate] : []),
   ];
   const packetPath = typeof derived?.packet_path === "string" ? derived.packet_path : null;
+  // Carry the inspected report into the printed command, for the same reason
+  // the `Next:` block carries an explicit --context/--report: a remediation
+  // must act on the artifacts the inspection read. `checkpoint waive` and
+  // `polish capture` both default to the packet-inferred
+  // <target repo>/.campaign-runtime/assembly-report.json, so a run whose
+  // report came from somewhere else (--report, or a context report_path
+  // binding) would otherwise send the operator at a different report — or at
+  // a file that does not exist — and leave the inspected gate blocked. Quiet
+  // in the common case: the arg is appended only when the inspected report is
+  // not that default, or when the target repo is unknown so the default
+  // cannot be ruled out.
+  const reportPath = typeof derived?.assembly_report_path === "string" ? derived.assembly_report_path : null;
+  const inferredReportPath = typeof derived?.target_repo === "string"
+    ? join(derived.target_repo, ".campaign-runtime/assembly-report.json")
+    : null;
+  const reportArg = reportPath && reportPath !== inferredReportPath
+    ? ` --report ${shellToken(reportPath)}`
+    : "";
   const lines = [];
   for (const gate of gates) {
     for (const action of gate?.required_actions || []) {
-      const command = packetPath && typeof action?.command === "string"
-        ? action.command.replace("--packet <packet>", `--packet ${shellToken(packetPath)}`)
-        : action?.command;
+      let command = typeof action?.command === "string" ? action.command : null;
+      if (command && packetPath) command = command.replace("--packet <packet>", `--packet ${shellToken(packetPath)}`);
+      // Only packet-scoped commands read a report sidecar, and a command that
+      // already names one is left alone.
+      if (command && reportArg && command.includes("--packet") && !command.includes("--report")) {
+        command = `${command}${reportArg}`;
+      }
       const text = command || action?.description;
       if (!text) continue;
       lines.push(`- [${gate.id}] ${text}`);

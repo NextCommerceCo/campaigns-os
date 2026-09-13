@@ -2244,8 +2244,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.15",
-      "changelog_sha256": "5467e496e54baf2bc0daa847dc666b58ca4ab1f758a5813f8f43cac30dce9070",
-      "agent_impact": "Text-only change to campaigns-os doctor: the human report now prints a `Required actions:` block listing every checkpoint gate's required_actions[] (one `- [<gate id>] <command or description>` line), below Errors:/Warnings: and above Next:, with `--packet <packet>` substituted for the packet the run read. The gate set is the one `next` aggregates: the three registered checkpoint gates plus the polish checkpoint gate. A report with no outstanding gate actions prints nothing extra. doctor --json is unchanged in every field, so an agent parsing JSON needs no adaptation; an agent that scrapes the text report can now read the remediation instead of re-running with --json. The lines are produced by the exported doctorRequiredActionLines(result) helper, mirroring nextTinyPromptLines.",
+      "changelog_sha256": "230368aa1c85ff0bffa005b4fb1bf71aa534dd7e4e2c2d169513a8c00395d5ef",
+      "agent_impact": "Text-only change to campaigns-os doctor: the human report now prints a `Required actions:` block listing every checkpoint gate's required_actions[] (one `- [<gate id>] <command or description>` line), below Errors:/Warnings: and above Next:, with `--packet <packet>` substituted for the packet the run read. The gate set is the one `next` aggregates: the registered checkpoint gates plus the polish checkpoint gate. Packet-scoped commands also gain `--report <inspected report>` when the run's Assembly Report is not the packet-inferred default, so the remediation acts on the report the inspection read. A report with no outstanding gate actions prints nothing extra. doctor --json is unchanged in every field, so an agent parsing JSON needs no adaptation; an agent that scrapes the text report can now read the remediation instead of re-running with --json. The lines are produced by the exported doctorRequiredActionLines(result) helper, mirroring nextTinyPromptLines.",
       "compatibility": "compatible",
       "migration": "None.",
       "changes": [
@@ -2253,7 +2253,7 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "doctor",
-          "summary": "Render each checkpoint gate's required_actions[] in the human doctor report as a `Required actions:` block between the findings and the `Next:` block, via a new exported doctorRequiredActionLines(result); JSON output unchanged."
+          "summary": "Render each checkpoint gate's required_actions[] in the human doctor report as a `Required actions:` block between the findings and the `Next:` block, with the run's packet and its non-default Assembly Report substituted into packet-scoped commands, via a new exported doctorRequiredActionLines(result); JSON output unchanged."
         },
         {
           "class": "named_surface",
@@ -2262,7 +2262,7 @@
           "summary": "State that the text doctor report prints the same required_actions[] the JSON report carries, under a `Required actions:` block."
         }
       ],
-      "entry_sha256": "64a50b081439c7806a503f868543631d1b3980472595eb433f57dc40743f5fe5"
+      "entry_sha256": "b6e9ceda258d258a34aa26178f6f4c9810df9a6ea78cba511de3b2bd9e8cead0"
     }
   ]
 }
