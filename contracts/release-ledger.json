@@ -2283,7 +2283,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.16",
-      "changelog_sha256": "c8ac630b5f6ce9e8a6c7cfdf03d247806139566e824b12c367b31330eeb77f24",
+      "changelog_sha256": "04877c9983993cda073dc1793b4de7216743c515af6369ac65e31eef533d7ea3",
       "agent_impact": "A `qa run --browser` that a blocked checkpoint, polish, or theme gate finalized before any page was rendered now stamps the verdict with browser: { requested: true, status: \"skipped_gate_blocked\", blocked_by: [<gate codes>], reason } and prints that reason once on stderr. The reason names the gate and quotes that gate's own required_actions for what clears it, so the guidance matches the exact blocking state (a stale-assembly polish blocker asks for a fresh Build, and a waive command appears only where the gate is waivable). Nothing else moves: the assertion set, the disposition and the exit code (4, blocked) are what they were, and no browser is launched. Treat the field as additive and emitted only for that case \u2014 its absence means the verdict makes no claim about a browser pass, not that one ran, so keep reading the browser-runtime assertions and tested_urls to tell whether a browser pass happened. The field is not part of the committed .campaign-runtime/qa-verdict.json allowlist projection, and a --json run receives the stamp in the emitted verdict instead of the stderr line.",
       "compatibility": "compatible",
       "migration": "None.",
@@ -2295,7 +2295,7 @@
           "summary": "The checkpoint-preflight section states the visible downgrade: the browser stamp a gate-blocked --browser run carries, the single stderr line whose repair guidance comes from the gate's required_actions, the unchanged exit code, and that the field's absence is not evidence a browser pass ran."
         }
       ],
-      "entry_sha256": "302e3fa7930d608c5c15b63662738ba0f02642335aea34bc3e4e59604c0c6bac"
+      "entry_sha256": "4e14f7f9ed40ddae8f34cabc3e372a267b96e19e8275cd869179892aef2b3e81"
     }
   ]
 }
