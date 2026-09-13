@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.8] - 2026-09-13
+
+### Fixed
+
+- The doctor ready line for a passing theme gate states the fact the gate
+  passed on. The gate passes on two different facts — a brand layer applied
+  after `next-core.css` (`theme_gate.applied`), or no generatable brand theme
+  at all (`theme_gate.nothing_generatable`) — and `ready[]` printed the first
+  sentence for both, so a token-less campaign read "brand layer applied" three
+  lines after "Brand theme context missing". The line now carries the gate's
+  own reason. Gate codes, statuses and reasons are unchanged.
 ## [1.26.0+agent.6] - 2026-09-13
 
 ### Fixed

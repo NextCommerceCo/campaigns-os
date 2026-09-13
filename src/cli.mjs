@@ -3328,7 +3328,11 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   } else if (themeGate.status === "waived") {
     ready.push(`Theme gate waived: ${themeGate.waiver?.reason || "(no reason recorded)"}`);
   } else if (themeGate.status === "pass") {
-    ready.push("Theme gate passed: brand layer applied after next-core.css on commerce pages.");
+    // The gate passes on two different facts (a brand layer applied, or no
+    // generatable brand theme at all); print the one it found, never the
+    // other. An operator reading ready[] on a token-less campaign must not
+    // believe brand styling shipped.
+    ready.push(`Theme gate passed: ${themeGate.reason}`);
   }
   runPricingCssHideCheck({ packet, derived, warnings, ready, report });
 
