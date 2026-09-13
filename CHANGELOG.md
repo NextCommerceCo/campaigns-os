@@ -2,6 +2,25 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.3] - 2026-09-13
+
+### Fixed
+
+- A Run Record's `assembly_report` sha256 no longer goes stale on the next
+  `doctor` run. `run-record` digests the Assembly Report at mint, but every
+  `campaigns-os doctor` against a matching packet rewrote the report with a
+  fresh `stages.doctor.checked_at` even when it found exactly what the report
+  already said, so the record's attestation broke seconds after it was minted
+  in any workflow where `doctor` runs after `run-record` (the packet and
+  QA-verdict digests kept verifying because nothing rewrites those). `doctor`
+  now compares its restated outcome with the report on disk, ignoring only
+  the doctor stage's own `checked_at` / `completed_at`, and leaves the file's
+  bytes alone when nothing else moved; a changed outcome (a blocker cleared,
+  a warning added, a different command or output path) still rewrites, and
+  `doctor-output.json` is refreshed on every run as before. The helper is
+  exported from the stage ledger as `producerStageOutcomeUnchanged` for the QA
+  producer to adopt.
+
 ## [1.26.0] - 2026-09-12
 
 ### Added

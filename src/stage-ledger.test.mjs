@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { producerStageOutcomeUnchanged, recordProducerStageOutcome } from "./stage-ledger.mjs";
 
 function report() {
   return {
@@ -352,4 +352,28 @@ test("empty prior evidence beside a real prior identity archives the identity al
     identity: { verdict_run_id: "TODAY_RUN" },
   });
   assert.deepEqual(updated.stages.qa.history, [{ status: "blocked", checked_at: "2026-09-10T00:00:00.000Z", verdict_run_id: "YESTERDAY_RUN" }]);
+});
+
+test("producerStageOutcomeUnchanged ignores only the stage's own timestamps", () => {
+  const base = recordProducerStageOutcome(report(), {
+    stage: "doctor", disposition: "blocked", timestamp: "2026-09-13T10:00:00.000Z",
+    command: "campaigns-os doctor", outputs: ["/out/doctor-output.json"], blockers: ["one"], warnings: [],
+  });
+  const rerun = recordProducerStageOutcome(base, {
+    stage: "doctor", disposition: "blocked", timestamp: "2026-09-13T10:05:00.000Z",
+    command: "campaigns-os doctor", outputs: ["/out/doctor-output.json"], blockers: ["one"], warnings: [],
+  });
+  assert.equal(producerStageOutcomeUnchanged(base, rerun, "doctor"), true);
+
+  const changed = recordProducerStageOutcome(base, {
+    stage: "doctor", disposition: "ready", timestamp: "2026-09-13T10:05:00.000Z",
+    command: "campaigns-os doctor", outputs: ["/out/doctor-output.json"], blockers: [], warnings: [],
+  });
+  assert.equal(producerStageOutcomeUnchanged(base, changed, "doctor"), false);
+
+  // A timestamp on the OTHER stage is someone else's data and still counts as a change.
+  const otherStage = JSON.parse(JSON.stringify(rerun));
+  otherStage.stages.qa.checked_at = "2026-09-13T10:05:00.000Z";
+  assert.equal(producerStageOutcomeUnchanged(base, otherStage, "doctor"), false);
+  assert.throws(() => producerStageOutcomeUnchanged(base, rerun, "build"), /doctor or qa/);
 });
