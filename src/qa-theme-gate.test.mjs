@@ -270,6 +270,41 @@ test("blocked theme gate still records current polish gate evidence", () => {
   assert.equal(assertions.some((assertion) => assertion.family === "theme_gate" && assertion.status === "fail"), true);
 });
 
+test("a blocked polish gate assertion carries the fingerprints and waiver its reason names", () => {
+  const gate = {
+    status: "blocked",
+    code: "polish.assembly_source_package_fingerprint_missing",
+    reason: "Assembly is not tied to the current Design Source Package material fingerprint. Re-run Build before Polish.",
+    build_fingerprint: "sha256:build",
+    source_package_material_fingerprint: "sha256:source-package",
+    expired_waiver: { expires_at: "2026-09-01T00:00:00.000Z" },
+    required_actions: [{ id: "rerun_build", kind: "skill", command: "next-campaigns-build", description: "Re-run Build." }],
+  };
+  const blocked = polishGateAssertion(gate);
+  assert.equal(blocked.status, "fail");
+  assert.equal(blocked.severity, "blocker");
+  // The doctor's derived.polish_gate and the verdict's copy name the same fields.
+  assert.equal(blocked.evidence.build_fingerprint, "sha256:build");
+  assert.equal(blocked.evidence.source_package_material_fingerprint, "sha256:source-package");
+  assert.equal(blocked.evidence.source_build_fingerprint, null);
+  assert.deepEqual(blocked.evidence.expired_waiver, gate.expired_waiver);
+  assert.equal(blocked.evidence.reason, gate.reason);
+  assert.deepEqual(blocked.evidence.required_actions, gate.required_actions);
+  assert.deepEqual(blocked.evidence.problems, []);
+
+  const stale = polishGateAssertion({
+    status: "blocked",
+    code: "polish.assembly_source_package_stale",
+    reason: "The Design Source Package changed after Build.",
+    build_fingerprint: "sha256:build",
+    source_package_material_fingerprint: "sha256:current",
+    assembly_source_package_material_fingerprint: "sha256:assembled",
+    required_actions: [],
+  });
+  assert.equal(stale.evidence.source_package_material_fingerprint, "sha256:current");
+  assert.equal(stale.evidence.assembly_source_package_material_fingerprint, "sha256:assembled");
+});
+
 test("polish gate assertion keeps pass, waived, and not-applicable distinct", () => {
   const pass = polishGateAssertion({
     status: "pass",
