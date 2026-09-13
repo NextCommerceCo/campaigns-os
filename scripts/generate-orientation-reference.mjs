@@ -468,6 +468,19 @@ export function renderReference({ orientationSchema, ledgerSchema, policy, reaso
   push("");
 
   push(
+    "## Ledger order and entry identity",
+    "",
+    "`sequence` is the authoritative order of `contracts/release-ledger.json`: it is the entry's",
+    "position in `entries[]` (1-based) and the repository gate derives the expected value from that",
+    "position, so a consumer reading history in array order reads it in `sequence` order.",
+    "`id` is a unique, immutable label that is never reused and never renumbered, and nothing binds",
+    "its number to `sequence`; the two diverge legitimately, because when concurrent pull requests",
+    "land the later one restamps its `sequence` to follow the earlier while keeping the id it was",
+    "written with. Order by `sequence`, identify by `id`, and do not infer one from the other.",
+    "",
+  );
+
+  push(
     "## Release-ledger digest canonicalization",
     "",
     `The rules below are normative. The supported self-check vector at [\`${CANONICALIZATION_FIXTURE_PATH}\`](../${CANONICALIZATION_FIXTURE_PATH})`,
