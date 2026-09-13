@@ -93,8 +93,13 @@ test("doctor blocks unprepared source with actionable preparation codes", () => 
     assert.equal(errorCodes.has("source_html.prep.frontmatter_residue"), true);
     assert.equal(warningCodes.has("source_html.prep.internal_link_unrooted"), true);
 
-    assert.equal(doctor.next.stage, "collect-inputs");
+    // Doctor's next block is a projection of the `next` command's picker, so
+    // the two name the same stage for the same packet.
+    const next = runCliJson(["next", "--packet", packetPath, "--json"]);
+    assert.equal(doctor.next.stage, next.stage);
     assert.equal(doctor.next.status, "blocked");
+    assert.equal(typeof doctor.next.command, "string");
+    assert.ok(!doctor.next.blocked_stages.includes(doctor.next.stage), "the picked stage is never inside its own blocked_stages");
     assert.ok(doctor.next.actions.some((action) => action.includes("Prepare Raw HTML Source")));
 
     const wrapperError = doctor.errors.find((issue) => issue.code === "source_html.prep.document_wrapper");

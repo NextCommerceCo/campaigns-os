@@ -2,6 +2,29 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.11] - 2026-09-13
+
+### Changed
+
+- Doctor's `next` block is now a projection of the `next` command's own stage
+  picker, so the two can no longer disagree about which stage comes next.
+  Doctor carried a second decider with its own vocabulary (`collect-inputs`,
+  `assembly`, `complete`) and its own gating: it knew neither the
+  prepare-build gate nor purchase proof, so it could report `complete` while
+  `next` said `qa` on the same packet; it listed the stage it recommended
+  inside its own `blocked_stages`; and it omitted `command` on some branches.
+  `next.stage` now uses the picker's names (`prepare-build`, `doctor-blocked`,
+  `setup`, `build`, `polish`, `deploy`, `qa`, `done`), `reason` is the picker's
+  reason, `command` is always present (the stage-less `campaigns-os next`
+  for `prepare-build` and `done`, since neither is a `next <stage>`
+  argument), and `blocked_stages` lists only the stages behind the picked
+  one. `owner`, `default_skill`, `status` and the
+  code-to-action `actions[]` strings are unchanged in meaning. Readers keyed
+  on `collect-inputs` should key on `doctor-blocked` / `prepare-build`; on
+  `assembly`, `build`; on `complete`, `done`. The `next-campaigns-os` skill
+  (1.0.9) and the build-flow, design-source-package and source-adapters docs
+  say so.
+
 ## [1.26.0] - 2026-09-12
 
 ### Added
