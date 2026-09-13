@@ -10610,6 +10610,43 @@ export function nextTinyPromptLines(result) {
   return lines;
 }
 
+// The remediation half of the human doctor report. `doctor --json` has always
+// carried each checkpoint gate's `required_actions[]` — the exact command or
+// manual step that clears the gate — and docs/build-packet.md documents them,
+// but the text report printed only the error line. A cold operator reading
+// stdout saw "does not match the CampaignSpec pin" and no way forward, which
+// is the state this renders out of existence. Exported (like
+// nextTinyPromptLines) so the text an operator reads is assertable without a
+// subprocess. Returns the lines to print, in order; an empty array prints
+// nothing. `--packet <packet>` is substituted with the packet this run read,
+// exactly as the QA resolve printer does, so the command is copy-pasteable;
+// under --strip-paths derived.packet_path is already relativized, so the
+// substitution stays portable.
+export function doctorRequiredActionLines(result) {
+  const derived = result?.derived;
+  // Same gate set `next` aggregates: the per-check checkpoint gates plus the
+  // polish checkpoint gate, so the two commands cannot disagree about which
+  // gates owe the operator an action.
+  const gates = [
+    ...(Array.isArray(derived?.checkpoint_gates) ? derived.checkpoint_gates : []),
+    ...(derived?.polish_checkpoint_gate ? [derived.polish_checkpoint_gate] : []),
+  ];
+  const packetPath = typeof derived?.packet_path === "string" ? derived.packet_path : null;
+  const lines = [];
+  for (const gate of gates) {
+    for (const action of gate?.required_actions || []) {
+      const command = packetPath && typeof action?.command === "string"
+        ? action.command.replace("--packet <packet>", `--packet ${shellToken(packetPath)}`)
+        : action?.command;
+      const text = command || action?.description;
+      if (!text) continue;
+      lines.push(`- [${gate.id}] ${text}`);
+    }
+  }
+  if (!lines.length) return [];
+  return ["Required actions:", ...lines];
+}
+
 function printNextTinyPrompt(result, args) {
   if (args.json) return;
   for (const line of nextTinyPromptLines(result)) console.log(line);
@@ -10679,6 +10716,9 @@ function printResult(result) {
     console.log("Warnings:");
     for (const issue of result.warnings) console.log(`- ${formatIssueSummary(issue)}`);
   }
+  // Directly under the findings they remediate, above the stage picker's
+  // `Next:` block: the operator reads what is wrong, then what clears it.
+  for (const line of doctorRequiredActionLines(result)) console.log(line);
   if (result.next) {
     console.log("Next:");
     console.log(`- ${result.next.stage || "unknown"} (${result.next.owner || result.next.default_skill || "owner unknown"})`);

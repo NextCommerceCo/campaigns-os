@@ -2236,6 +2236,33 @@
         }
       ],
       "entry_sha256": "7f8072738a6200727ea172cbed10685f768e1d70f50b998aa067c3137cee9bd6"
+    },
+    {
+      "id": "RL-0054",
+      "sequence": 54,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.15",
+      "changelog_sha256": "5467e496e54baf2bc0daa847dc666b58ca4ab1f758a5813f8f43cac30dce9070",
+      "agent_impact": "Text-only change to campaigns-os doctor: the human report now prints a `Required actions:` block listing every checkpoint gate's required_actions[] (one `- [<gate id>] <command or description>` line), below Errors:/Warnings: and above Next:, with `--packet <packet>` substituted for the packet the run read. The gate set is the one `next` aggregates: the three registered checkpoint gates plus the polish checkpoint gate. A report with no outstanding gate actions prints nothing extra. doctor --json is unchanged in every field, so an agent parsing JSON needs no adaptation; an agent that scrapes the text report can now read the remediation instead of re-running with --json. The lines are produced by the exported doctorRequiredActionLines(result) helper, mirroring nextTinyPromptLines.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Render each checkpoint gate's required_actions[] in the human doctor report as a `Required actions:` block between the findings and the `Next:` block, via a new exported doctorRequiredActionLines(result); JSON output unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "State that the text doctor report prints the same required_actions[] the JSON report carries, under a `Required actions:` block."
+        }
+      ],
+      "entry_sha256": "64a50b081439c7806a503f868543631d1b3980472595eb433f57dc40743f5fe5"
     }
   ]
 }

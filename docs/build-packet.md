@@ -154,6 +154,12 @@ snapshot; a waiver for one never hides a blocker in another. See
 [QA checkpoint preflight](./qa-and-test-orders.md#packet-local-checkpoint-preflight)
 for the downstream runtime boundary.
 
+Every gate that still owes work carries `required_actions[]` — the exact repair
+command or manual step, plus the waiver command. `campaigns-os doctor` prints
+the same actions in its text report, under a `Required actions:` block below the
+errors and warnings, so an operator reading stdout gets the remediation without
+re-running with `--json`.
+
 > **Where does the source HTML come from?** See [docs/entry-points.md](./entry-points.md) for the five recognized entry points (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and how each populates `source_html.pages[]` + `design_source`.
 
 ## Artifact Locations
