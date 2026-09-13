@@ -199,7 +199,7 @@ import {
   planPolishCapture,
 } from "./polish-node.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
-import { POLISH_RESOURCE_TYPES, redactCaptureUrl } from "./polish-capture.mjs";
+import { POLISH_BEACON_RESOURCE_TYPES, redactCaptureUrl } from "./polish-capture.mjs";
 import {
   appendCheckpointWaiver,
   createCheckpointRegistry,
@@ -9251,7 +9251,8 @@ const POLISH_CAPTURE_TEXT_RAW_PROBLEM_LIMIT = 64;
 const POLISH_CAPTURE_TEXT_RESOURCE_TYPE_LIMIT = 32;
 const POLISH_CAPTURE_TEXT_ACTION_LIMIT = 8;
 const SAFE_POLISH_CAPTURE_PROBLEM_CODES = new Set(POLISH_CAPTURE_PROBLEM_CODES);
-const SAFE_POLISH_RESOURCE_TYPES = new Set(POLISH_RESOURCE_TYPES);
+// The field is documented as drawn from the beacon allowlist, so the renderer prints nothing outside it.
+const SAFE_POLISH_RESOURCE_TYPES = new Set(POLISH_BEACON_RESOURCE_TYPES);
 const SAFE_POLISH_CHECKPOINT_REASONS = new Map([
   ["polish.hidden_eager_media.capture_malformed", "Package-owned page-load evidence or its governing authority is missing, malformed, or inconsistent."],
   ["polish.hidden_eager_media.capture_stale", "Package-owned page-load evidence is stale for the current build, campaign, routes, or viewports."],

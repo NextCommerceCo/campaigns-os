@@ -292,6 +292,29 @@ test("polish capture text reports unavailable resource types when the warning ca
   assert.match(output, /Resource types: unavailable$/m);
 });
 
+test("polish capture text prints only beacon-class resource types from a warning", () => {
+  const output = formatPolishCaptureText({
+    status: "ready",
+    measurement: {
+      status: "complete",
+      incomplete: [],
+      warnings: [{
+        route: "/landing/",
+        viewport: "desktop",
+        problem_codes: ["cross_origin_request_failed"],
+        failed_origins: ["https://attribution.example.invalid"],
+        failed_origin_count: 1,
+        resource_types: ["script", "ping", "stylesheet", "xhr"],
+      }],
+    },
+    checkpoint: { code: "polish.hidden_eager_media.pass", findings: [], required_actions: [] },
+    observed_findings: [],
+  });
+
+  assert.match(output, /Resource types: ping, xhr$/m);
+  assert.doesNotMatch(output, /script|stylesheet/);
+});
+
 test("missing Chromium persists browser_unavailable and prints the install-browser action", async () => {
   const f = fixture();
   try {
