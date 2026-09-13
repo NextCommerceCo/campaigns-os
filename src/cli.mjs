@@ -593,13 +593,19 @@ function autoStartRunSession(prepareResult, args, ambient, sessionHolder) {
       // packet (or to none); a session bound elsewhere is a conflict for the
       // operator to end, not something to write into silently.
       const boundPacket = optionalString(existing.session?.packet);
-      const samePacket = !boundPacket
-        || canonicalExistingPath(resolve(boundPacket)) === canonicalExistingPath(resolve(packetPath));
-      if (samePacket && sessionHolder) {
+      const thisPacket = canonicalExistingPath(resolve(packetPath));
+      const samePacket = !boundPacket || canonicalExistingPath(resolve(boundPacket)) === thisPacket;
+      const runId = singleLineField(existing.session?.run_id, "(unnamed)");
+      if (!samePacket) {
+        process.stderr.write(`[campaigns-os] run session ${runId} is bound to ${singleLineField(boundPacket)}, not this packet; not joined (this command's lifecycle entry is not recorded). End it with \`campaigns-os run end\` or run from its packet.\n`);
+        return null;
+      }
+      if (sessionHolder) {
         sessionHolder.current = existing;
         sessionHolder.adopted = true;
       }
-      return samePacket ? sessionHolder?.current || null : null;
+      process.stderr.write(`[campaigns-os] Run session ${runId} joined (already open for ${singleLineField(targetRepo)}; run telemetry is ambient).\n`);
+      return sessionHolder?.current || null;
     }
     const runId = mintSessionRunId();
     const session = {

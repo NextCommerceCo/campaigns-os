@@ -327,7 +327,7 @@ test("CLI: full ambient flow — run start -> prepare-build (no flags) -> run en
   });
 });
 
-test("CLI: a repeated start from outside the target joins the session the first one opened", () => {
+test("CLI: a repeated prepare-build from outside the target joins the session the first one opened", () => {
   withTempDir((dir) => {
     const target = join(dir, "target");
     cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
@@ -344,12 +344,36 @@ test("CLI: a repeated start from outside the target joins the session the first 
     const session = findRunSession(target);
     assert.ok(session, "the first intake opened a session");
     runIn(ROOT, intake, { allowFail: true });
+    runIn(ROOT, intake, { allowFail: true });
 
     const { entries } = readLifecycleJournal(session.session.lifecycle_journal);
     const intakes = entries.filter((entry) => entry.command === "prepare-build");
-    assert.equal(intakes.length, 2, JSON.stringify(entries.map((entry) => entry.command)));
+    assert.equal(intakes.length, 3, JSON.stringify(entries.map((entry) => entry.command)));
     assert.ok(intakes.every((entry) => entry.run_id === session.session.run_id));
     assert.equal(findRunSession(target).session.run_id, session.session.run_id, "no second session was opened");
+  });
+});
+
+test("CLI: an intake does not join a session bound to a different packet", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
+    // A session bound to some other packet is already open at the target.
+    const otherPacket = join(dir, "other-campaign-runtime.build.json");
+    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), otherPacket);
+    const start = JSON.parse(runIn(target, ["run", "start", "--packet", otherPacket, "--json"]));
+    const intake = [
+      "prepare-build",
+      "--spec", resolve(ROOT, "examples/campaignspec.v42.basic.json"),
+      "--source", resolve(ROOT, "examples/source-html"),
+      "--target", target,
+      "--template-family", "olympus",
+    ];
+    runIn(ROOT, intake, { allowFail: true });
+
+    assert.equal(findRunSession(target).session.run_id, start.session.run_id, "the bound session is left alone");
+    const { entries } = readLifecycleJournal(start.session.lifecycle_journal);
+    assert.equal(entries.filter((entry) => entry.command === "prepare-build").length, 0, "nothing was written into the foreign session");
   });
 });
 
