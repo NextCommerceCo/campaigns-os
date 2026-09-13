@@ -23,7 +23,7 @@ export const CAUSE_CLASSES = Object.freeze({
 });
 
 // Report order: the class an operator is looking for first comes first.
-export const CAUSE_CLASS_VOCABULARY = Object.freeze([
+const CAUSE_CLASS_VOCABULARY = Object.freeze([
   CAUSE_CLASSES.CAUSED_BY_CHANGE,
   CAUSE_CLASSES.PRE_EXISTING,
   CAUSE_CLASSES.TEST_ENVIRONMENT,
@@ -31,7 +31,7 @@ export const CAUSE_CLASS_VOCABULARY = Object.freeze([
   CAUSE_CLASSES.UNKNOWN,
 ]);
 
-export const CAUSE_CLASS_LABELS = Object.freeze({
+const CAUSE_CLASS_LABELS = Object.freeze({
   [CAUSE_CLASSES.CAUSED_BY_CHANGE]: "caused by this change",
   [CAUSE_CLASSES.PRE_EXISTING]: "pre-existing",
   [CAUSE_CLASSES.TEST_ENVIRONMENT]: "test environment",
@@ -45,7 +45,7 @@ export const CAUSE_CLASS_LABELS = Object.freeze({
 // `.target_missing` / `.waiver_inert` codes are configuration gaps and waiver
 // hygiene, not drift, and calling them drift would tell an operator the
 // upstream moved when it did not.
-export const UPSTREAM_DRIFT_DOCTOR_CODES = Object.freeze([
+const UPSTREAM_DRIFT_DOCTOR_CODES = Object.freeze([
   // observed target SDK version != the CampaignSpec pin (the blocking form)
   "page_kit.sdk_version",
   // the same disagreement, accepted under a named-human waiver
@@ -131,7 +131,7 @@ export function priorSetFromEntries(entries = []) {
 }
 
 /** Prior comparison set built from a previous run's QA verdict object. */
-export function priorSetFromVerdict(verdict, { isFinding }) {
+function priorSetFromVerdict(verdict, { isFinding }) {
   const assertions = Array.isArray(verdict?.assertions) ? verdict.assertions : [];
   return priorSetFromEntries(
     assertions
@@ -145,15 +145,15 @@ export function priorSetFromVerdict(verdict, { isFinding }) {
  * These are code lists the record already carries, so this works against every
  * Run Record ever written — no new field, no upgrade window.
  */
-export function priorSetFromRunRecordDoctor(record) {
+function priorSetFromRunRecordDoctor(record) {
   const doctor = record?.observations?.doctor;
   if (!doctor || typeof doctor !== "object") return null;
   const entries = [];
   for (const code of Array.isArray(doctor.error_codes) ? doctor.error_codes : []) {
-    entries.push({ fingerprint: `doctor:${text(code)}`, status: "error" });
+    entries.push({ fingerprint: doctorIssueFingerprint({ code }), status: "error" });
   }
   for (const code of Array.isArray(doctor.warning_codes) ? doctor.warning_codes : []) {
-    entries.push({ fingerprint: `doctor:${text(code)}`, status: "warning" });
+    entries.push({ fingerprint: doctorIssueFingerprint({ code }), status: "warning" });
   }
   return priorSetFromEntries(entries);
 }
@@ -168,7 +168,7 @@ export function priorSetFromRunRecordDoctor(record) {
  * Chromium failure "pre-existing" would tell the operator the campaign is at
  * fault. Only then does the previous-run comparison run.
  */
-export function classifyFinding({ fingerprint, status, environmentReason = null, upstreamDriftReason = null, prior = null, noPriorReason = "no_prior_run" }) {
+function classifyFinding({ fingerprint, status, environmentReason = null, upstreamDriftReason = null, prior = null, noPriorReason = "no_prior_run" }) {
   if (environmentReason) {
     return { cause: CAUSE_CLASSES.TEST_ENVIRONMENT, cause_reason: environmentReason };
   }
@@ -241,12 +241,12 @@ export function summarizeCauses(findings = []) {
  * run id, and naming it here would read as though it had been compared —
  * formatCauseBasisLine is where that case gets explained.
  */
-export function formatCauseSummaryLine(summary, { priorRunId = null } = {}) {
+export function formatCauseSummaryLine(summary) {
   if (!summary || !summary.total) return "Causes: no findings.";
   const parts = CAUSE_CLASS_VOCABULARY
     .filter((cause) => summary.counts[cause] > 0)
     .map((cause) => `${summary.counts[cause]} ${CAUSE_CLASS_LABELS[cause]}`);
-  const id = text(priorRunId) || text(summary.prior_run_id);
+  const id = text(summary.prior_run_id);
   let compared = " (no previous run to compare against)";
   if (summary.comparison === "prior_run" && id) {
     // The QA comparison reads that record's FINAL QA attempt, which is not the
@@ -287,6 +287,19 @@ export function formatCauseBasisLine(summary) {
     ? sentence(id)
     : "No previous-run comparison was possible, so every finding is labelled unknown.";
   return `  Comparison basis: ${reason}. ${explanation}`;
+}
+
+/**
+ * The cause block a human report prints: the summary line, then the basis
+ * line when no comparison happened. One function for the QA and the doctor
+ * report, so the two cannot print the same summary differently.
+ */
+export function formatCauseReportLines(summary) {
+  if (!summary) return [];
+  const lines = [formatCauseSummaryLine(summary)];
+  const basis = formatCauseBasisLine(summary);
+  if (basis) lines.push(basis);
+  return lines;
 }
 
 /** The short per-finding tag the report prints beside each finding. */
@@ -385,7 +398,7 @@ export function loadPriorQaVerdict({ baseDir, mapId = null, currentRunId = null 
  * carries these, so doctor cause labels work against existing history with no
  * upgrade window. Returns `{ prior, record, reason }`.
  */
-export function loadPriorDoctorFindings({ baseDir, mapId = null, currentRunId = null } = {}) {
+function loadPriorDoctorFindings({ baseDir, mapId = null, currentRunId = null } = {}) {
   const record = findPriorRunRecord({ baseDir, mapId, currentRunId });
   if (!record) return { prior: null, record: null, reason: "no_prior_run" };
   const prior = priorSetFromRunRecordDoctor(record);
@@ -437,7 +450,7 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, mapId = 
   };
 }
 
-export const CAUSE_SUMMARY_SCHEMA = "campaigns-os-finding-cause/v0";
+const CAUSE_SUMMARY_SCHEMA = "campaigns-os-finding-cause/v0";
 
 /**
  * The doctor twin. `errors` and `warnings` are the doctor output's own arrays;

@@ -198,7 +198,7 @@ npm run campaigns-os -- qa run \
   --base-url https://preview.example.com/campaign/
 ```
 
-The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags`, writes a local verdict JSON under `qa-output/<map-id>/<run-id>.json`, and returns exit code `4` when the verdict is blocked.
+The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags`, writes a local verdict JSON under `<target-repo>/qa-output/<map-id>/<run-id>.json` (the packet's `assembly.target_repo`, else the packet's directory; `--output-dir` overrides it, and a packet-less run uses `qa-output/` under the current directory), and returns exit code `4` when the verdict is blocked. The target's managed ignore block lists `qa-output/`, because full verdicts carry live storefront URLs; the committed form is the `.campaign-runtime/qa-verdict.json` projection.
 
 ### Automatic commercial parity
 
@@ -281,6 +281,19 @@ projected two ways, never a second lineage. The emitted literal predates the
 slash-versioned naming convention and the portal receiver validates the same
 literal, so changing it is a breaking shape change. Additions to v0 are
 expected; consumers must tolerate unknown fields.
+
+Two identity fields are easy to misread. `spec_hash` on the verdict is the
+CampaignSpec **material** hash — the canonical semantic identity that ignores
+formatting and the declared volatile metadata — and pairs with the Assembly
+Report's `identity.spec_material_hash` and the Build Context's
+`spec.material_hash`, not with the report's `identity.spec_hash`, which is the
+raw-byte digest of the spec file (the two meanings are deliberate; see
+[docs/migration-sidecar-bundle.md](./migration-sidecar-bundle.md)).
+`campaign_ref_id` is copied from the CampaignSpec's `campaign.ref_id` and
+identifies the platform campaign the spec was exported from, not this build:
+two specs exported from one platform campaign share it by design, and it is
+`null` when the spec carries none. Use `campaign_slug` (the Map ID) and
+`public_route_slug` to tell builds apart.
 
 **Trust is stamped by the receiver, never by this CLI.** The QA portal
 receiver accepts verdict posts publicly (after shape/size/rate checks) and
@@ -441,8 +454,8 @@ meaningful.
 ### Where the labels appear
 
 - `qa run` — `cause` / `cause_reason` on every finding assertion and on every
-  derived exception; `cause_summary` (`{surface, total, counts, prior_run_id,
-  prior_qa_attempt_run_id, comparison}`) on the verdict; a summary line plus a
+  derived exception; `cause_summary` (`{schema_version, surface, total, counts,
+  prior_run_id, prior_qa_attempt_run_id, comparison}`) on the verdict; a summary line plus a
   per-finding list on the human report. Passing assertions carry no cause: a
   pass has no cause to explain.
   `prior_run_id` is the previous **Run Record's** id on both surfaces, so the

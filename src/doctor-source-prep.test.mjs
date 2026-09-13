@@ -84,6 +84,43 @@ test("every stage the next picker can name has a doctor owner", () => {
   assert.deepEqual(Object.keys(DOCTOR_NEXT_STAGE_OWNERS).sort(), [...pickerStages].sort());
 });
 
+test("the Next block does not order a wrapper strip the accepted wrapper policy makes wrong", () => {
+  const wrapped = {
+    ...PREPARED_PAGES,
+    landing: readFileSync(resolve(UNPREPARED_FIXTURES, "full-document.html"), "utf8"),
+  };
+  withStartedBuild(wrapped, ({ packetPath }) => {
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const errorCodes = new Set((doctor.errors || []).map((issue) => issue.code));
+    const warningCodes = new Set((doctor.warnings || []).map((issue) => issue.code));
+    assert.equal(errorCodes.has("source_html.prep.document_wrapper"), false);
+    assert.equal(warningCodes.has("source_html.prep.document_wrapper"), true);
+    // The warning names the decision; the Next block must not contradict it.
+    assert.ok(!doctor.next.actions.some((action) => action.includes("strip document wrappers")), JSON.stringify(doctor.next.actions));
+  }, { extraArgs: ["--wrapper-policy", "preserve_document_wrappers"] });
+
+  // Under the default strip policy the same source still gets the strip step.
+  withStartedBuild(wrapped, ({ packetPath }) => {
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    assert.ok(doctor.next.actions.some((action) => action.includes("strip document wrappers")));
+    assert.ok(!doctor.next.actions.some((action) => action.includes("repair leftover frontmatter")), "names only the repairs the findings ask for");
+  });
+});
+
+test("the theme-gate ready line states the fact the gate passed on, never the other one", () => {
+  // A token-less campaign: the gate passes on theme_gate.nothing_generatable,
+  // so ready[] must not say a brand layer was applied.
+  withStartedBuild(PREPARED_PAGES, ({ packetPath }) => {
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    assert.equal(doctor.derived.theme_gate.status, "pass");
+    assert.equal(doctor.derived.theme_gate.code, "theme_gate.nothing_generatable");
+    const line = (doctor.ready || []).find((entry) => entry.startsWith("Theme gate passed:"));
+    assert.ok(line, JSON.stringify(doctor.ready));
+    assert.equal(line, `Theme gate passed: ${doctor.derived.theme_gate.reason}`);
+    assert.ok(!/brand layer applied/i.test(line), line);
+  });
+});
+
 test("doctor blocks unprepared source with actionable preparation codes", () => {
   const unprepared = {
     ...PREPARED_PAGES,

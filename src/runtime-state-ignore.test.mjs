@@ -34,6 +34,7 @@ test("the ignore list names the machine-local set and never the readback bundle"
     ".campaign-runtime/agent-deviations.jsonl",
     ".campaign-runtime/run-records/",
     ".campaign-runtime/fetched-specs/",
+    "qa-output/",
   ]) {
     assert.ok(RUNTIME_STATE_IGNORED_PATHS.includes(ignored), ignored);
   }
@@ -63,6 +64,32 @@ test("ensureRuntimeStateIgnored creates .gitignore, is idempotent on the marker,
     writeFileSync(join(dir, ".gitignore"), text.replace(".campaign-runtime/workflow-findings.jsonl\n", ""));
     assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
     assert.ok(!readFileSync(join(dir, ".gitignore"), "utf8").includes("workflow-findings.jsonl"));
+  });
+});
+
+test("a target set up before a required entry existed gains it on the next call, once, unless the file carries it elsewhere", () => {
+  withTempDir((dir) => {
+    const stale = `node_modules/\n\n${RUNTIME_STATE_IGNORE_BLOCK.replace("qa-output/\n", "")}\n\n_site/\n`;
+    assert.ok(!stale.includes("qa-output/"));
+    writeFileSync(join(dir, ".gitignore"), stale);
+    const result = ensureRuntimeStateIgnored(dir);
+    assert.equal(result.action, "updated");
+    assert.deepEqual(result.added_entries, ["qa-output/"]);
+    const text = readFileSync(join(dir, ".gitignore"), "utf8");
+    const block = text.slice(text.indexOf(RUNTIME_STATE_IGNORE_MARKER)).split("\n\n")[0];
+    assert.ok(block.split("\n").includes("qa-output/"), "appended inside the managed block");
+    assert.ok(text.endsWith("_site/\n"), "rules after the block are untouched");
+    assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
+  });
+  withTempDir((dir) => {
+    // An operator who ignores qa-output/ outside the block is left alone.
+    writeFileSync(join(dir, ".gitignore"), `qa-output/\n\n${RUNTIME_STATE_IGNORE_BLOCK.replace("qa-output/\n", "")}\n`);
+    assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
+  });
+  withTempDir((dir) => {
+    writeFileSync(join(dir, ".gitignore"), `${RUNTIME_STATE_IGNORE_BLOCK.replace("qa-output/\n", "")}\n`);
+    assert.deepEqual(ensureRuntimeStateIgnored(dir, { dryRun: true }).added_entries, ["qa-output/"]);
+    assert.ok(!readFileSync(join(dir, ".gitignore"), "utf8").includes("qa-output/"), "dry run writes nothing");
   });
 });
 
