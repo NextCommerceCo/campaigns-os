@@ -2322,19 +2322,40 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.18",
-      "changelog_sha256": "49c4c1e1551c288483ce113540e2d4b0281a77c26478fa0ea609d280e885f97b",
-      "agent_impact": "A `qa run --browser` that a blocked checkpoint, polish, or theme gate finalized before any page was rendered now stamps the verdict with browser: { requested: true, status: \"skipped_gate_blocked\", blocked_by: [<gate codes>], reason } and prints that reason once on stderr. The reason names the gate and quotes that gate's own required_actions for what clears it, so the guidance matches the exact blocking state (a stale-assembly polish blocker asks for a fresh Build, and a waive command appears only where the gate is waivable). Nothing else moves: the assertion set, the disposition and the exit code (4, blocked) are what they were, and no browser is launched. Treat the field as additive and emitted only for that case \u2014 its absence means the verdict makes no claim about a browser pass, not that one ran, so keep reading the browser-runtime assertions and tested_urls to tell whether a browser pass happened. The field is not part of the committed .campaign-runtime/qa-verdict.json allowlist projection, and a --json run receives the stamp in the emitted verdict instead of the stderr line.",
+      "changelog_sha256": "0653d73db8a95cc99ed5ab5815d4063b83d53ce78625219ad8d4d11242b3b5de",
+      "agent_impact": "A source-html manifest screenshot record that fails one of the three field tests (viewport, evidence pointer, kind) is still dropped, but is now reported: manifest validation emits one warning per unusable record naming pages[i].screenshots[j], its page_id, and the failing field. start/prepare-build/build print it and doctor carries it as an extra source_html.manifest warning. No schema change, no new codes, and the manifest is still accepted and used as written; an agent that reasoned about a page blocked for missing desktop/mobile proof can now read the warning instead of guessing which record was ignored.",
       "compatibility": "compatible",
       "migration": "None.",
       "changes": [
         {
           "class": "named_surface",
-          "path": "docs/qa-and-test-orders.md",
-          "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "The checkpoint-preflight section states the visible downgrade: the browser stamp a gate-blocked --browser run carries, the single stderr line whose repair guidance comes from the gate's required_actions, the unchanged exit code, and that the field's absence is not evidence a browser pass ran."
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "The record-shape section no longer says a record that fails one of the three field tests produces no diagnostic; it states that start/prepare-build and doctor warn once per bad record, naming the record, its page_id, and the failing field."
         }
       ],
-      "entry_sha256": "5dd661b4703bc7711d09dfe6cedaa2fbeb3bb4f2b496b0efe876089f14e7c873"
+      "entry_sha256": "24e5c09c001958bdbfde009b65d494586260c2d9e3b6d26c1dd2d515e18f6374"
+    },
+    {
+      "id": "RL-0057",
+      "sequence": 57,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.19",
+      "changelog_sha256": "73a258640d8d29f1322e6bd5adbf62f3d56ca48438764bd2b9996d2a6059f7b1",
+      "agent_impact": "Each entry in polish page-load evidence measurement.warnings[] now carries resource_types[] \u2014 the sorted, unique beacon-class resource roles whose failures were demoted to the cross_origin_request_failed warning (drawn from ping, fetch, xhr, other, preflight, so at most five values) \u2014 and campaigns-os polish text output prints them as a Resource types: line inside its Capture warnings (not blocking) block. An agent reading a warning can now tell which roles the demotion forgave instead of only which origins failed. The beacon allowlist, the problem codes, measurement.status, the resource ledger and the checkpoint verdict are unchanged: nothing that blocked before warns now, and nothing that warned before blocks. Two consumer-visible consequences: an agent comparing a warning entry against a fixed key set must accept the new key, and page-load evidence recorded before this change whose measurement carries a warning no longer equals the recomputed projection, so evaluateHiddenEagerMediaCheckpoint blocks it as polish.hidden_eager_media.capture_malformed until the route is recaptured.",
+      "compatibility": "breaking",
+      "migration": "Re-run campaigns-os polish for any Assembly Report whose recorded page-load measurement carries a capture warning; its recorded measurement predates the resource_types[] field and now reads as capture_malformed. Evidence with no capture warning, and any evidence captured with this version, needs nothing.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "polish",
+          "summary": "polish text output prints a Resource types: line for each capture warning, filtered to the known resource-type vocabulary."
+        }
+      ],
+      "entry_sha256": "8284174c311b75eb96382efa5f5de9ad36017be4c2f6c4d95c26a60048ef06dd"
     }
   ]
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -336,6 +336,120 @@ test("an unrecognized manifest wrapper_policy keeps the manifest and warns", () 
     assert.match(manifestWarning.message, /keep_them_i_guess/);
     assert.match(manifestWarning.message, /preserve_document_wrappers/);
     assert.doesNotMatch(manifestWarning.message, /Falling back to filesystem matching/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a hand-authored screenshot record with a bad field is reported, not silently dropped", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-screenshot-record-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(targetRepo, { recursive: true });
+    writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+    for (const [page, content] of Object.entries(PREPARED_PAGES)) {
+      writeFileSync(resolve(sourceRoot, `${page}.html`), content);
+    }
+    mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+    writeJson(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"), {
+      schema_version: "source-html-manifest/v0",
+      generator: "fixture-producer@1.0.0",
+      pages: Object.keys(PREPARED_PAGES).map((page) => (page === "landing"
+        ? {
+          page_id: page,
+          path: `${page}.html`,
+          screenshots: [
+            { id: "landing-desktop", viewport: "desktop", path: "shots/landing-desktop.png" },
+            { id: "landing-mobile", viewport: "mobil", path: "shots/landing-mobile.png" },
+          ],
+        }
+        : { page_id: page, path: `${page}.html` })),
+    });
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
+
+    const run = spawnSync(process.execPath, [
+      CLI,
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--no-run-session",
+      "--json",
+    ], { cwd: ROOT, encoding: "utf8", env: { ...process.env, CAMPAIGNS_API_KEY: "" } });
+    assert.equal(run.status, 0, run.stderr);
+    // prepare-build says it on the operator's console, naming record and field.
+    const warned = run.stderr.split("\n").filter((line) => line.includes("screenshots[1]"));
+    assert.equal(warned.length, 1, run.stderr);
+    assert.match(warned[0], /viewport/);
+    assert.match(warned[0], /"mobil"/);
+
+    // The manifest was still used as written: the good record stays proof.
+    const packetPath = resolve(targetRepo, "campaign-runtime.build.json");
+    const packet = readJson(packetPath);
+    assert.equal(packet.source_html.pages.length, Object.keys(PREPARED_PAGES).length);
+
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    const manifestWarnings = (doctor.warnings || []).filter((issue) => issue.code === "source_html.manifest");
+    const recordWarnings = manifestWarnings.filter((issue) => issue.message.includes("screenshots[1]"));
+    assert.equal(recordWarnings.length, 1, JSON.stringify(manifestWarnings));
+    assert.match(recordWarnings[0].message, /page_id "landing"/);
+    assert.match(recordWarnings[0].message, /viewport/);
+    assert.doesNotMatch(recordWarnings[0].message, /Falling back to filesystem matching/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a manifest whose screenshot records are all well-formed draws no record warning", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-screenshot-record-clean-"));
+  try {
+    const sourceRoot = resolve(dir, "source-html");
+    const targetRepo = resolve(dir, "target-page-kit");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(targetRepo, { recursive: true });
+    writeFileSync(resolve(targetRepo, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "fixture" } }));
+    for (const [page, content] of Object.entries(PREPARED_PAGES)) {
+      writeFileSync(resolve(sourceRoot, `${page}.html`), content);
+    }
+    mkdirSync(resolve(sourceRoot, ".campaigns-os"), { recursive: true });
+    writeJson(resolve(sourceRoot, ".campaigns-os/source-html-manifest.json"), {
+      schema_version: "source-html-manifest/v0",
+      generator: "fixture-producer@1.0.0",
+      pages: Object.keys(PREPARED_PAGES).map((page) => (page === "landing"
+        ? {
+          page_id: page,
+          path: `${page}.html`,
+          screenshots: [
+            { id: "landing-desktop", viewport: "desktop", path: "shots/landing-desktop.png" },
+            { id: "landing-mobile", viewport: "mobile", path: "shots/landing-mobile.png" },
+          ],
+        }
+        : { page_id: page, path: `${page}.html` })),
+    });
+    const specPath = resolve(dir, "campaignspec.json");
+    writeJson(specPath, readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json")));
+
+    const run = spawnSync(process.execPath, [
+      CLI,
+      "prepare-build",
+      "--spec", specPath,
+      "--source", sourceRoot,
+      "--target", targetRepo,
+      "--template-family", "olympus",
+      "--no-run-session",
+      "--json",
+    ], { cwd: ROOT, encoding: "utf8", env: { ...process.env, CAMPAIGNS_API_KEY: "" } });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stderr.includes("ignored as source screenshot proof"), false, run.stderr);
+
+    const doctor = runCliJson(["doctor", "--packet", resolve(targetRepo, "campaign-runtime.build.json"), "--json"]);
+    const recordWarnings = (doctor.warnings || [])
+      .filter((issue) => issue.code === "source_html.manifest" && issue.message.includes("screenshot"));
+    assert.deepEqual(recordWarnings, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

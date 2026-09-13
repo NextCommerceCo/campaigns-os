@@ -28,6 +28,62 @@ Notable supported-surface changes are recorded here.
   sidecar's allowlist projection, and `--json` runs receive the stamp in the
   emitted verdict instead of the stderr line. `docs/qa-and-test-orders.md`
   states the behaviour.
+## [1.26.0+agent.19] - 2026-09-13
+
+### Changed
+
+- A polish capture warning now names the resource roles whose failures were
+  demoted to it. `cross_origin_request_failed` exists because a failed
+  cross-origin request in a beacon-class role (`ping`, `fetch`, `xhr`,
+  `other`, `preflight`) says nothing about what the page renders, so it is
+  recorded without making the capture incomplete. That demotion is a
+  trade-off, not a fact about the page, and the warning entry did not say
+  which roles it had been applied to: an operator reading
+  `measurement.warnings[]` could see the failing origins but not whether a
+  stale tracking `ping` had been forgiven or a `fetch` the page may have
+  depended on. Each warning entry now carries `resource_types[]` — sorted,
+  unique, drawn from the beacon allowlist, so at most five values — and
+  `campaigns-os polish` prints the same list as `Resource types:` in its
+  `Capture warnings (not blocking)` block. The beacon allowlist itself is
+  unchanged, so nothing that blocked before is forgiven now and nothing that
+  warned before blocks; `measurement.status`, the problem codes, the resource
+  ledger and the checkpoint verdict are untouched. A consumer that compared a
+  warning entry against a fixed key set should accept the new key; one that
+  only reads fields it names needs no change. `docs/polish-evidence.md`
+  records the field and why the roles are named.
+- Page-load evidence recorded before this change whose `measurement` carries a
+  capture warning no longer equals the projection this module recomputes from
+  its own captures, so `evaluateHiddenEagerMediaCheckpoint` (the recorded-
+  checkpoint path doctor and the QA gate read) blocks it as
+  `polish.hidden_eager_media.capture_malformed` until the route is recaptured.
+  Re-run `campaigns-os polish` for such a report; evidence with no warning is
+  unaffected. The absent field is deliberately not normalised away: the
+  recorded measurement has to equal the projection for a hand-edited
+  measurement to be catchable, and accepting a warning that does not name the
+  roles it forgave would re-open the gap this change closes.
+## [1.26.0+agent.18] - 2026-09-13
+
+### Fixed
+
+- A source-html manifest `pages[].screenshots[]` record that fails one of the
+  three field tests is now reported per record instead of disappearing. The
+  package build dropped a record whose `viewport` was unrecognized, whose
+  `kind` was not a source-screenshot kind, or that pointed at no evidence
+  (no `path`, no `url`, no `unavailable_reason`), and said nothing: a
+  hand-authored manifest with a typo in one record lost that screenshot, the
+  page stayed blocked for missing desktop/mobile proof, and neither `start`
+  nor `doctor` mentioned the record the operator had written. Manifest
+  validation now emits one warning per unusable record, naming the record
+  (`manifest.pages[i].screenshots[j]`), its `page_id`, and the field that
+  failed, on the same channel as the `wrapper_policy` warning: `start`,
+  `prepare-build` and `build` print it, and `doctor` carries it as a
+  `source_html.manifest` warning. The schema is unchanged and the manifest is
+  still accepted and used as written — optional proof with a typo is not a
+  reason to fall back to filesystem matching — so the only change a reader
+  adapts to is the extra warning text and, in `doctor --json`, the extra
+  `warnings[]` entries under an existing code. The accept/reject test now
+  lives in one place beside the package builder, so the warning cannot drift
+  from the behaviour it describes.
 ## [1.26.0+agent.17] - 2026-09-13
 
 ### Changed
