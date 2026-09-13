@@ -2,6 +2,34 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.16] - 2026-09-13
+
+### Changed
+
+- The `browser-order-bump-state` marker vocabulary now lives in one list, and
+  the stylesheet-rule walk no longer reads a dimmed marker as a hidden one.
+  Two exported constants held the same four marker selectors — the ordered
+  family list and the container list a nested tick's wrapper is matched
+  against — so a family added to one and not the other would resolve a marker
+  and then judge it by the wrong box; `ORDER_BUMP_MARKER_CONTAINERS` is now
+  derived from `ORDER_BUMP_MARKER_FAMILIES` rather than repeating it (order is
+  immaterial to a container list, which is joined into a single `closest()`
+  query). Separately, one `opacity <= 0.5` threshold served both the rendered
+  read and the rule walk, which are asking different questions: the rendered
+  read asks whether a buyer can see the marker, and half opacity or less is
+  too faint to read a tick off; the rule walk asks whether a rule removes the
+  marker from rendering, which is the display-toggled family's signature. A
+  rule dimming a marker to `opacity: 0.4` leaves it on screen, so counting it
+  reported a correctly declined bump as misaligned. The rule walk now requires
+  an exact `opacity: 0`; the rendered read keeps its threshold. The
+  accepted-state fill is now the documented `ORDER_BUMP_ACCEPTED_FILL_COLOR`
+  constant, passed through the probe input instead of sitting inline as a bare
+  colour literal, and the fixture README records both sides of the new rule
+  threshold. No evidence field changed name or meaning, so nothing a reader of
+  the order-bump evidence consumes needs adapting; a page that dims a state
+  marker without hiding it now reads `unresolved` where it used to read
+  `display_toggled`, which is the false misalignment going away.
+
 ## [1.26.0+agent.15] - 2026-09-13
 
 ### Changed
@@ -60,6 +88,7 @@ Notable supported-surface changes are recorded here.
   its inspection contract — the sidecar it was not given stays off — so its
   `next` block decides over the artifacts it checked and its `reason` says
   which; the ladder decision over the bound report is `campaigns-os next`'s.
+
 ## [1.26.0+agent.7] - 2026-09-13
 
 ### Fixed
@@ -75,6 +104,7 @@ Notable supported-surface changes are recorded here.
   repairs the findings ask for, and offers the wrapper strip only when the
   wrapper finding is an error. Codes, severities and the warning text are
   unchanged.
+
 ## [1.26.0+agent.12] - 2026-09-13
 
 ### Changed
@@ -95,6 +125,7 @@ Notable supported-surface changes are recorded here.
 - `assemblySourcePackageFreshnessWaiver` from `src/polish-gate.mjs`: a
   three-line alias over `assessAssemblySourcePackageFreshnessWaivers(...).active`
   with no caller in `src/` or `scripts/`. Not on the supported surface.
+
 ## [1.26.0+agent.10] - 2026-09-13
 
 ### Removed
@@ -137,6 +168,7 @@ is gone.
   emits it) and a paragraph on `spec_hash` (the material hash, pairs with
   `identity.spec_material_hash`) and `campaign_ref_id` (copied from the spec's
   `campaign.ref_id`, shared by specs exported from one platform campaign).
+
 ## [1.26.0+agent.9] - 2026-09-13
 
 ### Changed
@@ -147,6 +179,7 @@ is gone.
   from. Neither name is on the supported surface (`package_exports` lists
   subpaths, not these symbols), so this removes an internal shim only; the
   one in-repo importer (a test) now imports from `src/run-record.mjs`.
+
 ## [1.26.0+agent.8] - 2026-09-13
 
 ### Fixed
@@ -158,6 +191,7 @@ is gone.
   sentence for both, so a token-less campaign read "brand layer applied" three
   lines after "Brand theme context missing". The line now carries the gate's
   own reason. Gate codes, statuses and reasons are unchanged.
+
 ## [1.26.0+agent.6] - 2026-09-13
 
 ### Fixed
@@ -176,6 +210,7 @@ is gone.
   the session entirely. (A `doctor` that runs after `run-record` is minted is
   recorded in the journal but not in that record, which is the record's
   cut-off working as designed, not a missing entry.)
+
 ## [1.26.0+agent.4] - 2026-09-13
 
 ### Changed
@@ -197,6 +232,7 @@ is gone.
   the committed form remains
   the `.campaign-runtime/qa-verdict.json` projection, which is unchanged. The
   `external:<kind>` sentinel on an out-of-root artifact is deliberate and stays.
+
 ## [1.26.0+agent.3] - 2026-09-13
 
 ### Fixed
@@ -215,6 +251,7 @@ is gone.
   `doctor-output.json` is refreshed on every run as before. The helper is
   exported from the stage ledger as `producerStageOutcomeUnchanged` for the QA
   producer to adopt.
+
 ## [1.26.0+agent.13] - 2026-09-13
 
 ### Changed
@@ -229,6 +266,7 @@ is gone.
   copy stays: it stringifies `null` differently and its callers rely on that).
   `standardize` output over the example target is byte-identical before and
   after, timestamps aside.
+
 ## [1.26.0+agent.5] - 2026-09-13
 
 ### Fixed
@@ -249,6 +287,7 @@ is gone.
   (assembly not tied to the current Design Source Package, re-run Build) and
   `polish.evidence_missing` (no Polish stage, run Polish) are different
   conditions with different next actions and stay distinct.
+
 ## [1.26.0+agent.2] - 2026-09-13
 
 ### Fixed
@@ -273,6 +312,7 @@ is gone.
   schema, problem code or verdict field outside that assertion's evidence
   changes.
 ||||||| 42ba452
+
 ## [1.26.0+agent.1] - 2026-09-13
 
 ### Fixed
@@ -337,6 +377,7 @@ is gone.
   it, the value, and the accepted values, and `pages[]`, `producer_provenance`,
   and `files[]` are used as written. A non-default selection prints the value
   and the channel that set it on stderr.
+
 ## [1.25.0+agent.16] - 2026-09-12
 
 ### Fixed
@@ -518,6 +559,7 @@ is gone.
   already lives, and are re-exported from `src/cli.mjs` unchanged. One
   implementation, now reachable from the QA runner, which cannot import the
   CLI. No behaviour change.
+
 ## [1.25.0+agent.11] - 2026-09-12
 
 ### Added
@@ -563,6 +605,7 @@ is gone.
   length capped. The repair path names
   `contracts/template-brand-contract.<family>.v0.json` only when that file is
   on disk, and otherwise says the private fragment supplying it.
+
 ## [1.25.0+agent.10] - 2026-09-12
 
 ### Fixed
