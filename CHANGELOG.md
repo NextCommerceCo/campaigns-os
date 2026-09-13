@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.26.0+agent.20] - 2026-09-13
+## [1.26.0+agent.22] - 2026-09-13
 
 ### Fixed
 
@@ -42,6 +42,7 @@ Notable supported-surface changes are recorded here.
   keeps its existing restriction to variable names that name a campaign key,
   and now says so by name when it refuses one, without reading that
   variable's value.
+
 ## [1.26.0+agent.21] - 2026-09-13
 
 ### Fixed
