@@ -567,9 +567,18 @@ function attributedFailureCounts(entries) {
   return counts;
 }
 
-function captureWarningOrigins(capture) {
+// The demoted failures behind a capture warning, read back off the ledger:
+// which hosts they went to and which resource roles were demoted. The roles
+// matter because the demotion is a trade-off, not a fact about the page — a
+// warning that names only its origins leaves the operator unable to see
+// which beacon roles were forgiven. The role vocabulary is the beacon
+// allowlist in polish-capture.mjs, so the type list is bounded by that closed
+// set and needs no separate cap; the origin list is unbounded and is capped
+// by the caller.
+function captureWarningAttribution(capture) {
   const entries = Array.isArray(capture?.resource_ledger?.entries) ? capture.resource_ledger.entries : [];
   const origins = new Set();
+  const resourceTypes = new Set();
   for (const resource of entries) {
     if (resource.failed_request_count === 0) continue;
     if (failedRequestProblemCode({
@@ -579,8 +588,9 @@ function captureWarningOrigins(capture) {
     // A ledger URL has already passed safeHttpUrl in validResourceLedger, so a
     // parse failure here is a bug worth throwing on, not a case to swallow.
     origins.add(new URL(resource.url).origin);
+    resourceTypes.add(resource.resource_type);
   }
-  return [...origins].sort();
+  return { origins: [...origins].sort(), resourceTypes: [...resourceTypes].sort() };
 }
 
 function projectCaptureIntegrity(integrity) {
@@ -936,7 +946,7 @@ export function buildPolishPageLoadEvidence({
     .filter((capture) => capture.measurement_status === "complete"
       && capture.problems.some((problem) => CAPTURE_WARNING_PROBLEM_CODES.has(problem.code)))
     .map((capture) => {
-      const origins = captureWarningOrigins(capture);
+      const { origins, resourceTypes } = captureWarningAttribution(capture);
       return {
         route: capture.subject.requested_route,
         viewport: capture.subject.viewport,
@@ -944,6 +954,7 @@ export function buildPolishPageLoadEvidence({
           .filter((problem) => CAPTURE_WARNING_PROBLEM_CODES.has(problem.code))
           .map((problem) => problem.code)
           .sort(),
+        resource_types: resourceTypes,
         failed_origins: origins.slice(0, MAX_CAPTURE_WARNING_ORIGINS),
         failed_origin_count: origins.length,
       };

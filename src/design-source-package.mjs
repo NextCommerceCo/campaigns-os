@@ -1866,7 +1866,7 @@ function createVisualReferenceRegistry(defaultKind) {
         : defaultKind === "template_reference_screenshot"
           ? TEMPLATE_SCREENSHOT_KINDS
           : COMPARISON_REFERENCE_KINDS;
-      if (isNonEmptyString(raw?.kind) && !contextualKinds.has(raw.kind)) return null;
+      if (visualReferenceRejection(raw, contextualKinds)) return null;
       const normalized = normalizeVisualReference(raw, defaultKind, idPrefix, defaultSourceRefId);
       if (!normalized) return null;
       const explicitId = optionalString(raw?.id);
@@ -1895,19 +1895,83 @@ function createVisualReferenceRegistry(defaultKind) {
   };
 }
 
-function normalizeVisualReference(raw, defaultKind, idPrefix, defaultSourceRefId = null) {
-  if (!isObject(raw)) return null;
+// The field tests that decide whether a visual-reference record carries
+// evidence at all, in one place, so the acceptance path (below) and the
+// operator diagnostic (diagnoseSourceScreenshotRecord) can never disagree
+// about why a record was dropped. Returns null for an acceptable record, or
+// { field, detail } naming the first field that fails.
+function visualReferenceRejection(raw, contextualKinds = null) {
+  if (!isObject(raw)) {
+    return { field: "record", detail: "the record is not a JSON object", fix: "Replace the record with an object" };
+  }
+  if (contextualKinds && isNonEmptyString(raw.kind) && !contextualKinds.has(raw.kind)) {
+    return {
+      field: "kind",
+      detail: `kind ${JSON.stringify(raw.kind)} is not one of ${[...contextualKinds].sort().join(", ")}`,
+      fix: "Fix kind on that record",
+    };
+  }
   const viewport = optionalString(raw.viewport || raw.viewport_key)?.toLowerCase();
-  if (!VIEWPORTS.has(viewport)) return null;
-  const path = optionalString(raw.path) || optionalString(raw.artifact_path) || optionalString(raw.file_path);
+  if (!VIEWPORTS.has(viewport)) {
+    return {
+      field: "viewport",
+      detail: viewport
+        ? `viewport ${JSON.stringify(viewport)} is not one of ${[...VIEWPORTS].sort().join(", ")}`
+        : `viewport is missing; it must be one of ${[...VIEWPORTS].sort().join(", ")}`,
+      fix: "Fix viewport on that record",
+    };
+  }
+  const availability = visualReferenceAvailability(raw);
+  if (!availability) {
+    return {
+      // "evidence" is a synthetic field: the fix names the three real keys.
+      field: "evidence",
+      detail: "the record declares no path, no url, and no unavailable_reason, so it points at no evidence",
+      fix: "Set path, url, or unavailable_reason on that record",
+    };
+  }
+  if (availability === "unavailable" && !visualReferenceUnavailableReason(raw)) {
+    return {
+      field: "unavailable_reason",
+      detail: 'availability is "unavailable" without an unavailable_reason explaining what is missing',
+      fix: "Add unavailable_reason to that record",
+    };
+  }
+  return null;
+}
+
+// A per-record diagnostic for source screenshot proof: null when the record is
+// accepted, otherwise the field that makes it unusable. Exported so manifest
+// validation can warn about a record the package build would otherwise drop in
+// silence.
+export function diagnoseSourceScreenshotRecord(raw) {
+  return visualReferenceRejection(raw, SOURCE_SCREENSHOT_KINDS);
+}
+
+function visualReferencePath(raw) {
+  return optionalString(raw.path) || optionalString(raw.artifact_path) || optionalString(raw.file_path);
+}
+
+function visualReferenceUnavailableReason(raw) {
+  return optionalString(raw.unavailable_reason) || optionalString(raw.reason);
+}
+
+function visualReferenceAvailability(raw) {
+  const path = visualReferencePath(raw);
   const url = optionalString(raw.url) || optionalString(raw.canonical_url);
-  const unavailableReason = optionalString(raw.unavailable_reason) || optionalString(raw.reason);
-  const availability = raw.availability === "unavailable" || (!path && !url && unavailableReason)
-    ? "unavailable"
-    : path || url
-      ? "available"
-      : null;
-  if (!availability || (availability === "unavailable" && !unavailableReason)) return null;
+  if (raw.availability === "unavailable" || (!path && !url && visualReferenceUnavailableReason(raw))) {
+    return "unavailable";
+  }
+  return path || url ? "available" : null;
+}
+
+function normalizeVisualReference(raw, defaultKind, idPrefix, defaultSourceRefId = null) {
+  if (visualReferenceRejection(raw)) return null;
+  const viewport = optionalString(raw.viewport || raw.viewport_key)?.toLowerCase();
+  const path = visualReferencePath(raw);
+  const url = optionalString(raw.url) || optionalString(raw.canonical_url);
+  const unavailableReason = visualReferenceUnavailableReason(raw);
+  const availability = visualReferenceAvailability(raw);
   const dimensions = isObject(raw.dimensions) ? raw.dimensions : {};
   const kind = VISUAL_KINDS.has(raw.kind) ? raw.kind : defaultKind;
   const id = optionalString(raw.id)
