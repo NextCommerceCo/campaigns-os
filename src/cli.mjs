@@ -2710,9 +2710,24 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     const packet = readJson(packetPath);
     const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
     const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
-    const reportPath = args.report
-      ? resolve(args.report)
-      : boundAssemblyReportPath(packet, packetPath, readJsonIfExists(contextPath), join(targetRepo, ".campaign-runtime/assembly-report.json"));
+    const defaultReportPath = join(targetRepo, ".campaign-runtime/assembly-report.json");
+    const context = readJsonIfExists(contextPath);
+    const boundReportPath = args.report ? resolve(args.report) : boundAssemblyReportPath(packet, packetPath, context, defaultReportPath);
+    // A recorded report_path is followed for the write-back only when the
+    // context/report binding checks pass: a report of another run of the
+    // same campaign matches on map id and slug alone, and restating this
+    // doctor's outcome into it would corrupt that run's evidence.
+    const boundReportSafe = args.report || boundReportPath === defaultReportPath || nextPrepareBuildBindingIssues({
+      packet,
+      packetPath,
+      context,
+      contextPath,
+      report: readJsonIfExists(boundReportPath),
+      reportPath: boundReportPath,
+      targetRepo,
+      explicitReport: false,
+    }).length === 0;
+    const reportPath = boundReportSafe ? boundReportPath : defaultReportPath;
     if (existsSync(reportPath)) {
       const report = readJson(reportPath);
       if (assemblyReportMatchesPacket(report, packet)) {
