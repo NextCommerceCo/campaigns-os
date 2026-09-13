@@ -2,6 +2,34 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.23] - 2026-09-13
+
+### Fixed
+
+- The human `campaigns-os doctor` report now prints each checkpoint gate's
+  `required_actions[]`, so the remediation is on the surface an operator
+  actually reads. `doctor --json` has always carried the exact repair command
+  (or manual step) and the waiver command for every gate that still owes work,
+  and docs/build-packet.md documents them, but the text report printed only the
+  finding: an operator whose target page-kit pinned a newer campaign-cart SDK
+  than the CampaignSpec saw `Target SDK version ... does not match the
+  CampaignSpec pin ...` and no way forward, and had to re-run with `--json` or
+  read the docs to learn that a one-field pin repair or a recorded waiver
+  clears it. The report gains a `Required actions:` block below `Errors:` and
+  `Warnings:` and above `Next:`, one `- [<gate id>] <command or description>`
+  line per action, covering the same gate set `next` aggregates (the three
+  registered checkpoint gates plus the polish checkpoint gate); `--packet
+  <packet>` is substituted with the packet the run read, as the QA resolve
+  printer already does. A run whose Assembly Report is not the packet-inferred
+  default (`--report`, or a context `report_path` binding) also gets
+  `--report <inspected report>` appended to the packet-scoped commands, so the
+  remediation acts on the report the inspection read rather than on
+  `.campaign-runtime/assembly-report.json`, which `checkpoint waive` and
+  `polish capture` would otherwise resolve. A report whose gates are all clear
+  prints nothing extra, so clean runs are unchanged. `--json` output is byte-for-byte
+  unchanged — this is text-only, like the existing tiny prompts — so no
+  machine reader needs to adapt.
+
 ## [1.26.0+agent.22] - 2026-09-13
 
 ### Fixed

@@ -10747,6 +10747,75 @@ export function nextTinyPromptLines(result) {
   return lines;
 }
 
+// The remediation half of the human doctor report. `doctor --json` has always
+// carried each checkpoint gate's `required_actions[]` — the exact command or
+// manual step that clears the gate — and docs/build-packet.md documents them,
+// but the text report printed only the error line. A cold operator reading
+// stdout saw "does not match the CampaignSpec pin" and no way forward, which
+// is the state this renders out of existence. Exported (like
+// nextTinyPromptLines) so the text an operator reads is assertable without a
+// subprocess. Returns the lines to print, in order; an empty array prints
+// nothing. `--packet <packet>` is substituted with the packet this run read,
+// exactly as the QA resolve printer does, so the command is copy-pasteable;
+// under --strip-paths derived.packet_path is already relativized, so the
+// substitution stays portable.
+export function doctorRequiredActionLines(result) {
+  const derived = result?.derived;
+  // Same gate set `next` aggregates: the per-check checkpoint gates plus the
+  // polish checkpoint gate, so the two commands cannot disagree about which
+  // gates owe the operator an action.
+  const gates = [
+    ...(Array.isArray(derived?.checkpoint_gates) ? derived.checkpoint_gates : []),
+    ...(derived?.polish_checkpoint_gate ? [derived.polish_checkpoint_gate] : []),
+  ];
+  const packetPath = typeof derived?.packet_path === "string" ? derived.packet_path : null;
+  // Carry the inspected report into the printed command, for the same reason
+  // the `Next:` block carries an explicit --context/--report: a remediation
+  // must act on the artifacts the inspection read. `checkpoint waive` and
+  // `polish capture` both default to the packet-inferred
+  // <target repo>/.campaign-runtime/assembly-report.json, so a run whose
+  // report came from somewhere else (--report, or a context report_path
+  // binding) would otherwise send the operator at a different report — or at
+  // a file that does not exist — and leave the inspected gate blocked. Quiet
+  // in the common case: the arg is appended only when the inspected report is
+  // not that default, or when the target repo is unknown so the default
+  // cannot be ruled out.
+  const reportPath = typeof derived?.assembly_report_path === "string" ? derived.assembly_report_path : null;
+  const inferredReportPath = typeof derived?.target_repo === "string"
+    ? join(derived.target_repo, ".campaign-runtime/assembly-report.json")
+    : null;
+  const reportArg = reportPath && reportPath !== inferredReportPath
+    ? ` --report ${shellToken(reportPath)}`
+    : "";
+  const lines = [];
+  for (const gate of gates) {
+    for (const action of gate?.required_actions || []) {
+      const template = typeof action?.command === "string" ? action.command : null;
+      // The two decisions below read the TEMPLATE, never the substituted
+      // string: a packet path that happens to contain "--report" (or
+      // "--packet") must not be mistaken for an option the action declared.
+      // Whole-token matches, so a flag that merely shares the prefix (say
+      // --report-format) does not count as the option itself.
+      const declaresFlag = (flag) => Boolean(template) && template.split(/\s+/).includes(flag);
+      const packetScoped = declaresFlag("--packet");
+      const namesReport = declaresFlag("--report");
+      // A function replacement, so `$&` / `$$` / `$1` inside the path are
+      // inserted literally instead of being read as replacement patterns.
+      let command = template && packetPath
+        ? template.replace("--packet <packet>", () => `--packet ${shellToken(packetPath)}`)
+        : template;
+      // Only packet-scoped commands read a report sidecar, and a command that
+      // already names one is left alone.
+      if (command && reportArg && packetScoped && !namesReport) command = `${command}${reportArg}`;
+      const text = command || action?.description;
+      if (!text) continue;
+      lines.push(`- [${gate.id}] ${text}`);
+    }
+  }
+  if (!lines.length) return [];
+  return ["Required actions:", ...lines];
+}
+
 function printNextTinyPrompt(result, args) {
   if (args.json) return;
   for (const line of nextTinyPromptLines(result)) console.log(line);
@@ -10816,6 +10885,9 @@ function printResult(result) {
     console.log("Warnings:");
     for (const issue of result.warnings) console.log(`- ${formatIssueSummary(issue)}`);
   }
+  // Directly under the findings they remediate, above the stage picker's
+  // `Next:` block: the operator reads what is wrong, then what clears it.
+  for (const line of doctorRequiredActionLines(result)) console.log(line);
   if (result.next) {
     console.log("Next:");
     console.log(`- ${result.next.stage || "unknown"} (${result.next.owner || result.next.default_skill || "owner unknown"})`);
