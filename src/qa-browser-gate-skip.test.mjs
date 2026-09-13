@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { __qaNodeTestHooks, BROWSER_SKIPPED_GATE_BLOCKED } from "./qa-node.mjs";
 
-const { runResolvedQa, browserSkippedByGate, reportBrowserSkippedByGate } = __qaNodeTestHooks;
+const { runResolvedQa, browserSkippedByGate, reportBrowserSkippedByGate, gateClearingHint } = __qaNodeTestHooks;
 
 const PAGE_URL = "https://preview.example.test/gate-skip/checkout/";
 
@@ -56,12 +56,28 @@ function resolvedFixture({ checkpointGates = [], themeGate = null, polishGate = 
   };
 }
 
+// Shaped like page-kit-store-profile.mjs's blocked, waivable result: the
+// repair command first, the waive command only because the state is waivable.
 const blockedCheckpoint = () => [{
   id: "page_kit.store_profile",
   status: "blocked",
   code: "page_kit.store_profile.mismatch",
   reason: "Fixture forces a blocked checkpoint gate.",
-  required_actions: [],
+  waivable: true,
+  required_actions: [
+    {
+      id: "align_store_profile",
+      kind: "manual",
+      command: null,
+      description: "Align the target _data/campaigns.json Store Profile fields with the CampaignSpec.",
+    },
+    {
+      id: "waive_checkpoint",
+      kind: "command",
+      command: "campaigns-os checkpoint waive --gate page_kit.store_profile --reason <why> --waived-by <named human>",
+      description: "Record a bounded waiver for this exact state.",
+    },
+  ],
 }];
 
 // Runs the gate-blocked path the way the CLI does, and captures the stderr the
@@ -101,7 +117,10 @@ test("a --browser run a blocked checkpoint gate refused stamps the verdict and s
   assert.equal(result.verdict.browser.status, BROWSER_SKIPPED_GATE_BLOCKED);
   assert.deepEqual(result.verdict.browser.blocked_by, ["page_kit.store_profile"]);
   assert.match(result.verdict.browser.reason, /no browser launched/);
-  assert.match(result.verdict.browser.reason, /checkpoint waive/);
+  // The repair guidance is the gate's own required_actions, not prose written
+  // at the notice: this state is waivable, so the waive command is among them.
+  assert.match(result.verdict.browser.reason, /Align the target _data\/campaigns\.json Store Profile fields/);
+  assert.match(result.verdict.browser.reason, /campaigns-os checkpoint waive --gate page_kit\.store_profile/);
   // The CLI result payload carries the same stamp for --json readers.
   assert.deepEqual(result.browser, result.verdict.browser);
 
@@ -125,31 +144,71 @@ test("the blocked theme gate names the theme gate and the action that clears it"
       code: "theme_gate.starter_palette_only",
       reason: "Fixture forces a blocked theme gate.",
       commerce_pages: [],
-      required_actions: [],
+      required_actions: [
+        {
+          id: "generate_brand_layer",
+          kind: "command",
+          command: "campaigns-os theme generate --packet campaign-runtime.build.json",
+          description: "Generate the brand layer from the CampaignSpec brand.",
+        },
+      ],
     },
   }));
 
   assert.equal(result.verdict.browser.status, BROWSER_SKIPPED_GATE_BLOCKED);
   assert.deepEqual(result.verdict.browser.blocked_by, ["theme_gate.starter_palette_only"]);
   assert.match(result.verdict.browser.reason, /the theme gate \(theme_gate\.starter_palette_only\)/);
-  assert.match(result.verdict.browser.reason, /--theme-waive/);
+  assert.match(result.verdict.browser.reason, /campaigns-os theme generate --packet campaign-runtime\.build\.json/);
   assert.equal(browserLines.length, 1);
 });
 
-test("the blocked polish gate names the polish gate and re-running Polish", async () => {
+test("a stale-assembly polish blocker is told to re-run Build, which is what clears it", async () => {
+  // The regression this guards: a hand-written "re-run Polish" is wrong here.
+  // polish-gate.mjs blocks polish.assembly_source_package_stale until BUILD
+  // refreshes the assembly's source-package fingerprint, and says so in its
+  // required_actions. The notice must carry that, not a plausible guess.
   const { result } = await runBlocked({ browser: true }, resolvedFixture({
     polishGate: {
       status: "blocked",
       code: "polish.assembly_source_package_stale",
-      reason: "Fixture forces a blocked polish gate.",
+      reason: "The Design Source Package changed after Build. Re-run Build against the current source package before Polish.",
       problems: [],
-      required_actions: [],
+      required_actions: [{
+        id: "rerun_build",
+        kind: "skill",
+        command: "next-campaigns-build",
+        description: "Re-run Build/Assembly against the current Design Source Package.",
+      }],
     },
   }));
 
   assert.equal(result.verdict.browser.status, BROWSER_SKIPPED_GATE_BLOCKED);
   assert.deepEqual(result.verdict.browser.blocked_by, ["polish.assembly_source_package_stale"]);
-  assert.match(result.verdict.browser.reason, /Re-run Polish/);
+  assert.match(result.verdict.browser.reason, /next-campaigns-build/);
+  assert.doesNotMatch(result.verdict.browser.reason, /[Rr]e-run Polish/);
+});
+
+test("the clearing hint quotes the gate and never invents a repair", () => {
+  // Nothing published: the notice sends the reader to the gate rather than
+  // guessing, and in particular does not offer a waiver.
+  const silent = gateClearingHint([{ status: "blocked", code: "page_kit.sdk_version.conflicting_declarations" }]);
+  assert.match(silent, /required_actions on the verdict/);
+  assert.doesNotMatch(silent, /waive/);
+
+  // Manual-only actions carry no command; the instruction is used instead.
+  const manual = gateClearingHint([{
+    required_actions: [{ id: "repair_waiver", kind: "manual", command: null, description: "Correct the waiver's\n expires_at on the assembly report." }],
+  }]);
+  // Flattened into one line, because this becomes a single stderr line.
+  assert.match(manual, /Correct the waiver's expires_at on the assembly report\./);
+  assert.doesNotMatch(manual, /\n/);
+
+  // Long action lists are capped and say that the verdict has the rest.
+  const many = gateClearingHint([{
+    required_actions: [1, 2, 3, 4, 5].map((n) => ({ id: `a${n}`, kind: "command", command: `cmd-${n}` })),
+  }]);
+  assert.match(many, /cmd-1; cmd-2; cmd-3 \(and the rest of the gate's required_actions on the verdict\)/);
+  assert.doesNotMatch(many, /cmd-4/);
 });
 
 test("the stamp is only ever built for a run that asked for a browser pass", () => {
@@ -157,7 +216,7 @@ test("the stamp is only ever built for a run that asked for a browser pass", () 
     args: { browser: true },
     blockedBy: ["page_kit.sdk_version"],
     gateLabel: "checkpoint gate",
-    clears: "Clear it.",
+    gates: [{ status: "blocked", code: "page_kit.sdk_version.expected_observed_mismatch", required_actions: [] }],
   };
   assert.equal(browserSkippedByGate({ ...blocked, args: {} }), null);
   assert.equal(browserSkippedByGate({ ...blocked, args: { browser: "true" } }), null, "only the parsed boolean flag counts");
@@ -173,7 +232,7 @@ test("the skip notice stays silent in JSON mode, where the stamp is already emit
     args: { browser: true },
     blockedBy: ["page_kit.store_profile"],
     gateLabel: "checkpoint gate",
-    clears: "Clear it.",
+    gates: [{ status: "blocked", code: "page_kit.store_profile.mismatch", required_actions: [] }],
   });
 
   assert.equal(reportBrowserSkippedByGate({ json: true, browser: true }, stamp, write), false);

@@ -114,8 +114,10 @@ A blocked gate downgrades a requested browser pass visibly. When `--browser` was
 passed and a blocked checkpoint, polish, or theme gate finalized the run before
 any page was rendered, the verdict carries
 `browser: { requested: true, status: "skipped_gate_blocked", blocked_by: [<gate
-codes>], reason }` and the run prints that reason once on stderr, naming what
-clears the gate. The gate decision and the exit code are unchanged (`4`, blocked);
+codes>], reason }` and the run prints that reason once on stderr, naming the
+gate and quoting that gate's own `required_actions` for what clears it (so a
+stale-assembly polish blocker asks for a fresh Build, and a waive command
+appears only where the gate is waivable). The gate decision and the exit code are unchanged (`4`, blocked);
 only the silence is. The field is emitted for that case alone, so its absence
 means the verdict makes no claim about a browser pass — read the
 `browser-runtime` assertions and `tested_urls` to tell whether one ran. It is

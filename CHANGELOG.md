@@ -15,10 +15,13 @@ Notable supported-surface changes are recorded here.
   Such a run now stamps the verdict with
   `browser: { requested: true, status: "skipped_gate_blocked", blocked_by:
   [<gate codes>], reason }` and prints that reason once on stderr, naming the
-  gate that blocked and the action that clears it (clear or waive the
-  checkpoint, re-run Polish, generate the brand layer or `--theme-waive`). The
-  gate decision, the assertion set and the exit code are unchanged: a blocked
-  verdict still exits `4`. A reader adapts by treating the field as additive
+  gate that blocked and what clears it. That repair guidance is quoted from the
+  blocking gate's own `required_actions` rather than written at the notice, so
+  it cannot send an operator into a second blocked run — a
+  `polish.assembly_source_package_stale` blocker asks for a fresh Build, not
+  another Polish, and a waive command appears only for a state its gate
+  actually lets an operator waive. The gate decision, the assertion set and the
+  exit code are unchanged: a blocked verdict still exits `4`. A reader adapts by treating the field as additive
   and present only for that case — its absence means the verdict makes no claim
   about a browser pass, not that one ran, so keep reading `browser-runtime`
   assertions and `tested_urls` for that. The field is not in the committed

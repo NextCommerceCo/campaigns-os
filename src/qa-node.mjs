@@ -1686,7 +1686,49 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze(
 // `reportBrowserSkippedByGate` says it once for the human.
 export const BROWSER_SKIPPED_GATE_BLOCKED = "skipped_gate_blocked";
 
-function browserSkippedByGate({ args, blockedBy, gateLabel, clears }) {
+const MAX_BROWSER_SKIP_ACTIONS = 3;
+
+// What actually clears this gate, taken from the gate itself.
+//
+// Deliberately not prose written here: "re-run Polish" is wrong for
+// polish.assembly_source_package_stale (only a fresh Build refreshes the
+// assembly fingerprint), and "record a waiver" is wrong for every non-waivable
+// checkpoint state — checkpointWaive refuses those outright. The evaluators
+// already publish the correct repair for the exact state they blocked on, and
+// the waive command appears among them only when the gate is waivable, so the
+// notice quotes required_actions and invents nothing.
+function gateClearingHint(gates) {
+  const actions = (Array.isArray(gates) ? gates : [gates])
+    .filter(isPlainObject)
+    .flatMap((gate) => (Array.isArray(gate.required_actions) ? gate.required_actions.filter(isPlainObject) : []));
+  const named = [];
+  for (const action of actions) {
+    // Prefer the runnable command; fall back to the manual instruction, which
+    // is what a kind: "manual" action carries instead of one.
+    const text = flattenForNotice(action.command) || flattenForNotice(action.description);
+    if (text && !named.includes(text)) named.push(text);
+    if (named.length === MAX_BROWSER_SKIP_ACTIONS) break;
+  }
+  if (!named.length) {
+    return "Read the gate's own reason and required_actions on the verdict for what clears it, then re-run with --browser.";
+  }
+  const more = actions.length > named.length ? " (and the rest of the gate's required_actions on the verdict)" : "";
+  return `The gate's required actions clear it: ${named.join("; ")}${more}. Then re-run with --browser.`;
+}
+
+// Gate reasons and required actions carry subject-derived values (slugs,
+// target paths, timestamps), and this text becomes one stderr line, so a
+// newline or an ANSI escape in it could split or dress up toolkit output.
+// cli.mjs flattens its own notices for the same reason; its helper is not
+// importable here (cli.mjs imports this module, not the reverse), and this one
+// also collapses runs of whitespace, because the values are being folded into
+// a sentence rather than printed as their own field.
+function flattenForNotice(value) {
+  if (typeof value !== "string") return "";
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function browserSkippedByGate({ args, blockedBy, gateLabel, gates }) {
   // No flag, no claim: a run that never asked for a browser pass is not
   // "skipping" one, and stamping it would make the field unreadable.
   if (args?.browser !== true) return null;
@@ -1697,7 +1739,7 @@ function browserSkippedByGate({ args, blockedBy, gateLabel, clears }) {
     requested: true,
     status: BROWSER_SKIPPED_GATE_BLOCKED,
     blocked_by: codes,
-    reason: `Browser QA was requested with --browser but no browser launched: the ${gateLabel}${named} blocked this run before any page was rendered. ${clears}`,
+    reason: `Browser QA was requested with --browser but no browser launched: the ${gateLabel}${named} blocked this run before any page was rendered. ${gateClearingHint(gates)}`,
   };
 }
 
@@ -1810,7 +1852,8 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
   const checkpointGates = Array.isArray(resolved.checkpointGates)
     ? resolved.checkpointGates
     : nonPacketCheckpointGates(resolved.publicRouteSlug);
-  if (checkpointGates.some((checkpoint) => checkpoint.status === "blocked")) {
+  const blockedCheckpoints = checkpointGates.filter((checkpoint) => checkpoint?.status === "blocked");
+  if (blockedCheckpoints.length) {
     return finalizeQaRun({
       args,
       resolved,
@@ -1822,9 +1865,9 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
       runSessionActive,
       browser: browserSkippedByGate({
         args,
-        blockedBy: checkpointGates.filter((checkpoint) => checkpoint.status === "blocked").map((checkpoint) => checkpoint.id),
+        blockedBy: blockedCheckpoints.map((checkpoint) => checkpoint.id),
         gateLabel: "checkpoint gate",
-        clears: "Clear the checkpoint blocker — or record a bounded waiver with `campaigns-os checkpoint waive --gate <gate-id>` — then re-run with --browser.",
+        gates: blockedCheckpoints,
       }),
     });
   }
@@ -1843,7 +1886,7 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
         args,
         blockedBy: [polishGate.code],
         gateLabel: "polish gate",
-        clears: "Re-run Polish against the current build so the polish gate passes, then re-run with --browser.",
+        gates: [polishGate],
       }),
     });
   }
@@ -1864,7 +1907,7 @@ async function runResolvedQa(args, resolved, { runSessionActive = false } = {}) 
         args,
         blockedBy: [gate.code],
         gateLabel: "theme gate",
-        clears: "Generate the brand layer (`campaigns-os theme generate --packet <packet>`) or waive the gate with --theme-waive, then re-run with --browser.",
+        gates: [gate],
       }),
     });
   }
@@ -3393,4 +3436,5 @@ export const __qaNodeTestHooks = Object.freeze({
   reportCommercialRunnerError,
   browserSkippedByGate,
   reportBrowserSkippedByGate,
+  gateClearingHint,
 });

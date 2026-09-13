@@ -2244,8 +2244,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.15",
-      "changelog_sha256": "055c91add45633878b29132160ac066363fa2e6bef471ca392a1ef5341a7dd26",
-      "agent_impact": "A `qa run --browser` that a blocked checkpoint, polish, or theme gate finalized before any page was rendered now stamps the verdict with browser: { requested: true, status: \"skipped_gate_blocked\", blocked_by: [<gate codes>], reason } and prints that reason once on stderr, naming the gate and the action that clears it. Nothing else moves: the assertion set, the disposition and the exit code (4, blocked) are what they were, and no browser is launched. Treat the field as additive and emitted only for that case \u2014 its absence means the verdict makes no claim about a browser pass, not that one ran, so keep reading the browser-runtime assertions and tested_urls to tell whether a browser pass happened. The field is not part of the committed .campaign-runtime/qa-verdict.json allowlist projection, and a --json run receives the stamp in the emitted verdict instead of the stderr line.",
+      "changelog_sha256": "0eaf9ca4e115fafe85de61f1f0bfb46fd997d5846d2c8808a8fe771caaf1d971",
+      "agent_impact": "A `qa run --browser` that a blocked checkpoint, polish, or theme gate finalized before any page was rendered now stamps the verdict with browser: { requested: true, status: \"skipped_gate_blocked\", blocked_by: [<gate codes>], reason } and prints that reason once on stderr. The reason names the gate and quotes that gate's own required_actions for what clears it, so the guidance matches the exact blocking state (a stale-assembly polish blocker asks for a fresh Build, and a waive command appears only where the gate is waivable). Nothing else moves: the assertion set, the disposition and the exit code (4, blocked) are what they were, and no browser is launched. Treat the field as additive and emitted only for that case \u2014 its absence means the verdict makes no claim about a browser pass, not that one ran, so keep reading the browser-runtime assertions and tested_urls to tell whether a browser pass happened. The field is not part of the committed .campaign-runtime/qa-verdict.json allowlist projection, and a --json run receives the stamp in the emitted verdict instead of the stderr line.",
       "compatibility": "compatible",
       "migration": "None.",
       "changes": [
@@ -2253,10 +2253,10 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "The checkpoint-preflight section states the visible downgrade: the browser stamp a gate-blocked --browser run carries, the single stderr line, the unchanged exit code, and that the field's absence is not evidence a browser pass ran."
+          "summary": "The checkpoint-preflight section states the visible downgrade: the browser stamp a gate-blocked --browser run carries, the single stderr line whose repair guidance comes from the gate's required_actions, the unchanged exit code, and that the field's absence is not evidence a browser pass ran."
         }
       ],
-      "entry_sha256": "8037fb4648af005d8f724ef5a8e434a29b2266aee7b98e2d4b510ee969319396"
+      "entry_sha256": "2bb6aa84c9130b4230e86959a2745b36543f9e6f1f7d22db4bc7594cdd25f60e"
     }
   ]
 }
