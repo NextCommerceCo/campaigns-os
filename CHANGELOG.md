@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.13] - 2026-09-13
+
+### Changed
+
+- Internal consolidation, no output change. The repository-scan helpers the
+  two campaign scanners (`campaign-ecosystem.mjs`, `standardization-report.mjs`)
+  each carried — the file walk, the skip rule, the version compare and
+  extract, and the small string helpers (`normalizeString`, `relPath`,
+  `rootId`, `unique`, `escapeRegExp`) — now live once in `src/repo-scan.mjs`;
+  each scanner keeps only its own skip-directory set and passes it in. The
+  build-brief extractor's `escapeRegExp` copy is folded in too (the `cli.mjs`
+  copy stays: it stringifies `null` differently and its callers rely on that).
+  `standardize` output over the example target is byte-identical before and
+  after, timestamps aside.
 ## [1.26.0+agent.5] - 2026-09-13
 
 ### Fixed
