@@ -25,6 +25,16 @@ Notable supported-surface changes are recorded here.
   warning entry against a fixed key set should accept the new key; one that
   only reads fields it names needs no change. `docs/polish-evidence.md`
   records the field and why the roles are named.
+- Page-load evidence recorded before this change whose `measurement` carries a
+  capture warning no longer equals the projection this module recomputes from
+  its own captures, so `evaluateHiddenEagerMediaCheckpoint` (the recorded-
+  checkpoint path doctor and the QA gate read) blocks it as
+  `polish.hidden_eager_media.capture_malformed` until the route is recaptured.
+  Re-run `campaigns-os polish` for such a report; evidence with no warning is
+  unaffected. The absent field is deliberately not normalised away: the
+  recorded measurement has to equal the projection for a hand-edited
+  measurement to be catchable, and accepting a warning that does not name the
+  roles it forgave would re-open the gap this change closes.
 ## [1.26.0+agent.11] - 2026-09-13
 
 ### Changed

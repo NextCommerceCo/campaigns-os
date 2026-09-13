@@ -2244,10 +2244,10 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.15",
-      "changelog_sha256": "511ec0adf77b8243134f8fbb95b087663c7913b98469dc1de906ad418095b34b",
-      "agent_impact": "Each entry in polish page-load evidence measurement.warnings[] now carries resource_types[] \u2014 the sorted, unique beacon-class resource roles whose failures were demoted to the cross_origin_request_failed warning (drawn from ping, fetch, xhr, other, preflight, so at most five values) \u2014 and campaigns-os polish text output prints them as a Resource types: line inside its Capture warnings (not blocking) block. An agent reading a warning can now tell which roles the demotion forgave instead of only which origins failed. The beacon allowlist, the problem codes, measurement.status, the resource ledger and the checkpoint verdict are unchanged: nothing that blocked before warns now, and nothing that warned before blocks. An agent comparing a warning entry against a fixed key set must accept the new key; one that reads only the fields it names needs no change.",
-      "compatibility": "compatible",
-      "migration": "None.",
+      "changelog_sha256": "8afe0496e370c8e81427fac647129da438871bdf87f5af39b1838a8091278771",
+      "agent_impact": "Each entry in polish page-load evidence measurement.warnings[] now carries resource_types[] \u2014 the sorted, unique beacon-class resource roles whose failures were demoted to the cross_origin_request_failed warning (drawn from ping, fetch, xhr, other, preflight, so at most five values) \u2014 and campaigns-os polish text output prints them as a Resource types: line inside its Capture warnings (not blocking) block. An agent reading a warning can now tell which roles the demotion forgave instead of only which origins failed. The beacon allowlist, the problem codes, measurement.status, the resource ledger and the checkpoint verdict are unchanged: nothing that blocked before warns now, and nothing that warned before blocks. Two consumer-visible consequences: an agent comparing a warning entry against a fixed key set must accept the new key, and page-load evidence recorded before this change whose measurement carries a warning no longer equals the recomputed projection, so evaluateHiddenEagerMediaCheckpoint blocks it as polish.hidden_eager_media.capture_malformed until the route is recaptured.",
+      "compatibility": "breaking",
+      "migration": "Re-run campaigns-os polish for any Assembly Report whose recorded page-load measurement carries a capture warning; its recorded measurement predates the resource_types[] field and now reads as capture_malformed. Evidence with no capture warning, and any evidence captured with this version, needs nothing.",
       "changes": [
         {
           "class": "cli_surface",
@@ -2256,7 +2256,7 @@
           "summary": "polish text output prints a Resource types: line for each capture warning, filtered to the known resource-type vocabulary."
         }
       ],
-      "entry_sha256": "8a9cbe2d168d78f5a9d9dddbb2f7588ed050233a8122acb2a81e5f7d8e39e5d3"
+      "entry_sha256": "209fe08267d76f6ded5da9ecafb7e457a300ae41a98d614cae493093db863759"
     }
   ]
 }

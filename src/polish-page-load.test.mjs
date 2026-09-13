@@ -1143,6 +1143,28 @@ test("a capture warning names every demoted beacon role once, sorted", () => {
   assert.equal(evaluate(evidence).status, "pass");
 });
 
+// The projection is package-owned: a recorded measurement must equal what
+// this module recomputes from the captures, which is how a hand-edited
+// measurement is caught. Page-load evidence recorded before this change
+// carries a warning without the demoted roles, so it no longer equals the
+// projection and must be recaptured. Normalising the absent field away would
+// re-open exactly the hole this change closes — a recorded warning that does
+// not name what the demotion forgave would validate again.
+test("page-load evidence whose recorded warning omits the demoted roles no longer matches the projection", () => {
+  const capture = attributionCapture([
+    okResponse("app", "https://shop.example.test/assets/app.js", "Script"),
+    { request_id: "beacon", url: "https://attribution.example.invalid/ping", resource_type: "Ping", failed: true },
+  ]);
+  const evidence = evidenceForCapture(capture);
+  assert.equal(evaluate(evidence).code, "polish.hidden_eager_media.pass");
+
+  const recorded = structuredClone(evidence);
+  delete recorded.measurement.warnings[0].resource_types;
+  const gate = evaluate(recorded);
+  assert.equal(gate.code, "polish.hidden_eager_media.capture_malformed");
+  assert.equal(gate.waivable, false);
+});
+
 // The failing half of the guard: a capture with nothing demoted must carry no
 // warning at all, so the new field can never be read as "no roles demoted".
 test("a capture with no demoted failure carries no warning entry to name roles on", () => {
