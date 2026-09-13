@@ -8547,7 +8547,7 @@ export const DOCTOR_NEXT_STAGE_OWNERS = Object.freeze({
 // The code -> action strings doctor prints under `Next:`. They describe the
 // repairs the findings ask for and are independent of which stage the picker
 // names, so they survive the picker consolidation unchanged.
-function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate }) {
+function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packetRef = derived.packet_path || "<packet>" }) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const onlyPolishErrors = doctorErrorsAreOnlyPolishGate(errors);
   const actions = [];
@@ -8600,7 +8600,7 @@ function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGat
   // (and `next build` refuses with next.build.setup), so the recovery is
   // spelled out here rather than by disagreeing with the picker.
   if (codes.has("page_kit.scaffold_required")) {
-    actions.push(`Target campaign output directory is missing; run campaigns-os next setup --packet ${derived.packet_path || "<packet>"} before build.`);
+    actions.push(`Target campaign output directory is missing; run campaigns-os next setup --packet ${packetRef} before build.`);
   }
   if (polishBlocked) {
     if (polishGate.status === "blocked") {
@@ -8634,7 +8634,10 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   if (!Object.hasOwn(DOCTOR_NEXT_STAGE_OWNERS, picked.stage)) {
     throw new Error(`Doctor has no owner for next stage "${picked.stage}"; add it to DOCTOR_NEXT_STAGE_OWNERS.`);
   }
-  const actions = doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate });
+  // An explicit --context / --report is carried into every recommended
+  // command, so a recovery reads the same artifacts the recommendation did.
+  const packetRef = `${derived.packet_path || "<packet>"}${sidecarArgs}`;
+  const actions = doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packetRef });
   const deployStatus = String(report?.stages?.deploy?.status || "");
   const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
     || Boolean(deployUrlFromReportOutputs(report));
@@ -8674,7 +8677,7 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   const owners = DOCTOR_NEXT_STAGE_OWNERS[picked.stage];
   // An explicit --context / --report is carried into the recommended
   // command, so the recovery reads the same artifacts the recommendation did.
-  const packetRef = `${derived.packet_path || "<packet>"}${sidecarArgs}`;
+
   // prepare-build is not a `next <stage>` argument: the stage-less `next`
   // is what prints the recovery actions for it, and it is also the right
   // call after a doctor-blocked repair or at done.
