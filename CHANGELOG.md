@@ -29,6 +29,7 @@ Notable supported-surface changes are recorded here.
   the order-bump evidence consumes needs adapting; a page that dims a state
   marker without hiding it now reads `unresolved` where it used to read
   `display_toggled`, which is the false misalignment going away.
+
 ## [1.26.0+agent.15] - 2026-09-13
 
 ### Changed
@@ -87,6 +88,7 @@ Notable supported-surface changes are recorded here.
   its inspection contract — the sidecar it was not given stays off — so its
   `next` block decides over the artifacts it checked and its `reason` says
   which; the ladder decision over the bound report is `campaigns-os next`'s.
+
 ## [1.26.0+agent.7] - 2026-09-13
 
 ### Fixed
@@ -102,6 +104,7 @@ Notable supported-surface changes are recorded here.
   repairs the findings ask for, and offers the wrapper strip only when the
   wrapper finding is an error. Codes, severities and the warning text are
   unchanged.
+
 ## [1.26.0+agent.12] - 2026-09-13
 
 ### Changed
@@ -122,6 +125,7 @@ Notable supported-surface changes are recorded here.
 - `assemblySourcePackageFreshnessWaiver` from `src/polish-gate.mjs`: a
   three-line alias over `assessAssemblySourcePackageFreshnessWaivers(...).active`
   with no caller in `src/` or `scripts/`. Not on the supported surface.
+
 ## [1.26.0+agent.10] - 2026-09-13
 
 ### Removed
@@ -164,6 +168,7 @@ is gone.
   emits it) and a paragraph on `spec_hash` (the material hash, pairs with
   `identity.spec_material_hash`) and `campaign_ref_id` (copied from the spec's
   `campaign.ref_id`, shared by specs exported from one platform campaign).
+
 ## [1.26.0+agent.9] - 2026-09-13
 
 ### Changed
@@ -174,6 +179,7 @@ is gone.
   from. Neither name is on the supported surface (`package_exports` lists
   subpaths, not these symbols), so this removes an internal shim only; the
   one in-repo importer (a test) now imports from `src/run-record.mjs`.
+
 ## [1.26.0+agent.8] - 2026-09-13
 
 ### Fixed
@@ -185,6 +191,7 @@ is gone.
   sentence for both, so a token-less campaign read "brand layer applied" three
   lines after "Brand theme context missing". The line now carries the gate's
   own reason. Gate codes, statuses and reasons are unchanged.
+
 ## [1.26.0+agent.6] - 2026-09-13
 
 ### Fixed
@@ -203,6 +210,7 @@ is gone.
   the session entirely. (A `doctor` that runs after `run-record` is minted is
   recorded in the journal but not in that record, which is the record's
   cut-off working as designed, not a missing entry.)
+
 ## [1.26.0+agent.4] - 2026-09-13
 
 ### Changed
@@ -224,6 +232,7 @@ is gone.
   the committed form remains
   the `.campaign-runtime/qa-verdict.json` projection, which is unchanged. The
   `external:<kind>` sentinel on an out-of-root artifact is deliberate and stays.
+
 ## [1.26.0+agent.3] - 2026-09-13
 
 ### Fixed
@@ -242,6 +251,7 @@ is gone.
   `doctor-output.json` is refreshed on every run as before. The helper is
   exported from the stage ledger as `producerStageOutcomeUnchanged` for the QA
   producer to adopt.
+
 ## [1.26.0+agent.13] - 2026-09-13
 
 ### Changed
@@ -256,6 +266,7 @@ is gone.
   copy stays: it stringifies `null` differently and its callers rely on that).
   `standardize` output over the example target is byte-identical before and
   after, timestamps aside.
+
 ## [1.26.0+agent.5] - 2026-09-13
 
 ### Fixed
@@ -276,6 +287,7 @@ is gone.
   (assembly not tied to the current Design Source Package, re-run Build) and
   `polish.evidence_missing` (no Polish stage, run Polish) are different
   conditions with different next actions and stay distinct.
+
 ## [1.26.0+agent.2] - 2026-09-13
 
 ### Fixed
@@ -300,6 +312,7 @@ is gone.
   schema, problem code or verdict field outside that assertion's evidence
   changes.
 ||||||| 42ba452
+
 ## [1.26.0+agent.1] - 2026-09-13
 
 ### Fixed
@@ -364,6 +377,7 @@ is gone.
   it, the value, and the accepted values, and `pages[]`, `producer_provenance`,
   and `files[]` are used as written. A non-default selection prints the value
   and the channel that set it on stderr.
+
 ## [1.25.0+agent.16] - 2026-09-12
 
 ### Fixed
@@ -545,6 +559,7 @@ is gone.
   already lives, and are re-exported from `src/cli.mjs` unchanged. One
   implementation, now reachable from the QA runner, which cannot import the
   CLI. No behaviour change.
+
 ## [1.25.0+agent.11] - 2026-09-12
 
 ### Added
@@ -590,6 +605,7 @@ is gone.
   length capped. The repair path names
   `contracts/template-brand-contract.<family>.v0.json` only when that file is
   on disk, and otherwise says the private fragment supplying it.
+
 ## [1.25.0+agent.10] - 2026-09-12
 
 ### Fixed
