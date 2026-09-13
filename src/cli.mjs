@@ -2717,7 +2717,11 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     const reportPath = args.report
       ? resolve(args.report)
       : join(targetRepo, ".campaign-runtime/assembly-report.json");
-    if (existsSync(reportPath)) {
+    // Restate the outcome only into the report the inspection actually read.
+    const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
+    const inspectedIsTarget = !inspectedReportPath
+      || canonicalExistingPath(resolve(dirname(packetPath), inspectedReportPath)) === canonicalExistingPath(reportPath);
+    if (inspectedIsTarget && existsSync(reportPath)) {
       const report = readJson(reportPath);
       if (assemblyReportMatchesPacket(report, packet)) {
         const command = `campaigns-os ${args._[0] || "doctor"}`;
@@ -3295,6 +3299,10 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   const ready = [];
   const derived = {
     packet_path: packetPath,
+    // The report this inspection read (null when the caller switched the
+    // report off), so a writer can refuse to restate the outcome into a
+    // different file.
+    assembly_report_path: typeof resolvedReportPath === "string" ? resolvedReportPath : null,
     map_id: packet?.spec?.map_id || null,
     public_route_slug: packet?.campaign?.public_route_slug || null,
     template_family: packet?.assembly?.template_family || null,
