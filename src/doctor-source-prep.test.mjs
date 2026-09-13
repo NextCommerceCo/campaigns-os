@@ -75,6 +75,20 @@ function withStartedBuild(sourcePages, run, { extraArgs = [], manifest = null } 
   }
 }
 
+test("the theme-gate ready line states the fact the gate passed on, never the other one", () => {
+  // A token-less campaign: the gate passes on theme_gate.nothing_generatable,
+  // so ready[] must not say a brand layer was applied.
+  withStartedBuild(PREPARED_PAGES, ({ packetPath }) => {
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--json"]);
+    assert.equal(doctor.derived.theme_gate.status, "pass");
+    assert.equal(doctor.derived.theme_gate.code, "theme_gate.nothing_generatable");
+    const line = (doctor.ready || []).find((entry) => entry.startsWith("Theme gate passed:"));
+    assert.ok(line, JSON.stringify(doctor.ready));
+    assert.equal(line, `Theme gate passed: ${doctor.derived.theme_gate.reason}`);
+    assert.ok(!/brand layer applied/i.test(line), line);
+  });
+});
+
 test("doctor blocks unprepared source with actionable preparation codes", () => {
   const unprepared = {
     ...PREPARED_PAGES,

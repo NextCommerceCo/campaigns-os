@@ -2,6 +2,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { escapeRegExp } from "./repo-scan.mjs";
+
 export const BUILD_BRIEF_SCHEMA = "campaigns-os-build-brief/v1";
 export const BUILD_BRIEF_NORMALIZED_REL_PATH = ".campaign-runtime/input/campaign-build-brief.normalized.json";
 export const BUILD_BRIEF_CANDIDATE_FILENAMES = Object.freeze([
@@ -777,6 +779,3 @@ function isDisabledSignal(value) {
   return false;
 }
 
-function escapeRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}

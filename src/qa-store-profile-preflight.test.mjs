@@ -439,6 +439,34 @@ test("qa resolve and run agree that target-only Store Profile values are ready w
   }
 });
 
+test("the local verdict defaults to the packet's target repo, not the caller's cwd", async () => {
+  const sentinel = armFetchSentinel();
+  const { dir, packetPath, targetRepo } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });
+  const foreignCwd = mkdtempSync(join(tmpdir(), "qa-foreign-cwd-"));
+  const priorCwd = process.cwd();
+  const priorExitCode = process.exitCode;
+  process.chdir(foreignCwd);
+  try {
+    const result = await runQaCli({
+      _: ["qa", "run"],
+      packet: packetPath,
+      "base-url": sentinel.baseUrl,
+      "proxy-base": sentinel.baseUrl,
+      "no-post-verdict": true,
+      "no-remit": true,
+    });
+    assert.ok(result.local_path.startsWith(join(targetRepo, "qa-output") + "/"), result.local_path);
+    assert.ok(existsSync(result.local_path));
+    assert.equal(existsSync(join(foreignCwd, "qa-output")), false, "nothing lands beside the caller");
+  } finally {
+    process.chdir(priorCwd);
+    process.exitCode = priorExitCode;
+    sentinel.restore();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(foreignCwd, { recursive: true, force: true });
+  }
+});
+
 test("packet checkpoint blockers coexist and finalize a verdict before HTTP, browser, analytics, or typed orders", async () => {
   const sentinel = armFetchSentinel();
   const { dir, packetPath, targetRepo } = fixture(sentinel.baseUrl, { targetVersion: "0.4.19" });
