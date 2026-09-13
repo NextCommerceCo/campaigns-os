@@ -1686,7 +1686,10 @@ export const GATE_SUPPRESSED_FAMILIES = Object.freeze(
 // `reportBrowserSkippedByGate` says it once for the human.
 export const BROWSER_SKIPPED_GATE_BLOCKED = "skipped_gate_blocked";
 
-const MAX_BROWSER_SKIP_ACTIONS = 3;
+// How many of a gate's required actions the one-line notice quotes before it
+// defers to the verdict. Exported so a test pins the number rather than
+// re-deriving it from the behaviour it governs.
+export const MAX_BROWSER_SKIP_ACTIONS = 3;
 
 // What actually clears this gate, taken from the gate itself.
 //
@@ -1701,18 +1704,28 @@ function gateClearingHint(gates) {
   const actions = (Array.isArray(gates) ? gates : [gates])
     .filter(isPlainObject)
     .flatMap((gate) => (Array.isArray(gate.required_actions) ? gate.required_actions.filter(isPlainObject) : []));
-  const named = [];
+  const unique = [];
   for (const action of actions) {
     // Prefer the runnable command; fall back to the manual instruction, which
     // is what a kind: "manual" action carries instead of one.
     const text = flattenForNotice(action.command) || flattenForNotice(action.description);
-    if (text && !named.includes(text)) named.push(text);
-    if (named.length === MAX_BROWSER_SKIP_ACTIONS) break;
+    if (text && !unique.includes(text)) unique.push(text);
   }
+  // Deduplicated BEFORE the cap, and truncation is measured against that count:
+  // two identical actions are one repair, and claiming a "rest" the reader
+  // would not find on the verdict is worse than saying nothing.
+  const named = unique.slice(0, MAX_BROWSER_SKIP_ACTIONS);
   if (!named.length) {
-    return "Read the gate's own reason and required_actions on the verdict for what clears it, then re-run with --browser.";
+    // Two different silences. A gate that published nothing has nothing for the
+    // reader to look up beyond its own reason; a gate that published actions
+    // this notice could not render (no command, no readable description) has
+    // repair steps ON the verdict, and calling that "no actions" would hide
+    // them.
+    return actions.length
+      ? "The gate published repair steps this notice could not render; read its required_actions on the verdict for what clears it, then re-run with --browser."
+      : "Read the gate's own reason and required_actions on the verdict for what clears it, then re-run with --browser.";
   }
-  const more = actions.length > named.length ? " (and the rest of the gate's required_actions on the verdict)" : "";
+  const more = unique.length > named.length ? " (and the rest of the gate's required_actions on the verdict)" : "";
   return `The gate's required actions clear it: ${named.join("; ")}${more}. Then re-run with --browser.`;
 }
 

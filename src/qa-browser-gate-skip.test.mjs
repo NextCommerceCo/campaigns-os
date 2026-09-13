@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { __qaNodeTestHooks, BROWSER_SKIPPED_GATE_BLOCKED } from "./qa-node.mjs";
+import { __qaNodeTestHooks, BROWSER_SKIPPED_GATE_BLOCKED, MAX_BROWSER_SKIP_ACTIONS } from "./qa-node.mjs";
 
 const { runResolvedQa, browserSkippedByGate, reportBrowserSkippedByGate, gateClearingHint } = __qaNodeTestHooks;
 
@@ -203,12 +203,60 @@ test("the clearing hint quotes the gate and never invents a repair", () => {
   assert.match(manual, /Correct the waiver's expires_at on the assembly report\./);
   assert.doesNotMatch(manual, /\n/);
 
-  // Long action lists are capped and say that the verdict has the rest.
+  // A gate that DID publish steps the notice cannot render is its own case:
+  // the repairs are on the verdict, so calling that "no actions" would hide
+  // them.
+  const unrenderable = gateClearingHint([{
+    required_actions: [{ id: "opaque", kind: "manual", command: null, description: "   " }],
+  }]);
+  assert.match(unrenderable, /published repair steps this notice could not render/);
+  assert.match(unrenderable, /required_actions on the verdict/);
+  assert.notEqual(unrenderable, silent, "an unpublished gate and an unrenderable one must not read the same");
+
+  // Long action lists are capped at exactly MAX_BROWSER_SKIP_ACTIONS and say
+  // that the verdict has the rest.
+  assert.equal(MAX_BROWSER_SKIP_ACTIONS, 3, "the cap this test's expectations are written against");
   const many = gateClearingHint([{
     required_actions: [1, 2, 3, 4, 5].map((n) => ({ id: `a${n}`, kind: "command", command: `cmd-${n}` })),
   }]);
   assert.match(many, /cmd-1; cmd-2; cmd-3 \(and the rest of the gate's required_actions on the verdict\)/);
   assert.doesNotMatch(many, /cmd-4/);
+
+  // Duplicates are one repair: deduplication happens before the cap, so three
+  // distinct repairs published six times claim no "rest" the reader cannot
+  // find.
+  const duplicated = gateClearingHint([{
+    required_actions: ["cmd-a", "cmd-b", "cmd-a", "cmd-c", "cmd-b", "cmd-c"].map((command, index) => ({ id: `a${index}`, kind: "command", command })),
+  }]);
+  assert.equal(duplicated, "The gate's required actions clear it: cmd-a; cmd-b; cmd-c. Then re-run with --browser.");
+});
+
+test("a non-waivable checkpoint blocker is told its manual repair and offered no waiver", async () => {
+  // page-kit-store-profile.mjs and polish-page-load.mjs both publish
+  // waivable: false states with manual-only repairs. The notice must carry the
+  // instruction and must not suggest a waiver checkpointWaive would refuse.
+  const { result, browserLines } = await runBlocked({ browser: true }, resolvedFixture({
+    checkpointGates: [{
+      id: "page_kit.sdk_version",
+      status: "blocked",
+      code: "page_kit.sdk_version.conflicting_declarations",
+      reason: "CampaignSpec and the target campaigns entry declare different SDK versions.",
+      waivable: false,
+      required_actions: [{
+        id: "align_sdk_version",
+        kind: "manual",
+        command: null,
+        description: "Fix the conflicting SDK version declarations so both sides name one released version.",
+      }],
+    }],
+  }));
+
+  assert.equal(result.verdict.browser.status, BROWSER_SKIPPED_GATE_BLOCKED);
+  assert.deepEqual(result.verdict.browser.blocked_by, ["page_kit.sdk_version"]);
+  assert.match(result.verdict.browser.reason, /Fix the conflicting SDK version declarations/);
+  assert.doesNotMatch(result.verdict.browser.reason, /waive/i);
+  assert.equal(browserLines.length, 1);
+  assert.doesNotMatch(browserLines[0], /waive/i);
 });
 
 test("the stamp is only ever built for a run that asked for a browser pass", () => {
