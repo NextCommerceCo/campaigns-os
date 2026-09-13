@@ -224,6 +224,27 @@ test("doctorRequiredActionLines reads the command template, not the substituted 
   ]);
 });
 
+test("doctorRequiredActionLines matches --report as a whole token, not a prefix", () => {
+  // An action whose only report-ish flag is --report-format has not declared
+  // --report, so the inspected report is still appended.
+  const packetPath = "/srv/example/campaign/campaign-runtime.build.json";
+  const lines = doctorRequiredActionLines({
+    derived: {
+      packet_path: packetPath,
+      target_repo: "/srv/example/campaign",
+      assembly_report_path: "/srv/example/reports/custom-report.json",
+      checkpoint_gates: [{
+        id: "page_kit.sdk_version",
+        required_actions: [{ id: "waive_checkpoint", command: "campaigns-os checkpoint waive --packet <packet> --report-format json" }],
+      }],
+    },
+  });
+  assert.deepEqual(lines, [
+    "Required actions:",
+    `- [page_kit.sdk_version] campaigns-os checkpoint waive --packet ${packetPath} --report-format json --report /srv/example/reports/custom-report.json`,
+  ]);
+});
+
 test("doctorRequiredActionLines keeps the placeholder when the report carries no packet path", () => {
   const lines = doctorRequiredActionLines({
     derived: {

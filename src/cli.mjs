@@ -10657,8 +10657,11 @@ export function doctorRequiredActionLines(result) {
       // The two decisions below read the TEMPLATE, never the substituted
       // string: a packet path that happens to contain "--report" (or
       // "--packet") must not be mistaken for an option the action declared.
-      const packetScoped = Boolean(template?.includes("--packet"));
-      const namesReport = Boolean(template?.includes("--report"));
+      // Whole-token matches, so a flag that merely shares the prefix (say
+      // --report-format) does not count as the option itself.
+      const declaresFlag = (flag) => Boolean(template) && template.split(/\s+/).includes(flag);
+      const packetScoped = declaresFlag("--packet");
+      const namesReport = declaresFlag("--report");
       // A function replacement, so `$&` / `$$` / `$1` inside the path are
       // inserted literally instead of being read as replacement patterns.
       let command = template && packetPath
