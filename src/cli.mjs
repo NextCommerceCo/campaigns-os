@@ -79,7 +79,6 @@ import {
 } from "./doctor-check-registry.mjs";
 import {
   evaluateSourcePreparation,
-  SOURCE_PREP_CODES,
   SOURCE_PREP_DOCUMENT_WRAPPER,
   SOURCE_PREP_FRONTMATTER_RESIDUE,
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
