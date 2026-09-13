@@ -1999,6 +1999,27 @@
         }
       ],
       "entry_sha256": "992e47ca80b0a0e12e228f0a9cebd9b664fc1e7269427f3f93c82fc1ac089340"
+    },
+    {
+      "id": "RL-0045",
+      "sequence": 45,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.26.0+agent.8",
+      "changelog_sha256": "63e382f0ec9c42ed8190b4fe2d81b410ba1bc24e23c7bddc903fad431267d808",
+      "agent_impact": "doctor ready[] prints 'Theme gate passed: ' followed by derived.theme_gate.reason instead of a fixed 'brand layer applied after next-core.css on commerce pages.' sentence, so on theme_gate.nothing_generatable the line says no generatable brand theme was found. Gate codes, statuses and reasons are unchanged; consumers should read derived.theme_gate, not the ready line.",
+      "compatibility": "compatible",
+      "migration": "none. A consumer matching the ready line on its full previous wording should match the 'Theme gate passed:' prefix or read derived.theme_gate.code.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "The passing theme-gate ready line carries the gate's reason; the fixed 'brand layer applied' sentence no longer prints on the nothing_generatable branch."
+        }
+      ],
+      "entry_sha256": "e1b53f9604a69e9ecd7f436faf99d3d0a0d8f9ad1f85bb217add1b1203ed6153"
     }
   ]
 }
