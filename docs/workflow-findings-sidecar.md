@@ -261,8 +261,13 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
 
 - `campaigns-os run start [--packet <p>]` mints one `run_id`, picks the
   lifecycle journal, and writes `.campaign-runtime/run-session.json`.
-- Every command then auto-discovers that session (walking up from cwd) and
-  shares its `run_id` + journal **with no per-command flags**. Findings commands
+- Every command then auto-discovers that session (walking up from cwd, or
+  from the `--packet` it was handed) and shares its `run_id` + journal **with
+  no per-command flags**. `start` / `prepare-build` / `build` take a
+  `--target`, not a packet: the first opens the target's session, and a
+  repeated one against the same target joins it from any cwd, so every intake
+  attempt lands in the same journal (a session bound to a different packet is
+  a conflict to end, not one to write into). Findings commands
   also inherit the active `run_id` when writing findings. Explicit `--run-id` /
   `--lifecycle-journal` still wins; `CAMPAIGNS_OS_TELEMETRY` consent still gates
   remit.

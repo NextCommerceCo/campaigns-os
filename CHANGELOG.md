@@ -2,6 +2,25 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.6] - 2026-09-13
+
+### Fixed
+
+- A repeated `start` / `prepare-build` / `build` against a target whose run
+  session is already open now joins that session, so its lifecycle entry
+  lands in the same journal. Those commands take a `--target`, not a
+  `--packet`, so the ambient session lookup could only find a session by
+  cwd; a re-run from anywhere else resolved no session, the auto-start
+  declined to open a second one, and the entry was never written. A journal
+  therefore held the first blocked intake and none of the retries, including
+  the one that produced the packet every later stage used, and the Run
+  Record's `repair_loop_count` and stage timings read low. Adoption requires
+  the open session to be bound to this packet or to none; a session bound to
+  a different packet is left alone as before. `--no-run-session` still skips
+  the session entirely. (A `doctor` that runs after `run-record` is minted is
+  recorded in the journal but not in that record, which is the record's
+  cut-off working as designed, not a missing entry.)
+
 ## [1.26.0] - 2026-09-12
 
 ### Added

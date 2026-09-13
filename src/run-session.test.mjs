@@ -327,6 +327,32 @@ test("CLI: full ambient flow — run start -> prepare-build (no flags) -> run en
   });
 });
 
+test("CLI: a repeated start from outside the target joins the session the first one opened", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
+    const intake = [
+      "prepare-build",
+      "--spec", resolve(ROOT, "examples/campaignspec.v42.basic.json"),
+      "--source", resolve(ROOT, "examples/source-html"),
+      "--target", target,
+      "--template-family", "olympus",
+    ];
+    // Both runs from the toolkit checkout, the way an operator drives a
+    // target from elsewhere; the first auto-opens the target's session.
+    runIn(ROOT, intake, { allowFail: true });
+    const session = findRunSession(target);
+    assert.ok(session, "the first intake opened a session");
+    runIn(ROOT, intake, { allowFail: true });
+
+    const { entries } = readLifecycleJournal(session.session.lifecycle_journal);
+    const intakes = entries.filter((entry) => entry.command === "prepare-build");
+    assert.equal(intakes.length, 2, JSON.stringify(entries.map((entry) => entry.command)));
+    assert.ok(intakes.every((entry) => entry.run_id === session.session.run_id));
+    assert.equal(findRunSession(target).session.run_id, session.session.run_id, "no second session was opened");
+  });
+});
+
 test("CLI: blocked qa run records an attempt and keeps the session open for repair", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");

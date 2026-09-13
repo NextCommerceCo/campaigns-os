@@ -500,7 +500,7 @@ export async function main(argv) {
   // prepare-build auto-open a run session mid-command, they publish it here
   // so onFinish persists this command's own lifecycle entry into the new
   // session — without two interleaved invocations ever sharing a session.
-  const sessionHolder = { current: ambient, autoStarted: false, qaResult: null, sweptStale };
+  const sessionHolder = { current: ambient, autoStarted: false, adopted: false, qaResult: null, sweptStale };
   await withCommandLifecycle(
     {
       command,
@@ -581,7 +581,26 @@ function autoStartRunSession(prepareResult, args, ambient, sessionHolder) {
     const packetPath = prepareResult?.packetPath;
     const targetRepo = optionalString(args.target) ? resolve(args.target) : null;
     if (!packetPath || !targetRepo) return null;
-    if (findRunSession(targetRepo)) return null;
+    const existing = findRunSession(targetRepo);
+    if (existing) {
+      // A repeated start against a target whose session is already open
+      // joins that session rather than opening a second one. `start` has no
+      // --packet, so main() could only find a session by cwd; a re-run from
+      // anywhere else used to resolve no session and its lifecycle entry was
+      // never written, which left the journal with the first blocked start
+      // and none of the retries, including the one that produced the packet
+      // every later stage used. Adopt only when the session is bound to this
+      // packet (or to none); a session bound elsewhere is a conflict for the
+      // operator to end, not something to write into silently.
+      const boundPacket = optionalString(existing.session?.packet);
+      const samePacket = !boundPacket
+        || canonicalExistingPath(resolve(boundPacket)) === canonicalExistingPath(resolve(packetPath));
+      if (samePacket && sessionHolder) {
+        sessionHolder.current = existing;
+        sessionHolder.adopted = true;
+      }
+      return samePacket ? sessionHolder?.current || null : null;
+    }
     const runId = mintSessionRunId();
     const session = {
       ...buildRunSession({
@@ -639,7 +658,7 @@ function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder) {
   // autoStartRunSession: if that call ever moves out of dispatch, the
   // holder stays the single handoff point.
   let entry = lifecycle;
-  if (sessionHolder?.autoStarted && !entry.run_id && ambient?.session?.run_id) {
+  if ((sessionHolder?.autoStarted || sessionHolder?.adopted) && !entry.run_id && ambient?.session?.run_id) {
     entry = { ...entry, run_id: ambient.session.run_id };
   }
   const journalPath = resolveLifecycleJournal(args, { ambient });
