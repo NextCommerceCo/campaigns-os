@@ -22,6 +22,10 @@
       "import": "./campaign-spec/dist/index.js",
       "default": "./campaign-spec/dist/index.js"
     },
+    "./text-safety": {
+      "import": "./src/text-safety.mjs",
+      "default": "./src/text-safety.mjs"
+    },
     "./legacy-migration": {
       "types": "./src/legacy-migration.d.ts",
       "import": "./src/legacy-migration.mjs",

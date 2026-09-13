@@ -38,8 +38,6 @@ test("knownCommands covers the real dispatch branches", () => {
     "build",
     "standardize",
     "doctor",
-    "standardize",
-    "standardization-report",
     "theme",
     "checkpoint",
     "polish",
@@ -65,7 +63,7 @@ test("knownCommands is exactly the dispatch branches, nothing leaked from commen
   assert.deepEqual([...knownCommands()].sort(), [
     "build", "bundle", "checkpoint", "doctor", "findings", "help",
     "install-agent-context", "install-skills", "next", "polish", "prepare-build",
-    "qa", "run", "run-record", "standardization-report", "standardize", "start",
+    "qa", "run", "run-record", "standardize", "start",
     "telemetry", "theme", "tooling", "validate-assembly-report",
   ]);
 });
@@ -107,6 +105,18 @@ test("the removed validate-build-packet alias is an unknown command, not a silen
   assert.match(out, /Unknown command: validate-build-packet\./);
   assert.match(out, /campaigns-os --help/);
   assert.doesNotMatch(out, /Doctor|Build Packet/);
+});
+
+test("the removed standardization-report spelling is an unknown command, not a silent standardize", () => {
+  // The alias dispatched to standardize with identical flags and output, so a
+  // caller that kept the old spelling would never notice the surface shrank.
+  // It must be told, and told what to use: did-you-mean cannot help here (the
+  // two spellings are nowhere near each other), so the help pointer is the
+  // whole signal. --json so a still-working alias would print a report body.
+  const out = runCli(["standardization-report", "--target", ".", "--json"]);
+  assert.match(out, /Unknown command: standardization-report\./);
+  assert.match(out, /campaigns-os --help/);
+  assert.doesNotMatch(out, /campaign-standardization-report\/v0/);
 });
 
 test("an unrelated command gets no suggestion but still points at help", () => {

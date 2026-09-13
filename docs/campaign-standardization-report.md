@@ -34,8 +34,15 @@ application checkout:
 
 ```bash
 campaigns-os standardize --target /path/to/example-cpk --json
-campaigns-os standardization-report --target /path/to/example-cpk --family olympus-mv-single-step --slug example --json
+campaigns-os standardize --target /path/to/example-cpk --family olympus-mv-single-step --slug example --json
 ```
+
+The command is spelled `standardize`. It had a second spelling,
+`standardization-report`, which dispatched to the same code with the same
+flags and the same output; that spelling was removed at supported surface
+1.27.0 and now returns the unknown-command error, so a script still using it
+must be retargeted at `standardize`. The report's own
+`schema_version` is unaffected.
 
 By default, the command prints markdown for operators. Use `--json` for agents
 or dashboards. When a built `_site` exists and a template family is explicit or
@@ -115,7 +122,7 @@ scanner code.
 
 Both are also injectable from the CLI: pass
 `--sdk-support-policy <path-to-json>` and/or `--field-contract <path-to-json>`
-to `standardize`/`standardization-report`. Each file is read and JSON-parsed
+to `standardize`. Each file is read and JSON-parsed
 (a missing or unparseable file is a clear, named error) and overrides the
 bundled contract for that run:
 

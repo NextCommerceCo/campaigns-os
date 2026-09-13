@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { buildNextActions, nextTinyPromptLines, safeBrandContractCode, safeFamilyLabel, singleLineDetail } from "./cli.mjs";
+import { buildNextActions, nextTinyPromptLines, safeBrandContractCode, safeFamilyLabel } from "./cli.mjs";
 import { resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { contractHasPaletteResidueChecks, templateBrandContractPath } from "./template-brand-contract.mjs";
 
@@ -298,21 +298,8 @@ test("a family name that is not a slug is not echoed into the description", () =
 });
 
 test("an unrecognized error code is reported as unknown, not echoed", () => {
-  // The detail sanitiser, directly: one line, control characters gone, the
-  // Markdown that could restyle a rendered bullet escaped, length bounded, and
-  // an empty detail named rather than rendered as a gap.
-  assert.equal(singleLineDetail("a\nb\tc\r\nd"), "a b c d");
-  assert.equal(singleLineDetail("has `code` and [a](b)"), "has \\`code\\` and \\[a\\](b)");
-  // Line breaks become spaces (a newline inside quoted JSON is a word
-  // boundary); everything else control-shaped becomes the replacement
-  // character `singleLineField` already uses everywhere else in this CLI.
-  assert.equal(singleLineDetail("bellstring"), "�bell�string");
-  assert.equal(singleLineDetail("   "), "(no detail reported)");
-  assert.equal(singleLineDetail(undefined), "(no detail reported)");
-  const long = singleLineDetail("x".repeat(500));
-  assert.equal(long.length, 300);
-  assert.ok(long.endsWith("…"));
-
+  // The label sanitisers, directly: a code outside the registry and a family
+  // name outside the slug grammar are reported as unknown rather than echoed.
   assert.equal(safeBrandContractCode("schema_mismatch"), "schema_mismatch");
   assert.equal(safeBrandContractCode("ENOENT"), "unknown");
   assert.equal(safeBrandContractCode(undefined), "unknown");
