@@ -2322,19 +2322,19 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.26.0+agent.18",
-      "changelog_sha256": "e94b975849aedc2c9ba651d1b7de413038f1260d483ee4b72769e20fbb4f87e9",
-      "agent_impact": "Each entry in polish page-load evidence measurement.warnings[] now carries resource_types[] \u2014 the sorted, unique beacon-class resource roles whose failures were demoted to the cross_origin_request_failed warning (drawn from ping, fetch, xhr, other, preflight, so at most five values) \u2014 and campaigns-os polish text output prints them as a Resource types: line inside its Capture warnings (not blocking) block. An agent reading a warning can now tell which roles the demotion forgave instead of only which origins failed. The beacon allowlist, the problem codes, measurement.status, the resource ledger and the checkpoint verdict are unchanged: nothing that blocked before warns now, and nothing that warned before blocks. Two consumer-visible consequences: an agent comparing a warning entry against a fixed key set must accept the new key, and page-load evidence recorded before this change whose measurement carries a warning no longer equals the recomputed projection, so evaluateHiddenEagerMediaCheckpoint blocks it as polish.hidden_eager_media.capture_malformed until the route is recaptured.",
-      "compatibility": "breaking",
-      "migration": "Re-run campaigns-os polish for any Assembly Report whose recorded page-load measurement carries a capture warning; its recorded measurement predates the resource_types[] field and now reads as capture_malformed. Evidence with no capture warning, and any evidence captured with this version, needs nothing.",
+      "changelog_sha256": "0653d73db8a95cc99ed5ab5815d4063b83d53ce78625219ad8d4d11242b3b5de",
+      "agent_impact": "A source-html manifest screenshot record that fails one of the three field tests (viewport, evidence pointer, kind) is still dropped, but is now reported: manifest validation emits one warning per unusable record naming pages[i].screenshots[j], its page_id, and the failing field. start/prepare-build/build print it and doctor carries it as an extra source_html.manifest warning. No schema change, no new codes, and the manifest is still accepted and used as written; an agent that reasoned about a page blocked for missing desktop/mobile proof can now read the warning instead of guessing which record was ignored.",
+      "compatibility": "compatible",
+      "migration": "None.",
       "changes": [
         {
-          "class": "cli_surface",
-          "path": "src/cli.mjs",
-          "surface_entry": "polish",
-          "summary": "polish text output prints a Resource types: line for each capture warning, filtered to the known resource-type vocabulary."
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "The record-shape section no longer says a record that fails one of the three field tests produces no diagnostic; it states that start/prepare-build and doctor warn once per bad record, naming the record, its page_id, and the failing field."
         }
       ],
-      "entry_sha256": "891b908c82dc5be8de1f199c766cd13d402b0ae40b4a414314a2e0973ec22476"
+      "entry_sha256": "24e5c09c001958bdbfde009b65d494586260c2d9e3b6d26c1dd2d515e18f6374"
     }
   ]
 }

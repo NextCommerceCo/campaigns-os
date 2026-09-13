@@ -35,6 +35,27 @@ Notable supported-surface changes are recorded here.
   recorded measurement has to equal the projection for a hand-edited
   measurement to be catchable, and accepting a warning that does not name the
   roles it forgave would re-open the gap this change closes.
+### Fixed
+
+- A source-html manifest `pages[].screenshots[]` record that fails one of the
+  three field tests is now reported per record instead of disappearing. The
+  package build dropped a record whose `viewport` was unrecognized, whose
+  `kind` was not a source-screenshot kind, or that pointed at no evidence
+  (no `path`, no `url`, no `unavailable_reason`), and said nothing: a
+  hand-authored manifest with a typo in one record lost that screenshot, the
+  page stayed blocked for missing desktop/mobile proof, and neither `start`
+  nor `doctor` mentioned the record the operator had written. Manifest
+  validation now emits one warning per unusable record, naming the record
+  (`manifest.pages[i].screenshots[j]`), its `page_id`, and the field that
+  failed, on the same channel as the `wrapper_policy` warning: `start`,
+  `prepare-build` and `build` print it, and `doctor` carries it as a
+  `source_html.manifest` warning. The schema is unchanged and the manifest is
+  still accepted and used as written — optional proof with a typo is not a
+  reason to fall back to filesystem matching — so the only change a reader
+  adapts to is the extra warning text and, in `doctor --json`, the extra
+  `warnings[]` entries under an existing code. The accept/reject test now
+  lives in one place beside the package builder, so the warning cannot drift
+  from the behaviour it describes.
 ## [1.26.0+agent.17] - 2026-09-13
 
 ### Changed
