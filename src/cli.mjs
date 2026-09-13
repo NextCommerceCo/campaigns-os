@@ -2711,7 +2711,8 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
     const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
     const defaultReportPath = join(targetRepo, ".campaign-runtime/assembly-report.json");
-    const context = readJsonIfExists(contextPath);
+    // The context is read only to infer a report the operator did not name.
+    const context = args.report ? null : readJsonIfExists(contextPath);
     const boundReportPath = args.report ? resolve(args.report) : boundAssemblyReportPath(packet, packetPath, context, defaultReportPath);
     // A recorded report_path is followed for the write-back only when the
     // context/report binding checks pass: a report of another run of the
