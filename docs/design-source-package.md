@@ -590,6 +590,34 @@ names. Treat a wrong or absent file as what it is — a false claim about the
 merchant's design that will surface as a mismatch during Polish, when there is
 no honest evidence to compare against.
 
+### A read-only source root
+
+Intake needs the source root to be readable, not writable. Every access
+`prepare-build`, `start`, and doctor make under the source root is a read — the
+HTML files, the manifest, the asset crawl — and every artifact the run produces
+is written under the target repository: the Design Source Package at
+`.campaign-runtime/input/design-source-package.json`, plus the Build Packet,
+Build Context, Assembly Report, and normalized Build Brief. So the gate clears
+from a writable target repo against a source root nobody can write to, and an
+operator does not need a work copy of the source in order to run intake.
+
+The proof itself can also stay outside the source tree. A visual reference is
+available when it carries either a `path` or a `url`, and the producer opens no
+file (see the negative controls above), so `screenshots[]` records that give a
+`url` for their desktop and mobile captures satisfy the requirement with no PNG
+bytes anywhere under the source root. An accepted screenshot-absence Source Gap
+or an active approved `source_screenshot`-scope waiver clears it the same way,
+where one exists — v0 has no operator channel for authoring either.
+
+Two mechanics to plan around. The manifest path is fixed at
+`<source-root>/.campaigns-os/source-html-manifest.json` and is not
+configurable, so whoever adds or changes `screenshots[]` writes that one file
+inside the source root; it is the source-preparation side's artifact, which is
+the ownership boundary described below. And the packet stores
+`source_html.root` relative to the packet file, so a packet resolves its source
+from the location it was written at: replay a run from the same place, or expect
+doctor to report `source_html.root` as missing.
+
 ## Lifecycle ownership and freshness
 
 Prepare owns source normalization and the three package references. It records
