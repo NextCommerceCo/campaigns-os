@@ -2,6 +2,49 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.26.0+agent.10] - 2026-09-13
+
+### Removed
+
+Recorded late. These left the tree in 1.25.0+agent.9–13 (2026-09-12) with no
+changelog entry. None was on the supported surface (`package_exports` lists
+subpaths, not symbols), so no consumer contract moved and no ledger entry is
+owed; they are listed so a reader who imported one by deep path knows why it
+is gone.
+
+- `scripts/assembly-inject.mjs` — an orphaned prototype with no references
+  (159 lines).
+- `src/lifecycle.mjs`: `lifecycleForRunRecord`, `selectLifecycleForRun`,
+  `resolveLifecycleJournalPath` — the off-embed trio superseded by
+  `aggregateLifecycleForRun` and the run-session journal resolution in
+  `src/cli.mjs`.
+- `src/qa-node.mjs`: `shouldPublishVerdict` — superseded by
+  `decidePublishVerdict`; and the `shellToken` re-export — import it from
+  `src/shell-token.mjs`.
+- `src/theme-gate.mjs`: `commercePagesFromScope`; `src/design-source-package.mjs`:
+  `serializeAndHashDesignSourcePackage` — zero callers.
+
+### Changed
+
+- Docs only. `docs/quickstart.md` § Inputs says what the Store Profile gate
+  requires after the target is scaffolded (every field the CampaignSpec
+  provides must be present and identical in the target; target-only fields
+  warn, demo residue blocks; `checkpoint waive --gate page_kit.store_profile`
+  records an exception),
+  where it used to say only `store_url` is required. The source-preparation
+  paragraph now names the `preserve_document_wrappers` route where the wrapper
+  gate is hit, and `docs/source-adapters.md` gains an "Order of operations"
+  paragraph (decide the policy before capturing screenshots or computing
+  `source_hash`; what a later strip invalidates). The run-telemetry note says
+  what `off` changes downstream (`remit_state: skipped`; machine/environment
+  consent off makes `qa run` default to local-only, `--no-remit` does not),
+  and the README's copy of it is now a short pointer to the
+  quickstart instead of a verbatim duplicate. `docs/qa-and-test-orders.md`
+  adds `schema_version` to the `cause_summary` field list (the code always
+  emits it) and a paragraph on `spec_hash` (the material hash, pairs with
+  `identity.spec_material_hash`) and `campaign_ref_id` (copied from the spec's
+  `campaign.ref_id`, shared by specs exported from one platform campaign).
+
 ## [1.26.0] - 2026-09-12
 
 ### Added
