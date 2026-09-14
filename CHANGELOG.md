@@ -2,6 +2,34 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.9] - 2026-09-14
+
+### Fixed
+
+- `campaigns-os doctor` reads the Campaigns API key through the same
+  resolver the remit rails use. Doctor kept a resolver of its own after the
+  remit half gained its shape gate in 1.26.0+agent.22, and it called any
+  non-empty value present, so a key the remit rail refused on shape (a quoted
+  key, a pasted JSON blob) read as available in the doctor report and its
+  sidecar. Doctor's view is now a projection of `resolveCampaignsApiKeySource`
+  — the same sources in the same order, the same gate, the same wording — and
+  a refused value is reported under a new warning code,
+  `campaign.api_key_rejected`, naming the refused source (the packet field,
+  the CampaignSpec field, or the env var) and never the value, with the source
+  and refusal kind on `detail`. A key that is simply not configured is still
+  reported under `campaign.api_key_source` with the same explanations as
+  before. One ready-line wording follows the resolver: a key sourced from the
+  CampaignSpec now reads `available via the packet-local CampaignSpec
+  campaign.campaigns_api_key` rather than `via CampaignSpec
+  campaign.campaigns_api_key`. Consolidating onto that gate surfaced a bug in
+  it: the env-name rule anchored `^[A-Z]` before looking for `CAMPAIGN`, so
+  the documented default `env:CAMPAIGNS_API_KEY` (and `CAMPAIGN_KEY`) was
+  refused by name on the remit rails since 1.26.0+agent.22. The rule now
+  requires the leading letter by lookahead and accepts a name that starts
+  with `CAMPAIGN`; a foreign secret (`AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`)
+  is still refused by name. `docs/workflow-findings-sidecar.md` carries the
+  corrected rule and doctor's two codes.
+
 ## [1.27.0+agent.8] - 2026-09-14
 
 ### Fixed

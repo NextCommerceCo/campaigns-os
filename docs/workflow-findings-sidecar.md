@@ -221,9 +221,14 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
     configured". Consent gates the whole thing: with no send attempted
     (consent off, or `--no-remit`) the key is never read and nothing is said.
     `api_key_source` must additionally name a variable matching
-    `^[A-Z][A-Z0-9_]*CAMPAIGN[A-Z0-9_]*$`, so a packet cannot route an
-    arbitrary secret into the header; a variable outside that shape is refused
-    by name and its value is never read.
+    `^(?=[A-Z])[A-Z0-9_]*CAMPAIGN[A-Z0-9_]*$` — upper-case, starting with a
+    letter, containing `CAMPAIGN` anywhere, so the documented default
+    `CAMPAIGNS_API_KEY` qualifies — so a packet cannot route an arbitrary
+    secret into the header; a variable outside that shape is refused by name
+    and its value is never read. `campaigns-os doctor` reads the key through
+    the same resolver: a refused value is its `campaign.api_key_rejected`
+    warning, naming the source, while a key that is simply not configured
+    stays `campaign.api_key_source`.
   - `--proxy-base` must be `https:`. A loopback host (`localhost`,
     `127.0.0.1`, `[::1]`) may be plain http for a local receiver, and each
     such request prints one stderr warning that the credential travels in
