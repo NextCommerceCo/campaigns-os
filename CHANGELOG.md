@@ -262,6 +262,24 @@ Notable supported-surface changes are recorded here.
   relied on one of the removed spellings being clicked was never going to
   reach the checkout through it.
 
+## [1.27.0+agent.16] - 2026-09-14
+
+### Fixed
+
+- One launcher for the package-owned Playwright Chromium. Polish capture and
+  browser QA each imported `playwright` lazily, launched Chromium headless
+  unless `--headed`, and recognised a missing browser executable by the same
+  regular expression over Playwright's install wording — the import, the
+  launch and the detection written twice, so a change to Playwright's wording
+  would have to be found in both. The launch now lives once in
+  `src/browser-launch.mjs` (`launchPackageChromium`), which imports, launches
+  and detects, and asks the caller for the two error messages through
+  `onMissing(kind, error)` — each surface keeps naming its own rerun command.
+  Polish capture runs the launcher inside its bounded startup deadline as
+  before; browser QA calls it directly. No output changes: the polish
+  `POLISH_BROWSER_UNAVAILABLE` error and both QA messages are word-for-word
+  what they were.
+
 ## [1.27.0+agent.11] - 2026-09-14
 
 ### Fixed
