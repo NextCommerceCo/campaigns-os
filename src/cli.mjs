@@ -5978,32 +5978,37 @@ function isAutomatableTemplateFamily(family) {
 // (an error from the catalog check and a warning from the pricing scan).
 const BRAND_CONTRACT_RESOLUTIONS = new WeakMap();
 
-function resolveBrandContractOnce(derived, family) {
-  if (BRAND_CONTRACT_RESOLUTIONS.has(derived)) return BRAND_CONTRACT_RESOLUTIONS.get(derived);
+// The one resolution: the contract object (or the loader's error) and the
+// summary every consumer reads. null is "resolved to no contract", never
+// "something went wrong": no public contract file AND no private fragment
+// carrying a brandContract, for which QA emits no residue rows. A defect
+// throws instead; the two must not be collapsed.
+function resolveBrandContract(family) {
   const label = optionalString(family);
-  const resolution = { contract: null, error: null, reported: false };
-  if (!label) {
-    derived.brand_contract = { state: "no_family", family: null };
-  } else {
-    try {
-      resolution.contract = resolveTemplateBrandContract(label);
-      // null is "resolved to no contract", never "something went wrong": no
-      // public contract file AND no private fragment carrying a brandContract.
-      // QA emits no residue rows for such a family. A defect throws instead;
-      // the two must not be collapsed.
-      derived.brand_contract = resolution.contract
-        ? { state: contractHasPaletteResidueChecks(resolution.contract) ? "inspected" : "no_palette_checks", family: label }
-        : { state: "no_contract", family: label };
-    } catch (error) {
-      resolution.error = error;
-      derived.brand_contract = {
+  if (!label) return { contract: null, error: null, summary: { state: "no_family", family: null } };
+  try {
+    const contract = resolveTemplateBrandContract(label);
+    const state = contract ? (contractHasPaletteResidueChecks(contract) ? "inspected" : "no_palette_checks") : "no_contract";
+    return { contract, error: null, summary: { state, family: label } };
+  } catch (error) {
+    return {
+      contract: null,
+      error,
+      summary: {
         state: "defect",
         family: label,
         code: safeBrandContractCode(error?.code),
         detail: singleLineDetail(error instanceof Error ? error.message : error),
-      };
-    }
+      },
+    };
   }
+}
+
+function resolveBrandContractOnce(derived, family) {
+  if (BRAND_CONTRACT_RESOLUTIONS.has(derived)) return BRAND_CONTRACT_RESOLUTIONS.get(derived);
+  const { contract, error, summary } = resolveBrandContract(family);
+  derived.brand_contract = summary;
+  const resolution = { contract, error, reported: false };
   BRAND_CONTRACT_RESOLUTIONS.set(derived, resolution);
   return resolution;
 }
@@ -8121,9 +8126,9 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   // action lists: a blocked gate is a different code, and a blocked polish gate
   // is a stop-and-fix state whose own actions come first — these reappear on
   // the next `next` once that gate clears.
-  // Doctor resolved the family brand contract once; its summary is what the
-  // advisories read (no doctor in hand reads as no family).
-  const residueState = brandContract || { state: "no_family", family: null };
+  // Doctor resolved the family brand contract once and `next` hands its
+  // summary in; a caller without a doctor result resolves the same way.
+  const residueState = brandContract || resolveBrandContract(packet?.assembly?.template_family).summary;
   for (const advisory of [brandContractDefectAdvisory(residueState), themeStarterPaletteAdvisory(themeGate, packetPath, residueState)]) {
     if (advisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
       push(advisory.id, advisory.kind, advisory.command, advisory.description);
