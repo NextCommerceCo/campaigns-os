@@ -14,6 +14,7 @@ Notable supported-surface changes are recorded here.
 ### Removed
 
 - The QA runner's private spec fetch, the CLI's `canonicalExistingPath`, run-session's `canonicalPath`, campaign-workspace's `samePath`, the polish producer wrapper's own argument validation, a duplicated comment in the doctor next-step picker, and the copies of `optionalString` / `isPlainObject` / the slug normaliser in `stage-ledger` and `qa-verdict-discovery` (they import `src/repo-scan.mjs` and `src/route-identity.mjs`). Five identifiers no module imports lose their `export` keyword: `deadlineTimeoutError`, `canonicalize`, `largestResourceProjection`, `PRODUCER_FAILURE_PROBLEM_CODES`, `PRODUCER_STAGE_HISTORY_LIMIT`.
+
 ## [1.27.0+agent.29] - 2026-09-14
 
 ### Fixed
