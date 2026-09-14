@@ -588,14 +588,5 @@ export async function capturePolishPageLoad({
     viewports,
     captures,
   });
-  const checkpoint = evaluateHiddenEagerMediaCheckpoint({
-    pageLoad,
-    buildFingerprint,
-    slug,
-    routeScope: plan.route_scope,
-    routes,
-    viewports,
-    waivers: Array.isArray(report?.waivers) ? report.waivers : [],
-  });
-  return { plan, page_load: pageLoad, checkpoint };
+  return { plan, page_load: pageLoad };
 }
