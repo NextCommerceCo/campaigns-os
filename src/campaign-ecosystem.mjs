@@ -328,7 +328,7 @@ function collectLoaderReferences(root, files) {
   };
 }
 
-function evaluateVersionPolicy(versionEntries, policy, findings) {
+export function evaluateVersionPolicy(versionEntries, policy, findings) {
   const evaluations = versionEntries.map(({ version, source }) => ({
     version,
     source,
@@ -364,7 +364,7 @@ function evaluateVersionPolicy(versionEntries, policy, findings) {
   };
 }
 
-function inspectCheckoutFields(root, htmlFiles, contract, findings) {
+export function inspectCheckoutFields(root, htmlFiles, contract, findings) {
   const bindings = [];
   const attributes = contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"];
   const attributePattern = new RegExp(`\\b(${attributes.map(escapeRegExp).join("|")})\\s*=\\s*(["'])([^"']*)\\2`, "g");

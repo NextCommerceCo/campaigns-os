@@ -25,9 +25,18 @@ Two implementation kinds are recognized:
   findings.
 
 Every root carries `implementation` (`kind`, `evidence`, `frameworks`) and
-`capabilities` — the inspections that ran for that root. Composition is
-capability-based rather than a repository-type switch (see
-`campaign-ecosystem-standardization-design.md`).
+`capabilities` — the inspections that actually ran for that root, never a
+standing list per kind. A `page_kit` root always lists
+`page_kit_source_contract`, `sdk_version_policy` and
+`campaign_cart_runtime_inventory`; it adds `checkout_field_contract` only
+when its source inlines `data-next-checkout-field` / `os-checkout-field`
+bindings, and `built_output_doctor` only once a built-output doctor result is
+attached (so never under `--no-doctor`, never without a `_site`, never while
+the built slug is unresolved). A `campaign_cart_app` root lists
+`campaign_cart_runtime_inventory`, `sdk_loader_discovery`,
+`sdk_version_policy`, `checkout_field_contract` and
+`payment_interaction_risk`. Composition is capability-based rather than a
+repository-type switch (see `campaign-ecosystem-standardization-design.md`).
 
 Run it against a Page Kit root, a parent `*-cpk` repo, or any campaign
 application checkout:
@@ -45,10 +54,63 @@ must be retargeted at `standardize`. The report's own
 `schema_version` is unaffected.
 
 By default, the command prints markdown for operators. Use `--json` for agents
-or dashboards. When a built `_site` exists and a template family is explicit or
-can be found in `.campaign-runtime`, the command also runs the existing
-`doctor --built` checks and folds those findings into the report. Use
-`--no-doctor` to keep the run to source/runtime inventory only.
+or dashboards. When a built `_site` exists, the built slug is resolved, and a
+template family is explicit or can be found in `.campaign-runtime`, the
+command also runs the existing `doctor --built` checks and folds those
+findings into the report. Use `--no-doctor` to keep the run to source/runtime
+inventory only.
+
+The command is read-only: it never writes into the target repository, and a
+test holds it to that (every file's size, mtime and content hash are identical
+before and after a run that includes the built-output doctor).
+
+### Flags
+
+`standardize` accepts exactly `--target`, `--family` (alias
+`--template-family`), `--slug`, `--sdk-support-policy`, `--field-contract`,
+`--no-doctor`, `--json`, and the two flags every command accepts,
+`--run-id` and `--lifecycle-journal`. Any other flag is refused before the
+scan starts, with the known list in the message — including the
+`--flag=value` spelling, which the parser would otherwise store as an unknown
+key (`--no-doctor=maybe` used to run the doctor anyway). Values follow the
+flag as the next argument.
+
+### Exit codes
+
+- `0` — the report was produced and `ok` is `true` (`status` is `ready` or
+  `ready_with_warnings`).
+- `1` — the command did not run: an unknown flag, a missing `--target`, or a
+  missing or unparseable `--sdk-support-policy` / `--field-contract` file.
+  Nothing is printed on stdout; stderr carries one named error.
+- `2` — the report was produced and `ok` is `false` (`status` is
+  `blocked`, including `campaign.root_not_found`).
+
+### When `--slug` matters
+
+The built-output scope is the directory under `_site/` whose pages the
+built-output doctor inspects. It is resolved from, in order: `--slug`; the
+single slug `_data/campaigns.json` declares; the `campaign.public_route_slug`
+a `.campaign-runtime` packet names; and, only when none of those exists, the
+`_site/` layout itself (one html-bearing directory, or root-level html). The
+report records the choice as `built_output.slug` and `built_output.slug_source`
+(`operator_flag`, `campaigns_json`, the packet's relative path, or
+`site_layout`), and `identity.campaign_slug` / `identity.campaign_slug_source`
+carry the same answer. Two outcomes replace a silent guess:
+
+- `built_output.scope_unresolved` (operator readiness) — `_site/` holds more
+  than one html-bearing directory and no slug source names one. This is the
+  case that needs `--slug`; the finding lists `slug_candidates` and the
+  doctor proof command carries a `--slug <slug>` placeholder.
+- `built_output.slug_mismatch` (operator readiness) — the slug came from
+  `campaigns.json` or a packet, but `_site/` has no directory for it. The
+  built output belongs to some other campaign (a stale build, typically), so
+  the doctor is skipped and the finding names the expected slug, its source,
+  and the directories that are there. Rebuild, or pass `--slug` to inspect a
+  different directory on purpose.
+
+Whenever a slug was needed, the doctor proof command under `remediation`
+carries it (`--slug <resolved>`), so the command the report hands back is the
+one that reproduces its own result.
 
 ## Schema
 
@@ -120,11 +182,30 @@ via `createStandardizationReport({ sdkSupportPolicy })`; the field contract is
 similarly injectable via `fieldContract`. "Latest" is never frozen into
 scanner code.
 
+Both contracts apply to both root kinds. The SDK support policy judges every
+discovered SDK version — a `campaign_cart_app` root's loader pins and bundled
+dependency, and a `page_kit` root's `_data/campaigns.json` `sdk_version`
+values — with one rule: below `minimum_supported` is the blocker
+`version.sdk_below_minimum_supported`, below `preferred_minimum` is the
+warning `version.sdk_below_preferred_policy`, and each message names the
+policy source. Every root records the policy it was judged by under
+`version_policy` (`source`, `minimum_supported`, `preferred_minimum`,
+`evaluations[]` with a `source` of `loader`, `bundled_dependency` or
+`campaigns_json` per version), and the markdown prints it as
+`Version policy: min X, preferred Y (source)`. The bundled policy is
+`0.4.20` minimum / `0.4.30` preferred. The Page Kit dependency cutoff is
+separate: `version.page_kit_below_preferred_cutoff` fires below `0.1.1`, a
+constant in the scanner, because the policy contract has no Page Kit field.
+The checkout field contract runs wherever inline checkout bindings exist; a
+Page Kit root that inlines them gets the same `checkout_fields` block and the
+same `checkout.unsupported_field_binding` / `checkout.unknown_field_binding`
+findings as an application root.
+
 Both are also injectable from the CLI: pass
 `--sdk-support-policy <path-to-json>` and/or `--field-contract <path-to-json>`
 to `standardize`. Each file is read and JSON-parsed
 (a missing or unparseable file is a clear, named error) and overrides the
-bundled contract for that run:
+bundled contract for that run, for every root the run discovers:
 
 ```bash
 campaigns-os standardize --target /path/to/example-cpk \
@@ -155,7 +236,12 @@ Each Page Kit root contains these sections:
 - `runtime_contract`: `data-next-*` anchor summary, checkout/upsell/receipt
   surface signals, package/shipping refs, source manifest presence, and
   `.campaign-runtime` inventory.
-- `built_output`: built page inventory, slug-scope resolution state, and
+- `version_policy`: the SDK support policy the root was judged by and its
+  per-version evaluations (see above).
+- `checkout_fields`: present only when the root inlines checkout bindings;
+  the same shape as on application roots.
+- `built_output`: built page inventory, the resolved slug and its source,
+  slug-scope resolution state (`slug_candidates` when unresolved), and
   optional built-output doctor result.
 - `findings`: normalized blocker, warning, and operator-readiness items with
   evidence and next action.
@@ -166,18 +252,22 @@ Each Page Kit root contains these sections:
 
 `standardization_blocker` means an agent should not assume the repo is portable
 or standard without repair. Current blockers include missing or invalid
-`_data/campaigns.json`, Liquid raw blocks, and built-output doctor errors.
+`_data/campaigns.json`, an SDK below the policy's minimum supported version,
+stale checkout field aliases, Liquid raw blocks, and built-output doctor
+errors.
 
 `standardization_warning` means the repo can be inspected but may drift from the
-modern CPK contract. Current warnings include older SDK/Page Kit versions,
-missing Campaigns OS artifacts, hardcoded `/assets/...` refs, page-level
+modern CPK contract. Current warnings include an SDK below the policy's
+preferred minimum, a Page Kit dependency below `0.1.1`, missing Campaigns OS
+artifacts, hardcoded `/assets/...` refs, page-level
 document wrappers, unreadable source files, missing `campaign_asset`, missing
 `data-next-*` anchors, and tentative payment-method include gaps.
 
 `operator_readiness` means the repo may be technically inspectable but lacks
 proof or business context. Current readiness items include missing built output,
 unknown or tentative template family, missing source-html manifest, unresolved
-built slug, and unknown production proof.
+built slug, a built slug with no matching built directory, and unknown
+production proof.
 
 ## Home Recommendation
 
@@ -215,9 +305,6 @@ leaving private operational workflow outside the public package.
 - Additional adapters: source-only exports, legacy CampaignsJS funnels,
   CampaignSpec/Build Packet cross-checking for campaigns that carry full
   Campaigns OS evidence.
-- Unify the Page Kit `campaigns.json` SDK cutoff onto the SDK support policy
-  contract (currently the legacy hardcoded cutoff is preserved for
-  compatibility).
 - Provenance refresh script for the field/policy contracts, mirroring the
   starter-template catalog refresh.
 - Symlinked source directories are currently skipped (silent false negative)

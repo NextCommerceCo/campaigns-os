@@ -2812,6 +2812,33 @@
         }
       ],
       "entry_sha256": "48041caee696268681911749bafb5e45f8016821e7e158907786608d3593a3ac"
+    },
+    {
+      "id": "RL-0076",
+      "sequence": 76,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.22",
+      "changelog_sha256": "46372b067f8f0dcafa626667d110d6e2480aa97f99bf833af53e8c3c9da97297",
+      "agent_impact": "standardize output changes in five places an agent parsing it must know. (1) Page Kit roots are judged by the SDK support policy: version.sdk_below_preferred_cutoff no longer exists; an SDK below the policy's minimum_supported (bundled 0.4.20) is the blocker version.sdk_below_minimum_supported (status blocked, exit 2, where it was a warning and exit 0) and one below preferred_minimum (bundled 0.4.30) is the warning version.sdk_below_preferred_policy; every page_kit root carries version_policy { source, minimum_supported, preferred_minimum, evaluations[] }, and --sdk-support-policy now changes page_kit output. (2) A page_kit root with inline checkout bindings carries checkout_fields and can raise checkout.unsupported_field_binding / checkout.unknown_field_binding; --field-contract applies to it. (3) built_output.slug is resolved from --slug, then the single campaigns.json slug, then a .campaign-runtime packet's campaign.public_route_slug, then the _site layout, with the source in built_output.slug_source and identity.campaign_slug_source; built_output.scope_unresolved now fires only when no slug source disambiguates several built directories, and the new operator-readiness finding built_output.slug_mismatch (evidence expected_slug, slug_source, slug_candidates) fires when the derived slug has no built directory, replacing a silent scope onto the wrong directory; remediation.proof_commands carry --slug <resolved> or a --slug <slug> placeholder whenever scope needed one. (4) capabilities[] on a page_kit root lists only inspections that ran: built_output_doctor appears only once a doctor result is attached (never under --no-doctor or without a resolved built slug), checkout_field_contract only when bindings were inspected. (5) Unknown flags exit 1 with 'Unknown flag for standardize: --x. Known flags: ...' on stderr and empty stdout; --flag=value spellings are refused the same way. Exit codes are now documented: 0 produced and ok, 1 did not run, 2 produced and blocked.",
+      "compatibility": "additive",
+      "migration": "Match version.sdk_below_minimum_supported / version.sdk_below_preferred_policy instead of version.sdk_below_preferred_cutoff on page_kit roots, and expect a page_kit root below the policy minimum to exit 2. Read the built slug from built_output.slug / built_output.slug_source rather than assuming _site/ layout, and treat built_output.slug_mismatch as a stale-build signal. Do not test built_output_doctor's presence in capabilities[] as a static property of the root kind. Scripts passing standardize a flag it does not read, or the --flag=value spelling, must drop or respell it.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "standardize",
+          "summary": "standardize refuses flags outside --target, --family/--template-family, --slug, --sdk-support-policy, --field-contract, --no-doctor, --json, --run-id and --lifecycle-journal (exit 1, named error on stderr), and hands both contract overrides to every root kind."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Documents the exit codes, the flag list, the slug-resolution order and when --slug is required, that both contracts apply to both root kinds, the version_policy / checkout_fields / slug_source fields, built_output.slug_mismatch, the bundled cutoffs and their sources, the capabilities[] rule, and the read-only guarantee."
+        }
+      ],
+      "entry_sha256": "dc35da38bd45902ca7edff2a1e1f7ab54ffccad6c63c64cc66695b011f8e865e"
     }
   ]
 }

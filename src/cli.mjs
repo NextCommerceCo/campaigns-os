@@ -2904,7 +2904,37 @@ function readContractFlag(args, flag) {
   }
 }
 
+// Every flag `standardize` reads, plus the two flags any command accepts
+// (run session + lifecycle journal). Anything else is refused up front: the
+// parser stores an unknown token as a key and the run would otherwise proceed
+// as if the flag had never been typed.
+const STANDARDIZE_FLAGS = [
+  "target",
+  "family",
+  "template-family",
+  "slug",
+  "sdk-support-policy",
+  "field-contract",
+  "no-doctor",
+  "json",
+  "run-id",
+  "lifecycle-journal",
+];
+
+function rejectUnknownStandardizeFlags(args) {
+  const known = new Set(STANDARDIZE_FLAGS);
+  const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
+  if (!unknown.length) return;
+  const valueHint = unknown.some((key) => key.includes("="))
+    ? " A flag takes its value as the next argument (--flag value), not --flag=value."
+    : "";
+  throw new Error(
+    `Unknown flag${unknown.length > 1 ? "s" : ""} for standardize: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${STANDARDIZE_FLAGS.map((key) => `--${key}`).join(", ")}.`,
+  );
+}
+
 function standardizationReportCommand(args) {
+  rejectUnknownStandardizeFlags(args);
   const target = optionalString(args.target);
   if (!target) {
     throw new Error("standardize requires --target <campaign-repo> (a Page Kit root, a parent repo, or a Campaign Cart application checkout).");

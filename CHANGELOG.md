@@ -447,6 +447,109 @@ Notable supported-surface changes are recorded here.
   `--json`), the persisted `page_load` evidence and the doctor sidecar are
   byte-identical.
 
+## [1.27.0+agent.22] - 2026-09-14
+
+### Changed
+
+- `standardize` judges a Page Kit root's SDK versions by the SDK support
+  policy, the same contract a Campaign Cart application root is judged by.
+  A `page_kit` root read its `_data/campaigns.json` `sdk_version` values
+  against a scanner constant (`0.4.20`, reported as
+  `version.sdk_below_preferred_cutoff` "below the preferred 0.4.20+ sample
+  cutoff"), so `--sdk-support-policy` was accepted, validated, and then had
+  no effect on such a root: a policy with `minimum_supported: 0.4.35`
+  produced output byte-identical to the default. Every discovered version now
+  goes through one evaluation: below `minimum_supported` is the blocker
+  `version.sdk_below_minimum_supported`, below `preferred_minimum` the
+  warning `version.sdk_below_preferred_policy`, each naming the policy source
+  (`... (policy: contracts/campaign-cart-sdk-support-policy.v0.json)`), and
+  the root carries a `version_policy` block (`source`, `minimum_supported`,
+  `preferred_minimum`, `evaluations[]` with `source: "campaigns_json"`),
+  printed in markdown as `- Version policy: min 0.4.20, preferred 0.4.30
+  (contracts/campaign-cart-sdk-support-policy.v0.json)`. Under the bundled
+  policy this changes default output: an SDK below `0.4.20` is now a blocker
+  (`status: blocked`, exit 2) where it was a warning, and an SDK in
+  `0.4.20`–`0.4.29` gains the preferred-minimum warning it did not have.
+  `version.sdk_below_preferred_cutoff` is gone; the Page Kit dependency
+  cutoff (`version.page_kit_below_preferred_cutoff`, `0.1.1`) is unchanged
+  and documented as the scanner constant it is. A `--sdk-support-policy`
+  override also feeds the certification-freshness assessment, which read the
+  bundled policy regardless.
+- `--field-contract` reaches Page Kit roots too. A Page Kit root whose
+  source inlines `data-next-checkout-field` / `os-checkout-field` bindings
+  now gets the same `checkout_fields` block and the same
+  `checkout.unsupported_field_binding` / `checkout.unknown_field_binding`
+  findings as an application root, judged by the bundled field contract or
+  the override; a root with no such bindings is unchanged and has no
+  `checkout_fields` key.
+- The built-output scope no longer depends on the shape of `_site/` alone.
+  With no `--slug`, a `_site/` holding the campaign's directory beside a
+  stale one reported `Built _site: unresolved`, `Doctor: skipped (Multiple
+  campaign slugs under .../_site; pass --slug to choose one.)` and the
+  `built_output.scope_unresolved` finding — while `identity.campaign_slug`
+  already named the campaign from `_data/campaigns.json`. The slug is now
+  resolved in order from `--slug`, the single slug `campaigns.json`
+  declares, the `campaign.public_route_slug` a `.campaign-runtime` packet
+  names, and only then the `_site/` layout; that run now reports
+  `Built _site: yes`, `- Built slug: demo (campaigns_json)`, `Doctor:
+  ready` and no scope finding. The choice is recorded as
+  `built_output.slug` / `built_output.slug_source` (`operator_flag`,
+  `campaigns_json`, the packet's relative path, or `site_layout`) and as
+  `identity.campaign_slug` / `identity.campaign_slug_source`; a new
+  `- Built slug:` line precedes `- Built pages:` in markdown.
+  `built_output.scope_unresolved` remains for the case that genuinely needs
+  `--slug` — several built directories and no slug source — and its
+  `next_action` now says so.
+- A derived slug with no built directory is a named mismatch, not a silent
+  scope. When `campaigns.json` (or a packet) names `demo` and `_site/` holds
+  only `stale-old/`, the scope resolver used to fall through to the one
+  directory it found and the doctor certified `stale-old` as `ready`, with
+  the proof command `doctor --built ... --slug stale-old`. The report now
+  says `Built _site: unresolved`, `- Built slug: demo not found (built
+  directories: stale-old)`, `Doctor: skipped (built _site has no demo/
+  directory for campaign slug demo (from campaigns_json); built directories:
+  stale-old)`, and the operator-readiness finding
+  `built_output.slug_mismatch` with evidence `{ expected_slug, slug_source,
+  slug_candidates }`, so the root is `ready_with_warnings` rather than
+  `ready`. Root-level html beside the campaign directory no longer collapses
+  the scope to the site root either: with a known slug the campaign
+  directory is inspected. An explicit `--slug` naming a missing directory
+  keeps the existing `built_output.scope_unresolved` shape.
+- The doctor proof command under `remediation.proof_commands` carries
+  `--slug` whenever scope needed one: `--slug demo` when a slug was
+  resolved (derived slugs included), and a `--slug <slug>` placeholder when
+  the scope is unresolved among several built directories — the command the
+  report handed back for that case used to omit the flag and exit 2 with the
+  same ambiguity when run.
+- `capabilities[]` lists the inspections that ran. A Page Kit root listed
+  `built_output_doctor` unconditionally — on roots with no `_site`, under
+  `--no-doctor`, and while the built slug was unresolved. It now appears only
+  once a doctor result is attached, and `checkout_field_contract` only when
+  bindings were inspected; `page_kit_source_contract`, `sdk_version_policy`
+  and `campaign_cart_runtime_inventory` are listed as before. Application
+  roots are unchanged.
+- `standardize` refuses unknown flags. The parser stores any `--token` as a
+  key, so `--bogus` ran the report as if nothing had been typed and
+  `--no-doctor=maybe` (stored as the key `no-doctor=maybe`) ran the doctor
+  anyway, exit 0, stderr empty. Both now exit 1 with nothing on stdout and
+  one line on stderr: `campaigns-os: Unknown flag for standardize: --bogus.
+  Known flags: --target, --family, --template-family, --slug,
+  --sdk-support-policy, --field-contract, --no-doctor, --json, --run-id,
+  --lifecycle-journal.`; the `--flag=value` spelling adds `A flag takes its
+  value as the next argument (--flag value), not --flag=value.` Other commands
+  parse as they did.
+- `docs/campaign-standardization-report.md` now states the exit codes (0
+  produced and `ok`, 1 did not run, 2 produced and `blocked`), the flag list,
+  the slug-resolution order and when `--slug` is required, that both
+  contracts apply to both root kinds (the policy applies-to statement sits
+  beside the override paragraph rather than in the backlog), the bundled
+  cutoffs (`0.4.20` / `0.4.30` from the policy contract, `0.1.1` Page Kit
+  dependency from the scanner) and the read-only guarantee, which a test now
+  holds: a run that includes the built-output doctor leaves every file in
+  the target identical in size, mtime and content. `docs/entry-points.md`
+  names `standardize` as the entry point for an existing campaign
+  repository.
+
 ## [1.27.0] - 2026-09-13
 
 ### Added
