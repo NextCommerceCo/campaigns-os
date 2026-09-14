@@ -2728,6 +2728,27 @@
         }
       ],
       "entry_sha256": "3e3b981f8a2882c1fdb3dc9624fddc7c37cb796152e8bb51ea3579ef7f2e4c86"
+    },
+    {
+      "id": "RL-0072",
+      "sequence": 72,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.10",
+      "changelog_sha256": "bed5723e9c6197d780d3e080fae4622a69a7319db7b0d6b5e3cf8e58be9ecde6",
+      "agent_impact": "None. next --json (including divergences[] and the divergence.qa.verdict_present evidence), run-record's inferred qa_verdict artifact and the run-record closeout assessment are unchanged in every field. Internal: the three walks over qa-output/<map_id|slug>/*.json are one (src/qa-verdict-discovery.mjs) with three projections; the identity rule and the directory spelling exist once. One edge case aligns: run-record inference now reads the slug directory under the slug's identity form (trimmed, no slashes), the form the writer files verdicts under, where it previously used the packet's raw public_route_slug.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "next",
+          "summary": "qaVerdictArtifactsForCampaign (next's ledger-divergence evidence), inferQaVerdictPath (run-record's verdict inference) and currentQaVerdictDigestsForReport (closeout) are projections of discoverQaVerdicts from src/qa-verdict-discovery.mjs; qaVerdictPathHints, addQaVerdictsFromDirectory and the candidate score/time helpers move there. Output of next, run-record and the closeout assessment unchanged."
+        }
+      ],
+      "entry_sha256": "0866feb9a581482336f396037202caf981f9273eaaa37610ea0d3cb7b5105736"
     }
   ]
 }
