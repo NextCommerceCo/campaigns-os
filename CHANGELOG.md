@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.26] - 2026-09-14
+
+### Fixed
+
+- `CHANGELOG.md` carried two stray diff3 base-marker lines (`## [1.27.0+agent.25] - 2026-09-14
+
 ## [1.27.0+agent.25] - 2026-09-14
 
 ### Changed
@@ -354,6 +360,132 @@ Notable supported-surface changes are recorded here.
   fails with `No active run session to end.`), and the auto-log line names
   the session's directory and the `--packet` form instead of `this project`.
 
+## [1.27.0+agent.19] - 2026-09-14
+
+### Fixed
+
+- A remit answered **409** by the receiver is read as `already_stored` — the
+  receiver holds this `run_id`, which is what the send was for — and the Run
+  Record stays `remit_state: "ok"`. It used to be stamped `failed` with
+  `Remit POST failed: 409 Conflict {"error":"run_record_conflict"}`, and the
+  `run_record_remit_recovery` action `next` then printed re-sent the same
+  record into the same 409 on every run. A 2xx whose body is not JSON is
+  `ok` with `remit_error` `Remit POST <status>: acknowledged with a body that
+  is not JSON: <excerpt>` (it used to be `failed` with a bare `Unexpected
+  token` parse error). Any other non-2xx is `failed` with `Remit POST
+  <status>: <statusText> <body>`. `run-record --json` gains a `remit` object
+  beside the record — `result` (`stored`, `already_stored`,
+  `ok_unparsed_ack`, `refused`, `transport_error` for this run's send,
+  `not_contacted` for a record already `ok` on disk, or null when nothing was
+  sent), `http_status`, `base_kind` (`canonical`, `loopback`, `proxy` — never
+  the host), `sent`, `preserved` — and the text `Remit:` line ends with
+  `[base: <kind>]` and names the 409 / non-JSON cases.
+- A re-run of `run-record` under a `run_id` whose record is already remitted
+  — an explicit `--run-id`, `run end` on a session re-opened under that id,
+  or the recovery action — no longer rewrites that record. It used to replace
+  `run-records/<run_id>.json` with this invocation's outcome unconditionally,
+  so a re-run into a 409 turned a durable `ok` into `failed`, and a `--no-remit`
+  re-run turned it into `skipped`. Now the record on disk is read first: an
+  `ok` record is left exactly as written and nothing is sent (`written:
+  false`, `remit.result: "not_contacted"`, `remit.sent: false`; text: `Run
+  Record already closed and remitted for run <id>; left as written.` and
+  `Remit: ok (already stored at the receiver for this run id; not re-sent)`).
+  Only a file that passes the Run Record validator counts as that prior; one
+  that merely says `remit_state: "ok"` is replaced like a corrupt file.
+  A prior `failed` or `pending` send is retried when the run may send, and
+  carried forward unchanged when it may not (`--no-remit`, consent off):
+  `remit.preserved: true`, text `Remit: not attempted this run; the prior
+  outcome for this run id is kept (failed: …)`. A `--no-write` run is
+  unchanged: it reads nothing, writes nothing, sends nothing.
+- The body the receiver stores now carries the outcome of the send it is
+  receiving: `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true`,
+  `remit_endpoint: "/api/runs"`. It used to be the pre-flight snapshot —
+  `remit_state: "pending"`, `remit_attempted: false`, `remit_endpoint: null` —
+  so every stored record said its own remit had not happened. The local file
+  still carries `pending` only between its first write and the answer.
+- `telemetry list` exits non-zero on a 2xx whose body carries no `runs[]`
+  (`telemetry list: 200 OK from <url> is not a Run Record listing (no runs[]
+  in the body): {"raw":"<html>…`). It used to print `showing 0 of 0 returned`
+  / `"count": 0` and exit 0 for a maintenance page.
+- The `run_record_remit_recovery` action's text says that a send the receiver
+  already holds resolves to ok and that a remitted record is left as written.
+- Docs: `docs/workflow-findings-sidecar.md` (Remit Channel: Durable status,
+  re-runs, the stored copy, `telemetry list`; Closeout recognition: the
+  recovery command's premise).
+
+## [1.27.0+agent.18] - 2026-09-14
+
+### Fixed
+
+- A Run Record auto-ended after a session-ending `qa run` no longer lists
+  `qa run`'s flags as its own. The three ways a run session closes — `run
+  end`, the auto-end after a `ready` or `ready_with_exceptions` verdict, and
+  the stale-session sweep — each built run-record's argv for themselves, and
+  the auto-end did so by spreading the QA command's argv, so its record's
+  `argv_shape` carried `--base-url` and `--no-post-verdict` under `command:
+  "run-record"`. The session now closes by one path that hands run-record
+  only the flags it reads (`--context`, `--report`, `--qa-verdict`,
+  `--journal`, the surface and agent-usage flags, `--no-remit`, `--no-write`,
+  `--proxy-base`, `--json`) beside the session's own `--packet`, `--run-id`
+  and `--lifecycle-journal`; an auto-ended record's `argv_shape` is now
+  `["--json", "--lifecycle-journal", "--packet", "--qa-verdict", "--run-id"]`
+  for a `--json` run. `run end` and the sweep produce what they did. On the
+  opening side, `run start` and the auto-start behind `start`/`prepare-build`
+  write the session through one opener, and "is this session bound to this
+  packet" has one answer where `--packet` selection (which refuses) and the
+  auto-start (which stands off) each had a spelling; messages are unchanged.
+  `run start`, `run status` and `run end` return their result and the
+  dispatcher prints it — text and JSON output are byte-identical.
+
+## [1.27.0+agent.17] - 2026-09-14
+
+### Fixed
+
+- One commit step for every edit to the Assembly Report. Six commands edit
+  the report and then keep the retained doctor sidecar honest about it —
+  `qa run`'s stage record, `doctor`'s stage write-back, `theme waive`,
+  `checkpoint waive`, `qa waive` and `polish capture` — and each spelled the
+  step for itself: load, bind, mutate, write, then either refresh the doctor
+  sidecar or stamp it stale. That left two write disciplines and two
+  freshness rules in six places. `doctor` wrote its sidecar in place while
+  `next` and the QA stage replaced theirs atomically, and `qa waive` wrote
+  the report itself in place while every other editor replaced it, so a
+  reader racing either command could see a torn file — for the sidecar, the
+  one artifact whose freshness contract a torn write breaks outright. The
+  step now lives once, as `commitAssemblyReport(workspace, mutate,
+  {refreshDoctor | staleReason})` in `src/stage-ledger.mjs`, on the campaign
+  workspace the resolver returns: the report is read from the path the
+  workspace binds, the mutation returns what to write (or nothing, to leave
+  the file's bytes and every digest of them alone), the write is tmp +
+  rename, and exactly one doctor-freshness strategy is named. A producer
+  (`stage: "doctor" | "qa"`) restates its outcome only into this campaign's
+  report and skips a write that would move nothing but its timestamps — the
+  re-record rule `doctor` gained in 1.26.0+agent.3 now covers the QA stage
+  too, where it changes nothing in practice because every run restates a new
+  `verdict_run_id`. Both in-place writes are atomic; the QA stage refresh,
+  the waivers' stale stamps, the polish evidence merge and every command's
+  output are unchanged. `writeJsonAtomic` is exported from
+  `src/doctor-sidecar.mjs`, and `assemblyReportMatchesPacket` moves to
+  `src/stage-ledger.mjs`.
+
+## [1.27.0+agent.16] - 2026-09-14
+
+### Fixed
+
+- One launcher for the package-owned Playwright Chromium. Polish capture and
+  browser QA each imported `playwright` lazily, launched Chromium headless
+  unless `--headed`, and recognised a missing browser executable by the same
+  regular expression over Playwright's install wording — the import, the
+  launch and the detection written twice, so a change to Playwright's wording
+  would have to be found in both. The launch now lives once in
+  `src/browser-launch.mjs` (`launchPackageChromium`), which imports, launches
+  and detects, and asks the caller for the two error messages through
+  `onMissing(kind, error)` — each surface keeps naming its own rerun command.
+  Polish capture runs the launcher inside its bounded startup deadline as
+  before; browser QA calls it directly. No output changes: the polish
+  `POLISH_BROWSER_UNAVAILABLE` error and both QA messages are word-for-word
+  what they were.
+
 ## [1.27.0+agent.15] - 2026-09-14
 
 ### Changed
@@ -375,6 +507,96 @@ Notable supported-surface changes are recorded here.
   page-load evidence for captures whose shape holds, checkpoint results and
   the QA verdict's measurement projection (which lists a fixed field set)
   produce what they did.
+
+## [1.27.0+agent.14] - 2026-09-14
+
+### Fixed
+
+- One response record between the polish browser collector and the capture
+  aggregator. The CDP collector built its `responses[]` records inline — a
+  single response, a redirect chain with hops numbered from zero, and two
+  in-band problem sentinels — and the aggregator re-parsed them as if they
+  might have come from anywhere: it re-checked that hops were contiguous from
+  zero, that every record carried a request identity and that no two records
+  shared one, accepted a second, flat spelling of a redirect chain, and read
+  cache evidence from six field names when the collector writes three. There
+  is one producer, so those checks could only ever fail on hand-built test
+  records, and the three problem codes they produced
+  (`redirect_chain_invalid`, `request_identity_invalid`,
+  `duplicate_request_identity`) were vocabulary no capture could carry. The
+  record now lives once in `src/polish-capture.mjs` as exported constructors
+  (`singleResponseRecord`, `redirectChainRecord`, `captureProblemRecord`) and
+  readers (`responseRecordResponses`, `responseRecordFromCache`,
+  `captureProblemRecordCode`, with `POLISH_RESPONSE_CACHE_FLAGS` and
+  `POLISH_CAPTURE_SENTINEL_PROBLEM_CODES`); the collector emits through them
+  and the aggregator reads through them without re-validation. The three
+  unreachable problem codes are gone from `POLISH_CAPTURE_PROBLEM_CODES`, and
+  the record is documented in `docs/polish-evidence.md`. No output changes:
+  the collector's wire form is byte-identical and a capture built from the
+  same collector output is byte-identical. One reading tightens: a record
+  spelt `from_cache`, `from_memory_cache` or `served_from_cache` — which the
+  collector never writes — is no longer counted as cache-served.
+
+## [1.27.0+agent.13] - 2026-09-14
+
+### Changed
+
+- One hidden eager-media checkpoint evaluation per `polish capture`. The
+  capture producer (`capturePolishPageLoad`) evaluated the checkpoint against
+  the report it was handed at start and returned it beside the evidence, and
+  the command discarded that result: it re-reads the report after the browser
+  pass and evaluates the checkpoint on the merged report it persists, which is
+  the evaluation that decides the exit status, the `checkpoint` field and any
+  waiver. The producer now returns `{ plan, page_load }` only; its tests
+  evaluate the recorded checkpoint explicitly through
+  `evaluateRecordedHiddenEagerMediaCheckpoint` on the merged report, the same
+  path the command uses. No output changes: `polish capture` (text and
+  `--json`), the persisted `page_load` evidence and the doctor sidecar are
+  byte-identical.
+
+## [1.27.0+agent.12] - 2026-09-14
+
+### Fixed
+
+- One deadline racer. The polish producer deadline, the QA runner's step
+  timeout, its diagnostic settle and its analytics-window bound, the remit
+  transport's request timeout and the commercial parity loader's request
+  budget each raced an operation against `setTimeout` for themselves — six
+  wrappers of one mechanism, differing only in the error they reject with
+  and in whether a timeout resolves to a fallback. The race now lives once as
+  `runWithDeadline` in `src/deadline.mjs` (timer always cleared, timeout
+  settled before best-effort cleanup runs, owner abort signal, optional
+  unref, caller-shaped timeout error) and the six sites are projections of
+  it; `polish-deadline.mjs` keeps its constants and error constructors and
+  delegates the race. No output changes for polish capture, the QA step
+  ladder, the analytics window or remit: the same codes, messages and
+  settle shapes are produced. One guard tightens: the commercial parity
+  loader only aborted its request's signal at the budget and waited for the
+  fetch to notice, so a fetch that ignored its signal held the run open
+  past the budget; the budget now rejects with the same `page_fetch_timeout`
+  / `price_preview_timeout` codes whether or not the fetch honours the abort
+  (the recorded `error` text names the deadline instead of the abort
+  reason).
+
+## [1.27.0+agent.11] - 2026-09-14
+
+### Fixed
+
+- One HTTP(S) origin parser for polish evidence. The capture producer, the
+  capture validator (its origin-field rule and its cross-origin warning
+  attribution), the `polish capture` text renderer, the browser adapter's
+  cookie-origin check and the analytics parity capture's baseline credential
+  guard each parsed "the origin of this URL, or null" for themselves — five
+  copies of one rule with the scheme test and the length cap drifting between
+  them. The rule now lives once as `captureOrigin` in `src/polish-capture.mjs`
+  and the five callers are projections of it. No output changes: a capture's
+  `document_response` origins, the validator's `failed_origins`, the
+  checkpoint and the rendered text are byte-identical for the same input. One
+  guard tightens: the parity capture treated two non-HTTP URLs as same-origin
+  (both carry the URL standard's opaque origin), so a fixture-supplied
+  non-HTTP baseline beside a non-HTTP candidate carried the preview
+  credential; only an HTTP(S) origin can now be "the same", and the credential
+  is withheld as it is for any other cross-origin baseline.
 
 ## [1.27.0+agent.10] - 2026-09-14
 
@@ -635,222 +857,6 @@ Notable supported-surface changes are recorded here.
   `?forcePackageId=` link into the checkout, are unaffected; a page that
   relied on one of the removed spellings being clicked was never going to
   reach the checkout through it.
-
-## [1.27.0+agent.18] - 2026-09-14
-
-### Fixed
-
-- A Run Record auto-ended after a session-ending `qa run` no longer lists
-  `qa run`'s flags as its own. The three ways a run session closes — `run
-  end`, the auto-end after a `ready` or `ready_with_exceptions` verdict, and
-  the stale-session sweep — each built run-record's argv for themselves, and
-  the auto-end did so by spreading the QA command's argv, so its record's
-  `argv_shape` carried `--base-url` and `--no-post-verdict` under `command:
-  "run-record"`. The session now closes by one path that hands run-record
-  only the flags it reads (`--context`, `--report`, `--qa-verdict`,
-  `--journal`, the surface and agent-usage flags, `--no-remit`, `--no-write`,
-  `--proxy-base`, `--json`) beside the session's own `--packet`, `--run-id`
-  and `--lifecycle-journal`; an auto-ended record's `argv_shape` is now
-  `["--json", "--lifecycle-journal", "--packet", "--qa-verdict", "--run-id"]`
-  for a `--json` run. `run end` and the sweep produce what they did. On the
-  opening side, `run start` and the auto-start behind `start`/`prepare-build`
-  write the session through one opener, and "is this session bound to this
-  packet" has one answer where `--packet` selection (which refuses) and the
-  auto-start (which stands off) each had a spelling; messages are unchanged.
-  `run start`, `run status` and `run end` return their result and the
-  dispatcher prints it — text and JSON output are byte-identical.
-
-## [1.27.0+agent.17] - 2026-09-14
-
-### Fixed
-
-- One commit step for every edit to the Assembly Report. Six commands edit
-  the report and then keep the retained doctor sidecar honest about it —
-  `qa run`'s stage record, `doctor`'s stage write-back, `theme waive`,
-  `checkpoint waive`, `qa waive` and `polish capture` — and each spelled the
-  step for itself: load, bind, mutate, write, then either refresh the doctor
-  sidecar or stamp it stale. That left two write disciplines and two
-  freshness rules in six places. `doctor` wrote its sidecar in place while
-  `next` and the QA stage replaced theirs atomically, and `qa waive` wrote
-  the report itself in place while every other editor replaced it, so a
-  reader racing either command could see a torn file — for the sidecar, the
-  one artifact whose freshness contract a torn write breaks outright. The
-  step now lives once, as `commitAssemblyReport(workspace, mutate,
-  {refreshDoctor | staleReason})` in `src/stage-ledger.mjs`, on the campaign
-  workspace the resolver returns: the report is read from the path the
-  workspace binds, the mutation returns what to write (or nothing, to leave
-  the file's bytes and every digest of them alone), the write is tmp +
-  rename, and exactly one doctor-freshness strategy is named. A producer
-  (`stage: "doctor" | "qa"`) restates its outcome only into this campaign's
-  report and skips a write that would move nothing but its timestamps — the
-  re-record rule `doctor` gained in 1.26.0+agent.3 now covers the QA stage
-  too, where it changes nothing in practice because every run restates a new
-  `verdict_run_id`. Both in-place writes are atomic; the QA stage refresh,
-  the waivers' stale stamps, the polish evidence merge and every command's
-  output are unchanged. `writeJsonAtomic` is exported from
-  `src/doctor-sidecar.mjs`, and `assemblyReportMatchesPacket` moves to
-  `src/stage-ledger.mjs`.
-
-## [1.27.0+agent.16] - 2026-09-14
-
-### Fixed
-
-- One launcher for the package-owned Playwright Chromium. Polish capture and
-  browser QA each imported `playwright` lazily, launched Chromium headless
-  unless `--headed`, and recognised a missing browser executable by the same
-  regular expression over Playwright's install wording — the import, the
-  launch and the detection written twice, so a change to Playwright's wording
-  would have to be found in both. The launch now lives once in
-  `src/browser-launch.mjs` (`launchPackageChromium`), which imports, launches
-  and detects, and asks the caller for the two error messages through
-  `onMissing(kind, error)` — each surface keeps naming its own rerun command.
-  Polish capture runs the launcher inside its bounded startup deadline as
-  before; browser QA calls it directly. No output changes: the polish
-  `POLISH_BROWSER_UNAVAILABLE` error and both QA messages are word-for-word
-  what they were.
-
-## [1.27.0+agent.11] - 2026-09-14
-
-### Fixed
-
-- One HTTP(S) origin parser for polish evidence. The capture producer, the
-  capture validator (its origin-field rule and its cross-origin warning
-  attribution), the `polish capture` text renderer, the browser adapter's
-  cookie-origin check and the analytics parity capture's baseline credential
-  guard each parsed "the origin of this URL, or null" for themselves — five
-  copies of one rule with the scheme test and the length cap drifting between
-  them. The rule now lives once as `captureOrigin` in `src/polish-capture.mjs`
-  and the five callers are projections of it. No output changes: a capture's
-  `document_response` origins, the validator's `failed_origins`, the
-  checkpoint and the rendered text are byte-identical for the same input. One
-  guard tightens: the parity capture treated two non-HTTP URLs as same-origin
-  (both carry the URL standard's opaque origin), so a fixture-supplied
-  non-HTTP baseline beside a non-HTTP candidate carried the preview
-  credential; only an HTTP(S) origin can now be "the same", and the credential
-  is withheld as it is for any other cross-origin baseline.
-
-## [1.27.0+agent.14] - 2026-09-14
-
-### Fixed
-
-- One response record between the polish browser collector and the capture
-  aggregator. The CDP collector built its `responses[]` records inline — a
-  single response, a redirect chain with hops numbered from zero, and two
-  in-band problem sentinels — and the aggregator re-parsed them as if they
-  might have come from anywhere: it re-checked that hops were contiguous from
-  zero, that every record carried a request identity and that no two records
-  shared one, accepted a second, flat spelling of a redirect chain, and read
-  cache evidence from six field names when the collector writes three. There
-  is one producer, so those checks could only ever fail on hand-built test
-  records, and the three problem codes they produced
-  (`redirect_chain_invalid`, `request_identity_invalid`,
-  `duplicate_request_identity`) were vocabulary no capture could carry. The
-  record now lives once in `src/polish-capture.mjs` as exported constructors
-  (`singleResponseRecord`, `redirectChainRecord`, `captureProblemRecord`) and
-  readers (`responseRecordResponses`, `responseRecordFromCache`,
-  `captureProblemRecordCode`, with `POLISH_RESPONSE_CACHE_FLAGS` and
-  `POLISH_CAPTURE_SENTINEL_PROBLEM_CODES`); the collector emits through them
-  and the aggregator reads through them without re-validation. The three
-  unreachable problem codes are gone from `POLISH_CAPTURE_PROBLEM_CODES`, and
-  the record is documented in `docs/polish-evidence.md`. No output changes:
-  the collector's wire form is byte-identical and a capture built from the
-  same collector output is byte-identical. One reading tightens: a record
-  spelt `from_cache`, `from_memory_cache` or `served_from_cache` — which the
-  collector never writes — is no longer counted as cache-served.
-
-## [1.27.0+agent.12] - 2026-09-14
-
-### Fixed
-
-- One deadline racer. The polish producer deadline, the QA runner's step
-  timeout, its diagnostic settle and its analytics-window bound, the remit
-  transport's request timeout and the commercial parity loader's request
-  budget each raced an operation against `setTimeout` for themselves — six
-  wrappers of one mechanism, differing only in the error they reject with
-  and in whether a timeout resolves to a fallback. The race now lives once as
-  `runWithDeadline` in `src/deadline.mjs` (timer always cleared, timeout
-  settled before best-effort cleanup runs, owner abort signal, optional
-  unref, caller-shaped timeout error) and the six sites are projections of
-  it; `polish-deadline.mjs` keeps its constants and error constructors and
-  delegates the race. No output changes for polish capture, the QA step
-  ladder, the analytics window or remit: the same codes, messages and
-  settle shapes are produced. One guard tightens: the commercial parity
-  loader only aborted its request's signal at the budget and waited for the
-  fetch to notice, so a fetch that ignored its signal held the run open
-  past the budget; the budget now rejects with the same `page_fetch_timeout`
-  / `price_preview_timeout` codes whether or not the fetch honours the abort
-  (the recorded `error` text names the deadline instead of the abort
-  reason).
-
-## [1.27.0+agent.13] - 2026-09-14
-
-### Changed
-
-- One hidden eager-media checkpoint evaluation per `polish capture`. The
-  capture producer (`capturePolishPageLoad`) evaluated the checkpoint against
-  the report it was handed at start and returned it beside the evidence, and
-  the command discarded that result: it re-reads the report after the browser
-  pass and evaluates the checkpoint on the merged report it persists, which is
-  the evaluation that decides the exit status, the `checkpoint` field and any
-  waiver. The producer now returns `{ plan, page_load }` only; its tests
-  evaluate the recorded checkpoint explicitly through
-  `evaluateRecordedHiddenEagerMediaCheckpoint` on the merged report, the same
-  path the command uses. No output changes: `polish capture` (text and
-  `--json`), the persisted `page_load` evidence and the doctor sidecar are
-  byte-identical.
-
-## [1.27.0+agent.19] - 2026-09-14
-
-### Fixed
-
-- A remit answered **409** by the receiver is read as `already_stored` — the
-  receiver holds this `run_id`, which is what the send was for — and the Run
-  Record stays `remit_state: "ok"`. It used to be stamped `failed` with
-  `Remit POST failed: 409 Conflict {"error":"run_record_conflict"}`, and the
-  `run_record_remit_recovery` action `next` then printed re-sent the same
-  record into the same 409 on every run. A 2xx whose body is not JSON is
-  `ok` with `remit_error` `Remit POST <status>: acknowledged with a body that
-  is not JSON: <excerpt>` (it used to be `failed` with a bare `Unexpected
-  token` parse error). Any other non-2xx is `failed` with `Remit POST
-  <status>: <statusText> <body>`. `run-record --json` gains a `remit` object
-  beside the record — `result` (`stored`, `already_stored`,
-  `ok_unparsed_ack`, `refused`, `transport_error` for this run's send,
-  `not_contacted` for a record already `ok` on disk, or null when nothing was
-  sent), `http_status`, `base_kind` (`canonical`, `loopback`, `proxy` — never
-  the host), `sent`, `preserved` — and the text `Remit:` line ends with
-  `[base: <kind>]` and names the 409 / non-JSON cases.
-- A re-run of `run-record` under a `run_id` whose record is already remitted
-  — an explicit `--run-id`, `run end` on a session re-opened under that id,
-  or the recovery action — no longer rewrites that record. It used to replace
-  `run-records/<run_id>.json` with this invocation's outcome unconditionally,
-  so a re-run into a 409 turned a durable `ok` into `failed`, and a `--no-remit`
-  re-run turned it into `skipped`. Now the record on disk is read first: an
-  `ok` record is left exactly as written and nothing is sent (`written:
-  false`, `remit.result: "not_contacted"`, `remit.sent: false`; text: `Run
-  Record already closed and remitted for run <id>; left as written.` and
-  `Remit: ok (already stored at the receiver for this run id; not re-sent)`).
-  Only a file that passes the Run Record validator counts as that prior; one
-  that merely says `remit_state: "ok"` is replaced like a corrupt file.
-  A prior `failed` or `pending` send is retried when the run may send, and
-  carried forward unchanged when it may not (`--no-remit`, consent off):
-  `remit.preserved: true`, text `Remit: not attempted this run; the prior
-  outcome for this run id is kept (failed: …)`. A `--no-write` run is
-  unchanged: it reads nothing, writes nothing, sends nothing.
-- The body the receiver stores now carries the outcome of the send it is
-  receiving: `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true`,
-  `remit_endpoint: "/api/runs"`. It used to be the pre-flight snapshot —
-  `remit_state: "pending"`, `remit_attempted: false`, `remit_endpoint: null` —
-  so every stored record said its own remit had not happened. The local file
-  still carries `pending` only between its first write and the answer.
-- `telemetry list` exits non-zero on a 2xx whose body carries no `runs[]`
-  (`telemetry list: 200 OK from <url> is not a Run Record listing (no runs[]
-  in the body): {"raw":"<html>…`). It used to print `showing 0 of 0 returned`
-  / `"count": 0` and exit 0 for a maintenance page.
-- The `run_record_remit_recovery` action's text says that a send the receiver
-  already holds resolves to ok and that a remitted record is left as written.
-- Docs: `docs/workflow-findings-sidecar.md` (Remit Channel: Durable status,
-  re-runs, the stored copy, `telemetry list`; Closeout recognition: the
-  recovery command's premise).
 
 ## [1.27.0] - 2026-09-13
 
@@ -1163,6 +1169,56 @@ Notable supported-surface changes are recorded here.
   branches on the condition it claims to handle instead of swallowing every
   error. No behaviour changed; no command, schema, or artifact moved.
 
+## [1.26.0+agent.14] - 2026-09-13
+
+### Fixed
+
+- `shellToken` prints a falsy value as itself. It stringified `value || ""`, so
+  a count or flag of `0`, `false` or `NaN` vanished from a printed command;
+  only `null` and `undefined` now read as no value. Review follow-up on the
+  shell-token test; the charset test pins the new cases.
+
+### Changed
+
+- The two campaign scanners drop an import left dead by the repo-scan
+  consolidation. No behaviour change.
+
+## [1.26.0+agent.13] - 2026-09-13
+
+### Changed
+
+- Internal consolidation, no output change. The repository-scan helpers the
+  two campaign scanners (`campaign-ecosystem.mjs`, `standardization-report.mjs`)
+  each carried — the file walk, the skip rule, the version compare and
+  extract, and the small string helpers (`normalizeString`, `relPath`,
+  `rootId`, `unique`, `escapeRegExp`) — now live once in `src/repo-scan.mjs`;
+  each scanner keeps only its own skip-directory set and passes it in. The
+  build-brief extractor's `escapeRegExp` copy is folded in too (the `cli.mjs`
+  copy stays: it stringifies `null` differently and its callers rely on that).
+  `standardize` output over the example target is byte-identical before and
+  after, timestamps aside.
+
+## [1.26.0+agent.12] - 2026-09-13
+
+### Changed
+
+- Internal consolidation, no output change. The cause block the `doctor` and
+  `qa run` human reports print (summary line, then the comparison-basis line
+  when no comparison happened) is one function, `formatCauseReportLines`,
+  instead of the same three lines written in each command; the doctor
+  fingerprint used for the prior-run comparison is computed by
+  `doctorIssueFingerprint` at both sites instead of once as a function and
+  once as a string literal; and `formatCauseSummaryLine` drops a `priorRunId`
+  option that both callers passed with the value the function already read
+  from the summary. Eight `finding-cause.mjs` symbols with no importer outside
+  the module are no longer exported; none is on the supported surface.
+
+### Removed
+
+- `assemblySourcePackageFreshnessWaiver` from `src/polish-gate.mjs`: a
+  three-line alias over `assessAssemblySourcePackageFreshnessWaivers(...).active`
+  with no caller in `src/` or `scripts/`. Not on the supported surface.
+
 ## [1.26.0+agent.11] - 2026-09-13
 
 ### Changed
@@ -1188,43 +1244,6 @@ Notable supported-surface changes are recorded here.
   its inspection contract — the sidecar it was not given stays off — so its
   `next` block decides over the artifacts it checked and its `reason` says
   which; the ladder decision over the bound report is `campaigns-os next`'s.
-
-## [1.26.0+agent.7] - 2026-09-13
-
-### Fixed
-
-- The doctor `Next:` block no longer orders a document-wrapper strip that the
-  run's accepted `preserve_document_wrappers` adapter decision makes wrong.
-  The source-preparation action fired on any source-preparation code in
-  errors or warnings and always listed all three repairs, so a run whose
-  `source_html.prep.document_wrapper` finding had been downgraded to a warning
-  by the recorded wrapper policy still told the operator to strip wrappers,
-  while the warning beside it said the decision was accepted; following the
-  block literally undid what cleared the gate. The action now names only the
-  repairs the findings ask for, and offers the wrapper strip only when the
-  wrapper finding is an error. Codes, severities and the warning text are
-  unchanged.
-
-## [1.26.0+agent.12] - 2026-09-13
-
-### Changed
-
-- Internal consolidation, no output change. The cause block the `doctor` and
-  `qa run` human reports print (summary line, then the comparison-basis line
-  when no comparison happened) is one function, `formatCauseReportLines`,
-  instead of the same three lines written in each command; the doctor
-  fingerprint used for the prior-run comparison is computed by
-  `doctorIssueFingerprint` at both sites instead of once as a function and
-  once as a string literal; and `formatCauseSummaryLine` drops a `priorRunId`
-  option that both callers passed with the value the function already read
-  from the summary. Eight `finding-cause.mjs` symbols with no importer outside
-  the module are no longer exported; none is on the supported surface.
-
-### Removed
-
-- `assemblySourcePackageFreshnessWaiver` from `src/polish-gate.mjs`: a
-  three-line alias over `assessAssemblySourcePackageFreshnessWaivers(...).active`
-  with no caller in `src/` or `scripts/`. Not on the supported surface.
 
 ## [1.26.0+agent.10] - 2026-09-13
 
@@ -1292,6 +1311,22 @@ is gone.
   lines after "Brand theme context missing". The line now carries the gate's
   own reason. Gate codes, statuses and reasons are unchanged.
 
+## [1.26.0+agent.7] - 2026-09-13
+
+### Fixed
+
+- The doctor `Next:` block no longer orders a document-wrapper strip that the
+  run's accepted `preserve_document_wrappers` adapter decision makes wrong.
+  The source-preparation action fired on any source-preparation code in
+  errors or warnings and always listed all three repairs, so a run whose
+  `source_html.prep.document_wrapper` finding had been downgraded to a warning
+  by the recorded wrapper policy still told the operator to strip wrappers,
+  while the warning beside it said the decision was accepted; following the
+  block literally undid what cleared the gate. The action now names only the
+  repairs the findings ask for, and offers the wrapper strip only when the
+  wrapper finding is an error. Codes, severities and the warning text are
+  unchanged.
+
 ## [1.26.0+agent.6] - 2026-09-13
 
 ### Fixed
@@ -1310,6 +1345,27 @@ is gone.
   the session entirely. (A `doctor` that runs after `run-record` is minted is
   recorded in the journal but not in that record, which is the record's
   cut-off working as designed, not a missing entry.)
+
+## [1.26.0+agent.5] - 2026-09-13
+
+### Fixed
+
+- A blocked polish gate's QA verdict evidence now carries the same fields the
+  doctor's `derived.polish_gate` carries. The blocked branch of the verdict
+  projection built a hand-picked subset (`reason`, `build_fingerprint`,
+  `source_build_fingerprint`, `performed_by`, `problems`, `required_actions`,
+  `scope_source`), so on `polish.assembly_source_package_fingerprint_missing`
+  and `polish.assembly_source_package_stale` the verdict dropped the
+  `source_package_material_fingerprint` and
+  `assembly_source_package_material_fingerprint` the reason names, showed
+  `source_build_fingerprint: null` beside it, and omitted the `waiver` and
+  `expired_waiver` the other branches carry. The blocked branch now uses the
+  shared evidence object plus `reason`, `problems` and `required_actions`;
+  `expired_waiver` joins the shared set. Gate codes, reasons and required
+  actions are unchanged: `polish.assembly_source_package_fingerprint_missing`
+  (assembly not tied to the current Design Source Package, re-run Build) and
+  `polish.evidence_missing` (no Polish stage, run Polish) are different
+  conditions with different next actions and stay distinct.
 
 ## [1.26.0+agent.4] - 2026-09-13
 
@@ -1352,42 +1408,6 @@ is gone.
   exported from the stage ledger as `producerStageOutcomeUnchanged` for the QA
   producer to adopt.
 
-## [1.26.0+agent.13] - 2026-09-13
-
-### Changed
-
-- Internal consolidation, no output change. The repository-scan helpers the
-  two campaign scanners (`campaign-ecosystem.mjs`, `standardization-report.mjs`)
-  each carried — the file walk, the skip rule, the version compare and
-  extract, and the small string helpers (`normalizeString`, `relPath`,
-  `rootId`, `unique`, `escapeRegExp`) — now live once in `src/repo-scan.mjs`;
-  each scanner keeps only its own skip-directory set and passes it in. The
-  build-brief extractor's `escapeRegExp` copy is folded in too (the `cli.mjs`
-  copy stays: it stringifies `null` differently and its callers rely on that).
-  `standardize` output over the example target is byte-identical before and
-  after, timestamps aside.
-
-## [1.26.0+agent.5] - 2026-09-13
-
-### Fixed
-
-- A blocked polish gate's QA verdict evidence now carries the same fields the
-  doctor's `derived.polish_gate` carries. The blocked branch of the verdict
-  projection built a hand-picked subset (`reason`, `build_fingerprint`,
-  `source_build_fingerprint`, `performed_by`, `problems`, `required_actions`,
-  `scope_source`), so on `polish.assembly_source_package_fingerprint_missing`
-  and `polish.assembly_source_package_stale` the verdict dropped the
-  `source_package_material_fingerprint` and
-  `assembly_source_package_material_fingerprint` the reason names, showed
-  `source_build_fingerprint: null` beside it, and omitted the `waiver` and
-  `expired_waiver` the other branches carry. The blocked branch now uses the
-  shared evidence object plus `reason`, `problems` and `required_actions`;
-  `expired_waiver` joins the shared set. Gate codes, reasons and required
-  actions are unchanged: `polish.assembly_source_package_fingerprint_missing`
-  (assembly not tied to the current Design Source Package, re-run Build) and
-  `polish.evidence_missing` (no Polish stage, run Polish) are different
-  conditions with different next actions and stay distinct.
-
 ## [1.26.0+agent.2] - 2026-09-13
 
 ### Fixed
@@ -1411,7 +1431,6 @@ is gone.
   `measurement: null`. No
   schema, problem code or verdict field outside that assertion's evidence
   changes.
-||||||| 42ba452
 
 ## [1.26.0+agent.1] - 2026-09-13
 
@@ -1437,20 +1456,6 @@ is gone.
   as `url_length_overflow`. Capture shape, problem-code vocabulary and the
   measurement invariants are unchanged; a capture blocked this way needs a fresh
   `polish capture`, which it needed anyway.
-
-## [1.26.0+agent.14] - 2026-09-13
-
-### Fixed
-
-- `shellToken` prints a falsy value as itself. It stringified `value || ""`, so
-  a count or flag of `0`, `false` or `NaN` vanished from a printed command;
-  only `null` and `undefined` now read as no value. Review follow-up on the
-  shell-token test; the charset test pins the new cases.
-
-### Changed
-
-- The two campaign scanners drop an import left dead by the repo-scan
-  consolidation. No behaviour change.
 
 ## [1.26.0] - 2026-09-12
 
@@ -2001,7 +2006,6 @@ is gone.
   so a redirect that followed a reservation went uncounted even though the
   platform may have created an order behind it — an exception the documented
   "a manual review charges the budget" never admitted.
-||||||| 2912d70
 
 ## [1.25.0+agent.2] - 2026-09-11
 

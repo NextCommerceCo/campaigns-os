@@ -3019,6 +3019,50 @@
         }
       ],
       "entry_sha256": "ea7aac0226c7014b282705424f86c53c738a2fa28d64539fc1110c9da9047917"
+    },
+    {
+      "id": "RL-0083",
+      "sequence": 83,
+      "date": "2026-09-14",
+      "kind": "amendment",
+      "amends": "RL-0032",
+      "amendment_reason": "The 1.25.0+agent.3 section RL-0032 hashed ended with a stray diff3 base-marker line (||||||| 2912d70) committed during a merge. The line is deleted, which changes the section's bytes; RL-0032 is append-only and keeps its original hash, so this amendment re-links the same section with its current hash. Nothing RL-0032 records about behaviour changes.",
+      "surface_version": null,
+      "changelog_section": "1.25.0+agent.3",
+      "changelog_sha256": "4a0a26b9252d22280baaaa24611ce4884c429ffdb729b15fb44be621aedd702b",
+      "agent_impact": "None for behaviour. A consumer verifying RL-0032's changelog_sha256 against CHANGELOG.md will find it stale; the current hash of section 1.25.0+agent.3 is the one on this entry, and a checker should read an amended entry's section hash as superseded when the amendment links the same section.",
+      "compatibility": "compatible",
+      "migration": "None. Consumers that pin a section hash for 1.25.0+agent.3 take this entry's changelog_sha256.",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "docs/release-ledger-authoring-guide.md",
+          "surface_entry": "docs/release-ledger-authoring-guide.md",
+          "summary": "Documents that an amendment may link the same changelog section as the entry it amends, carrying the section's current hash, and that this is the only way a hashed section's bytes may change."
+        }
+      ],
+      "entry_sha256": "3279a63f456df5b47882589d50232175ef819ec02a79865d8ddf88d950c4e510"
+    },
+    {
+      "id": "RL-0084",
+      "sequence": 84,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.26",
+      "changelog_sha256": "5785c59602d12eb1e243cc03a4323c591ecfc66b64d12e552d2ef4b0fa154ee7",
+      "agent_impact": "npm run check now runs scripts/check-changelog-structure.mjs, which exits 1 naming every merge-conflict marker line in CHANGELOG.md or under docs/, every duplicated section identifier, every +agent.N section out of descending order or not directly above its own release, and every ledger changelog_section naming no section. An agent adding a +agent.N section places it at the top of its release's run. The +agent.N sections under 1.27.0 and 1.26.0 are re-ordered newest first with byte-identical bodies. scripts/check-release-ledger.mjs accepts an amendment that links the same section as the entry it amends and reads the amended entry's changelog_sha256 as superseded; its stale-hash message names that remedy. polish capture text renders 'Resource types: unavailable' when every resource_types value is outside the beacon allowlist (unchanged behaviour, now pinned by a test).",
+      "compatibility": "compatible",
+      "migration": "None. A branch that inserts a new +agent.N section directly above the release heading instead of at the top of the run fails npm run check until the section is moved.",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "npm run check runs scripts/check-changelog-structure.mjs and its test; npm run check:changelog-structure runs the checker alone."
+        }
+      ],
+      "entry_sha256": "d656a8f608a8d8c8f83d87841bbaba0784e19b1108350f767fd8ffaf6aaa4edb"
     }
   ]
 }

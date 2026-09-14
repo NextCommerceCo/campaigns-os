@@ -204,6 +204,24 @@ export function validateLedgerStructure(ledger, { policy, surface, sections, cla
   const seenSections = new Map();
   let previousDate = "";
 
+  // An amendment that links the SAME section as the entry it amends re-hashes
+  // that section: it is the one way to correct a section's bytes (a stray
+  // conflict-marker line, for example) without rewriting the historical entry
+  // whose hash covered them. The amended entry's changelog_sha256 is then
+  // superseded — the amendment's own hash, checked below like any other, keeps
+  // the section pinned. An amendment linking a different section supersedes
+  // nothing. Amendments chain (RL-C amends RL-B amends RL-A, all on one
+  // section): each link supersedes its own predecessor, and the newest hash is
+  // the one still checked. Two amendments of ONE entry on one section are not
+  // a chain; the second fails the one-to-one link rule below.
+  const byId = new Map(entries.map((entry) => [entry?.id, entry]));
+  const superseded = new Set();
+  for (const entry of entries) {
+    if (entry?.kind !== "amendment" || typeof entry.amends !== "string") continue;
+    const amended = byId.get(entry.amends);
+    if (amended && amended.changelog_section === entry.changelog_section) superseded.add(amended.id);
+  }
+
   for (const [index, entry] of entries.entries()) {
     const where = `${LEDGER_PATH} ${entry?.id ?? "<entry with no id>"}`;
 
@@ -267,14 +285,15 @@ export function validateLedgerStructure(ledger, { policy, surface, sections, cla
         errors.push(`${where}: changelog_section "${entry.changelog_section}" has no matching section in ${CHANGELOG_PATH}`);
       } else if (linked.length > 1) {
         errors.push(`${where}: changelog_section "${entry.changelog_section}" matches ${linked.length} sections in ${CHANGELOG_PATH}; section identifiers must be unique`);
-      } else if (linked[0].body_sha256 !== entry.changelog_sha256) {
+      } else if (linked[0].body_sha256 !== entry.changelog_sha256 && !superseded.has(entry.id)) {
         errors.push(
           `${where}: changelog_sha256 does not match the body of ${CHANGELOG_PATH} section "${entry.changelog_section}" ` +
-            `(actual ${linked[0].body_sha256}) — update the ledger hash in the same change that edits the section`,
+            `(actual ${linked[0].body_sha256}) — update the ledger hash in the same change that edits the section, ` +
+            `or, for a historical entry, append an amendment that links the same section with its current hash`,
         );
       }
       const priorEntry = seenSections.get(entry.changelog_section);
-      if (priorEntry) {
+      if (priorEntry && !(entry.kind === "amendment" && entry.amends === priorEntry)) {
         errors.push(`${where}: changelog section "${entry.changelog_section}" is already linked from ${priorEntry}; the link is one-to-one`);
       }
       seenSections.set(entry.changelog_section, entry.id);
