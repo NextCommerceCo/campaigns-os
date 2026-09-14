@@ -52,13 +52,18 @@ test("themeGateLines prints the actions and the ephemeral-waiver hint only for a
     reason: "The starter palette is still applied.",
     required_actions: [{ id: "generate", kind: "command", command: "campaigns-os theme generate --packet <packet>", description: "Generate the brand theme." }, { id: "manual", command: null, description: "Apply the brand tokens by hand." }],
   };
-  assert.deepEqual(themeGateLines(blocked), [
+  assert.deepEqual(themeGateLines(blocked, "/w/p.json"), [
     "Theme gate: blocked (theme_gate.starter_palette) — The starter palette is still applied.",
     "Required actions:",
-    "  - campaigns-os theme generate --packet <packet>",
+    "  - campaigns-os theme generate --packet /w/p.json",
     "  - Apply the brand tokens by hand.",
     'Or rerun with --theme-waive "<reason>" to record an ephemeral waiver for this run.',
   ]);
+  // The gate bakes the packet in when it is evaluated; the same rule applied
+  // here changes nothing for such a command, with or without a packet.
+  const baked = { ...blocked, required_actions: [{ id: "waive", kind: "command", command: "campaigns-os theme waive --packet /w/p.json --reason \"<why>\"", description: "Waive." }] };
+  assert.equal(themeGateLines(baked, "/w/p.json")[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\"");
+  assert.equal(themeGateLines(baked)[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\"");
   assert.deepEqual(themeGateLines({ status: "pass", code: "theme_gate.pass", reason: "Brand theme applied." }), [
     "Theme gate: pass (theme_gate.pass) — Brand theme applied.",
   ]);

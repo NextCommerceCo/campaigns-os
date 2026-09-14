@@ -2790,7 +2790,7 @@ function output(value, args) {
     console.log(`Disposition: ${value.verdict.disposition}`);
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
     printCauseLines(value.verdict);
-    printThemeGateLines(value.theme_gate);
+    printThemeGateLines(value.theme_gate, value.packet_path);
     if (value.commercial) {
       console.log(`Commercial parity: ${value.commercial.status} (${value.commercial.finding_count || 0} findings, ${value.commercial.checked_pages || 0} pages checked)`);
     }
@@ -2826,7 +2826,7 @@ function output(value, args) {
   }
   console.log("");
   printCheckpointGateLines(value.checkpoint_gates, value.packet_path);
-  printThemeGateLines(value.theme_gate);
+  printThemeGateLines(value.theme_gate, value.packet_path);
   printRouteProbeLines(value.route_probe);
   const nextProofLines = qaResolveNextProofLines(value);
   if (nextProofLines.length) {
@@ -2916,21 +2916,23 @@ function printCauseLines(verdict) {
   }
 }
 
-// The theme-gate block of the `qa resolve` text report, as lines.
-export function themeGateLines(themeGate) {
+// The theme-gate block of the `qa resolve` / `qa run` text report, as lines.
+// The gate bakes the packet into its commands when it is evaluated, so the
+// substitution here is the same rule applied uniformly, not a change of text.
+export function themeGateLines(themeGate, packetPath = null) {
   if (!themeGate) return [];
   const lines = [`Theme gate: ${themeGate.status} (${themeGate.code}) — ${themeGate.reason}`];
   if (themeGate.status !== "blocked") return lines;
   lines.push("Required actions:");
   for (const action of themeGate.required_actions || []) {
-    lines.push(`  - ${requiredActionText(action)}`);
+    lines.push(`  - ${requiredActionText(action, { packetPath })}`);
   }
   lines.push("Or rerun with --theme-waive \"<reason>\" to record an ephemeral waiver for this run.");
   return lines;
 }
 
-function printThemeGateLines(themeGate) {
-  for (const line of themeGateLines(themeGate)) console.log(line);
+function printThemeGateLines(themeGate, packetPath = null) {
+  for (const line of themeGateLines(themeGate, packetPath)) console.log(line);
 }
 
 export function qaResolveNextProofLines(value) {
