@@ -2820,7 +2820,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.27.0+agent.25",
-      "changelog_sha256": "c2290d2490f0e2155b7d657fbd0a72997296547e2dcb91f2716530bb2be61748",
+      "changelog_sha256": "1d6e8af727c6675e06ea785d3219485243dba058979f7a81143f3fb47782d4a1",
       "agent_impact": "Two text changes and one planning change an agent may observe. (1) doctor's packet field qa.test_order_policy_notes and the next-stage QA hand-off text now carry a sentence on --test-order tiers / tiers:common / tiers:full: one strict-selection order per selector tier the CampaignSpec declares on the checkout page, order-bump rows marked is_upsell are add-ons and never tiers, and --select-package <ref[:qty],...> narrows a tiers run to the listed tiers; existing sentences are unchanged. (2) qa run: a checkout packages[] row marked is_upsell: true no longer becomes a selector tier, so the tiers plan count and the --max-test-orders raise the flood guard names drop for specs that declare a bump (three tiers + one bump on a two-upsell funnel: tiers:common 12 not 16, tiers:full 15 not 20, tiers 3 not 4); a [qa:test-order] stderr line names the bump ref(s) left out. --select-package with a tiers mode now narrows instead of throwing; --apply-coupon with a tiers mode still throws, with a message that names only that flag. A refused cap's 'Planned paths:' lists every planned path instead of eight plus '...'. An agent parsing the refusal message for a fixed eight-id preview must accept the full list.",
       "compatibility": "compatible",
       "migration": "None. An agent that scripted --test-order tiers together with --select-package expecting a refusal now gets a narrowed plan; drop --select-package to iterate every declared tier.",
@@ -2838,7 +2838,7 @@
           "summary": "Tiers section: is_upsell bump rows are excluded from selector tiers (with the 12-not-16 example and the stderr line), --select-package narrows a tiers run by exact ref / ref:qty identity, --apply-coupon remains incompatible, and a refused --max-test-orders cap lists every planned path."
         }
       ],
-      "entry_sha256": "32a79e2d877ac62f4f5153842a0d26dc159a4cbd463791182c0ea95b73907b52"
+      "entry_sha256": "ba5cb2576c7cf1d1f6137c3f1d371fd9cf462006e413a55fe03194065ee37e2e"
     }
   ]
 }

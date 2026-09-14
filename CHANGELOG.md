@@ -471,11 +471,13 @@ Notable supported-surface changes are recorded here.
 - `--select-package <ref[:qty],...>` now narrows a tiers run to the listed
   declared tiers instead of being refused. Identities match the tier's own
   strict-selection value (`1` or `1:1` is ref 1 at quantity one, `1:2` the
-  two-unit multiplier); coupon plans are not tiers and are still planned. An
-  identity the spec declares no tier for is refused by name, listing the
-  declared tiers (`--select-package 7 matches none of the selector tiers the
-  CampaignSpec declares (1, 1:2, 1:3)`). `--apply-coupon` with a tiers mode is
-  still refused, with the message now naming only that flag.
+  two-unit multiplier); coupon plans are not tiers and are still planned.
+  Every listed identity must be a declared tier: any that is not is refused
+  by name, listing the declared tiers (`--select-package 7: is not a selector
+  tier the CampaignSpec declares (declared: 1, 1:2, 1:3)`), so a partly
+  declared list never runs the matched tiers and skips the rest. `--apply-
+  coupon` with a tiers mode is still refused, with the message now naming
+  only that flag.
 - A refused `--max-test-orders` cap lists every planned path. The message cut
   the preview at eight ids and hid the rest behind `...`, so the plans that
   most needed a look (the tail) were the ones an operator could not see;

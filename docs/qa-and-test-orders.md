@@ -1092,8 +1092,10 @@ plan (tier ref or coupon code plus its declaring surface) on the order.
 declared tiers, matched by exact identity (`1` or `1:1` is ref 1 at purchase
 quantity one; `1:2` is the two-unit multiplier), so `--test-order tiers:common
 --select-package 1:2,1:3` proves two of three tiers without the full flood.
-Coupon plans are not tiers and are planned regardless. A listed identity the
-spec declares no tier for is refused by name, listing the declared tiers.
+Coupon plans are not tiers and are planned regardless. Every listed identity
+must be a declared tier: any that is not is refused by name, listing the
+declared tiers, so a partly declared list never runs the matched tiers and
+silently skips the rest.
 `tiers` is incompatible with explicit `--apply-coupon` (the mode derives
 coupons from the spec; combining would be ambiguous), and it errors when the
 spec declares neither selector tiers nor an enabled offer code — use

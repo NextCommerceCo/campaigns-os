@@ -570,7 +570,13 @@ test("--select-package narrows a tiers run to the listed declared tiers; coupon 
   // a ref the spec does not declare as a tier is a named refusal, not a silent zero-tier run
   assert.throws(
     () => testOrderPlans("tiers", topo, { "select-package": "7" }),
-    /--select-package 7 matches none of the selector tiers the CampaignSpec declares \(1, 1:2, 1:3\)/,
+    /--select-package 7: is not a selector tier the CampaignSpec declares \(declared: 1, 1:2, 1:3\)/,
+  );
+  // ...and a list that is only partly declared is refused too, naming the
+  // unmatched identities — never a run of the matched tiers with the rest skipped
+  assert.throws(
+    () => testOrderPlans("tiers", topo, { "select-package": "1:2,7,1:9" }),
+    /--select-package 7,1:9: are not selector tiers the CampaignSpec declares \(declared: 1, 1:2, 1:3\)/,
   );
   assert.throws(
     () => testOrderPlans("tiers", topo, { "select-package": "1:zero" }),

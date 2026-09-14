@@ -5518,6 +5518,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
   // declared tiers (exact `ref` / `ref:qty` identities) instead of iterating
   // every tier; coupon plans are not tiers and are unaffected.
   const narrowTo = selectorTierNarrowing(args["select-package"]);
+  const declaredIdentities = new Set();
   // Every funnel's checkout page contributes plans, and each plan carries the
   // checkout page that declares its tier/coupon so the runner drives THAT
   // page — strict-selecting a ref on a checkout that doesn't render it would
@@ -5538,10 +5539,8 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
     if (bumps.length) {
       warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares order bump package(s) ${bumps.join(", ")} (is_upsell) — not planned as selector tiers; bump coverage comes from --cart.`);
     }
+    for (const tier of declaredTiers) declaredIdentities.add(selectorTierIdentity(tier));
     const tiers = narrowTo ? declaredTiers.filter((tier) => narrowTo.has(selectorTierIdentity(tier))) : declaredTiers;
-    if (narrowTo && declaredTiers.length && !tiers.length) {
-      warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares tier(s) ${declaredTiers.map(selectorTierIdentity).join(", ")}; none match --select-package ${[...narrowTo].join(",")}.`);
-    }
     const coupons = declaredCheckoutCoupons(checkoutPage);
     if (!tiers.length && !coupons.length) continue;
     if (checkoutPage !== primary && !checkoutPage.url) {
@@ -5600,14 +5599,14 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       });
     }
   }
-  if (narrowTo && !plans.some((plan) => plan.source?.type === "selector_tier")) {
-    const declared = (Array.isArray(topologies) ? topologies : [])
-      .flatMap((topology) => (Array.isArray(topology?.pages) ? topology.pages : []))
-      .filter((page) => String(page?.page_type || "").toLowerCase() === "checkout")
-      .flatMap((page) => declaredSelectorTiers(page).map(selectorTierIdentity));
+  // Every listed identity must name a declared tier: a list that is only
+  // partly declared would run the matched tiers and quietly skip the rest,
+  // and the verdict would read as proof of a tier that was never driven.
+  const unmatched = narrowTo ? [...narrowTo].filter((identity) => !declaredIdentities.has(identity)) : [];
+  if (unmatched.length) {
     throw new Error([
-      `--select-package ${[...narrowTo].join(",")} matches none of the selector tiers the CampaignSpec declares${declared.length ? ` (${[...new Set(declared)].join(", ")})` : " (none declared)"}.`,
-      "Name a declared tier as ref or ref:qty, or drop --select-package to iterate every tier.",
+      `--select-package ${unmatched.join(",")}: ${unmatched.length === 1 ? "is not a selector tier" : "are not selector tiers"} the CampaignSpec declares${declaredIdentities.size ? ` (declared: ${[...declaredIdentities].join(", ")})` : " (none declared)"}.`,
+      "Name declared tiers only, as ref or ref:qty, or drop --select-package to iterate every tier.",
     ].join(" "));
   }
   if (!plans.length) {
