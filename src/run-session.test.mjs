@@ -652,6 +652,23 @@ test("runSessionEndArgs: the closing argv carries the session's identity and onl
   });
 });
 
+// The whitelist is hand-written, so the documented run-record flags are the
+// drift signal: a flag `help` names for run-record must either be carried by
+// the closer or be one of the three it sets itself.
+test("runSessionEndArgs: every flag help documents for run-record is carried or closer-owned", () => {
+  const help = execFileSync("node", [CLI, "help"], { encoding: "utf8" });
+  const line = help.split("\n").find((entry) => /^\s*campaigns-os run-record /.test(entry));
+  assert.ok(line, "help names run-record");
+  const documented = [...line.matchAll(/--([a-z-]+)/g)].map((match) => match[1]);
+  assert.ok(documented.length > 5, `help documents run-record's flags: ${documented.join(", ")}`);
+  const closerOwned = new Set(["packet", "run-id", "lifecycle-journal"]);
+  const extraArgs = Object.fromEntries(documented.map((flag) => [flag, `carried:${flag}`]));
+  const endArgs = runSessionEndArgs({ run_id: "run_1", lifecycle_journal: "/p/lc.jsonl" }, "/p/packet.json", extraArgs);
+  const dropped = documented.filter((flag) => !closerOwned.has(flag) && endArgs[flag] !== `carried:${flag}`);
+  assert.deepEqual(dropped, [], "documented run-record flags the closer does not carry");
+  assert.deepEqual([endArgs.packet, endArgs["run-id"], endArgs["lifecycle-journal"]], ["/p/packet.json", "run_1", "/p/lc.jsonl"]);
+});
+
 test("run start/status/end return their result in-process and print nothing", async () => {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-inproc-"));
   writeFileSync(join(dir, "package.json"), "{}\n");

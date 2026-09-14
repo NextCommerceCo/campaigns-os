@@ -9764,9 +9764,10 @@ function runSessionTextLines(result) {
   if (result.action === "run-end") {
     return result.stale_closeout.map((entry) => `Stale run session ${entry.run_id} closed out${entry.record_path ? ` (Run Record ${entry.record_path}, remit ${entry.remit_state || "skipped"})` : ` without a Run Record (${entry.error})`}.`);
   }
-  // run end over an active session: the run-record summary, already printed
-  // by run-record itself in text mode.
-  return [`Run session ${result.record.run_id} ended; session cleared.`];
+  // run end over an active session returns run-record's summary, whose text
+  // run-record already printed; only the closing line is added.
+  if (result.action === "run-record") return [`Run session ${result.record.run_id} ended; session cleared.`];
+  throw new Error(`Unknown run result action "${result.action}".`);
 }
 
 function runSessionStart(args) {
