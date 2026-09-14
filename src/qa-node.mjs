@@ -2070,9 +2070,13 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   // printed report all carry the same labels. The comparison root is the Build
   // Packet directory — the same root the Run Record writes under — so the
   // previous run is found through the existing Run Record discovery rather
-  // than a second scan of qa-output/.
+  // than a second scan of qa-output/. The target repo rides along because the
+  // previous run's full verdict lives under ITS qa-output/ (the same default
+  // this run writes to below), which the record references only as
+  // `external:qa_verdict` whenever that is not the packet directory.
   const causeSummary = annotateQaAssertionCauses(assertions, {
     baseDir: resolved.packetPath ? dirname(resolved.packetPath) : null,
+    targetRepo: resolved.packetPath ? targetRepoFor(resolved.packetPath, resolved.packet) : null,
     mapId: resolved.mapId,
     currentRunId: runId,
     isFinding: isFindingAssertion,

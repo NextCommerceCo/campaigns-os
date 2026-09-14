@@ -41,6 +41,7 @@ import {
   forbiddenComputedColors,
   normalizeCssColor,
   paletteResidueStyleChecks,
+  paymentChromeArtifacts,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
@@ -1963,20 +1964,11 @@ function logoResidueAssertion({ page, logo, sources, severity }) {
   });
 }
 
-// Selectors/assets belonging to one payment method, plus shared chrome assets
-// (those naming no contract method, e.g. upsell-payment-logos.svg) which count
-// as implied residue for any unsupported method per the contract rule.
+// Selectors/assets belonging to one payment method; the partition lives in
+// template-brand-contract.mjs so doctor's static checkout scan and this browser
+// gate read the same contract the same way.
 function methodPaymentArtifacts(chrome, method) {
-  const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
-  const token = compact(method);
-  const methodTokens = (chrome.methods || []).map(compact).filter(Boolean);
-  const selectors = (chrome.selectors || []).filter((selector) => compact(selector).includes(token));
-  const assets = (chrome.assets || []).filter((asset) => {
-    const normalized = compact(asset);
-    if (normalized.includes(token)) return true;
-    return !methodTokens.some((candidate) => normalized.includes(candidate));
-  });
-  return { selectors, assets };
+  return paymentChromeArtifacts(chrome, method);
 }
 
 async function collectVisibleSelectorMatches(browserPage, selectors) {

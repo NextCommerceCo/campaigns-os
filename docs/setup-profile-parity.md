@@ -32,7 +32,8 @@ For page-kit packets, doctor and direct QA compare the CampaignSpec to the targe
 campaign entry across one fixed matrix: `store_name`, `store_url`,
 `store_terms`, `store_privacy`, `store_contact`, `store_returns`,
 `store_shipping`, `store_phone`, and `store_phone_tel`. Known demo URLs and both
-demo phone spellings are blockers. Target-only values remain visible warnings.
+demo phone spellings are blockers that no waiver can accept; the gate names the
+residue fields and the values must be replaced. Target-only values remain visible warnings.
 Missing target data is `not_applicable` only before scaffold; it blocks without
 a waiver lane when setup/assembly is terminal or output already exists.
 

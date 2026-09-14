@@ -5,6 +5,7 @@ import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
 import {
   evaluatePageKitStoreProfile,
   isStoreProfileDiscrepancyWaivable,
+  storeProfileDemoResidueFields,
   PAGE_KIT_STORE_PROFILE_FIELDS,
 } from "./page-kit-store-profile.mjs";
 
@@ -275,10 +276,11 @@ test("packet QA cannot fetch around a missing or malformed local spec", () => {
 });
 
 test("waivability is decided by an enumerated kind set, not by how a kind is named", () => {
-  for (const kind of ["demo_residue", "target_missing", "mismatch"]) {
+  for (const kind of ["target_missing", "mismatch"]) {
     assert.equal(isStoreProfileDiscrepancyWaivable(kind), true, kind);
   }
   for (const kind of [
+    "demo_residue",
     "both_invalid_type",
     "spec_invalid_type",
     "target_invalid_type",
@@ -294,7 +296,6 @@ test("waivability is decided by an enumerated kind set, not by how a kind is nam
   // decided this for any kind added later; this test is what makes a change to
   // the set deliberate.
   const waivableCases = [
-    ["demo_residue", () => { const t = profile(); t.store_url = "https://demo.29next.com/"; return [profile(), t]; }],
     ["target_missing", () => { const t = profile(); t.store_returns = ""; return [profile(), t]; }],
     ["mismatch", () => { const t = profile(); t.store_name = "Other Merchant"; return [profile(), t]; }],
   ];
@@ -307,6 +308,7 @@ test("waivability is decided by an enumerated kind set, not by how a kind is nam
   }
 
   const nonWaivableCases = [
+    ["demo_residue", () => { const t = profile(); t.store_url = "https://demo.29next.com/"; return [profile(), t]; }],
     ["spec_invalid_type", () => { const s = profile(); s.store_name = 123; return [s, profile()]; }],
     ["target_invalid_type", () => { const t = profile(); t.store_name = 123; return [profile(), t]; }],
     ["both_invalid_type", () => { const s = profile(); const t = profile(); s.store_name = 123; t.store_name = {}; return [s, t]; }],
@@ -324,11 +326,30 @@ test("waivability is decided by an enumerated kind set, not by how a kind is nam
   // cannot accept a divergence when part of the comparison is unreadable.
   const mixedSpec = profile();
   const mixedTarget = profile();
-  mixedTarget.store_url = "https://demo.29next.com/";
+  mixedTarget.store_returns = "";
   mixedTarget.store_name = 123;
   const mixed = evaluate(mixedSpec, mixedTarget);
   assert.equal(mixed.status, "blocked");
-  assert.ok(mixed.matrix.some((row) => row.kind === "demo_residue"));
+  assert.ok(mixed.matrix.some((row) => row.kind === "target_missing"));
   assert.ok(mixed.matrix.some((row) => row.kind === "target_invalid_type"));
   assert.equal(mixed.waivable, false);
+});
+
+test("demo residue is never waivable and the gate names the residue fields", () => {
+  const spec = profile();
+  const target = profile();
+  target.store_url = "https://demo.29next.com/";
+  target.store_phone = "+1 (888) 831-6810";
+  target.store_name = "Other Merchant";
+  const gate = evaluate(spec, target);
+  assert.equal(gate.status, "blocked");
+  assert.equal(gate.waivable, false);
+  assert.deepEqual(storeProfileDemoResidueFields(gate), ["store_url", "store_phone"]);
+  assert.match(gate.reason, /Starter demo residue in store_url, store_phone is not waivable/);
+  assert.equal(gate.required_actions.some((action) => action.id === "waive_checkpoint"), false);
+
+  const mismatchOnly = evaluate(spec, { ...profile(), store_name: "Other Merchant" });
+  assert.equal(mismatchOnly.waivable, true);
+  assert.deepEqual(storeProfileDemoResidueFields(mismatchOnly), []);
+  assert.doesNotMatch(mismatchOnly.reason, /demo residue/);
 });

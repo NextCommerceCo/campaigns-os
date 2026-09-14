@@ -196,8 +196,50 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
   succeeded one may not be re-sent. Endpoint: `/api/runs` (implemented; receives
   at the canonical remit scope).
 - **Durable status** — the local Run Record records `remit_attempted`,
-  `remit_ok`, and `error` so a dropped send is visible, not silent. No
-  background retry daemon.
+  `remit_ok`, `remit_error` and `remit_state` so a dropped send is visible,
+  not silent. No background retry daemon. The outcome is classified by what
+  the receiver answered, not by whether the transport threw:
+  - a parsed 2xx is `ok` (`stored`);
+  - a **409** is `ok` (`already_stored`): the receiver already holds this
+    `run_id`, which is the outcome the send was for — reached by an earlier
+    send whose answer was lost, or by a re-run. The body's error token does
+    not change this; 409 on this endpoint means exactly one thing;
+  - a 2xx whose body is not JSON is `ok` (`ok_unparsed_ack`) with
+    `remit_error` set to `Remit POST <status>: acknowledged with a body that
+    is not JSON: <excerpt>`, so the anomaly stays on the record;
+  - any other non-2xx is `failed` (`refused`) with `remit_error` `Remit POST
+    <status>: <statusText> <body>`; a transport failure (refused connection,
+    timeout, the proxy-base gate) is `failed` (`transport_error`).
+
+  The classification, the HTTP status, and the resolved base — as a kind,
+  `canonical` / `loopback` / `proxy`, never the host — travel in the
+  `run-record --json` summary under `remit` (`result`, `http_status`,
+  `base_kind`, `sent`, `preserved`) and in the text `Remit:` line; the Run
+  Record schema does not carry them. `result` is one of the five outcomes
+  above for a send this run made, `not_contacted` when the record on disk was
+  already `ok` and the receiver was not asked (below), or null when nothing was
+  sent and nothing is known (`--no-remit`, consent off).
+- **Re-runs never downgrade a durable outcome** — `run-record` is keyed on
+  `run_id`, and `run end`, the QA auto-end and the recovery action `next`
+  prints all go through it. Before writing, it reads the record already under
+  that id. A record whose remit is `ok` is final: it is neither re-sent (the
+  receiver would refuse it) nor rewritten (a reassembly is at best thinner
+  than what the session wrote, and would then disagree with the stored copy);
+  the command reports `written: false`, `remit.result: "not_contacted"`
+  (distinct from `already_stored`, which is a 409 the receiver answered),
+  `remit.sent: false`, and the text line `Remit: ok (already stored at the
+  receiver for this run id; not re-sent)`. A prior counts only when it is a
+  valid Run Record — the same validator that gates `writeRunRecord` — so a
+  file that merely says `remit_state: "ok"` is replaced like a corrupt one. A prior `failed` or `pending`
+  send is retried when the run may send, and carried forward unchanged
+  (`remit.preserved: true`) when it may not — `--no-remit` or consent off
+  over a failed remit does not file it as `skipped`. Only a `--no-write` run
+  reads nothing, because it writes and sends nothing.
+- **The stored copy states its outcome** — the record the receiver holds is,
+  by construction, one whose send landed, so the body sent carries
+  `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true` and the
+  endpoint. The local file carries the `pending` sentinel only between its
+  first write and the answer.
 - **Tenant-scoped** — the remit sends the packet's Campaigns API key (packet,
   then the packet-local CampaignSpec, then the declared `env:` source) as the
   `X-Campaign-Key` header. The receiver hashes it server-side into
@@ -208,6 +250,9 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
 - **Readable back** — `campaigns-os telemetry list --packet <json>` lists the
   tenant scope; `campaigns-os telemetry list` with `CAMPAIGN_OPS_ADMIN_KEY` set
   (or `--admin-key-env <VAR>`) lists cross-tenant, unscoped records included.
+  A 2xx is a listing only when its body carries `runs[]`: any other body (a
+  maintenance page, an intermediary's HTML) is an error naming the status and
+  an excerpt, and exits non-zero, rather than "showing 0 of 0 returned".
 - **Shape-checked before it leaves the machine** — a credential is validated,
   and its destination vetted, before a socket is opened:
   - The resolved campaign key must look like a campaign key: 8-256 characters
@@ -290,7 +335,13 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
 `--lifecycle-journal` on every command. A **run session** makes capture ambient:
 
 - `campaigns-os run start [--packet <p>]` mints one `run_id`, picks the
-  lifecycle journal, and writes `.campaign-runtime/run-session.json`.
+  lifecycle journal, and writes `.campaign-runtime/run-session.json`. With
+  `--packet` the session (and the managed `.gitignore` block) lands in the
+  packet's target repo — `assembly.target_repo` resolved from the packet's
+  directory, else that directory — whatever the cwd, the same root the
+  auto-opener behind `start` / `prepare-build` uses; without it, at cwd. A
+  packet that exists but does not parse is refused (no session is opened on a
+  guessed root); one not written yet roots on its own directory with a warning.
 - Every command then auto-discovers that session (walking up from cwd, or
   from the `--packet` it was handed) and shares its `run_id` + journal **with
   no per-command flags**. `start` / `prepare-build` / `build` take a
@@ -321,8 +372,9 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   local record to keep. It does not print a re-send command: `run-record
   --run-id` reassembles rather than reloads (see below), and the session whose
   attempt references the record carries is already cleared.
-- An explicit absolute `--packet` associates commands and `run status` with the
-  target campaign session even from the toolkit or another project directory.
+- An explicit `--packet` associates commands, `run status`, and `run end` with
+  the target campaign session even from the toolkit or another project
+  directory, and `run start --packet` opens it there.
   If cwd and packet resolve to different active sessions, the command fails
   with both run IDs instead of silently cross-writing lifecycle evidence.
 - `campaigns-os run end` remains the manual close path for non-QA or interrupted
@@ -330,8 +382,9 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
 - Sessions older than 12 hours are treated as stale and are not auto-discovered,
   so a later work session does not inherit an old `run_id` or lifecycle journal.
   A stale session is closed out, not abandoned: the next `start`,
-  `prepare-build`, or `build` at that `--target`, or `run start` / `run end` at
-  cwd, assembles its Run Record from the lifecycle journal (remit under the
+  `prepare-build`, or `build` at that `--target`, or `run start` / `run end`
+  (at the `--packet`'s target repo, else at cwd), assembles its Run Record
+  from the lifecycle journal (remit under the
   usual consent) and removes the file before opening a new session. A stale
   session whose packet is gone is cleared with a stderr note and no record.
   `run status` reports a stale file but never sweeps it.
@@ -389,23 +442,29 @@ newer broken one.
 | `remit_incomplete` | the required `run_record_remit_recovery` |
 
 A failed or never-finished remit is **not** a missing record, and must not be
-answered by minting a second one — that would fork the run's identity. A remit
-that failed left nothing stored under that `run_id`, so recovery re-runs
-`run-record` against the record already on disk and the send is the first one
-for that id:
+answered by minting a second one — that would fork the run's identity. Recovery
+re-runs `run-record` against the record already on disk:
 
 ```bash
 campaigns-os run-record --packet <packet> --run-id <existing-run-id> --json
 ```
 
-Read that command for what it is: it **reassembles** the record under that
-`run_id`, it does not reload and re-send the file already written. Anything the
-record held that came only from the run session — the QA attempt references a
-repaired run collects across several attempts — is gone once the session is
-cleared, so on a multi-attempt run this replaces the stored record with a
-thinner one and sends that. Re-sending the persisted record is not implemented.
-Until it is, treat the local file as the durable artifact and recover the remit
-only for a run whose record the current disk state can still reproduce.
+The receiver may or may not hold the id already (a send whose answer was lost
+after the store, say). Either answer closes the record: a 2xx stores it, and a
+409 is read as `already_stored` — `remit_state: ok` — so the recovery converges
+instead of stamping `failed` over the record and being demanded again. A record
+whose remit is already `ok` on disk is never re-sent and never rewritten by this
+command; it reports `not_contacted` and leaves the file as written.
+
+Read the command for what it is on a record that is not yet stored: it
+**reassembles** the record under that `run_id`, it does not reload and re-send
+the file already written. Anything the record held that came only from the run
+session — the QA attempt references a repaired run collects across several
+attempts — is gone once the session is cleared, so on a multi-attempt run this
+replaces the unsent record with a thinner one and sends that. Re-sending the
+persisted record is not implemented. Until it is, treat the local file as the
+durable artifact and recover the remit only for a run whose record the current
+disk state can still reproduce.
 
 An active run session still wins: with an ambient session open, `done` emits the
 required `run end` exactly as before, satisfied or not.

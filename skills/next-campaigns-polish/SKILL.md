@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-polish
-version: 1.1.0
+version: 1.1.1
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
@@ -12,7 +12,7 @@ Theme gate: `campaigns-os next polish` blocks when theme inspect found a
 generatable brand theme that is not yet applied to commerce pages. Do not work
 around the gate — apply the brand layer (`theme generate`, copy into campaign
 assets, load after `next-core.css`, record `report.theme`) or record an
-explicit waiver (`campaigns-os theme waive --packet <p> --reason "<why>"`).
+explicit waiver (`campaigns-os theme waive --packet <p> --reason "<why>" --waived-by "<named human>"`; placeholders are refused).
 
 Responsibilities:
 
