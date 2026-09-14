@@ -9,7 +9,7 @@
 // --out` elsewhere — exactly when a stage spelling the rule for itself drifts.
 // A leaf: node built-ins and the sidecar leaves only.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
 
@@ -47,6 +47,15 @@ function readContextForBinding(contextPath) {
   }
 }
 
+function samePath(left, right) {
+  if (resolve(left) === resolve(right)) return true;
+  try {
+    return realpathSync(left) === realpathSync(right);
+  } catch {
+    return false;
+  }
+}
+
 // The one resolver. `contextPath` / `reportPath` / `doctorOutPath` are the
 // operator's explicit choices, resolved by the caller from whichever flag it
 // owns: a string is used as given, `null` switches that sidecar off (no
@@ -59,6 +68,12 @@ function readContextForBinding(contextPath) {
 // legitimate (doctor's stage write-back must not restate its outcome into a
 // report it did not inspect), but a stage that never said which is how the QA
 // stage came to be recorded into a report `next` never reads. Say it.
+//
+// A context binds a report for the packet it names: prepare-build writes
+// `packet_path` beside `report_path`, and when two packets of one campaign
+// share a target repo the default context belongs to whichever ran last, so
+// a pointer from a context naming another packet is not followed. A context
+// naming no packet binds by location, as it always did.
 export function resolveCampaignWorkspace(packetPath, {
   packet = undefined,
   contextPath = undefined,
@@ -77,9 +92,11 @@ export function resolveCampaignWorkspace(packetPath, {
   const resolvedContextPath = contextPath === undefined ? defaults.contextPath : contextPath;
   const context = followContextPointer ? readContextForBinding(resolvedContextPath) : null;
   const recorded = typeof context?.report_path === "string" && context.report_path.trim() ? context.report_path.trim() : null;
+  const named = typeof context?.packet_path === "string" && context.packet_path.trim() ? context.packet_path.trim() : null;
+  const bound = recorded && (!named || samePath(resolve(targetRepo, named), absolutePacketPath));
   const resolvedReportPath = reportPath !== undefined
     ? reportPath
-    : recorded
+    : bound
       ? resolve(targetRepo, recorded)
       : defaults.reportPath;
   return {

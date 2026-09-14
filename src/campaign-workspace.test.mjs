@@ -119,6 +119,26 @@ test("explicit paths win, null switches a sidecar off, and a switched-off contex
   assert.equal(viaExplicit.reportPath, join(dir, "from-explicit.json"));
 }));
 
+test("a context naming another packet does not bind; one naming this packet or none does", () => withDir((dir) => {
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  const packet = { assembly: { target_repo: "." } };
+  mkdirSync(join(dir, ".campaign-runtime"));
+  const write = (context) => writeFileSync(join(dir, BUILD_CONTEXT_REL_PATH), JSON.stringify(context));
+  const bound = join(dir, "custom-report.json");
+
+  write({ packet_path: "campaign-runtime.build.json", report_path: "custom-report.json" });
+  assert.equal(resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true }).reportPath, bound, "names this packet");
+  write({ packet_path: "./campaign-runtime.build.json", report_path: "custom-report.json" });
+  assert.equal(resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true }).reportPath, bound, "spelled with ./");
+  write({ report_path: "custom-report.json" });
+  assert.equal(resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true }).reportPath, bound, "names no packet: binds by location");
+  write({ packet_path: "other-packet.json", report_path: "custom-report.json" });
+  assert.equal(resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true }).reportPath, join(dir, ASSEMBLY_REPORT_REL_PATH), "names another packet: not followed");
+  // An explicit report is never second-guessed by the context.
+  write({ packet_path: "other-packet.json", report_path: "custom-report.json" });
+  assert.equal(resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true, reportPath: join(dir, "r.json") }).reportPath, join(dir, "r.json"));
+}));
+
 test("a missing, malformed or pointer-less context leaves the default report bound", () => withDir((dir) => {
   const packetPath = join(dir, "campaign-runtime.build.json");
   const packet = { assembly: { target_repo: "." } };

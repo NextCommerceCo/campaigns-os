@@ -372,6 +372,7 @@ function resolvePacketCheckpointPreflight(args, {
   // not the default sidecar.
   const { targetRepo, reportPath } = resolveCampaignWorkspace(packetPath, {
     packet,
+    contextPath: stringArg(args.context) ? resolve(String(args.context)) : undefined,
     reportPath: stringArg(args.report) ? resolve(String(args.report)) : undefined,
     followContextPointer: true,
   });
@@ -682,11 +683,18 @@ function themeGateScopeSource(doctorScope, specScope) {
   return merged === doctorScope ? "doctor_derived_scope" : "doctor_derived_scope+spec_topologies";
 }
 
+// The sidecars live where the producers write them — under the target repo,
+// with the report the Build Context binds — never merely beside the packet.
 function loadRuntimeArtifact(packetPath, name) {
   if (!packetPath) return null;
-  const path = join(dirname(resolve(packetPath)), ".campaign-runtime", name);
-  if (!existsSync(path)) return null;
   try {
+    const workspace = resolveCampaignWorkspace(packetPath, { followContextPointer: true });
+    const path = {
+      "assembly-report.json": workspace.reportPath,
+      "build-context.json": workspace.contextPath,
+      "doctor-output.json": workspace.doctorOutPath,
+    }[name];
+    if (!path || !existsSync(path)) return null;
     return readJson(path);
   } catch {
     return null;
