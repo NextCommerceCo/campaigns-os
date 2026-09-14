@@ -29,13 +29,17 @@ Notable supported-surface changes are recorded here.
   (a test evaluates the exact serialised text in a fresh context, so a
   module-scope reference leaking into it fails CI instead of the page).
 - `browser-primary-cta` evidence carries `ignored_attributes`: the
-  route-shaped spellings seen on a candidate and not consulted
-  (`data-next-href`, `data-next-checkout-action`, and `data-next-url` on an
-  element that is not an SDK cart-entry control), per candidate and as a
-  page-level union. A failing verdict on a page spelled that way reads
-  `missing_route_cta (candidates carry route-shaped attributes the runner
-  does not consult: data-next-href)`, so a verdict that flipped after this
-  narrowing is distinguishable from a CTA that was removed.
+  route-shaped spellings seen and not consulted (`data-next-href`,
+  `data-next-checkout-action`, and `data-next-url` on an element that is not
+  an SDK cart-entry control), per listed candidate and as a page-level union
+  over every visible CTA-shaped element — including one the candidate rows
+  drop for having neither text nor route, and any past the eight-row cap, so
+  the union may name a spelling no listed row shows. Every verdict on a page
+  spelled that way, passing or failing, appends `(page carries route-shaped
+  attributes the runner does not consult: data-next-href)` to its `actual`,
+  so a verdict that flipped after this narrowing is distinguishable from a
+  CTA that was removed and a passing page still shows the spelling to
+  re-spell.
 - `docs/qa-and-test-orders.md` names the coupon selector vocabulary the
   runner actually reads.
 

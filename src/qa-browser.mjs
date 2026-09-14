@@ -979,8 +979,17 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
     }
   };
 
-  const candidates = Array.from(document.querySelectorAll(CTA_SELECTOR))
-    .filter(isVisible)
+  const visibleElements = Array.from(document.querySelectorAll(CTA_SELECTOR)).filter(isVisible);
+  // The page-level view of route-shaped spellings not consulted: every
+  // visible CTA-shaped element counts, including one the candidate rows below
+  // drop (no text and no route) and one past the candidate cap, because the
+  // question it answers is "is this page spelled with an undeclared route
+  // attribute", not "which listed candidate carries one". So the union may
+  // name an attribute no `candidates[]` row shows; the rows are the
+  // per-element detail for the listed candidates only.
+  const ignoredAttributes = Array.from(new Set(visibleElements.flatMap(ignoredAttributesOn))).sort();
+
+  const candidates = visibleElements
     .map((element) => {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -1024,17 +1033,15 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
         ? "cta_too_small"
         : "low_contrast";
 
-  const ignoredAttributes = Array.from(new Set(candidates.flatMap((candidate) => candidate.ignored_attributes))).sort();
-
   return {
     ok,
     reason,
     expected_url: routeUrl,
     primary,
     candidates: candidates.slice(0, 8),
-    // Every route-shaped attribute seen on a candidate and not consulted, so
-    // a missing-route verdict on a page spelled that way reads as a
-    // vocabulary gap, not as a removed CTA.
+    // Every route-shaped attribute seen on a visible CTA-shaped element and
+    // not consulted (see above), so a missing-route verdict on a page spelled
+    // that way reads as a vocabulary gap, not as a removed CTA.
     ignored_attributes: ignoredAttributes,
   };
 }
@@ -1042,8 +1049,11 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
 function primaryCtaAssertionFromEvidence(page, evidence) {
   const ok = evidence?.ok === true;
   const ignored = Array.isArray(evidence?.ignored_attributes) ? evidence.ignored_attributes.filter(Boolean) : [];
-  const reason = (evidence?.reason || "unknown")
-    + (!ok && ignored.length ? ` (candidates carry route-shaped attributes the runner does not consult: ${ignored.join(", ")})` : "");
+  // Named on every verdict the page earns, passing or not: a passing page
+  // spelled with an undeclared route attribute is still one an operator
+  // should re-spell before the fallback that carried it changes.
+  const ignoredHint = ignored.length ? ` (page carries route-shaped attributes the runner does not consult: ${ignored.join(", ")})` : "";
+  const reason = (evidence?.reason || "unknown") + ignoredHint;
   return assertion({
     id: `browser-primary-cta:${page.page_id}`,
     family: "browser-runtime",
@@ -1052,7 +1062,7 @@ function primaryCtaAssertionFromEvidence(page, evidence) {
     severity: ok ? undefined : SEVERITY.WARN,
     expected: "visible readable primary CTA linked to the expected next route",
     actual: ok
-      ? `CTA visible (${evidence.primary?.width || 0}x${evidence.primary?.height || 0}, contrast ${evidence.primary?.contrast_ratio || "n/a"})`
+      ? `CTA visible (${evidence.primary?.width || 0}x${evidence.primary?.height || 0}, contrast ${evidence.primary?.contrast_ratio || "n/a"})${ignoredHint}`
       : reason,
     evidence,
   });

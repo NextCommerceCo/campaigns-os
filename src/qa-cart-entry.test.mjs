@@ -208,11 +208,43 @@ test("a page whose only route-shaped spelling is undeclared reads as a vocabular
 
   const result = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "landing" }, evidence);
   assert.equal(result.status, "fail");
-  assert.equal(result.actual, "missing_route_cta (candidates carry route-shaped attributes the runner does not consult: data-next-href)");
+  assert.equal(result.actual, "missing_route_cta (page carries route-shaped attributes the runner does not consult: data-next-href)");
 
   // A page with no such spelling keeps the bare reason.
   const bare = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "landing" }, { ok: false, reason: "missing_route_cta", candidates: [], ignored_attributes: [] });
   assert.equal(bare.actual, "missing_route_cta");
+
+  // A passing page spelled that way still names the spelling.
+  const passing = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "landing" }, {
+    ok: true,
+    reason: "ok",
+    primary: { width: 180, height: 52, contrast_ratio: 12, readable: true, size_ok: true },
+    candidates: [],
+    ignored_attributes: ["data-next-checkout-action"],
+  });
+  assert.equal(passing.status, "pass");
+  assert.equal(passing.actual, "CTA visible (180x52, contrast 12) (page carries route-shaped attributes the runner does not consult: data-next-checkout-action)");
+});
+
+test("the page-level ignored_attributes union covers visible CTA-shaped elements the candidate rows do not list", () => {
+  const script = primaryCtaInspectionScript("https://campaign.example/checkout/");
+  // An element with an undeclared spelling and neither text nor a route is
+  // dropped from candidates[] (nothing to report about it as a CTA), and the
+  // ninth-and-later candidates fall past the cap; both still count on the page.
+  const filler = Array.from({ length: 8 }, (_, index) => ({ tag: "a", attrs: { href: `/other-${index}/` }, text: `Other ${index}`, href: `https://campaign.example/other-${index}/` }));
+  const context = pageContext({
+    base: "https://campaign.example/lp/",
+    elements: [
+      { tag: "div", attrs: { role: "button", "data-next-href": "/checkout/" }, text: "" },
+      ...filler,
+      { tag: "button", attrs: { "data-next-checkout-action": "go" }, text: "Continue" },
+    ],
+  });
+  const evidence = evaluateInPage(script, context);
+  assert.equal(evidence.reason, "missing_route_cta");
+  assert.equal(evidence.candidates.length, 8, "candidate rows are capped");
+  assert.ok(evidence.candidates.every((candidate) => candidate.ignored_attributes.length === 0), "no listed row carries the spellings");
+  assert.deepEqual(evidence.ignored_attributes, ["data-next-checkout-action", "data-next-href"]);
 });
 
 test("the entry step is the first rung of the ladder", () => {
