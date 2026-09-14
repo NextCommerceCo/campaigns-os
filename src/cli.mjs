@@ -82,6 +82,7 @@ import {
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace } from "./campaign-workspace.mjs";
+import { discoverQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
@@ -7389,18 +7390,14 @@ const RUN_RECORD_QA_DIGEST_LIMIT = 8;
 // Hash whatever QA verdict the report's qa stage currently points at, so a Run
 // Record can be checked against the evidence the report carries NOW rather than
 // against whatever it carried when the record was written.
+// Digests of the verdicts the report records, best-effort: an unreadable
+// hint contributes no digest, which fails open to "outdated" rather than to
+// a false match.
 function currentQaVerdictDigestsForReport(report, reportPath) {
   const digests = new Set();
-  for (const hint of qaVerdictPathHints(report)) {
+  for (const candidate of discoverQaVerdicts({ report, reportPath, withDigest: true })) {
     if (digests.size >= RUN_RECORD_QA_DIGEST_LIMIT) break;
-    try {
-      const candidate = reportPath ? resolveFromFile(reportPath, hint) : resolve(hint);
-      if (!candidate || !existsSync(candidate) || !statSync(candidate).isFile()) continue;
-      digests.add(sha256File(candidate));
-    } catch {
-      // best-effort: an unreadable hint simply contributes no digest, which
-      // fails open to "outdated" rather than to a false match.
-    }
+    if (candidate.source === "assembly_report" && candidate.sha256) digests.add(candidate.sha256);
   }
   return [...digests];
 }
@@ -8390,45 +8387,18 @@ function deployUrlFromReportOutputs(report) {
 // contents: entries are name-sorted, no mtimes, no clock, no cwd. A JSON
 // file only counts when its campaign_slug matches this campaign's identity,
 // so a neighbouring campaign's verdict never reads as ours.
+// This campaign's verdicts under the target repo, repo-relative (divergence
+// evidence must read the same wherever the repo sits on disk).
 function qaVerdictArtifactsForCampaign(packet, targetRepo) {
-  const identifiers = [...new Set([
-    optionalString(packet?.spec?.map_id),
-    normalizePublicRouteSlug(packet?.campaign?.public_route_slug),
-  ].filter(Boolean))];
-  if (!identifiers.length || !isNonEmptyString(targetRepo)) return [];
-  const found = [];
-  for (const identifier of identifiers) {
-    const dirPath = join(targetRepo, "qa-output", identifier);
-    let names = [];
-    try {
-      if (!existsSync(dirPath) || !statSync(dirPath).isDirectory()) continue;
-      names = readdirSync(dirPath, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-        .map((entry) => entry.name)
-        .sort();
-    } catch {
-      continue;
-    }
-    for (const name of names) {
-      try {
-        const verdict = readJson(join(dirPath, name));
-        if (!isObject(verdict)) continue;
-        const slug = optionalString(verdict.campaign_slug);
-        if (!slug || !identifiers.includes(slug)) continue;
-        found.push({
-          // Repo-relative on purpose: divergence evidence must be identical
-          // wherever the repo sits on disk (purity contract).
-          path: `qa-output/${identifier}/${name}`,
-          campaign_slug: slug,
-          verdict: optionalString(verdict.verdict),
-        });
-      } catch {
-        // Unreadable candidates are not verdict evidence.
-      }
-    }
-  }
-  found.sort((a, b) => a.path.localeCompare(b.path));
-  return found;
+  if (!isNonEmptyString(targetRepo)) return [];
+  return discoverQaVerdicts({ packet, roots: [targetRepo] })
+    .filter((candidate) => candidate.source === "qa_output" && candidate.identityMatch)
+    .map((candidate) => ({
+      path: candidate.repoRelPath,
+      campaign_slug: optionalString(candidate.verdict.campaign_slug),
+      verdict: optionalString(candidate.verdict.verdict),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 // Packet 03 (INV-5 first slice, EN-1): where the artifacts in the campaign
@@ -10281,123 +10251,27 @@ function artifactRefPath(kind, filePath, baseDir) {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+// The verdict a Run Record should carry when none was named: every candidate
+// the report records or the qa-output directories hold, minus any the QA
+// verdict receiver stamped `trusted: false` (an anonymous submission is
+// shape-valid but unattributed, and automatic inference must never pick one
+// up as this run's evidence; locally written verdicts never carry the field,
+// and an explicit --qa-verdict path bypasses inference and is honored as
+// given — see docs/qa-and-test-orders.md), ranked by identity score and
+// time. Best-effort: malformed side artifacts never make run-record fail.
 function inferQaVerdictPath({ packet, report, reportPath = null, targetRepo = null, baseDir = null } = {}) {
-  const candidates = [];
-  const add = (path, source) => {
-    if (!isNonEmptyString(path)) return;
-    const resolvedPath = resolve(path);
-    try {
-      if (!existsSync(resolvedPath) || !statSync(resolvedPath).isFile()) return;
-      const verdict = readJson(resolvedPath);
-      if (!isObject(verdict)) return;
-      candidates.push({
-        path: resolvedPath,
-        source,
-        verdict,
-        mtimeMs: statSync(resolvedPath).mtimeMs,
-      });
-    } catch {
-      // QA verdict inference is best-effort; malformed side artifacts should not
-      // make run-record fail.
-    }
-  };
-
-  const reportBasePath = reportPath || (targetRepo ? campaignSidecarPaths(targetRepo).reportPath : null);
-  for (const path of qaVerdictPathHints(report)) {
-    add(reportBasePath ? resolveFromFile(reportBasePath, path) : path, "assembly_report");
-  }
-
-  const roots = [...new Set([targetRepo, baseDir].filter(isNonEmptyString).map((path) => resolve(path)))];
-  const slugs = [...new Set([
-    optionalString(packet?.spec?.map_id),
-    optionalString(packet?.campaign?.public_route_slug),
-  ].filter(Boolean))];
-  for (const root of roots) {
-    for (const slug of slugs) {
-      addQaVerdictsFromDirectory(candidates, join(root, "qa-output", slug), "qa_output", packet);
-    }
-  }
-
-  // Trust segregation: a verdict stamped `trusted: false` by the QA verdict
-  // receiver (an anonymous submission) is shape-valid but unattributed, and
-  // automatic inference must never pick one up as this run's QA evidence.
-  // Locally emitted verdicts never carry the field — it is server-stamped —
-  // so only fetched untrusted records are excluded here. An operator's
-  // explicit --qa-verdict path bypasses inference and is honored as given.
-  // See docs/qa-and-test-orders.md (Verdict schema and trust semantics).
-  const eligible = candidates.filter((candidate) => candidate.verdict?.trusted !== false);
+  const eligible = discoverQaVerdicts({
+    packet,
+    report,
+    reportPath: reportPath || (targetRepo ? campaignSidecarPaths(targetRepo).reportPath : null),
+    roots: [targetRepo, baseDir],
+  }).filter((candidate) => candidate.verdict && candidate.trusted);
   eligible.sort((a, b) => {
     const scoreDelta = qaVerdictCandidateScore(b, packet) - qaVerdictCandidateScore(a, packet);
     if (scoreDelta !== 0) return scoreDelta;
     return qaVerdictCandidateTime(b) - qaVerdictCandidateTime(a);
   });
   return eligible[0]?.path || null;
-}
-
-function qaVerdictPathHints(report) {
-  const paths = [];
-  const visit = (value) => {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
-    }
-    if (isObject(value)) {
-      for (const [key, item] of Object.entries(value)) {
-        if (typeof item === "string" && /(?:path|file|verdict|output)$/i.test(key)) visit(item);
-        else if (key === "outputs" || key === "artifacts" || key === "qa") visit(item);
-      }
-      return;
-    }
-    if (typeof value === "string" && /\.json(?:[?#].*)?$/i.test(value.trim())) paths.push(value.trim());
-  };
-  visit(report?.qa || null);
-  visit(report?.stages?.qa || null);
-  return [...new Set(paths)];
-}
-
-function addQaVerdictsFromDirectory(candidates, dirPath, source, packet) {
-  try {
-    if (!existsSync(dirPath) || !statSync(dirPath).isDirectory()) return;
-    for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-      const path = join(dirPath, entry.name);
-      const verdict = readJson(path);
-      if (!isObject(verdict)) continue;
-      candidates.push({
-        path: resolve(path),
-        source,
-        verdict,
-        mtimeMs: statSync(path).mtimeMs,
-      });
-    }
-  } catch {
-    // Best-effort: unreadable qa-output directories should not block capture.
-  }
-}
-
-function qaVerdictCandidateScore(candidate, packet) {
-  const verdict = candidate?.verdict || {};
-  const expectedMapId = optionalString(packet?.spec?.map_id);
-  const expectedSlug = optionalString(packet?.campaign?.public_route_slug);
-  let score = 0;
-  if (expectedMapId && verdict.campaign_slug === expectedMapId) score += 100;
-  if (expectedSlug && verdict.campaign_slug === expectedSlug) score += 80;
-  if (verdict.schema_version === "1.0" || verdict.schema_version === "campaigns-os-qa-verdict/v0") score += 10;
-  const deployOrigins = [
-    optionalString(packet?.deploy?.preview_url),
-    optionalString(packet?.deploy?.production_url),
-  ].filter(Boolean);
-  const assertionUrls = Array.isArray(verdict.assertions)
-    ? verdict.assertions.map((assertion) => optionalString(assertion?.url)).filter(Boolean)
-    : [];
-  if (deployOrigins.some((origin) => assertionUrls.some((url) => url.startsWith(origin)))) score += 25;
-  return score;
-}
-
-function qaVerdictCandidateTime(candidate) {
-  const completedAt = Date.parse(candidate?.verdict?.completed_at || "");
-  if (Number.isFinite(completedAt)) return completedAt;
-  return Number(candidate?.mtimeMs || 0);
 }
 
 const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["auth-cookie", "no-remit", "no-write", "proxy-base"]);
