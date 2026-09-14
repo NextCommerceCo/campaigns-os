@@ -2,15 +2,11 @@ import { createHash } from "node:crypto";
 
 import {
   buildPolishCaptureIntegrity,
-<<<<<<< HEAD
   canonicalJson,
+  captureOrigin,
   documentResponseAcceptable,
   hiddenEagerSourceUnresolved,
   ledgerProblemCounts,
-||||||| 84ed62b
-=======
-  captureOrigin,
->>>>>>> origin/main
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,

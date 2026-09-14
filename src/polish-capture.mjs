@@ -494,13 +494,7 @@ function assessFinalDocumentResponse(prepared, {
     context_fingerprint: null,
     capture_origin: requestedOrigin,
     final_origin: finalOrigin,
-<<<<<<< HEAD
-    origin_matches_capture: originMatchesCapture(captureOrigin, finalOrigin),
-||||||| 84ed62b
-    origin_matches_capture: Boolean(captureOrigin && finalOrigin && captureOrigin === finalOrigin),
-=======
-    origin_matches_capture: Boolean(requestedOrigin && finalOrigin && requestedOrigin === finalOrigin),
->>>>>>> origin/main
+    origin_matches_capture: originMatchesCapture(requestedOrigin, finalOrigin),
   });
   if (!finalIdentity) {
     addProblemCount(problemCounts, "document_response_missing");
@@ -533,13 +527,7 @@ function assessFinalDocumentResponse(prepared, {
     context_fingerprint: record.document_context_fingerprint,
     capture_origin: requestedOrigin,
     final_origin: finalOrigin,
-<<<<<<< HEAD
-    origin_matches_capture: originMatchesCapture(captureOrigin, finalOrigin),
-||||||| 84ed62b
-    origin_matches_capture: Boolean(captureOrigin && finalOrigin && captureOrigin === finalOrigin),
-=======
-    origin_matches_capture: Boolean(requestedOrigin && finalOrigin && requestedOrigin === finalOrigin),
->>>>>>> origin/main
+    origin_matches_capture: originMatchesCapture(requestedOrigin, finalOrigin),
   };
   if (record?.failed === true || !documentResponseAcceptable(projection)) {
     addProblemCount(problemCounts, "document_response_error");
