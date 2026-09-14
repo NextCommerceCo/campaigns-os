@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { validateCommerceCatalog, validateExitPopContract, validateTemplateFamilyInventory } from "./cli.mjs";
+import { runPricingCssHideCheck, validateCommerceCatalog, validateExitPopContract, validateTemplateFamilyInventory } from "./cli.mjs";
 
 const codes = (issues) => issues.map((issue) => issue.code);
 
@@ -242,6 +242,64 @@ function runExitPop({ spec, targetHtml = null }) {
   }
   return { warnings, ready };
 }
+
+// A defective contract used to be found twice in one doctor run: the catalog
+// check reported it (as an error for an automatable family) and the pricing
+// CSS scan reported it again as a warning, each resolving the contract for
+// itself. The contract is resolved once per run now, its state recorded on
+// derived.brand_contract, and the defect reported by whichever check comes
+// first — once.
+test("a defective brand contract is resolved once and reported once across the catalog check and the pricing scan", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-tmpl-contract-"));
+  const prevPath = process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+  const prevRoot = process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+  try {
+    // A private family whose fragment declares another family: the loader
+    // throws family_mismatch, which is a defect, not "no contract".
+    const sourcesRoot = join(dir, "root");
+    mkdirSync(join(sourcesRoot, "acme-templates", "contracts"), { recursive: true });
+    writeFileSync(join(sourcesRoot, "acme-templates", "contracts", "acme.json"), JSON.stringify({
+      schema_version: "private-template-source-fragment/v0",
+      family: "not-acme",
+      catalog_family: {},
+      brand_contract: {},
+    }));
+    writeFileSync(join(dir, "private-template-sources.json"), JSON.stringify({
+      schema_version: "private-template-source/v0",
+      sources: { acme: { repo: "some-org/acme-templates", contract_path: "contracts/acme.json" } },
+    }));
+    process.env.PRIVATE_TEMPLATE_SOURCES_PATH = join(dir, "private-template-sources.json");
+    process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = sourcesRoot;
+    writeFileSync(join(dir, "catalog.json"), JSON.stringify({
+      agentContractVersion: 1,
+      sharedFrontmatterVocabulary: {},
+      families: { acme: { agentContract: { status: "agent-ready", frontmatter: {} } } },
+    }));
+    const packet = { assembly: { template_family: "acme", commerce_catalog: { required: true, family: "acme", path: "catalog.json" } } };
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    const derived = {};
+
+    validateCommerceCatalog(packet, join(dir, "packet.json"), { campaign: {}, funnels: [] }, errors, warnings, ready, derived, {});
+    runPricingCssHideCheck({ packet, derived, warnings, ready, report: null });
+
+    const findings = [...errors, ...warnings].filter((issue) => issue.code === "template_contract.brand_contract");
+    assert.equal(findings.length, 1, JSON.stringify(findings));
+    assert.equal(errors.includes(findings[0]), true, "reported at the catalog check's severity, which came first");
+    assert.equal(findings[0].detail.reason, "family_mismatch");
+    assert.deepEqual(derived.brand_contract, {
+      state: "defect",
+      family: "acme",
+      code: "family_mismatch",
+      detail: findings[0].detail.message,
+    });
+  } finally {
+    if (prevPath === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_PATH; else process.env.PRIVATE_TEMPLATE_SOURCES_PATH = prevPath;
+    if (prevRoot === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_ROOT; else process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = prevRoot;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("default exit-pop warns when CampaignSpec has no governed offer surface", () => {
   const { warnings } = runExitPop({
