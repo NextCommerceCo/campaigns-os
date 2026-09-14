@@ -2659,6 +2659,27 @@
         }
       ],
       "entry_sha256": "ba76140526420055a6bd621e74a947ce7bd6d36024baf5754aeaf3694cf29eb7"
+    },
+    {
+      "id": "RL-0069",
+      "sequence": 69,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.7",
+      "changelog_sha256": "b48a2da5caf44b7b2c750b48534700f776972e752173fe23d135a63832a0f583",
+      "agent_impact": "None. doctor --json, doctor's text report, next --json and next's text report are unchanged byte for byte (diffed against 1.27.0+agent.6 on a fixture with both polish gates blocked; only generated_at differs). Internal: the three doctor-side and three next-side gate-to-issue projections are one function, and the check that doctor's errors are only the polish gates reads the gate carried on each issue's detail instead of the polish. code prefix.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "gateIssue(kind, gate, { stage }) projects the theme, polish and polish-checkpoint gates into issues for doctor (the gate's own code, theme as a warning) and next (next.<stage>.<code>); the six inline projections call it; doctorErrorsAreOnlyPolishGate reads issue.detail.polish_gate / polish_checkpoint_gate rather than the code prefix. Codes and messages unchanged."
+        }
+      ],
+      "entry_sha256": "3e72ba5c194bb97db0f199ed4a2a93b5d9cd6e8a00baedab10e34703c3333547"
     }
   ]
 }

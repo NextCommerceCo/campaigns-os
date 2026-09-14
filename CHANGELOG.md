@@ -2,6 +2,24 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.7] - 2026-09-14
+
+### Fixed
+
+- One projection of a gate into an issue. `doctor` turned its theme, polish
+  and polish-checkpoint gates into findings in three inline blocks, and
+  `next` turned the same three gates into `next.<stage>.<code>` errors in
+  three more functions — six spellings of the same rule — while "doctor's
+  only errors are the polish gates" was decided by the `polish.` prefix of
+  the error codes in three places, so an error merely spelled like a polish
+  code would have counted and a polish-gate error under another code would
+  not. The projection now lives in one function (`gateIssue`), used by both
+  commands, and the polish decision reads the gate each issue carries on its
+  `detail`. No output changes: `doctor --json` and its text report, and
+  `next --json` and its text report (stage-less, `polish`, `qa`), were diffed
+  against the previous release on a fixture with both polish gates blocked
+  and are identical apart from the timestamp.
+
 ## [1.27.0+agent.6] - 2026-09-14
 
 ### Fixed
