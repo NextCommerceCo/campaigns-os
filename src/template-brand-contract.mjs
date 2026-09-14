@@ -264,6 +264,8 @@ export function demoAssetConfig(contract) {
   };
 }
 
+const SIMPLE_CLASS_SELECTOR = /^\.([A-Za-z0-9_-]+)$/;
+
 // Selectors/assets belonging to one payment method under the contract's
 // default_residue.payment_chrome, plus shared chrome assets (those naming no
 // contract method, e.g. upsell-payment-logos.svg) which count as implied residue
@@ -298,14 +300,14 @@ export function paymentMethodMarkupMatches(html, method, chrome = null) {
   const canonical = String(method || "").toLowerCase().replace(/[\s-]+/g, "_");
   if (!canonical) return [];
   const matches = [];
-  const spellings = [...new Set([canonical, canonical.replace(/_/g, "-")])].map(escapeRegExp).join("|");
+  const spellings = [...new Set([canonical, canonical.replace(/_/g, "-")])].map(escapeContractRegExp).join("|");
   const attribute = new RegExp(`data-next-payment-method\\s*=\\s*["'](?:${spellings})["']`, "i").exec(text);
   if (attribute) matches.push(attribute[0].replace(/\s+/g, ""));
   const artifacts = paymentChromeArtifacts(chrome, canonical);
   for (const selector of artifacts.selectors) {
-    const className = /^\.([A-Za-z0-9_-]+)$/.exec(selector)?.[1];
+    const className = SIMPLE_CLASS_SELECTOR.exec(selector)?.[1];
     if (!className) continue;
-    if (new RegExp(`class\\s*=\\s*["'](?:[^"']*\\s)?${escapeRegExp(className)}(?:\\s|["'])`, "i").test(text)) matches.push(selector);
+    if (new RegExp(`class\\s*=\\s*["'](?:[^"']*\\s)?${escapeContractRegExp(className)}(?:\\s|["'])`, "i").test(text)) matches.push(selector);
   }
   const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
   const token = compact(canonical);
@@ -317,9 +319,22 @@ export function paymentMethodMarkupMatches(html, method, chrome = null) {
   return [...new Set(matches)];
 }
 
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// The part of a method's payment_chrome a static HTML scan cannot attribute:
+// compound selectors (need a live DOM) and shared chrome assets naming no
+// method (need a fetch to attribute the mark). Browser QA covers both; doctor
+// names them so "no markup found" is never read as "nothing left to check".
+export function paymentMethodStaticScanGaps(chrome, method) {
+  const canonical = String(method || "").toLowerCase().replace(/[\s-]+/g, "_");
+  if (!canonical) return { compound_selectors: [], shared_assets: [] };
+  const artifacts = paymentChromeArtifacts(chrome, canonical);
+  const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+  const token = compact(canonical);
+  return {
+    compound_selectors: artifacts.selectors.filter((selector) => !SIMPLE_CLASS_SELECTOR.test(selector)),
+    shared_assets: artifacts.assets.filter((asset) => !compact(asset).includes(token)).map((asset) => asset.split("/").pop()).filter(Boolean),
+  };
 }
+
 
 // Pure: which demo-asset basenames are referenced in rendered HTML. Mirrors
 // referencedAssetBasenames in qa-browser (payment-chrome residue).

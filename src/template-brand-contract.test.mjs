@@ -10,6 +10,7 @@ import {
   normalizeCssColor,
   paymentChromeArtifacts,
   paymentMethodMarkupMatches,
+  paymentMethodStaticScanGaps,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
@@ -280,7 +281,7 @@ test("repeatedIconSrcs flags the four-identical-benefit-icons trap, not legitima
 test("paymentMethodMarkupMatches reads the SDK attribute, contract class selectors and method-named assets from static HTML", () => {
   const chrome = {
     methods: ["paypal", "klarna"],
-    selectors: [".payment-method__icon--paypal-logo", ".payment-method__icon--klarna-logo", "div.compound .selector"],
+    selectors: [".payment-method__icon--paypal-logo", ".payment-method__icon--klarna-logo", "div.checkout .payment-method--klarna"],
     assets: ["images/paypal-logo.svg", "images/klarna-logo.svg", "images/upsell-payment-logos.svg"],
   };
   const html = '<div data-next-payment-method="paypal" class="payment-method"><img class="x payment-method__icon--paypal-logo" src="/c/images/paypal-logo.svg"><img src="/c/images/upsell-payment-logos.svg"></div>';
@@ -293,11 +294,21 @@ test("paymentMethodMarkupMatches reads the SDK attribute, contract class selecto
   assert.deepEqual(paymentMethodMarkupMatches(html, "klarna", chrome), []);
   // Legacy hyphen spelling of the SDK attribute still counts.
   assert.deepEqual(paymentMethodMarkupMatches('<div data-next-payment-method="apple-pay">', "apple_pay", chrome), ['data-next-payment-method="apple-pay"']);
-  // A radio value or a class prefix is not the method's markup.
+  // A radio value, a class suffix or a class prefix is not the method's markup: the
+  // class name must follow the opening quote or a space and end at a space or quote.
   assert.deepEqual(paymentMethodMarkupMatches('<input value="paypal" name="payment_method"><i class="payment-method__icon--paypal-logox">', "paypal", chrome), []);
+  assert.deepEqual(paymentMethodMarkupMatches('<i class="x-payment-method__icon--paypal-logo">', "paypal", chrome), []);
+  assert.deepEqual(paymentMethodMarkupMatches('<i class="a x-payment-method__icon--paypal-logo b">', "paypal", chrome), []);
+  assert.deepEqual(paymentMethodMarkupMatches("<i class='a payment-method__icon--paypal-logo'>", "paypal", chrome), [".payment-method__icon--paypal-logo"]);
   assert.deepEqual(paymentMethodMarkupMatches("", "paypal", null), []);
   assert.deepEqual(paymentChromeArtifacts(chrome, "klarna"), {
-    selectors: [".payment-method__icon--klarna-logo"],
+    selectors: [".payment-method__icon--klarna-logo", "div.checkout .payment-method--klarna"],
     assets: ["images/klarna-logo.svg", "images/upsell-payment-logos.svg"],
   });
+  // What the static scan leaves to browser QA: compound selectors and shared chrome assets.
+  assert.deepEqual(paymentMethodStaticScanGaps(chrome, "klarna"), {
+    compound_selectors: ["div.checkout .payment-method--klarna"],
+    shared_assets: ["upsell-payment-logos.svg"],
+  });
+  assert.deepEqual(paymentMethodStaticScanGaps(null, "klarna"), { compound_selectors: [], shared_assets: [] });
 });

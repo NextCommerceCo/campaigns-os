@@ -87,7 +87,10 @@ test("a built checkout with no paypal/klarna markup silences the default-on warn
     '<form data-next-checkout><fieldset><label><input type="radio" name="payment_method" value="card"> Card</label></fieldset></form>',
     ({ warnings, ready }) => {
       assert.equal(codes(warnings).includes("spec.store_profile.payment_methods_default_on"), false);
-      assert.ok(ready.some((note) => note.includes("Built checkout carries no paypal, klarna payment-method markup")));
+      const note = ready.find((entry) => entry.includes("Built checkout carries no paypal, klarna payment-method markup"));
+      assert.ok(note);
+      // The shared chrome strip names no method: the static scan cannot attribute it, so the note says browser QA still checks it.
+      assert.match(note, /; left to browser QA: shared chrome asset upsell-payment-logos\.svg$/);
     },
   );
 });
@@ -108,6 +111,7 @@ test("a built checkout that still renders an unsupported method warns from the b
       assert.ok(warning.detail.pages[0].markers.includes('data-next-payment-method="klarna"'));
       assert.ok(warning.detail.pages[0].markers.includes(".payment-method__icon--klarna-logo"));
       assert.ok(warning.detail.pages[0].markers.includes("klarna-logo.svg"));
+      assert.deepEqual(warning.detail.static_scan_gaps, { compound_selectors: [], shared_assets: ["upsell-payment-logos.svg"] });
     },
   );
 });

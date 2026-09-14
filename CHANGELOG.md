@@ -465,13 +465,19 @@ Notable supported-surface changes are recorded here.
   and its method-named chrome assets, the same markers browser QA's
   template-residue gate keys on — and stays silent when none shipped,
   adding the ready note `Built checkout carries no paypal, klarna
-  payment-method markup (_site/<slug>/checkout/index.html)`. When the
-  markup did ship, the warning keeps its code but states the built evidence:
+  payment-method markup (_site/<slug>/checkout/index.html); left to browser
+  QA: shared chrome asset upsell-payment-logos.svg`. The clause after the
+  semicolon names what a static scan cannot attribute — the family's shared
+  chrome assets that name no method, and any compound selectors — so the
+  note is never read as "nothing left for browser QA to check"; it is
+  omitted when the contract leaves no such gap. When the markup did ship,
+  the warning keeps its code but states the built evidence:
   `Built checkout still renders paypal, which the CampaignSpec does not list
   …: _site/<slug>/checkout/index.html: paypal
   (data-next-payment-method="paypal", .payment-method__icon--paypal-logo,
-  paypal-logo.svg)`, with `detail.basis: "built_output"` and one
-  `detail.pages[]` entry per page and method carrying the markers found.
+  paypal-logo.svg)`, with `detail.basis: "built_output"`, one
+  `detail.pages[]` entry per page and method carrying the markers found,
+  and `detail.static_scan_gaps { compound_selectors[], shared_assets[] }`.
   Severity is unchanged (a warning; the QA residue gate is the blocker).
 - The pre-build repair text is now correct for the starter-template
   families. Every family's checkout page calls
@@ -487,10 +493,11 @@ Notable supported-surface changes are recorded here.
 - The per-method partition of a family's `default_residue.payment_chrome`
   (selectors and assets, shared chrome counting for every method) now lives
   once in `src/template-brand-contract.mjs` as `paymentChromeArtifacts`;
-  browser QA's `methodPaymentArtifacts` delegates to it, and the new static
+  browser QA's `methodPaymentArtifacts` delegates to it, the new static
   matcher `paymentMethodMarkupMatches(html, method, chrome)` is what doctor
-  reads the built checkout with. Browser QA's residue assertions are
-  unchanged.
+  reads the built checkout with, and `paymentMethodStaticScanGaps(chrome,
+  method)` names the compound selectors and shared assets that matcher
+  leaves to browser QA. Browser QA's residue assertions are unchanged.
 
 ## [1.27.0] - 2026-09-13
 

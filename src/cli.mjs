@@ -146,6 +146,7 @@ import {
   demoAssetConfig,
   findForbiddenPriceHides,
   paymentMethodMarkupMatches,
+  paymentMethodStaticScanGaps,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   templateBrandContractPath,
@@ -4131,8 +4132,23 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready, { packet
     }
   }
   const builtFiles = [...new Set(builtCheckouts.map((built) => built.file))].join(", ");
+  // What the static scan could not attribute (compound selectors, shared
+  // chrome assets) stays with browser QA; name it so "no markup" is never
+  // read as "nothing left to check".
+  const gaps = { compound_selectors: [], shared_assets: [] };
+  for (const method of unsupportedDefaults) {
+    const methodGaps = paymentMethodStaticScanGaps(chrome, method);
+    gaps.compound_selectors.push(...methodGaps.compound_selectors);
+    gaps.shared_assets.push(...methodGaps.shared_assets);
+  }
+  gaps.compound_selectors = [...new Set(gaps.compound_selectors)];
+  gaps.shared_assets = [...new Set(gaps.shared_assets)];
+  const gapClauses = [];
+  if (gaps.shared_assets.length) gapClauses.push(`shared chrome asset${gaps.shared_assets.length > 1 ? "s" : ""} ${gaps.shared_assets.join(", ")}`);
+  if (gaps.compound_selectors.length) gapClauses.push(`compound selector${gaps.compound_selectors.length > 1 ? "s" : ""} ${gaps.compound_selectors.join(", ")}`);
+  const gapNote = gapClauses.length ? `; left to browser QA: ${gapClauses.join(" and ")}` : "";
   if (shipped.length === 0) {
-    ready.push(`Built checkout carries no ${unsupportedDefaults.join(", ")} payment-method markup (${builtFiles})`);
+    ready.push(`Built checkout carries no ${unsupportedDefaults.join(", ")} payment-method markup (${builtFiles})${gapNote}`);
     return;
   }
   const shippedMethods = [...new Set(shipped.map((hit) => hit.method))];
@@ -4147,6 +4163,7 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready, { packet
       template_family: isNonEmptyString(family) ? family : null,
       basis: "built_output",
       pages: shipped,
+      static_scan_gaps: gaps,
       repair: {
         owner: "operator",
         action: `Pass ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call, or add the method(s) to the CampaignSpec, then rebuild.`,
