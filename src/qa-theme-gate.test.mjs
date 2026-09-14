@@ -742,6 +742,33 @@ test("the doctor scope is read from the target repo for a packet kept elsewhere"
   }
 });
 
+test("an unreadable packet costs the target-repo resolution, not the sidecar read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-theme-gate-"));
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  writeFileSync(packetPath, "{ not json");
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  writeFileSync(join(dir, ".campaign-runtime", "doctor-output.json"), JSON.stringify({ derived: { scope: { mode: "full", built_pages: [
+    { page_id: "checkout", type: "checkout", role: "runtime" },
+    { page_id: "upsell", type: "upsell", role: "runtime" },
+    { page_id: "upsell-2", type: "upsell", role: "runtime" },
+    { page_id: "upsell-3", type: "upsell", role: "runtime" },
+    { page_id: "upsell-4", type: "upsell", role: "runtime" },
+    { page_id: "upsell-5", type: "upsell", role: "runtime" },
+    { page_id: "receipt", type: "thankyou", role: "runtime" },
+  ] } } }));
+  try {
+    const gate = resolveThemeGate({
+      packetPath,
+      topologies: renewaliftTopologies,
+      waive: null,
+      report: { theme: { status: "applied", load_order: "after-next-core" } },
+    });
+    assert.equal(gate.scope_source, "doctor_derived_scope", "the sidecar beside the packet is still read");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("without doctor output the gate still reads the spec topologies, as before", () => {
   const gate = resolveThemeGate({
     packetPath: null,

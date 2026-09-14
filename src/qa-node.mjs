@@ -684,11 +684,20 @@ function themeGateScopeSource(doctorScope, specScope) {
 }
 
 // The sidecars live where the producers write them — under the target repo,
-// with the report the Build Context binds — never merely beside the packet.
+// with the report the Build Context binds — never merely beside the packet. A
+// packet that cannot be read at this moment costs the target-repo resolution,
+// not the read: the workspace then falls back to the packet's directory, which
+// is what this reader always used.
 function loadRuntimeArtifact(packetPath, name) {
   if (!packetPath) return null;
   try {
-    const workspace = resolveCampaignWorkspace(packetPath, { followContextPointer: true });
+    let packet = null;
+    try {
+      packet = readJson(packetPath);
+    } catch {
+      packet = null;
+    }
+    const workspace = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true });
     const path = {
       "assembly-report.json": workspace.reportPath,
       "build-context.json": workspace.contextPath,

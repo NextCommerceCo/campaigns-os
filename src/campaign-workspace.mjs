@@ -47,13 +47,22 @@ function readContextForBinding(contextPath) {
   }
 }
 
+// The same file: equal once resolved, or both present on disk and one file
+// behind any symlinks. Two differently spelled paths that do not both exist
+// cannot be shown to be one file, and are not treated as one.
 function samePath(left, right) {
-  if (resolve(left) === resolve(right)) return true;
-  try {
-    return realpathSync(left) === realpathSync(right);
-  } catch {
-    return false;
-  }
+  const resolvedLeft = resolve(left);
+  const resolvedRight = resolve(right);
+  if (resolvedLeft === resolvedRight) return true;
+  const real = (path) => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return null;
+    }
+  };
+  const realLeft = real(resolvedLeft);
+  return realLeft !== null && realLeft === real(resolvedRight);
 }
 
 // The one resolver. `contextPath` / `reportPath` / `doctorOutPath` are the
