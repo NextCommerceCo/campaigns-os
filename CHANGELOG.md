@@ -2,6 +2,58 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.22] - 2026-09-14
+
+### Fixed
+
+- Doctor's `spec.store_profile.payment_methods_default_on` warning now reads
+  the built checkout. The check compared the CampaignSpec's
+  `available_payment_methods` / `available_express_payment_methods` against
+  the four methods a starter-template checkout renders by default (paypal,
+  klarna, apple_pay, google_pay) and warned whenever one was absent — before
+  a build, after a build that shipped none of them, and after every rebuild,
+  clearing only when the spec added the method. Once the spec's checkout
+  page exists under `_site/<public_route_slug>/`, doctor now scans that
+  rendered page for each unsupported method's markup — the SDK-owned
+  `data-next-payment-method="<method>"` attribute the payment-methods
+  include renders, the template family's `payment_chrome` class selectors
+  and its method-named chrome assets, the same markers browser QA's
+  template-residue gate keys on — and stays silent when none shipped,
+  adding the ready note `Built checkout carries no paypal, klarna
+  payment-method markup (_site/<slug>/checkout/index.html); left to browser
+  QA: shared chrome asset upsell-payment-logos.svg`. The clause after the
+  semicolon names what a static scan cannot attribute — the family's shared
+  chrome assets that name no method, and any compound selectors — so the
+  note is never read as "nothing left for browser QA to check"; it is
+  omitted when the contract leaves no such gap. When the markup did ship,
+  the warning keeps its code but states the built evidence:
+  `Built checkout still renders paypal, which the CampaignSpec does not list
+  …: _site/<slug>/checkout/index.html: paypal
+  (data-next-payment-method="paypal", .payment-method__icon--paypal-logo,
+  paypal-logo.svg)`, with `detail.basis: "built_output"`, one
+  `detail.pages[]` entry per page and method carrying the markers found,
+  and `detail.static_scan_gaps { compound_selectors[], shared_assets[] }`.
+  Severity is unchanged (a warning; the QA residue gate is the blocker).
+- The pre-build repair text is now correct for the starter-template
+  families. Every family's checkout page calls
+  `{% campaign_include 'payment-methods.html' %}` with no arguments and the
+  include defaults `show_<method>` to true, so there were never `show_*`
+  arguments to remove. The warning now says to pass
+  `show_paypal=false show_klarna=false` (the absent methods) on that include
+  call in the named family's checkout page, quotes the resulting include
+  call, and carries `detail.basis: "spec_only"`, `detail.methods[]`,
+  `detail.template_family` and a `detail.repair` object
+  (`owner`, `action`, `include_call`). The old message was
+  `… remove the show_* arg(s) from the checkout payment-methods include …`.
+- The per-method partition of a family's `default_residue.payment_chrome`
+  (selectors and assets, shared chrome counting for every method) now lives
+  once in `src/template-brand-contract.mjs` as `paymentChromeArtifacts`;
+  browser QA's `methodPaymentArtifacts` delegates to it, the new static
+  matcher `paymentMethodMarkupMatches(html, method, chrome)` is what doctor
+  reads the built checkout with, and `paymentMethodStaticScanGaps(chrome,
+  method)` names the compound selectors and shared assets that matcher
+  leaves to browser QA. Browser QA's residue assertions are unchanged.
+
 ## [1.27.0+agent.21] - 2026-09-14
 
 ### Fixed
@@ -527,57 +579,6 @@ Notable supported-surface changes are recorded here.
   `--json`), the persisted `page_load` evidence and the doctor sidecar are
   byte-identical.
 
-## [1.27.0+agent.23] - 2026-09-14
-
-### Fixed
-
-- Doctor's `spec.store_profile.payment_methods_default_on` warning now reads
-  the built checkout. The check compared the CampaignSpec's
-  `available_payment_methods` / `available_express_payment_methods` against
-  the four methods a starter-template checkout renders by default (paypal,
-  klarna, apple_pay, google_pay) and warned whenever one was absent — before
-  a build, after a build that shipped none of them, and after every rebuild,
-  clearing only when the spec added the method. Once the spec's checkout
-  page exists under `_site/<public_route_slug>/`, doctor now scans that
-  rendered page for each unsupported method's markup — the SDK-owned
-  `data-next-payment-method="<method>"` attribute the payment-methods
-  include renders, the template family's `payment_chrome` class selectors
-  and its method-named chrome assets, the same markers browser QA's
-  template-residue gate keys on — and stays silent when none shipped,
-  adding the ready note `Built checkout carries no paypal, klarna
-  payment-method markup (_site/<slug>/checkout/index.html); left to browser
-  QA: shared chrome asset upsell-payment-logos.svg`. The clause after the
-  semicolon names what a static scan cannot attribute — the family's shared
-  chrome assets that name no method, and any compound selectors — so the
-  note is never read as "nothing left for browser QA to check"; it is
-  omitted when the contract leaves no such gap. When the markup did ship,
-  the warning keeps its code but states the built evidence:
-  `Built checkout still renders paypal, which the CampaignSpec does not list
-  …: _site/<slug>/checkout/index.html: paypal
-  (data-next-payment-method="paypal", .payment-method__icon--paypal-logo,
-  paypal-logo.svg)`, with `detail.basis: "built_output"`, one
-  `detail.pages[]` entry per page and method carrying the markers found,
-  and `detail.static_scan_gaps { compound_selectors[], shared_assets[] }`.
-  Severity is unchanged (a warning; the QA residue gate is the blocker).
-- The pre-build repair text is now correct for the starter-template
-  families. Every family's checkout page calls
-  `{% campaign_include 'payment-methods.html' %}` with no arguments and the
-  include defaults `show_<method>` to true, so there were never `show_*`
-  arguments to remove. The warning now says to pass
-  `show_paypal=false show_klarna=false` (the absent methods) on that include
-  call in the named family's checkout page, quotes the resulting include
-  call, and carries `detail.basis: "spec_only"`, `detail.methods[]`,
-  `detail.template_family` and a `detail.repair` object
-  (`owner`, `action`, `include_call`). The old message was
-  `… remove the show_* arg(s) from the checkout payment-methods include …`.
-- The per-method partition of a family's `default_residue.payment_chrome`
-  (selectors and assets, shared chrome counting for every method) now lives
-  once in `src/template-brand-contract.mjs` as `paymentChromeArtifacts`;
-  browser QA's `methodPaymentArtifacts` delegates to it, the new static
-  matcher `paymentMethodMarkupMatches(html, method, chrome)` is what doctor
-  reads the built checkout with, and `paymentMethodStaticScanGaps(chrome,
-  method)` names the compound selectors and shared assets that matcher
-  leaves to browser QA. Browser QA's residue assertions are unchanged.
 ## [1.27.0+agent.19] - 2026-09-14
 
 ### Fixed
