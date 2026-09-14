@@ -85,6 +85,8 @@ import {
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import { canonicalPath, sameFile } from "./fs-identity.mjs";
+import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
@@ -270,14 +272,12 @@ const PROOF_POLICY_REQUIRED_FIELDS = Object.freeze([
   "operator_approval_state",
 ]);
 
-// Default proxy base for `--map-id` spec retrieval. The Map Builder
-// (campaign-map.nextcommerce.com) is fronted by a backend service that
-// exposes `/api/spec/<map-id>` returning the canonical saved CampaignSpec.
-// Override via `--proxy-base` for staging environments or a local backend.
-// The same flag aims the credential-bearing rails (remit, verdict publish,
-// `telemetry list`), and those require https unless the host is loopback —
-// see assertSecureProxyBase in src/remit.mjs.
-const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
+// `--proxy-base` overrides DEFAULT_PROXY_BASE (src/spec-fetch.mjs) for
+// staging environments or a local backend. The same flag aims the
+// credential-bearing rails (remit, verdict publish, `telemetry list`), and
+// those require https unless the host is loopback — see assertSecureProxyBase
+// in src/remit.mjs.
+
 
 const KNOWN_TEMPLATE_FAMILIES = new Set([
   "undecided",
@@ -548,7 +548,7 @@ function ambientRunSession(args = {}) {
     const packetArg = optionalString(args.packet);
     if (!packetArg) return cwdSession;
 
-    const packetPath = canonicalExistingPath(resolve(packetArg));
+    const packetPath = canonicalPath(packetArg);
     const candidateRoots = new Set([dirname(packetPath)]);
     try {
       const packet = readJson(packetPath);
@@ -562,7 +562,7 @@ function ambientRunSession(args = {}) {
     const targetSessions = [];
     for (const root of candidateRoots) {
       const found = findRunSession(root);
-      if (found && !targetSessions.some((entry) => canonicalExistingPath(entry.path) === canonicalExistingPath(found.path))) targetSessions.push(found);
+      if (found && !targetSessions.some((entry) => sameFile(entry.path, found.path))) targetSessions.push(found);
     }
     if (targetSessions.length > 1) {
       throw new Error(`Conflicting active run sessions resolve from packet ${packetPath}: ${targetSessions.map((entry) => entry.session.run_id).join(", ")}. End the stale or wrong session before continuing.`);
@@ -572,7 +572,7 @@ function ambientRunSession(args = {}) {
     if (binding && !binding.same) {
       throw new Error(`Conflicting active run session ${targetSession.session.run_id} is bound to ${binding.boundPacket}, not packet ${packetPath}. End it before continuing.`);
     }
-    if (cwdSession && targetSession && canonicalExistingPath(cwdSession.path) !== canonicalExistingPath(targetSession.path)) {
+    if (cwdSession && targetSession && !sameFile(cwdSession.path, targetSession.path)) {
       throw new Error(`Conflicting active run sessions: cwd selects ${cwdSession.session.run_id}, while packet ${packetPath} selects ${targetSession.session.run_id}. End the wrong session before continuing.`);
     }
     if (cwdSession && !targetSession) {
@@ -585,13 +585,6 @@ function ambientRunSession(args = {}) {
   }
 }
 
-function canonicalExistingPath(path) {
-  try {
-    return realpathSync(path);
-  } catch {
-    return resolve(path);
-  }
-}
 
 // Telemetry is ambient by default: `start`/`prepare-build` open the run
 // session themselves (in the TARGET repo, where the build happens), arm the
@@ -1106,53 +1099,6 @@ function writeJson(path, value) {
   writeFileSync(resolve(path), `${JSON.stringify(value, null, 2)}\n`);
 }
 
-/**
- * Fetch a CampaignSpec by Map ID from the proxy Worker.
- *
- * The Map Builder portal at campaign-map.nextcommerce.com is fronted by
- * a backend service that persists saved specs and exposes them via
- * GET /api/spec/<map-id>. Response shape is
- * { ok: true, data: <spec> } or { ok: false, error: <message> } on a
- * 200 with a logical failure.
- *
- * `fetchImpl` is parameterized for tests so a local mock server can
- * stand in for the deployed Worker.
- *
- * @param {string} mapId — saved Map Builder identity (e.g. "veyra-v1-knp4")
- * @param {object} [opts]
- * @param {string} [opts.proxyBase] — proxy origin without trailing slash
- * @param {Function} [opts.fetchImpl] — fetch shim for testing
- * @returns {Promise<object>} parsed CampaignSpec
- */
-async function fetchSpecByMapId(mapId, opts = {}) {
-  const trimmed = String(mapId || "").trim();
-  if (!trimmed) throw new Error("fetchSpecByMapId: mapId is required.");
-  const base = (opts.proxyBase || DEFAULT_PROXY_BASE).replace(/\/+$/, "");
-  const url = `${base}/api/spec/${encodeURIComponent(trimmed)}`;
-  const fetchImpl = opts.fetchImpl || globalThis.fetch;
-  if (typeof fetchImpl !== "function") {
-    throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
-  }
-  let res;
-  try {
-    res = await fetchImpl(url, { headers: { Accept: "application/json" } });
-  } catch (error) {
-    throw new Error(`Spec fetch network error: ${error.message} (${url})`);
-  }
-  if (!res.ok) {
-    throw new Error(`Spec fetch failed: ${res.status} ${res.statusText} (${url})`);
-  }
-  let body;
-  try {
-    body = await res.json();
-  } catch (error) {
-    throw new Error(`Spec fetch returned invalid JSON: ${error.message} (${url})`);
-  }
-  if (!body || body.ok === false || body.data == null) {
-    throw new Error(`Spec fetch returned ok=false: ${body?.error || "unknown error"} (${url})`);
-  }
-  return body.data;
-}
 
 /**
  * Sanitize a Map ID for use as a cache filename. Map IDs are normally
@@ -1227,8 +1173,12 @@ function relFromFile(filePath, targetPath) {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+// Portable output rebases every path onto the output base as the filesystem
+// knows both (real paths when they exist), so a target reached through a
+// symlinked checkout and a sidecar recorded by its real path relativize to
+// `./…`, not to a chain of `../` that names the original machine.
 function relFromDir(dirPath, targetPath) {
-  const rel = relative(resolve(dirPath), resolve(targetPath));
+  const rel = relative(canonicalPath(dirPath), canonicalPath(targetPath));
   if (!rel) return ".";
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
@@ -2732,7 +2682,7 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     // Restate the outcome only into the report the inspection actually read.
     const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
     const inspectedIsTarget = !inspectedReportPath
-      || canonicalExistingPath(resolve(dirname(packetPath), inspectedReportPath)) === canonicalExistingPath(workspace.reportPath);
+      || sameFile(resolve(dirname(packetPath), inspectedReportPath), workspace.reportPath);
     // The sidecar is this inspection's result, written whether or not the
     // report gained a new chapter (a re-run restating the outcome already on
     // disk leaves the report's bytes, and every digest of them, alone). A
@@ -8849,9 +8799,6 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
     ...(qaNeedsUrl ? ["qa"] : []),
   ];
   const owners = DOCTOR_NEXT_STAGE_OWNERS[picked.stage];
-  // An explicit --context / --report is carried into the recommended
-  // command, so the recovery reads the same artifacts the recommendation did.
-
   // prepare-build is not a `next <stage>` argument: the stage-less `next`
   // is what prints the recovery actions for it, and it is also the right
   // call after a doctor-blocked repair or at done.
@@ -9976,7 +9923,7 @@ function runSessionTextLines(result) {
 // see. Null without --packet.
 function runSessionPacketPath(args) {
   const packetArg = optionalString(args.packet);
-  return packetArg ? canonicalExistingPath(resolve(packetArg)) : null;
+  return packetArg ? canonicalPath(packetArg) : null;
 }
 
 // The project a `run start` / `run end` acts on. With --packet it is the
@@ -10400,16 +10347,16 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (qaVerdictExists) qaAttemptPaths.push(qaVerdictPath);
   const seenQaAttempts = new Set();
   for (const attemptPath of qaAttemptPaths) {
-    const canonicalPath = canonicalExistingPath(attemptPath);
-    if (seenQaAttempts.has(canonicalPath) || !existsSync(canonicalPath)) continue;
-    seenQaAttempts.add(canonicalPath);
+    const attempt = canonicalPath(attemptPath);
+    if (seenQaAttempts.has(attempt) || !existsSync(attempt)) continue;
+    seenQaAttempts.add(attempt);
     let schemaVersion = null;
     try {
-      schemaVersion = optionalString(readJson(canonicalPath)?.schema_version);
+      schemaVersion = optionalString(readJson(attempt)?.schema_version);
     } catch {
       // Artifact capture is best-effort; a malformed attempt remains hashable.
     }
-    artifacts.push(runRecordArtifactRef("qa_verdict", canonicalPath, schemaVersion, baseDir));
+    artifacts.push(runRecordArtifactRef("qa_verdict", attempt, schemaVersion, baseDir));
   }
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
@@ -10676,8 +10623,9 @@ function runRecordArtifactRef(kind, filePath, schemaVersion, baseDir) {
 }
 
 function artifactRefPath(kind, filePath, baseDir) {
-  const base = canonicalExistingPath(resolve(baseDir));
-  const fullPath = canonicalExistingPath(resolve(filePath));
+  const base = canonicalPath(baseDir);
+  const fullPath = canonicalPath(filePath);
+
   const rel = relative(base, fullPath);
   if (!rel) return ".";
   if (rel.startsWith("..") || isAbsolute(rel)) return `external:${kind}`;

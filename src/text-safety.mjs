@@ -6,13 +6,14 @@
 // loader message) into its own single-line notice can flatten them the same
 // way instead of reimplementing the escape set and drifting from it.
 
-// One line, no control characters. The operator notices these values land in
-// are single-line by construction, and a run id or a path carrying a newline, a
-// carriage return, or an ANSI escape could split a notice, overwrite it, or
-// dress a fabricated line up as toolkit output. Neither value is
-// toolkit-authored: the path comes from a packet-derived target directory and
-// the id can be handed in with --run-id. Replaced, never dropped, so a mangled
-// value stays visible as mangled rather than silently shortening the message.
+// One line, no control characters. These values land in operator notices
+// that are single-line by construction, so a run id or a path carrying a
+// newline, a carriage return, or an ANSI escape could split a notice,
+// overwrite it, or dress a fabricated line up as toolkit output. Neither value
+// is toolkit-authored: the path comes from a packet-derived target directory
+// and the id can be handed in with --run-id. Replaced, never dropped, so a
+// mangled value stays visible as mangled rather than silently shortening the
+// message.
 export function singleLineField(value, fallback = "") {
   const raw = typeof value === "string" ? value : value == null ? "" : String(value);
   if (!raw) return fallback;
@@ -47,8 +48,15 @@ export const ADVISORY_DETAIL_MAX = 300;
 export function singleLineDetail(detail, max = ADVISORY_DETAIL_MAX) {
   const flattened = singleLineFragment(detail).replace(/[`*_[\]<>]/g, "\\$&");
   if (!flattened) return "(no detail reported)";
-  // A published export: a derived or mistaken max below one would otherwise
-  // slice to nothing and fabricate a lone ellipsis, so the budget floors at one.
+  // A published export: the result never exceeds `max` characters, and it
+  // never fabricates. A non-finite max means the default budget; a derived or
+  // mistaken max below one floors at one character, since a budget of zero
+  // would print nothing at all in place of a real message. The ellipsis
+  // itself costs a character, so a budget of one cannot hold it: at that
+  // width the cut is bare rather than an ellipsis standing in for the whole
+  // detail.
   const limit = Number.isFinite(max) ? Math.max(1, Math.floor(max)) : ADVISORY_DETAIL_MAX;
-  return flattened.length > limit ? `${flattened.slice(0, limit - 1).trimEnd()}\u2026` : flattened;
+  if (flattened.length <= limit) return flattened;
+  if (limit < 2) return flattened.slice(0, limit);
+  return `${flattened.slice(0, limit - 1).trimEnd()}\u2026`;
 }

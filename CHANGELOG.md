@@ -72,6 +72,142 @@ Notable supported-surface changes are recorded here.
   for the IPv6 loopback, whose brackets glob in zsh) so the pasted line hands
   the shell one argument; `http://127.0.0.1:4399` and https URLs are
   unchanged.
+## [1.27.0+agent.30] - 2026-09-14
+
+### Changed
+
+- Packet-less `qa run --map-id <id>` fetches the CampaignSpec through the one reader `start`/`prepare-build --map-id` already use (`src/spec-fetch.mjs`): a 200 body of `{ ok: false, error }` is refused as `Spec fetch returned ok=false: <error> (<url>)` and a non-JSON body as `Spec fetch returned invalid JSON: …`, instead of being handed to the QA runner as the spec and failing later inside spec normalisation with an unrelated message.
+- One "is this the same file" rule (`src/fs-identity.mjs`) behind run-session binding, the Build Context → Assembly Report binding, `doctor`'s write-back target check and the Run Record artifact refs. A path that does not exist yet is canonicalised through its nearest existing ancestor, so a packet or sidecar reached through a symlinked checkout and the same path reached directly are one path whether or not it is on disk. `doctor --strip-paths` (and `start`'s generated doctor output) rebase every path onto the output base by that rule, so a target reached through a symlink keeps `./…` relative paths even when a recorded sidecar path was written by its real path.
+- A Build Context, QA verdict, Assembly Report or packet that is on disk but cannot be read (a permission failure, a directory where the file should be) is no longer treated as absent: `resolveCampaignWorkspace`, QA verdict discovery and the QA runner's sidecar reads rethrow such errors with their code (`EISDIR`, `EACCES`, …) and treat only a missing path (`ENOENT`/`ENOTDIR`) or malformed JSON as "nothing there". Before, an unreadable context silently bound the default Assembly Report, so a `--report-out` campaign's QA outcome could be recorded into a report `next` never reads.
+- An invalid polish producer deadline configuration is refused by the shared deadline racer as `Campaigns OS polish capture received an invalid deadline configuration.` (was `… received an invalid producer deadline configuration.`); a finite non-integer `timeoutMs` is accepted like every other deadline (every caller passes a bounded safe integer).
+
+### Removed
+
+- The QA runner's private spec fetch, the CLI's `canonicalExistingPath`, run-session's `canonicalPath`, campaign-workspace's `samePath`, the polish producer wrapper's own argument validation, a duplicated comment in the doctor next-step picker, and the copies of `optionalString` / `isPlainObject` / the slug normaliser in `stage-ledger` and `qa-verdict-discovery` (they import `src/repo-scan.mjs` and `src/route-identity.mjs`). Five identifiers no module imports lose their `export` keyword: `deadlineTimeoutError`, `canonicalize`, `largestResourceProjection`, `PRODUCER_FAILURE_PROBLEM_CODES`, `PRODUCER_STAGE_HISTORY_LIMIT`.
+
+## [1.27.0+agent.29] - 2026-09-14
+
+### Fixed
+
+- `qa resolve` and `qa run` print a blocked gate's remediation the way
+  `doctor` prints the same gate: when the checkpoint gates were evaluated on
+  a report other than the target repo's default
+  `.campaign-runtime/assembly-report.json` (`--report`, or a Build Context
+  `report_path` binding), every packet-scoped `checkpoint waive` /
+  `theme waive` line under `Required actions:` now ends with
+  `--report <that path>`, so the pasted command acts on the report QA read
+  instead of on a default sidecar that may not exist. The payload carries
+  the same path as `report_path` (present only when it is not that default,
+  like doctor's `derived.assembly_report_path`); a default-report campaign's
+  text and JSON are unchanged. The rule that picks the report to name is one
+  function, `explicitReportPath` in `src/campaign-workspace.mjs`.
+- `theme waive`, `checkpoint waive`, `polish capture` and `qa waive` fail by
+  name on a torn or hand-edited Assembly Report: `Assembly Report at <path>
+  is not valid JSON: <parser message>` in place of a bare `SyntaxError:
+  Unexpected end of JSON input` that named no file. The torn bytes are left
+  on disk, no waiver or merge is written, and the doctor sidecar is neither
+  stamped stale nor refreshed. A read failure (permissions, a directory at
+  the path) still propagates as itself; only the parse is renamed.
+- `singleLineDetail` (`./text-safety`) never fabricates a lone ellipsis: a
+  `max` of one, zero or below now returns the first character (`"a"` for
+  `"abc"`) where it returned `"…"`, so the cut is bare at a width the
+  ellipsis cannot fit. Documented alongside the two behaviours the 1.27.0
+  move added without a note: a non-finite `max` (NaN) means the default
+  `ADVISORY_DETAIL_MAX` (300) rather than the whole string, and `max` floors
+  at one. The result never exceeds `max` characters for any `max >= 1`. The
+  module's header comment is one sentence again.
+
+## [1.27.0+agent.28] - 2026-09-14
+
+### Changed
+
+- `qa run --browser` names the upsell price-visibility row per page:
+  `pricing.upsell_price_visible:<page_id>` (was the bare
+  `pricing.upsell_price_visible`, emitted once per upsell page so a funnel
+  with two upsells carried two rows under one id). The id now carries the
+  page the way `template-residue:<page>:*` and `meta:<page>:*` already do;
+  `family`, `page`, `status`, `severity` and `evidence` are unchanged, and
+  the checkout row keeps its id (`pricing.checkout_price_visible`). A
+  consumer keying on the old literal id must match the prefix.
+- `pricing.checkout_price_visible` also accepts a visible cart-summary total
+  (`[data-next-display="cart.total"]`,
+  `[data-next-cart-summary] .order-totals__value--total` — the selectors the
+  order-total parity check reads at submit) as a price surface. A checkout
+  whose cart is seeded upstream, or one entered directly before any
+  selection, renders no bundle price row and was failing with `actual: "0
+  visible price row(s)"` while the same run's parity row proved a total was
+  displayed. `expected` now reads `at least one visible checkout bundle price
+  row or a visible cart-summary total`, `actual` reads `<n> visible price
+  row(s); <m> visible cart-summary total(s)`, and `evidence` gains
+  `total_selectors[]` and `total_visible_count`; the row still fails (warn
+  severity) only when neither surface is visible. A contract that declares
+  no `checkout_bundle.price_row_selectors` at all still gets the row (it was
+  skipped outright): only the bundle count is skipped, the cart-summary
+  total is still read. The total fields appear in `evidence` only when that
+  surface was read, so an absent key means the check did not run, never an
+  empty result.
+
+### Fixed
+
+- Palette residue found under a recorded, unexpired theme waiver (or a gate
+  that does not apply) reports `status: warn`, not `status: fail` with
+  `severity: warn`. `template-residue:<page>:style:*`,
+  `template-residue:<page>:logo` and
+  `template-residue:<page>:payment-chrome:*` were the only warn-severity rows
+  in the verdict that read `fail`, so a waived build showed the unwaived
+  shape next to the `warn` a missing selector already reports, and the
+  waiver notice's "downgrades those rows to warn" did not describe the
+  output. The disposition is unchanged: a waived exception still lands on
+  `ready_with_exceptions`, never plain `ready`, and placeholder-text residue
+  stays a blocker the waiver does not soften.
+
+## [1.27.0+agent.27] - 2026-09-14
+
+### Fixed
+
+- `npm run check` writes nothing into the checkout. The fixtures in
+  `scripts/check-fixtures.mjs` that ran `doctor`, `next build` and `qa resolve`
+  against `examples/build-packet.basic.json` in place, or pointed a packet's
+  `assembly.target_repo` at `examples/target-page-kit`, and the one test in
+  `src/doctor-required-actions.test.mjs` that ran `doctor` on that packet, now
+  stage a copy of the example layout (packet, spec, source, target, catalog)
+  under a temp dir, so
+  `examples/target-page-kit/.campaign-runtime/doctor-output.json` (gitignored,
+  rewritten on every run, and readable as prior state by a later doctor run
+  there) is no longer left behind. `scripts/check-fixtures.test.mjs` runs the
+  fixture check and fails when any file under `examples/` is added, removed or
+  changed, or when that sidecar exists.
+- `check-pack.mjs --skip-prepare` refuses to pack when the working tree has no
+  `campaign-spec/dist` (`campaign-spec/dist/index.js missing from the working
+  tree; --skip-prepare packs the build the pipeline already made`) instead of
+  letting npm rebuild it on the way, and asserts the packed `dist/index.js` and
+  `dist/index.d.ts` are byte-identical to the working tree's. npm before 11
+  runs the prepare script during `npm pack` regardless of `--ignore-scripts`;
+  that second `build:spec` is now reported (`pack check note: npm <version>
+  re-ran the prepare script during npm pack despite --ignore-scripts …`) rather
+  than hidden. On npm 11+ `npm run check` compiles once.
+- `check-template-doctrine.mjs` validates the starter-template partials at the
+  catalog's `_synced_from_sha`, the commit CI checks out, instead of whatever
+  commit the sibling checkout happens to be on. A sibling on another commit, or
+  at the pin with local edits or untracked files under its `src/`, is read at
+  the pin through `git archive` (its working tree is untouched; the
+  pass output gains `templates: read at _synced_from_sha=<sha> from the
+  sibling checkout (its HEAD <sha> differs; working tree untouched)`). A
+  sibling that does not have the pinned commit is still scanned, with
+  `check-template-doctrine: WARNING: validating the sibling checkout … NOT the
+  catalog pin … A green result here is not evidence for the CI gate.` on
+  stderr naming the fetch command. `STARTER_TEMPLATES_PATH` is used as given.
+
+### Changed
+
+- `npm run check` calls the named `check:*` scripts instead of inlining their
+  commands, so a named script and the pipeline step it stands for cannot
+  drift. `check:tests` (the `node --test` suite), `check:slot-manifest` and
+  `check:supported-surface` are new names for steps that had none; the step
+  order is unchanged and `build:spec` is the one explicit build.
+- `docs/small-pr-review-path.md` documents the three PR-only `--base` gates
+  (`check-skill-versions`, `check-supported-surface`, `check-release-ledger`)
+  and how to run them locally against `origin/main`.
 
 ## [1.27.0+agent.26] - 2026-09-14
 

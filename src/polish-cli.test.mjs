@@ -140,6 +140,27 @@ function commandArgs(f, extra = {}) {
   };
 }
 
+test("polish capture names the report when the re-read after the browser pass is not valid JSON", async () => {
+  const f = fixture();
+  try {
+    await assert.rejects(
+      polishCaptureCommand(commandArgs(f), {
+        createBrowserAdapter: successfulAdapter(),
+        async afterCapture() {
+          // A concurrent writer left the report torn between the capture and
+          // the merge: the merge must refuse by name, not with a bare parse error.
+          writeFileSync(f.reportPath, "{ \"stages\": ");
+        },
+      }),
+      (error) => !(error instanceof SyntaxError)
+        && error.message.startsWith(`Assembly Report at ${f.reportPath} is not valid JSON: `),
+    );
+    assert.equal(readFileSync(f.reportPath, "utf8"), "{ \"stages\": ", "the torn bytes are left for inspection");
+  } finally {
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
+
 test("polish capture merges onto the latest report, preserves unrelated fields, and stales doctor", async () => {
   const f = fixture();
   try {

@@ -8,20 +8,20 @@
 // identity score and time) and closeout (digests of the recorded paths) —
 // each with its own copy of the identity rule and the directory spelling.
 //
-// A leaf: node built-ins and the workspace constant only.
+// A leaf: node built-ins, the workspace constant and the string leaves only.
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { QA_OUTPUT_REL_PATH } from "./campaign-workspace.mjs";
+import { absentOrMalformed } from "./fs-identity.mjs";
+import { isPlainObject as isObject, normalizeString as optionalString } from "./repo-scan.mjs";
+import { normalizePublicRouteSlug } from "./route-identity.mjs";
 
-const optionalString = (value) => (typeof value === "string" && value.trim() ? value.trim() : null);
-const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
-
-// The slug as identity: trimmed, no slashes, null when absent. The one
-// spelling the identifiers and the candidate score both read.
+// The slug as identity, null when absent: the one spelling the identifiers
+// and the candidate score both read.
 function qaVerdictSlug(packet) {
-  return String(packet?.campaign?.public_route_slug || "").trim().replace(/^\/+|\/+$/g, "") || null;
+  return normalizePublicRouteSlug(packet?.campaign?.public_route_slug) || null;
 }
 
 // The names a campaign's verdicts are filed and stamped under: the map id and
@@ -69,8 +69,9 @@ function readVerdictFile(path) {
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
     return isObject(parsed) ? parsed : null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (absentOrMalformed(error)) return null;
+    throw error;
   }
 }
 
@@ -86,7 +87,8 @@ function sha256File(path) {
 // (it still has a digest: closeout compares bytes, not shape). `trusted` is
 // false only for a verdict the receiver stamped `trusted: false` (an
 // anonymous submission); locally written verdicts never carry the field.
-// Best-effort throughout: an unreadable directory or file is no candidate.
+// An absent directory or file, or a file that is not JSON, is no candidate;
+// any other read failure (a permission error, an I/O error) is the caller's.
 //
 // Lazy per candidate: a directory's names are listed when the walk reaches
 // it, but each file is read (and hashed, when asked) only as the consumer
@@ -99,20 +101,21 @@ export function* iterateQaVerdicts({ packet = null, report = null, reportPath = 
     if (seen.has(absolute)) return null;
     let stats;
     try {
-      if (!existsSync(absolute)) return null;
       stats = statSync(absolute);
-      if (!stats.isFile()) return null;
-    } catch {
-      return null;
+    } catch (error) {
+      if (absentOrMalformed(error)) return null;
+      throw error;
     }
+    if (!stats.isFile()) return null;
     seen.add(absolute);
     const verdict = readVerdictFile(absolute);
     let sha256 = null;
     if (withDigest) {
       try {
         sha256 = sha256File(absolute);
-      } catch {
-        sha256 = null;
+      } catch (error) {
+        // The file can vanish between the stat and the read; nothing else may.
+        if (!absentOrMalformed(error)) throw error;
       }
     }
     return {
@@ -139,14 +142,15 @@ export function* iterateQaVerdicts({ packet = null, report = null, reportPath = 
       const dir = qaVerdictDir(root, identifier);
       let names = [];
       try {
-        if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
         names = readdirSync(dir, { withFileTypes: true })
           .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
           .map((entry) => entry.name)
           .sort();
-      } catch {
-        continue;
+      } catch (error) {
+        if (absentOrMalformed(error)) continue;
+        throw error;
       }
+
       for (const name of names) {
         const path = join(dir, name);
         // Repo-relative on purpose: divergence evidence must read the same

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
 
@@ -37,17 +38,13 @@ const QA_OWNED_FIELDS = Object.freeze(["verdict_run_id", "evidence", "purchase_p
 // Bounded so a committed handoff artifact cannot grow without limit, and deep
 // enough that a couple of repair attempts do not evict the state a reviewer
 // came looking for.
-export const PRODUCER_STAGE_HISTORY_LIMIT = 5;
+const PRODUCER_STAGE_HISTORY_LIMIT = 5;
 // The fields a producer restates on every run even when nothing else moved.
 // A re-run that reaches the same outcome differs from the previous report in
 // these alone, and rewriting the file for them makes every digest taken of
 // the report (a Run Record's assembly_report sha256, for one) go stale for
 // no information.
 const PRODUCER_STAGE_TIMESTAMP_FIELDS = Object.freeze(["checked_at", "completed_at"]);
-
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 // `$defs.stage.evidence` is `oneOf: [array, object]`, so an operator or an
 // out-of-repo producer may legally have written either shape. Recognize both,
@@ -207,10 +204,6 @@ export function recordProducerStageOutcome(report, {
   return updated;
 }
 
-function optionalString(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 /**
  * True when `report` is this packet's Assembly Report: the identity block
  * names the packet's map id and public route slug (both absent on both sides
@@ -304,7 +297,18 @@ export function commitAssemblyReport(workspace, mutate, {
     }
     throw new Error(`Assembly Report not found at ${reportPath}; run prepare-build/start first.`);
   }
-  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  // A torn or hand-edited report fails by name: the raw SyntaxError names
+  // neither the file nor the command, and every caller's read of the report
+  // (waivers, the polish merge, the producer stage records) goes through
+  // here. Only the parse is caught; a read failure (EACCES, EISDIR) is not
+  // a malformed report and propagates as itself.
+  const raw = readFileSync(reportPath, "utf8");
+  let report;
+  try {
+    report = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Assembly Report at ${reportPath} is not valid JSON: ${error.message}`);
+  }
   outcome.report = report;
   if (stage && !assemblyReportMatchesPacket(report, workspace?.packet)) {
     outcome.skipped = "identity";
