@@ -2528,20 +2528,20 @@
       "date": "2026-09-13",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.27.0+agent.2",
-      "changelog_sha256": "7fb2a500a710be97a6525801d5c9370ea0a615f9fc9b192d92b59f3adc156cc8",
-      "agent_impact": "Additive. The ./text-safety package export gains singleLineFragment(value, fallback): line breaks and tabs become spaces, runs of whitespace collapse, the ends are trimmed, every other control character (C0 other than whitespace, DEL, C1) becomes U+FFFD, no Markdown escaping, no length cap; an empty or absent value returns fallback (default the empty string). Use it for a toolkit-derived value folded into a sentence, such as a gate's required_actions[].command or .description. singleLineField and singleLineDetail keep their signatures and their exact output; singleLineDetail is now defined as singleLineFragment plus Markdown escaping, the cap and the (no detail reported) placeholder. One stderr line changes on hostile input only: the qa run browser-skipped notice's quoted required actions now render a non-whitespace control character as U+FFFD instead of a space. No JSON output changes.",
-      "compatibility": "additive",
-      "migration": "None. A consumer that reimplemented the sentence fold can import singleLineFragment instead.",
+      "changelog_section": "1.27.0+agent.1",
+      "changelog_sha256": "1b62ee227ee1b1aa82a65daebe9a08962549ad7a75ab35e8ef40d2d875448851",
+      "agent_impact": "Behaviour change in campaigns-os qa run --test-order for one page shape only. The runner's cart-entry control set no longer includes [data-next-checkout-action=\"add-to-cart\"] or [data-next-add-to-cart]; it is exactly the SDK's activation selector, [data-next-action=\"add-to-cart\"]. A landing page whose only add-to-cart control uses one of the two removed spellings now fails the entered_via_landing step immediately with cart_entry_control_missing (order_creation classification not_created, no reservation, no click) instead of clicking the control and failing with cart_entry_no_navigation after the navigation budget. The primary-CTA assertion on such a page no longer credits the element's data-next-url as a route, so a page with no other route CTA reports missing_route_cta. Pages with the SDK's own control or a ?forcePackageId= checkout link behave exactly as before. Verdict field names and codes are unchanged; only which code such a page receives, and how quickly, changes.",
+      "compatibility": "compatible",
+      "migration": "None for a page the SDK actually wires. A page that renders its add-to-cart control as data-next-add-to-cart or data-next-checkout-action=\"add-to-cart\" should switch it to data-next-action=\"add-to-cart\" \u2014 that is the only spelling the SDK activates on, so the page was not adding to the cart through that control before this change either.",
       "changes": [
         {
-          "class": "compatibility_policy",
-          "path": "docs/supported-surface.md",
-          "surface_entry": "docs/supported-surface.md",
-          "summary": "The ./text-safety row names singleLineFragment beside singleLineField and singleLineDetail, states which value kind each is for (own field, folded into a sentence, quoted detail) and what each does to whitespace and to other control characters, and records that singleLineFragment was added at 1.27.0+agent.2."
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The cart-entry step describes the SDK add-to-cart control as [data-next-action=\"add-to-cart\"] only, drops the two spellings the SDK does not activate on, and states that a page offering only such a control fails the step by name (cart_entry_control_missing) rather than clicking it and waiting out the navigation budget."
         }
       ],
-      "entry_sha256": "83b2fe3b78923e3fede08efddfd7d90733f3a6ce3f5747424529f89d60f9b4da"
+      "entry_sha256": "66e644d94de7e5114449270d735f1f5edd32863e0aec7270daf6658ec51b9842"
     }
   ]
 }

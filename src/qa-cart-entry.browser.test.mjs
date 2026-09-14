@@ -233,6 +233,53 @@ browserTest("no-entry-resolvable: no selector on checkout and no entry page is a
   assert.equal(classifyTestOrderCreation(result.orders.length ? { ok: false, submit: { reserved: false }, order: result.orders[0], events: {} } : null).creation, "not_created");
 });
 
+// The negative of landing-entry: a page whose only "add-to-cart" controls are
+// spelled with attributes the SDK never activates on. The runner must not
+// click one and then wait out the navigation budget for a hand-off the SDK
+// will never make; it fails by name at the entry step, before any click.
+browserTest("landing-unwired-controls: a control the SDK never wires is not a cart entry, and the step fails by name before any click", async () => {
+  const started = Date.now();
+  const { result, steps, server } = await runFixture("landing-unwired-controls");
+  const byName = stepsByName(steps);
+
+  assert.equal(steps[0].step, "entered_via_landing");
+  assert.equal(byName.entered_via_landing.status, "failed");
+  assert.match(byName.entered_via_landing.error, /^cart_entry_control_missing: no add-to-cart control or forcePackageId checkout link/);
+  assert.equal(byName.opened_checkout, undefined, "the ladder stopped at the entry step");
+  assert.ok(Date.now() - started < ARGS["browser-timeout"], "refused before any click: no navigation wait was spent");
+  assert.equal(server.orders.length, 0);
+
+  const attempt = result.assertions.find((entry) => entry.id === "browser-test-order:checkout");
+  assert.equal(attempt.status, "fail");
+  assert.equal(attempt.evidence.order_creation.classification, "not_created");
+  assert.equal(attempt.evidence.order_creation.submissions_reserved, 0);
+});
+
+// The same vocabulary drives the primary-CTA recogniser: an unwired control
+// is a plain button, so its data-next-url has no navigation semantics and it
+// routes nowhere.
+browserTest("primary-cta: a control the SDK never wires gets no route from its data-next-url", async () => {
+  const { inspectPrimaryCta } = __qaBrowserTestHooks;
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  const server = await serveFixture("landing-unwired-controls");
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${server.base}/x/landing/`, { waitUntil: "load" });
+    const evidence = await inspectPrimaryCta(page, `${server.base}/x/checkout/`);
+    assert.equal(evidence.candidates.length, 2, JSON.stringify(evidence.candidates));
+    for (const candidate of evidence.candidates) {
+      assert.equal(candidate.href, null, `${candidate.text}: a plain button has no href`);
+      assert.equal(candidate.route_matches, false, candidate.text);
+    }
+    assert.equal(evidence.reason, "missing_route_cta");
+    await page.close();
+  } finally {
+    await server.close();
+    await browser.close();
+  }
+});
+
 // Keep the topology helper honest: the runner reads entry from the same
 // resolved topology the rest of the ladder uses.
 // campaigns-os#321: the primary-CTA recogniser and the ladder's entry step
