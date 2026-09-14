@@ -29,8 +29,9 @@ Notable supported-surface changes are recorded here.
   than hidden. On npm 11+ `npm run check` compiles once.
 - `check-template-doctrine.mjs` validates the starter-template partials at the
   catalog's `_synced_from_sha`, the commit CI checks out, instead of whatever
-  commit the sibling checkout happens to be on. A sibling on another commit is
-  read at the pin through `git archive` (its working tree is untouched; the
+  commit the sibling checkout happens to be on. A sibling on another commit, or
+  at the pin with local edits or untracked files under its `src/`, is read at
+  the pin through `git archive` (its working tree is untouched; the
   pass output gains `templates: read at _synced_from_sha=<sha> from the
   sibling checkout (its HEAD <sha> differs; working tree untouched)`). A
   sibling that does not have the pinned commit is still scanned, with
