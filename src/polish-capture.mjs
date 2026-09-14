@@ -284,14 +284,24 @@ export function captureProblemRecordCode(record) {
     : null;
 }
 
+// The constructors are the one place a response is checked to be a record:
+// a non-object hop is a producer bug, so it throws here rather than being
+// read as an observation downstream.
+function assertResponse(response) {
+  if (!isPlainObject(response)) {
+    throw new Error("A polish response record is built from a plain response object.");
+  }
+  return response;
+}
+
 export function singleResponseRecord(requestId, response) {
-  return { request_id: requestId, ...response };
+  return { request_id: requestId, ...assertResponse(response) };
 }
 
 export function redirectChainRecord(requestId, responses) {
   return {
     request_id: requestId,
-    redirect_chain: responses.map((response, redirectHop) => ({ ...response, redirect_hop: redirectHop })),
+    redirect_chain: responses.map((response, redirectHop) => ({ ...assertResponse(response), redirect_hop: redirectHop })),
   };
 }
 

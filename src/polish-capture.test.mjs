@@ -264,6 +264,10 @@ test("the response record is one shape: the constructors number redirect hops fr
     assert.equal(captureProblemRecordCode(sentinel), code);
   }
   assert.throws(() => captureProblemRecord("redirect_chain_invalid"), /Unknown polish capture sentinel/);
+  for (const notAResponse of [null, "private malformed hop payload", ["url"], 42]) {
+    assert.throws(() => singleResponseRecord("single", notAResponse), /plain response object/);
+    assert.throws(() => redirectChainRecord("chain", [hop("https://shop.example.test/a"), notAResponse]), /plain response object/);
+  }
   assert.equal(captureProblemRecordCode({ capture_problem: "redirect_chain_invalid" }), null);
   assert.equal(captureProblemRecordCode(single), null);
   assert.equal(captureProblemRecordCode("response_record_overflow"), null);
