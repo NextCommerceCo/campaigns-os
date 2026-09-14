@@ -27,6 +27,7 @@ Notable supported-surface changes are recorded here.
   ignored — the same verdict doctor gives — rather than honouring it. No
   doctor output, JSON or text, changes; no QA verdict field changes;
   `docs/build-packet.md` states that QA reads `route_root` by doctor's rule.
+
 ## [1.27.0+agent.2] - 2026-09-13
 
 ### Added
