@@ -12,6 +12,7 @@ import test from "node:test";
 
 import { formatPolishCaptureText, main, polishCaptureCommand } from "./cli.mjs";
 import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
+import { evaluateRecordedHiddenEagerMediaCheckpoint, mergePolishPageLoadEvidence } from "./polish-node.mjs";
 
 const EXAMPLES = new URL("../examples/", import.meta.url);
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
@@ -120,6 +121,13 @@ function blockingAdapter() {
       };
     },
     async close() {},
+  });
+}
+
+function checkpointOnLatestReport(f, capture, latest) {
+  return evaluateRecordedHiddenEagerMediaCheckpoint({
+    packet: readJson(f.packetPath),
+    report: mergePolishPageLoadEvidence(latest, capture.page_load),
   });
 }
 
@@ -552,9 +560,10 @@ test("polish capture evaluates concurrent exact waiver additions from the report
     const result = await polishCaptureCommand(commandArgs(f), {
       createBrowserAdapter: blockingAdapter(),
       async afterCapture({ capture }) {
-        assert.equal(capture.checkpoint.status, "blocked");
         const latest = readJson(f.reportPath);
-        latest.waivers = [createCheckpointWaiver(capture.checkpoint, {
+        const checkpoint = checkpointOnLatestReport(f, capture, latest);
+        assert.equal(checkpoint.status, "blocked");
+        latest.waivers = [createCheckpointWaiver(checkpoint, {
           reason: "Approved campaign-specific launch exception",
           waivedBy: "Jordan Lee",
           now: "2026-08-20T00:00:00.000Z",
@@ -591,8 +600,8 @@ test("polish capture evaluates concurrent waiver removal from the report snapsho
     const result = await polishCaptureCommand(commandArgs(f), {
       createBrowserAdapter: blockingAdapter(),
       async afterCapture({ capture }) {
-        assert.equal(capture.checkpoint.status, "waived");
         const latest = readJson(f.reportPath);
+        assert.equal(checkpointOnLatestReport(f, capture, latest).status, "waived");
         latest.waivers = [];
         writeJson(f.reportPath, latest);
       },

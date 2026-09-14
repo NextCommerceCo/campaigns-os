@@ -150,7 +150,7 @@ copied between builds, or repaired in place. Its stable projection is:
 | `subject.route_scope`, `subject.routes[]`, `subject.viewports[]` | Deterministic mapped-route scope (`all` or `selected`), normalized routes, and fixed `desktop` / `mobile` viewport keys. |
 | `measurement.status` | `complete` only when the subject is valid and every expected route/viewport has exactly one complete capture. |
 | `measurement.expected_capture_count`, `measurement.captured_count` | Planned and recorded capture totals. |
-| `measurement.missing[]`, `measurement.duplicate[]`, `measurement.unexpected[]`, `measurement.incomplete[]` | Route/viewport coverage defects. Each incomplete entry carries its sorted `problem_codes[]`. |
+| `measurement.missing[]`, `measurement.duplicate[]`, `measurement.unexpected[]`, `measurement.incomplete[]` | Route/viewport coverage defects. Each incomplete entry carries its sorted `problem_codes[]`; an entry whose codes include `capture_shape_invalid` also carries `shape_violation`, the name of the first shape rule the capture broke (see below). |
 | `measurement.warnings[]` | Complete captures that still carry warning-class problems (today only `cross_origin_request_failed`). Each entry carries the route, viewport, the warning `problem_codes[]`, the sorted unique `resource_types[]` the demotion applied to (the beacon allowlist, so at most five values), the bounded sorted `failed_origins[]` (at most 32) and the full `failed_origin_count`. Warnings never change `measurement.status`; they are evidence for the operator and the merchant. |
 | `captures[]` | One deterministic package projection per route and viewport; see the per-capture map below. |
 | `findings[]` | Observed hidden eager-media findings. Each records `code`, route, viewport, tag and element index, bounded `sources[]` / `resource_ids[]` with their full counts, a fingerprint over the complete resource-identity set, transferred and threshold bytes, preload state, and `hidden_by[]`. |
@@ -220,6 +220,20 @@ counted as `transfer_size_unavailable` or in the entry's
 resource ledger at evaluation time; a capture whose problems disagree with its
 ledger, or that declares its collection complete over a ledger-recorded
 dependency failure, is `capture_shape_invalid` and blocks.
+
+That recomputation is one of an ordered table of shape rules. Each rule names
+one statement a capture makes about itself (its metrics, its media totals, its
+collection statuses, the problem counts its ledger implies) and recomputes it
+with the producer's own derivation, exported from `polish-capture.mjs`, so the
+producer and the validator cannot drift apart. The rule names are exported as
+`POLISH_CAPTURE_SHAPE_RULES` from `polish-page-load.mjs`, and
+`captureShapeViolation(capture)` returns the first rule a capture breaks (or
+`null`). A `measurement.incomplete[]` entry whose codes include
+`capture_shape_invalid` carries that name as `shape_violation`; the name is a
+fixed token from the table and never capture content. Rules run in order and
+the first failure is the one reported, so `integrity` reports for any capture
+whose fields fall outside the projected vocabulary, and the later rules only
+ever name a contradiction between values the capture could have produced.
 
 For canceled responses, the collector also retains the declared body size from
 `Content-Range`'s total when available, falling back to `Content-Length`.

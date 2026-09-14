@@ -57,6 +57,16 @@ function completedReport(overrides = {}) {
   };
 }
 
+// Capture returns the plan and the page-load evidence only. The checkpoint is
+// evaluated once, against the report the evidence is recorded on, the way the
+// command does after it re-reads the report.
+function recordedCheckpoint(packet, capture, report = completedReport()) {
+  return evaluateRecordedHiddenEagerMediaCheckpoint({
+    packet,
+    report: mergePolishPageLoadEvidence(report, capture.page_load),
+  });
+}
+
 test("polish capture plan deterministically covers every mapped non-skipped route at both fixed viewports", () => {
   const packet = packetWithPages([
     {
@@ -203,7 +213,36 @@ test("polish capture orchestrates every route and viewport through the injected 
     ["/merchant/landing/", "desktop"],
     ["/merchant/landing/", "mobile"],
   ]);
-  assert.equal(result.checkpoint.status, "pass");
+  assert.equal(recordedCheckpoint(packet, result).status, "pass");
+});
+
+test("polish capture returns the plan and page-load evidence only; the checkpoint is evaluated on the recorded report", async () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const result = await capturePolishPageLoad({
+    packet,
+    report: completedReport(),
+    baseUrl: "http://127.0.0.1:4173",
+    createBrowserAdapter: async () => ({
+      async captureRoute({ url, viewport }) {
+        return {
+          finalDocumentUrl: url,
+          responseCollectionStatus: "complete",
+          networkidle: { status: "settled", duration_ms: 12 },
+          mediaElements: [],
+          responses: [mainDocumentResponse(url, { request_id: `document-${viewport.key}` })],
+        };
+      },
+      async close() {},
+    }),
+  });
+
+  assert.deepEqual(Object.keys(result).sort(), ["page_load", "plan"]);
+  assert.equal(Object.hasOwn(result, "checkpoint"), false);
+  assert.equal(recordedCheckpoint(packet, result).status, "pass");
 });
 
 test("injected producer-to-gate pass controls preserve the exact threshold and preload or visibility exemptions", async (t) => {
@@ -263,7 +302,7 @@ test("injected producer-to-gate pass controls preserve the exact threshold and p
 
       assert.equal(capture.page_load.measurement.status, "complete");
       assert.deepEqual(capture.page_load.findings, []);
-      assert.equal(capture.checkpoint.status, "pass");
+      assert.equal(recordedCheckpoint(packet, capture).status, "pass");
     });
   }
 });
@@ -297,9 +336,10 @@ test("producer-to-gate routing accepts HTML 200 and nonwaivably blocks HTTP 404 
         }),
       });
       assert.equal(capture.page_load.measurement.status, status === 200 ? "complete" : "incomplete");
-      assert.equal(capture.checkpoint.status, status === 200 ? "pass" : "blocked");
+      const checkpoint = recordedCheckpoint(packet, capture);
+      assert.equal(checkpoint.status, status === 200 ? "pass" : "blocked");
       if (status !== 200) {
-        assert.equal(capture.checkpoint.code, "polish.hidden_eager_media.capture_incomplete");
+        assert.equal(checkpoint.code, "polish.hidden_eager_media.capture_incomplete");
         assert.equal(capture.page_load.captures.every((cell) => cell.problems.some(
           (problem) => problem.code === "document_response_error",
         )), true);
@@ -358,13 +398,13 @@ test("producer-to-gate source history retains a hidden at-load transfer after dy
 
   const hidden = await captureFor(true);
   assert.equal(hidden.page_load.measurement.status, "complete");
-  assert.equal(hidden.checkpoint.status, "blocked");
+  assert.equal(recordedCheckpoint(packet, hidden).status, "blocked");
   assert.equal(hidden.page_load.findings.length, 2);
   assert.equal(hidden.page_load.findings.every((finding) => finding.sources[0].includes("initial-")), true);
 
   const initiallyVisible = await captureFor(false);
   assert.equal(initiallyVisible.page_load.measurement.status, "complete");
-  assert.equal(initiallyVisible.checkpoint.status, "pass");
+  assert.equal(recordedCheckpoint(packet, initiallyVisible).status, "pass");
 });
 
 test("capture binding permits unrelated report updates and page-load merge preserves the latest report", () => {
@@ -559,10 +599,11 @@ test("browser adapter startup failure produces complete-matrix nonwaivable incom
     ["/merchant/landing/", "desktop"],
     ["/merchant/landing/", "mobile"],
   ]);
-  assert.equal(result.checkpoint.status, "blocked");
-  assert.equal(result.checkpoint.code, "polish.hidden_eager_media.capture_incomplete");
-  assert.equal(result.checkpoint.waivable, false);
-  const serialized = JSON.stringify(result);
+  const checkpoint = recordedCheckpoint(packet, result);
+  assert.equal(checkpoint.status, "blocked");
+  assert.equal(checkpoint.code, "polish.hidden_eager_media.capture_incomplete");
+  assert.equal(checkpoint.waivable, false);
+  const serialized = JSON.stringify({ ...result, checkpoint });
   for (const secret of ["PRIVATE_ADAPTER_SECRET", "/private/tmp/browser-profile"]) {
     assert.equal(serialized.includes(secret), false, secret);
   }
@@ -595,9 +636,10 @@ test("browser adapter close failure fails the matrix closed without leaking its 
   });
 
   assert.equal(result.page_load.measurement.status, "incomplete");
-  assert.equal(result.checkpoint.status, "blocked");
-  assert.equal(result.checkpoint.waivable, false);
-  const serialized = JSON.stringify(result);
+  const checkpoint = recordedCheckpoint(packet, result);
+  assert.equal(checkpoint.status, "blocked");
+  assert.equal(checkpoint.waivable, false);
+  const serialized = JSON.stringify({ ...result, checkpoint });
   assert.equal(serialized.includes("PRIVATE_CLOSE_SECRET"), false);
   assert.equal(serialized.includes("/private/tmp/playwright-profile"), false);
 });
@@ -643,9 +685,10 @@ test("a bounded per-cell producer timeout retires the adapter and safely complet
       "response_collection_unavailable",
     ],
   })));
-  assert.equal(result.checkpoint.status, "blocked");
-  assert.equal(result.checkpoint.waivable, false);
-  assert.equal(JSON.stringify(result).includes("POLISH_PRODUCER_TIMEOUT"), false);
+  const checkpoint = recordedCheckpoint(packet, result);
+  assert.equal(checkpoint.status, "blocked");
+  assert.equal(checkpoint.waivable, false);
+  assert.equal(JSON.stringify({ ...result, checkpoint }).includes("POLISH_PRODUCER_TIMEOUT"), false);
   assert.equal(JSON.stringify(result).includes("PRIVATE_OVERLAP"), false);
 });
 
@@ -759,9 +802,10 @@ test("a never-resolving adapter close is bounded and projects producer_timeout w
   assert.equal(result.page_load.captures.some((capture) => capture.problems.some(
     (problem) => problem.code === "producer_failed",
   )), false);
-  assert.equal(result.checkpoint.status, "blocked");
-  assert.equal(result.checkpoint.waivable, false);
-  assert.equal(JSON.stringify(result).includes("POLISH_PRODUCER_TIMEOUT"), false);
+  const checkpoint = recordedCheckpoint(packet, result);
+  assert.equal(checkpoint.status, "blocked");
+  assert.equal(checkpoint.waivable, false);
+  assert.equal(JSON.stringify({ ...result, checkpoint }).includes("POLISH_PRODUCER_TIMEOUT"), false);
 });
 
 test("a never-resolving adapter startup yields full-matrix timeout evidence and closes a late adapter", {
@@ -789,8 +833,9 @@ test("a never-resolving adapter startup yields full-matrix timeout evidence and 
   assert.equal(result.page_load.captures.every((capture) => capture.problems.some(
     (problem) => problem.code === "producer_timeout",
   )), true);
-  assert.equal(result.checkpoint.status, "blocked");
-  assert.equal(result.checkpoint.waivable, false);
+  const checkpoint = recordedCheckpoint(packet, result);
+  assert.equal(checkpoint.status, "blocked");
+  assert.equal(checkpoint.waivable, false);
   resolveFactory({
     async captureRoute() {
       captures += 1;

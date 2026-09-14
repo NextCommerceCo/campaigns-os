@@ -5,8 +5,10 @@ import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
 import { buildPageLoadCapture, buildPolishCaptureIntegrity } from "./polish-capture.mjs";
 import {
   buildPolishPageLoadEvidence,
+  captureShapeViolation,
   evaluateHiddenEagerMediaCheckpoint,
   HIDDEN_EAGER_MEDIA_THRESHOLD_BYTES,
+  POLISH_CAPTURE_SHAPE_RULES,
 } from "./polish-page-load.mjs";
 
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
@@ -433,6 +435,7 @@ test("resource-type ambiguity remains a structurally valid but nonwaivably incom
   const evidence = evidenceForCapture(capture);
 
   assert.equal(evidence.measurement.status, "incomplete");
+  // The shape held, so the cell names no violated rule.
   assert.deepEqual(evidence.measurement.incomplete, [{
     route: "/landing/",
     viewport: "desktop",
@@ -710,6 +713,7 @@ test("a malformed route capture cannot self-declare complete and false-pass miss
     route: "/landing/",
     viewport: "desktop",
     problem_codes: ["capture_integrity_invalid", "capture_shape_invalid"],
+    shape_violation: "integrity",
   }]);
   const gate = evaluate(evidence);
   assert.equal(gate.status, "blocked");
@@ -720,24 +724,27 @@ test("a malformed route capture cannot self-declare complete and false-pass miss
 test("ledger-derived totals, largest-resource facts, cache/SW/cross-origin counts, and media attribution reject contradictions", () => {
   const base = structuredClone(blockingEvidence().captures[0]);
   const mutations = [
-    (capture) => { capture.metrics.total_transferred_bytes += 1; },
-    (capture) => { capture.metrics.request_count += 1; },
-    (capture) => { capture.metrics.largest_resource.transferred_bytes += 1; },
-    (capture) => { capture.metrics.cross_origin_request_count += 1; },
-    (capture) => { capture.metrics.cache_request_count += 1; },
-    (capture) => { capture.metrics.service_worker_request_count += 1; },
-    (capture) => { capture.media[0].fetched_bytes -= 1; },
-    (capture) => { capture.media[0].fetched_request_count += 1; },
-    (capture) => { capture.media[0].fetched_resources[0].transferred_bytes -= 1; },
-    (capture) => { capture.resource_ledger.entries[0].transferred_bytes -= 1; },
+    ["metrics", (capture) => { capture.metrics.total_transferred_bytes += 1; }],
+    ["metrics", (capture) => { capture.metrics.request_count += 1; }],
+    ["metrics", (capture) => { capture.metrics.largest_resource.transferred_bytes += 1; }],
+    ["metrics", (capture) => { capture.metrics.cross_origin_request_count += 1; }],
+    ["metrics", (capture) => { capture.metrics.cache_request_count += 1; }],
+    ["metrics", (capture) => { capture.metrics.service_worker_request_count += 1; }],
+    ["media", (capture) => { capture.media[0].fetched_bytes -= 1; }],
+    ["media", (capture) => { capture.media[0].fetched_request_count += 1; }],
+    ["media", (capture) => { capture.media[0].fetched_resources[0].transferred_bytes -= 1; }],
+    ["metrics", (capture) => { capture.resource_ledger.entries[0].transferred_bytes -= 1; }],
   ];
 
-  for (const mutate of mutations) {
+  for (const [rule, mutate] of mutations) {
     const capture = structuredClone(base);
     mutate(capture);
+    // Re-signed, so the contradiction is the only thing the rules can catch.
+    capture.integrity = buildPolishCaptureIntegrity(capture);
     const evidence = evidenceForCapture(capture);
     assert.equal(evidence.measurement.status, "incomplete");
-    assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+    assert.deepEqual(evidence.measurement.incomplete[0].problem_codes, ["capture_shape_invalid"]);
+    assert.equal(evidence.measurement.incomplete[0].shape_violation, rule);
     const gate = evaluate(evidence);
     assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
     assert.equal(gate.waivable, false);
@@ -758,9 +765,14 @@ test("coordinated resource-ID rewriting cannot detach a hidden transfer from its
   assert.equal(evidence.measurement.status, "incomplete");
   assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_integrity_invalid"), true);
   assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+  assert.equal(evidence.measurement.incomplete[0].shape_violation, "integrity");
   const gate = evaluate(evidence);
   assert.equal(gate.code, "polish.hidden_eager_media.capture_incomplete");
   assert.equal(gate.waivable, false);
+
+  // Even re-signed, the ledger still carries a media transfer no element claims.
+  capture.integrity = buildPolishCaptureIntegrity(capture);
+  assert.equal(captureShapeViolation(capture), "media_transfer_unattributed");
 });
 
 test("a clean builder artifact round-trips with versioned integrity and no private URL material", () => {
@@ -843,9 +855,11 @@ test("a grouped URL cannot self-declare only some same-origin-status requests as
 
   capture.resource_ledger.entries[0].cross_origin_request_count = 1;
   capture.metrics.cross_origin_request_count = 1;
+  capture.integrity = buildPolishCaptureIntegrity(capture);
   const evidence = evidenceForCapture(capture);
   assert.equal(evidence.measurement.status, "incomplete");
   assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+  assert.equal(evidence.measurement.incomplete[0].shape_violation, "resource_ledger");
 });
 
 test("capture reuse across build, campaign, route, or viewport bindings is rejected", () => {
@@ -959,6 +973,7 @@ test("malformed capture identities and problem codes are reduced to fixed safe d
     "capture_integrity_invalid",
     "capture_shape_invalid",
   ]);
+  assert.equal(evidence.measurement.incomplete[0].shape_violation, "schema_version");
   const serialized = JSON.stringify(evidence);
   for (const secret of ["private-schema", "private-producer", "cookie_private"]) {
     assert.equal(serialized.includes(secret), false, secret);
@@ -978,6 +993,7 @@ test("malformed typed capture fields cannot flow arbitrary strings into the evid
 
   assert.equal(evidence.measurement.status, "incomplete");
   assert.equal(evidence.captures[0].problems.some(({ code }) => code === "capture_shape_invalid"), true);
+  assert.equal(evidence.measurement.incomplete[0].shape_violation, "measurement_status_token");
   const serialized = JSON.stringify(evidence);
   for (const secret of [
     "private-measurement", "private-observed", "private-ledger", "private-total", "private-index", "private-media", "private-count",
@@ -1002,7 +1018,10 @@ test("contradictory hidden and preload projections cannot erase a captured block
     "capture_integrity_invalid",
     "capture_shape_invalid",
   ]);
+  assert.equal(evidence.measurement.incomplete[0].shape_violation, "integrity");
   assert.equal(evaluate(evidence).waivable, false);
+  capture.integrity = buildPolishCaptureIntegrity(capture);
+  assert.equal(captureShapeViolation(capture), "media");
 
   const missingCollectionFailure = structuredClone(blockingEvidence().captures[0]);
   missingCollectionFailure.response_collection.observed_response_count = 0;
@@ -1016,6 +1035,8 @@ test("contradictory hidden and preload projections cannot erase a captured block
     captures: [missingCollectionFailure],
   });
   assert.equal(missingCollectionEvidence.measurement.status, "incomplete");
+  missingCollectionFailure.integrity = buildPolishCaptureIntegrity(missingCollectionFailure);
+  assert.equal(captureShapeViolation(missingCollectionFailure), "response_collection_empty");
 
   const missingSourceFailure = structuredClone(blockingEvidence().captures[0]);
   missingSourceFailure.media[0].sources = ["[non-http-url]"];
@@ -1292,29 +1313,33 @@ test("a capture cannot self-declare a dependency failure as a cross-origin warni
   assert.equal(base.measurement_status, "complete");
   const mutations = [
     // The ledger says the failed request was first-party; the problem still claims cross-origin.
-    (capture) => {
+    ["dependency_failure_voids_collection", (capture) => {
       capture.resource_ledger.entries.find((entry) => entry.resource_type === "ping").cross_origin_request_count = 0;
       capture.metrics.cross_origin_request_count -= 1;
-    },
+    }],
     // The ledger says the failed request was a script; the problem still claims a beacon.
-    (capture) => {
+    // (The ping is also the largest resource, so its projection is retyped too or
+    // the metrics rule reports first.)
+    ["dependency_failure_voids_collection", (capture) => {
       capture.resource_ledger.entries.find((entry) => entry.resource_type === "ping").resource_type = "script";
-    },
+      capture.metrics.largest_resource.resource_type = "script";
+    }],
     // The warning is dropped but the ledger still records the failure.
-    (capture) => { capture.problems = []; },
+    ["ledger_problem_counts", (capture) => { capture.problems = []; }],
     // A dependency failure claims the collection completed.
-    (capture) => {
+    ["ledger_problem_counts", (capture) => {
       capture.problems = [{ code: "dependency_request_failed", count: 1 }];
       capture.measurement_status = "incomplete";
-    },
+    }],
   ];
-  for (const [index, mutate] of mutations.entries()) {
+  for (const [index, [rule, mutate]] of mutations.entries()) {
     const capture = structuredClone(base);
     mutate(capture);
     capture.integrity = buildPolishCaptureIntegrity(capture);
     const evidence = evidenceForCapture(capture);
     assert.equal(evidence.measurement.status, "incomplete", `mutation ${index}`);
     assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true, `mutation ${index}`);
+    assert.equal(evidence.measurement.incomplete[0].shape_violation, rule, `mutation ${index}`);
     assert.equal(evaluate(evidence).waivable, false, `mutation ${index}`);
   }
 });
@@ -1330,5 +1355,96 @@ test("a capture cannot declare its collection complete over a ledger-recorded de
   const evidence = evidenceForCapture(capture);
   assert.equal(evidence.measurement.status, "incomplete");
   assert.equal(evidence.measurement.incomplete[0].problem_codes.includes("capture_shape_invalid"), true);
+  assert.equal(evidence.measurement.incomplete[0].shape_violation, "dependency_failure_voids_collection");
   assert.equal(evaluate(evidence).waivable, false);
+});
+
+// One mutation per rule, in table order, against a producer-built capture that
+// carries a document, a hidden eager media element and a demoted cross-origin
+// beacon. Each mutation is re-signed so the named rule is the first one that
+// can fail. Four field-vocabulary rules (response_collection_fields,
+// media_collection_fields, and the structural halves of networkidle and
+// metrics) sit behind integrity: a capture that fails them cannot carry a
+// matching integrity fingerprint, so integrity is the rule that reports.
+test("every shape rule names itself as the first violated invariant", () => {
+  const base = attributionCapture(
+    [
+      mediaResponse("hidden", "hidden-too-large.mp4", 2_000_000),
+      { request_id: "beacon", url: "https://attribution.example.invalid/ping", resource_type: "Ping", failed: true },
+    ],
+    { mediaElements: [mediaElement("hidden-too-large.mp4")] },
+  );
+  assert.equal(base.measurement_status, "complete");
+  assert.equal(captureShapeViolation(base), null);
+  assert.equal(Object.isFrozen(POLISH_CAPTURE_SHAPE_RULES), true);
+  assert.equal(new Set(POLISH_CAPTURE_SHAPE_RULES).size, POLISH_CAPTURE_SHAPE_RULES.length);
+
+  const pushProblem = (capture, code) => {
+    capture.problems = [...capture.problems, { code, count: 1 }].sort((a, b) => a.code.localeCompare(b.code));
+    capture.measurement_status = "incomplete";
+  };
+  const mediaEntry = (capture) => capture.resource_ledger.entries.find((entry) => entry.resource_type === "media");
+  const pingEntry = (capture) => capture.resource_ledger.entries.find((entry) => entry.resource_type === "ping");
+  assert.equal(captureShapeViolation(null), "capture_object");
+  assert.equal(captureShapeViolation([]), "capture_object");
+  const mutations = {
+    schema_version: (capture) => { capture.schema_version = "other"; },
+    performed_by: (capture) => { capture.performed_by = "other"; },
+    measurement_status_token: (capture) => { capture.measurement_status = "partial"; },
+    subject: (capture) => { capture.subject.viewport = "Desktop"; },
+    problems: (capture) => { capture.problems = [{ code: "cache_observed", count: 0 }]; },
+    integrity: (capture) => { capture.integrity.projection_fingerprint = `sha256:${"e".repeat(64)}`; },
+    producer_status: (capture) => { capture.producer_status = "failed"; },
+    response_collection_status: (capture) => { capture.response_collection.status = "failed"; },
+    response_collection_empty: (capture) => pushProblem(capture, "response_collection_empty"),
+    media_collection_status: (capture) => { capture.media_collection.status = "partial"; },
+    media_collection_counts: (capture) => {
+      capture.media_collection.status = "partial";
+      capture.media_collection.failed_element_count = 1;
+    },
+    networkidle: (capture) => { capture.networkidle = { status: "timeout", duration_ms: null }; },
+    networkidle_problem: (capture) => pushProblem(capture, "networkidle_measurement_invalid"),
+    resource_ledger: (capture) => { mediaEntry(capture).cross_origin_request_count = 2; },
+    document_response: (capture) => { capture.document_response.status = "error"; },
+    metrics: (capture) => { capture.metrics.total_transferred_bytes += 1; },
+    response_accounting: (capture) => { capture.response_collection.unattributed_response_count += 1; },
+    resource_ledger_overflow: (capture) => {
+      capture.resource_ledger.omitted_resource_count = 1;
+      capture.resource_ledger.total_resource_count += 1;
+    },
+    media: (capture) => { capture.media[0].fetched_bytes -= 1; },
+    media_element_accounting: (capture) => { capture.media_collection.observed_element_count = 2; },
+    media_source_unresolvable: (capture) => pushProblem(capture, "media_source_unresolvable"),
+    media_transfer_unattributed: (capture) => {
+      const rewritten = `sha256:${"f".repeat(64)}`;
+      mediaEntry(capture).resource_id = rewritten;
+      mediaEntry(capture).match_resource_ids = [rewritten];
+      capture.metrics.largest_resource.resource_id = rewritten;
+      capture.media[0].fetched_bytes = 0;
+      capture.media[0].fetched_request_count = 0;
+      capture.media[0].fetched_resources = [];
+    },
+    final_document_route_mismatch: (capture) => { capture.subject.final_document_route = "/other/"; },
+    dependency_failure_voids_collection: (capture) => { pingEntry(capture).resource_type = "script"; },
+    ledger_problem_counts: (capture) => { capture.problems = []; },
+  };
+  const shadowedByIntegrity = ["response_collection_fields", "media_collection_fields"];
+  assert.deepEqual(
+    ["capture_object", ...Object.keys(mutations), ...shadowedByIntegrity].sort(),
+    [...POLISH_CAPTURE_SHAPE_RULES].sort(),
+  );
+
+  for (const [rule, mutate] of Object.entries(mutations)) {
+    const capture = structuredClone(base);
+    mutate(capture);
+    if (rule !== "integrity") capture.integrity = buildPolishCaptureIntegrity(capture);
+    assert.equal(captureShapeViolation(capture), rule, rule);
+  }
+  for (const rule of shadowedByIntegrity) {
+    const capture = structuredClone(base);
+    if (rule === "response_collection_fields") capture.response_collection.status = "partial";
+    else capture.media_collection.status = "other";
+    capture.integrity = buildPolishCaptureIntegrity(capture);
+    assert.equal(captureShapeViolation(capture), "integrity", rule);
+  }
 });
