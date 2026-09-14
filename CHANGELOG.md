@@ -2,6 +2,38 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.29] - 2026-09-14
+
+### Fixed
+
+- `qa resolve` and `qa run` print a blocked gate's remediation the way
+  `doctor` prints the same gate: when the checkpoint gates were evaluated on
+  a report other than the target repo's default
+  `.campaign-runtime/assembly-report.json` (`--report`, or a Build Context
+  `report_path` binding), every packet-scoped `checkpoint waive` /
+  `theme waive` line under `Required actions:` now ends with
+  `--report <that path>`, so the pasted command acts on the report QA read
+  instead of on a default sidecar that may not exist. The payload carries
+  the same path as `report_path` (present only when it is not that default,
+  like doctor's `derived.assembly_report_path`); a default-report campaign's
+  text and JSON are unchanged. The rule that picks the report to name is one
+  function, `explicitReportPath` in `src/campaign-workspace.mjs`.
+- `theme waive`, `checkpoint waive`, `polish capture` and `qa waive` fail by
+  name on a torn or hand-edited Assembly Report: `Assembly Report at <path>
+  is not valid JSON: <parser message>` in place of a bare `SyntaxError:
+  Unexpected end of JSON input` that named no file. The torn bytes are left
+  on disk, no waiver or merge is written, and the doctor sidecar is neither
+  stamped stale nor refreshed. A read failure (permissions, a directory at
+  the path) still propagates as itself; only the parse is renamed.
+- `singleLineDetail` (`./text-safety`) never fabricates a lone ellipsis: a
+  `max` of one, zero or below now returns the first character (`"a"` for
+  `"abc"`) where it returned `"…"`, so the cut is bare at a width the
+  ellipsis cannot fit. Documented alongside the two behaviours the 1.27.0
+  move added without a note: a non-finite `max` (NaN) means the default
+  `ADVISORY_DETAIL_MAX` (300) rather than the whole string, and `max` floors
+  at one. The result never exceeds `max` characters for any `max >= 1`. The
+  module's header comment is one sentence again.
+
 ## [1.27.0+agent.28] - 2026-09-14
 
 ### Changed
