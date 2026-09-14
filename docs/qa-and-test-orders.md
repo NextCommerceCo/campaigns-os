@@ -441,12 +441,12 @@ Exactly one comparison, against exactly one earlier run:
    When that reference is `external:qa_verdict` — the record's spelling for a
    verdict written outside the packet directory, the ordinary case whenever
    `assembly.target_repo` is not the packet's own directory — the verdict is
-   located by its recorded digest under the target repo's `qa-output/`, or,
-   failing that, read from the committed
-   `<packet dir>/.campaign-runtime/qa-verdict.json` sidecar when that
-   projection is this campaign's, is not the run being classified, and agrees
-   with the record (completed no later than the record was written, same
-   disposition as the record's QA observations).
+   located by its recorded digest under the target repo's `qa-output/`. The
+   committed `.campaign-runtime/qa-verdict.json` sidecar is not a stand-in:
+   it is a projection, so its digest cannot match, and the record stores no
+   verdict run id to tie it to the referenced attempt — comparing against a
+   projection of some other attempt would report a reintroduced finding as
+   pre-existing.
    For doctor, from the Run Record's `observations.doctor.error_codes` /
    `warning_codes`.
 3. **Classify.** Environment and upstream drift are decided first, from the
@@ -472,7 +472,7 @@ violations sharing a code are one finding to this comparison.
 | `no_prior_run` | No Run Record for this campaign under the packet directory — including every packet-less run (`--site`, a raw map id), which has no Run Record home. |
 | `prior_run_without_qa_verdict` | The previous Run Record carries no QA verdict artifact reference at all. |
 | `prior_run_verdict_unreadable` | It references one by path, but the file is gone or unparseable. |
-| `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, and neither the target repo's `qa-output/` (by digest) nor the committed sidecar holds a matching verdict. |
+| `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, and the target repo's `qa-output/` holds no verdict with the recorded digest. |
 | `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
 
 Only the first of those means "run again and it will improve". The other four

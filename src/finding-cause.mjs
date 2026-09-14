@@ -270,7 +270,7 @@ const CAUSE_BASIS_SENTENCES = Object.freeze({
   no_prior_run: () => "There is no previous run for this campaign to compare against, so every finding is labelled unknown. The comparison starts working once a Run Record exists.",
   prior_run_without_qa_verdict: (id) => `Previous run ${id} exists but references no QA verdict, so there was nothing to compare against and every finding is labelled unknown.`,
   prior_run_verdict_unreadable: (id) => `Previous run ${id} exists but its QA verdict is missing or unreadable, so there was nothing to compare against and every finding is labelled unknown.`,
-  prior_run_verdict_unlocated: (id) => `Previous run ${id} exists and references a QA verdict written outside the packet directory, but neither the target repo's qa-output/ nor the committed .campaign-runtime/qa-verdict.json sidecar holds a verdict matching it, so there was nothing to compare against and every finding is labelled unknown.`,
+  prior_run_verdict_unlocated: (id) => `Previous run ${id} exists and references a QA verdict written outside the packet directory, but the target repo's qa-output/ holds no verdict with the recorded digest, so there was nothing to compare against and every finding is labelled unknown.`,
   prior_run_without_doctor_observations: (id) => `Previous run ${id} exists but carries no doctor observations, so there was nothing to compare against and every finding is labelled unknown.`,
 });
 
@@ -321,9 +321,8 @@ export function formatCauseTag(finding) {
 // ---------------------------------------------------------------------------
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve as resolvePath } from "node:path";
-import { SIDECAR_RELATIVE_PATH } from "./qa-sidecar.mjs";
-import { iterateQaVerdicts, qaVerdictIdentityMatch } from "./qa-verdict-discovery.mjs";
+import { isAbsolute, resolve as resolvePath } from "node:path";
+import { iterateQaVerdicts } from "./qa-verdict-discovery.mjs";
 
 import { readRunRecordsForTarget } from "./run-record.mjs";
 
@@ -387,43 +386,34 @@ function recordIdentityForDiscovery(record) {
  * `assembly.target_repo` is not the packet's own directory: `qa run` writes
  * the full verdict under `<target repo>/qa-output/<identifier>/` and the
  * record, relativizing against the packet directory, keeps only the kind and
- * the file's digest. Two places can still hold that verdict:
+ * the file's digest. The digest is the one thing that ties a file on disk to
+ * THAT reference, so the target repo's `qa-output/` directories are searched
+ * for the file whose bytes hash to it: the referenced verdict itself, never a
+ * neighbouring attempt.
  *
- * 1. The target repo's `qa-output/` directories, matched by the digest the
- *    reference carries — the same bytes the record hashed, so this is the
- *    referenced file itself, never a neighbouring attempt.
- * 2. The committed sidecar `<packet dir>/.campaign-runtime/qa-verdict.json`,
- *    the projection `qa run` writes beside the packet regardless of where the
- *    full verdict went. A projection has a different digest, so it is
- *    accepted only when it is this campaign's, is not the run being
- *    classified, and is consistent with the record: completed no later than
- *    the record was written, and carrying the disposition the record's own
- *    QA observations stored.
+ * The committed sidecar (`.campaign-runtime/qa-verdict.json`) is deliberately
+ * not a fallback. It is a projection, so its digest cannot match, and the
+ * record stores no verdict run id to match it by; any other rule (same
+ * campaign, older than the record, same disposition) admits a projection of a
+ * different attempt — one restored by `qa promote`, say — and would report a
+ * finding that attempt carried and the recorded final attempt had fixed as
+ * pre-existing. Until the record can name the attempt, an unlocated reference
+ * stays `prior_run_verdict_unlocated`.
  *
- * Returns `{ verdict, path }` or null. The single-record boundary holds: both
- * routes read a verdict the ONE previous record references or projected, not
- * the newest file lying around.
+ * Returns `{ verdict, path }` or null. The single-record boundary holds: this
+ * reads the verdict the ONE previous record references, not the newest file
+ * lying around.
  */
-function locateExternalPriorVerdict({ baseDir, targetRepo, record, ref, currentRunId }) {
-  const identity = recordIdentityForDiscovery(record);
+function locateExternalPriorVerdict({ targetRepo, record, ref }) {
   const digest = text(ref?.sha256);
-  if (digest && text(targetRepo)) {
-    for (const candidate of iterateQaVerdicts({ packet: identity, roots: [targetRepo], withDigest: true })) {
-      if (candidate.sha256 !== digest) continue;
-      const verdict = candidate.verdict && Array.isArray(candidate.verdict.assertions) ? candidate.verdict : null;
-      return verdict ? { verdict, path: candidate.path } : null;
-    }
+  if (!digest || !text(targetRepo)) return null;
+  const identity = recordIdentityForDiscovery(record);
+  for (const candidate of iterateQaVerdicts({ packet: identity, roots: [targetRepo], withDigest: true })) {
+    if (candidate.sha256 !== digest) continue;
+    const verdict = candidate.verdict && Array.isArray(candidate.verdict.assertions) ? candidate.verdict : null;
+    return verdict ? { verdict, path: candidate.path } : null;
   }
-  const sidecarPath = join(baseDir, SIDECAR_RELATIVE_PATH);
-  const sidecar = readPriorVerdictFile(sidecarPath);
-  if (!sidecar || !qaVerdictIdentityMatch(sidecar, identity)) return null;
-  if (currentRunId && sidecar.run_id === currentRunId) return null;
-  const completedAt = Date.parse(sidecar.completed_at || "");
-  const recordedAt = Date.parse(record?.created_at || "");
-  if (Number.isFinite(completedAt) && Number.isFinite(recordedAt) && completedAt > recordedAt) return null;
-  const recordedDisposition = text(record?.observations?.qa?.disposition);
-  if (recordedDisposition && text(sidecar.disposition) !== recordedDisposition) return null;
-  return { verdict: sidecar, path: sidecarPath };
+  return null;
 }
 
 /**
@@ -440,9 +430,9 @@ function locateExternalPriorVerdict({ baseDir, targetRepo, record, ref, currentR
  * false-clean answer this label exists to prevent.
  *
  * A reference of `external:qa_verdict` is a reference, not an absence: it is
- * resolved through `targetRepo` (the packet's `assembly.target_repo`) and the
- * committed sidecar — see locateExternalPriorVerdict. Only a record with no
- * qa_verdict artifact at all reports `prior_run_without_qa_verdict`.
+ * resolved by digest through `targetRepo` (the packet's `assembly.target_repo`)
+ * — see locateExternalPriorVerdict. Only a record with no qa_verdict artifact
+ * at all reports `prior_run_without_qa_verdict`.
  *
  * The single-record boundary is unchanged: this still reads the final attempt
  * of exactly one earlier run, never a merged view across runs.
@@ -454,7 +444,7 @@ export function loadPriorQaVerdict({ baseDir, targetRepo = null, mapId = null, c
   const refPath = text(ref?.path);
   if (!refPath) return { verdict: null, record, path: null, reason: "prior_run_without_qa_verdict" };
   if (refPath.startsWith(EXTERNAL_REF_PREFIX)) {
-    const located = locateExternalPriorVerdict({ baseDir, targetRepo, record, ref, currentRunId });
+    const located = locateExternalPriorVerdict({ targetRepo, record, ref });
     return located
       ? { verdict: located.verdict, record, path: located.path, reason: null }
       : { verdict: null, record, path: null, reason: "prior_run_verdict_unlocated" };

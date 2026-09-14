@@ -464,16 +464,16 @@ Notable supported-surface changes are recorded here.
   under the target repo's `qa-output/`, so the second run reports
   `Comparison basis` as `prior_run` and labels carried-over findings
   `pre_existing` — the same result a packet at the target root already got.
-- When that full verdict is gone (the `qa-output/` directory is gitignored),
-  the committed `<packet dir>/.campaign-runtime/qa-verdict.json` sidecar
-  stands in, provided it is this campaign's, is not the run being classified,
-  completed no later than the Run Record was written, and carries the
-  disposition the record's QA observations stored. A sidecar from a later,
-  unrecorded run is refused rather than compared against.
+- The committed `<packet dir>/.campaign-runtime/qa-verdict.json` sidecar is
+  deliberately not a stand-in when that full verdict is gone: it is a
+  projection, so its digest cannot match, and the Run Record stores no
+  verdict run id to tie it to the referenced attempt, so any looser rule
+  could compare against a projection of a different attempt and report a
+  reintroduced finding as pre-existing.
 - New `cause_reason` / `comparison` value `prior_run_verdict_unlocated`: the
-  previous Run Record references a verdict as `external:qa_verdict` and
-  neither route above finds a match. Its report line names both places that
-  were searched. `prior_run_without_qa_verdict` now means exactly what it
+  previous Run Record references a verdict as `external:qa_verdict` and the
+  target repo's `qa-output/` holds no verdict with the recorded digest. Its
+  report line says so. `prior_run_without_qa_verdict` now means exactly what it
   says — the record carries no `qa_verdict` artifact reference at all — and
   `prior_run_verdict_unreadable` keeps its meaning for a by-path reference
   whose file is missing or unparseable. `docs/qa-and-test-orders.md` lists

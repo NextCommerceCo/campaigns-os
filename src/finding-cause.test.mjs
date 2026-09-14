@@ -518,7 +518,7 @@ const sha256Of = (path) => createHash("sha256").update(readFileSync(path)).diges
  * and `run-record` leave them when `assembly.target_repo` points elsewhere:
  * the full verdict under `<target>/qa-output/<map id>/`, the record under the
  * packet directory referencing it only as `external:qa_verdict` plus the
- * file's digest, and optionally the committed sidecar beside the packet.
+ * file's digest, and optionally a committed sidecar beside the packet.
  */
 function writeExternalPriorRun({ runId, mapId, verdict, sha256, createdAt = "2026-09-14T10:00:00.000Z", disposition = null, sidecar = null }) {
   const packetDir = scratch();
@@ -578,15 +578,19 @@ test("the digest picks the referenced verdict, not a neighbouring attempt under 
   assert.equal(assertions[0].cause, CAUSE_CLASSES.CAUSED_BY_CHANGE);
 });
 
-test("the committed sidecar stands in for an external verdict that cannot be located, when it agrees with the record", () => {
+test("the committed sidecar is never a stand-in: a projection cannot be tied to the referenced attempt", () => {
+  // The full verdict is gone from the target repo (digest matches nothing),
+  // and the sidecar beside the packet is a projection of an EARLIER attempt
+  // (restored by qa promote) that still carried a finding the recorded final
+  // attempt had fixed. Comparing against it would call the regression
+  // pre-existing.
   const sidecar = {
-    run_id: "qa_final",
+    run_id: "qa_attempt_1",
     campaign_slug: "map-1",
     completed_at: "2026-09-14T09:59:00.000Z",
     disposition: "blocked",
     assertions: [finding({ id: "http:checkout" })],
   };
-  // The full verdict is gone from the target repo (digest matches nothing).
   const { packetDir, targetRepo } = writeExternalPriorRun({
     runId: "run_1757000000000_aaaaaaaa",
     mapId: "map-1",
@@ -597,42 +601,24 @@ test("the committed sidecar stands in for an external verdict that cannot be loc
     sidecar,
   });
   const lookup = loadPriorQaVerdict({ baseDir: packetDir, targetRepo, mapId: "map-1", currentRunId: "run_current" });
-  assert.equal(lookup.reason, null);
-  assert.equal(lookup.path, join(packetDir, ".campaign-runtime/qa-verdict.json"));
-  assert.equal(lookup.verdict.run_id, "qa_final");
+  assert.equal(lookup.verdict, null);
+  assert.equal(lookup.reason, "prior_run_verdict_unlocated");
   const assertions = [finding({ id: "http:checkout" })];
   const summary = annotateQaAssertionCauses(assertions, { baseDir: packetDir, targetRepo, mapId: "map-1", currentRunId: "run_current", isFinding: isFindingAssertion });
-  assert.equal(summary.comparison, "prior_run");
-  assert.equal(assertions[0].cause, CAUSE_CLASSES.PRE_EXISTING);
+  assert.equal(summary.comparison, "prior_run_verdict_unlocated");
+  assert.equal(assertions[0].cause, CAUSE_CLASSES.UNKNOWN);
 });
 
-test("a sidecar that is not the previous run's is refused: wrong campaign, newer than the record, other disposition, or the current run", () => {
-  const base = {
-    run_id: "qa_final",
-    campaign_slug: "map-1",
-    completed_at: "2026-09-14T09:59:00.000Z",
-    disposition: "blocked",
-    assertions: [finding({ id: "http:checkout" })],
-  };
-  const cases = [
-    { name: "wrong campaign", sidecar: { ...base, campaign_slug: "map-2" } },
-    { name: "newer than the record", sidecar: { ...base, completed_at: "2026-09-14T10:00:01.000Z" } },
-    { name: "other disposition", sidecar: { ...base, disposition: "pass" } },
-    { name: "the current run", sidecar: base, currentRunId: "qa_final" },
-  ];
-  for (const { name, sidecar, currentRunId = "run_current" } of cases) {
-    const { packetDir, targetRepo } = writeExternalPriorRun({
-      runId: "run_1757000000000_aaaaaaaa",
-      mapId: "map-1",
-      verdict: { run_id: "qa_other", campaign_slug: "map-1", assertions: [] },
-      sha256: "0".repeat(64),
-      disposition: "blocked",
-      sidecar,
-    });
-    const lookup = loadPriorQaVerdict({ baseDir: packetDir, targetRepo, mapId: "map-1", currentRunId });
-    assert.equal(lookup.verdict, null, name);
-    assert.equal(lookup.reason, "prior_run_verdict_unlocated", name);
-  }
+test("a reference without a digest cannot be located, even when one verdict sits under the target repo", () => {
+  const { packetDir, targetRepo } = writeExternalPriorRun({
+    runId: "run_1757000000000_aaaaaaaa",
+    mapId: "map-1",
+    verdict: { run_id: "qa_final", campaign_slug: "map-1", assertions: [] },
+    sha256: null,
+  });
+  const lookup = loadPriorQaVerdict({ baseDir: packetDir, targetRepo, mapId: "map-1" });
+  assert.equal(lookup.verdict, null);
+  assert.equal(lookup.reason, "prior_run_verdict_unlocated");
 });
 
 test("an external reference that resolves nowhere names its own reason, never 'references no QA verdict'", () => {
@@ -641,7 +627,7 @@ test("an external reference that resolves nowhere names its own reason, never 'r
     mapId: "map-1",
     verdict: { run_id: "qa_final", campaign_slug: "map-1", assertions: [] },
   });
-  // No target repo known at all: nothing to search by digest, no sidecar.
+  // No target repo known at all: nothing to search by digest.
   const lookup = loadPriorQaVerdict({ baseDir: packetDir, mapId: "map-1" });
   assert.equal(lookup.verdict, null);
   assert.equal(lookup.reason, "prior_run_verdict_unlocated");
