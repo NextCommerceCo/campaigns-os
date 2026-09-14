@@ -60,6 +60,11 @@ export function normalizeString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+export function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+
 export function relPath(from, to) {
   const rel = relative(resolve(from), resolve(to)).split(sep).join("/");
   return rel || ".";

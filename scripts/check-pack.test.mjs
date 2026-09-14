@@ -37,7 +37,12 @@ test('standalone packing rebuilds, pipeline packing reuses, and missing dist fai
   assert.equal(recorded, 'build\n');
   const pipeline = run(['--skip-prepare']);
   assert.equal(pipeline.status, 0, pipeline.stderr);
-  assert.equal(readFileSync(join(dir, 'build-count.txt'), 'utf8'), recorded);
+  // npm before 11 runs prepare during pack regardless of --ignore-scripts; the
+  // check reports that re-run on stderr rather than hiding it, and either way
+  // the tarball must carry the working-tree build.
+  const rebuiltByNpm = /re-ran the prepare script/.test(pipeline.stderr);
+  const afterPipeline = rebuiltByNpm ? `${recorded}build\n` : recorded;
+  assert.equal(readFileSync(join(dir, 'build-count.txt'), 'utf8'), afterPipeline);
   for (const hook of ['prepack', 'postpack']) {
     pkg.scripts[hook] = 'node ./record-build.mjs';
     writeFileSync(pkgPath, JSON.stringify(pkg));
@@ -45,7 +50,7 @@ test('standalone packing rebuilds, pipeline packing reuses, and missing dist fai
     assert.notEqual(guarded.status, 0);
     assert.match(guarded.stderr, /cannot omit packaging hooks/);
     assert.ok(guarded.stderr.includes(hook));
-    assert.equal(readFileSync(join(dir, 'build-count.txt'), 'utf8'), recorded);
+    assert.equal(readFileSync(join(dir, 'build-count.txt'), 'utf8'), afterPipeline);
     delete pkg.scripts[hook];
   }
   writeFileSync(pkgPath, JSON.stringify(pkg));
@@ -54,5 +59,5 @@ test('standalone packing rebuilds, pipeline packing reuses, and missing dist fai
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /dist\/index.js missing/);
   assert.deepEqual(readdirSync(scratch).filter(name => name.startsWith('campaigns-os-pack-')), [], 'failed packing must remove its tarball and extraction');
-  assert.equal(readFileSync(join(dir, 'build-count.txt'), 'utf8'), recorded);
+  assert.equal(readFileSync(join(dir, 'build-count.txt'), 'utf8'), afterPipeline, 'a missing build is refused before npm pack can rebuild it');
 });
