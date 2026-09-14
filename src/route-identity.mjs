@@ -99,8 +99,12 @@ export function intakeRouteRoot(declared, publicRouteSlug) {
 // root (doctor) share one answer:
 //   { route_root, declared, source: "packet" | "spec" | "raw_spec" | null,
 //     accepted: true | false | null }   // null: nothing declared
+// `publicRouteSlug` omitted (undefined) means "the packet's own slug"; passed
+// explicitly — even null or "" — it is used as given, so a caller that resolved
+// the slug from wider evidence (deploy path, spec) is never second-guessed by
+// the packet, and an explicit "no slug" yields route_root null.
 export function resolveRouteRoot({ packet = null, spec = null, rawSpec = null, publicRouteSlug } = {}) {
-  const slug = normalizePublicRouteSlug(publicRouteSlug !== undefined ? publicRouteSlug : packet?.campaign?.public_route_slug);
+  const slug = normalizePublicRouteSlug(publicRouteSlug === undefined ? packet?.campaign?.public_route_slug : publicRouteSlug);
   const fallback = slug ? `/${slug}/` : null;
   const declarations = [
     ["packet", packet?.campaign?.route_root, packetRouteRoot],

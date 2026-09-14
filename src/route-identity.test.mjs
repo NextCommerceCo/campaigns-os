@@ -136,6 +136,11 @@ test("resolveRouteRoot reads the first declaration under its artifact's rule and
   // An explicit slug wins over the packet's own, so a caller that resolved the
   // slug from wider evidence (deploy path, spec) reads the root against it.
   assert.equal(resolveRouteRoot({ packet: { campaign: { public_route_slug: "x" } }, publicRouteSlug: "y" }).route_root, "/y/");
+  // Omitted means the packet's slug; an explicit null or "" means no slug.
+  assert.equal(resolveRouteRoot({ packet: { campaign: { public_route_slug: "x" } } }).route_root, "/x/");
+  assert.equal(resolveRouteRoot({ packet: { campaign: { public_route_slug: "x" } }, publicRouteSlug: undefined }).route_root, "/x/");
+  assert.equal(resolveRouteRoot({ packet: { campaign: { public_route_slug: "x" } }, publicRouteSlug: null }).route_root, null);
+  assert.equal(resolveRouteRoot({ packet: { campaign: { public_route_slug: "x" } }, publicRouteSlug: "" }).route_root, null);
 });
 
 test("campaignRouteRoot is the packet's honoured root or the slug default", () => {

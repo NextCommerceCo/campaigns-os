@@ -3117,7 +3117,7 @@ function normalizeQaBaseUrl(value, publicRouteSlug) {
 // the discard is written onto the evidence rather than swallowed.
 function resolveCampaignRouteRoot({ packet, spec, rawSpec, publicRouteSlug, notes = null }) {
   const slug = normalizePublicRouteSlug(publicRouteSlug);
-  const resolved = resolveRouteRoot({ packet, spec, rawSpec, publicRouteSlug: slug });
+  const resolved = resolveRouteRoot({ packet, spec, rawSpec, publicRouteSlug });
   if (notes && resolved.accepted === false) {
     notes.push({
       code: "route_root.declared_discarded",
