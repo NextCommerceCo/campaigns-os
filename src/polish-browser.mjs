@@ -645,6 +645,7 @@ export async function createPolishBrowserAdapter({
   );
   let browser;
   let startupTimedOut = false;
+  const startupAbort = new AbortController();
   const startupPromise = Promise.resolve().then(async () => {
     let launchedBrowser;
     try {
@@ -652,6 +653,7 @@ export async function createPolishBrowserAdapter({
         headed,
         chromium: injectedChromium,
         onMissing: polishBrowserMissing,
+        signal: startupAbort.signal,
       });
     } catch (error) {
       if (startupTimedOut) throw polishProducerTimeoutError();
@@ -670,7 +672,10 @@ export async function createPolishBrowserAdapter({
   });
   browser = await runWithPolishProducerDeadline(() => startupPromise, {
     timeoutMs: boundedStartupDeadlineMs,
-    onTimeout() { startupTimedOut = true; },
+    onTimeout() {
+      startupTimedOut = true;
+      startupAbort.abort(polishProducerTimeoutError());
+    },
   });
 
   let closed = false;

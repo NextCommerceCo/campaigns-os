@@ -65,6 +65,23 @@ test("any other launch failure is rethrown untouched", async () => {
   );
 });
 
+test("a signal aborted before launch stops the launch and surfaces the caller's reason", async () => {
+  const fake = fakeChromium();
+  const reason = new Error("deadline expired");
+  const controller = new AbortController();
+  controller.abort(reason);
+
+  await assert.rejects(
+    launchPackageChromium({ chromium: fake.chromium, onMissing, signal: controller.signal }),
+    (error) => error === reason,
+  );
+  assert.deepEqual(fake.calls, []);
+
+  const live = new AbortController();
+  assert.equal(await launchPackageChromium({ chromium: fake.chromium, onMissing, signal: live.signal }), fake.browser);
+  assert.equal(fake.calls.length, 1);
+});
+
 test("onMissing is required, and is consulted before any launch", async () => {
   const fake = fakeChromium();
   await assert.rejects(

@@ -30,10 +30,14 @@ async function importChromium() {
 // (`kind` "browser": launch failed with Playwright's install wording). Any
 // other launch failure is rethrown untouched. `chromium` injects a launcher
 // (tests, or a caller that already resolved one) in place of the import.
+// `signal` is consulted between the import and the launch: a caller whose
+// deadline expired while the package was loading gets `signal.reason` back
+// and no browser is started on its behalf.
 export async function launchPackageChromium({
   headed = false,
   chromium: injectedChromium,
   onMissing,
+  signal,
 } = {}) {
   if (typeof onMissing !== "function") {
     throw new Error("Campaigns OS browser launch requires an onMissing(kind, error) handler.");
@@ -46,6 +50,7 @@ export async function launchPackageChromium({
       throw onMissing(MISSING_BROWSER_KINDS.PACKAGE, error);
     }
   }
+  if (signal?.aborted) throw signal.reason ?? new Error("Campaigns OS browser launch was abandoned before launch.");
   try {
     return await chromium.launch({ headless: headed !== true });
   } catch (error) {
