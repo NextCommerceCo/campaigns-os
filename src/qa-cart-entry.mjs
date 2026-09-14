@@ -98,9 +98,17 @@ export function cartEntryHrefFor(element, { cartEntrySelector, cartEntryRouteAtt
   try {
     return new URL(attr, baseHref).href;
   } catch {
-    return attr;
+    // Same rule as the SDK branch: an unparseable attribute is not a route,
+    // and evidence `href` fields stay parseable URLs or null.
+    return null;
   }
 }
+
+// Route-shaped spellings the runner used to consult and no longer does,
+// because the SDK never declares them. They are not routes, but a page that
+// carries one is reported so an operator can tell "the runner narrowed its
+// vocabulary" from "the CTA was removed" when a missing-route verdict flips.
+export const UNDECLARED_ROUTE_ATTRIBUTES = Object.freeze(["data-next-href", "data-next-checkout-action"]);
 
 // Page types that, when they route into checkout, are preferred as the cart
 // entry. `select` is a real page type since #228; `product` is what the

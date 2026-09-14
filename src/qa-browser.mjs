@@ -33,6 +33,7 @@ import {
   resolveCartEntryPage,
   sdkCartSnapshotScript,
   summarizeSelectionSurface,
+  UNDECLARED_ROUTE_ATTRIBUTES,
 } from "./qa-cart-entry.mjs";
 import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
 import { isBumpRow } from "./commercial-journey.mjs";
@@ -860,22 +861,35 @@ function primaryCtaCheckEligible(page) {
 // element is a candidate only through its own clickable shape.
 const PRIMARY_CTA_SELECTOR = ["a[href]", "button", "[role='button']", "[data-next-action]", CART_ENTRY_CONTROL_SELECTOR].join(", ");
 
-// The in-page half of the primary-CTA inspection. Runs as a serialised
-// script, so the route rule it needs (cartEntryHrefFor, unit-tested in
-// qa-cart-entry) is handed in as a function value rather than closed over.
+// The in-page half of the primary-CTA inspection, as the source text the
+// page evaluates. The route rule it needs (cartEntryHrefFor, unit-tested in
+// qa-cart-entry) is handed in as a function value rather than closed over, so
+// both function bodies must stay free of module-scope references: the text is
+// run in a fresh context by a test (primary-CTA inspection script is
+// self-contained) that would surface a leaked identifier as a ReferenceError.
+function primaryCtaInspectionScript(expectedUrl) {
+  const args = {
+    routeUrl: expectedUrl,
+    ctaSelector: PRIMARY_CTA_SELECTOR,
+    cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR,
+    cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE,
+    ignoredRouteAttributes: [...UNDECLARED_ROUTE_ATTRIBUTES],
+  };
+  return `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()})`;
+}
+
 async function inspectPrimaryCta(browserPage, expectedUrl) {
-  const args = { routeUrl: expectedUrl, ctaSelector: PRIMARY_CTA_SELECTOR, cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR, cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE };
-  const script = `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()})`;
-  return browserPage.evaluate(script).catch((error) => ({
+  return browserPage.evaluate(primaryCtaInspectionScript(expectedUrl)).catch((error) => ({
     ok: false,
     reason: "inspection_error",
     expected_url: expectedUrl,
     error: error instanceof Error ? error.message : String(error),
     candidates: [],
+    ignored_attributes: [],
   }));
 }
 
-function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute }, hrefForImpl) {
+function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute, ignoredRouteAttributes }, hrefForImpl) {
   const CTA_SELECTOR = ctaSelector;
 
   const trim = (value) => String(value || "").replace(/\s+/g, " ").trim();
@@ -946,6 +960,15 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
   // The route a control leads to: the shared cart-entry rule, evaluated
   // against this document's origin and base.
   const hrefFor = (element) => hrefForImpl(element, { cartEntrySelector, cartEntryRouteAttribute, origin: location.origin, baseHref: location.href });
+  // Route-shaped attributes the element carries that the rule above does not
+  // consult: the undeclared spellings, plus the SDK route attribute on an
+  // element that is not an SDK control (a decoy, not a route). Reported, not
+  // read, so a narrowed vocabulary is visible in the evidence.
+  const ignoredAttributesOn = (element) => {
+    const names = (ignoredRouteAttributes || []).filter((name) => element.hasAttribute(name));
+    if (element.hasAttribute(cartEntryRouteAttribute) && !element.matches(cartEntrySelector)) names.push(cartEntryRouteAttribute);
+    return names;
+  };
   const routeMatches = (href) => {
     if (!href || !expected) return false;
     try {
@@ -971,6 +994,7 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
         text: label.slice(0, 120),
         href,
         route_matches: routeMatches(href),
+        ignored_attributes: ignoredAttributesOn(element),
         width: Math.round(rect.width),
         height: Math.round(rect.height),
         foreground: hex(fg),
@@ -1000,18 +1024,26 @@ function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, car
         ? "cta_too_small"
         : "low_contrast";
 
+  const ignoredAttributes = Array.from(new Set(candidates.flatMap((candidate) => candidate.ignored_attributes))).sort();
+
   return {
     ok,
     reason,
     expected_url: routeUrl,
     primary,
     candidates: candidates.slice(0, 8),
+    // Every route-shaped attribute seen on a candidate and not consulted, so
+    // a missing-route verdict on a page spelled that way reads as a
+    // vocabulary gap, not as a removed CTA.
+    ignored_attributes: ignoredAttributes,
   };
 }
 
 function primaryCtaAssertionFromEvidence(page, evidence) {
   const ok = evidence?.ok === true;
-  const reason = evidence?.reason || "unknown";
+  const ignored = Array.isArray(evidence?.ignored_attributes) ? evidence.ignored_attributes.filter(Boolean) : [];
+  const reason = (evidence?.reason || "unknown")
+    + (!ok && ignored.length ? ` (candidates carry route-shaped attributes the runner does not consult: ${ignored.join(", ")})` : "");
   return assertion({
     id: `browser-primary-cta:${page.page_id}`,
     family: "browser-runtime",
@@ -6147,6 +6179,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   commerceStructureAssertionFromEvidence,
   primaryCtaAssertionFromEvidence,
   inspectPrimaryCta,
+  primaryCtaInspectionScript,
   isOrderUpsellsUrl,
   testEmail,
   testOrderPaths,

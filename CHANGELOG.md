@@ -21,9 +21,21 @@ Notable supported-surface changes are recorded here.
   candidate CTA or `data-next-href` as a route: neither is an attribute the
   SDK declares. A control spelled that way is a candidate only through its own
   clickable shape (`<a href>`, `<button>`, `role="button"`), and routes only
-  by `href`, `data-href` or a wrapping form's `action`. The route rule is now
-  the pure `cartEntryHrefFor` in `src/qa-cart-entry.mjs`, run inside the page
-  as a serialised script and unit-tested without a browser.
+  by `href`, `data-href` or a wrapping form's `action`; an attribute that
+  does not parse as a URL is no route on either branch, so every
+  `candidates[].href` in the evidence is a resolved URL or `null`. The route
+  rule is now the pure `cartEntryHrefFor` in `src/qa-cart-entry.mjs`, run
+  inside the page as a serialised script and unit-tested without a browser
+  (a test evaluates the exact serialised text in a fresh context, so a
+  module-scope reference leaking into it fails CI instead of the page).
+- `browser-primary-cta` evidence carries `ignored_attributes`: the
+  route-shaped spellings seen on a candidate and not consulted
+  (`data-next-href`, `data-next-checkout-action`, and `data-next-url` on an
+  element that is not an SDK cart-entry control), per candidate and as a
+  page-level union. A failing verdict on a page spelled that way reads
+  `missing_route_cta (candidates carry route-shaped attributes the runner
+  does not consult: data-next-href)`, so a verdict that flipped after this
+  narrowing is distinguishable from a CTA that was removed.
 - `docs/qa-and-test-orders.md` names the coupon selector vocabulary the
   runner actually reads.
 

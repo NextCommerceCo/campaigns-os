@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 
 import {
   CART_ENTRY_CODES,
@@ -13,10 +14,11 @@ import {
   isCartEntryCode,
   resolveCartEntryPage,
   summarizeSelectionSurface,
+  UNDECLARED_ROUTE_ATTRIBUTES,
 } from "./qa-cart-entry.mjs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
-const { cartStateBeforeSubmit, classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER, PRIMARY_CTA_SELECTOR, COUPON_INPUT_SELECTORS, COUPON_APPLY_CONTROL_SELECTOR } = __qaBrowserTestHooks;
+const { cartStateBeforeSubmit, classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER, PRIMARY_CTA_SELECTOR, COUPON_INPUT_SELECTORS, COUPON_APPLY_CONTROL_SELECTOR, primaryCtaInspectionScript, primaryCtaAssertionFromEvidence } = __qaBrowserTestHooks;
 
 const BASE = "https://campaign.example";
 const checkout = { page_id: "checkout", page_type: "checkout", order: 3, url: `${BASE}/checkout/`, expected_next_url: `${BASE}/upsell-1/` };
@@ -95,9 +97,122 @@ test("cartEntryHrefFor: href-shaped attributes and a wrapping form's action reso
   const form = { getAttribute: (name) => (name === "action" ? "/checkout/" : null) };
   assert.equal(cartEntryHrefFor(element({ attrs: {}, form }), ROUTE_RULE), "https://campaign.example/checkout/");
   assert.equal(cartEntryHrefFor(element({ attrs: { "data-next-href": "/checkout/" } }), ROUTE_RULE), null, "data-next-href is not an SDK attribute and not a route");
-  assert.equal(cartEntryHrefFor(element({ attrs: { href: "http://[bad" } }), ROUTE_RULE), "http://[bad", "an unparseable href is reported as written");
+  assert.equal(cartEntryHrefFor(element({ attrs: { href: "http://[bad" } }), ROUTE_RULE), null, "an unparseable href is not a route, on either branch");
   assert.equal(cartEntryHrefFor(element(), ROUTE_RULE), null);
   assert.equal(cartEntryHrefFor(null, ROUTE_RULE), null);
+});
+
+// The primary-CTA inspection is serialised into the page as source text:
+// `inspectPrimaryCtaScript` and `cartEntryHrefFor` both travel by
+// `Function.prototype.toString`, so neither may reference a module-scope
+// identifier — an import or a top-level constant compiles and unit-tests fine
+// here and then throws ReferenceError inside the page. This evaluates the
+// exact text the runner sends, in a fresh vm context that holds only the
+// browser globals the script reads (no module scope, no Node globals), so a
+// leaked identifier fails this test instead of the next QA run.
+function pageContext({ base, elements }) {
+  const attrMatches = (element, selector) => selector.split(",").map((part) => part.trim()).some((part) => {
+    const attr = part.match(/^([a-z]*)\[([^=\]]+)(?:=(?:"([^"]*)"|'([^']*)'))?\]$/i);
+    if (attr) {
+      const [, tag, name, dq, sq] = attr;
+      if (tag && element.tagName.toLowerCase() !== tag.toLowerCase()) return false;
+      const value = dq ?? sq;
+      return value === undefined ? element.hasAttribute(name) : element.getAttribute(name) === value;
+    }
+    return element.tagName.toLowerCase() === part.toLowerCase();
+  });
+  const make = ({ tag = "button", attrs = {}, text = "", href }) => {
+    const element = {
+      tagName: tag.toUpperCase(),
+      nodeType: 1,
+      id: "",
+      className: attrs.class || "",
+      innerText: text,
+      textContent: text,
+      parentElement: null,
+      getAttribute: (name) => (name in attrs ? attrs[name] : null),
+      hasAttribute: (name) => name in attrs,
+      matches: (selector) => attrMatches(element, selector),
+      closest: () => null,
+      getBoundingClientRect: () => ({ width: 200, height: 48 }),
+    };
+    if (tag === "a" && href !== undefined) element.href = href;
+    return element;
+  };
+  const nodes = elements.map(make);
+  const context = {
+    URL,
+    Node: { ELEMENT_NODE: 1 },
+    location: { href: base, origin: new URL(base).origin },
+    document: { querySelectorAll: (selector) => nodes.filter((node) => attrMatches(node, selector)) },
+    getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1", color: "rgb(255, 255, 255)", backgroundColor: "rgb(17, 51, 34)" }),
+  };
+  return vm.createContext(context);
+}
+
+// What the runner receives: the page boundary serialises the return value,
+// so the cross-realm arrays and objects come back as plain host values.
+function evaluateInPage(script, context) {
+  return JSON.parse(JSON.stringify(vm.runInContext(script, context)));
+}
+
+test("primary-CTA inspection script is self-contained: it evaluates in a fresh context with only browser globals", () => {
+  const base = "https://campaign.example/lp/";
+  const script = primaryCtaInspectionScript("https://campaign.example/checkout/");
+  assert.equal(typeof script, "string");
+  assert.match(script, /^\(function inspectPrimaryCtaScript\(/);
+  assert.match(script, /function cartEntryHrefFor\(/);
+
+  const context = pageContext({
+    base,
+    elements: [
+      { tag: "button", attrs: { "data-next-action": "add-to-cart", "data-next-url": "/checkout/" }, text: "Buy now" },
+      { tag: "a", attrs: { href: "../support/" }, text: "Help", href: "https://campaign.example/support/" },
+      { tag: "button", attrs: { "data-next-href": "/checkout/", "data-next-url": "/checkout/" }, text: "Continue" },
+    ],
+  });
+  const evidence = evaluateInPage(script, context);
+
+  assert.equal(evidence.ok, true);
+  assert.equal(evidence.reason, "ok");
+  assert.equal(evidence.expected_url, "https://campaign.example/checkout/");
+  assert.deepEqual(Object.keys(evidence).sort(), ["candidates", "expected_url", "ignored_attributes", "ok", "primary", "reason"]);
+  assert.equal(evidence.candidates.length, 3);
+  for (const candidate of evidence.candidates) {
+    assert.deepEqual(Object.keys(candidate).sort(), ["background", "background_source", "contrast_ratio", "foreground", "height", "href", "ignored_attributes", "readable", "route_matches", "selector", "size_ok", "text", "width"]);
+    assert.ok(candidate.href === null || typeof candidate.href === "string", "href is a resolved URL or null");
+  }
+  const [sdkControl, anchor, undeclared] = evidence.candidates;
+  assert.equal(sdkControl.href, "https://campaign.example/checkout/", "the SDK control routes by data-next-url against the origin");
+  assert.equal(sdkControl.route_matches, true);
+  assert.deepEqual(sdkControl.ignored_attributes, []);
+  assert.equal(anchor.href, "https://campaign.example/support/");
+  assert.equal(anchor.route_matches, false);
+  assert.equal(undeclared.href, null, "an undeclared spelling is not a route");
+  assert.deepEqual(undeclared.ignored_attributes, ["data-next-href", "data-next-url"], "seen, reported, not consulted");
+  assert.deepEqual(evidence.ignored_attributes, ["data-next-href", "data-next-url"]);
+  assert.equal(evidence.primary.selector, "button");
+});
+
+test("a page whose only route-shaped spelling is undeclared reads as a vocabulary gap in the verdict, not as a removed CTA", () => {
+  const script = primaryCtaInspectionScript("https://campaign.example/checkout/");
+  const context = pageContext({
+    base: "https://campaign.example/lp/",
+    elements: [{ tag: "button", attrs: { "data-next-href": "/checkout/" }, text: "Continue" }],
+  });
+  const evidence = evaluateInPage(script, context);
+  assert.equal(evidence.ok, false);
+  assert.equal(evidence.reason, "missing_route_cta");
+  assert.deepEqual(evidence.ignored_attributes, ["data-next-href"]);
+  assert.ok(UNDECLARED_ROUTE_ATTRIBUTES.includes("data-next-href"));
+
+  const result = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "landing" }, evidence);
+  assert.equal(result.status, "fail");
+  assert.equal(result.actual, "missing_route_cta (candidates carry route-shaped attributes the runner does not consult: data-next-href)");
+
+  // A page with no such spelling keeps the bare reason.
+  const bare = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "landing" }, { ok: false, reason: "missing_route_cta", candidates: [], ignored_attributes: [] });
+  assert.equal(bare.actual, "missing_route_cta");
 });
 
 test("the entry step is the first rung of the ladder", () => {
