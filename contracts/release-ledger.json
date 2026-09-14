@@ -2893,6 +2893,27 @@
         }
       ],
       "entry_sha256": "9869e5eea619076f6c82e03f98019a4ca92941413739df362d73b580a34a18bb"
+    },
+    {
+      "id": "RL-0079",
+      "sequence": 79,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.22",
+      "changelog_sha256": "e0331866c914b47497efd588f17397fb3a3058596437ac87a3d8b300eaaa080e",
+      "agent_impact": "One doctor output changes. The warning spec.store_profile.payment_methods_default_on no longer appears once the CampaignSpec's checkout page is built under _site/<public_route_slug>/ and that page carries no markup for the unsupported methods; a ready note 'Built checkout carries no <methods> payment-method markup (<file>)' appears instead (followed by '; left to browser QA: shared chrome asset(s) <basenames>' and/or 'compound selector(s) <selectors>' when the family contract has payment chrome a static scan cannot attribute), and status/exit for a run whose only warning was this one moves from ready_with_warnings to ready. When the built checkout does carry the markup, the warning keeps its code, its message starts 'Built checkout still renders <methods>' and names each file and the markers found, and it now carries a detail object: basis 'built_output', methods[], template_family, pages[] ({ page_id, file, method, markers[] }), static_scan_gaps { compound_selectors[], shared_assets[] }, repair { owner, action, include_call }. Before a build the warning keeps its code with a new message (pass show_<method>=false on the checkout page's payment-methods.html include call; the old text said to remove show_* arguments that do not exist) and a detail object with basis 'spec_only', methods[], template_family and repair. An agent that repairs from this warning should read detail.repair.include_call and detail.methods instead of parsing the message. Severity is unchanged: still a warning, never an error. No other doctor field, note, warning or exit path changes; --json and text output for every other check are byte-identical.",
+      "compatibility": "compatible",
+      "migration": "None. A consumer that keyed on the old message text 'remove the show_* arg(s)' should key on the code and read detail.basis / detail.repair.include_call.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "validateSpecStoreProfile(spec, errors, warnings, ready, { packet, derived, buildState }) reads the built checkout page(s) under _site/<slug>/ for unsupported-method markup via paymentMethodMarkupMatches and the family's payment_chrome contract, silencing spec.store_profile.payment_methods_default_on when none shipped (the ready note names the shared assets / compound selectors left to browser QA via paymentMethodStaticScanGaps) and stating built evidence (detail.basis built_output, pages[], static_scan_gaps) when it did; the pre-build warning names the family, says to pass show_<method>=false on the payment-methods.html include call, and carries detail.basis spec_only, methods[], template_family, repair. STARTER_TEMPLATE_DEFAULT_ON_PAYMENT_METHODS is exported."
+        }
+      ],
+      "entry_sha256": "6093d32985a0e94994a0c6ede7070b9a1848b56ccfc14008eac1eebcc6f52f2d"
     }
   ]
 }

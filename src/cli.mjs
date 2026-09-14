@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
@@ -147,6 +147,8 @@ import {
   contractHasPaletteResidueChecks,
   demoAssetConfig,
   findForbiddenPriceHides,
+  paymentMethodMarkupMatches,
+  paymentMethodStaticScanGaps,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   templateBrandContractPath,
@@ -3563,7 +3565,8 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "spec.store_profile",
     phase: "spec",
-    run: ({ spec, errors, warnings, ready }) => validateSpecStoreProfile(spec, errors, warnings, ready),
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) =>
+      validateSpecStoreProfile(spec, errors, warnings, ready, { packet, derived, buildState }),
   },
   {
     id: PAGE_KIT_SDK_VERSION_SCOPE,
@@ -4025,7 +4028,7 @@ function validateProofPolicyObject(policy, location, warnings, ready, { requireB
   ready.push(`${location} loaded: browser=${policy.browser_qa_required === true}, typed_card_depth=${policy.typed_card_depth || "unspecified"}, order_path_depth=${policy.order_path_depth || "unspecified"}`);
 }
 
-export function validateSpecStoreProfile(spec, errors, warnings, ready) {
+export function validateSpecStoreProfile(spec, errors, warnings, ready, { packet = null, derived = {}, buildState = {} } = {}) {
   const campaign = spec?.campaign || {};
   const missing = REQUIRED_STORE_PROFILE_FIELDS.filter((field) => !isNonEmptyString(campaign[field]));
   if (missing.length > 0) {
@@ -4073,32 +4076,125 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready) {
     );
   }
 
-  // Starter-template checkout pages hard-code the payment-methods include with
-  // show_paypal/show_klarna/show_apple_pay/show_google_pay = true (the include
-  // itself defaults them false). So a method the spec does not support still
-  // renders unless the build removes it from that include call. When the spec
-  // declares its supported methods and one of those four is absent from both
+  // Every starter-template family's checkout page calls
+  // {% campaign_include 'payment-methods.html' %} with no arguments, and the
+  // include defaults show_paypal/show_klarna/show_apple_pay/show_google_pay to
+  // true. So a method the spec does not support still renders unless the build
+  // passes show_<method>=false on that include call. When the spec declares its
+  // supported methods and one of those four is absent from both
   // available_payment_methods and available_express_payment_methods, warn so the
   // build disables it (or the spec adds it). Methods may be plain strings or
   // { code, label } objects.
+  //
+  // Once the checkout is built, the rendered page is the authority: doctor
+  // reads _site/<slug>/<checkout route>/index.html for the method's markup and
+  // stays silent when none shipped — the same markers browser QA's
+  // template-residue gate keys on — instead of repeating a pre-build advisory
+  // the build already satisfied.
   const normalizeMethod = (method) =>
     String(method && typeof method === "object" ? method.code : method).toLowerCase().replace(/[\s-]+/g, "_");
   const supportedMethods = new Set([
     ...(Array.isArray(paymentMethods) ? paymentMethods : []).map(normalizeMethod),
     ...(Array.isArray(campaign.available_express_payment_methods) ? campaign.available_express_payment_methods : []).map(normalizeMethod),
   ]);
-  if (supportedMethods.size > 0) {
-    const unsupportedDefaults = ["paypal", "klarna", "apple_pay", "google_pay"].filter(
-      (method) => !supportedMethods.has(method)
+  if (supportedMethods.size === 0) return;
+  const unsupportedDefaults = STARTER_TEMPLATE_DEFAULT_ON_PAYMENT_METHODS.filter((method) => !supportedMethods.has(method));
+  if (unsupportedDefaults.length === 0) return;
+
+  const family = packet?.assembly?.template_family;
+  const builtCheckouts = builtCheckoutPagesForSpec(spec, packet, derived);
+  if (builtCheckouts.length === 0) {
+    const includeCall = `{% campaign_include 'payment-methods.html' ${unsupportedDefaults.map((method) => `show_${method}=false`).join(" ")} %}`;
+    addIssue(
+      warnings,
+      "spec.store_profile.payment_methods_default_on",
+      `Starter-template checkout pages render ${unsupportedDefaults.join(", ")} by default: the checkout page includes payment-methods.html with no arguments and the include defaults show_${unsupportedDefaults.length > 1 ? "<method>" : unsupportedDefaults[0]} to true, but the CampaignSpec does not list ${unsupportedDefaults.length > 1 ? "them" : "it"} in available_payment_methods/available_express_payment_methods. `
+        + `Pass ${unsupportedDefaults.map((method) => `show_${method}=false`).join(" ")} on that include call in the ${isNonEmptyString(family) ? `${family} ` : ""}checkout page (${includeCall}) or add the method to the spec, so unsupported methods do not ship. Doctor re-reads the built checkout once it exists.`,
+      {
+        methods: unsupportedDefaults,
+        template_family: isNonEmptyString(family) ? family : null,
+        basis: "spec_only",
+        repair: {
+          owner: "operator",
+          action: `Pass ${unsupportedDefaults.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call, or add the method(s) to the CampaignSpec, then rebuild.`,
+          include_call: includeCall,
+        },
+      }
     );
-    if (unsupportedDefaults.length > 0) {
-      addIssue(
-        warnings,
-        "spec.store_profile.payment_methods_default_on",
-        `Starter-template checkout pages enable ${unsupportedDefaults.join(", ")} in the payment-methods include by default, but the CampaignSpec does not list ${unsupportedDefaults.length > 1 ? "them" : "it"} in available_payment_methods/available_express_payment_methods. If you build on a starter template family, remove the show_* arg(s) from the checkout payment-methods include (or add the method to the spec) so unsupported methods do not ship.`
-      );
+    return;
+  }
+
+  const chrome = isNonEmptyString(family) ? resolveBrandContractOnce(derived, family).contract?.default_residue?.payment_chrome || null : null;
+  const shipped = [];
+  for (const built of builtCheckouts) {
+    const html = readFileSync(built.path, "utf8");
+    for (const method of unsupportedDefaults) {
+      const markers = paymentMethodMarkupMatches(html, method, chrome);
+      if (markers.length) shipped.push({ page_id: built.page_id, file: built.file, method, markers });
     }
   }
+  const builtFiles = [...new Set(builtCheckouts.map((built) => built.file))].join(", ");
+  // What the static scan could not attribute (compound selectors, shared
+  // chrome assets) stays with browser QA; name it so "no markup" is never
+  // read as "nothing left to check".
+  const gaps = { compound_selectors: [], shared_assets: [] };
+  for (const method of unsupportedDefaults) {
+    const methodGaps = paymentMethodStaticScanGaps(chrome, method);
+    gaps.compound_selectors.push(...methodGaps.compound_selectors);
+    gaps.shared_assets.push(...methodGaps.shared_assets);
+  }
+  gaps.compound_selectors = [...new Set(gaps.compound_selectors)];
+  gaps.shared_assets = [...new Set(gaps.shared_assets)];
+  const gapClauses = [];
+  if (gaps.shared_assets.length) gapClauses.push(`shared chrome asset${gaps.shared_assets.length > 1 ? "s" : ""} ${gaps.shared_assets.join(", ")}`);
+  if (gaps.compound_selectors.length) gapClauses.push(`compound selector${gaps.compound_selectors.length > 1 ? "s" : ""} ${gaps.compound_selectors.join(", ")}`);
+  const gapNote = gapClauses.length ? `; left to browser QA: ${gapClauses.join(" and ")}` : "";
+  if (shipped.length === 0) {
+    ready.push(`Built checkout carries no ${unsupportedDefaults.join(", ")} payment-method markup (${builtFiles})${gapNote}`);
+    return;
+  }
+  const shippedMethods = [...new Set(shipped.map((hit) => hit.method))];
+  const evidence = shipped.map((hit) => `${hit.file}: ${hit.method} (${hit.markers.join(", ")})`).join("; ");
+  addIssue(
+    warnings,
+    "spec.store_profile.payment_methods_default_on",
+    `Built checkout still renders ${shippedMethods.join(", ")}, which the CampaignSpec does not list in available_payment_methods/available_express_payment_methods: ${evidence}. `
+      + `Pass ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call and rebuild (or add the method to the spec); browser QA's template-residue gate fails on this markup.`,
+    {
+      methods: shippedMethods,
+      template_family: isNonEmptyString(family) ? family : null,
+      basis: "built_output",
+      pages: shipped,
+      static_scan_gaps: gaps,
+      repair: {
+        owner: "operator",
+        action: `Pass ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call, or add the method(s) to the CampaignSpec, then rebuild.`,
+        include_call: `{% campaign_include 'payment-methods.html' ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} %}`,
+      },
+    }
+  );
+}
+
+// The four methods every starter-template payment-methods include renders
+// unless the checkout page passes show_<method>=false.
+export const STARTER_TEMPLATE_DEFAULT_ON_PAYMENT_METHODS = Object.freeze(["paypal", "klarna", "apple_pay", "google_pay"]);
+
+// Built checkout pages on disk for the spec's active checkout pages: the
+// rendered _site/<slug>/<route>/index.html files that exist. Empty before a
+// build (or when the spec declares no checkout page), which is the pre-build
+// state the spec-only advisory covers.
+function builtCheckoutPagesForSpec(spec, packet, derived = {}) {
+  const targetRepo = derived?.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!targetRepo || !publicRouteSlug) return [];
+  const built = [];
+  for (const page of activeSpecPages(spec)) {
+    if (String(page?.type || page?.page_type || "").toLowerCase().trim() !== "checkout") continue;
+    const path = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
+    if (!path || !existsSync(path) || !statSync(path).isFile()) continue;
+    built.push({ page_id: page.id, path, file: relative(targetRepo, path).split(sep).join("/") });
+  }
+  return built;
 }
 
 // R2-B5: a best-effort check for store URLs that clearly cannot be
