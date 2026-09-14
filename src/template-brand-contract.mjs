@@ -239,27 +239,20 @@ export function summarizePlaceholderTerms(matches) {
 }
 
 // Demo-asset fidelity contract (H3.2): the template's own demo placeholder
-// assets (1x1 spacers, repeated benefit icons, starter imagery) that should be
-// re-skinned. Data-driven per family so the flag is declarative, not hardcoded.
+// assets (1x1 spacers, starter imagery) that should be re-skinned. Data-driven
+// per family so the flag is declarative, not hardcoded: `demo_assets.assets`
+// is the whole vocabulary, and a contract with no assets declares no check.
 export function demoAssetConfig(contract) {
   const cfg = contract?.demo_assets;
   if (!isPlainObject(cfg)) return null;
   const assets = Array.isArray(cfg.assets)
     ? cfg.assets.map((asset) => String(asset)).filter((asset) => asset.trim())
     : [];
-  const rawIcon = isPlainObject(cfg.repeated_icon) ? cfg.repeated_icon : null;
-  const repeatedIcon = rawIcon && typeof rawIcon.selector === "string" && rawIcon.selector.trim()
-    ? {
-        selector: rawIcon.selector.trim(),
-        minRepeats: Number.isInteger(rawIcon.min_repeats) && rawIcon.min_repeats > 1 ? rawIcon.min_repeats : 3,
-      }
-    : null;
-  if (!assets.length && !repeatedIcon) return null;
+  if (!assets.length) return null;
   return {
     assets,
     assetBasenames: [...new Set(assets.map((asset) => asset.split("/").pop()).filter(Boolean))],
     pageTypes: normalizePageTypes(cfg.page_types),
-    repeatedIcon,
     rule: typeof cfg.rule === "string" ? cfg.rule : null,
   };
 }
@@ -341,22 +334,6 @@ export function paymentMethodStaticScanGaps(chrome, method) {
 export function referencedDemoAssetBasenames(html, basenames) {
   const text = typeof html === "string" ? html : "";
   return (basenames || []).filter((basename) => basename && text.includes(basename));
-}
-
-// Pure: from a flat list of icon src strings, the ones repeated at least
-// `minRepeats` times — the "four identical benefit icons" trap (learnings L5).
-export function repeatedIconSrcs(srcs, minRepeats = 3) {
-  const counts = new Map();
-  for (const src of srcs || []) {
-    const key = String(src || "").trim();
-    if (!key) continue;
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-  const threshold = Number.isInteger(minRepeats) && minRepeats > 1 ? minRepeats : 3;
-  return [...counts.entries()]
-    .filter(([, count]) => count >= threshold)
-    .map(([src, count]) => ({ src, count }))
-    .sort((a, b) => b.count - a.count);
 }
 
 // Scan campaign CSS text for rules that hide pricing surfaces with

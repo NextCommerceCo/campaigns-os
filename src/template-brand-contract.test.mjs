@@ -14,7 +14,6 @@ import {
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
-  repeatedIconSrcs,
   summarizePlaceholderTerms,
   TEMPLATE_BRAND_CONTRACT_SCHEMA,
 } from "./template-brand-contract.mjs";
@@ -243,39 +242,29 @@ test("placeholderTextResidueMatches handles empty/missing input", () => {
 
 // --- H3.2: demo-asset fidelity contract + detectors ---
 
-test("demoAssetConfig parses a family's demo-asset set and a repeated-icon selector", () => {
+test("demoAssetConfig parses a family's demo-asset set", () => {
   const config = demoAssetConfig({
     demo_assets: {
       assets: ["images/1x1_1.svg", "images/benefit-icon.svg"],
-      repeated_icon: { selector: ".benefit-icon img", min_repeats: 3 },
     },
   });
   assert.ok(config);
   assert.ok(config.assetBasenames.includes("1x1_1.svg"));
   assert.ok(config.assetBasenames.includes("benefit-icon.svg"));
-  assert.ok(config.repeatedIcon.selector.length > 0);
-  assert.equal(config.repeatedIcon.minRepeats, 3);
+  assert.deepEqual(Object.keys(config).sort(), ["assetBasenames", "assets", "pageTypes", "rule"], "the asset list is the whole vocabulary");
 });
 
-test("demoAssetConfig is null when neither assets nor a repeated-icon selector exist", () => {
+test("demoAssetConfig is null when no demo assets are declared", () => {
   assert.equal(demoAssetConfig(null), null);
   assert.equal(demoAssetConfig({ demo_assets: { assets: [] } }), null);
-  assert.equal(demoAssetConfig({ demo_assets: { repeated_icon: { min_repeats: 3 } } }), null, "selector is required");
+  // A key no shipped family contract declares is not a second vocabulary.
+  assert.equal(demoAssetConfig({ demo_assets: { repeated_icon: { selector: ".benefit-icon img", min_repeats: 3 } } }), null);
 });
 
 test("referencedDemoAssetBasenames reports only basenames present in the HTML", () => {
   const html = '<img src="/c/images/1x1_1.svg"><img src="/c/images/hero.jpg">';
   assert.deepEqual(referencedDemoAssetBasenames(html, ["1x1_1.svg", "1x1_2.svg"]), ["1x1_1.svg"]);
   assert.deepEqual(referencedDemoAssetBasenames("", ["1x1_1.svg"]), []);
-});
-
-test("repeatedIconSrcs flags the four-identical-benefit-icons trap, not legitimate variety", () => {
-  const trap = ["/i/icon.svg", "/i/icon.svg", "/i/icon.svg", "/i/icon.svg"];
-  assert.deepEqual(repeatedIconSrcs(trap, 3), [{ src: "/i/icon.svg", count: 4 }]);
-  const distinct = ["/i/a.svg", "/i/b.svg", "/i/c.svg", "/i/d.svg"];
-  assert.deepEqual(repeatedIconSrcs(distinct, 3), []);
-  // a pair below the threshold does not trip
-  assert.deepEqual(repeatedIconSrcs(["/i/a.svg", "/i/a.svg"], 3), []);
 });
 
 test("paymentMethodMarkupMatches reads the SDK attribute, contract class selectors and method-named assets from static HTML", () => {

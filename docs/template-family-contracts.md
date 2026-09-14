@@ -124,10 +124,9 @@ Two residue surfaces keep a build from silently shipping template placeholders:
   placeholder text. A family may override the term set.
 - **`demo_assets`** (declared per family; arrays replace on `extends`): the
   template's own demo placeholder assets. `assets` lists demo-asset paths (e.g.
-  `images/1x1_1.svg`), and an optional `repeated_icon.selector` /
-  `min_repeats` flags one icon `src` reused across distinct slots (the
-  "four identical benefit icons" trap). Both surface as **warnings** that tell
-  the agent to re-skin rather than ship placeholders — not blockers.
+  `images/1x1_1.svg`); a real asset reference to one of them surfaces as a
+  **warning** that tells the agent to re-skin rather than ship placeholders —
+  not a blocker. The asset list is the whole vocabulary of this key.
 
 ## Exit-Pop Rules
 

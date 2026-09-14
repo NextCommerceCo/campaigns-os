@@ -2,6 +2,62 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.34] - 2026-09-14
+
+### Changed
+
+- `qa run --apply-coupon` clicks the Campaign Cart SDK's own apply control,
+  `[data-next-coupon="apply"]`, when the checkout renders one. The explicit
+  locator used to name three attribute spellings the SDK never activates on
+  (`[data-next-coupon-apply]`, `[data-next-action="apply-coupon"]`,
+  `[data-next-checkout-action="apply-coupon"]`) and not the one it does; a
+  page carrying one of those still reaches the same fallbacks as before (a
+  visible "Apply" control in the form, else Enter in the input). The SDK
+  control is clicked only when it is visible and the click lands; a hidden
+  or unclickable one falls through to those same fallbacks instead of the
+  step recording `clicked explicit apply control` for a click that never
+  applied the code. The coupon
+  input list likewise reads the SDK's `input[data-next-coupon="input"]`
+  instead of the undeclared `[data-next-coupon-input]`; the
+  `browser-promo-code-surface` assertion and the "no coupon/promo input found
+  (looked for …)" refusal list the new spelling.
+- `browser-primary-cta` no longer treats `[data-next-checkout-action]` as a
+  candidate CTA or `data-next-href` as a route: neither is an attribute the
+  SDK declares. A control spelled that way is a candidate only through its own
+  clickable shape (`<a href>`, `<button>`, `role="button"`), and routes only
+  by `href`, `data-href` or a wrapping form's `action`; an attribute that
+  does not parse as a URL is no route on either branch, so every
+  `candidates[].href` in the evidence is a resolved URL or `null`. The route
+  rule is now the pure `cartEntryHrefFor` in `src/qa-cart-entry.mjs`, run
+  inside the page as a serialised script and unit-tested without a browser
+  (a test evaluates the exact serialised text in a fresh context, so a
+  module-scope reference leaking into it fails CI instead of the page).
+- `browser-primary-cta` evidence carries `ignored_attributes`: the
+  route-shaped spellings seen and not consulted (`data-next-href`,
+  `data-next-checkout-action`, and `data-next-url` on an element that is not
+  an SDK cart-entry control), per listed candidate and as a page-level union
+  over every visible CTA-shaped element — including one the candidate rows
+  drop for having neither text nor route, and any past the eight-row cap, so
+  the union may name a spelling no listed row shows. Every verdict on a page
+  spelled that way, passing or failing, appends `(page carries route-shaped
+  attributes the runner does not consult: data-next-href)` to its `actual`,
+  so a verdict that flipped after this narrowing is distinguishable from a
+  CTA that was removed and a passing page still shows the spelling to
+  re-spell.
+- `docs/qa-and-test-orders.md` names the coupon selector vocabulary the
+  runner actually reads.
+
+### Removed
+
+- The `repeated_icon` half of the `demo_assets` family contract: the parser
+  field, the in-page icon collector and the `repeatedIconSrcs` counter. No
+  shipped family contract declares the key, so the branch could never fire;
+  `demo_assets.assets` is the whole vocabulary and a contract that declares
+  only `repeated_icon` now yields no demo-asset check. The
+  `template-residue:<page>:demo-asset` assertion's evidence carries
+  `named_hits` and `page_url` only (the always-empty `repeated_icons` key is
+  gone) and its `actual` text is unchanged for named hits.
+
 ## [1.27.0+agent.33] - 2026-09-14
 
 ### Added
