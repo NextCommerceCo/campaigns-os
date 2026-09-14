@@ -3063,6 +3063,27 @@
         }
       ],
       "entry_sha256": "d656a8f608a8d8c8f83d87841bbaba0784e19b1108350f767fd8ffaf6aaa4edb"
+    },
+    {
+      "id": "RL-0085",
+      "sequence": 85,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.32",
+      "changelog_sha256": "46b74a8522b3acadf5dafe83858ed4e2c653604f627f01f9ea8f933c378b2883",
+      "agent_impact": "On a prepare-build --report-out campaign, a standalone `campaigns-os doctor` run now writes its stage outcome into the Assembly Report the Build Context binds (the file derived.assembly_report_path names in doctor's output), not only into the doctor sidecar. An agent reading that report's stages.doctor (checked_at, status, blockers, warnings, commands) after a doctor run sees that run's outcome; before, it saw whatever start or prepare-build last wrote. The default <target repo>/.campaign-runtime/assembly-report.json is not written when a binding exists, --report still wins over the binding, and a bound report whose identity is another campaign's is left untouched. --no-write is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor's stage write-back targets the report the inspection read (--report, else the report the Build Context binds via report_path, else the default) instead of always resolving the default location and skipping the write when the two differed; commitAssemblyReport's identity check still refuses another campaign's report."
+        }
+      ],
+      "entry_sha256": "e0ef18527431ab9523d2f7c5016ecc37530027e17de505dda8f172901a845ddd"
     }
   ]
 }
