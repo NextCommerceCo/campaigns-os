@@ -2617,6 +2617,27 @@
         }
       ],
       "entry_sha256": "a4b50ba13c8afa7869b0fffbcd6d42a4f4e64ed21b36e55974396ea1649815ef"
+    },
+    {
+      "id": "RL-0067",
+      "sequence": 67,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.5",
+      "changelog_sha256": "11f9ea9bc3f32018f2e9b0bad1961c07fd404afc71d8cbff3ca17d44265e9a50",
+      "agent_impact": "Text-only, and almost entirely no-op. Every line of the human doctor report, the qa resolve report and the next report is unchanged byte for byte (diffed against the previous release on a blocked-gate fixture); doctor --json, next --json and qa resolve --json are untouched. One string changes: the checkpoint usage error's 'Registered gates:' list is now derived from the checkpoint registry and reads in registry order (page_kit.sdk_version, page_kit.store_profile, built_output.upsell_selector_scope, polish.hidden_eager_media) instead of the previous hand-written order. An agent that parses that error for the gate list should not depend on order; the four names are the same. New exported line functions (resultTextLines, doctorTinyPromptLines from src/cli.mjs; checkpointGateLines, themeGateLines from src/qa-node.mjs) are internal, not package exports.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "The human doctor report is produced by resultTextLines(result) and doctorTinyPromptLines(result), which printResult and the doctor printer print line for line; doctorRequiredActionLines and next's buildNextActions render each gate action through requiredActionText / substitutePacket from src/gate-actions.mjs; the checkpoint usage error derives its registered-gate list from the checkpoint registry. Output is byte-identical except that list's order."
+        }
+      ],
+      "entry_sha256": "2ce97e49c8a33f5445e37623b25aede4fa101f64ad53ad7e74e87254d0c0a88c"
     }
   ]
 }

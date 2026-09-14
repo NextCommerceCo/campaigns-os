@@ -2,6 +2,36 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.5] - 2026-09-14
+
+### Fixed
+
+- One action vocabulary and one rendering rule for a checkpoint gate's
+  `required_actions[]`. A gate publishes each action as `{ id, kind, command,
+  description }`, and four renderers turned that into text for themselves —
+  the human `doctor` report, `next`'s action list (twice) and the `qa resolve`
+  printer — four spellings of the `--packet <packet>` substitution, one of
+  them without the guard that keeps a `$&` or `$1` inside the packet path
+  literal. The polish checkpoint's five recorded actions were declared in the
+  polish producer and one of them copied byte for byte into the polish gate,
+  which the producer imports and so could not import from. They now live once
+  in `src/gate-actions.mjs`, with `substitutePacket` and
+  `requiredActionText` (the runnable command with the packet substituted, else
+  the manual description, carrying `--report` into packet-scoped commands as
+  the doctor report has since 1.26.0+agent.23); the producer, the gate,
+  doctor, `next` and the QA runner all read them from there. The doctor text
+  report is now one walker returning its lines (`resultTextLines`, with
+  `doctorTinyPromptLines` for the prompt beneath it), and the `qa resolve`
+  checkpoint and theme-gate blocks likewise (`checkpointGateLines`,
+  `themeGateLines`), so every line an operator reads is assertable without a
+  subprocess; the printers print exactly those lines. Text output is
+  unchanged byte for byte — `doctor`, `qa resolve` and `next` were diffed
+  against the previous release on a blocked-gate fixture — with one exception:
+  the `checkpoint` usage error's "Registered gates:" list is now derived from
+  the checkpoint registry instead of a hand-maintained string, so it reads in
+  registry order (`page_kit.sdk_version, page_kit.store_profile,
+  built_output.upsell_selector_scope, polish.hidden_eager_media`).
+
 ## [1.27.0+agent.4] - 2026-09-14
 
 ### Fixed
