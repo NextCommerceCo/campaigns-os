@@ -1156,6 +1156,22 @@ syncBuiltinESMExports();
   assert.equal(recovery.json.packet.design_source_package.material_fingerprint, dsp.material_fingerprint);
 }));
 
+// The workspace resolver follows a context's report_path only for the packet
+// its packet_path names, so prepare-build must keep writing both, relative to
+// the target repo. This pins that contract directly rather than through the
+// packet-only next matrix.
+test("prepare-build records packet_path beside report_path on the Build Context, relative to the target repo", () => {
+  withFixture((fixture) => {
+    const reportPath = join(fixture.target, ".campaign-runtime/reports/nested/assembly-report.json");
+    const result = runPrepare(fixture, { extraArgs: ["--report-out", reportPath] });
+    assert.equal(result.status, 0, result.stderr);
+    const context = readJson(join(fixture.target, ".campaign-runtime/build-context.json"));
+    assert.equal(typeof context.packet_path, "string");
+    assert.equal(resolve(fixture.target, context.packet_path), join(fixture.target, "campaign-runtime.build.json"));
+    assert.equal(resolve(fixture.target, context.report_path), reportPath);
+  });
+});
+
 test("a nested custom report keeps the DSP reference canonical and omits duplicate blocker paths", () => {
   withFixture((fixture) => {
     const reportPath = join(fixture.target, ".campaign-runtime/reports/nested/assembly-report.json");

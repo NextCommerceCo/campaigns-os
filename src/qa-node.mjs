@@ -41,6 +41,7 @@ import {
 } from "./polish-capture.mjs";
 import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
+import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
 import { loadPageKitCampaignEntry, PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
@@ -366,11 +367,16 @@ function resolvePacketCheckpointPreflight(args, {
     }
   }
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  const targetRepo = resolveTargetBaseDir(packet, packetPath);
+  // Follows the Build Context's report_path, like `next` and the QA stage
+  // record: a `prepare-build --report-out` campaign's report is the bound one,
+  // not the default sidecar.
+  const { targetRepo, reportPath } = resolveCampaignWorkspace(packetPath, {
+    packet,
+    contextPath: stringArg(args.context) ? resolve(String(args.context)) : undefined,
+    reportPath: stringArg(args.report) ? resolve(String(args.report)) : undefined,
+    followContextPointer: true,
+  });
   const targetLoad = loadCampaignEntry({ targetRepo, publicRouteSlug });
-  const reportPath = stringArg(args.report)
-    ? resolve(String(args.report))
-    : join(targetRepo, ".campaign-runtime", "assembly-report.json");
   let report = null;
   if (existsSync(reportPath)) {
     try {
@@ -677,11 +683,27 @@ function themeGateScopeSource(doctorScope, specScope) {
   return merged === doctorScope ? "doctor_derived_scope" : "doctor_derived_scope+spec_topologies";
 }
 
+// The sidecars live where the producers write them — under the target repo,
+// with the report the Build Context binds — never merely beside the packet. A
+// packet that cannot be read at this moment costs the target-repo resolution,
+// not the read: the workspace then falls back to the packet's directory, which
+// is what this reader always used.
 function loadRuntimeArtifact(packetPath, name) {
   if (!packetPath) return null;
-  const path = join(dirname(resolve(packetPath)), ".campaign-runtime", name);
-  if (!existsSync(path)) return null;
   try {
+    let packet = null;
+    try {
+      packet = readJson(packetPath);
+    } catch {
+      packet = null;
+    }
+    const workspace = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true });
+    const path = {
+      "assembly-report.json": workspace.reportPath,
+      "build-context.json": workspace.contextPath,
+      "doctor-output.json": workspace.doctorOutPath,
+    }[name];
+    if (!path || !existsSync(path)) return null;
     return readJson(path);
   } catch {
     return null;
@@ -1487,10 +1509,6 @@ function checkpointWaiverSummary(waiver, subject) {
   };
 }
 
-function resolveTargetBaseDir(packet, packetPath) {
-  return resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
-}
-
 // Run-record closeout is required for every QA workflow. With an active run
 // session, blocked attempts stay attached to that session while repair
 // continues; the first ready outcome auto-closes with all attempt references.
@@ -1558,7 +1576,7 @@ function updateQaPolicy(args) {
     writeJson(packetPath, packet);
     // #171: packet edits change what doctor would conclude; the retained
     // doctor sidecar (if any) now predates them.
-    markDoctorSidecarStale(resolveTargetBaseDir(packet, packetPath), {
+    markDoctorSidecarStale(targetRepoFor(packetPath, packet), {
       command: "qa policy set",
       reason: "The Build Packet changed after this doctor snapshot (qa policy set). Re-run campaigns-os doctor (or next) for current state.",
     });
@@ -1605,9 +1623,11 @@ export function qaWaive(args) {
   if (!reason) {
     throw new Error("qa waive requires --reason \"<why this failing blocker is acceptable for this campaign>\".");
   }
-  const reportPath = args.report
-    ? resolve(String(args.report))
-    : join(resolveTargetBaseDir(packet, packetPath), ".campaign-runtime", "assembly-report.json");
+  const { targetRepo, reportPath } = resolveCampaignWorkspace(packetPath, {
+    packet,
+    reportPath: args.report ? resolve(String(args.report)) : undefined,
+    followContextPointer: true,
+  });
   if (!existsSync(reportPath)) {
     throw new Error(`qa waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
   }
@@ -1630,7 +1650,7 @@ export function qaWaive(args) {
   writeJson(reportPath, report);
   // #171: the waiver changes what the next qa run concludes; the retained
   // doctor sidecar (if any) now predates this report edit.
-  markDoctorSidecarStale(resolveTargetBaseDir(packet, packetPath), {
+  markDoctorSidecarStale(targetRepo, {
     command: "qa waive",
     reason: "A QA assertion waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
   });
@@ -2089,7 +2109,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   const outputDir = args["output-dir"]
     ? resolve(args["output-dir"])
     : resolved.packetPath
-      ? join(resolveTargetBaseDir(resolved.packet, resolved.packetPath), "qa-output")
+      ? campaignSidecarPaths(targetRepoFor(resolved.packetPath, resolved.packet)).qaOutputDir
       : resolve("qa-output");
   const localPath = writeLocalVerdict(verdict, outputDir);
   // The committed sidecar lands beside the Build Packet regardless of

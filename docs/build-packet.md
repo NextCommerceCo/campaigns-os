@@ -179,6 +179,19 @@ campaign-runtime.build.json
 .campaign-runtime/input/design-source-package.json
 ```
 
+Those `.campaign-runtime/` paths are relative to the target repo
+(`packet.assembly.target_repo`, resolved against the packet's directory) even
+when `--out` keeps the packet somewhere else, and every stage — `doctor`
+included — reads and writes them there. When `prepare-build --report-out`
+puts the Assembly Report elsewhere, the Build Context records that path
+(`report_path`, relative to the target repo) and `doctor`, `next`, `qa run`,
+`qa waive` and the QA stage record follow it, so the report `next` reads is the
+one QA writes into — provided the context's `packet_path` names that packet;
+a context naming another packet binds nothing. `theme waive`, `checkpoint
+waive`, `polish capture`,
+`findings harvest`, `run-record` and `run status` act on the default location
+unless `--report` names another.
+
 The packet's top-level `generated_at` (ISO-8601 UTC, `Z` suffix) is stamped by
 `prepare-build` on every new packet. Downstream freshness — campaigns-agent's
 readback staleness comparison and its multi-packet selection at the repository

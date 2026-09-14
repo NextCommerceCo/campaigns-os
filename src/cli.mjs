@@ -80,6 +80,7 @@ import {
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
+import { campaignSidecarPaths, resolveCampaignWorkspace } from "./campaign-workspace.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
@@ -730,11 +731,15 @@ export function recordQaStageOutcome(args, result) {
     const packetArg = optionalString(args.packet);
     if (!packetArg) return false;
     const packetPath = resolve(packetArg);
-    const packet = readJson(packetPath);
-    const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
-    const reportPath = args.report
-      ? resolve(args.report)
-      : join(targetRepo, ".campaign-runtime/assembly-report.json");
+    // Follows the Build Context's report_path: the QA outcome belongs in the
+    // report `next` reads, which for a `prepare-build --report-out` run is not
+    // the default sidecar.
+    const workspace = resolveCampaignWorkspace(packetPath, {
+      contextPath: args.context ? resolve(args.context) : undefined,
+      reportPath: args.report ? resolve(args.report) : undefined,
+      followContextPointer: true,
+    });
+    const { packet, reportPath } = workspace;
     if (!existsSync(reportPath)) return false;
     const report = readJson(reportPath);
     if (!assemblyReportMatchesPacket(report, packet)) return false;
@@ -766,14 +771,11 @@ export function recordQaStageOutcome(args, result) {
     // Updating the QA stage changes the report after the preflight doctor
     // snapshot. Refresh the doctor artifact from the updated ledger in the same
     // producer transaction so closeout never leaves a known-stale green sidecar.
-    const contextPath = args.context
-      ? resolve(args.context)
-      : join(targetRepo, ".campaign-runtime/build-context.json");
     const doctor = doctorPacket(packetPath, {
-      contextPath: existsSync(contextPath) ? contextPath : null,
+      contextPath: existsSync(workspace.contextPath) ? workspace.contextPath : null,
       reportPath,
     });
-    writeJsonAtomic(join(targetRepo, ".campaign-runtime/doctor-output.json"), doctor);
+    writeJsonAtomic(workspace.doctorOutPath, doctor);
     return true;
   } catch (error) {
     // Assembly Report ownership is best-effort telemetry. A malformed or
@@ -1994,10 +1996,11 @@ function prepareBuild(args, options = {}) {
   if (!existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) throw new Error(`Source root is not a directory: ${sourceRoot}`);
   if (!existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) throw new Error(`Target repo is not a directory: ${targetRepo}`);
 
+  const sidecars = campaignSidecarPaths(targetRepo);
   const packetPath = resolve(args.out || join(targetRepo, "campaign-runtime.build.json"));
-  const contextPath = resolve(args["context-out"] || join(targetRepo, ".campaign-runtime/build-context.json"));
-  const reportPath = resolve(args["report-out"] || join(targetRepo, ".campaign-runtime/assembly-report.json"));
-  const doctorOutPath = resolve(args["doctor-out"] || join(targetRepo, ".campaign-runtime/doctor-output.json"));
+  const contextPath = resolve(args["context-out"] || sidecars.contextPath);
+  const reportPath = resolve(args["report-out"] || sidecars.reportPath);
+  const doctorOutPath = resolve(args["doctor-out"] || sidecars.doctorOutPath);
   const briefPath = resolve(args["brief-out"] || join(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
   const designSourcePackagePath = resolve(targetRepo, DESIGN_SOURCE_PACKAGE_REL_PATH);
   const prepareBuildOutputPaths = [
@@ -2722,19 +2725,18 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
   // the artifact on disk stayed frozen at intake (NEXT-114 dogfood finding
   // wf_1785566917680). Opt out with --no-write.
   if (args["no-write"] !== true) {
-    const doctorOutPath = resolve(
-      args["doctor-out"] || join(dirname(packetPath), ".campaign-runtime/doctor-output.json"),
-    );
-    const packet = readJson(packetPath);
-    const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
     // The stage write-back targets the report the operator named, else the
     // default location. It does not follow a recorded report_path: a report
     // of another run of the same campaign matches on map id and slug alone,
     // and restating this doctor's outcome into it would corrupt that run's
-    // evidence. Inspection and the stage decision above do follow it.
-    const reportPath = args.report
-      ? resolve(args.report)
-      : join(targetRepo, ".campaign-runtime/assembly-report.json");
+    // evidence. Inspection and the stage decision above do follow it. The
+    // sidecar itself goes under the target repo, where prepare-build, next
+    // and the QA stage refresh write it — not beside the packet.
+    const { packet, reportPath, doctorOutPath } = resolveCampaignWorkspace(packetPath, {
+      reportPath: args.report ? resolve(args.report) : undefined,
+      doctorOutPath: args["doctor-out"] ? resolve(args["doctor-out"]) : undefined,
+      followContextPointer: false,
+    });
     // Restate the outcome only into the report the inspection actually read.
     const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
     const inspectedIsTarget = !inspectedReportPath
@@ -3038,8 +3040,11 @@ export function themeWaive(args) {
   const packet = readJson(packetPath);
   const reason = optionalString(args.reason);
   if (!reason) throw new Error("theme waive requires --reason \"<why the starter palette is acceptable for this campaign>\".");
-  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
-  const reportPath = args.report ? resolve(args.report) : sidecars.reportPath;
+  const { reportPath } = resolveCampaignWorkspace(packetPath, {
+    packet,
+    reportPath: args.report ? resolve(args.report) : undefined,
+    followContextPointer: false,
+  });
   const report = readJsonIfExists(reportPath);
   if (!report) throw new Error(`theme waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
   const waiver = {
@@ -3070,14 +3075,6 @@ export function themeWaive(args) {
   };
 }
 
-function inferredBuildSidecarPaths(packet, packetPath) {
-  const targetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(resolve(packetPath));
-  return {
-    contextPath: join(targetRepo, ".campaign-runtime/build-context.json"),
-    reportPath: join(targetRepo, ".campaign-runtime/assembly-report.json"),
-  };
-}
-
 function requireValidPolishCaptureReport(report, reportPath) {
   // Shape only. `polish capture` produces page-load evidence on a report the
   // polish gate evaluates on the way out, so the source-freshness findings
@@ -3105,12 +3102,14 @@ export async function polishCaptureCommand(args, options = {}) {
   if (args["auth-cookie"] === true) throw new Error("Missing value for --auth-cookie");
 
   const packet = readJson(packetPath);
-  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
-  const targetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+  const { targetRepo, reportPath } = resolveCampaignWorkspace(packetPath, {
+    packet,
+    reportPath: args.report ? resolve(args.report) : undefined,
+    followContextPointer: false,
+  });
   if (!isLocalAbsolutePath(targetRepo)) {
     throw new Error("polish capture requires packet.assembly.target_repo to resolve to a local target repo.");
   }
-  const reportPath = args.report ? resolve(args.report) : sidecars.reportPath;
   const report = readJsonIfExists(reportPath);
   if (!report) {
     throw new Error(`polish capture needs an existing Assembly Report at ${reportPath}; run prepare-build/start first.`);
@@ -3230,8 +3229,11 @@ export function checkpointWaive(args) {
   const expiresAt = args["expires-at"] == null ? null : String(args["expires-at"]);
   const reviewCondition = args["review-condition"] == null ? null : String(args["review-condition"]);
   const packet = readJson(packetPath);
-  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
-  const reportPath = args.report ? resolve(String(args.report)) : sidecars.reportPath;
+  const { reportPath } = resolveCampaignWorkspace(packetPath, {
+    packet,
+    reportPath: args.report ? resolve(String(args.report)) : undefined,
+    followContextPointer: false,
+  });
   const report = readJsonIfExists(reportPath);
   if (!report) throw new Error(`checkpoint waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
 
@@ -3291,30 +3293,17 @@ export function doctorPacket(packetPath, options = {}) {
   return result;
 }
 
-// The assembly report a packet is bound to when no --report is given: the
-// path the Build Context recorded (prepare-build --report-out), resolved
-// against the target repo, else the default sidecar. `next`, packet doctor
-// and doctor's stage write-back all resolve it here so they read and write
-// the same file.
-function boundAssemblyReportPath(packet, packetPath, context, defaultPath) {
-  const recorded = optionalString(context?.report_path);
-  if (!recorded) return defaultPath;
-  const targetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
-  return resolve(targetRepo, recorded);
-}
-
 function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null } = {}) {
-  const packet = readJson(packetPath);
-  const sidecars = inferredBuildSidecarPaths(packet, packetPath);
-  const resolvedContextPath = contextPath === undefined ? sidecars.contextPath : contextPath;
-  const context = readJsonIfExists(resolvedContextPath);
   // The Build Context records where prepare-build wrote the report
   // (--report-out). `next` follows that pointer when no --report is given;
   // doctor reads the same report so its gates and its next block cannot
   // disagree with the ladder over which report is the campaign's.
-  const resolvedReportPath = reportPath !== undefined
-    ? reportPath
-    : boundAssemblyReportPath(packet, packetPath, context, sidecars.reportPath);
+  const { packet, contextPath: resolvedContextPath, reportPath: resolvedReportPath } = resolveCampaignWorkspace(packetPath, {
+    contextPath,
+    reportPath,
+    followContextPointer: true,
+  });
+  const context = readJsonIfExists(resolvedContextPath);
   const report = readJsonIfExists(resolvedReportPath);
   const errors = [];
   const warnings = [];
@@ -7515,20 +7504,16 @@ function pickNextStage(report, doctor, prepareBuildGate = prepareBuildGateIssue(
 
 export function nextStage(stage, args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
-  const packet = readJson(packetPath);
-  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
-  const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
   // A custom prepare-build report is recorded on the Build Context relative
   // to the target repo. Packet-only `next` must follow that durable pointer;
   // silently falling back to the absent default report erases the earliest
   // lifecycle gate from the orchestration decision.
+  const { packet, targetRepo, contextPath, reportPath, doctorOutPath } = resolveCampaignWorkspace(packetPath, {
+    contextPath: args.context ? resolve(args.context) : undefined,
+    reportPath: args.report ? resolve(args.report) : undefined,
+    followContextPointer: true,
+  });
   const recordedContext = readJsonIfExists(contextPath);
-  const recordedReportPath = optionalString(recordedContext?.report_path);
-  const reportPath = args.report
-    ? resolve(args.report)
-    : recordedReportPath
-      ? resolve(targetRepo, recordedReportPath)
-      : join(targetRepo, ".campaign-runtime/assembly-report.json");
   const report = readJsonIfExists(reportPath);
   const bindingIssues = nextPrepareBuildBindingIssues({
     packet,
@@ -7559,7 +7544,7 @@ export function nextStage(stage, args, ambient = null) {
       // Atomic like the assembly report: a torn sidecar would be a corrupted
       // freshness artifact — the exact green-lie shape this refresh exists to
       // prevent (Kilo review, PR #176).
-      writeJsonAtomic(join(targetRepo, ".campaign-runtime/doctor-output.json"), doctor);
+      writeJsonAtomic(doctorOutPath, doctor);
     } catch {
       // sidecar refresh is best-effort; orchestration must not fail on it
     }
@@ -9553,10 +9538,11 @@ function findingsList(args, ambient = null) {
 
 function findingsHarvest(args, ambient = null) {
   const packetPath = resolve(requireArg(args, "packet"));
-  const packet = readJson(packetPath);
-  const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(packetPath);
-  const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
-  const reportPath = args.report ? resolve(args.report) : join(targetRepo, ".campaign-runtime/assembly-report.json");
+  const { packet, targetRepo, contextPath, reportPath } = resolveCampaignWorkspace(packetPath, {
+    contextPath: args.context ? resolve(args.context) : undefined,
+    reportPath: args.report ? resolve(args.report) : undefined,
+    followContextPointer: false,
+  });
   const contextExists = existsSync(contextPath);
   const reportExists = existsSync(reportPath);
   const report = reportExists ? readJson(reportPath) : null;
@@ -9804,8 +9790,7 @@ function runSessionProgress(found) {
   if (!isNonEmptyString(packetPath) || !existsSync(packetPath)) return null;
   try {
     const packet = readJson(packetPath);
-    const sidecars = inferredBuildSidecarPaths(packet, packetPath);
-    const report = readJsonIfExists(sidecars.reportPath);
+    const report = readJsonIfExists(resolveCampaignWorkspace(packetPath, { packet, followContextPointer: false }).reportPath);
     const incomplete = [];
     for (const key of ASSEMBLY_REPORT_STAGE_KEYS) {
       const status = String(report?.stages?.[key]?.status || "");
@@ -10026,11 +10011,13 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   const packetPath = resolve(requireArg(args, "packet"));
   const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
-  const baseDir = dirname(packetPath);
   const explicitTargetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
-  const targetRepo = explicitTargetRepo || baseDir;
-  const contextPath = args.context ? resolve(args.context) : join(targetRepo, ".campaign-runtime/build-context.json");
-  const reportPath = args.report ? resolve(args.report) : join(targetRepo, ".campaign-runtime/assembly-report.json");
+  const { baseDir, targetRepo, contextPath, reportPath } = resolveCampaignWorkspace(packetPath, {
+    packet,
+    contextPath: args.context ? resolve(args.context) : undefined,
+    reportPath: args.report ? resolve(args.report) : undefined,
+    followContextPointer: false,
+  });
   const contextExists = existsSync(contextPath);
   const reportExists = existsSync(reportPath);
   const context = contextExists ? readJson(contextPath) : null;
@@ -10263,7 +10250,7 @@ function inferQaVerdictPath({ packet, report, reportPath = null, targetRepo = nu
     }
   };
 
-  const reportBasePath = reportPath || (targetRepo ? join(targetRepo, ".campaign-runtime/assembly-report.json") : null);
+  const reportBasePath = reportPath || (targetRepo ? campaignSidecarPaths(targetRepo).reportPath : null);
   for (const path of qaVerdictPathHints(report)) {
     add(reportBasePath ? resolveFromFile(reportBasePath, path) : path, "assembly_report");
   }
@@ -10697,7 +10684,7 @@ export function doctorRequiredActionLines(result) {
   // cannot be ruled out.
   const reportPath = typeof derived?.assembly_report_path === "string" ? derived.assembly_report_path : null;
   const inferredReportPath = typeof derived?.target_repo === "string"
-    ? join(derived.target_repo, ".campaign-runtime/assembly-report.json")
+    ? campaignSidecarPaths(derived.target_repo).reportPath
     : null;
   const reportArg = reportPath && reportPath !== inferredReportPath
     ? ` --report ${shellToken(reportPath)}`
