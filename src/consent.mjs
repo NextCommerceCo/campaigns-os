@@ -139,8 +139,10 @@ function scopeMatches(storedScope, requestedScope) {
 
 /**
  * Persist consent at user level. Records its own schema_version, the package
- * name, the proxy/endpoint scope, a timestamp, and the value source — so the
- * decision is auditable. Returns `{ configPath, config }`.
+ * name, the proxy/endpoint scope (ON only — an OFF record is unscoped), a
+ * timestamp, and the value source — so the decision is auditable. A named
+ * `proxyBase` that is not a URL is refused for either state. Returns
+ * `{ configPath, config }`.
  */
 export function writeConsentConfig(state, {
   configPath = resolveConfigPath(),
@@ -149,15 +151,20 @@ export function writeConsentConfig(state, {
   now = new Date(),
 } = {}) {
   const enabled = configState(state);
-  const scope = normalizeConsentScope(proxyBase);
-  // An ON grant is a grant for one endpoint. A named base that does not
-  // normalize would be stored as `scope: null`, which matches no endpoint and
-  // turns the grant into a silent OFF at every remit — refuse it instead.
-  // (An absent base still writes `scope: null`: an unscoped record, matched
-  // only by a caller that names no endpoint.)
-  if (enabled && isNonEmptyString(proxyBase) && !scope) {
+  const normalizedScope = normalizeConsentScope(proxyBase);
+  // A named base that does not normalize is refused for either state: on an
+  // ON grant it would be stored as `scope: null`, which matches no endpoint
+  // and turns the grant into a silent OFF at every remit; on an OFF record
+  // it would be dropped without a word, hiding a typo the caller meant to
+  // be honoured. (An absent base still writes `scope: null`: an unscoped
+  // record, matched only by a caller that names no endpoint.)
+  if (isNonEmptyString(proxyBase) && !normalizedScope) {
     throw new Error(`Telemetry consent scope is not a URL: ${proxyBase.trim()}`);
   }
+  // An OFF choice is machine-wide — it disables remit to every endpoint — so
+  // the record carries no scope: `enabled: false, scope: <url>` would read
+  // as a still-granted endpoint on disk and in `telemetry status`.
+  const scope = enabled ? normalizedScope : null;
   const config = {
     schema_version: TELEMETRY_CONFIG_SCHEMA,
     package: PACKAGE_NAME,

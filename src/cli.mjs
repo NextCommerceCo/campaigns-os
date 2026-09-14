@@ -403,7 +403,8 @@ Usage:
   campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
-  campaigns-os telemetry status|on|off [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
+  campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
+  campaigns-os telemetry off [--json]                                  # turn remit off for every endpoint (takes no --proxy-base)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags; with --packet the session lives in the packet's target repo, whatever the cwd
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
@@ -10821,24 +10822,27 @@ function toolkitProvenance({ silent = false } = {}) {
 // to a non-canonical base — the alternative, CAMPAIGNS_OS_TELEMETRY=on, skips
 // scope checking altogether. `status` checks the stored grant against the
 // canonical endpoint, or against --proxy-base when given, so it reports what
-// a remit to that endpoint would do.
+// a remit to that endpoint would do. `off` takes no --proxy-base: an OFF
+// choice is machine-wide and the record it writes carries no scope.
 async function telemetryCommand(args) {
   const sub = args._[1] || "status";
   const configPath = resolveConfigPath();
   const requestedBase = optionalString(args["proxy-base"]);
+  // Same transport rule as the remit rail: https, or a loopback host. A grant
+  // for a base a remit would refuse to send to is not a grant, and a status
+  // check against one would report on a remit that can never happen. Nothing
+  // is sent here, so the in-clear warning is left to the remit.
+  const secureBase = () => assertSecureProxyBase(requestedBase, { label: `telemetry ${sub}`, warn: () => {} }).base;
 
   if (sub === "on" || sub === "off") {
-    let proxyBase = DEFAULT_PROXY_BASE;
-    if (requestedBase) {
-      // Same transport rule as the remit rail: https, or a loopback host. A
-      // grant for a base a remit would refuse to send to is not a grant.
-      // Nothing is sent here, so the in-clear warning is left to the remit.
-      ({ base: proxyBase } = assertSecureProxyBase(requestedBase, { label: `telemetry ${sub}`, warn: () => {} }));
+    if (sub === "off" && requestedBase) {
+      throw new Error(`telemetry off: --proxy-base is not accepted; turning telemetry off applies to every endpoint. To grant one endpoint instead, run: ${scopedConsentCommand(requestedBase)}`);
     }
+    const proxyBase = requestedBase ? secureBase() : DEFAULT_PROXY_BASE;
     const { configPath: written, config } = writeConsentConfig(sub, { configPath, proxyBase, source: "telemetry-command" });
     const scope = config.telemetry.scope;
     const canonical = scope === CANONICAL_REMIT_SCOPE;
-    const resolved = resolveConsent({ configPath, proxyBase: scope });
+    const resolved = resolveConsent({ configPath, proxyBase: scope || CANONICAL_REMIT_SCOPE });
     if (args.json) {
       console.log(JSON.stringify({
         ok: true,
@@ -10853,7 +10857,8 @@ async function telemetryCommand(args) {
     }
     console.log(`Telemetry ${sub.toUpperCase()}.`);
     console.log(`Config: ${written}`);
-    console.log(`Scope: ${scope}${canonical ? " (canonical NEXT endpoint)" : ""}`);
+    if (scope) console.log(`Scope: ${scope}${canonical ? " (canonical NEXT endpoint)" : ""}`);
+    else console.log("Scope: every endpoint (an OFF choice is not scoped)");
     console.log(`Resolved: ${resolved.state} (source: ${resolved.source})`);
     if (sub === "on" && !canonical) {
       console.log(`This grant covers remits that pass --proxy-base ${scope} only; a remit to the canonical NEXT endpoint (${CANONICAL_REMIT_SCOPE}) is OFF until you run: campaigns-os telemetry on`);
@@ -10865,7 +10870,7 @@ async function telemetryCommand(args) {
   }
 
   if (sub === "status") {
-    const checkedEndpoint = requestedBase ? (normalizeConsentScope(requestedBase) || requestedBase) : CANONICAL_REMIT_SCOPE;
+    const checkedEndpoint = requestedBase ? (normalizeConsentScope(secureBase()) || requestedBase) : CANONICAL_REMIT_SCOPE;
     const resolved = resolveConsent({ configPath, proxyBase: checkedEndpoint });
     const { ok: configPresent, config } = readConfig(configPath);
     const storedScope = configPresent ? normalizeConsentScope(config?.telemetry?.scope) : null;
@@ -10886,7 +10891,7 @@ async function telemetryCommand(args) {
       }, null, 2));
       return;
     }
-    console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})${resolved.scope_bypassed ? ` — ${TELEMETRY_ENV_VAR} bypasses scope checking` : ""}`);
+    console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})${resolved.scope_bypassed ? ` — ${TELEMETRY_ENV_VAR} bypasses scope checking for ${checkedEndpoint}` : ""}`);
     console.log(`Config: ${configPath}${configPresent ? "" : " (not set)"}`);
     if (storedScope) {
       console.log(`Scope: ${storedScope}${storedScope === CANONICAL_REMIT_SCOPE ? " (canonical NEXT endpoint)" : ""}`);

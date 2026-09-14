@@ -119,7 +119,9 @@ command calls** — not a one-time `start` prompt that later commands bypass.
   does not match the stored scope stays OFF and the warning names the command
   that would grant it. `campaigns-os telemetry status` prints the stored scope
   and checks it against the canonical endpoint, or against `--proxy-base <url>`
-  when given.
+  when given (the same https-or-loopback rule applies). `campaigns-os
+  telemetry off` takes no `--proxy-base`: an OFF choice applies to every
+  endpoint, and the record it writes carries no scope.
 - **Prompted once, up front** — the first interactive command that would remit
   asks plainly: "Campaigns OS can send build telemetry to Next Commerce to
   improve templates, tools, and guidance. Share telemetry from this machine?

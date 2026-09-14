@@ -370,9 +370,23 @@ test("writeConsentConfig refuses a named scope that is not a URL instead of stor
     const configPath = join(dir, "config.json");
     assert.throws(() => writeConsentConfig("on", { configPath, proxyBase: "not a url" }), /consent scope is not a URL: not a url/);
     assert.equal(readConfig(configPath).ok, false);
-    // Turning OFF never needs a scope.
-    writeConsentConfig("off", { configPath, proxyBase: "not a url" });
-    assert.equal(readConfig(configPath).config.telemetry.enabled, false);
+    // The same input is refused for OFF: a malformed base is a typo to
+    // surface, not something to drop silently.
+    assert.throws(() => writeConsentConfig("off", { configPath, proxyBase: "not a url" }), /consent scope is not a URL: not a url/);
+    assert.equal(readConfig(configPath).ok, false);
+  });
+});
+
+test("writeConsentConfig stores an OFF record unscoped even when a base is named", async () => {
+  await withTempDir((dir) => {
+    const configPath = join(dir, "config.json");
+    // The prompt path passes the remit's base for a "no" answer too; an OFF
+    // choice is machine-wide, so the record must not look like a grant.
+    writeConsentConfig("off", { configPath, proxyBase: "http://127.0.0.1:4399", source: "prompt" });
+    const { config } = readConfig(configPath);
+    assert.deepEqual([config.telemetry.enabled, config.telemetry.scope], [false, null]);
+    assert.equal(resolveConsent({ env: {}, configPath, proxyBase: "http://127.0.0.1:4399", warn: quiet }).state, "off");
+    assert.equal(resolveConsent({ env: {}, configPath, warn: quiet }).state, "off");
   });
 });
 
@@ -460,6 +474,55 @@ test("CLI: telemetry on refuses a plain-http base that is not loopback, and writ
   });
 });
 
+test("CLI: telemetry status --proxy-base applies the same transport rule as telemetry on", async () => {
+  await withTempDir((dir) => {
+    const env = cliEnv(dir);
+    const refused = runCli(["telemetry", "status", "--proxy-base", "http://example.invalid:8080"], env);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /telemetry status: --proxy-base must be https \(or a loopback host for local testing\)/);
+    assert.doesNotMatch(refused.stdout, /Checked endpoint:/);
+    const notUrl = runCli(["telemetry", "status", "--proxy-base", "not a url"], env);
+    assert.equal(notUrl.status, 1);
+    assert.match(notUrl.stderr, /telemetry status: --proxy-base is not a URL: not a url/);
+  });
+});
+
+test("CLI: telemetry off takes no --proxy-base, and an OFF record after a scoped grant carries no scope", async () => {
+  await withTempDir((dir) => {
+    const env = cliEnv(dir);
+    execFileSync("node", [CLI, "telemetry", "on", "--proxy-base", "http://127.0.0.1:4399", "--json"], { encoding: "utf8", env });
+
+    const refused = runCli(["telemetry", "off", "--proxy-base", "http://127.0.0.1:4399"], env);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /telemetry off: --proxy-base is not accepted; turning telemetry off applies to every endpoint\. To grant one endpoint instead, run: campaigns-os telemetry on --proxy-base http:\/\/127\.0\.0\.1:4399/);
+    // The refusal wrote nothing: the scoped grant is still in place.
+    const kept = readConfig(resolveConfigPath({ env })).config.telemetry;
+    assert.deepEqual([kept.enabled, kept.scope], [true, "http://127.0.0.1:4399"]);
+
+    const off = JSON.parse(execFileSync("node", [CLI, "telemetry", "off", "--json"], { encoding: "utf8", env }));
+    assert.deepEqual([off.state, off.source, off.scope, off.scope_canonical], ["off", "file", null, false]);
+    assert.equal(readConfig(resolveConfigPath({ env })).config.telemetry.scope, null);
+
+    const offText = execFileSync("node", [CLI, "telemetry", "off"], { encoding: "utf8", env });
+    assert.match(offText, /^Scope: every endpoint \(an OFF choice is not scoped\)$/m);
+
+    // status shows no Scope: row for an OFF file — nothing reads as granted.
+    const status = execFileSync("node", [CLI, "telemetry", "status"], { encoding: "utf8", env });
+    assert.match(status, /^Telemetry: off \(source: file\)$/m);
+    assert.doesNotMatch(status, /^Scope:/m);
+    const scoped = JSON.parse(execFileSync("node", [CLI, "telemetry", "status", "--proxy-base", "http://127.0.0.1:4399", "--json"], { encoding: "utf8", env }));
+    assert.deepEqual([scoped.state, scoped.scope, scoped.scope_mismatch], ["off", null, false]);
+  });
+});
+
+test("CLI: telemetry status names the endpoint the env override bypasses scope checking for", async () => {
+  await withTempDir((dir) => {
+    const env = { ...cliEnv(dir), [TELEMETRY_ENV_VAR]: "on" };
+    const text = execFileSync("node", [CLI, "telemetry", "status", "--proxy-base", "http://127.0.0.1:4399"], { encoding: "utf8", env, stdio: ["ignore", "pipe", "ignore"] });
+    assert.match(text, /^Telemetry: on \(source: env\) — CAMPAIGNS_OS_TELEMETRY bypasses scope checking for http:\/\/127\.0\.0\.1:4399$/m);
+  });
+});
+
 test("CLI: a file grant scoped to a loopback receiver remits there without the env override, and nowhere else", async () => {
   await withTempDir(async (dir) => {
     const granted = await startLoopbackReceiver();
@@ -494,8 +557,9 @@ test("CLI: a file grant scoped to a loopback receiver remits there without the e
   });
 });
 
-test("CLI: help lists --proxy-base on run end and on telemetry status|on|off", () => {
+test("CLI: help lists --proxy-base on run end and on telemetry status|on, and off without it", () => {
   const help = execFileSync("node", [CLI, "help"], { encoding: "utf8", env: cliEnv(tmpdir()) });
   assert.match(help, /campaigns-os run end \[--packet <json>\] \[--no-remit\] \[--no-write\] \[--proxy-base <url>\] \[--json\]/);
-  assert.match(help, /campaigns-os telemetry status\|on\|off \[--proxy-base <url>\] \[--json\]/);
+  assert.match(help, /campaigns-os telemetry status\|on \[--proxy-base <url>\] \[--json\]/);
+  assert.match(help, /campaigns-os telemetry off \[--json\] +# turn remit off for every endpoint \(takes no --proxy-base\)/);
 });

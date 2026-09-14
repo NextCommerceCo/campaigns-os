@@ -18,13 +18,25 @@ Notable supported-surface changes are recorded here.
   before the file is written. The output names the scope (`Scope:
   http://127.0.0.1:4399`) and, for a non-canonical grant, says the canonical
   endpoint is OFF until `campaigns-os telemetry on` is run again; `--json`
-  carries `scope` and `scope_canonical`. `telemetry off` accepts the flag too.
+  carries `scope` and `scope_canonical`. `telemetry off` takes no
+  `--proxy-base` — an OFF choice applies to every endpoint — and refuses it
+  with `telemetry off: --proxy-base is not accepted; turning telemetry off
+  applies to every endpoint. To grant one endpoint instead, run: campaigns-os
+  telemetry on --proxy-base <url>`; the OFF record it writes carries
+  `scope: null` (text: `Scope: every endpoint (an OFF choice is not
+  scoped)`), so `telemetry status` prints no `Scope:` row for an OFF file.
 - `telemetry status` prints the stored scope (`Scope: <url>`) and the endpoint
   it was checked against (`Checked endpoint: <url>` — the canonical endpoint,
   or `--proxy-base <url>` when given), and on a mismatch says `Scope mismatch
   — the stored grant is for <stored>, so remit to <checked> is OFF. Consent to
   it with: campaigns-os telemetry on [--proxy-base <checked>]`; `--json`
-  carries `scope`, `checked_endpoint`, `scope_mismatch`.
+  carries `scope`, `checked_endpoint`, `scope_mismatch`. `--proxy-base` is
+  gated by the same transport rule as `telemetry on` (https or a loopback
+  host); a base a remit would refuse is refused here too, with the same
+  message, instead of being reported as an unresolvable endpoint. Under
+  `CAMPAIGNS_OS_TELEMETRY=on` the state line names the endpoint the override
+  bypasses scope checking for: `Telemetry: on (source: env) —
+  CAMPAIGNS_OS_TELEMETRY bypasses scope checking for <url>`.
 
 ### Changed
 
@@ -43,10 +55,13 @@ Notable supported-surface changes are recorded here.
   silent.
 - `help` lists `--proxy-base <url>` on `run end` (it was already forwarded to
   `run-record`, so a session close could be remitted to a named receiver, but
-  the help line omitted it) and on `telemetry status|on|off`.
-- `writeConsentConfig("on", { proxyBase })` throws `Telemetry consent scope is
-  not a URL: <base>` for a named base that does not normalize instead of
-  storing `scope: null`, a grant that matches no endpoint.
+  the help line omitted it) and on `telemetry status|on`; `telemetry off` is
+  listed on its own line without it.
+- `writeConsentConfig(state, { proxyBase })` throws `Telemetry consent scope
+  is not a URL: <base>` for a named base that does not normalize, for both
+  states, instead of storing `scope: null` (on ON, a grant that matches no
+  endpoint; on OFF, a silently dropped typo). An OFF record is always written
+  with `scope: null`, whatever base the caller passed.
 
 ## [1.27.0+agent.26] - 2026-09-14
 
