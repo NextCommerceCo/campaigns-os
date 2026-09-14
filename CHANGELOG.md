@@ -29,6 +29,7 @@ Notable supported-surface changes are recorded here.
   reading every other CLI notice gives it, rather than folded into a space.
   Line breaks and tabs inside a command still read as one space, as before.
   `docs/supported-surface.md` describes the third function beside the two.
+
 ## [1.27.0+agent.1] - 2026-09-13
 
 ### Fixed
