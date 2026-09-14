@@ -2542,6 +2542,27 @@
         }
       ],
       "entry_sha256": "66e644d94de7e5114449270d735f1f5edd32863e0aec7270daf6658ec51b9842"
+    },
+    {
+      "id": "RL-0064",
+      "sequence": 64,
+      "date": "2026-09-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.2",
+      "changelog_sha256": "7fb2a500a710be97a6525801d5c9370ea0a615f9fc9b192d92b59f3adc156cc8",
+      "agent_impact": "Additive. The ./text-safety package export gains singleLineFragment(value, fallback): line breaks and tabs become spaces, runs of whitespace collapse, the ends are trimmed, every other control character (C0 other than whitespace, DEL, C1) becomes U+FFFD, no Markdown escaping, no length cap; an empty or absent value returns fallback (default the empty string). Use it for a toolkit-derived value folded into a sentence, such as a gate's required_actions[].command or .description. singleLineField and singleLineDetail keep their signatures and their exact output; singleLineDetail is now defined as singleLineFragment plus Markdown escaping, the cap and the (no detail reported) placeholder. One stderr line changes on hostile input only: the qa run browser-skipped notice's quoted required actions now render a non-whitespace control character as U+FFFD instead of a space. No JSON output changes.",
+      "compatibility": "additive",
+      "migration": "None. A consumer that reimplemented the sentence fold can import singleLineFragment instead.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The ./text-safety row names singleLineFragment beside singleLineField and singleLineDetail, states which value kind each is for (own field, folded into a sentence, quoted detail) and what each does to whitespace and to other control characters, and records that singleLineFragment was added at 1.27.0+agent.2."
+        }
+      ],
+      "entry_sha256": "58e1d67b29a1b3988c9398f5357a181ead30e352d602be8c1a6fd197d970e653"
     }
   ]
 }

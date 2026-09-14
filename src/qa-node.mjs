@@ -1,5 +1,6 @@
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
@@ -1708,7 +1709,7 @@ function gateClearingHint(gates) {
   for (const action of actions) {
     // Prefer the runnable command; fall back to the manual instruction, which
     // is what a kind: "manual" action carries instead of one.
-    const text = flattenForNotice(action.command) || flattenForNotice(action.description);
+    const text = singleLineFragment(action.command) || singleLineFragment(action.description);
     if (text && !unique.includes(text)) unique.push(text);
   }
   // Deduplicated BEFORE the cap, and truncation is measured against that count:
@@ -1727,18 +1728,6 @@ function gateClearingHint(gates) {
   }
   const more = unique.length > named.length ? " (and the rest of the gate's required_actions on the verdict)" : "";
   return `The gate's required actions clear it: ${named.join("; ")}${more}. Then re-run with --browser.`;
-}
-
-// Gate reasons and required actions carry subject-derived values (slugs,
-// target paths, timestamps), and this text becomes one stderr line, so a
-// newline or an ANSI escape in it could split or dress up toolkit output.
-// cli.mjs flattens its own notices for the same reason; its helper is not
-// importable here (cli.mjs imports this module, not the reverse), and this one
-// also collapses runs of whitespace, because the values are being folded into
-// a sentence rather than printed as their own field.
-function flattenForNotice(value) {
-  if (typeof value !== "string") return "";
-  return value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function browserSkippedByGate({ args, blockedBy, gateLabel, gates }) {
