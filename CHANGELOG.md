@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.15] - 2026-09-14
+
+### Changed
+
+- One derivation per polish capture invariant. The page-load validator
+  re-derived twenty-two statements the capture producer makes about itself
+  (ledger order, largest resource, metric sums, source-reference order,
+  fetched-resource attribution and totals, unresolvable and unattributed
+  media, the document, collection, producer and networkidle statuses, the
+  problem counts a ledger implies) with its own copies of the producer's
+  code, and answered with one bit: `capture_shape_invalid`. The producer's
+  derivations are now exported from `src/polish-capture.mjs` and the
+  validator is an ordered table of shape rules that recomputes each stated
+  value with the same function, so the two cannot drift apart. The table is
+  exported as `POLISH_CAPTURE_SHAPE_RULES`, `captureShapeViolation(capture)`
+  names the first rule a capture breaks, and a `measurement.incomplete[]`
+  entry whose codes include `capture_shape_invalid` now also carries that
+  name as `shape_violation`. Every other output is unchanged: captures,
+  page-load evidence for captures whose shape holds, checkpoint results and
+  the QA verdict's measurement projection (which lists a fixed field set)
+  produce what they did.
+
 ## [1.27.0+agent.10] - 2026-09-14
 
 ### Fixed
@@ -292,6 +314,60 @@ Notable supported-surface changes are recorded here.
   output are unchanged. `writeJsonAtomic` is exported from
   `src/doctor-sidecar.mjs`, and `assemblyReportMatchesPacket` moves to
   `src/stage-ledger.mjs`.
+## [1.27.0+agent.16] - 2026-09-14
+
+### Fixed
+
+- One launcher for the package-owned Playwright Chromium. Polish capture and
+  browser QA each imported `playwright` lazily, launched Chromium headless
+  unless `--headed`, and recognised a missing browser executable by the same
+  regular expression over Playwright's install wording — the import, the
+  launch and the detection written twice, so a change to Playwright's wording
+  would have to be found in both. The launch now lives once in
+  `src/browser-launch.mjs` (`launchPackageChromium`), which imports, launches
+  and detects, and asks the caller for the two error messages through
+  `onMissing(kind, error)` — each surface keeps naming its own rerun command.
+  Polish capture runs the launcher inside its bounded startup deadline as
+  before; browser QA calls it directly. No output changes: the polish
+  `POLISH_BROWSER_UNAVAILABLE` error and both QA messages are word-for-word
+  what they were.
+
+## [1.27.0+agent.11] - 2026-09-14
+
+### Fixed
+
+- One HTTP(S) origin parser for polish evidence. The capture producer, the
+  capture validator (its origin-field rule and its cross-origin warning
+  attribution), the `polish capture` text renderer, the browser adapter's
+  cookie-origin check and the analytics parity capture's baseline credential
+  guard each parsed "the origin of this URL, or null" for themselves — five
+  copies of one rule with the scheme test and the length cap drifting between
+  them. The rule now lives once as `captureOrigin` in `src/polish-capture.mjs`
+  and the five callers are projections of it. No output changes: a capture's
+  `document_response` origins, the validator's `failed_origins`, the
+  checkpoint and the rendered text are byte-identical for the same input. One
+  guard tightens: the parity capture treated two non-HTTP URLs as same-origin
+  (both carry the URL standard's opaque origin), so a fixture-supplied
+  non-HTTP baseline beside a non-HTTP candidate carried the preview
+  credential; only an HTTP(S) origin can now be "the same", and the credential
+  is withheld as it is for any other cross-origin baseline.
+
+## [1.27.0+agent.13] - 2026-09-14
+
+### Changed
+
+- One hidden eager-media checkpoint evaluation per `polish capture`. The
+  capture producer (`capturePolishPageLoad`) evaluated the checkpoint against
+  the report it was handed at start and returned it beside the evidence, and
+  the command discarded that result: it re-reads the report after the browser
+  pass and evaluates the checkpoint on the merged report it persists, which is
+  the evaluation that decides the exit status, the `checkpoint` field and any
+  waiver. The producer now returns `{ plan, page_load }` only; its tests
+  evaluate the recorded checkpoint explicitly through
+  `evaluateRecordedHiddenEagerMediaCheckpoint` on the merged report, the same
+  path the command uses. No output changes: `polish capture` (text and
+  `--json`), the persisted `page_load` evidence and the doctor sidecar are
+  byte-identical.
 
 ## [1.27.0] - 2026-09-13
 

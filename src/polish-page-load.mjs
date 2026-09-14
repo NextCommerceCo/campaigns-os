@@ -2,11 +2,24 @@ import { createHash } from "node:crypto";
 
 import {
   buildPolishCaptureIntegrity,
+  canonicalJson,
+  captureOrigin,
+  documentResponseAcceptable,
+  hiddenEagerSourceUnresolved,
+  ledgerProblemCounts,
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
   MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
+  mediaCollectionStatus,
+  mediaFetchTotals,
+  mediaFetchedResources,
+  normalizedBuildFingerprint,
+  normalizedCampaignSlug,
+  normalizedNetworkidle,
+  normalizedViewport,
   normalizePageLoadRoute,
+  originMatchesCapture,
   POLISH_CAPTURE_PRODUCER,
   POLISH_CAPTURE_INTEGRITY_ALGORITHM,
   POLISH_CAPTURE_INTEGRITY_SCHEMA_VERSION,
@@ -14,6 +27,14 @@ import {
   POLISH_PRELOAD_ATTRIBUTES,
   POLISH_RESOURCE_TYPES,
   POLISH_ROUTE_CAPTURE_SCHEMA_VERSION,
+  preloadDefersFetch,
+  producerStatus,
+  resourceLedgerMetrics,
+  resourceLedgerSort,
+  resourceTypeKnown,
+  responseCollectionProblemCode,
+  sourceReferenceSort,
+  unattributedMediaTransfers,
   failedRequestProblemCode,
   polishCaptureMeasurementStatus,
   redactCaptureUrl,
@@ -97,24 +118,6 @@ function normalizedRoutes(values) {
     .filter(Boolean))].sort();
 }
 
-// No cycle guard, deliberately: captures reach this module from exactly two
-// places, and neither can carry one. The producer builds them in-process out of
-// fresh literals (polish-node.mjs), and the re-derivation path reads them back
-// out of the Assembly Report, where JSON.parse cannot produce a cycle by
-// construction. A guard here would be unreachable code standing in for an
-// invariant that holds one level up.
-function canonicalize(value) {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonicalize(value));
-}
-
 function emptyWaiverAssessment() {
   return {
     active: null,
@@ -123,10 +126,9 @@ function emptyWaiverAssessment() {
 }
 
 function pageLoadCheckpointSubject({ buildFingerprint, slug, routeScope, routes, viewports } = {}) {
-  const campaignSlug = normalizeString(slug);
   return {
-    build_fingerprint: isSha256(buildFingerprint) ? buildFingerprint : null,
-    campaign_slug: campaignSlug && /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(campaignSlug) ? campaignSlug : null,
+    build_fingerprint: normalizedBuildFingerprint(buildFingerprint),
+    campaign_slug: normalizedCampaignSlug(slug),
     route_scope: normalizeString(routeScope)?.toLocaleLowerCase("en-US") || null,
     routes: normalizedRoutes(routes),
     viewports: normalizedStrings(viewports),
@@ -171,39 +173,23 @@ function safeSourceUrl(value) {
   return safeHttpUrl(value) || "[malformed-url]";
 }
 
+// A subject is valid when the producer's normalizers leave every field as
+// stated and none of them null.
 function validCaptureSubject(subject) {
   if (!subject || typeof subject !== "object" || Array.isArray(subject)) return false;
-  const requestedRoute = normalizePageLoadRoute(subject.requested_route);
-  const finalRoute = normalizePageLoadRoute(subject.final_document_route);
-  const viewport = normalizeString(subject.viewport)?.toLocaleLowerCase("en-US") || null;
-  const slug = normalizeString(subject.campaign_slug);
-  return isSha256(subject.build_fingerprint)
-    && Boolean(slug && /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(slug))
-    && Boolean(requestedRoute)
-    && requestedRoute === subject.requested_route
-    && Boolean(finalRoute)
-    && finalRoute === subject.final_document_route
-    && Boolean(viewport)
-    && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(viewport)
-    && viewport === subject.viewport;
+  const projected = projectCaptureSubject(subject);
+  return Object.values(projected).every((value) => value !== null)
+    && canonicalJson(projected) === canonicalJson(subject);
 }
 
 function projectCaptureSubject(subject) {
-  const fingerprint = isSha256(subject?.build_fingerprint) ? subject.build_fingerprint : null;
-  const slug = normalizeString(subject?.campaign_slug);
-  const safeSlug = slug && /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(slug) ? slug : null;
-  const viewport = normalizeString(subject?.viewport)?.toLocaleLowerCase("en-US") || null;
   return {
-    build_fingerprint: fingerprint,
-    campaign_slug: safeSlug,
+    build_fingerprint: normalizedBuildFingerprint(subject?.build_fingerprint),
+    campaign_slug: normalizedCampaignSlug(subject?.campaign_slug),
     requested_route: normalizePageLoadRoute(subject?.requested_route),
     final_document_route: normalizePageLoadRoute(subject?.final_document_route),
-    viewport: viewport && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(viewport) ? viewport : null,
+    viewport: normalizedViewport(subject?.viewport),
   };
-}
-
-function resourceLedgerSort(a, b) {
-  return String(a.url).localeCompare(String(b.url)) || String(a.resource_id).localeCompare(String(b.resource_id));
 }
 
 function hasOwn(value, field) {
@@ -221,8 +207,7 @@ function validResourceLedgerEntry(resource) {
   if (!isSha256(resource.resource_id) || safeHttpUrl(resource.url) !== resource.url) return false;
   if (!RESOURCE_TYPES.has(resource.resource_type)
     || !RESOURCE_TYPE_STATUSES.has(resource.resource_type_status)) return false;
-  if ((resource.resource_type_status === "known") !== (resource.resource_type !== "unknown")) return false;
-  if ((resource.resource_type_status !== "known") !== (resource.resource_type === "unknown")) return false;
+  if ((resource.resource_type_status === "known") !== resourceTypeKnown(resource.resource_type)) return false;
   for (const field of [
     "transferred_bytes",
     "request_count",
@@ -321,31 +306,6 @@ function projectResourceLedger(ledger) {
   };
 }
 
-function largestResourceProjection(resources) {
-  const largest = [...resources].sort((a, b) => b.transferred_bytes - a.transferred_bytes
-    || a.url.localeCompare(b.url)
-    || a.resource_id.localeCompare(b.resource_id))[0];
-  return largest ? {
-    resource_id: largest.resource_id,
-    url: largest.url,
-    resource_type: largest.resource_type,
-    transferred_bytes: largest.transferred_bytes,
-    request_count: largest.request_count,
-  } : null;
-}
-
-function recomputedMetrics(resources) {
-  const sum = (field) => resources.reduce((total, resource) => total + resource[field], 0);
-  return {
-    total_transferred_bytes: sum("transferred_bytes"),
-    request_count: sum("request_count"),
-    largest_resource: largestResourceProjection(resources),
-    cross_origin_request_count: sum("cross_origin_request_count"),
-    cache_request_count: sum("cache_request_count"),
-    service_worker_request_count: sum("service_worker_request_count"),
-  };
-}
-
 function projectLargestResource(resource) {
   if (!resource || typeof resource !== "object" || Array.isArray(resource)) return null;
   return {
@@ -381,13 +341,6 @@ function validSourceReference(reference) {
     : reference.resource_id === null && SOURCE_SENTINELS.has(reference.url);
 }
 
-function sourceReferenceSort(a, b) {
-  const ranks = { current_src: 0, src_attribute: 1, source_src_attribute: 2, observed_source: 3 };
-  return (ranks[a.source_kind] ?? 99) - (ranks[b.source_kind] ?? 99)
-    || a.source_index - b.source_index
-    || String(a.resource_id).localeCompare(String(b.resource_id));
-}
-
 function projectSourceReference(reference) {
   return {
     source_kind: SOURCE_KINDS.has(reference?.source_kind) ? reference.source_kind : null,
@@ -408,25 +361,6 @@ function explicitSourceDescriptors(media) {
     if (url !== null) descriptors.push({ source_kind: "observed_source", source_index: sourceIndex, url });
   });
   return descriptors.sort(sourceReferenceSort);
-}
-
-function expectedFetchedResources(media, ledgerEntries) {
-  const sourceIds = new Set(media.source_references
-    .map((reference) => reference.resource_id)
-    .filter(Boolean));
-  return ledgerEntries.flatMap((resource) => {
-    const matchedSourceIds = resource.match_resource_ids.filter((id) => sourceIds.has(id));
-    if (!matchedSourceIds.length) return [];
-    return [{
-      resource_id: resource.resource_id,
-      url: resource.url,
-      resource_type: resource.resource_type,
-      transferred_bytes: resource.transferred_bytes,
-      request_count: resource.request_count,
-      ...(hasDeclaredLedgerShape(resource) ? { declared_bytes: resource.declared_bytes } : {}),
-      matched_source_resource_ids: matchedSourceIds.sort(),
-    }];
-  }).sort(resourceLedgerSort);
 }
 
 function validFetchedResource(resource) {
@@ -481,7 +415,7 @@ function validMediaProjection(media, ledgerEntries) {
   if (canonicalJson(descriptors) !== canonicalJson(referenceDescriptors)) return false;
   if (!PRELOAD_ATTRIBUTES.has(media.preload_attribute)
     || typeof media.preload_defers_fetch !== "boolean"
-    || media.preload_defers_fetch !== (media.preload_attribute === "none" || media.preload_attribute === "metadata")) return false;
+    || media.preload_defers_fetch !== preloadDefersFetch(media.preload_attribute)) return false;
   if (typeof media.hidden_at_load !== "boolean"
     || (media.zero_size_at_load !== null && typeof media.zero_size_at_load !== "boolean")) return false;
   if (!isSortedUnique(media.hidden_by)
@@ -494,13 +428,13 @@ function validMediaProjection(media, ledgerEntries) {
     || !isNonnegativeInteger(media.fetched_request_count)
     || !Array.isArray(media.fetched_resources)
     || media.fetched_resources.some((resource) => !validFetchedResource(resource))) return false;
-  const expected = expectedFetchedResources(media, ledgerEntries);
+  const expected = mediaFetchedResources(media, ledgerEntries);
   const projectedFetched = media.fetched_resources.map(projectFetchedResource).sort(resourceLedgerSort);
   if (canonicalJson(projectedFetched) !== canonicalJson(expected)) return false;
-  const expectedDeclaredBytes = expected.reduce((sum, resource) => sum + (resource.declared_bytes || 0), 0);
-  return media.fetched_bytes === expected.reduce((sum, resource) => sum + resource.transferred_bytes, 0)
-    && (hasOwn(media, "declared_bytes") ? media.declared_bytes === expectedDeclaredBytes : expectedDeclaredBytes === 0)
-    && media.fetched_request_count === expected.reduce((sum, resource) => sum + resource.request_count, 0);
+  const totals = mediaFetchTotals(expected);
+  return media.fetched_bytes === totals.fetched_bytes
+    && (hasOwn(media, "declared_bytes") ? media.declared_bytes === totals.declared_bytes : totals.declared_bytes === 0)
+    && media.fetched_request_count === totals.fetched_request_count;
 }
 
 function projectMedia(media) {
@@ -552,21 +486,6 @@ function validProblems(capture) {
   return capture.measurement_status === polishCaptureMeasurementStatus(capture.problems);
 }
 
-// Recomputes the attributed failure counts from the ledger alone: every
-// request under one entry shares the entry's origin relation and resolved
-// type, so the entry decides the class for all of its failed requests.
-function attributedFailureCounts(entries) {
-  const counts = { cross_origin_request_failed: 0, dependency_request_failed: 0 };
-  for (const resource of entries) {
-    if (resource.failed_request_count === 0) continue;
-    counts[failedRequestProblemCode({
-      crossOrigin: resource.cross_origin_request_count > 0,
-      resourceType: resource.resource_type,
-    })] += resource.failed_request_count;
-  }
-  return counts;
-}
-
 // The demoted failures behind a capture warning, read back off the ledger:
 // which hosts they went to and which resource roles were demoted. The roles
 // matter because the demotion is a trade-off, not a fact about the page — a
@@ -587,7 +506,9 @@ function captureWarningAttribution(capture) {
     }) !== "cross_origin_request_failed") continue;
     // A ledger URL has already passed safeHttpUrl in validResourceLedger, so a
     // parse failure here is a bug worth throwing on, not a case to swallow.
-    origins.add(new URL(resource.url).origin);
+    const origin = captureOrigin(resource.url);
+    if (origin === null) throw new Error("polish capture: resource ledger URL is not an HTTP(S) URL");
+    origins.add(origin);
     resourceTypes.add(resource.resource_type);
   }
   return { origins: [...origins].sort(), resourceTypes: [...resourceTypes].sort() };
@@ -617,16 +538,10 @@ function validCaptureIntegrity(capture) {
   return canonicalJson(integrity) === canonicalJson(expected);
 }
 
+// An origin field is trusted only when it is exactly what the one origin
+// parser returns for itself: no path, no query, no credentials, no case drift.
 function safeOrigin(value) {
-  if (typeof value !== "string") return null;
-  try {
-    const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value
-      ? value
-      : null;
-  } catch {
-    return null;
-  }
+  return captureOrigin(value) === value ? value : null;
 }
 
 function projectDocumentResponse(value) {
@@ -653,8 +568,7 @@ function validDocumentResponse(capture, entries) {
   const projected = projectDocumentResponse(capture.document_response);
   if (canonicalJson(projected) !== canonicalJson(capture.document_response)) return false;
   if (projected.origin_matches_capture
-    !== Boolean(projected.capture_origin && projected.final_origin
-      && projected.capture_origin === projected.final_origin)) return false;
+    !== originMatchesCapture(projected.capture_origin, projected.final_origin)) return false;
   const problemStatus = problemCount(capture, "document_response_ambiguous") > 0
     ? "ambiguous"
     : problemCount(capture, "document_response_missing") > 0
@@ -671,105 +585,175 @@ function validDocumentResponse(capture, entries) {
   const resource = entries.find((entry) => entry.resource_id === projected.resource_id);
   if (!resource || resource.resource_type !== "document" || resource.url !== projected.url) return false;
   if (projected.http_status !== null && !resource.statuses.includes(projected.http_status)) return false;
-  const acceptable = projected.http_status === 200
-    && (projected.mime_type === "html" || projected.mime_type === "xhtml")
-    && projected.origin_matches_capture;
-  return (projected.status === "complete") === acceptable;
+  return (projected.status === "complete") === documentResponseAcceptable(projected);
 }
 
-function validCaptureShape(capture) {
-  if (!capture || typeof capture !== "object" || Array.isArray(capture)) return false;
-  if (capture.schema_version !== POLISH_ROUTE_CAPTURE_SCHEMA_VERSION
-    || capture.performed_by !== POLISH_CAPTURE_PRODUCER
-    || (capture.measurement_status !== "complete" && capture.measurement_status !== "incomplete")
-    || !validCaptureSubject(capture.subject)
-    || !validProblems(capture)
-    || !validCaptureIntegrity(capture)) return false;
-  if (capture.producer_status !== "complete" && capture.producer_status !== "failed") return false;
-  if ((capture.producer_status === "failed") !== (problemCount(capture, "producer_failed") > 0
-    || problemCount(capture, "browser_unavailable") > 0
-    || problemCount(capture, "producer_timeout") > 0)) return false;
-  if (!capture.response_collection
-    || !["complete", "failed", "invalid"].includes(capture.response_collection.status)
-    || !isNonnegativeInteger(capture.response_collection.observed_response_count)
-    || !isNonnegativeInteger(capture.response_collection.unattributed_response_count)) return false;
-  if ((capture.response_collection.status === "failed") !== (problemCount(capture, "response_collection_failed") > 0)) return false;
-  if ((capture.response_collection.status === "invalid") !== (problemCount(capture, "response_collection_status_invalid") > 0)) return false;
-  if ((capture.response_collection.status === "complete"
-    && capture.response_collection.observed_response_count === 0)
-    !== (problemCount(capture, "response_collection_empty") > 0)) return false;
-  if (!capture.media_collection
-    || !["complete", "failed", "partial"].includes(capture.media_collection.status)
-    || !isNonnegativeInteger(capture.media_collection.observed_element_count)
-    || !isNonnegativeInteger(capture.media_collection.failed_element_count)
-    || !isNonnegativeInteger(capture.media_collection.omitted_element_count)
-    || !isNonnegativeInteger(capture.media_collection.source_overflow_element_count)
-    || !isNonnegativeInteger(capture.media_collection.ancestor_overflow_element_count)) return false;
-  const partialMediaCollection = capture.media_collection.failed_element_count > 0
-    || capture.media_collection.omitted_element_count > 0
-    || capture.media_collection.source_overflow_element_count > 0
-    || capture.media_collection.ancestor_overflow_element_count > 0;
-  if ((capture.media_collection.status === "partial") !== partialMediaCollection) return false;
-  if ((capture.media_collection.status === "failed") !== (problemCount(capture, "media_collection_unavailable") > 0)) return false;
-  if (capture.media_collection.failed_element_count !== problemCount(capture, "media_measurement_failed")) return false;
-  if (capture.media_collection.omitted_element_count !== problemCount(capture, "media_element_overflow")) return false;
-  if (capture.media_collection.source_overflow_element_count !== problemCount(capture, "media_source_overflow")) return false;
-  if (capture.media_collection.ancestor_overflow_element_count !== problemCount(capture, "media_ancestor_overflow")) return false;
-  if (!capture.networkidle
-    || !["invalid", "settled", "timeout"].includes(capture.networkidle.status)
-    || (capture.networkidle.status === "invalid"
-      ? capture.networkidle.duration_ms !== null
-      : !isNonnegativeInteger(capture.networkidle.duration_ms))) return false;
-  if ((capture.networkidle.status === "invalid") !== (problemCount(capture, "networkidle_measurement_invalid") > 0)) return false;
-  if (!validResourceLedger(capture.resource_ledger)) return false;
-  const entries = capture.resource_ledger.entries;
-  if (!validDocumentResponse(capture, entries)) return false;
-  if (!capture.metrics || typeof capture.metrics !== "object" || Array.isArray(capture.metrics)) return false;
-  if (canonicalJson(projectMetrics(capture.metrics)) !== canonicalJson(recomputedMetrics(entries))) return false;
-  if (capture.response_collection.observed_response_count !== capture.metrics.request_count
-    + capture.resource_ledger.omitted_request_count
-    + capture.response_collection.unattributed_response_count) return false;
-  if ((capture.resource_ledger.omitted_resource_count > 0)
-    !== (problemCount(capture, "resource_ledger_overflow") > 0)) return false;
-  if (capture.resource_ledger.omitted_resource_count > 0
-    && problemCount(capture, "resource_ledger_overflow") !== capture.resource_ledger.omitted_resource_count) return false;
-  if (!Array.isArray(capture.media)
-    || capture.media.length > MAX_PAGE_LOAD_MEDIA_ELEMENTS
-    || capture.media.some((media) => !validMediaProjection(media, entries))) return false;
-  const indices = capture.media.map((media) => media.element_index);
-  if (!isSortedUnique(indices, (a, b) => a - b)) return false;
-  if (capture.media_collection.status !== "failed"
-    && (!capture.media.every((media, index) => media.element_index === index)
-      || capture.media_collection.observed_element_count !== capture.media.length
-        + capture.media_collection.failed_element_count
-        + capture.media_collection.omitted_element_count)) return false;
-  const unresolvedHiddenEager = capture.media.filter((media) => media.hidden_at_load
-    && !media.preload_defers_fetch
-    && media.source_references.some((reference) => reference.resource_id === null)).length;
-  if (problemCount(capture, "media_source_unresolvable") !== unresolvedHiddenEager) return false;
-  const attributedResourceIds = new Set(capture.media.flatMap((media) => media.fetched_resources)
-    .map((resource) => resource.resource_id));
-  const unattributedMediaTransfers = entries.filter((resource) => resource.resource_type === "media"
-    && resource.transferred_bytes > 0
-    && !attributedResourceIds.has(resource.resource_id)).length;
-  if (problemCount(capture, "media_transfer_unattributed") !== unattributedMediaTransfers) return false;
-  if ((capture.subject.final_document_route !== capture.subject.requested_route)
-    !== (problemCount(capture, "final_document_route_mismatch") > 0)) return false;
-  const noOverflow = capture.resource_ledger.omitted_resource_count === 0;
-  if (noOverflow) {
-    const failures = attributedFailureCounts(entries);
-    // A dependency failure voids the collection; a cross-origin beacon-class
-    // failure alone never does. Both stay tied to the ledger they came from.
-    if (failures.dependency_request_failed > 0 && capture.response_collection.status === "complete") return false;
-    if (problemCount(capture, "cache_observed") !== capture.metrics.cache_request_count
-      || problemCount(capture, "service_worker_observed") !== capture.metrics.service_worker_request_count
-      || problemCount(capture, "cross_origin_request_failed") !== failures.cross_origin_request_failed
-      || problemCount(capture, "dependency_request_failed") !== failures.dependency_request_failed
-      || problemCount(capture, "transfer_size_unavailable") !== entries.reduce((sum, resource) => sum + resource.unmeasured_request_count, 0)
-      || problemCount(capture, "resource_type_ambiguous") !== entries.filter((resource) => resource.resource_type_status === "ambiguous").length
-      || problemCount(capture, "resource_type_unknown") !== entries.filter((resource) => resource.resource_type_status === "unknown").length) return false;
+// The shape rules. Each names one statement a capture makes about itself
+// and recomputes it from the ledger, the media list or the problems with the
+// producer's own derivation (imported from polish-capture.mjs), so the
+// producer and the validator cannot drift apart. A "stated"/"derived" rule
+// holds when the two canonicalize to the same bytes; a "holds" rule is a
+// structural check the derivations rely on. Order matters: a rule may assume
+// every rule before it held, and the first failure is the one reported.
+const CAPTURE_SHAPE_RULES = Object.freeze([
+  { name: "capture_object", holds: (capture) => Boolean(capture) && typeof capture === "object" && !Array.isArray(capture) },
+  { name: "schema_version", holds: (capture) => capture.schema_version === POLISH_ROUTE_CAPTURE_SCHEMA_VERSION },
+  { name: "performed_by", holds: (capture) => capture.performed_by === POLISH_CAPTURE_PRODUCER },
+  {
+    name: "measurement_status_token",
+    holds: (capture) => capture.measurement_status === "complete" || capture.measurement_status === "incomplete",
+  },
+  { name: "subject", holds: (capture) => validCaptureSubject(capture.subject) },
+  { name: "problems", holds: (capture) => validProblems(capture) },
+  { name: "integrity", holds: (capture) => validCaptureIntegrity(capture) },
+  {
+    name: "producer_status",
+    holds: (capture) => capture.producer_status === "complete" || capture.producer_status === "failed",
+    stated: (capture) => capture.producer_status,
+    derived: (capture) => producerStatus(capture.problems),
+  },
+  {
+    name: "response_collection_fields",
+    holds: (capture) => Boolean(capture.response_collection)
+      && ["complete", "failed", "invalid"].includes(capture.response_collection.status)
+      && isNonnegativeInteger(capture.response_collection.observed_response_count)
+      && isNonnegativeInteger(capture.response_collection.unattributed_response_count),
+  },
+  {
+    name: "response_collection_status",
+    stated: (capture) => ["response_collection_failed", "response_collection_status_invalid"]
+      .filter((code) => problemCount(capture, code) > 0),
+    derived: (capture) => [responseCollectionProblemCode(capture.response_collection.status)].filter(Boolean),
+  },
+  {
+    name: "response_collection_empty",
+    stated: (capture) => problemCount(capture, "response_collection_empty") > 0,
+    derived: (capture) => capture.response_collection.status === "complete"
+      && capture.response_collection.observed_response_count === 0,
+  },
+  {
+    name: "media_collection_fields",
+    holds: (capture) => Boolean(capture.media_collection)
+      && ["complete", "failed", "partial"].includes(capture.media_collection.status)
+      && ["observed_element_count", "failed_element_count", "omitted_element_count",
+        "source_overflow_element_count", "ancestor_overflow_element_count"]
+        .every((field) => isNonnegativeInteger(capture.media_collection[field])),
+  },
+  {
+    name: "media_collection_status",
+    stated: (capture) => capture.media_collection.status,
+    derived: (capture) => (problemCount(capture, "media_collection_unavailable") > 0
+      ? (mediaCollectionStatus(capture.media_collection) === "complete" ? "failed" : "invalid")
+      : mediaCollectionStatus(capture.media_collection)),
+  },
+  {
+    name: "media_collection_counts",
+    stated: (capture) => [
+      capture.media_collection.failed_element_count,
+      capture.media_collection.omitted_element_count,
+      capture.media_collection.source_overflow_element_count,
+      capture.media_collection.ancestor_overflow_element_count,
+    ],
+    derived: (capture) => [
+      problemCount(capture, "media_measurement_failed"),
+      problemCount(capture, "media_element_overflow"),
+      problemCount(capture, "media_source_overflow"),
+      problemCount(capture, "media_ancestor_overflow"),
+    ],
+  },
+  {
+    name: "networkidle",
+    holds: (capture) => Boolean(capture.networkidle) && typeof capture.networkidle === "object",
+    stated: (capture) => capture.networkidle,
+    derived: (capture) => normalizedNetworkidle(capture.networkidle),
+  },
+  {
+    name: "networkidle_problem",
+    stated: (capture) => problemCount(capture, "networkidle_measurement_invalid") > 0,
+    derived: (capture) => capture.networkidle.status === "invalid",
+  },
+  { name: "resource_ledger", holds: (capture) => validResourceLedger(capture.resource_ledger) },
+  { name: "document_response", holds: (capture) => validDocumentResponse(capture, capture.resource_ledger.entries) },
+  {
+    name: "metrics",
+    holds: (capture) => Boolean(capture.metrics) && typeof capture.metrics === "object" && !Array.isArray(capture.metrics),
+    stated: (capture) => projectMetrics(capture.metrics),
+    derived: (capture) => resourceLedgerMetrics(capture.resource_ledger.entries),
+  },
+  {
+    name: "response_accounting",
+    stated: (capture) => capture.response_collection.observed_response_count,
+    derived: (capture) => capture.metrics.request_count
+      + capture.resource_ledger.omitted_request_count
+      + capture.response_collection.unattributed_response_count,
+  },
+  {
+    name: "resource_ledger_overflow",
+    stated: (capture) => problemCount(capture, "resource_ledger_overflow"),
+    derived: (capture) => capture.resource_ledger.omitted_resource_count,
+  },
+  {
+    name: "media",
+    holds: (capture) => Array.isArray(capture.media)
+      && capture.media.length <= MAX_PAGE_LOAD_MEDIA_ELEMENTS
+      && capture.media.every((media) => validMediaProjection(media, capture.resource_ledger.entries))
+      && isSortedUnique(capture.media.map((media) => media.element_index), (a, b) => a - b),
+  },
+  {
+    name: "media_element_accounting",
+    holds: (capture) => capture.media_collection.status === "failed"
+      || (capture.media.every((media, index) => media.element_index === index)
+        && capture.media_collection.observed_element_count === capture.media.length
+          + capture.media_collection.failed_element_count
+          + capture.media_collection.omitted_element_count),
+  },
+  {
+    name: "media_source_unresolvable",
+    stated: (capture) => problemCount(capture, "media_source_unresolvable"),
+    derived: (capture) => capture.media.filter(hiddenEagerSourceUnresolved).length,
+  },
+  {
+    name: "media_transfer_unattributed",
+    stated: (capture) => problemCount(capture, "media_transfer_unattributed"),
+    derived: (capture) => unattributedMediaTransfers(capture.media, capture.resource_ledger.entries).length,
+  },
+  {
+    name: "final_document_route_mismatch",
+    stated: (capture) => problemCount(capture, "final_document_route_mismatch") > 0,
+    derived: (capture) => capture.subject.final_document_route !== capture.subject.requested_route,
+  },
+  // The ledger-implied problem counts and the collection verdict can only be
+  // recomputed when no entry was omitted: an omitted entry contributed to
+  // the counts but is not there to recompute from.
+  {
+    name: "dependency_failure_voids_collection",
+    holds: (capture) => capture.resource_ledger.omitted_resource_count > 0
+      || ledgerProblemCounts(capture.resource_ledger.entries).dependency_request_failed === 0
+      || capture.response_collection.status !== "complete",
+  },
+  {
+    name: "ledger_problem_counts",
+    stated: (capture) => (capture.resource_ledger.omitted_resource_count > 0
+      ? null
+      : Object.fromEntries(Object.keys(ledgerProblemCounts([]))
+        .map((code) => [code, problemCount(capture, code)]))),
+    derived: (capture) => (capture.resource_ledger.omitted_resource_count > 0
+      ? null
+      : ledgerProblemCounts(capture.resource_ledger.entries)),
+  },
+]);
+
+export const POLISH_CAPTURE_SHAPE_RULES = Object.freeze(CAPTURE_SHAPE_RULES.map((rule) => rule.name));
+
+// The name of the first shape rule the capture breaks, or null when every
+// rule holds. The name is one of POLISH_CAPTURE_SHAPE_RULES and never
+// carries capture content.
+export function captureShapeViolation(capture) {
+  for (const rule of CAPTURE_SHAPE_RULES) {
+    if (rule.holds && !rule.holds(capture)) return rule.name;
+    if (rule.stated && canonicalJson(rule.stated(capture)) !== canonicalJson(rule.derived(capture))) return rule.name;
   }
-  return true;
+  return null;
 }
 
 function projectCapturePayload(capture) {
@@ -900,20 +884,23 @@ export function buildPolishPageLoadEvidence({
   captures,
 } = {}) {
   const subject = pageLoadCheckpointSubject({ buildFingerprint, slug, routeScope, routes, viewports });
+  const shapeViolations = new Map();
   const records = (Array.isArray(captures) ? captures : [])
     .map((capture) => {
       const integrityValid = validCaptureIntegrity(capture);
-      const shapeValid = validCaptureShape(capture);
+      const shapeViolation = captureShapeViolation(capture);
       const bindingValid = captureBindingMatches(capture, subject);
       const projected = projectCapture(capture);
       if (!integrityValid) addProjectedProblem(projected.problems, "capture_integrity_invalid");
-      if (!shapeValid) addProjectedProblem(projected.problems, "capture_shape_invalid");
+      if (shapeViolation) addProjectedProblem(projected.problems, "capture_shape_invalid");
       if (!bindingValid) addProjectedProblem(projected.problems, "capture_binding_mismatch");
       projected.problems.sort((a, b) => a.code.localeCompare(b.code));
-      return {
+      const record = {
         ...projected,
-        measurement_status: shapeValid && bindingValid ? projected.measurement_status : "incomplete",
+        measurement_status: !shapeViolation && bindingValid ? projected.measurement_status : "incomplete",
       };
+      shapeViolations.set(record, shapeViolation);
+      return record;
     })
     .sort((a, b) => String(a.subject.requested_route).localeCompare(String(b.subject.requested_route))
       || String(a.subject.viewport).localeCompare(String(b.subject.viewport)));
@@ -932,12 +919,17 @@ export function buildPolishPageLoadEvidence({
       route: capture.subject.requested_route,
       viewport: capture.subject.viewport,
     }));
+  // A cell whose capture failed the shape rules also names the first rule it
+  // broke, so a reader can see which statement the capture could not back
+  // up without re-running the rules. A cell that is incomplete for another
+  // reason carries no such field.
   const incomplete = records
     .filter((capture) => capture.measurement_status !== "complete")
     .map((capture) => ({
       route: capture.subject.requested_route,
       viewport: capture.subject.viewport,
       problem_codes: capture.problems.map((problem) => problem.code).sort(),
+      ...(shapeViolations.get(capture) ? { shape_violation: shapeViolations.get(capture) } : {}),
     }));
   // Complete captures that still carry warning-class problems. They do not
   // block, but the operator and the merchant should see them in the verdict

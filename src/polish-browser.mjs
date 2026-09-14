@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  captureOrigin,
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
@@ -8,6 +9,7 @@ import {
   MAX_PAGE_LOAD_RESPONSE_RECORDS,
   MAX_POLISH_CAPTURE_URL_LENGTH,
 } from "./polish-capture.mjs";
+import { launchPackageChromium } from "./browser-launch.mjs";
 import {
   boundedPolishDeadline,
   POLISH_BROWSER_CELL_DEADLINE_MS,
@@ -127,16 +129,6 @@ function parseAuthCookie(value) {
     cookies.push({ name, value: cookieValue });
   }
   return cookies;
-}
-
-function captureOrigin(value) {
-  try {
-    const url = new URL(value);
-    if (url.protocol === "http:" || url.protocol === "https:") return url.origin;
-  } catch {
-    // Use the fixed error below so a URL containing credentials or query data is never echoed.
-  }
-  throw new Error("Campaigns OS polish capture requires an HTTP(S) capture URL before applying --auth-cookie.");
 }
 
 function observedResourceType(event = {}) {
@@ -612,22 +604,16 @@ async function drainProtocolEvents() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function missingBrowserError(error) {
-  const message = error instanceof Error ? error.message : String(error || "");
-  return /executable doesn't exist|browser.*not found|playwright install|install.*chromium/i.test(message);
-}
-
-async function chromiumLauncher(injectedChromium) {
-  if (injectedChromium) return injectedChromium;
-  try {
-    const playwright = await import("playwright");
-    return playwright.chromium;
-  } catch {
-    throw browserUnavailableError([
+function polishBrowserMissing(kind) {
+  return browserUnavailableError(kind === "package"
+    ? [
       "Playwright is not installed for Campaigns OS polish capture.",
       "Run `npm install` from the campaigns-os repo, then rerun `campaigns-os polish capture`.",
+    ].join(" ")
+    : [
+      "Playwright Chromium is not installed for Campaigns OS polish capture.",
+      "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun `campaigns-os polish capture`.",
     ].join(" "));
-  }
 }
 
 export async function createPolishBrowserAdapter({
@@ -650,12 +636,16 @@ export async function createPolishBrowserAdapter({
   );
   let browser;
   let startupTimedOut = false;
+  const startupAbort = new AbortController();
   const startupPromise = Promise.resolve().then(async () => {
-    const chromium = await chromiumLauncher(injectedChromium);
-    if (startupTimedOut) throw polishProducerTimeoutError();
     let launchedBrowser;
     try {
-      launchedBrowser = await chromium.launch({ headless: headed !== true });
+      launchedBrowser = await launchPackageChromium({
+        headed,
+        chromium: injectedChromium,
+        onMissing: polishBrowserMissing,
+        signal: startupAbort.signal,
+      });
     } catch (error) {
       if (startupTimedOut) throw polishProducerTimeoutError();
       throw error;
@@ -671,21 +661,13 @@ export async function createPolishBrowserAdapter({
     }
     return launchedBrowser;
   });
-  try {
-    browser = await runWithPolishProducerDeadline(() => startupPromise, {
-      timeoutMs: boundedStartupDeadlineMs,
-      onTimeout() { startupTimedOut = true; },
-    });
-  } catch (error) {
-    if (error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw error;
-    if (missingBrowserError(error)) {
-      throw browserUnavailableError([
-        "Playwright Chromium is not installed for Campaigns OS polish capture.",
-        "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun `campaigns-os polish capture`.",
-      ].join(" "));
-    }
-    throw error;
-  }
+  browser = await runWithPolishProducerDeadline(() => startupPromise, {
+    timeoutMs: boundedStartupDeadlineMs,
+    onTimeout() {
+      startupTimedOut = true;
+      startupAbort.abort(polishProducerTimeoutError());
+    },
+  });
 
   let closed = false;
   let poisonCode = null;
@@ -758,6 +740,8 @@ export async function createPolishBrowserAdapter({
           assertActive();
           if (authCookies.length > 0) {
             const origin = captureOrigin(url);
+            // Fixed message: a URL containing credentials or query data is never echoed.
+            if (origin === null) throw new Error("Campaigns OS polish capture requires an HTTP(S) capture URL before applying --auth-cookie.");
             await awaitActive(context.addCookies(authCookies.map((cookie) => ({ ...cookie, url: origin }))));
           }
           const page = await awaitActive(context.newPage());
