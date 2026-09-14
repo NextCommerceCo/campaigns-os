@@ -45,7 +45,9 @@ import {
   mintRunId,
   orderRunRecordFileNames,
   readRunRecordsForTarget,
+  resolveRunRecordPath,
   RUN_RECORD_SURFACES,
+  validateRunRecord,
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
@@ -81,9 +83,9 @@ import {
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
-import { campaignSidecarPaths, resolveCampaignWorkspace } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
-import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
+import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -398,7 +400,7 @@ Usage:
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
-  campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags
+  campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags; with --packet the session lives in the packet's target repo, whatever the cwd
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd)
 
@@ -406,7 +408,7 @@ Usage:
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
   Wrapper policy: \`start\`/\`prepare-build\`/\`build\` seed source_html.adapter_contract.wrapper_policy from --wrapper-policy, else the source-html manifest's wrapper_policy key, else strip_document_wrappers. Selecting preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking, so raw-HTML source can be handed over without a wrapper-stripping pass (docs/source-adapters.md).
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
-  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
+  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` with its --packet, or at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
@@ -8162,7 +8164,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
         "run_record_remit_recovery",
         "command",
         `campaigns-os run-record --packet ${shellToken(packetPath)} --run-id ${shellToken(runRecordCloseout.record_id)} --json`,
-        `Recover the existing Run Record's remit (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || "the local record is written but its remit did not complete."} Re-running against the same run id is idempotent; do not mint a second record.`,
+        `Recover the existing Run Record's remit (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || "the local record is written but its remit did not complete."} Re-running against the same run id is idempotent — a send the receiver already holds resolves to ok — and a record already remitted is left as written; do not mint a second record.`,
         { required: true },
       );
     } else {
@@ -9708,12 +9710,20 @@ function writeRunSessionResult(result, args, exitCode) {
 function runSessionTextLines(result) {
   if (result.action === "run-start") {
     const { session } = result;
+    // With a packet the session may live away from cwd (its target repo), so
+    // the advertised close names the packet: it works from anywhere, including
+    // the directory the operator started from. The project named is the
+    // session's root: session_path is <root>/.campaign-runtime/run-session.json
+    // (RUN_SESSION_REL_PATH), two levels up, not the storage directory.
+    const projectDir = dirname(dirname(result.session_path));
     return [
       "Run session started.",
       `Run ID: ${session.run_id}`,
       `Lifecycle journal: ${session.lifecycle_journal}`,
-      "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
-      `Finish with: campaigns-os run end${session.packet ? "" : " --packet <campaign-runtime.build.json>"}`,
+      session.packet
+        ? `Every campaigns-os command in ${projectDir} — or run from anywhere with --packet ${session.packet} — now auto-logs to this run; no per-command flags.`
+        : "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
+      `Finish with: campaigns-os run end --packet ${session.packet || "<campaign-runtime.build.json>"}`,
     ];
   }
   if (result.action === "run-status") {
@@ -9755,9 +9765,48 @@ function runSessionTextLines(result) {
   throw new Error(`Unknown run result action "${result.action}".`);
 }
 
+// The build packet a `run start` / `run end` names, canonicalised the way
+// ambientRunSession canonicalises it (realpath when it exists), so a packet
+// reached through a symlink is the same packet discovery and the Run Record
+// see. Null without --packet.
+function runSessionPacketPath(args) {
+  const packetArg = optionalString(args.packet);
+  return packetArg ? canonicalExistingPath(resolve(packetArg)) : null;
+}
+
+// The project a `run start` / `run end` acts on. With --packet it is the
+// packet's target repo (targetRepoFor: `assembly.target_repo` resolved from the
+// packet's directory, else that directory) — where the build happens and where
+// the auto-opener behind start/prepare-build roots its session — so a session
+// opened from the toolkit or any other directory lands with the build and is
+// found again by packet from anywhere. A packet that is not written yet roots
+// on its own directory (the command prints the `does not exist yet` warning);
+// a packet that exists but cannot be parsed is refused with the parse error,
+// never rooted on a guess — a session opened on the packet's directory when
+// the packet declares a different target would be invisible to every later
+// command run by packet. Without --packet it is cwd, as before.
+function runSessionRootFor(args) {
+  const packetPath = runSessionPacketPath(args);
+  if (!packetPath) return resolve(process.cwd());
+  let packet = null;
+  try {
+    packet = readJson(packetPath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      // Name what failed: a parse error is a packet problem, anything else
+      // (EACCES, EISDIR, …) is the file itself, said with the OS error.
+      const what = error instanceof SyntaxError ? "could not be read as a build packet" : "could not be read";
+      throw new Error(
+        `--packet ${packetPath} ${what} (${error?.message || error}); the run session roots on its assembly.target_repo. Fix or re-point the packet, then retry.`,
+      );
+    }
+  }
+  return targetRepoFor(packetPath, packet);
+}
+
 function runSessionStart(args) {
-  const rootDir = process.cwd();
-  const packet = optionalString(args.packet) ? resolve(args.packet) : null;
+  const rootDir = runSessionRootFor(args);
+  const packet = runSessionPacketPath(args);
   const opened = openRunSession(rootDir, {
     runId: optionalString(args["run-id"]) || null,
     lifecycleJournal: isNonEmptyString(args["lifecycle-journal"]) ? resolve(args["lifecycle-journal"]) : null,
@@ -9830,9 +9879,12 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
   // Use the session resolved once in main() (single source of truth).
   const found = ambient;
   if (!found) {
-    // A stale session at cwd was already closed out by main()'s sweep; that IS
-    // the end the operator asked for, so report it rather than fail.
-    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === resolve(process.cwd()));
+    // A stale session at the root this command acts on was already closed out
+    // by main()'s sweep; that IS the end the operator asked for, so report it
+    // rather than fail. Resolving the root first also surfaces an unreadable
+    // --packet as its own diagnostic instead of "no active run session".
+    const rootDir = runSessionRootFor(args);
+    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === rootDir);
     if (swept.length) {
       return { result: { ok: swept.every((entry) => Boolean(entry.record_path)), action: "run-end", stale_closeout: swept }, exitCode: 0 };
     }
@@ -9903,8 +9955,9 @@ async function closeRunSession(found, { packet, extraArgs = {}, silent = false, 
 // runs most worth learning from (blocked, abandoned, agent-driven) left no
 // record. Now, right before a command opens a NEW session at a root, the stale
 // one there is assembled into its Run Record (remit under the usual consent)
-// and removed. Roots: --target for start/prepare-build/build; cwd for
-// `run start` / `run end`. `run status` never sweeps — it is read-only.
+// and removed. Roots: --target for start/prepare-build/build; the packet's
+// target repo for `run start --packet` / `run end --packet`, cwd for the bare
+// forms. `run status` never sweeps — it is read-only.
 // Best-effort throughout: a closeout failure clears the file and says so on
 // stderr; it never blocks the command that triggered it.
 const STALE_SWEEP_TARGET_COMMANDS = new Set(["start", "prepare-build", "build"]);
@@ -9914,7 +9967,19 @@ async function closeOutStaleRunSessions(command, args) {
   if (args["no-run-session"] === true) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
-  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) roots.push(resolve(process.cwd()));
+  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {
+    // cwd is deliberately not a second root when --packet is given: the sweep
+    // closes out (assembles and, under consent, remits) the stale session at
+    // the root the command is about to act on, and a stale session at an
+    // unrelated cwd belongs to whatever next acts there (`run status` there
+    // reports it). An unreadable packet roots nothing here; the command itself
+    // raises that diagnostic right after, so it is not printed twice.
+    try {
+      roots.push(runSessionRootFor(args));
+    } catch {
+      // Reported by the command.
+    }
+  }
   // The closeout inherits the invoking command's remit controls: an explicit
   // --no-remit / --no-write stays an opt-out, and a run pointed at a custom
   // --proxy-base never remits the stale record to the canonical endpoint.
@@ -10144,9 +10209,21 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
   const write = args["no-write"] !== true;
-  // A pure local-inspection run (--no-write) or an explicit --no-remit never
-  // phones home, regardless of consent.
-  const remitDisabled = args["no-remit"] === true || !write;
+  // The record already on disk under this run_id, when a writing run would
+  // replace it. run-record is keyed on run_id, and a re-run — an explicit
+  // --run-id, a `run end` on a session re-opened under an id that already
+  // closed, the recovery action `next` prints — must never turn a remit that
+  // landed into one that did not. The receiver holds one record per id and
+  // refuses a second send, so a record it already has is final: it is neither
+  // re-sent nor rewritten here. A prior send that did not land (failed,
+  // pending) is retried when this run may send, and kept as it stands when it
+  // may not. A dry run reads nothing: it writes and sends nothing.
+  const prior = write ? readPriorRunRecord(runId, baseDir) : null;
+  const priorRemit = priorRemitOutcome(prior?.record);
+  const storedRemotely = priorRemit?.state === "ok";
+  // A pure local-inspection run (--no-write), an explicit --no-remit, or a
+  // record the receiver already holds never phones home, regardless of consent.
+  const remitDisabled = args["no-remit"] === true || !write || storedRemotely;
 
   // Resolve consent through the shared resolver every remitting command calls.
   // When interactive, not in --json/agent mode, remit isn't disabled, and no
@@ -10193,12 +10270,52 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // being fast or reachable. If a crash lands before the final rewrite below,
   // the durable record is explicitly pending instead of silently skipped.
   const shouldAttemptRemit = !remitDisabled && consent.state === "on";
+  const remitBaseKind = describeRemitBaseKind(proxyBase);
+
+  // The receiver already holds this run_id: the local record is the durable
+  // one and stays exactly as written. Nothing is sent (the receiver would
+  // refuse it) and nothing is rewritten (a reassembly could only be thinner
+  // than what the session wrote, and would then disagree with the stored copy).
+  // `not_contacted` says exactly that — the receiver was not asked — where
+  // `already_stored` is reserved for a 409 it actually answered.
+  if (storedRemotely) {
+    const summary = {
+      ok: true,
+      action: "run-record",
+      written: false,
+      record_path: prior.path,
+      record: prior.record,
+      remit: { result: REMIT_RESULTS.not_contacted, http_status: null, base_kind: null, sent: false, preserved: true },
+    };
+    if (silent) return summary;
+    if (args.json) {
+      console.log(JSON.stringify(summary, null, 2));
+      return summary;
+    }
+    console.log(`Run Record already closed and remitted for run ${prior.record.run_id}; left as written.`);
+    console.log(`Run ID: ${prior.record.run_id}`);
+    console.log(`Remit: ok (already stored at the receiver for this run id; not re-sent) -> ${prior.record.remit_endpoint || DEFAULT_RUNS_ENDPOINT}`);
+    console.log(`Kept: ${prior.path}`);
+    return summary;
+  }
+
+  // A prior send that did not land, on a run that will not send now: the
+  // outcome on disk is the truth about that send and is carried forward, so
+  // `--no-remit` (or consent off) over a failed remit does not file it as
+  // skipped and hide it from closeout.
+  const carriedForward = !shouldAttemptRemit && priorRemit && priorRemit.state !== "skipped" ? priorRemit : null;
   if (shouldAttemptRemit) {
     record.remit_state = "pending";
     record.remit_attempted = false;
     record.remit_ok = null;
     record.remit_error = null;
     record.remit_endpoint = null;
+  } else if (carriedForward) {
+    record.remit_state = carriedForward.state;
+    record.remit_attempted = carriedForward.attempted;
+    record.remit_ok = carriedForward.ok;
+    record.remit_error = carriedForward.error;
+    record.remit_endpoint = carriedForward.endpoint;
   }
 
   const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
@@ -10222,18 +10339,42 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // leaves the machine.
   const keyRejection = describeCampaignKeyRejection(keySource.rejected);
   if (keyRejection) process.stderr.write(`[campaigns-os] run-record: ${keyRejection} This run's remit is attempted without a tenant scope.\n`);
-  const remitStatus = remitDisabled
-    ? { attempted: false, ok: null, error: null, endpoint: null }
-    : await remitRunRecord(record, { proxyBase, consent, campaignKey });
-  record.remit_attempted = remitStatus.attempted;
-  record.remit_ok = remitStatus.ok;
-  record.remit_error = remitStatus.error;
-  record.remit_endpoint = remitStatus.endpoint;
-  record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
+  const remitStatus = shouldAttemptRemit
+    ? await remitRunRecord(record, { proxyBase, consent, campaignKey })
+    : { attempted: false, ok: null, error: null, endpoint: null, result: null, http_status: null };
+  if (!carriedForward) {
+    record.remit_attempted = remitStatus.attempted;
+    record.remit_ok = remitStatus.ok;
+    record.remit_error = remitStatus.error;
+    record.remit_endpoint = remitStatus.endpoint;
+    // Classified by what the receiver answered, not by whether the transport
+    // threw: `already_stored` (409) and `ok_unparsed_ack` (a 2xx whose body was
+    // not JSON) are ok states; only a refusal or a transport failure is failed.
+    record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
+  }
 
   if (write) writeRunRecord(record, { baseDir });
 
-  const summary = { ok: true, action: "run-record", written: write, record_path: recordPath, record };
+  const summary = {
+    ok: true,
+    action: "run-record",
+    written: write,
+    record_path: recordPath,
+    record,
+    // The send's classification and where it went, which the record's schema
+    // does not carry: `result` is one of stored, already_stored,
+    // ok_unparsed_ack, refused, transport_error (this run's send),
+    // not_contacted (a prior ok on disk; the early return above), or null
+    // when nothing was sent and nothing is known; `base_kind` names the
+    // resolved remit base as canonical, loopback or proxy — never the host.
+    remit: {
+      result: remitStatus.result,
+      http_status: remitStatus.http_status,
+      base_kind: shouldAttemptRemit ? remitBaseKind : null,
+      sent: remitStatus.attempted,
+      preserved: Boolean(carriedForward),
+    },
+  };
   if (silent) return summary;
   if (args.json) {
     console.log(JSON.stringify(summary, null, 2));
@@ -10244,14 +10385,71 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   console.log(`Consent: ${record.consent_state} (${record.consent_source})`);
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
-  if (record.remit_attempted) {
-    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : ` (unscoped: ${keyRejection ? "the declared Campaigns API key was refused on shape — see the warning above" : "no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source"} — the receiver lists this record only via the admin listing or by run_id)`}`);
+  if (carriedForward) {
+    console.log(`Remit: not attempted this run; the prior outcome for this run id is kept (${carriedForward.state}${carriedForward.error ? `: ${carriedForward.error}` : ""}).`);
+  } else if (record.remit_attempted) {
+    console.log(`Remit: ${remitResultText(record, remitStatus)} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : ` (unscoped: ${keyRejection ? "the declared Campaigns API key was refused on shape — see the warning above" : "no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source"} — the receiver lists this record only via the admin listing or by run_id)`} [base: ${remitBaseKind}]`);
   } else {
     console.log(`Remit: skipped (consent ${record.consent_state}${remitDisabled ? ", disabled for this run" : ""}).`);
   }
   if (write) console.log(`Wrote: ${recordPath}`);
   else console.log("Dry run only (--no-write). No record written, no remit.");
   return summary;
+}
+
+// The record already written under `runId` for this target, or null when there
+// is none, it cannot be parsed, or it is not a valid Run Record. Only a record
+// `writeRunRecord` could have written is trusted as a prior — the same
+// validator gates both — so a file that merely says `remit_state: "ok"` is
+// replaced like a corrupt one, never preserved or handed back as the record.
+function readPriorRunRecord(runId, baseDir) {
+  let path;
+  try {
+    path = resolveRunRecordPath(runId, baseDir);
+  } catch {
+    return null;
+  }
+  if (!existsSync(path)) return null;
+  try {
+    const record = readJson(path);
+    return validateRunRecord(record).ok ? { path, record } : null;
+  } catch {
+    return null;
+  }
+}
+
+// The remit outcome a prior record carries, in the shape the stamping code
+// uses; null when the record has no recognisable remit state.
+function priorRemitOutcome(record) {
+  const state = optionalString(record?.remit_state);
+  if (!state || !["skipped", "pending", "ok", "failed"].includes(state)) return null;
+  return {
+    state,
+    attempted: record.remit_attempted === true,
+    ok: typeof record.remit_ok === "boolean" ? record.remit_ok : null,
+    error: optionalString(record.remit_error) || null,
+    endpoint: optionalString(record.remit_endpoint) || null,
+  };
+}
+
+// Where a remit resolves to, as a kind rather than a host: the canonical
+// endpoint, a loopback receiver, or some other proxy the operator named.
+function describeRemitBaseKind(proxyBase) {
+  if (normalizeConsentScope(proxyBase) === CANONICAL_REMIT_SCOPE) return "canonical";
+  try {
+    return isLoopbackHostname(new URL(String(proxyBase)).hostname) ? "loopback" : "proxy";
+  } catch {
+    return "proxy";
+  }
+}
+
+// The one-line reading of an attempted remit for the text output: ok states
+// that were not a plain stored 2xx say what they were.
+function remitResultText(record, remitStatus) {
+  if (!record.remit_ok) return `failed (${record.remit_error})`;
+  if (remitStatus.result === REMIT_RESULTS.already_stored) return `ok (already stored at the receiver for this run id; HTTP ${remitStatus.http_status})`;
+  if (remitStatus.result === REMIT_RESULTS.ok_unparsed_ack) return `ok (${record.remit_error})`;
+  return "ok";
 }
 
 // Build one artifact reference {kind, path, schema_version, sha256}. The path
@@ -10529,11 +10727,17 @@ async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   let body;
   try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text.slice(0, 400) }; }
   if (!response.ok) throw new Error(`telemetry list: ${response.status} ${response.statusText} from ${url}: ${JSON.stringify(body).slice(0, 400)}`);
+  // A 2xx is not a listing until it carries runs[]. A maintenance page or an
+  // intermediary's HTML comes back 200 with no JSON at all, and reporting that
+  // as "0 of 0 returned" would tell the operator the receiver holds nothing.
+  if (!Array.isArray(body.runs)) {
+    throw new Error(`telemetry list: ${response.status} ${response.statusText} from ${url} is not a Run Record listing (no runs[] in the body): ${JSON.stringify(body).slice(0, 400)}`);
+  }
   const limit = Number.isFinite(Number(args.limit)) && Number(args.limit) > 0 ? Number(args.limit) : 50;
   // --limit trims client-side (the receiver has no page size); `count` is
   // what is shown, `returned` what the receiver sent, `total` what it holds.
-  const returned = Array.isArray(body.runs) ? body.runs.length : 0;
-  const runs = Array.isArray(body.runs) ? body.runs.slice(0, limit) : [];
+  const returned = body.runs.length;
+  const runs = body.runs.slice(0, limit);
   if (args.json) {
     console.log(JSON.stringify({ ok: true, action: "telemetry-list", scope, endpoint: url, count: runs.length, returned, total: body.total ?? null, truncated: body.truncated === true, runs }, null, 2));
     return;
