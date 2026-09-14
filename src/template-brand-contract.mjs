@@ -264,6 +264,63 @@ export function demoAssetConfig(contract) {
   };
 }
 
+// Selectors/assets belonging to one payment method under the contract's
+// default_residue.payment_chrome, plus shared chrome assets (those naming no
+// contract method, e.g. upsell-payment-logos.svg) which count as implied residue
+// for any unsupported method per the contract rule. One partition for both
+// consumers: browser QA (visible selectors + fetched assets) and doctor's static
+// scan of the built checkout.
+export function paymentChromeArtifacts(chrome, method) {
+  const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+  const token = compact(method);
+  const methodTokens = (chrome?.methods || []).map(compact).filter(Boolean);
+  const selectors = (chrome?.selectors || []).filter((selector) => compact(selector).includes(token));
+  const assets = (chrome?.assets || []).filter((asset) => {
+    const normalized = compact(asset);
+    if (normalized.includes(token)) return true;
+    return !methodTokens.some((candidate) => normalized.includes(candidate));
+  });
+  return { selectors, assets };
+}
+
+// Pure, static: the markers in rendered checkout HTML that say a payment method
+// shipped. Three sources, in order of authority: the SDK-owned
+// data-next-payment-method attribute every starter-template payment-methods
+// include renders per method (underscore spelling canonical, legacy hyphen
+// accepted); the contract's payment_chrome class selectors for the method
+// (simple .class selectors only — a static scan cannot evaluate compound
+// selectors or visibility, browser QA does that); and the method-named chrome
+// assets by basename. Shared chrome assets that name no method are left to
+// browser QA, which fetches them to attribute the mark; a static scan cannot
+// tell a paypal strip from a card-only one by its filename.
+export function paymentMethodMarkupMatches(html, method, chrome = null) {
+  const text = typeof html === "string" ? html : "";
+  const canonical = String(method || "").toLowerCase().replace(/[\s-]+/g, "_");
+  if (!canonical) return [];
+  const matches = [];
+  const spellings = [...new Set([canonical, canonical.replace(/_/g, "-")])].map(escapeRegExp).join("|");
+  const attribute = new RegExp(`data-next-payment-method\\s*=\\s*["'](?:${spellings})["']`, "i").exec(text);
+  if (attribute) matches.push(attribute[0].replace(/\s+/g, ""));
+  const artifacts = paymentChromeArtifacts(chrome, canonical);
+  for (const selector of artifacts.selectors) {
+    const className = /^\.([A-Za-z0-9_-]+)$/.exec(selector)?.[1];
+    if (!className) continue;
+    if (new RegExp(`class\\s*=\\s*["'](?:[^"']*\\s)?${escapeRegExp(className)}(?:\\s|["'])`, "i").test(text)) matches.push(selector);
+  }
+  const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+  const token = compact(canonical);
+  for (const asset of artifacts.assets) {
+    if (!compact(asset).includes(token)) continue;
+    const basename = asset.split("/").pop();
+    if (basename && text.includes(basename)) matches.push(basename);
+  }
+  return [...new Set(matches)];
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // Pure: which demo-asset basenames are referenced in rendered HTML. Mirrors
 // referencedAssetBasenames in qa-browser (payment-chrome residue).
 export function referencedDemoAssetBasenames(html, basenames) {

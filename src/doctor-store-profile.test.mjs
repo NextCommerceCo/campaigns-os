@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { isLocalhostDevelopmentOrigin, validateSpecStoreProfile } from "./cli.mjs";
@@ -41,6 +44,72 @@ test("warns when checkout-page force-enabled methods are absent from the spec", 
   for (const method of ["paypal", "klarna", "apple_pay", "google_pay"]) {
     assert.ok(warning.message.includes(method), `warning should name ${method}`);
   }
+});
+
+test("pre-build repair text tells the operator to pass show_<method>=false on the include call", () => {
+  const { warnings } = run({ store_url: "https://shop.acmevitamins.com/", available_payment_methods: ["card", "apple_pay", "google_pay"] });
+  const warning = warnings.find((issue) => issue.code === "spec.store_profile.payment_methods_default_on");
+  assert.ok(warning);
+  assert.match(warning.message, /Pass show_paypal=false show_klarna=false on that include call/);
+  assert.doesNotMatch(warning.message, /remove the show_\* arg/);
+  assert.equal(warning.detail.basis, "spec_only");
+  assert.deepEqual(warning.detail.methods, ["paypal", "klarna"]);
+  assert.equal(warning.detail.repair.include_call, "{% campaign_include 'payment-methods.html' show_paypal=false show_klarna=false %}");
+});
+
+const SLUG = "test-campaign";
+const CHECKOUT_SPEC = {
+  campaign: { store_url: "https://shop.acmevitamins.com/", available_payment_methods: ["card", "apple_pay", "google_pay"] },
+  funnel_pages: [
+    { id: "landing", type: "landing", enabled: true, page_url: "" },
+    { id: "checkout", type: "checkout", enabled: true, page_url: "checkout/" },
+  ],
+};
+const PACKET = { campaign: { public_route_slug: SLUG }, assembly: { template_family: "apollo" } };
+
+function withBuiltCheckout(html, fn) {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-store-profile-"));
+  try {
+    mkdirSync(join(dir, "_site", SLUG, "checkout"), { recursive: true });
+    writeFileSync(join(dir, "_site", SLUG, "checkout", "index.html"), html);
+    const errors = [];
+    const warnings = [];
+    const ready = [];
+    validateSpecStoreProfile(CHECKOUT_SPEC, errors, warnings, ready, { packet: PACKET, derived: { target_repo: dir }, buildState: {} });
+    return fn({ errors, warnings, ready });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("a built checkout with no paypal/klarna markup silences the default-on warning", () => {
+  withBuiltCheckout(
+    '<form data-next-checkout><fieldset><label><input type="radio" name="payment_method" value="card"> Card</label></fieldset></form>',
+    ({ warnings, ready }) => {
+      assert.equal(codes(warnings).includes("spec.store_profile.payment_methods_default_on"), false);
+      assert.ok(ready.some((note) => note.includes("Built checkout carries no paypal, klarna payment-method markup")));
+    },
+  );
+});
+
+test("a built checkout that still renders an unsupported method warns from the built page, naming the markup", () => {
+  withBuiltCheckout(
+    '<div data-next-payment-method="klarna" class="payment-method"><img class="payment-method__icon--klarna-logo" src="/c/images/klarna-logo.svg"></div>',
+    ({ warnings }) => {
+      const warning = warnings.find((issue) => issue.code === "spec.store_profile.payment_methods_default_on");
+      assert.ok(warning);
+      assert.match(warning.message, /^Built checkout still renders klarna/);
+      assert.match(warning.message, /_site\/test-campaign\/checkout\/index\.html: klarna \(data-next-payment-method="klarna"/);
+      assert.match(warning.message, /Pass show_klarna=false on the checkout page/);
+      assert.equal(warning.detail.basis, "built_output");
+      assert.deepEqual(warning.detail.methods, ["klarna"]);
+      assert.equal(warning.detail.pages.length, 1);
+      assert.equal(warning.detail.pages[0].method, "klarna");
+      assert.ok(warning.detail.pages[0].markers.includes('data-next-payment-method="klarna"'));
+      assert.ok(warning.detail.pages[0].markers.includes(".payment-method__icon--klarna-logo"));
+      assert.ok(warning.detail.pages[0].markers.includes("klarna-logo.svg"));
+    },
+  );
 });
 
 test("does not false-fire on object-form payment methods ({ code, label })", () => {

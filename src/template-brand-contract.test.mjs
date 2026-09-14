@@ -8,6 +8,8 @@ import {
   forbiddenComputedColors,
   loadTemplateBrandContract,
   normalizeCssColor,
+  paymentChromeArtifacts,
+  paymentMethodMarkupMatches,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
@@ -273,4 +275,29 @@ test("repeatedIconSrcs flags the four-identical-benefit-icons trap, not legitima
   assert.deepEqual(repeatedIconSrcs(distinct, 3), []);
   // a pair below the threshold does not trip
   assert.deepEqual(repeatedIconSrcs(["/i/a.svg", "/i/a.svg"], 3), []);
+});
+
+test("paymentMethodMarkupMatches reads the SDK attribute, contract class selectors and method-named assets from static HTML", () => {
+  const chrome = {
+    methods: ["paypal", "klarna"],
+    selectors: [".payment-method__icon--paypal-logo", ".payment-method__icon--klarna-logo", "div.compound .selector"],
+    assets: ["images/paypal-logo.svg", "images/klarna-logo.svg", "images/upsell-payment-logos.svg"],
+  };
+  const html = '<div data-next-payment-method="paypal" class="payment-method"><img class="x payment-method__icon--paypal-logo" src="/c/images/paypal-logo.svg"><img src="/c/images/upsell-payment-logos.svg"></div>';
+  assert.deepEqual(paymentMethodMarkupMatches(html, "paypal", chrome), [
+    'data-next-payment-method="paypal"',
+    ".payment-method__icon--paypal-logo",
+    "paypal-logo.svg",
+  ]);
+  // The shared strip names no method: a static scan cannot attribute it, so it is left to browser QA.
+  assert.deepEqual(paymentMethodMarkupMatches(html, "klarna", chrome), []);
+  // Legacy hyphen spelling of the SDK attribute still counts.
+  assert.deepEqual(paymentMethodMarkupMatches('<div data-next-payment-method="apple-pay">', "apple_pay", chrome), ['data-next-payment-method="apple-pay"']);
+  // A radio value or a class prefix is not the method's markup.
+  assert.deepEqual(paymentMethodMarkupMatches('<input value="paypal" name="payment_method"><i class="payment-method__icon--paypal-logox">', "paypal", chrome), []);
+  assert.deepEqual(paymentMethodMarkupMatches("", "paypal", null), []);
+  assert.deepEqual(paymentChromeArtifacts(chrome, "klarna"), {
+    selectors: [".payment-method__icon--klarna-logo"],
+    assets: ["images/klarna-logo.svg", "images/upsell-payment-logos.svg"],
+  });
 });
