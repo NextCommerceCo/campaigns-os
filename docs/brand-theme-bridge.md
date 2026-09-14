@@ -113,8 +113,10 @@ or `doctor_derived_scope+spec_topologies`.
 
 The gate result lives at `doctor.derived.theme_gate` and in every `next`
 response's `gates` array, with `required_actions` carrying the exact commands.
-A waiver does not silence QA: template-residue checks still run at warn
-severity so the shipped palette stays visible in the verdict.
+A waiver does not silence QA: the palette-residue checks (`:style:*`, `:logo`,
+`:payment-chrome:*`) still run and report residue as `warn` rows so the shipped
+palette stays visible in the verdict; placeholder-text residue stays a blocker
+regardless of the waiver.
 
 Per-family expectations (required token overrides, starter defaults that count
 as residue, CSS load order, QA selectors, pricing-surface modes, exit-pop
