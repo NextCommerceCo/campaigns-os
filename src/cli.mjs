@@ -7395,10 +7395,11 @@ const RUN_RECORD_QA_DIGEST_LIMIT = 8;
 // a false match.
 function currentQaVerdictDigestsForReport(report, reportPath) {
   const digests = new Set();
-  // Lazy on purpose: nothing past the limit is read or hashed.
+  // Lazy on purpose, and the check follows the add: once the limit is
+  // reached the next candidate is never pulled, read or hashed.
   for (const candidate of iterateQaVerdicts({ report, reportPath, withDigest: true })) {
-    if (digests.size >= RUN_RECORD_QA_DIGEST_LIMIT) break;
     if (candidate.source === "assembly_report" && candidate.sha256) digests.add(candidate.sha256);
+    if (digests.size >= RUN_RECORD_QA_DIGEST_LIMIT) break;
   }
   return [...digests];
 }
