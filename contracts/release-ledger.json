@@ -3071,8 +3071,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.27.0+agent.28",
-      "changelog_sha256": "d38109541fe601187870fbff179b66d1ef856ca3c4cb3a2f7d4a3c96c0037796",
-      "agent_impact": "qa run --browser verdicts name the upsell price-visibility row per page: the id is pricing.upsell_price_visible:<page_id> (was the bare pricing.upsell_price_visible, emitted once per upsell page under one id); family, page, status, severity and evidence are unchanged and pricing.checkout_price_visible keeps its id. pricing.checkout_price_visible passes when either a contract bundle price row or a cart-summary total ([data-next-display=\"cart.total\"] or [data-next-cart-summary] .order-totals__value--total) is visible; its expected/actual strings name both surfaces and evidence gains total_selectors[] and total_visible_count. Palette residue (template-residue:<page>:style:*, :logo, :payment-chrome:*) found under a recorded, unexpired theme waiver or an inapplicable gate reports status warn with severity warn, no longer status fail with severity warn; the disposition still lands on ready_with_exceptions and placeholder-text residue stays a blocker. docs/build-packet.md and docs/brand-theme-bridge.md state the waived rows report warn.",
+      "changelog_sha256": "d92b0b73af28f5a3abfb2cc435b160dd105be5ba47b315e17461fb16e25b1430",
+      "agent_impact": "qa run --browser verdicts name the upsell price-visibility row per page: the id is pricing.upsell_price_visible:<page_id> (was the bare pricing.upsell_price_visible, emitted once per upsell page under one id); family, page, status, severity and evidence are unchanged and pricing.checkout_price_visible keeps its id. pricing.checkout_price_visible passes when either a contract bundle price row or a cart-summary total ([data-next-display=\"cart.total\"] or [data-next-cart-summary] .order-totals__value--total) is visible; its expected/actual strings name both surfaces and evidence gains total_selectors[] and total_visible_count (present only when the total surface was read; an absent key means that check did not run). A contract with no checkout_bundle.price_row_selectors still emits the row, keyed on the cart-summary total, instead of skipping the check. Palette residue (template-residue:<page>:style:*, :logo, :payment-chrome:*) found under a recorded, unexpired theme waiver or an inapplicable gate reports status warn with severity warn, no longer status fail with severity warn; the disposition still lands on ready_with_exceptions and placeholder-text residue stays a blocker. docs/build-packet.md and docs/brand-theme-bridge.md state the waived rows report warn.",
       "compatibility": "compatible",
       "migration": "A consumer matching the literal assertion id pricing.upsell_price_visible must match the prefix pricing.upsell_price_visible: instead; a consumer reading template-residue palette rows under a waiver must accept status warn where it accepted status fail with severity warn.",
       "changes": [
@@ -3089,7 +3089,7 @@
           "summary": "Names the palette-residue rows a waiver downgrades to warn (:style:*, :logo, :payment-chrome:*) and that placeholder-text residue stays a blocker."
         }
       ],
-      "entry_sha256": "abda5acff9bc1e95a2de1cbc401fd88643c83c5b76f1226aae50e6d029896a52"
+      "entry_sha256": "adb888c0ec4bf521d83ca163aaa556802e32d4ad5d207ff37f3a68c012fb364a"
     }
   ]
 }

@@ -25,7 +25,12 @@ Notable supported-surface changes are recorded here.
   row or a visible cart-summary total`, `actual` reads `<n> visible price
   row(s); <m> visible cart-summary total(s)`, and `evidence` gains
   `total_selectors[]` and `total_visible_count`; the row still fails (warn
-  severity) only when neither surface is visible.
+  severity) only when neither surface is visible. A contract that declares
+  no `checkout_bundle.price_row_selectors` at all still gets the row (it was
+  skipped outright): only the bundle count is skipped, the cart-summary
+  total is still read. The total fields appear in `evidence` only when that
+  surface was read, so an absent key means the check did not run, never an
+  empty result.
 
 ### Fixed
 

@@ -16,6 +16,7 @@ const {
   ASSET_FETCH_TIMEOUT_MS,
   ASSET_FETCH_MAX_BYTES,
   paymentChromeResidueAssertion,
+  pricingVisibilityAssertions,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
   checkoutTotalSelectors,
@@ -229,6 +230,54 @@ test("checkout pricing visibility: a visible cart-summary total satisfies the ch
   assert.equal(nothing.status, "fail");
   assert.equal(nothing.severity, "warn");
   assert.match(nothing.expected, /cart-summary total/);
+});
+
+test("checkout pricing visibility: the cart-summary total is still checked when the contract declares no bundle price rows", async () => {
+  const totalSelectors = checkoutTotalSelectors();
+  const evaluated = [];
+  // A page whose only price surface is the cart-summary total: the total
+  // selectors match one visible element, anything else matches nothing.
+  const browserPage = {
+    evaluate: async (_fn, targets) => {
+      evaluated.push(targets);
+      return JSON.stringify(targets) === JSON.stringify(totalSelectors) ? 1 : 0;
+    },
+  };
+  const brandContract = { pricing_surfaces: { surfaces: { checkout_bundle: { price_row_selectors: [] } } } };
+
+  const results = await pricingVisibilityAssertions(browserPage, checkoutPage, { brandContract });
+  assert.equal(results.length, 1, "a contract with no bundle selectors still emits the checkout pricing row");
+  const [row] = results;
+  assert.equal(row.id, "pricing.checkout_price_visible");
+  assert.equal(row.status, "pass");
+  assert.equal(row.actual, "0 visible price row(s); 1 visible cart-summary total(s)");
+  assert.deepEqual(row.evidence.selectors, []);
+  assert.equal(row.evidence.visible_count, 0);
+  assert.deepEqual(row.evidence.total_selectors, totalSelectors);
+  assert.equal(row.evidence.total_visible_count, 1);
+  // Only the total was read from the page; no query ran for the empty bundle list.
+  assert.deepEqual(evaluated, [totalSelectors]);
+
+  const missing = { evaluate: async () => 0 };
+  const [absent] = await pricingVisibilityAssertions(missing, checkoutPage, { brandContract });
+  assert.equal(absent.status, "fail");
+  assert.equal(absent.severity, "warn");
+  assert.equal(absent.actual, "0 visible price row(s); 0 visible cart-summary total(s)");
+});
+
+test("checkout pricing visibility: total evidence is omitted when the cart-summary total was not read", () => {
+  const selectors = demeter.pricing_surfaces.surfaces.checkout_bundle.price_row_selectors;
+  const bundleOnly = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 1 });
+  assert.equal(bundleOnly.status, "pass");
+  assert.equal(bundleOnly.expected, "at least one visible checkout bundle price row");
+  assert.equal(bundleOnly.actual, "1 visible price row(s)");
+  assert.equal("total_selectors" in bundleOnly.evidence, false);
+  assert.equal("total_visible_count" in bundleOnly.evidence, false);
+
+  const withTotal = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 1, totalSelectors: [], totalVisibleCount: 0 });
+  assert.deepEqual(withTotal.evidence.total_selectors, []);
+  assert.equal(withTotal.evidence.total_visible_count, 0);
+  assert.equal(withTotal.actual, "1 visible price row(s); 0 visible cart-summary total(s)");
 });
 
 // --- H3.1: placeholder text-residue is a verdict blocker, like color residue ---

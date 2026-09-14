@@ -2238,15 +2238,17 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   }
   if (pageType === "checkout") {
     const selectors = surfaces.checkout_bundle?.price_row_selectors || [];
-    if (!selectors.length) return [];
     // Two price surfaces satisfy this check. The contract's bundle price rows
     // are one; the rendered cart-summary total is the other — the same
     // selectors the order-total parity check reads at submit. A family that
     // seeds the cart upstream, or a checkout entered directly before any
     // selection, renders no bundle row but still shows the shopper a total.
+    // A contract that declares no bundle selectors at all is that same shape
+    // by construction, so the total is still checked; only the bundle count
+    // is skipped.
     const totalSelectors = checkoutTotalSelectors();
     const [visibleCount, totalVisibleCount] = await Promise.all([
-      countVisiblePriceRows(browserPage, selectors),
+      selectors.length ? countVisiblePriceRows(browserPage, selectors) : 0,
       countVisiblePriceRows(browserPage, totalSelectors),
     ]);
     return [checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount })];
@@ -2298,21 +2300,30 @@ function upsellPriceVisibilityAssertion({ page, selectors, visibleCount }) {
   });
 }
 
-function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors = [], totalVisibleCount = 0 }) {
-  const ok = visibleCount >= 1 || totalVisibleCount >= 1;
+// The cart-summary total evidence (`total_selectors`, `total_visible_count`)
+// is present only when that surface was actually read — a caller that passes
+// no `totalSelectors` ran the bundle-row check alone, and the row says so
+// rather than reporting an empty selector list that reads like a check that
+// ran and found nothing.
+function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount = 0 }) {
+  const totalChecked = Array.isArray(totalSelectors);
+  const ok = visibleCount >= 1 || (totalChecked && totalVisibleCount >= 1);
   return assertion({
     id: "pricing.checkout_price_visible",
     family: "pricing",
     page,
     status: ok ? STATUS.PASS : STATUS.FAIL,
     severity: ok ? undefined : SEVERITY.WARN,
-    expected: "at least one visible checkout bundle price row or a visible cart-summary total",
-    actual: `${visibleCount} visible price row(s); ${totalVisibleCount} visible cart-summary total(s)`,
+    expected: totalChecked
+      ? "at least one visible checkout bundle price row or a visible cart-summary total"
+      : "at least one visible checkout bundle price row",
+    actual: totalChecked
+      ? `${visibleCount} visible price row(s); ${totalVisibleCount} visible cart-summary total(s)`
+      : `${visibleCount} visible price row(s)`,
     evidence: {
       selectors,
       visible_count: visibleCount,
-      total_selectors: totalSelectors,
-      total_visible_count: totalVisibleCount,
+      ...(totalChecked ? { total_selectors: totalSelectors, total_visible_count: totalVisibleCount } : {}),
       page_url: page.url,
     },
   });
@@ -6263,6 +6274,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   ASSET_FETCH_TIMEOUT_MS,
   ASSET_FETCH_MAX_BYTES,
   paymentChromeResidueAssertion,
+  pricingVisibilityAssertions,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
   assessReceiptRendering,
