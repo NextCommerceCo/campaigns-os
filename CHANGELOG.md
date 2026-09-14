@@ -282,6 +282,30 @@ Notable supported-surface changes are recorded here.
   credential; only an HTTP(S) origin can now be "the same", and the credential
   is withheld as it is for any other cross-origin baseline.
 
+## [1.27.0+agent.12] - 2026-09-14
+
+### Fixed
+
+- One deadline racer. The polish producer deadline, the QA runner's step
+  timeout, its diagnostic settle and its analytics-window bound, the remit
+  transport's request timeout and the commercial parity loader's request
+  budget each raced an operation against `setTimeout` for themselves — six
+  wrappers of one mechanism, differing only in the error they reject with
+  and in whether a timeout resolves to a fallback. The race now lives once as
+  `runWithDeadline` in `src/deadline.mjs` (timer always cleared, timeout
+  settled before best-effort cleanup runs, owner abort signal, optional
+  unref, caller-shaped timeout error) and the six sites are projections of
+  it; `polish-deadline.mjs` keeps its constants and error constructors and
+  delegates the race. No output changes for polish capture, the QA step
+  ladder, the analytics window or remit: the same codes, messages and
+  settle shapes are produced. One guard tightens: the commercial parity
+  loader only aborted its request's signal at the budget and waited for the
+  fetch to notice, so a fetch that ignored its signal held the run open
+  past the budget; the budget now rejects with the same `page_fetch_timeout`
+  / `price_preview_timeout` codes whether or not the fetch honours the abort
+  (the recorded `error` text names the deadline instead of the abort
+  reason).
+
 ## [1.27.0] - 2026-09-13
 
 ### Added
