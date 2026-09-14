@@ -523,13 +523,33 @@ and the family decides only *how* the package records its coverage:
   two-step fixture family, whose `select` step is template stock by
   construction.
 
-That path is a partial build, and it carries partial-build limits: the
-declared pages appear under `declared_out_of_scope` (with `declared_by`
-recording which mechanism declared them) and under `derived.scope`; doctor
-labels only the mapped routes as previewable; and checkout launch and
-test-order proof stay blocked while runtime pages are out of scope. You get a
-terminal, honest intake — not a fully proven campaign — until the build stage
-has materialised the stock pages.
+Until the build stage has materialised the stock pages, that is a partial
+build and it carries partial-build limits: the declared pages appear under
+`declared_out_of_scope` (with `declared_by` recording which mechanism declared
+them) and under `derived.scope.out_of_scope_pages` (each carrying
+`template_stock: true` and `template_family`); doctor labels only the mapped
+routes as previewable, warns `CampaignSpec page "<id>" is template stock and
+not built yet`, and keeps checkout launch and test-order proof blocked while a
+runtime page (`select`, `checkout`, `upsell`, `receipt`) is among them. You get
+a terminal, honest intake — not a fully proven campaign.
+
+The build stage lifts those limits page by page. `next-campaigns-build`
+materialises each template-stock page from the locked family's own page of
+that role (the pre-checkout `select` step first, because it seeds the cart the
+runtime pages read). Once the page's built HTML exists at its route under
+`_site/<slug>/`, doctor reads the `template_stock` marker on the scope decision
+and counts the page as built: it moves into `derived.scope.built_pages` (with
+`template_stock: true`, `template_family`, and no `source_path`), joins the
+previewable routes, no longer blocks runtime QA, and the ready list says
+`Template-stock page(s) materialised by the build stage: <id> (<family>)`. A
+declared page the build leaves unbuilt stays out of scope exactly as before.
+
+One limit stands in this version: `polish capture` plans its routes from the
+packet's mapped pages (`source_html.pages[].page_kit`), and a template-stock
+mapping carries no `page_kit`, so a materialised stock page is outside the
+polish capture plan (`route_scope: "selected"`) and its hidden-eager-media
+checkpoint — the checkpoint does not demand a capture it cannot plan. Browser
+QA resolves its routes from the CampaignSpec topology and covers the page.
 
 Do not attest a screenshot of stock template output as a design source to get
 past intake. It is no longer the only route through for a non-apollo family,

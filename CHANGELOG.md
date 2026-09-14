@@ -48,7 +48,35 @@ Notable supported-surface changes are recorded here.
   `stages.prepare_build.status: "completed_partial"` and no
   `DESIGN_SOURCE_PACKAGE_NOT_READY` blocker. `apollo`'s `template_baseline`
   path is unchanged. The `next build` prompt gains a `Template-stock pages`
-  line naming each such page and the family to materialise it from.
+  line naming each such page and the family to materialise it from, a
+  pre-checkout `select` step first (it seeds the cart the runtime pages read).
+- Doctor treats a materialised template-stock page as built. Before the build
+  it stays out of scope (`derived.scope.out_of_scope_pages[]` entries now carry
+  `template_stock: true` and `template_family`), the skip warning reads
+  `CampaignSpec page "<id>" is template stock and not built yet: <reason> The
+  build stage materialises it from the <family> family's own page; it joins
+  the previewable routes once its built HTML exists.` instead of `... is out of
+  scope for this partial build: <reason>`, and `scope.runtime_qa_blocked`
+  still fires for a runtime page. Once the page's built HTML exists at its
+  route under `_site/<slug>/`, it moves into `derived.scope.built_pages` (with
+  `template_stock: true`, `template_family`, `source_path: null`) and
+  `previewable_routes`, `scope.partial_build` / `scope.runtime_qa_blocked` no
+  longer name it (a funnel whose only declared pages are materialised reads
+  `derived.scope.mode: "full"`), and the ready list adds `Template-stock
+  page(s) materialised by the build stage: <id> (<family>)`. A CampaignSpec
+  `build_scope.mode: "partial"` declaration is discharged the same way once
+  every page it took out of scope is built — its `reasons` no longer keep
+  `scope.runtime_qa_blocked` alive on their own. A declared page the build
+  leaves unbuilt, and a skip entry recorded before this change (no
+  `template_stock` marker on its decision), are unchanged: not listed on the
+  build prompt, not counted as built. `polish capture` still plans from the
+  packet's mapped pages, so a materialised stock page stays outside the polish
+  capture plan (`route_scope: "selected"`) and its hidden-eager-media
+  checkpoint; browser QA covers its route from the CampaignSpec topology.
+- The `next-campaigns-build` skill (1.0.2) materialises template-stock pages
+  from the locked family's own page of that role instead of reading every
+  out-of-scope page as "do not build"; pages without the marker keep the
+  partial-build rule.
 - The Design Source Package builds on the family the packet locks
   (`--template-family` first, then the CampaignSpec `preferred_template_family`
   hint), not the hint first. The `template-baseline` contribution's

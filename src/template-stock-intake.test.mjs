@@ -44,7 +44,7 @@ function readJson(path) {
 // and mobile captures; `select` is the template-stock page under test. The
 // manifest is written either at the default in-tree path or to a directory
 // beside the source root (`external`), which then has no `.campaigns-os/`.
-function withFixture(run, { external = false, hint = null, declareSelect = true } = {}) {
+function withFixture(run, { external = false, hint = null, declareSelect = true, stockPageIds = ["select"], selectLast = false, buildScope = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-template-stock-"));
   try {
     const source = join(dir, "source");
@@ -55,12 +55,23 @@ function withFixture(run, { external = false, hint = null, declareSelect = true 
 
     const spec = readJson(FIXTURE_SPEC);
     if (hint) spec.spec_identity.preferred_template_family = hint;
+    // With a CampaignSpec build_scope the stock pages are declared by the
+    // spec, not by manifest skip entries.
+    if (buildScope) spec.build_scope = buildScope;
+    // The packet's page mapping follows CampaignSpec order. Listing the select
+    // step last tells a consumer that orders template-stock pages by role
+    // apart from one that merely echoes the mapping.
+    if (selectLast) {
+      const funnelPages = spec.funnels[0].pages;
+      funnelPages.push(...funnelPages.splice(funnelPages.findIndex((page) => page.id === "select"), 1));
+    }
     writeJson(specPath, spec);
 
     const pages = [];
+    const skips = [];
     for (const page of spec.funnels[0].pages) {
-      if (page.id === "select") {
-        if (declareSelect) pages.push({ page_id: "select", skip_reason: "Template-stock select step; the family's own page is the design." });
+      if (stockPageIds.includes(page.id)) {
+        if (declareSelect && !buildScope) skips.push({ page_id: page.id, skip_reason: `Template-stock ${page.id} step; the family's own page is the design.` });
         continue;
       }
       const html = `<main><h1>${page.id}</h1></main>\n`;
@@ -79,7 +90,7 @@ function withFixture(run, { external = false, hint = null, declareSelect = true 
         ],
       });
     }
-    const manifest = { schema_version: "source-html-manifest/v0", generator: "fixture-exporter@1.0.0", pages };
+    const manifest = { schema_version: "source-html-manifest/v0", generator: "fixture-exporter@1.0.0", pages: [...pages, ...skips] };
     const manifestPath = external
       ? join(dir, "handoff", "design-manifest.json")
       : join(source, ".campaigns-os", "source-html-manifest.json");
@@ -245,3 +256,128 @@ test("--design-manifest refuses a missing file or an invalid manifest before wri
   assert.ok(!existsSync(join(fixture.target, "campaign-runtime.build.json")));
   assert.ok(!existsSync(join(fixture.target, DSP_REL_PATH)));
 }, { external: true }));
+
+// The build stage materialises a template-stock page from the family's own
+// page of that role. Doctor treats the declared page as out of scope until
+// that built HTML exists — then it is a built page: previewable, no longer a
+// reason to block runtime QA, and the ready list says so. Two stock pages,
+// declared receipt-before-select, prove the build prompt puts the select step
+// first.
+test("a materialised template-stock page becomes a built, previewable route and the build prompt lists select first", () => withFixture((fixture) => {
+  const run = runPrepare(fixture);
+  assert.equal(run.status, 0, run.stderr);
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  const packet = readJson(packetPath);
+  const slug = packet.campaign.public_route_slug;
+  assert.deepEqual(
+    packet.source_html.pages.filter((page) => page.skip_reason).map((page) => page.page_id),
+    ["receipt", "select"],
+    "the mapping order under test lists receipt before select",
+  );
+
+  const before = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  assert.ok(before.json, before.stderr);
+  const outBefore = before.json.derived.scope.out_of_scope_pages.find((page) => page.page_id === "select");
+  assert.ok(outBefore, "select is out of scope before the build");
+  assert.equal(outBefore.template_stock, true);
+  assert.equal(outBefore.template_family, FAMILY);
+  assert.ok(!before.json.derived.scope.previewable_routes.some((page) => page.page_id === "select"));
+  assert.ok(before.json.warnings.some((issue) => issue.code === "scope.runtime_qa_blocked" && /select:select/.test(issue.message)));
+  const stockWarning = before.json.warnings.find((issue) => issue.code === "source_html.pages.skip_reason" && /"select"/.test(issue.message));
+  assert.match(stockWarning.message, /is template stock and not built yet/);
+  assert.match(stockWarning.message, new RegExp(`materialises it from the ${FAMILY} family`));
+
+  const next = runCli(["next", "build", "--packet", packetPath], fixture.dir);
+  assert.ok(next.json, next.stderr);
+  assert.match(next.json.prompt, /Template-stock pages \(declared out of source scope; no design source exists for them\): select, receipt\./);
+
+  // The build stage materialises both stock pages; nothing else about the
+  // packet or the report changes.
+  for (const pageId of ["select", "receipt"]) {
+    const built = join(fixture.target, "_site", slug, pageId, "index.html");
+    mkdirSync(dirname(built), { recursive: true });
+    writeFileSync(built, `<main data-next-page="${pageId}"><h1>${pageId}</h1></main>\n`);
+  }
+
+  const after = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  assert.ok(after.json, after.stderr);
+  const builtSelect = after.json.derived.scope.built_pages.find((page) => page.page_id === "select");
+  assert.ok(builtSelect, "select is a built page once its HTML exists");
+  assert.equal(builtSelect.template_stock, true);
+  assert.equal(builtSelect.template_family, FAMILY);
+  assert.equal(builtSelect.source_path, null);
+  assert.ok(after.json.derived.scope.previewable_routes.some((page) => page.page_id === "select"));
+  assert.ok(!after.json.derived.scope.out_of_scope_pages.some((page) => page.page_id === "select"));
+  assert.ok(!after.json.warnings.some((issue) => issue.code === "scope.runtime_qa_blocked"));
+  assert.ok(!after.json.warnings.some((issue) => issue.code === "source_html.pages.skip_reason"));
+  assert.ok(
+    after.json.ready.some((line) => line === `Template-stock page(s) materialised by the build stage: receipt (${FAMILY}), select (${FAMILY})`),
+    JSON.stringify(after.json.ready.filter((line) => /Template-stock/.test(line))),
+  );
+  assert.equal(after.json.derived.scope.mode, "full");
+}, { stockPageIds: ["select", "receipt"], selectLast: true }));
+
+// The same lifecycle when the CampaignSpec build_scope declares the stock
+// pages: its reasons name runtime pages, which keeps runtime QA blocked on
+// their own until every declared page has been materialised — then the
+// declaration is discharged and the scope reads full.
+test("a CampaignSpec build_scope partial declaration is discharged once its template-stock pages are built", () => withFixture((fixture) => {
+  const run = runPrepare(fixture);
+  assert.equal(run.status, 0, run.stderr);
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  const packet = readJson(packetPath);
+  const report = readReport(fixture);
+  assert.equal(report.stages.prepare_build.declared_out_of_scope[0].declared_by, "campaign_spec_build_scope");
+  assert.equal(report.decisions.find((entry) => entry.id === "dec_page_scope_select").template_stock, true);
+
+  const before = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  assert.ok(before.json, before.stderr);
+  assert.equal(before.json.derived.scope.mode, "partial");
+  assert.ok(before.json.warnings.some((issue) => issue.code === "scope.runtime_qa_blocked"));
+
+  const built = join(fixture.target, "_site", packet.campaign.public_route_slug, "select", "index.html");
+  mkdirSync(dirname(built), { recursive: true });
+  writeFileSync(built, "<main><h1>select</h1></main>\n");
+
+  const after = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  assert.ok(after.json, after.stderr);
+  assert.equal(after.json.derived.scope.mode, "full");
+  assert.deepEqual(after.json.derived.scope.out_of_scope_pages, []);
+  assert.ok(after.json.derived.scope.built_pages.some((page) => page.page_id === "select" && page.template_stock === true));
+  assert.ok(!after.json.warnings.some((issue) => issue.code === "scope.runtime_qa_blocked" || issue.code === "scope.partial_build"));
+  assert.ok(after.json.ready.includes("All mapped CampaignSpec pages are build candidates"));
+}, { buildScope: { mode: "partial", reasons: ["The select step is template stock; checkout and receipt come from prepared source."] } }));
+
+// A skip entry whose scope decision carries no template_stock marker — a
+// packet prepared before the marker existed, or a hand-authored do-not-build
+// declaration — is neither listed for materialisation nor counted as built
+// when HTML happens to exist at its route.
+test("a skip entry without the template_stock marker keeps the do-not-build reading", () => withFixture((fixture) => {
+  const run = runPrepare(fixture);
+  assert.equal(run.status, 0, run.stderr);
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  const reportPath = join(fixture.target, REPORT_REL_PATH);
+  const report = readJson(reportPath);
+  for (const decision of report.decisions) {
+    if (decision.id === "dec_page_scope_select") {
+      delete decision.template_stock;
+      delete decision.template_family;
+    }
+  }
+  writeJson(reportPath, report);
+
+  const next = runCli(["next", "build", "--packet", packetPath], fixture.dir);
+  assert.ok(next.json, next.stderr);
+  assert.doesNotMatch(next.json.prompt, /Template-stock pages/);
+
+  const packet = readJson(packetPath);
+  const built = join(fixture.target, "_site", packet.campaign.public_route_slug, "select", "index.html");
+  mkdirSync(dirname(built), { recursive: true });
+  writeFileSync(built, "<main><h1>select</h1></main>\n");
+  const doctor = runCli(["doctor", "--packet", packetPath], fixture.dir);
+  assert.ok(doctor.json, doctor.stderr);
+  assert.equal(doctor.json.derived.scope.mode, "partial");
+  assert.ok(doctor.json.derived.scope.out_of_scope_pages.some((page) => page.page_id === "select" && page.template_stock === undefined));
+  const warning = doctor.json.warnings.find((issue) => issue.code === "source_html.pages.skip_reason");
+  assert.match(warning.message, /is out of scope for this partial build/);
+}));
