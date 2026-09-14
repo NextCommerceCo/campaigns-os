@@ -7735,7 +7735,7 @@ export function nextStage(stage, args, ambient = null) {
   // (vs them having to re-derive it from report state themselves).
   if (picked) {
     result.picked_reason = picked.reason;
-    if (picked.blocked) result.stage_blocked = true;
+    if (picked.stage_blocked) result.stage_blocked = true;
   }
   return finalize(result);
 }
@@ -8664,6 +8664,11 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   return {
     stage: picked.stage,
     status: blocked ? "blocked" : readinessStatus(warnings, derived),
+    // The picker's own verdict on the picked stage (a blocked polish gate, a
+    // blocked ladder stage, prepare-build), as distinct from `status`, which
+    // also folds in what makes the stage unrunnable (no deploy URL, no
+    // scaffold). `next` reports it as its own stage_blocked.
+    stage_blocked: picked.blocked === true,
     owner: owners.owner,
     default_skill: owners.default_skill,
     command,
