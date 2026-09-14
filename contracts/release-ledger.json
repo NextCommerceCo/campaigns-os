@@ -2749,6 +2749,27 @@
         }
       ],
       "entry_sha256": "0866feb9a581482336f396037202caf981f9273eaaa37610ea0d3cb7b5105736"
+    },
+    {
+      "id": "RL-0073",
+      "sequence": 73,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.11",
+      "changelog_sha256": "46dae28d344da049c9eabfddb4df027a173cbae9529081bb06ae604b8eace70a",
+      "agent_impact": "None for polish capture: the capture's document_response.capture_origin / final_origin / origin_matches_capture fields, the validator's measurement.warnings[].failed_origins, the checkpoint and the polish capture text output are unchanged in every field for the same input. Internal: the five \"HTTP(S) origin or null\" parsers are one exported helper, captureOrigin in src/polish-capture.mjs; the text renderer's origin guard is a projection of it and keeps only its own 2048-character line bound. One guard tightens in qa run's analytics parity capture: a fixture-supplied baseline URL that is not HTTP(S) no longer carries the --auth-cookie credential when the candidate is also not HTTP(S) (the two shared the URL standard's opaque origin and were read as one host); the credential is withheld exactly as for any other cross-origin baseline, and an operator-named baseline is unaffected.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "polish",
+          "summary": "safePolishFailedOrigin, the polish capture text renderer's origin guard, is a projection of captureOrigin from src/polish-capture.mjs plus the renderer's own 2048-character line bound; its local URL parse is removed. Rendered text unchanged."
+        }
+      ],
+      "entry_sha256": "77dc3073559356d86c9bae5653f9f879d4df7f325f756bce2328ee7be4b8563a"
     }
   ]
 }

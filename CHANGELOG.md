@@ -262,6 +262,26 @@ Notable supported-surface changes are recorded here.
   relied on one of the removed spellings being clicked was never going to
   reach the checkout through it.
 
+## [1.27.0+agent.11] - 2026-09-14
+
+### Fixed
+
+- One HTTP(S) origin parser for polish evidence. The capture producer, the
+  capture validator (its origin-field rule and its cross-origin warning
+  attribution), the `polish capture` text renderer, the browser adapter's
+  cookie-origin check and the analytics parity capture's baseline credential
+  guard each parsed "the origin of this URL, or null" for themselves — five
+  copies of one rule with the scheme test and the length cap drifting between
+  them. The rule now lives once as `captureOrigin` in `src/polish-capture.mjs`
+  and the five callers are projections of it. No output changes: a capture's
+  `document_response` origins, the validator's `failed_origins`, the
+  checkpoint and the rendered text are byte-identical for the same input. One
+  guard tightens: the parity capture treated two non-HTTP URLs as same-origin
+  (both carry the URL standard's opaque origin), so a fixture-supplied
+  non-HTTP baseline beside a non-HTTP candidate carried the preview
+  credential; only an HTTP(S) origin can now be "the same", and the credential
+  is withheld as it is for any other cross-origin baseline.
+
 ## [1.27.0] - 2026-09-13
 
 ### Added

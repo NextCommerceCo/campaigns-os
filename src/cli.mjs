@@ -9279,8 +9279,10 @@ function safePolishFindingSource(value) {
     : "[source unavailable]";
 }
 
+// Origin parsing lives in captureOrigin; the length bound is this renderer's
+// own line policy, like the route and source bounds above.
 function safePolishFailedOrigin(value) {
-  return captureOrigin(value) === value ? value : null;
+  return typeof value === "string" && value.length <= 2_048 && captureOrigin(value) === value ? value : null;
 }
 
 function safePolishByteCount(value) {
