@@ -801,40 +801,47 @@ test("prepare-build refuses current material-input drift without rewriting the D
   }));
 });
 
-test("DSP template material follows the upstream source hint while the packet owns a Build override", async (t) => {
-  await t.test("a stable source hint survives a different locked Build choice", () => withFixture((fixture) => {
+test("DSP template material follows the family the packet locks, and a changed lock is material drift", async (t) => {
+  await t.test("a --template-family override names the locked family, not the CampaignSpec hint", () => withFixture((fixture) => {
     const spec = readJson(fixture.specPath);
     spec.spec_identity.preferred_template_family = "olympus";
     writeJson(fixture.specPath, spec);
-    const first = runPrepare(fixture);
+    const run = runPrepare(fixture, { templateFamily: "shop-three-step" });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.json.packet.assembly.template_family, "shop-three-step");
+    const dsp = readJson(join(fixture.target, DSP_REL_PATH));
+    const template = dsp.contributions.find((contribution) => contribution.id === "template-baseline");
+    assert.match(template.presentation_intent.summary, /shop-three-step/);
+    assert.doesNotMatch(template.presentation_intent.summary, /olympus/);
+    for (const todo of dsp.source_todos.filter((entry) => entry.kind === "missing_template_reference")) {
+      assert.match(todo.description, /shop-three-step/);
+      assert.doesNotMatch(todo.description, /olympus/);
+    }
+  }));
+
+  await t.test("a hint change under a stable lock is not drift", () => withFixture((fixture) => {
+    const spec = readJson(fixture.specPath);
+    spec.spec_identity.preferred_template_family = "olympus";
+    writeJson(fixture.specPath, spec);
+    const first = runPrepare(fixture, { templateFamily: "shop-three-step" });
     assert.equal(first.status, 0, first.stderr);
     const dspPath = join(fixture.target, DSP_REL_PATH);
     const before = readFileSync(dspPath);
 
+    spec.spec_identity.preferred_template_family = "demeter";
+    writeJson(fixture.specPath, spec);
     const rerun = runPrepare(fixture, { templateFamily: "shop-three-step" });
     assert.equal(rerun.status, 0, rerun.stderr);
     assert.equal(rerun.json.designSourcePackageMode, "reused");
     assert.ok(readFileSync(dspPath).equals(before));
-    assert.equal(rerun.json.packet.assembly.template_family, "shop-three-step");
-    const dsp = readJson(dspPath);
-    assert.match(
-      dsp.contributions.find((contribution) => contribution.id === "template-baseline")
-        .presentation_intent.summary,
-      /olympus/,
-    );
   }));
 
-  await t.test("changing the upstream source hint remains material drift", () => withFixture((fixture) => {
-    const spec = readJson(fixture.specPath);
-    spec.spec_identity.preferred_template_family = "olympus";
-    writeJson(fixture.specPath, spec);
-    const first = runPrepare(fixture);
+  await t.test("changing the locked family is material drift", () => withFixture((fixture) => {
+    const first = runPrepare(fixture, { templateFamily: "olympus" });
     assert.equal(first.status, 0, first.stderr);
     const snapshot = snapshotArtifacts(targetArtifactPaths(fixture.target));
-    spec.spec_identity.preferred_template_family = "shop-three-step";
-    writeJson(fixture.specPath, spec);
 
-    const rerun = runPrepare(fixture);
+    const rerun = runPrepare(fixture, { templateFamily: "shop-three-step" });
     assert.notEqual(rerun.status, 0);
     assert.match(rerun.stderr, /current_template_material_stale/);
     assertArtifactsUnchanged(snapshot);

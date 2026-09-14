@@ -7,10 +7,18 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-// `--design-manifest <path>` reads the source-html manifest from outside the
-// source root, so a read-only source tree still gets its skip declarations
-// and screenshot proof from a file the operator owns. Proven on the two-step
-// fixture family.
+// Template-stock intake on a family without published Template Reference
+// proof, proven on the two-step fixture family. Two mechanics:
+//
+//   (a) `--design-manifest <path>` reads the source-html manifest from outside
+//       the source root, so a read-only source tree still gets its skip
+//       declarations and screenshot proof from a file the operator owns;
+//   (b) a page declared out of source scope is template stock: intake records
+//       `template_stock: true` (and the locked family) on its assembly
+//       decision, the Design Source Package carries an accepted coverage gap
+//       for it instead of a Template Reference TODO the operator cannot
+//       clear, and the TODO that still fires for an undeclared page names the
+//       family the packet locked rather than the CampaignSpec hint.
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -119,6 +127,64 @@ function readDsp(fixture) {
 function readReport(fixture) {
   return readJson(join(fixture.target, REPORT_REL_PATH));
 }
+
+test("a declared template-stock page clears intake on a family without Template Reference proof", () => withFixture((fixture) => {
+  const run = runPrepare(fixture);
+  assert.equal(run.status, 0, run.stderr);
+
+  const report = readReport(fixture);
+  assert.equal(report.status, "prepared");
+  assert.equal(report.stages.prepare_build.status, "completed_partial");
+  assert.deepEqual(report.blockers, []);
+  assert.deepEqual(
+    report.stages.prepare_build.declared_out_of_scope.map((skip) => skip.page_id),
+    ["select"],
+  );
+
+  const decision = report.decisions.find((entry) => entry.id === "dec_page_scope_select");
+  assert.ok(decision, "the declared page keeps its scope decision");
+  assert.equal(decision.template_stock, true);
+  assert.equal(decision.template_family, FAMILY);
+  assert.match(decision.decision, /template stock/);
+  assert.match(decision.decision, new RegExp(`locked ${FAMILY} family`));
+
+  const dsp = readDsp(fixture);
+  assert.equal(dsp.readiness.status, "ready_with_gaps");
+  assert.deepEqual(dsp.readiness.blocking_reasons, []);
+  assert.deepEqual(dsp.source_todos, [], "no Template Reference link TODO for a template-stock page");
+  assert.equal(dsp.source_gaps.length, 1);
+  const [gap] = dsp.source_gaps;
+  assert.equal(gap.id, "template-stock-select");
+  assert.equal(gap.kind, "coverage_absence");
+  assert.equal(gap.status, "accepted");
+  assert.equal(gap.attributed_by, "prepare-build");
+  assert.deepEqual(gap.applies_to, ["select"]);
+  assert.match(gap.reason, new RegExp(`template stock from the ${FAMILY} family`));
+
+  // A second run reuses the package byte for byte: the gap is part of the
+  // synthesized material, not a per-run mutation.
+  const before = readFileSync(join(fixture.target, DSP_REL_PATH));
+  const rerun = runPrepare(fixture);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.equal(rerun.json.designSourcePackageMode, "reused");
+  assert.ok(readFileSync(join(fixture.target, DSP_REL_PATH)).equals(before));
+}));
+
+test("the Template Reference TODO for an undeclared page names the locked family, not the CampaignSpec hint", () => withFixture((fixture) => {
+  const run = runPrepare(fixture);
+  assert.equal(run.status, 0, run.stderr);
+
+  const report = readReport(fixture);
+  assert.equal(report.status, "blocked", "an undeclared page with no source still blocks");
+  assert.ok(report.blockers.some((blocker) => blocker.code === "MISSING_SOURCE_PAGE" && blocker.page_id === "select"));
+
+  const dsp = readDsp(fixture);
+  const todo = dsp.source_todos.find((entry) => entry.id === "link-select-template-reference");
+  assert.ok(todo, "the undeclared page keeps its Template Reference TODO");
+  assert.match(todo.description, new RegExp(`Link ${FAMILY} family/version`));
+  assert.doesNotMatch(todo.description, /demeter/);
+  assert.equal(readJson(join(fixture.target, "campaign-runtime.build.json")).assembly.template_family, FAMILY);
+}, { hint: "demeter", declareSelect: false }));
 
 test("--design-manifest reads the manifest from outside the source root and doctor reads the same file back", () => withFixture((fixture) => {
   assert.ok(!existsSync(join(fixture.source, ".campaigns-os")), "the source root carries no manifest of its own");

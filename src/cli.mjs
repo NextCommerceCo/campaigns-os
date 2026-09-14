@@ -1711,6 +1711,7 @@ function createCurrentHtmlFunnelScope({
   manifestResult,
   sourceAssetCrawl,
   templateFamily,
+  templateStockPageIds = [],
   commerceCatalog,
   sourceRoot,
   mapId,
@@ -1777,6 +1778,7 @@ function createCurrentHtmlFunnelScope({
       : null,
     sourceAssetCrawl: crawl,
     templateFamily: resolveTemplateFamilyDesignSource(commerceCatalog, templateFamily),
+    templateStockPageIds: [...templateStockPageIds],
     packageId: `${mapId}:design-source`,
     campaignMapId: mapId,
     campaignSlug: publicRouteSlug,
@@ -1791,6 +1793,7 @@ function prepareDesignSourcePackage({
   manifestResult,
   sourceAssetCrawl,
   templateFamily,
+  templateStockPageIds = [],
   commerceCatalog,
   sourceRoot,
   mapId,
@@ -1809,6 +1812,7 @@ function prepareDesignSourcePackage({
     manifestResult,
     sourceAssetCrawl,
     templateFamily,
+    templateStockPageIds,
     commerceCatalog,
     sourceRoot,
     mapId,
@@ -1965,10 +1969,6 @@ function parseWrapperPolicyFlag(args) {
   return flag;
 }
 
-// Same precedence the template family uses (docs/build-packet.md
-// "Authoring-Time Hints"): an explicit CLI flag beats a declared file hint,
-// and with neither the default stands. The vocabulary is the adapter
-// contract's own — there is no second policy list.
 // --design-manifest <path>: read the source-html manifest from outside the
 // source root. Validated with the other argv checks so a bad path fails before
 // prepare-build has written anything. A bare flag, a missing file, or a
@@ -1987,6 +1987,10 @@ function parseDesignManifestFlag(args) {
   return path;
 }
 
+// Same precedence the template family uses (docs/build-packet.md
+// "Authoring-Time Hints"): an explicit CLI flag beats a declared file hint,
+// and with neither the default stands. The vocabulary is the adapter
+// contract's own — there is no second policy list.
 function resolveWrapperPolicy({ flag, manifest }) {
   if (flag) return { value: flag, source: "--wrapper-policy" };
   const declared = optionalString(manifest?.wrapper_policy);
@@ -2046,21 +2050,22 @@ function prepareBuild(args, options = {}) {
   // partway through, so a flag that throws later would leave persistent state
   // behind for a bad argument.
   const wrapperPolicyFlag = parseWrapperPolicyFlag(args);
+  const designManifestPath = parseDesignManifestFlag(args);
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
   const explicitTemplateFamily = optionalString(args["template-family"]);
-  const designManifestPath = parseDesignManifestFlag(args);
   const hintedTemplateFamily = preferredTemplateFamily(spec);
   const templateSelection = resolveTemplateFamilySelection({
     flag: explicitTemplateFamily,
     hint: hintedTemplateFamily,
   });
   const templateFamily = templateSelection.value;
-  // The DSP is upstream source/design context, so a CampaignSpec preference
-  // remains its template input even when Build locks a different CLI override.
-  // With no source hint, the explicit family is the only honest DSP input.
-  const designSourceTemplateFamily = hintedTemplateFamily || explicitTemplateFamily || "undecided";
+  // The Design Source Package builds on the same family the packet locks. It
+  // used to take the CampaignSpec hint first, so a --template-family override
+  // produced a package whose template-stock TODOs named a family the build
+  // would never use ("Link demeter ... " on an olympus-mv-two-step packet).
+  const designSourceTemplateFamily = templateFamily;
   const commerceCatalogPath = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
   const commerceCatalog = resolveCommerceCatalog(commerceCatalogPath);
   const templateLocked = Boolean(explicitTemplateFamily) && !isUnresolvedTemplateFamily(templateFamily);
@@ -2112,20 +2117,21 @@ function prepareBuild(args, options = {}) {
     publicRouteSlug,
     outputDir,
     buildScope: isObject(spec.build_scope) ? spec.build_scope : null,
-  });
-  const declaredScopeSkips = sourceIntake.declaredSkips || [];
-  const buildScopeReasonsInvalid = isObject(spec.build_scope)
-    && spec.build_scope.reasons != null
-    && !Array.isArray(spec.build_scope.reasons);
     manifestPath: designManifestPath,
     templateFamily: familyDecided ? templateFamily : null,
-  const manifestResult = sourceIntake.manifestResult;
+  });
   // An explicit --design-manifest that does not read as a manifest is an
   // error, not the warning-plus-filesystem-fallback the default path gets:
   // nothing has been written yet, and the operator named the file.
   if (designManifestPath && sourceIntake.manifestResult.warning) {
     throw new Error(sourceIntake.manifestResult.warning.replace(/ Falling back to filesystem matching\.$/, ""));
   }
+  const declaredScopeSkips = sourceIntake.declaredSkips || [];
+  const templateStockPageIds = declaredScopeSkips.map((skip) => skip.page_id).filter(isNonEmptyString);
+  const buildScopeReasonsInvalid = isObject(spec.build_scope)
+    && spec.build_scope.reasons != null
+    && !Array.isArray(spec.build_scope.reasons);
+  const manifestResult = sourceIntake.manifestResult;
   const manifestWarnings = sourceIntake.manifestWarnings;
   // Template-family precedence, said out loud. The flag has always beaten the
   // CampaignSpec hint; printing the losing value is what keeps an operator
@@ -2246,6 +2252,7 @@ function prepareBuild(args, options = {}) {
     manifestResult,
     sourceAssetCrawl,
     templateFamily: designSourceTemplateFamily,
+    templateStockPageIds,
     commerceCatalog,
     sourceRoot,
     mapId,
@@ -8473,6 +8480,19 @@ function recordNextRecommendation(ambient, result) {
   }
 }
 
+// Pages the packet carries with a skip_reason and no source path are template
+// stock: intake declared them out of source scope and demanded no design
+// source. The build stage materialises each from the locked family's own page
+// of that role rather than looking for prepared HTML that does not exist.
+function templateStockPromptLine(packet) {
+  const pages = (Array.isArray(packet?.source_html?.pages) ? packet.source_html.pages : [])
+    .filter((page) => isNonEmptyString(page?.skip_reason) && !isNonEmptyString(page?.path))
+    .map((page) => page.page_id)
+    .filter(isNonEmptyString);
+  if (!pages.length) return "";
+  return `\n- Template-stock pages (declared out of source scope; no design source exists for them): ${pages.join(", ")}. Materialise each from the ${packet.assembly.template_family} family's own page for that role (copied with its dependent _includes, _layouts, and assets), wire it from CampaignSpec, and do not look for prepared source HTML for it.`;
+}
+
 function buildPrompt(packetPath, contextPath, reportPath, packet) {
   const briefPath = packet.build_brief?.normalized_path || "(missing; generate or confirm Campaign Build Brief before business-sensitive assembly)";
   return `Use next-campaigns-build for this Campaigns OS handoff.
@@ -8483,7 +8503,7 @@ Read first:
 - Assembly Report: ${reportPath || "(use packet-adjacent .campaign-runtime/assembly-report.json if present)"}
 - Campaign Build Brief: ${briefPath}
 - Design Source Package: .campaign-runtime/input/design-source-package.json when present; use report.design_source_package.material_fingerprint as the source context fingerprint.
-- Template family: ${packet.assembly.template_family}
+- Template family: ${packet.assembly.template_family}${templateStockPromptLine(packet)}
 
 Rules:
 - Treat CampaignSpec/API as the source for package, shipping, voucher, payment, tracking, footer, and SEO values.

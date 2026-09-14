@@ -82,11 +82,19 @@ function buildScopeSkipReason(buildScope) {
   return reasons.length ? `${base} Reasons: ${reasons.join(" ")}` : base;
 }
 
-function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifestPath = null }) {
+// A declared out-of-scope page is template stock: the family's own page is
+// the design, so the decision carries `template_stock: true` and the family
+// the page assembles from. The Design Source Package reads the same marker
+// (through prepare-build's templateStockPageIds) so intake never asks for a
+// design source the page cannot have, and the build stage materialises the
+// page from that family's stock page.
+function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifestPath = null, templateFamily = null }) {
   // Mirror the validator's contract (skip_reason is a non-empty string) rather
   // than assuming it: a malformed entry falls back to the build_scope text
   // instead of throwing mid-intake.
   const skipReason = optionalString(skipEntry?.skip_reason) || buildScopeSkipReason(buildScope);
+  const family = optionalString(templateFamily);
+  const familyLabel = family ? `the locked ${family} family` : "the selected template family";
   return {
     mapping: { page_id: page.id, skip_reason: skipReason },
     declaredSkip: {
@@ -98,8 +106,10 @@ function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifest
       id: `dec_page_scope_${page.id}`,
       stage: "prepare_build",
       decision_type: "deterministic_derivation",
-      decision: `recorded CampaignSpec page "${page.id}" as declared out of source scope (${skipEntry ? "explicit source-html manifest skip entry" : 'CampaignSpec build_scope mode "partial"'}); the page assembles from the selected template family`,
+      decision: `recorded CampaignSpec page "${page.id}" as template stock, declared out of source scope (${skipEntry ? "explicit source-html manifest skip entry" : 'CampaignSpec build_scope mode "partial"'}); the build stage materialises the page from ${familyLabel}'s stock page, and intake demands no design source for it`,
       confidence: "high",
+      template_stock: true,
+      template_family: family,
       evidence: [
         skipEntry
           ? `source-html manifest entry for "${page.id}" at ${manifestPath} declares skip_reason without a path`
@@ -352,7 +362,7 @@ function matchSourcePages(specPages, htmlFiles, { buildScope = null, templateFam
     } else {
       const hasDesignSource = isObject(page.design_source);
       if (declaredPartialScope(buildScope) && !hasDesignSource) {
-        const declared = declaredScopeSkip(page, { buildScope });
+        const declared = declaredScopeSkip(page, { buildScope, templateFamily });
         mappings.push(declared.mapping);
         declaredSkips.push(declared.declaredSkip);
         decisions.push(declared.decision);

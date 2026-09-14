@@ -2,6 +2,70 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.33] - 2026-09-14
+
+### Added
+
+- `start`, `prepare-build`, and `build` accept `--design-manifest <path>`: the
+  source-html manifest (`source-html-manifest/v0`) is read from that file
+  instead of `<source>/.campaigns-os/source-html-manifest.json`, so a source
+  root nobody can write to still gets its screenshot proof and its skip
+  declarations from a file the operator owns. `pages[].path` and
+  `files[].path` stay relative to `--source`. The Design Source Package records
+  the file it read at `contributions[html-funnel].provenance.manifest_path`
+  (relative to the package), and doctor validates that same file on every
+  later run — the `Source-html manifest source-html-manifest/v0 validated`
+  ready line and the Figma provenance gate now follow the recorded manifest.
+  A bare `--design-manifest`, a path that is not a file, or a manifest that
+  fails validation is an error before anything is written (`Design manifest
+  does not exist or is not a file: <path>`, `--design-manifest needs a value`,
+  `Source-html manifest at <path> failed source-html-manifest/v0 validation:
+  ...`), not the warning-plus-filesystem-fallback the default path gets. The
+  flag was previously accepted and ignored. The `DESIGN_SOURCE_PACKAGE_NOT_READY`
+  remedy text now names the flag.
+
+### Changed
+
+- A page declared out of source scope (a source-html manifest `skip_reason`
+  entry, or CampaignSpec `build_scope.mode: "partial"`) is template stock, on
+  every family. Its assembly-report decision `dec_page_scope_<page>` carries
+  `template_stock: true` and `template_family` (the family the packet locks),
+  and its text reads `recorded CampaignSpec page "<id>" as template stock,
+  declared out of source scope (...); the build stage materialises the page
+  from the locked <family> family's stock page, and intake demands no design
+  source for it`. On a family without published Template Reference proof
+  (every certified family but `apollo`) the Design Source Package used to
+  block with `Page surface "<id>" lacks non-low primary_design, proven
+  template_baseline, an accepted Source Gap, or an approved waiver.` and
+  `Source TODO "link-<id>-template-reference" is blocked.` — a TODO no
+  operator channel could clear. It now records an accepted `coverage_absence`
+  Source Gap for the page (`template-stock-<surface>`, scope
+  `primary_design_coverage`, `attributed_by: "prepare-build"`, reason
+  `Page surface "<id>" is template stock from the <family> family: it has no
+  design source of its own, and the build stage materialises it from that
+  family's stock page.`), emits no `link-*`/`capture-*` TODO for it, and
+  reaches `readiness.status: "ready_with_gaps"` with
+  `stages.prepare_build.status: "completed_partial"` and no
+  `DESIGN_SOURCE_PACKAGE_NOT_READY` blocker. `apollo`'s `template_baseline`
+  path is unchanged. The `next build` prompt gains a `Template-stock pages`
+  line naming each such page and the family to materialise it from.
+- The Design Source Package builds on the family the packet locks
+  (`--template-family` first, then the CampaignSpec `preferred_template_family`
+  hint), not the hint first. The `template-baseline` contribution's
+  `presentation_intent` and the `link-<page>-template-reference` TODO name that
+  family: a packet locked to `olympus-mv-two-step` over a `demeter` hint used
+  to say `Link demeter family/version to a Template Reference artifact ...`
+  and now says `Link olympus-mv-two-step family/version ...`. Consequences:
+  changing the hint under a stable `--template-family` no longer reads as
+  `current_template_material_stale` drift, and a package emitted before this
+  change under a hint that differs from the flag is reported stale on the next
+  run — remove it per "Recovery after a blocked first run" and rerun.
+- Help text documents `--design-manifest` and the template-stock route;
+  docs/design-source-package.md "Template-stock pages: the family decides"
+  describes the declared route for every family and retires the "no operator
+  channel" / attest-the-stock-page reading; README, docs/build-packet.md, and
+  docs/entry-points.md name the flag.
+
 ## [1.27.0+agent.26] - 2026-09-14
 
 ### Fixed
