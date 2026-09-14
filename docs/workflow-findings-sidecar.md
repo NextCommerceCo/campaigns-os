@@ -294,7 +294,9 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   `--packet` the session (and the managed `.gitignore` block) lands in the
   packet's target repo — `assembly.target_repo` resolved from the packet's
   directory, else that directory — whatever the cwd, the same root the
-  auto-opener behind `start` / `prepare-build` uses; without it, at cwd.
+  auto-opener behind `start` / `prepare-build` uses; without it, at cwd. A
+  packet that exists but does not parse is refused (no session is opened on a
+  guessed root); one not written yet roots on its own directory with a warning.
 - Every command then auto-discovers that session (walking up from cwd, or
   from the `--packet` it was handed) and shares its `run_id` + journal **with
   no per-command flags**. `start` / `prepare-build` / `build` take a

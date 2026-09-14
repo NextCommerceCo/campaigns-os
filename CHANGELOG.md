@@ -471,8 +471,17 @@ Notable supported-surface changes are recorded here.
   reported as `Stale run session <run_id> closed out …`, where before the
   command failed with `No active run session to end.`
 - Bare `run start` / `run end` (no `--packet`) are unchanged: cwd. A
-  `--packet` that cannot be read yet roots on its own directory and still
+  `--packet` that is not written yet roots on its own directory and still
   prints the `does not exist yet` warning.
+- A `--packet` that exists but cannot be parsed is refused by `run start` /
+  `run end` with `--packet <p> could not be read as a build packet (<parse
+  error>); the run session roots on its assembly.target_repo. Fix or re-point
+  the packet, then retry.` (exit 1, nothing opened anywhere). It used to open
+  the session silently on the packet's directory, where no later command run
+  by that packet would find it once it parsed again and named another target.
+- The session records the packet in canonical form (symlinks resolved, the
+  form the root is derived from), so the Run Record `run end` assembles lands
+  beside the real packet rather than in a link's directory.
 
 ## [1.27.0] - 2026-09-13
 

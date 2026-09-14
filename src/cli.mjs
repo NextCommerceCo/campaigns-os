@@ -9755,33 +9755,45 @@ function runSessionTextLines(result) {
   throw new Error(`Unknown run result action "${result.action}".`);
 }
 
+// The build packet a `run start` / `run end` names, canonicalised the way
+// ambientRunSession canonicalises it (realpath when it exists), so a packet
+// reached through a symlink is the same packet discovery and the Run Record
+// see. Null without --packet.
+function runSessionPacketPath(args) {
+  const packetArg = optionalString(args.packet);
+  return packetArg ? canonicalExistingPath(resolve(packetArg)) : null;
+}
+
 // The project a `run start` / `run end` acts on. With --packet it is the
 // packet's target repo (targetRepoFor: `assembly.target_repo` resolved from the
 // packet's directory, else that directory) — where the build happens and where
 // the auto-opener behind start/prepare-build roots its session — so a session
 // opened from the toolkit or any other directory lands with the build and is
-// found again by packet from anywhere. The packet path is canonicalised the
-// way ambientRunSession canonicalises it before deriving the target, so a
-// packet reached through a symlink opens its session where discovery looks.
-// A packet that cannot be read yet roots on its own directory; the command
-// owns the missing/malformed diagnostics. Without --packet it is cwd, as
-// before.
+// found again by packet from anywhere. A packet that is not written yet roots
+// on its own directory (the command prints the `does not exist yet` warning);
+// a packet that exists but cannot be parsed is refused with the parse error,
+// never rooted on a guess — a session opened on the packet's directory when
+// the packet declares a different target would be invisible to every later
+// command run by packet. Without --packet it is cwd, as before.
 function runSessionRootFor(args) {
-  const packetArg = optionalString(args.packet);
-  if (!packetArg) return resolve(process.cwd());
-  const packetPath = canonicalExistingPath(resolve(packetArg));
+  const packetPath = runSessionPacketPath(args);
+  if (!packetPath) return resolve(process.cwd());
   let packet = null;
   try {
     packet = readJson(packetPath);
-  } catch {
-    // Rooted on the packet's directory below.
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw new Error(
+        `--packet ${packetPath} could not be read as a build packet (${error?.message || error}); the run session roots on its assembly.target_repo. Fix or re-point the packet, then retry.`,
+      );
+    }
   }
   return targetRepoFor(packetPath, packet);
 }
 
 function runSessionStart(args) {
   const rootDir = runSessionRootFor(args);
-  const packet = optionalString(args.packet) ? resolve(args.packet) : null;
+  const packet = runSessionPacketPath(args);
   const opened = openRunSession(rootDir, {
     runId: optionalString(args["run-id"]) || null,
     lifecycleJournal: isNonEmptyString(args["lifecycle-journal"]) ? resolve(args["lifecycle-journal"]) : null,
@@ -9854,9 +9866,12 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
   // Use the session resolved once in main() (single source of truth).
   const found = ambient;
   if (!found) {
-    // A stale session at cwd was already closed out by main()'s sweep; that IS
-    // the end the operator asked for, so report it rather than fail.
-    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === runSessionRootFor(args));
+    // A stale session at the root this command acts on was already closed out
+    // by main()'s sweep; that IS the end the operator asked for, so report it
+    // rather than fail. Resolving the root first also surfaces an unreadable
+    // --packet as its own diagnostic instead of "no active run session".
+    const rootDir = runSessionRootFor(args);
+    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === rootDir);
     if (swept.length) {
       return { result: { ok: swept.every((entry) => Boolean(entry.record_path)), action: "run-end", stale_closeout: swept }, exitCode: 0 };
     }
@@ -9939,7 +9954,19 @@ async function closeOutStaleRunSessions(command, args) {
   if (args["no-run-session"] === true) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
-  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) roots.push(runSessionRootFor(args));
+  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {
+    // cwd is deliberately not a second root when --packet is given: the sweep
+    // closes out (assembles and, under consent, remits) the stale session at
+    // the root the command is about to act on, and a stale session at an
+    // unrelated cwd belongs to whatever next acts there (`run status` there
+    // reports it). An unreadable packet roots nothing here; the command itself
+    // raises that diagnostic right after, so it is not printed twice.
+    try {
+      roots.push(runSessionRootFor(args));
+    } catch {
+      // Reported by the command.
+    }
+  }
   // The closeout inherits the invoking command's remit controls: an explicit
   // --no-remit / --no-write stays an opt-out, and a run pointed at a custom
   // --proxy-base never remits the stale record to the canonical endpoint.

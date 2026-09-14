@@ -353,6 +353,10 @@ test("CLI: run start --packet roots on the packet's declared target repo, not th
     symlinkSync(packetPath, link);
     const viaLink = JSON.parse(runIn(elsewhere, ["run", "start", "--packet", link, "--json"]));
     assert.equal(realpathSync(viaLink.session_path), realpathSync(resolveRunSessionPath(target)));
+    // The session remembers the packet in the same canonical form the root was
+    // derived from, so run end's Run Record lands beside the real packet, not
+    // in the link's directory.
+    assert.equal(viaLink.session.packet, realpathSync(packetPath));
     assert.equal(findRunSession(elsewhere), null);
     const linkedStatus = JSON.parse(runIn(elsewhere, ["run", "status", "--packet", link, "--json"]));
     assert.equal(linkedStatus.active, true);
@@ -363,6 +367,42 @@ test("CLI: run start --packet roots on the packet's declared target repo, not th
     // The bare form is unchanged: no --packet, the session opens at cwd.
     const bare = JSON.parse(runIn(elsewhere, ["run", "start", "--json"]));
     assert.equal(realpathSync(bare.session_path), realpathSync(resolveRunSessionPath(elsewhere)));
+  });
+});
+
+test("CLI: run start --packet refuses a packet that exists but cannot be parsed instead of rooting on its directory", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    const packets = join(dir, "packets");
+    const elsewhere = join(dir, "elsewhere");
+    for (const path of [target, packets, elsewhere]) {
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, "package.json"), "{}\n");
+    }
+    const packetPath = join(packets, "campaign-runtime.build.json");
+    writeFileSync(packetPath, "{\"assembly\": {\"target_repo\": \"../target\"");
+
+    for (const verb of ["start", "end"]) {
+      assert.throws(
+        () => runIn(elsewhere, ["run", verb, "--packet", packetPath, "--json"]),
+        (error) => {
+          const stderr = String(error.stderr || "");
+          return error.status !== 0 && stderr.includes("could not be read as a build packet") && stderr.includes(realpathSync(packetPath));
+        },
+        `run ${verb} names the unreadable packet`,
+      );
+    }
+    for (const path of [target, packets, elsewhere]) {
+      assert.equal(findRunSession(path), null, `no session opened at ${path}`);
+      assert.equal(existsSync(join(path, ".campaign-runtime")), false);
+      assert.equal(existsSync(join(path, ".gitignore")), false);
+    }
+
+    // A packet that is not written yet is still fine: the session roots on the
+    // packet's directory and the existing warning names it.
+    rmSync(packetPath);
+    const start = JSON.parse(runIn(elsewhere, ["run", "start", "--packet", packetPath, "--json"]));
+    assert.equal(realpathSync(start.session_path), realpathSync(resolveRunSessionPath(packets)));
   });
 });
 
@@ -764,7 +804,7 @@ test("run start/status/end return their result in-process and print nothing", as
     const started = await runSessionCommand({ _: ["run", "start"], packet: packetPath, json: true });
     assert.equal(started.exitCode, 0);
     assert.equal(started.result.action, "run-start");
-    assert.equal(started.result.session.packet, packetPath);
+    assert.equal(started.result.session.packet, realpathSync(packetPath));
     assert.equal(findRunSession(dir).session.run_id, started.result.session.run_id);
 
     const status = await runSessionCommand({ _: ["run", "status"], json: true });
