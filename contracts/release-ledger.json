@@ -3258,6 +3258,111 @@
         }
       ],
       "entry_sha256": "41ef9c14e7914e9a63e2f6b0b8ebff62d6f2825b50872f69ad8f08988ef1ff78"
+    },
+    {
+      "id": "RL-0092",
+      "sequence": 92,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": "1.28.0",
+      "changelog_section": "1.28.0",
+      "changelog_sha256": "43e75dd53b86c073f5d6f15846c5230d7834f63dccc2c3a6117799d9228285d8",
+      "agent_impact": "Build Packet (campaign-runtime-build-packet/v0): qa.test_orders_allowed and qa.sandbox_test_card_confirmed are gone from the schema (they were required booleans; nothing read their values \u2014 test orders run from --test-order <mode> alone). prepare-build/start and the synthesized built-site packet no longer write them; the qa.test_order_policy_notes sentence \"These flags are informational, not a permission gate.\" now reads \"There is no permission flag: depth is the only control.\" Doctor no longer emits \"qa.test_orders_allowed must be boolean.\" / \"qa.sandbox_test_card_confirmed must be boolean.\"; a packet that still carries either field is accepted and gets one warning, code qa.removed_policy_fields, naming the field(s) and asking for deletion. qa policy set refuses --test-orders-allowed / --sandbox-test-card-confirmed with \"qa policy set: --test-orders-allowed was removed in supported surface 1.28.0 ...\" (exit non-zero, packet untouched) and its --json policy echo has no qa block; --allowed-domains-confirmed, --deploy-target, --preview-url and --production-url are unchanged. deploy.target gains the enum value local-serve (the localhost QA path): doctor accepts it, skips the campaign.allowed_domains_confirmed warning under it, prints \"Deploy target is local-serve: serve the built _site/ locally and record the localhost URL on deploy.preview_url; ...\" while no URL is recorded and \"Deploy target is local-serve and the deploy URL <url> is localhost: ...\" once one is, and warns deploy.local_serve_url when the recorded URL is not a localhost origin (hostname localhost); next at the deploy stage emits the action \"Serve the built _site/ output locally (deploy.target is local-serve), then record the localhost URL on deploy.preview_url ...\" and a prompt beginning \"Deploy the built campaign by serving it locally (deploy.target is local-serve).\" instead of \"Deploy the built campaign to <target>.\"; the QA stage is unchanged. Run Record (campaigns-os-run-record/v0): two optional nullable fields, remit_result (stored | already_stored | ok_unparsed_ack | refused | transport_error | null) and remit_base_kind (canonical | loopback | proxy | null), are written by run-record on every record (null when no send was attempted), carried forward with a prior outcome under --no-remit or consent off, and stamped on the POSTed copy as remit_result \"stored\" plus the base kind; the validator rejects other values. The run-record --json summary's remit block is unchanged.",
+      "compatibility": "breaking",
+      "migration": "Build Packet: stop writing qa.test_orders_allowed and qa.sandbox_test_card_confirmed; delete them from existing packets (doctor warns qa.removed_policy_fields until you do; a schema-validating consumer must strip them because qa is additionalProperties: false). Drop --test-orders-allowed and --sandbox-test-card-confirmed from any qa policy set invocation \u2014 the command now exits non-zero on them. A consumer that validated deploy.target against the old enum must accept local-serve; a packet that used unknown for a locally served build may set deploy.target to local-serve (qa policy set --deploy-target local-serve). Run Record consumers must tolerate remit_result and remit_base_kind (both optional and nullable); a consumer that read remit.result / remit.base_kind from the run-record --json summary can keep doing so or read the record fields.",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "qa no longer requires or lists test_orders_allowed / sandbox_test_card_confirmed (breaking: they were required); deploy.target enum gains local-serve with a description of the localhost QA path."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Adds the optional nullable remit_result (five receiver-answer classifications) and remit_base_kind (canonical | loopback | proxy) fields."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Drops the two requireBoolean checks; warns qa.removed_policy_fields on a packet still carrying either removed field; accepts deploy.target local-serve and reads it as the localhost QA path (ready lines, no allowed-domains warning, deploy.local_serve_url warning on a non-localhost URL)."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "prepare-build",
+          "summary": "start/prepare-build write a qa block without test_orders_allowed / sandbox_test_card_confirmed and the notes sentence no longer refers to permission flags."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "next",
+          "summary": "Deploy-stage action and handoff prompt under deploy.target local-serve say to serve _site/ locally and record the localhost URL, not to ship to a host."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "qa",
+          "summary": "qa policy set refuses --test-orders-allowed / --sandbox-test-card-confirmed by name (exit non-zero, no write) and its --json policy echo drops the qa block; usage lists the four remaining flags."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run-record",
+          "summary": "Writes remit_result and remit_base_kind onto the record (null when no send was attempted), carries them forward with a prior outcome, and stamps remit_result stored plus the base kind on the POSTed copy."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.27.0 -> 1.28.0; recorded hashes for the Build Packet and Run Record schemas updated."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The schemas row records the 1.28.0 moves: the two removed Build Packet booleans, the local-serve deploy target, and the two Run Record fields."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/sidecar-bundle/production-shaped/campaign-runtime.build.json",
+          "surface_entry": "contracts/fixtures/sidecar-bundle/production-shaped/campaign-runtime.build.json",
+          "summary": "The production-shaped packet fixture drops the two removed qa fields; bundle check --require-qa still passes on it."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Adapter And Proof Fields states the qa block carries no permission booleans and names the removal; new Deploy target subsection lists the enum, the local-serve semantics and the doctor/next behaviour under it; the stage table names the local-serve alternative."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The SDK-origin paragraph states there is no permission flag, names the removed flags and fields, the qa policy set refusal, the doctor warning, the four remaining flags, and points at the local-serve deploy target for QA against a local serve."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Durable status names remit_result and remit_base_kind on the record and their carry-forward; the stored-copy paragraph names the two stamped fields."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated: supported surface at generation time 1.28.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated: supported surface at generation time 1.28.0."
+        }
+      ],
+      "entry_sha256": "96b849d0e33fa61ac7cc2f3802d97e192c17fd086b0cff30fe70d8b1af63431e"
     }
   ]
 }

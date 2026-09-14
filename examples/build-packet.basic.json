@@ -126,8 +126,6 @@
     "production_url": null
   },
   "qa": {
-    "test_orders_allowed": false,
-    "sandbox_test_card_confirmed": false,
     "proof_policy": {
       "browser_qa_required": true,
       "typed_card_depth": "common",

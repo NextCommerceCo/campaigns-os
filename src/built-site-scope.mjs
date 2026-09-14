@@ -230,10 +230,7 @@ export function synthesizeMinimalBuildPacket({
       target: deployTarget || "unknown",
       preview_url: baseUrl || null,
     },
-    qa: {
-      test_orders_allowed: false,
-      sandbox_test_card_confirmed: false,
-    },
+    qa: {},
     pages: (scope?.pages || []).map((page) => ({ page_id: page.page_id, type: page.page_type, route: page.route })),
   };
 }

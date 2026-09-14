@@ -86,6 +86,16 @@
       "pattern": "^/",
       "description": "Endpoint path the run was remitted to, e.g. \"/api/runs\". null when no attempt was made."
     },
+    "remit_result": {
+      "type": ["string", "null"],
+      "enum": ["stored", "already_stored", "ok_unparsed_ack", "refused", "transport_error", null],
+      "description": "What the receiver answered, classified: stored (parsed 2xx), already_stored (409 — the receiver already holds this run_id), ok_unparsed_ack (2xx with a non-JSON body), refused (other non-2xx), transport_error (no answer). null when no attempt was made. The copy the receiver stores carries stored, by construction."
+    },
+    "remit_base_kind": {
+      "type": ["string", "null"],
+      "enum": ["canonical", "loopback", "proxy", null],
+      "description": "The remit base the send resolved to, as a kind rather than a host: canonical (the default endpoint), loopback (a receiver on localhost), or proxy (any other --proxy-base). null when no attempt was made."
+    },
     "identity": {
       "type": "object",
       "additionalProperties": false,

@@ -228,14 +228,17 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
     <status>: <statusText> <body>`; a transport failure (refused connection,
     timeout, the proxy-base gate) is `failed` (`transport_error`).
 
-  The classification, the HTTP status, and the resolved base — as a kind,
-  `canonical` / `loopback` / `proxy`, never the host — travel in the
-  `run-record --json` summary under `remit` (`result`, `http_status`,
-  `base_kind`, `sent`, `preserved`) and in the text `Remit:` line; the Run
-  Record schema does not carry them. `result` is one of the five outcomes
-  above for a send this run made, `not_contacted` when the record on disk was
-  already `ok` and the receiver was not asked (below), or null when nothing was
-  sent and nothing is known (`--no-remit`, consent off).
+  The classification and the resolved base — as a kind, `canonical` /
+  `loopback` / `proxy`, never the host — are on the record itself since
+  surface 1.28.0 as `remit_result` (one of the five outcomes above, or null
+  when no send was attempted) and `remit_base_kind` (null when no send was
+  attempted); a prior outcome carried forward keeps both. They also travel,
+  with the HTTP status, in the `run-record --json` summary under `remit`
+  (`result`, `http_status`, `base_kind`, `sent`, `preserved`) and in the text
+  `Remit:` line. The summary's `result` is additionally `not_contacted` when
+  the record on disk was already `ok` and the receiver was not asked (below),
+  or null when nothing was sent and nothing is known (`--no-remit`, consent
+  off).
 - **Re-runs never downgrade a durable outcome** — `run-record` is keyed on
   `run_id`, and `run end`, the QA auto-end and the recovery action `next`
   prints all go through it. Before writing, it reads the record already under
@@ -254,8 +257,9 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
   reads nothing, because it writes and sends nothing.
 - **The stored copy states its outcome** — the record the receiver holds is,
   by construction, one whose send landed, so the body sent carries
-  `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true` and the
-  endpoint. The local file carries the `pending` sentinel only between its
+  `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true`, the
+  endpoint, `remit_result: "stored"` and the `remit_base_kind` the send
+  resolved to. The local file carries the `pending` sentinel only between its
   first write and the answer.
 - **Tenant-scoped** — the remit sends the packet's Campaigns API key (packet,
   then the packet-local CampaignSpec, then the declared `env:` source) as the

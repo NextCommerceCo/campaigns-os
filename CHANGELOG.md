@@ -2,6 +2,63 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.28.0] - 2026-09-14
+
+Breaking: two required Build Packet fields are removed. See the migration in
+release-ledger entry `surface_version: 1.28.0`.
+
+### Removed
+
+- The Build Packet fields `qa.test_orders_allowed` and
+  `qa.sandbox_test_card_confirmed`, and the `qa policy set` flags
+  `--test-orders-allowed` / `--sandbox-test-card-confirmed` that set them. The
+  permission gate on test orders was retired long ago (typed-card test orders
+  use global test cards, create no transactions, and run from `--test-order
+  <mode>` alone), but the schema kept both fields `required`, doctor kept
+  demanding they be booleans, `prepare-build`/`start` kept writing `false`, and
+  `qa policy set` kept setting values nothing read — so a packet pinned by a
+  Run Record said `test_orders_allowed: false` beside a notes string calling
+  the flag informational. Now: the packet schema neither requires nor lists
+  them; `prepare-build`/`start` and the synthesized built-site packet write a
+  `qa` block without them (the `test_order_policy_notes` sentence "These flags
+  are informational, not a permission gate." becomes "There is no permission
+  flag: depth is the only control."); doctor no longer emits
+  `qa.test_orders_allowed must be boolean.` / `qa.sandbox_test_card_confirmed
+  must be boolean.` and instead warns once, `qa.removed_policy_fields`, when a
+  packet still carries either field, naming it and asking for it to be
+  deleted (a 1.27.0 packet is otherwise accepted unchanged); `qa policy set`
+  refuses the two flags with `--test-orders-allowed was removed in supported
+  surface 1.28.0 …` and writes nothing, and its `--json` `policy` echo no
+  longer has a `qa` block. `--allowed-domains-confirmed`, `--deploy-target`,
+  `--preview-url` and `--production-url` are unchanged.
+
+### Added
+
+- `local-serve` as a `deploy.target` value in the Build Packet schema and in
+  doctor's known-target set, for the localhost QA path the docs already
+  describe. Before, the enum had no value for a locally served build, so an
+  operator either lied with `unknown` or hit `deploy.target: Unknown deploy
+  target "localhost"` (exit 2, `doctor-blocked`). Under `local-serve` doctor
+  skips the `campaign.allowed_domains_confirmed` warning, prints `Deploy target
+  is local-serve: serve the built _site/ locally and record the localhost URL
+  on deploy.preview_url; …` until a URL is recorded, prints `Deploy target is
+  local-serve and the deploy URL <url> is localhost: …` once it is, and warns
+  `deploy.local_serve_url` when the recorded URL is not a localhost origin.
+  `next` at the deploy stage emits the action `Serve the built _site/ output
+  locally (deploy.target is local-serve), then record the localhost URL on
+  deploy.preview_url …` and a serve-locally handoff prompt instead of the
+  ship-to-host one; the QA stage is unchanged. `qa policy set --deploy-target
+  local-serve` records it.
+- Run Record fields `remit_result` and `remit_base_kind` (both optional,
+  nullable): the classification of what the receiver answered (`stored`,
+  `already_stored`, `ok_unparsed_ack`, `refused`, `transport_error`) and the
+  remit base as a kind (`canonical`, `loopback`, `proxy`), which until now
+  travelled only in the `run-record --json` summary. `run-record` writes them
+  on every record it stamps (null when no send was attempted), carries them
+  forward with a prior outcome under `--no-remit` or consent off, and the copy
+  POSTed to the receiver states `remit_result: "stored"` and its base kind
+  beside `remit_state: "ok"`. The validator rejects any other value.
+
 ## [1.27.0+agent.34] - 2026-09-14
 
 ### Changed

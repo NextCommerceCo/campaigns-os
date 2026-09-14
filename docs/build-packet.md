@@ -450,7 +450,29 @@ localhost Development-domain behavior, non-localhost SDK allowlist requirement,
 order path depth, and operator approval state. Test cards still need no
 permission gate; the explicit field prevents agents from re-litigating proof
 depth in chat. Doctor checks the full field set in both packet and report
-artifacts when present.
+artifacts when present. The `qa` block carries no permission booleans:
+`qa.test_orders_allowed` and `qa.sandbox_test_card_confirmed`, which no command
+read, were removed in supported surface 1.28.0, and doctor warns
+(`qa.removed_policy_fields`) on a packet that still carries either.
+
+### Deploy target
+
+`deploy.target` names where the built `_site/` output is served for QA. The
+schema enum is `netlify`, `cloudflare-pages`, `vercel`, `shopify-proxy`,
+`agency-ci`, `local-serve` and `unknown`; doctor blocks (`deploy.target`) on
+any other value. `prepare-build`/`start` take `--deploy-target <target>` and
+default to `unknown`; `qa policy set --deploy-target <target>` changes it later.
+
+`local-serve` (added in 1.28.0) is the localhost QA path: nothing is deployed,
+the built output is served on localhost by any static server, and
+`deploy.preview_url` records that origin. Localhost on any port is a Campaigns
+App Development domain (SDK allowed, analytics suppressed), so under
+`local-serve` doctor does not raise `campaign.allowed_domains_confirmed`, reads
+a recorded localhost URL as the intended state (a `ready` line), and warns
+(`deploy.local_serve_url`) when the recorded URL is not a localhost origin.
+`next` at the deploy stage then hands off a serve-locally prompt and action
+instead of a ship-to-host one; the QA stage is unchanged and runs against the
+recorded URL.
 
 Campaign Build Brief `qa_policy` is deliberately scoped as
 `documented_expectation` metadata. Use it to preserve business QA intent, but
@@ -701,7 +723,7 @@ Stage order: `setup → build → polish → deploy → qa`. The picker walks th
 | setup | `stages.setup` | scaffold the page-kit campaign repo |
 | build | `stages.assembly` | assemble the campaign (next-campaigns-build) |
 | polish | `stages.polish` | source-design fidelity pass (next-campaigns-polish) |
-| deploy | `stages.deploy` | ship `_site/` to Netlify / CF Pages / Vercel / etc. (out-of-band) |
+| deploy | `stages.deploy` | ship `_site/` to Netlify / CF Pages / Vercel / etc. (out-of-band), or serve it locally under `deploy.target: local-serve` |
 | qa | `stages.qa` | spec-aware QA (next-campaigns-qa) |
 
 The CLI stage name is `build` but the report keys the same stage as `assembly` — the picker handles the translation. Both names refer to the same lifecycle step.

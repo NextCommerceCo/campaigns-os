@@ -408,7 +408,8 @@
       "required": ["target"],
       "properties": {
         "target": {
-          "enum": ["netlify", "cloudflare-pages", "vercel", "shopify-proxy", "agency-ci", "unknown"]
+          "enum": ["netlify", "cloudflare-pages", "vercel", "shopify-proxy", "agency-ci", "local-serve", "unknown"],
+          "description": "Where the built _site/ output is served for QA. local-serve is the localhost QA path: the built output is served locally (a Development domain on any port, SDK allowed, analytics suppressed) and deploy.preview_url records that localhost origin."
         },
         "preview_url": {
           "type": ["string", "null"]
@@ -424,16 +425,7 @@
     "qa": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["test_orders_allowed", "sandbox_test_card_confirmed"],
       "properties": {
-        "test_orders_allowed": {
-          "type": "boolean",
-          "default": false
-        },
-        "sandbox_test_card_confirmed": {
-          "type": "boolean",
-          "default": false
-        },
         "proof_policy": {
           "type": "object",
           "additionalProperties": true,

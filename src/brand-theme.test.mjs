@@ -76,10 +76,7 @@ function makePacket(dir, pages = [{ page_id: "landing", path: "landing.html" }])
       template_lock: { locked: true },
     },
     deploy: { target: "unknown" },
-    qa: {
-      test_orders_allowed: false,
-      sandbox_test_card_confirmed: false,
-    },
+    qa: {},
   };
   writeJson(packetPath, packet);
   return { source, target, packet, packetPath };

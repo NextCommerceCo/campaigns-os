@@ -88,7 +88,7 @@ import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from ".
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
-import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
+import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, describeRemitBaseKind, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -330,12 +330,23 @@ const KNOWN_DEPLOY_TARGETS = new Set([
   "vercel",
   "shopify-proxy",
   "agency-ci",
+  "local-serve",
   "unknown",
 ]);
+// The localhost QA path: the built _site/ is served locally instead of
+// deployed. Localhost on any port is a Development domain, so doctor and
+// `next` read a localhost deploy URL under this target as the intended state,
+// not as a deploy that has not happened.
+const LOCAL_SERVE_DEPLOY_TARGET = "local-serve";
 
 const REQUIRED_STORE_PROFILE_FIELDS = [
   "store_url",
 ];
+
+// Packet fields removed in supported surface 1.28.0. They were booleans no
+// command read since the permission gate on test orders was retired; doctor
+// warns when a packet still carries one.
+const REMOVED_QA_POLICY_FIELDS = ["test_orders_allowed", "sandbox_test_card_confirmed"];
 
 const US_MARKET_COPY_PATTERNS = [
   { label: "USPS", regex: /\bUSPS\b/i },
@@ -395,7 +406,7 @@ Usage:
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
   campaigns-os qa run --packet <json> [--base-url <url>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--no-post-verdict] [--no-remit] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
-  campaigns-os qa policy set --packet <json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
+  campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--json]
   campaigns-os findings add --stage <stage> --kind <kind> --summary <text> [--details <text>] [--packet <json>] [--journal <path>] [--run-id <id>] [...context flags]
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
@@ -2279,10 +2290,8 @@ function prepareBuild(args, options = {}) {
       live_url_path: liveUrlPath,
     },
     qa: {
-      test_orders_allowed: args["test-orders-allowed"] === true,
-      sandbox_test_card_confirmed: args["sandbox-test-card-confirmed"] === true,
       proof_policy: proofPolicy,
-      test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common` for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed (at most four orders). Use `--test-order full` for every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. Use `--test-order tiers` (or `tiers:common` / `tiers:full`) to drive one strict-selection order per selector tier the CampaignSpec declares on the checkout page, crossed with those path shapes; order-bump rows marked `is_upsell` are add-ons, not tiers, so a three-tier checkout with one bump plans 3 tiers, and `--select-package <ref[:qty],...>` narrows a tiers run to the listed tiers. The default accidental-flood cap is 6, and an overflow names the exact explicit `--max-test-orders` raise and lists the planned paths (up to 40 ids, the remainder counted). That cap bounds planned paths; `--max-order-creations` bounds actual order creations, defaults to the planned path count, and is reserved before each submit. Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. These flags are informational, not a permission gate.",
+      test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common` for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed (at most four orders). Use `--test-order full` for every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. Use `--test-order tiers` (or `tiers:common` / `tiers:full`) to drive one strict-selection order per selector tier the CampaignSpec declares on the checkout page, crossed with those path shapes; order-bump rows marked `is_upsell` are add-ons, not tiers, so a three-tier checkout with one bump plans 3 tiers, and `--select-package <ref[:qty],...>` narrows a tiers run to the listed tiers. The default accidental-flood cap is 6, and an overflow names the exact explicit `--max-test-orders` raise and lists the planned paths (up to 40 ids, the remainder counted). That cap bounds planned paths; `--max-order-creations` bounds actual order creations, defaults to the planned path count, and is reserved before each submit. Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. There is no permission flag: depth is the only control.",
     },
     notes: "Generated by campaigns-os prepare-build. Replace demo refs from CampaignSpec/API before launch.",
   };
@@ -3788,8 +3797,13 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   requireString(packet, errors, "assembly.target_repo");
   requireString(packet, errors, "assembly.output_dir");
   requireString(packet, errors, "assembly.template_family");
-  requireBoolean(packet, errors, "qa.test_orders_allowed");
-  requireBoolean(packet, errors, "qa.sandbox_test_card_confirmed");
+  // Test Orders have no permission flag: the two booleans that once gated
+  // them left the packet in surface 1.28.0. A packet still carrying them is
+  // valid (nothing reads them); doctor says so once so the residue is removed.
+  const removedQaPolicyFields = REMOVED_QA_POLICY_FIELDS.filter((field) => packet.qa && field in packet.qa);
+  if (removedQaPolicyFields.length) {
+    addIssue(warnings, "qa.removed_policy_fields", `qa.${removedQaPolicyFields.join(" and qa.")} ${removedQaPolicyFields.length > 1 ? "are" : "is"} no longer part of the Build Packet (removed in supported surface 1.28.0; nothing reads ${removedQaPolicyFields.length > 1 ? "them" : "it"}). Delete the field${removedQaPolicyFields.length > 1 ? "s" : ""} from qa; test orders run from --test-order <mode> alone.`);
+  }
 
   if (!isKnownTemplateFamily(packet.assembly?.template_family)) {
     addIssue(errors, "assembly.template_family", `Unknown template family "${packet.assembly?.template_family}".`);
@@ -3838,7 +3852,15 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   }
 
   const deployUrl = packet.deploy?.preview_url || packet.deploy?.production_url;
-  if (packet.campaign?.allowed_domains_confirmed !== true) {
+  if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
+    if (!deployUrl) {
+      ready.push("Deploy target is local-serve: serve the built _site/ locally and record the localhost URL on deploy.preview_url; localhost on any port is a Development domain, so no SDK origin allowlist entry is needed for QA.");
+    } else if (isLocalhostDevelopmentOrigin(deployUrl)) {
+      ready.push(`Deploy target is local-serve and the deploy URL ${deployUrl} is localhost: Campaigns App treats localhost on any port as a Development domain, so SDK initialization is allowed and analytics are suppressed for local QA.`);
+    } else {
+      addIssue(warnings, "deploy.local_serve_url", `deploy.target is local-serve but the recorded deploy URL ${deployUrl} is not a localhost origin. Record the served localhost URL, or set deploy.target to where that origin is actually hosted.`);
+    }
+  } else if (packet.campaign?.allowed_domains_confirmed !== true) {
     if (isLocalhostDevelopmentOrigin(deployUrl)) {
       ready.push("Deploy URL is localhost; Campaigns App treats localhost on any port as a Development domain, so SDK initialization is allowed and analytics are suppressed for local QA.");
     } else {
@@ -8399,7 +8421,11 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     push("polish_skill", "skill", "next-campaigns-polish", "Run the visual polish pass, capture desktop/mobile evidence, then record stages.polish in the assembly report.");
     if (polishCheckpointGate?.status === "blocked") pushPolishCheckpointActions();
   } else if (result.stage === "deploy") {
-    push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"}, then record deploy.preview_url (or production_url) on the packet and stages.deploy in the assembly report.`);
+    if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
+      push("deploy", "manual", null, "Serve the built _site/ output locally (deploy.target is local-serve), then record the localhost URL on deploy.preview_url and stages.deploy in the assembly report. Localhost on any port is a Development domain: SDK allowed, analytics suppressed.");
+    } else {
+      push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"}, then record deploy.preview_url (or production_url) on the packet and stages.deploy in the assembly report.`);
+    }
     push("advance", "command", `campaigns-os next --packet ${packetPath} --json`, "Advance to QA once the deploy URL is recorded.");
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
@@ -8595,6 +8621,24 @@ If report.theme/context.theme exists, verify source token parity for primary col
 function deployPrompt(packetPath, reportPath, packet) {
   const target = packet.deploy?.target || "unknown";
   const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || campaignRouteRoot(packet) || "/<slug>/";
+  if (target === LOCAL_SERVE_DEPLOY_TARGET) {
+    return `Deploy the built campaign by serving it locally (deploy.target is local-serve).
+
+Read first:
+- Build Packet: ${packetPath}
+- Assembly Report: ${reportPath}
+- Expected live URL path: ${liveUrlPath}
+- Deploy target: ${target}
+
+Nothing ships anywhere: the page-kit build produces _site/ output and you serve that directory on localhost (any static server, any port) for QA. Localhost on any port is a Campaigns App Development domain, so the SDK initialises there without an origin allowlist entry and Campaigns analytics events are suppressed.
+
+Once the server is up:
+1. Record the localhost URL (origin plus ${liveUrlPath}) on the packet at deploy.preview_url.
+2. Update the assembly report's stages.deploy.status to "completed" with that URL and the serve command in outputs.
+3. Run \`campaigns-os next --packet ${packetPath}\` to advance to QA.
+
+If the served build cannot be reached, set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
+  }
   return `Deploy the built campaign to ${target}.
 
 Read first:
@@ -10598,12 +10642,16 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     record.remit_ok = null;
     record.remit_error = null;
     record.remit_endpoint = null;
+    record.remit_result = null;
+    record.remit_base_kind = null;
   } else if (carriedForward) {
     record.remit_state = carriedForward.state;
     record.remit_attempted = carriedForward.attempted;
     record.remit_ok = carriedForward.ok;
     record.remit_error = carriedForward.error;
     record.remit_endpoint = carriedForward.endpoint;
+    record.remit_result = carriedForward.result;
+    record.remit_base_kind = carriedForward.base_kind;
   }
 
   const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
@@ -10639,6 +10687,10 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     // threw: `already_stored` (409) and `ok_unparsed_ack` (a 2xx whose body was
     // not JSON) are ok states; only a refusal or a transport failure is failed.
     record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
+    // The classification and the resolved base ride on the record itself, so
+    // a stored or re-read record says what its receiver answered and where.
+    record.remit_result = remitStatus.attempted ? remitStatus.result : null;
+    record.remit_base_kind = remitStatus.attempted ? remitBaseKind : null;
   }
 
   if (write) writeRunRecord(record, { baseDir });
@@ -10717,18 +10769,9 @@ function priorRemitOutcome(record) {
     ok: typeof record.remit_ok === "boolean" ? record.remit_ok : null,
     error: optionalString(record.remit_error) || null,
     endpoint: optionalString(record.remit_endpoint) || null,
+    result: optionalString(record.remit_result) || null,
+    base_kind: optionalString(record.remit_base_kind) || null,
   };
-}
-
-// Where a remit resolves to, as a kind rather than a host: the canonical
-// endpoint, a loopback receiver, or some other proxy the operator named.
-function describeRemitBaseKind(proxyBase) {
-  if (normalizeConsentScope(proxyBase) === CANONICAL_REMIT_SCOPE) return "canonical";
-  try {
-    return isLoopbackHostname(new URL(String(proxyBase)).hostname) ? "loopback" : "proxy";
-  } catch {
-    return "proxy";
-  }
 }
 
 // The one-line reading of an attempted remit for the text output: ok states

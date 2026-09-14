@@ -399,8 +399,6 @@ try {
   const policy = runCliJson([
     "qa", "policy", "set",
     "--packet", policyPacketPath,
-    "--test-orders-allowed", "true",
-    "--sandbox-test-card-confirmed", "true",
     "--allowed-domains-confirmed", "true",
     "--preview-url", "https://deploy-preview.example.com/runtime-packet-demo/",
     "--production-url", "https://preview.example.com/runtime-packet-demo/",
@@ -414,8 +412,8 @@ try {
     throw new Error("qa policy set should report changed fields.");
   }
   const updated = readJson(policyPacketPath);
-  if (updated.qa?.test_orders_allowed !== true || updated.qa?.sandbox_test_card_confirmed !== true) {
-    throw new Error("qa policy set should persist QA test-order flags.");
+  if ("test_orders_allowed" in (updated.qa || {}) || "sandbox_test_card_confirmed" in (updated.qa || {})) {
+    throw new Error("qa policy set must not write the removed qa.test_orders_allowed / qa.sandbox_test_card_confirmed fields.");
   }
   if (updated.campaign?.allowed_domains_confirmed !== true) {
     throw new Error("qa policy set should persist campaign allowed-domain confirmation.");
