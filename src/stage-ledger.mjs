@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
 
 function nonEmptyStrings(values) {
@@ -202,4 +205,118 @@ export function recordProducerStageOutcome(report, {
   stages[stage] = next;
   updated.stages = stages;
   return updated;
+}
+
+function optionalString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * True when `report` is this packet's Assembly Report: the identity block
+ * names the packet's map id and public route slug (both absent on both sides
+ * also matches — a report with no identity belongs to a packet with none).
+ */
+export function assemblyReportMatchesPacket(report, packet) {
+  return isPlainObject(report)
+    && optionalString(report?.identity?.map_id) === optionalString(packet?.spec?.map_id)
+    && optionalString(report?.identity?.public_route_slug) === optionalString(packet?.campaign?.public_route_slug);
+}
+
+/**
+ * One commit of an edit to the Assembly Report a campaign workspace binds,
+ * with the retained doctor sidecar kept honest about it in the same step.
+ *
+ * `workspace` is `resolveCampaignWorkspace(...)`'s result (or any object with
+ * `packet`, `reportPath`, `doctorOutPath`, `targetRepo`). The report is read
+ * from `reportPath`, `mutate(report)` returns the report to write — or `null`
+ * to leave the file's bytes alone (a re-run that restates what is already on
+ * disk, so every digest taken of the file stays valid) — and the write is
+ * atomic (tmp + rename), so a concurrent reader never sees a torn report.
+ * `null` means the same for an operator edit: nothing to write, so nothing
+ * to stamp stale — an edit that finds its change already recorded is a
+ * no-op, not an error.
+ *
+ * Exactly one doctor-freshness strategy is named:
+ *
+ * - `refreshDoctor(outcome)`: the caller recomputes doctor state (or already
+ *   has it) and the sidecar at `doctorOutPath` is rewritten wholesale from
+ *   what it returns, which also clears any stale stamp; return `null` to
+ *   leave the sidecar as it is. It runs whether or not the report was
+ *   written, because a producer that found nothing new to restate still
+ *   holds current doctor state.
+ * - `staleReason` (+ `command`): the edit changes what doctor would conclude
+ *   without recomputing it, so the retained sidecar under `targetRepo`, if
+ *   any, is stamped stale — only when the report was actually written.
+ *
+ * `stage`: a producer (`"doctor"` | `"qa"`) restating its outcome. The write
+ * is skipped when the mutated report differs from disk only in that stage's
+ * timestamps (`producerStageOutcomeUnchanged`), and the report must be this
+ * packet's (`assemblyReportMatchesPacket`) or the edit is skipped — a
+ * producer never restates its outcome into another campaign's report, and
+ * an absent report is likewise a skip rather than an error, since a producer
+ * without a ledger still has a sidecar to keep current. Operator edits
+ * (waivers, evidence merges) pass no `stage`: they require the report to
+ * exist and bind its identity themselves.
+ *
+ * Returns `{ written, skipped, report, reportPath, doctorOutPath }` where
+ * `skipped` is `null`, `"absent"`, `"identity"` or `"unchanged"` and `report`
+ * is what is now on disk (the mutated report when written, else the one read,
+ * else `null`).
+ */
+export function commitAssemblyReport(workspace, mutate, {
+  refreshDoctor = null,
+  staleReason = null,
+  command = null,
+  stage = null,
+} = {}) {
+  const hasRefresh = typeof refreshDoctor === "function";
+  const hasStale = typeof staleReason === "string" && staleReason.trim();
+  if (hasRefresh === Boolean(hasStale)) {
+    throw new TypeError("commitAssemblyReport requires exactly one of refreshDoctor (a function) or staleReason (a string).");
+  }
+  if (hasStale && !optionalString(command)) {
+    throw new TypeError("commitAssemblyReport requires command with staleReason: the stale stamp names the command that made it.");
+  }
+  if (stage !== null && !PRODUCER_STAGES.has(stage)) throw new Error("Producer stage must be doctor or qa.");
+  if (typeof mutate !== "function") throw new TypeError("commitAssemblyReport requires a mutate(report) function.");
+  const reportPath = optionalString(workspace?.reportPath);
+  const doctorOutPath = optionalString(workspace?.doctorOutPath);
+  const targetRepo = optionalString(workspace?.targetRepo);
+  if (!reportPath) throw new TypeError("commitAssemblyReport requires a workspace with reportPath.");
+  if (hasRefresh && !doctorOutPath) throw new TypeError("commitAssemblyReport requires a workspace with doctorOutPath to refresh the doctor sidecar.");
+  if (hasStale && !targetRepo) throw new TypeError("commitAssemblyReport requires a workspace with targetRepo to stamp the doctor sidecar stale.");
+
+  const outcome = { written: false, skipped: null, report: null, reportPath, doctorOutPath };
+  const finish = () => {
+    if (hasRefresh) {
+      const doctor = refreshDoctor(outcome);
+      if (doctor !== null && doctor !== undefined) writeJsonAtomic(doctorOutPath, doctor);
+    } else if (outcome.written) {
+      markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim() });
+    }
+    return outcome;
+  };
+
+  if (!existsSync(reportPath)) {
+    if (stage) {
+      outcome.skipped = "absent";
+      return finish();
+    }
+    throw new Error(`Assembly Report not found at ${reportPath}; run prepare-build/start first.`);
+  }
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  outcome.report = report;
+  if (stage && !assemblyReportMatchesPacket(report, workspace?.packet)) {
+    outcome.skipped = "identity";
+    return finish();
+  }
+  const next = mutate(report);
+  if (next === null || next === undefined || (stage && producerStageOutcomeUnchanged(report, next, stage))) {
+    outcome.skipped = "unchanged";
+    return finish();
+  }
+  writeJsonAtomic(reportPath, next);
+  outcome.written = true;
+  outcome.report = next;
+  return finish();
 }

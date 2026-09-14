@@ -12,6 +12,7 @@ import test from "node:test";
 
 import { formatPolishCaptureText, main, polishCaptureCommand } from "./cli.mjs";
 import { createCheckpointWaiver } from "./checkpoint-waiver.mjs";
+import { evaluateRecordedHiddenEagerMediaCheckpoint, mergePolishPageLoadEvidence } from "./polish-node.mjs";
 
 const EXAMPLES = new URL("../examples/", import.meta.url);
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
@@ -120,6 +121,13 @@ function blockingAdapter() {
       };
     },
     async close() {},
+  });
+}
+
+function checkpointOnLatestReport(f, capture, latest) {
+  return evaluateRecordedHiddenEagerMediaCheckpoint({
+    packet: readJson(f.packetPath),
+    report: mergePolishPageLoadEvidence(latest, capture.page_load),
   });
 }
 
@@ -265,6 +273,36 @@ test("polish capture text bounds incomplete cells, problem codes, reasons, and a
   assert.match(output, /Checkpoint: Package-owned page-load capture is incomplete/);
   assert.match(output, /campaigns-os polish capture --packet <packet> --base-url <url>/);
   assert.doesNotMatch(output, /PRIVATE|private=|token=secret|curl/);
+});
+
+test("polish capture text drops non-string, oversized and non-exact failed origins without throwing", () => {
+  const output = formatPolishCaptureText({
+    status: "ready",
+    measurement: {
+      status: "complete",
+      incomplete: [],
+      warnings: [{
+        route: "/landing/",
+        viewport: "desktop",
+        problem_codes: ["cross_origin_request_failed"],
+        resource_types: ["ping"],
+        failed_origins: [
+          null,
+          42,
+          { origin: "https://object.example.invalid" },
+          "https://Mixed-Case.example.invalid",
+          `https://${"a".repeat(2_048)}.invalid`,
+          "https://attribution.example.invalid",
+        ],
+        failed_origin_count: 6,
+      }],
+    },
+    checkpoint: { code: "polish.hidden_eager_media.pass", findings: [], required_actions: [] },
+    observed_findings: [],
+  });
+
+  assert.match(output, /Failed origins: https:\/\/attribution\.example\.invalid \(1 shown of 6\)/);
+  assert.doesNotMatch(output, /Mixed-Case|object\.example|aaaa/);
 });
 
 test("polish capture text prints non-blocking capture warnings with safe origins only", () => {
@@ -522,9 +560,10 @@ test("polish capture evaluates concurrent exact waiver additions from the report
     const result = await polishCaptureCommand(commandArgs(f), {
       createBrowserAdapter: blockingAdapter(),
       async afterCapture({ capture }) {
-        assert.equal(capture.checkpoint.status, "blocked");
         const latest = readJson(f.reportPath);
-        latest.waivers = [createCheckpointWaiver(capture.checkpoint, {
+        const checkpoint = checkpointOnLatestReport(f, capture, latest);
+        assert.equal(checkpoint.status, "blocked");
+        latest.waivers = [createCheckpointWaiver(checkpoint, {
           reason: "Approved campaign-specific launch exception",
           waivedBy: "Jordan Lee",
           now: "2026-08-20T00:00:00.000Z",
@@ -561,8 +600,8 @@ test("polish capture evaluates concurrent waiver removal from the report snapsho
     const result = await polishCaptureCommand(commandArgs(f), {
       createBrowserAdapter: blockingAdapter(),
       async afterCapture({ capture }) {
-        assert.equal(capture.checkpoint.status, "waived");
         const latest = readJson(f.reportPath);
+        assert.equal(checkpointOnLatestReport(f, capture, latest).status, "waived");
         latest.waivers = [];
         writeJson(f.reportPath, latest);
       },
