@@ -42,8 +42,9 @@ export function resolveStarterTemplatesRoot(root) {
 // usually somewhere else on its history, so a check that read its HEAD would
 // be validating partials CI never sees. Without an override, a sibling that
 // is not at the pin is read at the pin through `git archive` (its working
-// tree is never touched); only when that commit is not available locally
-// does the sibling's own tree stand in, and the caller says so loudly.
+// tree is never touched), and so is a sibling at the pin whose src/ carries
+// local edits or untracked files; only when that commit is not available
+// locally does the sibling's own tree stand in, and the caller says so loudly.
 //
 // Returns { path, kind, pinSha, headSha, reason, cleanup } where kind is one of
 // override | sibling_at_pin | pinned_archive | sibling_unpinned | sibling
@@ -58,7 +59,20 @@ export function resolveStarterTemplatesSource(root, { pinSha = null } = {}) {
   } catch {
     return result;
   }
-  if (result.headSha === pinSha) return { ...result, kind: "sibling_at_pin" };
+  // A sibling at the pin is used in place only when its src/ is exactly the
+  // commit: local edits or untracked files there would otherwise pass as the
+  // pinned source. Anything else is read from the commit itself.
+  if (result.headSha === pinSha) {
+    try {
+      const dirty = execFileSync("git", ["-C", path, "status", "--porcelain", "--untracked-files=all", "--", "src"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (dirty === "") return { ...result, kind: "sibling_at_pin" };
+    } catch {
+      // Fall through to the archive: the commit is the authority either way.
+    }
+  }
   const work = mkdtempSync(join(tmpdir(), "starter-templates-pin-"));
   try {
     const archive = join(work, "src.tar");

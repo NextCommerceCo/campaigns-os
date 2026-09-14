@@ -28,6 +28,7 @@ if (args.length && (args.length !== 1 || args[0] !== "--skip-prepare")) {
 const skipPrepare = args[0] === "--skip-prepare";
 const workingDist = ["campaign-spec/dist/index.js", "campaign-spec/dist/index.d.ts"].map((rel) => join(ROOT, rel));
 let distMtimeBeforePack = null;
+const distBeforePack = new Map();
 if (skipPrepare) {
   // --ignore-scripts suppresses all pack hooks, not just prepare. Fail closed
   // if future packaging starts depending on a hook this fast path would omit.
@@ -40,8 +41,10 @@ if (skipPrepare) {
     if (!existsSync(path)) fail(`${path.slice(ROOT.length + 1)} missing from the working tree; --skip-prepare packs the build the pipeline already made`);
   }
   // npm before 11 (pacote < 21) runs the prepare script during `npm pack` even
-  // under --ignore-scripts. Record the build's mtime so a re-run is reported
-  // instead of silently compiling a second time behind the flag's back.
+  // under --ignore-scripts, overwriting the working-tree build on the way.
+  // Snapshot the pipeline's build now so the tarball is compared against what
+  // the suite actually ran on, and so a re-run is reported rather than hidden.
+  for (const path of workingDist) distBeforePack.set(path, readFileSync(path));
   distMtimeBeforePack = statSync(workingDist[0]).mtimeMs;
 }
 
@@ -56,18 +59,19 @@ try {
   execFileSync("tar", ["-xzf", tarball, "-C", work]);
   const pkgRoot = join(work, "package");
   if (skipPrepare) {
-    // Honesty of the fast path: what got packed is the working tree's build,
-    // byte for byte, whether or not npm rebuilt it on the way.
-    for (const path of workingDist) {
+    // Honesty of the fast path: what got packed is the build the pipeline
+    // already tested, byte for byte, compared against the snapshot taken
+    // before npm had any chance to rebuild it.
+    for (const [path, before] of distBeforePack) {
       const rel = path.slice(ROOT.length + 1);
       if (!existsSync(join(pkgRoot, rel))) fail(`${rel} missing from tarball`);
-      if (!readFileSync(path).equals(readFileSync(join(pkgRoot, rel)))) fail(`packed ${rel} differs from the working-tree build`);
+      if (!before.equals(readFileSync(join(pkgRoot, rel)))) fail(`packed ${rel} differs from the build the pipeline already made`);
     }
     if (statSync(workingDist[0]).mtimeMs !== distMtimeBeforePack) {
       const npmVersion = execFileSync("npm", ["--version"], { encoding: "utf8" }).trim();
       console.warn(
         `pack check note: npm ${npmVersion} re-ran the prepare script during npm pack despite --ignore-scripts ` +
-          `(npm before 11 does not honour it for prepare), so build:spec ran a second time; its output matched the working-tree build. ` +
+          `(npm before 11 does not honour it for prepare), so build:spec ran a second time; its output matched the build the pipeline already made. ` +
           `npm 11+ packs the prior build without rebuilding.`,
       );
     }

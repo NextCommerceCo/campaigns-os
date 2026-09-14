@@ -65,12 +65,24 @@ test("a sibling ahead of the catalog pin is read at the pin without touching its
   assert.equal(existsSync(source.path), false);
 });
 
-test("a sibling already at the pin is used in place", (t) => {
+test("a sibling already at the pin with a clean src/ is used in place", (t) => {
   withoutOverride(t);
   const { root, sibling, headSha } = makeWorkspace(t);
   const source = resolveStarterTemplatesSource(root, { pinSha: headSha });
   assert.equal(source.kind, "sibling_at_pin");
   assert.equal(source.path, sibling);
+});
+
+test("a sibling at the pin with local edits under src/ is read from the commit, not the working tree", (t) => {
+  withoutOverride(t);
+  const { root, sibling, headSha } = makeWorkspace(t);
+  writeFileSync(join(sibling, "src/partial.html"), "edited locally\n");
+  writeFileSync(join(sibling, "src/untracked.html"), "untracked\n");
+  const source = resolveStarterTemplatesSource(root, { pinSha: headSha });
+  t.after(() => source.cleanup());
+  assert.equal(source.kind, "pinned_archive");
+  assert.equal(readFileSync(join(source.path, "src/partial.html"), "utf8"), "ahead\n");
+  assert.equal(existsSync(join(source.path, "src/untracked.html")), false);
 });
 
 test("a pin the sibling does not have falls back to the sibling and says why", (t) => {
