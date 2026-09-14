@@ -2819,20 +2819,80 @@
       "date": "2026-09-14",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.27.0+agent.23",
-      "changelog_sha256": "64eaae2a8dfe67b43d2f1c2e6fbef5a169938a10440188b8ecb7ff015cf040d4",
-      "agent_impact": "One doctor output changes. The warning spec.store_profile.payment_methods_default_on no longer appears once the CampaignSpec's checkout page is built under _site/<public_route_slug>/ and that page carries no markup for the unsupported methods; a ready note 'Built checkout carries no <methods> payment-method markup (<file>)' appears instead (followed by '; left to browser QA: shared chrome asset(s) <basenames>' and/or 'compound selector(s) <selectors>' when the family contract has payment chrome a static scan cannot attribute), and status/exit for a run whose only warning was this one moves from ready_with_warnings to ready. When the built checkout does carry the markup, the warning keeps its code, its message starts 'Built checkout still renders <methods>' and names each file and the markers found, and it now carries a detail object: basis 'built_output', methods[], template_family, pages[] ({ page_id, file, method, markers[] }), static_scan_gaps { compound_selectors[], shared_assets[] }, repair { owner, action, include_call }. Before a build the warning keeps its code with a new message (pass show_<method>=false on the checkout page's payment-methods.html include call; the old text said to remove show_* arguments that do not exist) and a detail object with basis 'spec_only', methods[], template_family and repair. An agent that repairs from this warning should read detail.repair.include_call and detail.methods instead of parsing the message. Severity is unchanged: still a warning, never an error. No other doctor field, note, warning or exit path changes; --json and text output for every other check are byte-identical.",
+      "changelog_section": "1.27.0+agent.19",
+      "changelog_sha256": "0976c46bdc2eb771557ff7843b7d54a29b822c514005468d22b7d1f996fe7821",
+      "agent_impact": "run-record's remit outcome is now classified by the receiver's HTTP status. A 409 (the receiver already holds this run_id) is an ok outcome: the record stays remit_state \"ok\" with remit_error null, where it used to become \"failed\" with \"Remit POST failed: 409 Conflict ...\". A 2xx whose body is not JSON is ok with remit_error \"Remit POST <status>: acknowledged with a body that is not JSON: <excerpt>\"; any other non-2xx is failed with remit_error \"Remit POST <status>: <statusText> <body>\" (the \"Remit POST failed:\" prefix is gone from records). run-record --json (and run end --json, which returns the same summary) gains a top-level \"remit\" object: result (stored | already_stored | ok_unparsed_ack | refused | transport_error for this run's send | not_contacted for a record already ok on disk | null when nothing was sent), http_status, base_kind (canonical | loopback | proxy), sent, preserved. A re-run under a run_id whose record is already remit_state \"ok\" (and passes the Run Record validator; an invalid file is replaced) no longer rewrites or re-sends it: the summary is written: false, record_path and record are the existing file, remit.result \"not_contacted\", remit.http_status null, remit.sent false; the text output is \"Run Record already closed and remitted for run <id>; left as written.\" A --no-remit or consent-off re-run over a failed or pending remit keeps that outcome (remit.preserved true) instead of writing \"skipped\". The text \"Remit:\" line for an attempted send now ends with \"[base: <kind>]\". The body POSTed to the receiver carries remit_state \"ok\", remit_attempted true, remit_ok true, remit_endpoint \"/api/runs\" instead of the pending sentinel. telemetry list now exits non-zero when a 2xx body has no runs[] (\"telemetry list: <status> <statusText> from <url> is not a Run Record listing (no runs[] in the body): ...\"), where it used to print an empty listing and exit 0. The run_record_remit_recovery action text changed. The Run Record schema is unchanged.",
       "compatibility": "compatible",
-      "migration": "None. A consumer that keyed on the old message text 'remove the show_* arg(s)' should key on the code and read detail.basis / detail.repair.include_call.",
+      "migration": "None. An agent that treated remit_state \"failed\" with a 409 error as a recovery trigger will now see \"ok\"; one that parsed remit_error for the \"Remit POST failed:\" prefix should read remit_state and, in --json output, remit.result instead. An agent that expected telemetry list to exit 0 on any 2xx must handle a non-zero exit for a body without runs[].",
       "changes": [
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
-          "surface_entry": "doctor",
-          "summary": "validateSpecStoreProfile(spec, errors, warnings, ready, { packet, derived, buildState }) reads the built checkout page(s) under _site/<slug>/ for unsupported-method markup via paymentMethodMarkupMatches and the family's payment_chrome contract, silencing spec.store_profile.payment_methods_default_on when none shipped (the ready note names the shared assets / compound selectors left to browser QA via paymentMethodStaticScanGaps) and stating built evidence (detail.basis built_output, pages[], static_scan_gaps) when it did; the pre-build warning names the family, says to pass show_<method>=false on the payment-methods.html include call, and carries detail.basis spec_only, methods[], template_family, repair. STARTER_TEMPLATE_DEFAULT_ON_PAYMENT_METHODS is exported."
+          "surface_entry": "run-record",
+          "summary": "runRecordCommand reads and validates the record already on disk under the run_id before writing: a valid ok record is left as written and not re-sent (written: false, remit.result not_contacted); a failed or pending one is retried when the run may send and carried forward when it may not. The remit outcome is stamped from remitRunRecord's status-classified result (409 = already_stored, non-JSON 2xx = ok_unparsed_ack), the --json summary gains remit { result, http_status, base_kind, sent, preserved }, the text Remit: line names the 409 / non-JSON cases and ends with [base: <kind>], and the run_record_remit_recovery action text says a held send resolves to ok."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "telemetry",
+          "summary": "telemetry list throws (exit non-zero) when a 2xx body carries no runs[] array, naming the status, the URL and a body excerpt, instead of printing an empty listing."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Remit Channel documents the status-based classification (already_stored, ok_unparsed_ack, refused, transport_error), the never-downgrade rule for re-runs, the stamped stored copy, and telemetry list's runs[] requirement; Closeout recognition's recovery paragraph no longer claims a failed remit left nothing stored."
         }
       ],
-      "entry_sha256": "22a77a3e906509b2dfdec6738aa2a604ea792b54a4805d74ed53b6fc2bce1b61"
+      "entry_sha256": "5c47ec2406fad74fd49e937d7af2fb8e63c75f37b4f2c361fd6a35f7b2ea0814"
+    },
+    {
+      "id": "RL-0077",
+      "sequence": 77,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.20",
+      "changelog_sha256": "ec79a1753dae6d22825fc6aeec786ca2fa358b4e7dd5a26f19f5497844ec89ac",
+      "agent_impact": "run start --packet <p> now opens the run session in the packet's target repo (assembly.target_repo resolved from the packet's directory, else that directory) regardless of cwd, and writes the managed .gitignore block there. The `Lifecycle journal:` line and the --json `session_path` / `session.lifecycle_journal` fields name the target, not cwd. An agent that started a session from the toolkit or another project and then ran `run status` in the target (previously `No active run session.`) or `run end --packet <p>` from the starting directory (previously refused with `Conflicting active run session: cwd selects <run_id>, but packet <p> has no matching active target session`) now gets the session and a clean close. The stale-session sweep behind run start / run end uses the same root, so `run end --packet <p>` from any cwd closes out a stale target session (`Stale run session <run_id> closed out \u2026`) where it previously failed with `No active run session to end.` Bare run start / run end without --packet are unchanged (cwd). An agent that relied on the starting directory holding the session file or the ignore block must read them from the packet's target repo. A --packet that exists but cannot be parsed is refused by run start / run end with `--packet <p> could not be read as a build packet (<parse error>)\u2026` (exit 1) instead of silently opening a session on the packet's directory; a packet not written yet still roots on its directory with the `does not exist yet` warning. The session's `packet` field is stored in canonical (symlink-resolved) form. Text-mode run start --packet now prints `Finish with: campaigns-os run end --packet <p>` (the packet path, usable from any cwd) instead of a bare `run end`. A --packet path that is not a readable file is refused as `could not be read (<OS error>)`.",
+      "compatibility": "compatible",
+      "migration": "None for the documented flow (start or run start at the target, then commands by --packet). An agent that ran `run start --packet` from a directory other than the target and then looked for .campaign-runtime/run-session.json or the managed .gitignore block in that directory should look in the packet's target repo instead.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "run start --packet and run end --packet resolve their project root through targetRepoFor(packet) (src/campaign-workspace.mjs) instead of process.cwd(): the session, its lifecycle journal, the managed .gitignore block and the stale-session sweep all land in the packet's target repo; the bare forms keep cwd. An existing but unparsable packet is refused with a named diagnostic; the stored session packet is canonicalised like the root. Text-mode run start --packet advertises `run end --packet <p>`."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Run Sessions: run start --packet roots the session and the ignore block in the packet's target repo from any cwd; --packet associates run end as well as run status with the target session; the stale sweep root for run start / run end is the --packet's target repo, else cwd. An unparsable packet is refused, a not-yet-written one roots on its directory."
+        }
+      ],
+      "entry_sha256": "2f1aa1629958fcb93b696f8bc9a7130446f156feecf708557cc1d79980448650"
+    },
+    {
+      "id": "RL-0078",
+      "sequence": 78,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.21",
+      "changelog_sha256": "06266d545b2579b336acb060e6d80fc30c7c5ab030ea0bc0c6564dd0406d03c7",
+      "agent_impact": "One new value in the QA verdict's cause_summary.comparison and per-assertion cause_reason: prior_run_verdict_unlocated, emitted when the previous Run Record references its QA verdict as external:qa_verdict and no verdict matching that reference could be located under the target repo's qa-output/ \u2014 nothing there hashes to the recorded sha256, the reference carries no digest, or no target repo was known to search (the committed .campaign-runtime/qa-verdict.json sidecar is not consulted: a projection cannot be tied to the referenced attempt). Where a second qa run on a packet whose assembly.target_repo is not the packet directory previously reported comparison prior_run_without_qa_verdict and labelled every finding unknown, it now reports prior_run with pre_existing / caused_by_change labels. prior_run_without_qa_verdict now means only that the record carries no qa_verdict artifact reference. An agent switching on cause_reason should treat prior_run_verdict_unlocated like the other prior_run_* reasons: a previous record exists, its evidence could not be read, a re-run will not change that.",
+      "compatibility": "additive",
+      "migration": "None. A consumer with a closed list of cause_reason / comparison values adds prior_run_verdict_unlocated.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The comparison rule now states how an external:qa_verdict reference is resolved (by digest under the target repo's qa-output/; the committed sidecar is stated not to be a stand-in, and why), and the cause_reason table gains prior_run_verdict_unlocated with the sharpened meanings of prior_run_without_qa_verdict and prior_run_verdict_unreadable."
+        }
+      ],
+      "entry_sha256": "9869e5eea619076f6c82e03f98019a4ca92941413739df362d73b580a34a18bb"
     }
   ]
 }

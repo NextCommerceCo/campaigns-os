@@ -438,6 +438,15 @@ Exactly one comparison, against exactly one earlier run:
    reintroduced now, as pre-existing. The last reference is the verdict the
    run actually closed on. This does not widen the boundary — it is still the
    final attempt of exactly one earlier run, never a merged view across runs.
+   When that reference is `external:qa_verdict` — the record's spelling for a
+   verdict written outside the packet directory, the ordinary case whenever
+   `assembly.target_repo` is not the packet's own directory — the verdict is
+   located by its recorded digest under the target repo's `qa-output/`. The
+   committed `.campaign-runtime/qa-verdict.json` sidecar is not a stand-in:
+   it is a projection, so its digest cannot match, and the record stores no
+   verdict run id to tie it to the referenced attempt — comparing against a
+   projection of some other attempt would report a reintroduced finding as
+   pre-existing.
    For doctor, from the Run Record's `observations.doctor.error_codes` /
    `warning_codes`.
 3. **Classify.** Environment and upstream drift are decided first, from the
@@ -461,11 +470,12 @@ violations sharing a code are one finding to this comparison.
 | `cause_reason` | What happened |
 |---|---|
 | `no_prior_run` | No Run Record for this campaign under the packet directory — including every packet-less run (`--site`, a raw map id), which has no Run Record home. |
-| `prior_run_without_qa_verdict` | The previous Run Record references no QA verdict artifact. |
-| `prior_run_verdict_unreadable` | It references one, but the file is gone or unparseable. |
+| `prior_run_without_qa_verdict` | The previous Run Record carries no QA verdict artifact reference at all. |
+| `prior_run_verdict_unreadable` | It references one by path, but the file is gone or unparseable. |
+| `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, but no verdict matching that reference could be located under the target repo's `qa-output/` — nothing there hashes to the recorded digest, the reference carries no digest, or no target repo was known to search. |
 | `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
 
-Only the first of those means "run again and it will improve". The other three
+Only the first of those means "run again and it will improve". The other four
 say a previous Run Record **does** exist and its evidence is missing or
 unreadable, which a second run will not fix on its own — so the report names
 that record rather than telling you to wait for one.

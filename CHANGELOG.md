@@ -2,6 +2,86 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.21] - 2026-09-14
+
+### Fixed
+
+- `qa run` now compares against the previous run when that run's QA verdict
+  lives outside the packet directory. Whenever `assembly.target_repo` is not
+  the packet's own directory, `qa run` writes the full verdict under
+  `<target repo>/qa-output/<identifier>/` and the Run Record, relativizing
+  against the packet directory, references it only as `external:qa_verdict`
+  plus the file's digest. The cause classifier treated that reference as no
+  reference: every finding on the second run was `unknown` with
+  `cause_reason: prior_run_without_qa_verdict`, and the report said
+  `Previous run <id> exists but references no QA verdict`, which was false.
+  The classifier now resolves an external reference by its recorded digest
+  under the target repo's `qa-output/`, so the second run reports
+  `Comparison basis` as `prior_run` and labels carried-over findings
+  `pre_existing` — the same result a packet at the target root already got.
+- The committed `<packet dir>/.campaign-runtime/qa-verdict.json` sidecar is
+  deliberately not a stand-in when that full verdict is gone: it is a
+  projection, so its digest cannot match, and the Run Record stores no
+  verdict run id to tie it to the referenced attempt, so any looser rule
+  could compare against a projection of a different attempt and report a
+  reintroduced finding as pre-existing.
+- New `cause_reason` / `comparison` value `prior_run_verdict_unlocated`: the
+  previous Run Record references a verdict as `external:qa_verdict` and no
+  verdict matching that reference could be located under the target repo's
+  `qa-output/` (nothing there hashes to the recorded digest, the reference
+  carries no digest, or no target repo was known to search). Its report line
+  says so, and is worded to be true in all three cases. `prior_run_without_qa_verdict` now means exactly what it
+  says — the record carries no `qa_verdict` artifact reference at all — and
+  `prior_run_verdict_unreadable` keeps its meaning for a by-path reference
+  whose file is missing or unparseable. `docs/qa-and-test-orders.md` lists
+  the four reasons.
+- `annotateQaAssertionCauses` / `loadPriorQaVerdict` accept `targetRepo`;
+  `qa run` passes the packet's resolved target repo. Doctor cause labels,
+  which read the record's own observations, are unchanged.
+
+## [1.27.0+agent.20] - 2026-09-14
+
+### Changed
+
+- `run start --packet <p>` opens the session in the packet's target repo
+  (`assembly.target_repo` resolved from the packet's directory, else that
+  directory) from any cwd, the root the auto-opener behind `start` /
+  `prepare-build` already uses. It used to open the session at cwd and only
+  remember the packet, so a session started from the toolkit or an unrelated
+  project was found from that directory alone: `run status` at the target
+  said `No active run session.`, and `run end --packet <p>` from the starting
+  directory was refused with `Conflicting active run session: cwd selects
+  <run_id>, but packet <p> has no matching active target session`. Now
+  `run status` at the target reports it and `run end --packet <p>` closes it
+  from anywhere; `Lifecycle journal:` and `session_path` name the target.
+- The managed `.gitignore` block `run start --packet` writes goes to that
+  target repo, not to cwd. An unrelated starting directory no longer gains a
+  `.gitignore` (or a `.campaign-runtime/`) it did not have.
+- The stale-session sweep for `run start` / `run end` runs at the same root:
+  the `--packet`'s target repo when given, cwd otherwise. A stale session in
+  the target is closed out by `run end --packet <p>` from any cwd and
+  reported as `Stale run session <run_id> closed out …`, where before the
+  command failed with `No active run session to end.`
+- Bare `run start` / `run end` (no `--packet`) are unchanged: cwd. A
+  `--packet` that is not written yet roots on its own directory and still
+  prints the `does not exist yet` warning.
+- A `--packet` that exists but cannot be parsed is refused by `run start` /
+  `run end` with `--packet <p> could not be read as a build packet (<parse
+  error>); the run session roots on its assembly.target_repo. Fix or re-point
+  the packet, then retry.` (exit 1, nothing opened anywhere); a path that is
+  not a readable file (a directory, no permission) is refused the same way
+  as `could not be read (<OS error>)`. It used to open
+  the session silently on the packet's directory, where no later command run
+  by that packet would find it once it parsed again and named another target.
+- The session records the packet in canonical form (symlinks resolved, the
+  form the root is derived from), so the Run Record `run end` assembles lands
+  beside the real packet rather than in a link's directory.
+- `run start --packet <p>` text output advertises a close that works from
+  where it was run: `Finish with: campaigns-os run end --packet <p>` (before:
+  `Finish with: campaigns-os run end`, which from a cwd other than the target
+  fails with `No active run session to end.`), and the auto-log line names
+  the session's directory and the `--packet` form instead of `this project`.
+
 ## [1.27.0+agent.15] - 2026-09-14
 
 ### Changed
@@ -498,6 +578,58 @@ Notable supported-surface changes are recorded here.
   reads the built checkout with, and `paymentMethodStaticScanGaps(chrome,
   method)` names the compound selectors and shared assets that matcher
   leaves to browser QA. Browser QA's residue assertions are unchanged.
+## [1.27.0+agent.19] - 2026-09-14
+
+### Fixed
+
+- A remit answered **409** by the receiver is read as `already_stored` — the
+  receiver holds this `run_id`, which is what the send was for — and the Run
+  Record stays `remit_state: "ok"`. It used to be stamped `failed` with
+  `Remit POST failed: 409 Conflict {"error":"run_record_conflict"}`, and the
+  `run_record_remit_recovery` action `next` then printed re-sent the same
+  record into the same 409 on every run. A 2xx whose body is not JSON is
+  `ok` with `remit_error` `Remit POST <status>: acknowledged with a body that
+  is not JSON: <excerpt>` (it used to be `failed` with a bare `Unexpected
+  token` parse error). Any other non-2xx is `failed` with `Remit POST
+  <status>: <statusText> <body>`. `run-record --json` gains a `remit` object
+  beside the record — `result` (`stored`, `already_stored`,
+  `ok_unparsed_ack`, `refused`, `transport_error` for this run's send,
+  `not_contacted` for a record already `ok` on disk, or null when nothing was
+  sent), `http_status`, `base_kind` (`canonical`, `loopback`, `proxy` — never
+  the host), `sent`, `preserved` — and the text `Remit:` line ends with
+  `[base: <kind>]` and names the 409 / non-JSON cases.
+- A re-run of `run-record` under a `run_id` whose record is already remitted
+  — an explicit `--run-id`, `run end` on a session re-opened under that id,
+  or the recovery action — no longer rewrites that record. It used to replace
+  `run-records/<run_id>.json` with this invocation's outcome unconditionally,
+  so a re-run into a 409 turned a durable `ok` into `failed`, and a `--no-remit`
+  re-run turned it into `skipped`. Now the record on disk is read first: an
+  `ok` record is left exactly as written and nothing is sent (`written:
+  false`, `remit.result: "not_contacted"`, `remit.sent: false`; text: `Run
+  Record already closed and remitted for run <id>; left as written.` and
+  `Remit: ok (already stored at the receiver for this run id; not re-sent)`).
+  Only a file that passes the Run Record validator counts as that prior; one
+  that merely says `remit_state: "ok"` is replaced like a corrupt file.
+  A prior `failed` or `pending` send is retried when the run may send, and
+  carried forward unchanged when it may not (`--no-remit`, consent off):
+  `remit.preserved: true`, text `Remit: not attempted this run; the prior
+  outcome for this run id is kept (failed: …)`. A `--no-write` run is
+  unchanged: it reads nothing, writes nothing, sends nothing.
+- The body the receiver stores now carries the outcome of the send it is
+  receiving: `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true`,
+  `remit_endpoint: "/api/runs"`. It used to be the pre-flight snapshot —
+  `remit_state: "pending"`, `remit_attempted: false`, `remit_endpoint: null` —
+  so every stored record said its own remit had not happened. The local file
+  still carries `pending` only between its first write and the answer.
+- `telemetry list` exits non-zero on a 2xx whose body carries no `runs[]`
+  (`telemetry list: 200 OK from <url> is not a Run Record listing (no runs[]
+  in the body): {"raw":"<html>…`). It used to print `showing 0 of 0 returned`
+  / `"count": 0` and exit 0 for a maintenance page.
+- The `run_record_remit_recovery` action's text says that a send the receiver
+  already holds resolves to ok and that a remitted record is left as written.
+- Docs: `docs/workflow-findings-sidecar.md` (Remit Channel: Durable status,
+  re-runs, the stored copy, `telemetry list`; Closeout recognition: the
+  recovery command's premise).
 
 ## [1.27.0] - 2026-09-13
 
