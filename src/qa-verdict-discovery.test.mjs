@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import {
   discoverQaVerdicts,
+  iterateQaVerdicts,
   qaVerdictCandidateScore,
   qaVerdictCandidateTime,
   qaVerdictDir,
@@ -86,6 +87,21 @@ test("discoverQaVerdicts walks the report's hints and every root's qa-output ide
   assert.equal(discoverQaVerdicts({ packet: PACKET, roots: [repo] }).every((candidate) => candidate.sha256 === null), true);
   // No packet: no identifier directories, only hints.
   assert.deepEqual(discoverQaVerdicts({ report, reportPath, roots: [repo] }).map((candidate) => candidate.source), ["assembly_report"]);
+}));
+
+test("iteration is lazy: a consumer that stops early reads nothing past its stop", () => withDir((dir) => {
+  const repo = join(dir, "repo");
+  const paths = ["a", "b", "c"].map((name) => join(qaVerdictDir(repo, "demo"), `${name}.json`));
+  for (const path of paths) writeJson(path, { campaign_slug: "demo" });
+  const report = { stages: { qa: { outputs: paths } } };
+  const iterator = iterateQaVerdicts({ packet: PACKET, report, reportPath: join(repo, "r.json"), withDigest: true });
+  const first = iterator.next().value;
+  assert.equal(first.path, paths[0]);
+  // Remove the rest before they are pulled: a lazy walk never touches them.
+  rmSync(paths[1]);
+  rmSync(paths[2]);
+  assert.equal(iterator.next().done, true, "the removed files were never read");
+  assert.deepEqual(discoverQaVerdicts({ packet: PACKET, report, reportPath: join(repo, "r.json") }).map((candidate) => candidate.path), [paths[0]]);
 }));
 
 test("candidate scoring prefers the map id over the slug, then the schema and a visited deploy origin; time breaks ties", () => {

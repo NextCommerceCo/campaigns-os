@@ -82,19 +82,22 @@ function sha256File(path) {
 // false only for a verdict the receiver stamped `trusted: false` (an
 // anonymous submission); locally written verdicts never carry the field.
 // Best-effort throughout: an unreadable directory or file is no candidate.
-export function discoverQaVerdicts({ packet = null, report = null, reportPath = null, roots = [], withDigest = false } = {}) {
-  const found = [];
+//
+// Lazy: each candidate is read (and hashed, when asked) as the consumer
+// pulls it, so a reader that stops early — closeout after a few digests —
+// pays for what it took, not for every recorded path.
+export function* iterateQaVerdicts({ packet = null, report = null, reportPath = null, roots = [], withDigest = false } = {}) {
   const seen = new Set();
-  const add = (path, source, repoRelPath) => {
+  const candidate = (path, source, repoRelPath) => {
     const absolute = resolve(path);
-    if (seen.has(absolute)) return;
+    if (seen.has(absolute)) return null;
     let stats;
     try {
-      if (!existsSync(absolute)) return;
+      if (!existsSync(absolute)) return null;
       stats = statSync(absolute);
-      if (!stats.isFile()) return;
+      if (!stats.isFile()) return null;
     } catch {
-      return;
+      return null;
     }
     seen.add(absolute);
     const verdict = readVerdictFile(absolute);
@@ -106,7 +109,7 @@ export function discoverQaVerdicts({ packet = null, report = null, reportPath = 
         sha256 = null;
       }
     }
-    found.push({
+    return {
       path: absolute,
       repoRelPath,
       source,
@@ -115,12 +118,13 @@ export function discoverQaVerdicts({ packet = null, report = null, reportPath = 
       mtimeMs: stats.mtimeMs,
       identityMatch: verdict ? qaVerdictIdentityMatch(verdict, packet) : false,
       trusted: verdict?.trusted !== false,
-    });
+    };
   };
 
   const reportBase = reportPath ? dirname(resolve(reportPath)) : null;
   for (const hint of qaVerdictPathHints(report)) {
-    add(reportBase ? resolve(reportBase, hint) : hint, "assembly_report", null);
+    const found = candidate(reportBase ? resolve(reportBase, hint) : hint, "assembly_report", null);
+    if (found) yield found;
   }
 
   const uniqueRoots = [...new Set(roots.filter((root) => typeof root === "string" && root).map((root) => resolve(root)))];
@@ -141,11 +145,15 @@ export function discoverQaVerdicts({ packet = null, report = null, reportPath = 
         const path = join(dir, name);
         // Repo-relative on purpose: divergence evidence must read the same
         // wherever the repo sits on disk.
-        add(path, "qa_output", relative(root, path).split("\\").join("/"));
+        const found = candidate(path, "qa_output", relative(root, path).split("\\").join("/"));
+        if (found) yield found;
       }
     }
   }
-  return found;
+}
+
+export function discoverQaVerdicts(options = {}) {
+  return [...iterateQaVerdicts(options)];
 }
 
 // Run-record inference: how well a candidate answers "this campaign, this

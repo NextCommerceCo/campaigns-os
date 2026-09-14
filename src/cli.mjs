@@ -82,7 +82,7 @@ import {
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace } from "./campaign-workspace.mjs";
-import { discoverQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
+import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
@@ -7395,7 +7395,8 @@ const RUN_RECORD_QA_DIGEST_LIMIT = 8;
 // a false match.
 function currentQaVerdictDigestsForReport(report, reportPath) {
   const digests = new Set();
-  for (const candidate of discoverQaVerdicts({ report, reportPath, withDigest: true })) {
+  // Lazy on purpose: nothing past the limit is read or hashed.
+  for (const candidate of iterateQaVerdicts({ report, reportPath, withDigest: true })) {
     if (digests.size >= RUN_RECORD_QA_DIGEST_LIMIT) break;
     if (candidate.source === "assembly_report" && candidate.sha256) digests.add(candidate.sha256);
   }
