@@ -139,8 +139,10 @@ function scopeMatches(storedScope, requestedScope) {
 
 /**
  * Persist consent at user level. Records its own schema_version, the package
- * name, the proxy/endpoint scope, a timestamp, and the value source — so the
- * decision is auditable. Returns `{ configPath, config }`.
+ * name, the proxy/endpoint scope (ON only — an OFF record is unscoped), a
+ * timestamp, and the value source — so the decision is auditable. A named
+ * `proxyBase` that is not a URL is refused for either state. Returns
+ * `{ configPath, config }`.
  */
 export function writeConsentConfig(state, {
   configPath = resolveConfigPath(),
@@ -148,12 +150,27 @@ export function writeConsentConfig(state, {
   source = "telemetry-command",
   now = new Date(),
 } = {}) {
+  const enabled = configState(state);
+  const normalizedScope = normalizeConsentScope(proxyBase);
+  // A named base that does not normalize is refused for either state: on an
+  // ON grant it would be stored as `scope: null`, which matches no endpoint
+  // and turns the grant into a silent OFF at every remit; on an OFF record
+  // it would be dropped without a word, hiding a typo the caller meant to
+  // be honoured. (An absent base still writes `scope: null`: an unscoped
+  // record, matched only by a caller that names no endpoint.)
+  if (isNonEmptyString(proxyBase) && !normalizedScope) {
+    throw new Error(`Telemetry consent scope is not a URL: ${proxyBase.trim()}`);
+  }
+  // An OFF choice is machine-wide — it disables remit to every endpoint — so
+  // the record carries no scope: `enabled: false, scope: <url>` would read
+  // as a still-granted endpoint on disk and in `telemetry status`.
+  const scope = enabled ? normalizedScope : null;
   const config = {
     schema_version: TELEMETRY_CONFIG_SCHEMA,
     package: PACKAGE_NAME,
     telemetry: {
-      enabled: configState(state),
-      scope: normalizeConsentScope(proxyBase),
+      enabled,
+      scope,
       updated_at: now.toISOString(),
       source,
     },
@@ -161,6 +178,28 @@ export function writeConsentConfig(state, {
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
   return { configPath, config };
+}
+
+/**
+ * The command that records file consent for one endpoint. The canonical
+ * endpoint needs no flag; any other base is named explicitly so the grant is
+ * visibly scoped to it.
+ */
+export function scopedConsentCommand(scope) {
+  const normalized = normalizeConsentScope(scope);
+  if (!normalized || normalized === CANONICAL_REMIT_SCOPE) return "campaigns-os telemetry on";
+  return `campaigns-os telemetry on --proxy-base ${shellArgument(normalized)}`;
+}
+
+// The generated command is meant to be pasted into a shell. A URL made of
+// the characters below passes through every common shell as one word; any
+// other character (the brackets of an IPv6 loopback such as http://[::1]:4399
+// glob in zsh) gets single quotes so the copy still grants the endpoint.
+const SHELL_SAFE_ARGUMENT = /^[A-Za-z0-9._~:/@%+=,-]+$/;
+
+function shellArgument(value) {
+  if (SHELL_SAFE_ARGUMENT.test(value)) return value;
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 /**
@@ -189,7 +228,17 @@ export function resolveConsent({
     return { state: "off", source: "env", resolved: true };
   }
   if (parsed.state) {
-    return { state: parsed.state, source: "env", resolved: true };
+    // The env override is a machine-wide answer with no scope: it applies to
+    // whatever endpoint the command names. When that is not the canonical
+    // endpoint, say so — the operator gets the persistent, scoped route.
+    if (parsed.state === "on" && requestedScope && requestedScope !== CANONICAL_REMIT_SCOPE) {
+      warn(`[campaigns-os] ${TELEMETRY_ENV_VAR}=${raw} bypasses consent scope checking: remitting to ${requestedScope} because the env override is set, not because this endpoint was consented to. To consent to it on this machine instead, run: ${scopedConsentCommand(requestedScope)}`);
+      return { state: "on", source: "env", resolved: true, scope: requestedScope, scope_bypassed: true };
+    }
+    if (parsed.state === "on") {
+      return { state: "on", source: "env", resolved: true, scope: requestedScope || CANONICAL_REMIT_SCOPE };
+    }
+    return { state: "off", source: "env", resolved: true };
   }
 
   const { ok, config, malformed } = readConfig(configPath);
@@ -205,7 +254,7 @@ export function resolveConsent({
       if (scopeMatches(storedScope, requestedScope)) {
         return { state: "on", source: "file", resolved: true, scope: storedScope };
       }
-      warn(`[campaigns-os] telemetry consent at ${configPath} is scoped to ${storedScope || "(unscoped)"}, not ${requestedScope}; treating telemetry as OFF until this endpoint is confirmed.`);
+      warn(`[campaigns-os] telemetry consent at ${configPath} is scoped to ${storedScope || "(unscoped)"}, not ${requestedScope}; treating telemetry as OFF for this endpoint. To consent to it on this machine, run: ${scopedConsentCommand(requestedScope)}`);
       return {
         state: "off",
         source: "default",

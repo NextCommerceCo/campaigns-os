@@ -60,6 +60,7 @@ import {
   readConfig,
   resolveConfigPath,
   resolveConsent,
+  scopedConsentCommand,
   TELEMETRY_ENV_VAR,
   writeConsentConfig,
 } from "./consent.mjs";
@@ -84,6 +85,8 @@ import {
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import { canonicalPath, sameFile } from "./fs-identity.mjs";
+import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
@@ -269,14 +272,12 @@ const PROOF_POLICY_REQUIRED_FIELDS = Object.freeze([
   "operator_approval_state",
 ]);
 
-// Default proxy base for `--map-id` spec retrieval. The Map Builder
-// (campaign-map.nextcommerce.com) is fronted by a backend service that
-// exposes `/api/spec/<map-id>` returning the canonical saved CampaignSpec.
-// Override via `--proxy-base` for staging environments or a local backend.
-// The same flag aims the credential-bearing rails (remit, verdict publish,
-// `telemetry list`), and those require https unless the host is loopback —
-// see assertSecureProxyBase in src/remit.mjs.
-const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
+// `--proxy-base` overrides DEFAULT_PROXY_BASE (src/spec-fetch.mjs) for
+// staging environments or a local backend. The same flag aims the
+// credential-bearing rails (remit, verdict publish, `telemetry list`), and
+// those require https unless the host is loopback — see assertSecureProxyBase
+// in src/remit.mjs.
+
 
 const KNOWN_TEMPLATE_FAMILIES = new Set([
   "undecided",
@@ -362,15 +363,15 @@ Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                             [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                             [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                              [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]
   campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
@@ -402,15 +403,18 @@ Usage:
   campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
-  campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
+  campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
+  campaigns-os telemetry off [--json]                                  # turn remit off for every endpoint (takes no --proxy-base)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags; with --packet the session lives in the packet's target repo, whatever the cwd
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
-  campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd)
+  campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--proxy-base <url>] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd); --proxy-base is handed to run-record, so the session record remits to that receiver under the consent scoped to it
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
   Wrapper policy: \`start\`/\`prepare-build\`/\`build\` seed source_html.adapter_contract.wrapper_policy from --wrapper-policy, else the source-html manifest's wrapper_policy key, else strip_document_wrappers. Selecting preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking, so raw-HTML source can be handed over without a wrapper-stripping pass (docs/source-adapters.md).
+  Design manifest: \`start\`/\`prepare-build\`/\`build\` read the source-html manifest from <source>/.campaigns-os/source-html-manifest.json; --design-manifest <path> reads it from anywhere else instead (a read-only source root keeps its proof and skip declarations in a file the operator owns). pages[].path stays relative to --source. Doctor re-reads the manifest the Design Source Package recorded.
+  Template-stock pages: a page declared out of source scope (manifest skip_reason, or CampaignSpec build_scope.mode "partial") is template stock — its assembly decision carries template_stock: true and the locked family, intake demands no design source for it, and the build stage materialises it from that family's stock page (docs/design-source-package.md "Template-stock pages").
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
   Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` with its --packet, or at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
@@ -546,7 +550,7 @@ function ambientRunSession(args = {}) {
     const packetArg = optionalString(args.packet);
     if (!packetArg) return cwdSession;
 
-    const packetPath = canonicalExistingPath(resolve(packetArg));
+    const packetPath = canonicalPath(packetArg);
     const candidateRoots = new Set([dirname(packetPath)]);
     try {
       const packet = readJson(packetPath);
@@ -560,7 +564,7 @@ function ambientRunSession(args = {}) {
     const targetSessions = [];
     for (const root of candidateRoots) {
       const found = findRunSession(root);
-      if (found && !targetSessions.some((entry) => canonicalExistingPath(entry.path) === canonicalExistingPath(found.path))) targetSessions.push(found);
+      if (found && !targetSessions.some((entry) => sameFile(entry.path, found.path))) targetSessions.push(found);
     }
     if (targetSessions.length > 1) {
       throw new Error(`Conflicting active run sessions resolve from packet ${packetPath}: ${targetSessions.map((entry) => entry.session.run_id).join(", ")}. End the stale or wrong session before continuing.`);
@@ -570,7 +574,7 @@ function ambientRunSession(args = {}) {
     if (binding && !binding.same) {
       throw new Error(`Conflicting active run session ${targetSession.session.run_id} is bound to ${binding.boundPacket}, not packet ${packetPath}. End it before continuing.`);
     }
-    if (cwdSession && targetSession && canonicalExistingPath(cwdSession.path) !== canonicalExistingPath(targetSession.path)) {
+    if (cwdSession && targetSession && !sameFile(cwdSession.path, targetSession.path)) {
       throw new Error(`Conflicting active run sessions: cwd selects ${cwdSession.session.run_id}, while packet ${packetPath} selects ${targetSession.session.run_id}. End the wrong session before continuing.`);
     }
     if (cwdSession && !targetSession) {
@@ -583,13 +587,6 @@ function ambientRunSession(args = {}) {
   }
 }
 
-function canonicalExistingPath(path) {
-  try {
-    return realpathSync(path);
-  } catch {
-    return resolve(path);
-  }
-}
 
 // Telemetry is ambient by default: `start`/`prepare-build` open the run
 // session themselves (in the TARGET repo, where the build happens), arm the
@@ -1104,53 +1101,6 @@ function writeJson(path, value) {
   writeFileSync(resolve(path), `${JSON.stringify(value, null, 2)}\n`);
 }
 
-/**
- * Fetch a CampaignSpec by Map ID from the proxy Worker.
- *
- * The Map Builder portal at campaign-map.nextcommerce.com is fronted by
- * a backend service that persists saved specs and exposes them via
- * GET /api/spec/<map-id>. Response shape is
- * { ok: true, data: <spec> } or { ok: false, error: <message> } on a
- * 200 with a logical failure.
- *
- * `fetchImpl` is parameterized for tests so a local mock server can
- * stand in for the deployed Worker.
- *
- * @param {string} mapId — saved Map Builder identity (e.g. "veyra-v1-knp4")
- * @param {object} [opts]
- * @param {string} [opts.proxyBase] — proxy origin without trailing slash
- * @param {Function} [opts.fetchImpl] — fetch shim for testing
- * @returns {Promise<object>} parsed CampaignSpec
- */
-async function fetchSpecByMapId(mapId, opts = {}) {
-  const trimmed = String(mapId || "").trim();
-  if (!trimmed) throw new Error("fetchSpecByMapId: mapId is required.");
-  const base = (opts.proxyBase || DEFAULT_PROXY_BASE).replace(/\/+$/, "");
-  const url = `${base}/api/spec/${encodeURIComponent(trimmed)}`;
-  const fetchImpl = opts.fetchImpl || globalThis.fetch;
-  if (typeof fetchImpl !== "function") {
-    throw new Error("Global fetch is not available. Upgrade to Node 18+ or pass fetchImpl.");
-  }
-  let res;
-  try {
-    res = await fetchImpl(url, { headers: { Accept: "application/json" } });
-  } catch (error) {
-    throw new Error(`Spec fetch network error: ${error.message} (${url})`);
-  }
-  if (!res.ok) {
-    throw new Error(`Spec fetch failed: ${res.status} ${res.statusText} (${url})`);
-  }
-  let body;
-  try {
-    body = await res.json();
-  } catch (error) {
-    throw new Error(`Spec fetch returned invalid JSON: ${error.message} (${url})`);
-  }
-  if (!body || body.ok === false || body.data == null) {
-    throw new Error(`Spec fetch returned ok=false: ${body?.error || "unknown error"} (${url})`);
-  }
-  return body.data;
-}
 
 /**
  * Sanitize a Map ID for use as a cache filename. Map IDs are normally
@@ -1225,8 +1175,12 @@ function relFromFile(filePath, targetPath) {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+// Portable output rebases every path onto the output base as the filesystem
+// knows both (real paths when they exist), so a target reached through a
+// symlinked checkout and a sidecar recorded by its real path relativize to
+// `./…`, not to a chain of `../` that names the original machine.
 function relFromDir(dirPath, targetPath) {
-  const rel = relative(resolve(dirPath), resolve(targetPath));
+  const rel = relative(canonicalPath(dirPath), canonicalPath(targetPath));
   if (!rel) return ".";
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
@@ -1709,6 +1663,7 @@ function createCurrentHtmlFunnelScope({
   manifestResult,
   sourceAssetCrawl,
   templateFamily,
+  templateStockPageIds = [],
   commerceCatalog,
   sourceRoot,
   mapId,
@@ -1775,6 +1730,7 @@ function createCurrentHtmlFunnelScope({
       : null,
     sourceAssetCrawl: crawl,
     templateFamily: resolveTemplateFamilyDesignSource(commerceCatalog, templateFamily),
+    templateStockPageIds: [...templateStockPageIds],
     packageId: `${mapId}:design-source`,
     campaignMapId: mapId,
     campaignSlug: publicRouteSlug,
@@ -1789,6 +1745,7 @@ function prepareDesignSourcePackage({
   manifestResult,
   sourceAssetCrawl,
   templateFamily,
+  templateStockPageIds = [],
   commerceCatalog,
   sourceRoot,
   mapId,
@@ -1807,6 +1764,7 @@ function prepareDesignSourcePackage({
     manifestResult,
     sourceAssetCrawl,
     templateFamily,
+    templateStockPageIds,
     commerceCatalog,
     sourceRoot,
     mapId,
@@ -1912,7 +1870,8 @@ function prepareDesignSourcePackage({
 // the blocking reason itself.
 const DESIGN_SOURCE_PACKAGE_REMEDY = [
   `Supply the missing source proof through pages[].screenshots[] in ${SOURCE_HTML_MANIFEST_REL_PATH}`,
-  "under the source root (one available desktop record and one available mobile record per renderable page);",
+  "under the source root, or in a manifest anywhere else named by --design-manifest <path>",
+  "(one available desktop record and one available mobile record per renderable page);",
   `then, if no downstream stage has consumed it, remove the Design Source Package this blocked run emitted at ${DESIGN_SOURCE_PACKAGE_REL_PATH}`,
   "and rerun prepare-build/start.",
   'See "Clearing DESIGN_SOURCE_PACKAGE_NOT_READY" in docs/design-source-package.md.',
@@ -1960,6 +1919,24 @@ function parseWrapperPolicyFlag(args) {
     );
   }
   return flag;
+}
+
+// --design-manifest <path>: read the source-html manifest from outside the
+// source root. Validated with the other argv checks so a bad path fails before
+// prepare-build has written anything. A bare flag, a missing file, or a
+// directory are errors: the operator named the file, so silently falling back
+// to filesystem matching would discard the declaration they made.
+function parseDesignManifestFlag(args) {
+  const raw = args["design-manifest"];
+  if (raw == null) return null;
+  if (raw === true || !isNonEmptyString(raw)) {
+    throw new Error("--design-manifest needs a value: the path of a source-html-manifest/v0 JSON file.");
+  }
+  const path = resolve(raw);
+  if (!existsSync(path) || !statSync(path).isFile()) {
+    throw new Error(`Design manifest does not exist or is not a file: ${path}`);
+  }
+  return path;
 }
 
 // Same precedence the template family uses (docs/build-packet.md
@@ -2025,6 +2002,7 @@ function prepareBuild(args, options = {}) {
   // partway through, so a flag that throws later would leave persistent state
   // behind for a bad argument.
   const wrapperPolicyFlag = parseWrapperPolicyFlag(args);
+  const designManifestPath = parseDesignManifestFlag(args);
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
@@ -2035,10 +2013,11 @@ function prepareBuild(args, options = {}) {
     hint: hintedTemplateFamily,
   });
   const templateFamily = templateSelection.value;
-  // The DSP is upstream source/design context, so a CampaignSpec preference
-  // remains its template input even when Build locks a different CLI override.
-  // With no source hint, the explicit family is the only honest DSP input.
-  const designSourceTemplateFamily = hintedTemplateFamily || explicitTemplateFamily || "undecided";
+  // The Design Source Package builds on the same family the packet locks. It
+  // used to take the CampaignSpec hint first, so a --template-family override
+  // produced a package whose template-stock TODOs named a family the build
+  // would never use ("Link demeter ... " on an olympus-mv-two-step packet).
+  const designSourceTemplateFamily = templateFamily;
   const commerceCatalogPath = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
   const commerceCatalog = resolveCommerceCatalog(commerceCatalogPath);
   const templateLocked = Boolean(explicitTemplateFamily) && !isUnresolvedTemplateFamily(templateFamily);
@@ -2090,8 +2069,17 @@ function prepareBuild(args, options = {}) {
     publicRouteSlug,
     outputDir,
     buildScope: isObject(spec.build_scope) ? spec.build_scope : null,
+    manifestPath: designManifestPath,
+    templateFamily: familyDecided ? templateFamily : null,
   });
+  // An explicit --design-manifest that does not read as a manifest is an
+  // error, not the warning-plus-filesystem-fallback the default path gets:
+  // nothing has been written yet, and the operator named the file.
+  if (designManifestPath && sourceIntake.manifestResult.warning) {
+    throw new Error(sourceIntake.manifestResult.warning.replace(/ Falling back to filesystem matching\.$/, ""));
+  }
   const declaredScopeSkips = sourceIntake.declaredSkips || [];
+  const templateStockPageIds = declaredScopeSkips.map((skip) => skip.page_id).filter(isNonEmptyString);
   const buildScopeReasonsInvalid = isObject(spec.build_scope)
     && spec.build_scope.reasons != null
     && !Array.isArray(spec.build_scope.reasons);
@@ -2216,6 +2204,7 @@ function prepareBuild(args, options = {}) {
     manifestResult,
     sourceAssetCrawl,
     templateFamily: designSourceTemplateFamily,
+    templateStockPageIds,
     commerceCatalog,
     sourceRoot,
     mapId,
@@ -2715,35 +2704,34 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
   // the artifact on disk stayed frozen at intake (NEXT-114 dogfood finding
   // wf_1785566917680). Opt out with --no-write.
   if (args["no-write"] !== true) {
-    // The stage write-back targets the report the operator named, else the
-    // default location. It does not follow a recorded report_path: a report
-    // of another run of the same campaign matches on map id and slug alone,
-    // and restating this doctor's outcome into it would corrupt that run's
-    // evidence. Inspection and the stage decision above do follow it. The
+    // The stage write-back restates the outcome into the report the
+    // inspection read: the one --report named, else the one the Build Context
+    // binds (`derived.assembly_report_path`, a `prepare-build --report-out`
+    // campaign's report), else the default location. Following the binding is
+    // what keeps the doctor stage on a bound report current; a report of
+    // another campaign is still refused by commitAssemblyReport's identity
+    // check, so the outcome never lands in another run's evidence. The
     // sidecar itself goes under the target repo, where prepare-build, next
     // and the QA stage refresh write it — not beside the packet.
+    const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
     const workspace = resolveCampaignWorkspace(packetPath, {
-      reportPath: args.report ? resolve(args.report) : undefined,
+      reportPath: args.report
+        ? resolve(args.report)
+        : inspectedReportPath
+          ? resolve(dirname(packetPath), inspectedReportPath)
+          : undefined,
       doctorOutPath: args["doctor-out"] ? resolve(args["doctor-out"]) : undefined,
       followContextPointer: false,
     });
-    // Restate the outcome only into the report the inspection actually read.
-    const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
-    const inspectedIsTarget = !inspectedReportPath
-      || canonicalExistingPath(resolve(dirname(packetPath), inspectedReportPath)) === canonicalExistingPath(workspace.reportPath);
     // The sidecar is this inspection's result, written whether or not the
     // report gained a new chapter (a re-run restating the outcome already on
     // disk leaves the report's bytes, and every digest of them, alone). A
     // report this inspection did not read is not opened at all: its state,
     // malformed included, is not this run's concern.
-    if (inspectedIsTarget) {
-      commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
-        command: `campaigns-os ${args._?.[0] || "doctor"}`,
-        doctorOutPath: workspace.doctorOutPath,
-      }), { stage: "doctor", refreshDoctor: () => result });
-    } else {
-      writeJsonAtomic(workspace.doctorOutPath, result);
-    }
+    commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
+      command: `campaigns-os ${args._?.[0] || "doctor"}`,
+      doctorOutPath: workspace.doctorOutPath,
+    }), { stage: "doctor", refreshDoctor: () => result });
   }
   return result;
 }
@@ -3675,7 +3663,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "source_html.coverage",
     phase: "source",
-    run: ({ packet, packetPath, spec, errors, warnings, ready, derived }) => validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived),
+    run: ({ packet, packetPath, spec, errors, warnings, ready, derived, buildState }) => validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived, buildState),
   },
   {
     id: "source_html.preparation",
@@ -5852,10 +5840,31 @@ function coverageErrorDetail(page) {
   };
 }
 
-function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}) {
+// A declared out-of-scope page whose scope decision carries `template_stock`
+// (recorded by prepare-build on dec_page_scope_<page>) is the locked family's
+// own page: the build stage materialises it, and once its built HTML exists at
+// the page's route it is a built page like any mapped one — previewable, and
+// no longer a reason to block runtime QA. Until the build has written it, it
+// stays out of scope exactly as before, so an unbuilt declaration is unchanged.
+function templateStockDecision(buildState, pageId) {
+  const decisions = buildState?.report?.decisions;
+  if (!Array.isArray(decisions)) return null;
+  const decision = decisions.find((entry) => entry?.id === `dec_page_scope_${pageId}` && entry?.template_stock === true);
+  return decision || null;
+}
+
+function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const pages = packet.source_html?.pages || [];
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const materialisedTemplateStock = [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
-  validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready });
+  validateSourceHtmlManifestAtRoot(sourceRoot, {
+    spec,
+    errors,
+    warnings,
+    ready,
+    manifestPath: recordedDesignManifestPath(packet, packetPath),
+  });
   const active = activeSpecPages(spec);
   const specPartialScope = spec?.build_scope?.mode === "partial";
   const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
@@ -5914,6 +5923,22 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     } else if (!page.skip_reason) {
       addIssue(errors, "source_html.pages.skip_reason", `Source mapping "${page.page_id}" needs path or skip_reason.`);
     } else {
+      const stockDecision = specPage ? templateStockDecision(buildState, specPage.id) : null;
+      const builtPath = stockDecision ? builtHtmlPathForPage(derived.target_repo, publicRouteSlug, specPage, derived) : null;
+      if (stockDecision && builtPath && existsSync(builtPath)) {
+        const family = optionalString(stockDecision.template_family) || "selected";
+        builtPages.push({
+          page_id: specPage.id,
+          type: specPage.type || "page",
+          role: pageRole(specPage.type),
+          route: publicRouteForPage(specPage),
+          source_path: null,
+          template_stock: true,
+          template_family: family,
+        });
+        materialisedTemplateStock.push({ page_id: specPage.id, family });
+        continue;
+      }
       const skipped = specPage
         ? {
             page_id: specPage.id,
@@ -5921,11 +5946,22 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
             role: pageRole(specPage.type),
             route: publicRouteForPage(specPage),
             skip_reason: page.skip_reason,
+            ...(stockDecision ? { template_stock: true, template_family: optionalString(stockDecision.template_family) } : {}),
           }
         : { page_id: page.page_id, type: "unknown", role: "unknown", route: null, skip_reason: page.skip_reason };
       outOfScopePages.push(skipped);
-      addIssue(warnings, "source_html.pages.skip_reason", `CampaignSpec page "${page.page_id}" is out of scope for this partial build: ${page.skip_reason}`);
+      addIssue(
+        warnings,
+        "source_html.pages.skip_reason",
+        stockDecision
+          ? `CampaignSpec page "${page.page_id}" is template stock and not built yet: ${page.skip_reason} The build stage materialises it from the ${optionalString(stockDecision.template_family) || "selected"} family's own page; it joins the previewable routes once its built HTML exists.`
+          : `CampaignSpec page "${page.page_id}" is out of scope for this partial build: ${page.skip_reason}`,
+      );
     }
+  }
+
+  if (materialisedTemplateStock.length > 0) {
+    ready.push(`Template-stock page(s) materialised by the build stage: ${materialisedTemplateStock.map((entry) => `${entry.page_id} (${entry.family})`).join(", ")}`);
   }
 
   for (const page of active) {
@@ -5935,8 +5971,14 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   }
 
   const runtimeBlocked = outOfScopePages.filter((page) => page.role === "runtime");
+  // A CampaignSpec build_scope "partial" declaration is discharged once every
+  // page it took out of scope has been materialised: the declaration named
+  // template-stock pages, and they now exist. With nothing materialised the
+  // declaration stands on its own, as before.
+  const partialScopeOpen = outOfScopePages.length > 0
+    || (specPartialScope && materialisedTemplateStock.length === 0);
   derived.scope = {
-    mode: outOfScopePages.length || specPartialScope ? "partial" : active.length ? "full" : "unknown",
+    mode: partialScopeOpen ? "partial" : active.length ? "full" : "unknown",
     built_pages: builtPages,
     out_of_scope_pages: outOfScopePages,
     out_of_scope_reasons: specPartialReasons,
@@ -5944,7 +5986,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     blocked_runtime_pages: runtimeBlocked,
   };
 
-  if (outOfScopePages.length > 0 || specPartialScope) {
+  if (partialScopeOpen) {
     const reasonSummary = specPartialReasons.length ? ` Reasons: ${specPartialReasons.join("; ")}.` : "";
     addIssue(
       warnings,
@@ -5962,12 +6004,12 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   }
 
   if (active.length > 0 && active.every((page) => mappedIds.has(page.id))) {
-    ready.push(outOfScopePages.length > 0 || specPartialScope
+    ready.push(partialScopeOpen
       ? "Source mappings cover active CampaignSpec pages with explicit partial-scope skip reasons"
       : "Source mappings cover active CampaignSpec pages");
   }
   if (builtPages.length > 0) {
-    ready.push(outOfScopePages.length > 0 || specPartialScope
+    ready.push(partialScopeOpen
       ? `Partial build previewable routes: ${builtPages.map((page) => routeLabel(page.route)).join(", ")}`
       : "All mapped CampaignSpec pages are build candidates");
   }
@@ -6006,9 +6048,30 @@ function validateSourcePreparation(packet, packetPath, errors, warnings, ready, 
   }
 }
 
-function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready } = {}) {
+// The manifest prepare-build read is recorded on the Design Source Package
+// (html-funnel contribution, provenance.manifest_path, relative to the package
+// file). Doctor reads the same file back, so a manifest supplied through
+// --design-manifest from outside the source root is still the one doctor
+// validates; with nothing recorded, the default path under the source root
+// stands.
+function recordedDesignManifestPath(packet, packetPath) {
+  const packagePath = resolveFromFile(packetPath, packet?.design_source_package?.path);
+  if (!packagePath || !existsSync(packagePath) || !statSync(packagePath).isFile()) return null;
+  let value;
+  try {
+    value = JSON.parse(readFileSync(packagePath, "utf8"));
+  } catch {
+    return null;
+  }
+  const htmlFunnel = (Array.isArray(value?.contributions) ? value.contributions : [])
+    .find((contribution) => contribution?.kind === "html_funnel");
+  const recorded = optionalString(htmlFunnel?.provenance?.manifest_path);
+  return recorded ? resolve(dirname(packagePath), recorded) : null;
+}
+
+function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready, manifestPath = null } = {}) {
   if (!isNonEmptyString(sourceRoot) || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
-  const result = readSourceHtmlManifestFile(sourceRoot);
+  const result = readSourceHtmlManifestFile(sourceRoot, { manifestPath });
   if (!result.path) return;
   if (result.validation && !result.validation.ok) {
     const detail = result.validation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
@@ -7915,7 +7978,7 @@ export function nextStage(stage, args, ambient = null) {
     addPrepareBuildGateErrors(errors, report);
     if (!doctor.ok && !doctorHasOnlyPolishGateErrors) addIssue(errors, "next.build.doctor", "Doctor is blocked; resolve packet errors before build.");
     if (doctor.derived?.scaffold_required) addIssue(errors, "next.build.setup", doctor.derived.scaffold_reason || "Setup is required before build.");
-    prompt = buildPrompt(packetPath, contextPath, reportPath, packet);
+    prompt = buildPrompt(packetPath, contextPath, reportPath, packet, doctor.derived);
   } else if (stage === "polish") {
     addPrepareBuildGateErrors(errors, report);
     if (!report) addIssue(errors, "next.polish.report", "Assembly report is required before polish.");
@@ -8416,7 +8479,32 @@ function recordNextRecommendation(ambient, result) {
   }
 }
 
-function buildPrompt(packetPath, contextPath, reportPath, packet) {
+// Pages the packet carries with a skip_reason and no source path are template
+// stock: intake declared them out of source scope and demanded no design
+// source. The build stage materialises each from the locked family's own page
+// of that role rather than looking for prepared HTML that does not exist.
+//
+// Order: the pre-checkout `select` step first, where the funnel has one. It
+// seeds the cart every downstream runtime page reads, so it is the page the
+// build wires before checkout; doctor's derived scope carries each page's
+// CampaignSpec type, and the packet's own mapping order stands otherwise.
+//
+// Only pages doctor reports out of scope WITH the template_stock marker are
+// listed: a skip entry recorded before the marker existed, or authored by
+// hand, is a do-not-build declaration and stays off the list. A page already
+// materialised has left out_of_scope_pages and needs no instruction.
+function templateStockPromptLine(packet, derived = {}) {
+  const stockPages = (Array.isArray(derived?.scope?.out_of_scope_pages) ? derived.scope.out_of_scope_pages : [])
+    .filter((page) => page?.template_stock === true && isNonEmptyString(page?.page_id));
+  if (!stockPages.length) return "";
+  const pages = [
+    ...stockPages.filter((page) => page.type === "select"),
+    ...stockPages.filter((page) => page.type !== "select"),
+  ].map((page) => page.page_id);
+  return `\n- Template-stock pages (declared out of source scope; no design source exists for them): ${pages.join(", ")}. Materialise each from the ${packet.assembly.template_family} family's own page for that role (copied with its dependent _includes, _layouts, and assets), in that order — a pre-checkout select step first, because it seeds the cart the runtime pages read — wire it from CampaignSpec, and do not look for prepared source HTML for it. Once its built HTML exists, doctor lists it among the previewable routes.`;
+}
+
+function buildPrompt(packetPath, contextPath, reportPath, packet, derived = {}) {
   const briefPath = packet.build_brief?.normalized_path || "(missing; generate or confirm Campaign Build Brief before business-sensitive assembly)";
   return `Use next-campaigns-build for this Campaigns OS handoff.
 
@@ -8426,7 +8514,7 @@ Read first:
 - Assembly Report: ${reportPath || "(use packet-adjacent .campaign-runtime/assembly-report.json if present)"}
 - Campaign Build Brief: ${briefPath}
 - Design Source Package: .campaign-runtime/input/design-source-package.json when present; use report.design_source_package.material_fingerprint as the source context fingerprint.
-- Template family: ${packet.assembly.template_family}
+- Template family: ${packet.assembly.template_family}${templateStockPromptLine(packet, derived)}
 
 Rules:
 - Treat CampaignSpec/API as the source for package, shipping, voucher, payment, tracking, footer, and SEO values.
@@ -8847,9 +8935,6 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
     ...(qaNeedsUrl ? ["qa"] : []),
   ];
   const owners = DOCTOR_NEXT_STAGE_OWNERS[picked.stage];
-  // An explicit --context / --report is carried into the recommended
-  // command, so the recovery reads the same artifacts the recommendation did.
-
   // prepare-build is not a `next <stage>` argument: the stage-less `next`
   // is what prints the recovery actions for it, and it is also the right
   // call after a doctor-blocked repair or at done.
@@ -9974,7 +10059,7 @@ function runSessionTextLines(result) {
 // see. Null without --packet.
 function runSessionPacketPath(args) {
   const packetArg = optionalString(args.packet);
-  return packetArg ? canonicalExistingPath(resolve(packetArg)) : null;
+  return packetArg ? canonicalPath(packetArg) : null;
 }
 
 // The project a `run start` / `run end` acts on. With --packet it is the
@@ -10398,16 +10483,16 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (qaVerdictExists) qaAttemptPaths.push(qaVerdictPath);
   const seenQaAttempts = new Set();
   for (const attemptPath of qaAttemptPaths) {
-    const canonicalPath = canonicalExistingPath(attemptPath);
-    if (seenQaAttempts.has(canonicalPath) || !existsSync(canonicalPath)) continue;
-    seenQaAttempts.add(canonicalPath);
+    const attempt = canonicalPath(attemptPath);
+    if (seenQaAttempts.has(attempt) || !existsSync(attempt)) continue;
+    seenQaAttempts.add(attempt);
     let schemaVersion = null;
     try {
-      schemaVersion = optionalString(readJson(canonicalPath)?.schema_version);
+      schemaVersion = optionalString(readJson(attempt)?.schema_version);
     } catch {
       // Artifact capture is best-effort; a malformed attempt remains hashable.
     }
-    artifacts.push(runRecordArtifactRef("qa_verdict", canonicalPath, schemaVersion, baseDir));
+    artifacts.push(runRecordArtifactRef("qa_verdict", attempt, schemaVersion, baseDir));
   }
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
@@ -10585,7 +10670,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   }
   console.log(`Run Record assembled.`);
   console.log(`Run ID: ${record.run_id}`);
-  console.log(`Consent: ${record.consent_state} (${record.consent_source})`);
+  console.log(`Consent: ${record.consent_state} (${record.consent_source})${consent.scope_mismatch ? ` — file consent is scoped to ${consent.consent_scope || "(unscoped)"}, not ${consent.requested_scope}; consent to this endpoint with: ${scopedConsentCommand(consent.requested_scope)}` : ""}${consent.scope_bypassed ? ` — ${TELEMETRY_ENV_VAR} bypasses scope checking for ${consent.scope}` : ""}`);
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
   if (carriedForward) {
@@ -10674,8 +10759,9 @@ function runRecordArtifactRef(kind, filePath, schemaVersion, baseDir) {
 }
 
 function artifactRefPath(kind, filePath, baseDir) {
-  const base = canonicalExistingPath(resolve(baseDir));
-  const fullPath = canonicalExistingPath(resolve(filePath));
+  const base = canonicalPath(baseDir);
+  const fullPath = canonicalPath(filePath);
+
   const rel = relative(base, fullPath);
   if (!rel) return ".";
   if (rel.startsWith("..") || isAbsolute(rel)) return `external:${kind}`;
@@ -10813,20 +10899,60 @@ function toolkitProvenance({ silent = false } = {}) {
 // Machine-level Run Telemetry consent. `status` reports the resolved state and
 // its source; `on`/`off` persist an explicit choice to the user-level config.
 // Consent gates REMIT only — local capture is unaffected.
+//
+// A file grant is scoped to ONE endpoint. `telemetry on` grants the canonical
+// NEXT endpoint; `telemetry on --proxy-base <url>` grants that receiver
+// instead (loopback or staging), which is the non-interactive way to consent
+// to a non-canonical base — the alternative, CAMPAIGNS_OS_TELEMETRY=on, skips
+// scope checking altogether. `status` checks the stored grant against the
+// canonical endpoint, or against --proxy-base when given, so it reports what
+// a remit to that endpoint would do. `off` takes no --proxy-base: an OFF
+// choice is machine-wide and the record it writes carries no scope.
 async function telemetryCommand(args) {
   const sub = args._[1] || "status";
   const configPath = resolveConfigPath();
+  const requestedBase = optionalString(args["proxy-base"]);
+  // A flag that was written but carries no URL (`--proxy-base --json`, or an
+  // empty variable) is not "no flag": treating it as absent would grant or
+  // check the canonical endpoint under a request that named something else.
+  if (Object.hasOwn(args, "proxy-base") && !requestedBase) {
+    throw new Error(`telemetry ${sub}: --proxy-base needs a URL (https, or a loopback host); nothing was written.`);
+  }
+  // Same transport rule as the remit rail: https, or a loopback host. A grant
+  // for a base a remit would refuse to send to is not a grant, and a status
+  // check against one would report on a remit that can never happen. Nothing
+  // is sent here, so the in-clear warning is left to the remit.
+  const secureBase = () => assertSecureProxyBase(requestedBase, { label: `telemetry ${sub}`, warn: () => {} }).base;
 
   if (sub === "on" || sub === "off") {
-    const { configPath: written } = writeConsentConfig(sub, { configPath, proxyBase: DEFAULT_PROXY_BASE, source: "telemetry-command" });
-    const resolved = resolveConsent({ configPath });
+    if (sub === "off" && requestedBase) {
+      throw new Error(`telemetry off: --proxy-base is not accepted; turning telemetry off applies to every endpoint. To grant one endpoint instead, run: ${scopedConsentCommand(requestedBase)}`);
+    }
+    const proxyBase = requestedBase ? secureBase() : DEFAULT_PROXY_BASE;
+    const { configPath: written, config } = writeConsentConfig(sub, { configPath, proxyBase, source: "telemetry-command" });
+    const scope = config.telemetry.scope;
+    const canonical = scope === CANONICAL_REMIT_SCOPE;
+    const resolved = resolveConsent({ configPath, proxyBase: scope || CANONICAL_REMIT_SCOPE });
     if (args.json) {
-      console.log(JSON.stringify({ ok: true, action: `telemetry-${sub}`, config_path: written, state: resolved.state, source: resolved.source }, null, 2));
+      console.log(JSON.stringify({
+        ok: true,
+        action: `telemetry-${sub}`,
+        config_path: written,
+        scope,
+        scope_canonical: canonical,
+        state: resolved.state,
+        source: resolved.source,
+      }, null, 2));
       return;
     }
     console.log(`Telemetry ${sub.toUpperCase()}.`);
     console.log(`Config: ${written}`);
+    if (scope) console.log(`Scope: ${scope}${canonical ? " (canonical NEXT endpoint)" : ""}`);
+    else console.log("Scope: every endpoint (an OFF choice is not scoped)");
     console.log(`Resolved: ${resolved.state} (source: ${resolved.source})`);
+    if (sub === "on" && !canonical) {
+      console.log(`This grant covers remits that pass --proxy-base ${scope} only; a remit to the canonical NEXT endpoint (${CANONICAL_REMIT_SCOPE}) is OFF until you run: campaigns-os telemetry on`);
+    }
     if (resolved.source === "env") {
       console.log(`Note: ${TELEMETRY_ENV_VAR} is set and overrides this file until unset.`);
     }
@@ -10834,14 +10960,20 @@ async function telemetryCommand(args) {
   }
 
   if (sub === "status") {
-    const resolved = resolveConsent({ configPath });
-    const { ok: configPresent } = readConfig(configPath);
+    const checkedEndpoint = requestedBase ? (normalizeConsentScope(secureBase()) || requestedBase) : CANONICAL_REMIT_SCOPE;
+    const resolved = resolveConsent({ configPath, proxyBase: checkedEndpoint });
+    const { ok: configPresent, config } = readConfig(configPath);
+    const storedScope = configPresent ? normalizeConsentScope(config?.telemetry?.scope) : null;
+    const mismatch = resolved.scope_mismatch === true;
     if (args.json) {
       console.log(JSON.stringify({
         ok: true,
         action: "telemetry-status",
         config_path: configPath,
         config_present: configPresent,
+        scope: storedScope,
+        checked_endpoint: checkedEndpoint,
+        scope_mismatch: mismatch,
         state: resolved.state,
         source: resolved.source,
         resolved: resolved.resolved,
@@ -10849,16 +10981,21 @@ async function telemetryCommand(args) {
       }, null, 2));
       return;
     }
-    console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})`);
+    console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})${resolved.scope_bypassed ? ` — ${TELEMETRY_ENV_VAR} bypasses scope checking for ${checkedEndpoint}` : ""}`);
     console.log(`Config: ${configPath}${configPresent ? "" : " (not set)"}`);
+    if (storedScope) {
+      console.log(`Scope: ${storedScope}${storedScope === CANONICAL_REMIT_SCOPE ? " (canonical NEXT endpoint)" : ""}`);
+    }
+    console.log(`Checked endpoint: ${checkedEndpoint}`);
     if (resolved.default_on === true) {
       console.log(`No explicit choice recorded — remit to the canonical NEXT endpoint (${resolved.scope}) is ON by default. Opt out with: campaigns-os telemetry off`);
+    } else if (mismatch) {
+      console.log(`Scope mismatch — the stored grant is for ${storedScope || "(unscoped)"}, so remit to ${checkedEndpoint} is OFF. Consent to it with: ${scopedConsentCommand(checkedEndpoint)}`);
     } else if (!resolved.resolved) {
-      // Only reachable for a malformed config file or a scope mismatch — the
-      // resolver fails CLOSED there, so the state really is off until the
-      // operator records a choice. (The old text said "defaults OFF", which
-      // contradicted the default-on canonical path above.)
-      console.log("Consent could not be resolved (malformed config or an endpoint scope mismatch) — remit is OFF until you set it: campaigns-os telemetry on|off");
+      // Only reachable for a malformed config file or a non-canonical
+      // endpoint with no grant — the resolver fails CLOSED there, so the
+      // state really is off until the operator records a choice.
+      console.log(`Consent could not be resolved (malformed config, or no grant for ${checkedEndpoint}) — remit is OFF until you set it: ${scopedConsentCommand(checkedEndpoint)} | campaigns-os telemetry off`);
     }
     return;
   }

@@ -295,6 +295,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   assetCrawl = null,
   sourceAssetCrawl = null,
   templateFamily = null,
+  templateStockPageIds = [],
   sourceScreenshots = [],
   packageId = "design-source-package",
   campaignMapId = null,
@@ -314,6 +315,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   assertInputArray(activePages, "activePages");
   assertInputArray(resolvedMappings, resolvedMappingsName);
   assertInputArray(sourceScreenshots, "sourceScreenshots");
+  assertInputArray(templateStockPageIds, "templateStockPageIds");
   for (const [name, value] of [
     ["sourceGaps", sourceGaps],
     ["sourceTodos", sourceTodos],
@@ -585,7 +587,39 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
     contributions.push(templateContribution);
   }
 
+  // Template-stock pages. A page intake declared out of source scope
+  // (templateStockPageIds) has no design of the merchant's: the selected
+  // family's stock page IS the design, and the build stage materialises it.
+  // Where the family publishes complete Template Reference proof, the
+  // template_baseline mapping above already covers the surface. Where it does
+  // not, the package used to demand a Template Reference link the operator
+  // has no channel to author; it now records an accepted coverage_absence
+  // Source Gap attributed by prepare-build instead, so the surface is
+  // excepted from primary coverage, no link/capture TODO fires for it, and
+  // readiness lands at ready_with_gaps rather than blocked.
   const clonedGaps = cloneJsonArray(sourceGaps);
+  const existingGapIds = new Set(clonedGaps.map((gap) => gap?.id).filter(isNonEmptyString));
+  if (template.family && !templateProofAssessment.complete) {
+    const templateStockSurfaceIds = new Set(
+      templateStockPageIds
+        .filter(isNonEmptyString)
+        .map((pageId) => surfaceByPageId.get(pageId))
+        .filter(Boolean),
+    );
+    for (const surface of surfaces.filter((entry) => entry.kind === "page" && templateStockSurfaceIds.has(entry.id))) {
+      const gap = {
+        id: uniqueRecordId(`template-stock-${surface.id}`, existingGapIds),
+        kind: "coverage_absence",
+        scope: "primary_design_coverage",
+        applies_to: [surface.id],
+        reason: `Page surface "${surface.id}" is template stock from the ${template.family} family: it has no design source of its own, and the build stage materialises it from that family's stock page.`,
+        status: "accepted",
+        attributed_by: "prepare-build",
+        attributed_at: null,
+      };
+      clonedGaps.push(gap);
+    }
+  }
   const clonedWaivers = cloneJsonArray(waivers);
   const generatedTodos = cloneJsonArray(sourceTodos);
   const now = Date.parse(generatedAt);

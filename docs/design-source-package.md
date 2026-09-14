@@ -361,7 +361,10 @@ durable, and it is telling you that the source material arrived without visual
 proof.
 
 The input channel that supplies that proof is the source-html manifest at
-`<source-root>/.campaigns-os/source-html-manifest.json`. Each `pages[]` entry may
+`<source-root>/.campaigns-os/source-html-manifest.json` — or, when the source
+root is not yours to write, a manifest of the same schema anywhere else, named
+with `--design-manifest <path>` on `start`, `prepare-build`, or `build` (see
+[A read-only source root](#a-read-only-source-root)). Each `pages[]` entry may
 carry a `screenshots[]` array; `prepare-build` reads it, alongside the
 equivalent `screenshot_refs` and `source_screenshot_refs` keys, and normalizes
 each record into the html_funnel contribution's `screenshot_refs`. This is the
@@ -487,20 +490,8 @@ has no bespoke design at all, because the design *is* the starter template
 family. There is nothing of the merchant's to screenshot, so a
 `source_screenshot` would be a capture of stock the toolkit already ships.
 
-`template_baseline` coverage is the honest route for such a page, and whether
-an intake operator can reach it depends entirely on the family. It is emitted
-only from a Template Reference carrying an `id`, `family`, `version`, a
-`contract_path` or `artifact_path`, and linked `template_reference_screenshot`
-records for desktop and mobile (see
-[Template Reference behavior](#template-reference-behavior)) — and that proof is
-published by the family's catalog entry, not authored by the operator.
-
-**Families that publish complete Template Reference proof — today `apollo`
-alone — have a supported intake path.** Declare each template-derived page out
-of source scope and the rest follows automatically: the catalog's Template
-Reference supplies the proof, synthesis emits `template_baseline` coverage for
-those pages, and they stop demanding screenshots that do not honestly exist.
-Two ways to declare it, both first-class:
+Declare such a page out of source scope and intake treats it as template
+stock. Two ways to declare it, both first-class:
 
 - a per-page `skip_reason` entry in the source-html manifest — a `pages[]` entry
   carrying `page_id` and `skip_reason` and no `path` (a page entry takes exactly
@@ -508,30 +499,69 @@ Two ways to declare it, both first-class:
 - `build_scope.mode: "partial"` on the CampaignSpec, when the whole scope is
   partial rather than a few named pages.
 
-`src/partial-source-build.test.mjs` covers both declarations end to end against
-`apollo`, including a clean re-run.
+Either declaration records the page on the assembly report's
+`dec_page_scope_<page>` decision with `template_stock: true` and
+`template_family` set to the family the packet locks, lists it under
+`stages.prepare_build.declared_out_of_scope`, and reaches
+`stages.prepare_build.status: "completed_partial"`. Intake demands no design
+source for the page: no `capture-*` TODO, no `link-*` TODO. The build stage
+materialises it from the locked family's own page of that role — the `next
+build` prompt names every template-stock page and the family to copy it from —
+and the family decides only *how* the package records its coverage:
 
-That path is a partial build, and it carries partial-build limits. Prepare
-reaches `stages.prepare_build.status: "completed_partial"`, not `completed`; the
-declared pages appear under `declared_out_of_scope` (with `declared_by`
-recording which mechanism declared them) and under `derived.scope`; doctor
-labels only the mapped routes as previewable; and checkout launch and
-test-order proof stay blocked while runtime pages are out of scope. You get a
-terminal, honest intake — not a fully proven campaign.
+- **A family that publishes complete Template Reference proof — today `apollo`
+  alone** — covers the page with synthesized `template_baseline` coverage from
+  the catalog's Template Reference. `readiness.status` is `ready`.
+  `src/partial-source-build.test.mjs` covers both declarations end to end
+  against `apollo`, including a clean re-run.
+- **Every other family** has no Template Reference to link, so the package
+  records an accepted `coverage_absence` Source Gap for the page instead
+  (`template-stock-<surface>`, scope `primary_design_coverage`,
+  `attributed_by: "prepare-build"`, reason naming the locked family).
+  `readiness.status` is `ready_with_gaps` — ready, and honest that the page's
+  design is stock. `src/template-stock-intake.test.mjs` covers this on the
+  two-step fixture family, whose `select` step is template stock by
+  construction.
 
-**Every other family has no operator channel.** Without a published Template
-Reference there is no `template_baseline` to synthesize, the manifest carries no
-key that declares "this page is template stock", the package is not hand-edited,
-and `checkpoint waive` registers no design-source gate — so nothing the operator
-can write clears `DESIGN_SOURCE_PACKAGE_NOT_READY` for the page.
+Until the build stage has materialised the stock pages, that is a partial
+build and it carries partial-build limits: the declared pages appear under
+`declared_out_of_scope` (with `declared_by` recording which mechanism declared
+them) and under `derived.scope.out_of_scope_pages` (each carrying
+`template_stock: true` and `template_family`); doctor labels only the mapped
+routes as previewable, warns `CampaignSpec page "<id>" is template stock and
+not built yet`, and keeps checkout launch and test-order proof blocked while a
+runtime page (`select`, `checkout`, `upsell`, `receipt`) is among them. You get
+a terminal, honest intake — not a fully proven campaign.
 
-Policy for v0: **that is deliberate, and no further operator channel is coming
-in v0.** Where no applicable template proof exists, template-stock pages are
-handled in the build stage, by `next-campaigns-build`, which owns the family
-contracts and the template material. Do not attest a screenshot of stock
-template output to get past intake, and do not read the recovery sequence below
-as a path for this case — it is the recovery for a page that *does* have a
-standalone design whose proof was missing the first time.
+The build stage lifts those limits page by page. `next-campaigns-build`
+materialises each template-stock page from the locked family's own page of
+that role (the pre-checkout `select` step first, because it seeds the cart the
+runtime pages read). Once the page's built HTML exists at its route under
+`_site/<slug>/`, doctor reads the `template_stock` marker on the scope decision
+and counts the page as built: it moves into `derived.scope.built_pages` (with
+`template_stock: true`, `template_family`, and no `source_path`), joins the
+previewable routes, no longer blocks runtime QA, and the ready list says
+`Template-stock page(s) materialised by the build stage: <id> (<family>)`. A
+declared page the build leaves unbuilt stays out of scope exactly as before.
+
+One limit stands in this version: `polish capture` plans its routes from the
+packet's mapped pages (`source_html.pages[].page_kit`), and a template-stock
+mapping carries no `page_kit`, so a materialised stock page is outside the
+polish capture plan (`route_scope: "selected"`) and its hidden-eager-media
+checkpoint — the checkpoint does not demand a capture it cannot plan. Browser
+QA resolves its routes from the CampaignSpec topology and covers the page.
+
+Do not attest a screenshot of stock template output as a design source to get
+past intake. It is no longer the only route through for a non-apollo family,
+and it never was honest: the toolkit records such a page as a high-confidence
+design-source match with a `source_hash`, and nothing downstream knows the
+page is stock. Declare it instead.
+
+The template-stock TODO that still fires — `link-<page>-template-reference`,
+for a page that is *undeclared* and has no source HTML on a family without
+Template Reference proof — names the family the packet locks (`--template-family`
+first, then the CampaignSpec `preferred_template_family` hint), the same
+family the `template-baseline` contribution's `presentation_intent` names.
 
 ### Recovery after a blocked first run
 
@@ -609,14 +639,20 @@ bytes anywhere under the source root. An accepted screenshot-absence Source Gap
 or an active approved `source_screenshot`-scope waiver clears it the same way,
 where one exists — v0 has no operator channel for authoring either.
 
-Two mechanics to plan around. The manifest path is fixed at
-`<source-root>/.campaigns-os/source-html-manifest.json` and is not
-configurable, so whoever adds or changes `screenshots[]` writes that one file
-inside the source root; it is the source-preparation side's artifact, which is
-the ownership boundary described below. And the packet stores
-`source_html.root` relative to the packet file, so a packet resolves its source
-from the location it was written at: replay a run from the same place, or expect
-doctor to report `source_html.root` as missing.
+Two mechanics to plan around. The manifest is read from
+`<source-root>/.campaigns-os/source-html-manifest.json` by default; when nobody
+can write there, pass `--design-manifest <path>` to `start`, `prepare-build`,
+or `build` and the same `source-html-manifest/v0` document is read from that
+file instead — `pages[].path` and `files[].path` stay relative to `--source`,
+never to the manifest. The Design Source Package records the file it read
+(`contributions[html-funnel].provenance.manifest_path`, relative to the
+package), and doctor validates that same file on every later run. A bare flag,
+a missing file, or a manifest that fails validation is an error before
+anything is written, not the warning-and-filesystem-fallback the default path
+gets: you named the file. And the packet stores `source_html.root` relative to
+the packet file, so a packet resolves its source from the location it was
+written at: replay a run from the same place, or expect doctor to report
+`source_html.root` as missing.
 
 ## Lifecycle ownership and freshness
 

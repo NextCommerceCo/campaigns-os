@@ -105,9 +105,23 @@ Consent is a **machine/user-level** setting (consent belongs to the operator,
 not the campaign), resolved through one shared resolver that **every remitting
 command calls** — not a one-time `start` prompt that later commands bypass.
 
-- **Stored** at user level (e.g. `~/.config/campaigns-os/config.json`) with its
-  own `schema_version`, the package name, the proxy/endpoint scope, a timestamp,
-  and the value source.
+- **Stored** at user level (`$XDG_CONFIG_HOME/campaigns-os/config.json`, else
+  `~/.config/campaigns-os/config.json`) with its own `schema_version`, the
+  package name, the proxy/endpoint scope, a timestamp, and the value source.
+- **Scoped to one endpoint.** A stored grant names the endpoint it was given
+  for and applies to remits that go there, not to any other base.
+  `campaigns-os telemetry on` grants the canonical NEXT endpoint;
+  `campaigns-os telemetry on --proxy-base <url>` grants that receiver instead
+  (a loopback or staging receiver; the base must be https or a loopback host,
+  the same rule the remit rail applies). The file holds one grant at a time,
+  so granting a staging receiver leaves the canonical endpoint OFF until
+  `telemetry on` is run again without the flag. A remit whose `--proxy-base`
+  does not match the stored scope stays OFF and the warning names the command
+  that would grant it. `campaigns-os telemetry status` prints the stored scope
+  and checks it against the canonical endpoint, or against `--proxy-base <url>`
+  when given (the same https-or-loopback rule applies). `campaigns-os
+  telemetry off` takes no `--proxy-base`: an OFF choice applies to every
+  endpoint, and the record it writes carries no scope.
 - **Prompted once, up front** — the first interactive command that would remit
   asks plainly: "Campaigns OS can send build telemetry to Next Commerce to
   improve templates, tools, and guidance. Share telemetry from this machine?
@@ -116,7 +130,10 @@ command calls** — not a one-time `start` prompt that later commands bypass.
   hunting for the config file.
 - **Env override** — `CAMPAIGNS_OS_TELEMETRY` accepts `1|true|on` /
   `0|false|off`; it beats the file (CI/automation). An **unknown** value
-  fails closed (no remit) with a warning, never a silent guess.
+  fails closed (no remit) with a warning, never a silent guess. `on` has no
+  scope: it applies to whatever endpoint the command names, so a remit to a
+  non-canonical `--proxy-base` under it warns that the override bypasses scope
+  checking and names the scoped `telemetry on --proxy-base` grant instead.
 - **No file, no env** → **ON for the canonical NEXT endpoint only**, announced
   at remit time with the endpoint and the opt-out command. A non-canonical
   `--proxy-base` (staging, self-hosted) stays **OFF** until explicitly

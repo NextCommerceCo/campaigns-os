@@ -26,12 +26,26 @@ if (args.length && (args.length !== 1 || args[0] !== "--skip-prepare")) {
 // The full check pipeline already compiled once. Standalone check:pack keeps
 // npm's prepare lifecycle, so it still verifies a fresh build from source.
 const skipPrepare = args[0] === "--skip-prepare";
+const workingDist = ["campaign-spec/dist/index.js", "campaign-spec/dist/index.d.ts"].map((rel) => join(ROOT, rel));
+let distMtimeBeforePack = null;
+const distBeforePack = new Map();
 if (skipPrepare) {
   // --ignore-scripts suppresses all pack hooks, not just prepare. Fail closed
   // if future packaging starts depending on a hook this fast path would omit.
   const scripts = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts ?? {};
   const omittedHooks = ["prepack", "postpack"].filter(name => scripts[name]);
   if (omittedHooks.length) fail(`--skip-prepare cannot omit packaging hooks: ${omittedHooks.join(", ")}; use standalone check:pack`);
+  // The pipeline's build is the thing under test. Refuse to pack without it
+  // rather than let a prepare re-run (below) manufacture one on the way.
+  for (const path of workingDist) {
+    if (!existsSync(path)) fail(`${path.slice(ROOT.length + 1)} missing from the working tree; --skip-prepare packs the build the pipeline already made`);
+  }
+  // npm before 11 (pacote < 21) runs the prepare script during `npm pack` even
+  // under --ignore-scripts, overwriting the working-tree build on the way.
+  // Snapshot the pipeline's build now so the tarball is compared against what
+  // the suite actually ran on, and so a re-run is reported rather than hidden.
+  for (const path of workingDist) distBeforePack.set(path, readFileSync(path));
+  distMtimeBeforePack = statSync(workingDist[0]).mtimeMs;
 }
 
 const work = mkdtempSync(join(tmpdir(), "campaigns-os-pack-"));
@@ -44,6 +58,24 @@ try {
   tarball = join(work, packed[0].filename);
   execFileSync("tar", ["-xzf", tarball, "-C", work]);
   const pkgRoot = join(work, "package");
+  if (skipPrepare) {
+    // Honesty of the fast path: what got packed is the build the pipeline
+    // already tested, byte for byte, compared against the snapshot taken
+    // before npm had any chance to rebuild it.
+    for (const [path, before] of distBeforePack) {
+      const rel = path.slice(ROOT.length + 1);
+      if (!existsSync(join(pkgRoot, rel))) fail(`${rel} missing from tarball`);
+      if (!before.equals(readFileSync(join(pkgRoot, rel)))) fail(`packed ${rel} differs from the build the pipeline already made`);
+    }
+    if (statSync(workingDist[0]).mtimeMs !== distMtimeBeforePack) {
+      const npmVersion = execFileSync("npm", ["--version"], { encoding: "utf8" }).trim();
+      console.warn(
+        `pack check note: npm ${npmVersion} re-ran the prepare script during npm pack despite --ignore-scripts ` +
+          `(npm before 11 does not honour it for prepare), so build:spec ran a second time; its output matched the build the pipeline already made. ` +
+          `npm 11+ packs the prior build without rebuilding.`,
+      );
+    }
+  }
 
   // 1. Compiled artifact + types are present.
   const distEntry = join(pkgRoot, "campaign-spec/dist/index.js");

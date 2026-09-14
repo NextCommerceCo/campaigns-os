@@ -16,8 +16,10 @@ const {
   ASSET_FETCH_TIMEOUT_MS,
   ASSET_FETCH_MAX_BYTES,
   paymentChromeResidueAssertion,
+  pricingVisibilityAssertions,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
+  checkoutTotalSelectors,
   placeholderTextResidueAssertion,
   demoAssetResidueAssertion,
 } = __qaBrowserTestHooks;
@@ -57,7 +59,7 @@ test("computed-style residue fails when a commerce surface renders the starter p
   assert.equal(result.evidence.matches.length, 2);
 });
 
-test("computed-style residue passes branded surfaces and respects waived severity", () => {
+test("computed-style residue passes branded surfaces; under a waived gate residue is a warn row, not a fail", () => {
   const pass = computedStyleResidueAssertions({
     page: checkoutPage,
     evidence: [{ id: "checkout_submit_button", selector: ".submit-button", optional: false, found: true, properties: { "background-color": "rgb(34, 85, 51)" } }],
@@ -73,8 +75,12 @@ test("computed-style residue passes branded surfaces and respects waived severit
     forbidden,
     severity: "warn",
   })[0];
-  assert.equal(waived.status, "fail");
+  // The theme waiver promised "those rows downgrade to warn"; a row that
+  // reads `status: fail` under a waiver is the unwaived shape with a tag.
+  assert.equal(waived.status, "warn");
   assert.equal(waived.severity, "warn");
+  assert.equal(waived.id, "template-residue:checkout:style:checkout_submit_button");
+  assert.match(waived.expected, /starter default/);
 });
 
 test("missing selectors: optional contract entries skip, required ones warn (contract drift, not a blocker)", () => {
@@ -107,6 +113,11 @@ test("logo residue fails on the starter asset basename, passes branded logos, sk
 
   const skipped = logoResidueAssertion({ page: checkoutPage, logo, sources: [], severity: "blocker" });
   assert.equal(skipped.status, "skipped");
+
+  const waived = logoResidueAssertion({ page: checkoutPage, logo, sources: ["/c/images/next-logo.png"], severity: "warn" });
+  assert.equal(waived.status, "warn");
+  assert.equal(waived.severity, "warn");
+  assert.match(waived.actual, /starter logo asset still referenced/);
 });
 
 test("payment chrome artifacts split per method; shared chrome counts for any unsupported method", () => {
@@ -163,8 +174,9 @@ test("payment chrome residue fails on a visible selector match or a referenced a
     referencedAssets: [],
     severity: "warn",
   });
-  assert.equal(visible.status, "fail");
+  assert.equal(visible.status, "warn");
   assert.equal(visible.severity, "warn");
+  assert.match(visible.actual, /residue found/);
 });
 
 test("upsell pricing visibility: zero visible price rows is a blocker, one or more passes with the count", () => {
@@ -172,7 +184,10 @@ test("upsell pricing visibility: zero visible price rows is a blocker, one or mo
 
   // The dogfood escape: .rr-full-price .price-wrapper:first-child { display:none!important }
   const hidden = upsellPriceVisibilityAssertion({ page: upsellPage, selectors, visibleCount: 0 });
-  assert.equal(hidden.id, "pricing.upsell_price_visible");
+  // page-scoped: a funnel with two upsells emits one row per page, so the id
+  // carries the page like template-residue:<page>:* and meta:<page>:* do
+  assert.equal(hidden.id, "pricing.upsell_price_visible:upsell-1");
+  assert.equal(upsellPriceVisibilityAssertion({ page: { ...upsellPage, page_id: "upsell-2" }, selectors, visibleCount: 1 }).id, "pricing.upsell_price_visible:upsell-2");
   assert.equal(hidden.family, "pricing");
   assert.equal(hidden.status, "fail");
   assert.equal(hidden.severity, "blocker");
@@ -194,6 +209,75 @@ test("checkout pricing visibility: zero visible bundle price rows is a warning, 
 
   const visible = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 3 });
   assert.equal(visible.status, "pass");
+});
+
+test("checkout pricing visibility: a visible cart-summary total satisfies the check when no bundle row renders", () => {
+  const selectors = demeter.pricing_surfaces.surfaces.checkout_bundle.price_row_selectors;
+  const totalSelectors = checkoutTotalSelectors();
+  // The cart was seeded upstream (or the checkout was entered directly), so no
+  // bundle price row exists on the page — but the shopper sees the order
+  // total, the same surface the order-total parity check reads at submit.
+  const totalOnly = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 0, totalSelectors, totalVisibleCount: 1 });
+  assert.equal(totalOnly.id, "pricing.checkout_price_visible");
+  assert.equal(totalOnly.status, "pass");
+  assert.equal(totalOnly.severity, undefined);
+  assert.equal(totalOnly.actual, "0 visible price row(s); 1 visible cart-summary total(s)");
+  assert.deepEqual(totalOnly.evidence.total_selectors, totalSelectors);
+  assert.equal(totalOnly.evidence.total_visible_count, 1);
+  assert.equal(totalOnly.evidence.visible_count, 0);
+
+  const nothing = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 0, totalSelectors, totalVisibleCount: 0 });
+  assert.equal(nothing.status, "fail");
+  assert.equal(nothing.severity, "warn");
+  assert.match(nothing.expected, /cart-summary total/);
+});
+
+test("checkout pricing visibility: the cart-summary total is still checked when the contract declares no bundle price rows", async () => {
+  const totalSelectors = checkoutTotalSelectors();
+  const evaluated = [];
+  // A page whose only price surface is the cart-summary total: the total
+  // selectors match one visible element, anything else matches nothing.
+  const browserPage = {
+    evaluate: async (_fn, targets) => {
+      evaluated.push(targets);
+      return JSON.stringify(targets) === JSON.stringify(totalSelectors) ? 1 : 0;
+    },
+  };
+  const brandContract = { pricing_surfaces: { surfaces: { checkout_bundle: { price_row_selectors: [] } } } };
+
+  const results = await pricingVisibilityAssertions(browserPage, checkoutPage, { brandContract });
+  assert.equal(results.length, 1, "a contract with no bundle selectors still emits the checkout pricing row");
+  const [row] = results;
+  assert.equal(row.id, "pricing.checkout_price_visible");
+  assert.equal(row.status, "pass");
+  assert.equal(row.actual, "0 visible price row(s); 1 visible cart-summary total(s)");
+  assert.deepEqual(row.evidence.selectors, []);
+  assert.equal(row.evidence.visible_count, 0);
+  assert.deepEqual(row.evidence.total_selectors, totalSelectors);
+  assert.equal(row.evidence.total_visible_count, 1);
+  // Only the total was read from the page; no query ran for the empty bundle list.
+  assert.deepEqual(evaluated, [totalSelectors]);
+
+  const missing = { evaluate: async () => 0 };
+  const [absent] = await pricingVisibilityAssertions(missing, checkoutPage, { brandContract });
+  assert.equal(absent.status, "fail");
+  assert.equal(absent.severity, "warn");
+  assert.equal(absent.actual, "0 visible price row(s); 0 visible cart-summary total(s)");
+});
+
+test("checkout pricing visibility: total evidence is omitted when the cart-summary total was not read", () => {
+  const selectors = demeter.pricing_surfaces.surfaces.checkout_bundle.price_row_selectors;
+  const bundleOnly = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 1 });
+  assert.equal(bundleOnly.status, "pass");
+  assert.equal(bundleOnly.expected, "at least one visible checkout bundle price row");
+  assert.equal(bundleOnly.actual, "1 visible price row(s)");
+  assert.equal("total_selectors" in bundleOnly.evidence, false);
+  assert.equal("total_visible_count" in bundleOnly.evidence, false);
+
+  const withTotal = checkoutPriceVisibilityAssertion({ page: checkoutPage, selectors, visibleCount: 1, totalSelectors: [], totalVisibleCount: 0 });
+  assert.deepEqual(withTotal.evidence.total_selectors, []);
+  assert.equal(withTotal.evidence.total_visible_count, 0);
+  assert.equal(withTotal.actual, "1 visible price row(s); 0 visible cart-summary total(s)");
 });
 
 // --- H3.1: placeholder text-residue is a verdict blocker, like color residue ---

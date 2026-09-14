@@ -2,7 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 
@@ -250,6 +250,33 @@ function runCliText(args, env = process.env) {
   });
 }
 
+// The example target repo is tracked. A doctor run writes its sidecar
+// (.campaign-runtime/doctor-output.json) into whatever target it is pointed
+// at, so every fixture that needs the example stages a copy under its own
+// temp dir and the checkout stays byte-identical across runs.
+function stageExampleTargetRepo(tmp) {
+  const targetRepo = resolve(tmp, "target-page-kit");
+  cpSync(resolve(root, "examples/target-page-kit"), targetRepo, { recursive: true });
+  return targetRepo;
+}
+
+// The example packet references its spec, source, target and the catalog by
+// relative path (`../contracts/...`). Fixtures that run it as committed do so
+// from a staged copy of that layout, so every artifact a command writes next
+// to the packet or into its target lands under the temp dir.
+function stageExamplePacket(tmp) {
+  const stagedExamples = resolve(tmp, "examples");
+  mkdirSync(resolve(tmp, "contracts"), { recursive: true });
+  cpSync(catalogPath, resolve(tmp, "contracts/commerce-surface-catalog.json"));
+  for (const entry of ["source-html", "target-page-kit"]) {
+    cpSync(resolve(root, "examples", entry), resolve(stagedExamples, entry), { recursive: true });
+  }
+  for (const file of ["campaignspec.v42.basic.json", "build-packet.basic.json"]) {
+    cpSync(resolve(root, "examples", file), resolve(stagedExamples, file));
+  }
+  return resolve(stagedExamples, "build-packet.basic.json");
+}
+
 validateCatalogFixtures();
 
 const qaRunHelp = runCliText(["qa", "run", "--help"]);
@@ -403,12 +430,17 @@ try {
   rmSync(qaPolicyTmp, { recursive: true, force: true });
 }
 
-const doctor = runCliJson(["doctor", "--packet", packet, "--json"], envWithout("CAMPAIGNS_API_KEY"));
-if (doctor.warnings?.some((issue) => issue.code === "campaign.api_key_source")) {
-  throw new Error("Doctor should accept CampaignSpec campaign.campaigns_api_key without requiring CAMPAIGNS_API_KEY.");
-}
-if (!doctor.warnings?.some((issue) => issue.code === "routing_meta.runtime_root")) {
-  throw new Error("Doctor should warn when CampaignSpec routing meta tags are not runtime-rooted under the campaign slug.");
+const examplePacketTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-example-packet-"));
+try {
+  const doctor = runCliJson(["doctor", "--packet", stageExamplePacket(examplePacketTmp), "--json"], envWithout("CAMPAIGNS_API_KEY"));
+  if (doctor.warnings?.some((issue) => issue.code === "campaign.api_key_source")) {
+    throw new Error("Doctor should accept CampaignSpec campaign.campaigns_api_key without requiring CAMPAIGNS_API_KEY.");
+  }
+  if (!doctor.warnings?.some((issue) => issue.code === "routing_meta.runtime_root")) {
+    throw new Error("Doctor should warn when CampaignSpec routing meta tags are not runtime-rooted under the campaign slug.");
+  }
+} finally {
+  rmSync(examplePacketTmp, { recursive: true, force: true });
 }
 
 const sdkMismatchTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-sdk-mismatch-"));
@@ -548,7 +580,7 @@ try {
   const partialPacket = readJson(packet);
   partialPacket.source_html.root = resolve(root, "examples/source-html");
   partialPacket.spec.local_path = resolve(root, "examples/campaignspec.v42.basic.json");
-  partialPacket.assembly.target_repo = resolve(root, "examples/target-page-kit");
+  partialPacket.assembly.target_repo = stageExampleTargetRepo(partialScopeTmp);
   partialPacket.assembly.commerce_catalog.path = catalogPath;
   partialPacket.source_html.pages = [
     { page_id: "landing", path: "landing.html" },
@@ -602,7 +634,7 @@ try {
   const shopPacket = readJson(packet);
   shopPacket.source_html.root = sourceRoot;
   shopPacket.spec.local_path = resolve(root, "examples/campaignspec.v42.basic.json");
-  shopPacket.assembly.target_repo = resolve(root, "examples/target-page-kit");
+  shopPacket.assembly.target_repo = stageExampleTargetRepo(unusedShippingTmp);
   shopPacket.assembly.template_family = "shop-single-step";
   shopPacket.assembly.commerce_catalog.path = catalogPath;
   shopPacket.assembly.template_lock = {
@@ -637,7 +669,7 @@ try {
   const rootedPacket = readJson(packet);
   rootedPacket.spec.local_path = rootedSpecPath;
   rootedPacket.source_html.root = resolve(root, "examples/source-html");
-  rootedPacket.assembly.target_repo = resolve(root, "examples/target-page-kit");
+  rootedPacket.assembly.target_repo = stageExampleTargetRepo(routingMetaTmp);
   rootedPacket.assembly.commerce_catalog.path = catalogPath;
   const rootedPacketPath = resolve(routingMetaTmp, "campaign-runtime.build.json");
   writeJson(rootedPacketPath, rootedPacket);
@@ -1278,36 +1310,42 @@ try {
   rmSync(designSourceTmp, { recursive: true, force: true });
 }
 
-execFileSync(process.execPath, [cli, "next", "build", "--packet", packet, "--json"], {
-  cwd: root,
-  stdio: "pipe",
-  env: { ...process.env, CAMPAIGNS_API_KEY: "fixture-key" },
-});
+const qaResolveTmp = mkdtempSync(resolve(tmpdir(), "campaigns-os-qa-resolve-"));
+try {
+  const stagedPacket = stageExamplePacket(qaResolveTmp);
+  execFileSync(process.execPath, [cli, "next", "build", "--packet", stagedPacket, "--json"], {
+    cwd: root,
+    stdio: "pipe",
+    env: { ...process.env, CAMPAIGNS_API_KEY: "fixture-key" },
+  });
 
-execFileSync(process.execPath, [cli, "qa", "resolve", "--packet", packet, "--json"], {
-  cwd: root,
-  stdio: "pipe",
-  env: { ...process.env, CAMPAIGNS_API_KEY: "fixture-key" },
-});
+  execFileSync(process.execPath, [cli, "qa", "resolve", "--packet", stagedPacket, "--json"], {
+    cwd: root,
+    stdio: "pipe",
+    env: { ...process.env, CAMPAIGNS_API_KEY: "fixture-key" },
+  });
 
-const resolvedQa = runCliJson(["qa", "resolve", "--packet", packet, "--base-url", "https://preview.example.com", "--json"], {
-  ...process.env,
-  CAMPAIGNS_API_KEY: "fixture-key",
-});
-const pages = resolvedQa.funnels?.[0]?.pages ?? [];
-const checkout = pages.find((page) => page.page_id === "checkout");
-const upsell = pages.find((page) => page.page_id === "upsell");
-if (resolvedQa.base_url !== "https://preview.example.com/runtime-packet-demo/") {
-  throw new Error(`QA base URL should resolve to campaign root, got ${resolvedQa.base_url}`);
-}
-if (checkout?.url !== "https://preview.example.com/runtime-packet-demo/checkout/") {
-  throw new Error(`QA checkout URL should include campaign slug, got ${checkout?.url}`);
-}
-if (checkout?.expected_meta_tags?.["next-success-url"] !== "/runtime-packet-demo/upsell/") {
-  throw new Error(`QA should expect runtime-rooted next-success-url, got ${checkout?.expected_meta_tags?.["next-success-url"]}`);
-}
-if (upsell?.expected_meta_tags?.["next-upsell-accept-url"] !== "/runtime-packet-demo/receipt/") {
-  throw new Error(`QA should expect runtime-rooted next-upsell-accept-url, got ${upsell?.expected_meta_tags?.["next-upsell-accept-url"]}`);
+  const resolvedQa = runCliJson(["qa", "resolve", "--packet", stagedPacket, "--base-url", "https://preview.example.com", "--json"], {
+    ...process.env,
+    CAMPAIGNS_API_KEY: "fixture-key",
+  });
+  const pages = resolvedQa.funnels?.[0]?.pages ?? [];
+  const checkout = pages.find((page) => page.page_id === "checkout");
+  const upsell = pages.find((page) => page.page_id === "upsell");
+  if (resolvedQa.base_url !== "https://preview.example.com/runtime-packet-demo/") {
+    throw new Error(`QA base URL should resolve to campaign root, got ${resolvedQa.base_url}`);
+  }
+  if (checkout?.url !== "https://preview.example.com/runtime-packet-demo/checkout/") {
+    throw new Error(`QA checkout URL should include campaign slug, got ${checkout?.url}`);
+  }
+  if (checkout?.expected_meta_tags?.["next-success-url"] !== "/runtime-packet-demo/upsell/") {
+    throw new Error(`QA should expect runtime-rooted next-success-url, got ${checkout?.expected_meta_tags?.["next-success-url"]}`);
+  }
+  if (upsell?.expected_meta_tags?.["next-upsell-accept-url"] !== "/runtime-packet-demo/receipt/") {
+    throw new Error(`QA should expect runtime-rooted next-upsell-accept-url, got ${upsell?.expected_meta_tags?.["next-upsell-accept-url"]}`);
+  }
+} finally {
+  rmSync(qaResolveTmp, { recursive: true, force: true });
 }
 
 // Slice 3: `--map-id` resolves the spec from the proxy Worker.
@@ -1564,7 +1602,11 @@ try {
   }
 
   // 2. CLI override wins on conflict. Spec hint = olympus-mv-single-step,
-  //    CLI override = olympus-mv-two-step → packet locks two-step.
+  //    CLI override = olympus-mv-two-step → packet locks two-step. The Design
+  //    Source Package builds on the family the packet locks, so changing that
+  //    family is material drift and the first run's package must go first —
+  //    the documented recovery for a package no downstream stage consumed.
+  rmSync(resolve(targetRepo, ".campaign-runtime/input/design-source-package.json"), { force: true });
   runCliJsonAllowFailure([
     "prepare-build",
     "--spec", specPath,
