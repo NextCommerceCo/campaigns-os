@@ -80,7 +80,8 @@ test("an env source that does not name a campaign key is refused, not read", () 
     const rejected = result.warnings.find((issue) => issue.code === "campaign.api_key_rejected");
     assert.ok(rejected);
     assert.equal(rejected.detail.kind, "unsupported_env_name");
-    assert.match(rejected.message, /env:AWS_SECRET_ACCESS_KEY/);
+    // The identifier the packet declared is quoted verbatim, never re-cased.
+    assert.match(rejected.message, /^api_key_source "env:AWS_SECRET_ACCESS_KEY" does not name a campaign key/);
     assert.doesNotMatch(rejected.message, /very-secret/);
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -5519,8 +5519,12 @@ function validateCampaignsApiKey(packet, spec, warnings, ready) {
   );
 }
 
-function capitalizeFirst(text) {
-  return typeof text === "string" && text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
+// The malformed-key description starts mid-sentence ("the Campaigns API key
+// from …"), which reads wrong at the head of a warning line; the env-name one
+// starts with an identifier (`api_key_source "env:…"`) that must not be
+// touched. Only the former is capitalised.
+function sentenceCase(text) {
+  return typeof text === "string" ? text.replace(/^the /, "The ") : text;
 }
 
 // Doctor's view of the key is a projection of the one resolver the remit
@@ -5546,7 +5550,7 @@ function resolveCampaignsApiKey(packet, spec, env) {
       present: false,
       source: resolved.rejected.source,
       rejected: resolved.rejected,
-      warning: `${capitalizeFirst(describeCampaignKeyRejection(resolved.rejected))} API-side package/shipping/offer confirmation is deferred.`,
+      warning: `${sentenceCase(describeCampaignKeyRejection(resolved.rejected))} API-side package/shipping/offer confirmation is deferred.`,
     };
   }
 
