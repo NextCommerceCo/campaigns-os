@@ -420,7 +420,8 @@ test("a derived slug with no built directory is a mismatch finding, never a sile
     const mismatch = root.findings.find((item) => item.code === "built_output.slug_mismatch");
     assert.equal(mismatch.severity, "operator_readiness");
     assert.match(mismatch.message, /no acme\/ directory for campaign slug acme \(from campaigns_json\); built directories: stale-old/);
-    assert.deepEqual(mismatch.evidence, { expected_slug: "acme", slug_source: "campaigns_json", slug_candidates: ["stale-old"] });
+    assert.deepEqual(mismatch.evidence, { expected_slug: "acme", slug_source: "campaigns_json", slug_directory_present: false, slug_candidates: ["stale-old"] });
+    assert.equal(root.built_output.slug_directory_present, false);
     assert.ok(!codes(root).includes("built_output.scope_unresolved"));
     assert.match(formatStandardizationReportMarkdown(report), /- Built slug: acme not found \(built directories: stale-old\)/);
 
@@ -429,6 +430,29 @@ test("a derived slug with no built directory is a mismatch finding, never a sile
     const explicit = createStandardizationReport({ targetRepo: dir, slug: "acme" }).roots[0];
     assert.ok(codes(explicit).includes("built_output.scope_unresolved"));
     assert.ok(!codes(explicit).includes("built_output.slug_mismatch"));
+  });
+});
+
+test("a derived slug whose built directory holds no HTML pages is named as empty, not missing", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    rmSync(join(dir, "_site", "acme"), { recursive: true, force: true });
+    write(join(dir, "_site", "acme", "assets", "app.css"), "body{}");
+    write(join(dir, "_site", "stale-old", "index.html"), "<h1>Stale</h1>");
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+    assert.equal(root.built_output.scope_resolved, false);
+    assert.equal(root.built_output.slug, "acme");
+    assert.equal(root.built_output.slug_directory_present, true);
+    assert.deepEqual(root.built_output.slug_candidates, ["stale-old"]);
+    const mismatch = root.findings.find((item) => item.code === "built_output.slug_mismatch");
+    assert.match(mismatch.message, /^Built _site\/acme\/ exists but holds no HTML pages for campaign slug acme \(from campaigns_json\); built directories: stale-old\./);
+    assert.ok(!/no acme\/ directory/.test(mismatch.message));
+    assert.equal(mismatch.evidence.slug_directory_present, true);
+    assert.match(mismatch.next_action, /contains its HTML pages/);
+    assert.match(root.built_output.doctor.reason, /exists but holds no HTML pages/);
+    assert.match(formatStandardizationReportMarkdown(report), /- Built slug: acme has no HTML pages \(built directories: stale-old\)/);
   });
 });
 

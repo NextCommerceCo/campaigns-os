@@ -107,8 +107,11 @@ carry the same answer. Two outcomes replace a silent guess:
   `campaigns.json` or a packet, but `_site/` has no directory for it. The
   built output belongs to some other campaign (a stale build, typically), so
   the doctor is skipped and the finding names the expected slug, its source,
-  and the directories that are there. Rebuild, or pass `--slug` to inspect a
-  different directory on purpose.
+  and the directories that are there. When `_site/<slug>/` exists but holds
+  no HTML pages the same finding says so (`exists but holds no HTML pages`,
+  evidence `slug_directory_present: true`) rather than calling the directory
+  missing. Rebuild, or pass `--slug` to inspect a different directory on
+  purpose.
 
 Whenever a slug was needed, the doctor proof command under `remediation`
 carries it (`--slug <resolved>`), so the command the report hands back is the

@@ -342,7 +342,15 @@ function scanPageKitRoot({
   const campaigns = readCampaigns(rootPath);
   const packageInfo = readPackageInfo(rootPath);
   const runtime = readRuntimeArtifacts(rootPath, targetRepo, files);
-  const sourceScan = scanSourceFiles(rootPath, structureFiles, sourceFiles, campaigns.slugs);
+  // The checkout field contract applies wherever inline checkout bindings
+  // exist; a Page Kit root that inlines checkout markup is inspected exactly
+  // like an application root, and the capability is listed only when it ran.
+  // The binding attributes come from the effective contract (override
+  // included), so a contract that names other attributes still finds them;
+  // the prefilter runs inside the one read scanSourceFiles already makes.
+  const contract = loadCheckoutFieldContract(fieldContract);
+  const bindingPattern = new RegExp(`\\b(?:${(contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"]).map(escapeRegExp).join("|")})\\s*=`);
+  const sourceScan = scanSourceFiles(rootPath, structureFiles, sourceFiles, campaigns.slugs, bindingPattern);
   const templateFamily = inferTemplateFamily({
     explicitTemplateFamily,
     runtime,
@@ -364,17 +372,7 @@ function scanPageKitRoot({
     policy,
     contractFindings,
   );
-  // The checkout field contract applies wherever inline checkout bindings
-  // exist; a Page Kit root that inlines checkout markup is inspected exactly
-  // like an application root, and the capability is listed only when it ran.
-  // The binding attributes come from the effective contract (override
-  // included), so a contract that names other attributes still finds them.
-  const contract = loadCheckoutFieldContract(fieldContract);
-  const bindingPattern = new RegExp(`\\b(?:${(contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"]).map(escapeRegExp).join("|")})\\s*=`);
-  const bindingFiles = structureFiles.filter((file) => {
-    const read = safeReadText(file);
-    return read.ok && bindingPattern.test(read.value);
-  });
+  const bindingFiles = sourceScan.binding_files;
   let checkoutFields = null;
   if (bindingFiles.length) {
     checkoutFields = inspectCheckoutFields(rootPath, bindingFiles, contract, contractFindings);
@@ -644,7 +642,7 @@ function readRuntimeArtifacts(rootPath, targetRepo, rootFiles = []) {
   };
 }
 
-function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
+function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPattern = null) {
   const findings = [];
   const helperCounts = {
     campaign_asset: 0,
@@ -662,6 +660,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
   const receiptFiles = new Set();
   const packageRefs = [];
   const shippingRefs = [];
+  const bindingFiles = [];
 
   const includeFiles = structureFiles.filter((file) => relPath(rootPath, file).includes("/_includes/"));
   const layoutFiles = structureFiles.filter((file) => relPath(rootPath, file).includes("/_layouts/"));
@@ -688,6 +687,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
       helperCounts.campaign_link += countLiteral(content, "campaign_link");
       collectPatternSamples(rawBlocks, rootPath, file, content, RAW_BLOCK_PATTERN);
       collectHardcodedAssetSamples(hardcodedAssets, rootPath, file, content, slugs);
+      if (bindingPattern && bindingPattern.test(content)) bindingFiles.push(file);
       if (isPaymentMethodsInclude(file, content)) {
         paymentMethodFiles.push(rel);
       }
@@ -804,6 +804,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
       package_refs: { count: packageRefs.length, samples: packageRefs.slice(0, MAX_SAMPLE_COUNT) },
       shipping_refs: { count: shippingRefs.length, samples: shippingRefs.slice(0, MAX_SAMPLE_COUNT) },
     },
+    binding_files: bindingFiles,
     findings,
   };
 }
@@ -863,9 +864,17 @@ function inspectBuiltOutput(rootPath, campaignSlug) {
     // built directory is a mismatch, not an ambiguity: the built output belongs
     // to some other campaign, so it is named rather than silently inspected.
     const derivedMismatch = requestedSlug && campaignSlug.source !== "operator_flag";
+    // The scope resolver sets campaign_dir when _site/<slug>/ exists but holds
+    // no HTML pages; that is an empty build, not a missing one, and is named
+    // as such so the remediation cue is right.
+    const directoryPresent = Boolean(scope.campaign_dir);
     const candidates = derivedMismatch ? builtSlugCandidates(siteRoot) : (scope.slug_candidates || []);
+    const builtDirectories = `built directories: ${candidates.join(", ") || "(none)"}`;
+    const mismatch = directoryPresent
+      ? `built _site/${requestedSlug}/ exists but holds no HTML pages for campaign slug ${requestedSlug} (from ${campaignSlug.source})`
+      : `built _site has no ${requestedSlug}/ directory for campaign slug ${requestedSlug} (from ${campaignSlug.source})`;
     const reason = derivedMismatch
-      ? `built _site has no ${requestedSlug}/ directory for campaign slug ${requestedSlug} (from ${campaignSlug.source}); built directories: ${candidates.join(", ") || "(none)"}`
+      ? `${mismatch}; ${builtDirectories}`
       : (scope.error || "built scope could not be resolved");
     return {
       present: true,
@@ -876,15 +885,18 @@ function inspectBuiltOutput(rootPath, campaignSlug) {
       html_count: 0,
       pages: [],
       slug_candidates: candidates,
+      ...(derivedMismatch ? { slug_directory_present: directoryPresent } : {}),
       doctor: { status: "skipped", reason },
       findings: [derivedMismatch
         ? finding({
           severity: "operator_readiness",
           category: "operator_readiness",
           code: "built_output.slug_mismatch",
-          message: `Built _site has no ${requestedSlug}/ directory for campaign slug ${requestedSlug} (from ${campaignSlug.source}); built directories: ${candidates.join(", ") || "(none)"}. The built-output doctor was skipped rather than run against another campaign's pages.`,
-          evidence: { expected_slug: requestedSlug, slug_source: campaignSlug.source, slug_candidates: candidates },
-          next_action: "Rebuild the campaign so _site/<slug>/ exists, or pass --slug to inspect a different built directory on purpose.",
+          message: `${mismatch.charAt(0).toUpperCase()}${mismatch.slice(1)}; ${builtDirectories}. The built-output doctor was skipped rather than run against ${directoryPresent ? "an empty build" : "another campaign's pages"}.`,
+          evidence: { expected_slug: requestedSlug, slug_source: campaignSlug.source, slug_directory_present: directoryPresent, slug_candidates: candidates },
+          next_action: directoryPresent
+            ? "Rebuild the campaign so _site/<slug>/ contains its HTML pages, or pass --slug to inspect a different built directory on purpose."
+            : "Rebuild the campaign so _site/<slug>/ exists, or pass --slug to inspect a different built directory on purpose.",
         })
         : finding({
           severity: "operator_readiness",
@@ -1110,9 +1122,10 @@ function formatBuiltSlug(root) {
   if (!built.present) return "(no built _site)";
   if (built.scope_resolved === false) {
     const candidates = built.slug_candidates?.length ? ` (built directories: ${built.slug_candidates.join(", ")})` : "";
-    return built.slug ? `${built.slug} not found${candidates}` : `unresolved${candidates}`;
+    if (!built.slug) return `unresolved${candidates}`;
+    return built.slug_directory_present ? `${built.slug} has no HTML pages${candidates}` : `${built.slug} not found${candidates}`;
   }
-  return built.slug ? `${built.slug} (${built.slug_source})` : "site root";
+  return built.slug ? `${built.slug} (${built.slug_source})` : `site root (${built.slug_source || "site_layout"})`;
 }
 
 // Html-bearing directories directly under _site/, the same set the scope

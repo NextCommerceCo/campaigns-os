@@ -515,8 +515,13 @@ Notable supported-surface changes are recorded here.
   slug_candidates }`, so the root is `ready_with_warnings` rather than
   `ready`. Root-level html beside the campaign directory no longer collapses
   the scope to the site root either: with a known slug the campaign
-  directory is inspected. An explicit `--slug` naming a missing directory
-  keeps the existing `built_output.scope_unresolved` shape.
+  directory is inspected. When `_site/<slug>/` exists but holds no HTML
+  pages, the finding says `Built _site/demo/ exists but holds no HTML pages
+  ...` with evidence `slug_directory_present: true` (markdown `- Built slug:
+  demo has no HTML pages (...)`), not that the directory is missing. An
+  explicit `--slug` naming a missing directory keeps the existing
+  `built_output.scope_unresolved` shape. A site-root layout renders its
+  source like every other case: `- Built slug: site root (site_layout)`.
 - The doctor proof command under `remediation.proof_commands` carries
   `--slug` whenever scope needed one: `--slug demo` when a slug was
   resolved (derived slugs included), and a `--slug <slug>` placeholder when
