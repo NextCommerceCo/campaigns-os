@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
+import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { producerStageOutcomeUnchanged, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
@@ -3216,7 +3217,7 @@ const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
-    throw new Error('Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope.');
+    throw new Error(`Unknown checkpoint subcommand. Use: campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"]. Registered gates: ${Object.keys(CHECKPOINT_EVALUATORS).join(", ")}.`);
   }
   return checkpointWaive(args);
 }
@@ -7988,11 +7989,9 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   const pushPolishCheckpointActions = () => {
     const baseUrl = packet.deploy?.preview_url || packet.deploy?.production_url || "<base-url>";
     for (const action of polishCheckpointGate?.required_actions || []) {
-      let command = action.command;
+      let command = substitutePacket(action.command, packetPath);
       if (typeof command === "string") {
-        command = command
-          .replace("--packet <packet>", `--packet ${shellToken(packetPath)}`)
-          .replace("--base-url <url>", `--base-url ${shellToken(baseUrl)}`);
+        command = command.replace("--base-url <url>", `--base-url ${shellToken(baseUrl)}`);
       }
       push(`checkpoint.${action.id}`, action.kind, command, action.description, { required: action.id !== "polish.hidden_eager_media.waive" });
     }
@@ -8019,9 +8018,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     for (const gate of checkpointGates) {
       for (const action of gate.required_actions || []) {
         const suffix = action.id === "waive_checkpoint" ? "waive" : action.id;
-        const command = typeof action.command === "string"
-          ? action.command.replace("--packet <packet>", `--packet ${shellToken(packetPath)}`)
-          : null;
+        const command = typeof action.command === "string" ? substitutePacket(action.command, packetPath) : null;
         push(
           `checkpoint.${gate.id}.${suffix}`,
           action.kind,
@@ -10599,17 +10596,26 @@ async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
 // are TEXT-ONLY by design — JSON output stays machine-readable, so these are
 // never written into the serialized result object.
 
+// The tiny prompt under a text-mode doctor report. Returns the lines to
+// print, in order, so the text is assertable without a subprocess.
+export function doctorTinyPromptLines(result) {
+  if (result.status === "blocked") {
+    return [
+      "",
+      "Next expected proof: resolve the blockers above, then re-run doctor.",
+      'If a blocker is confusing or the prompt is missing, record it: campaigns-os findings add --stage doctor --kind blocker --summary "..."',
+    ];
+  }
+  return [
+    "",
+    "Next expected proof: campaigns-os next to pick the next stage (setup/build), then polish, deploy, and QA.",
+    'Found workflow friction here? campaigns-os findings add --stage doctor --kind friction --summary "..."',
+  ];
+}
+
 function printDoctorTinyPrompt(result, args) {
   if (args.json) return;
-  if (result.status === "blocked") {
-    console.log("");
-    console.log("Next expected proof: resolve the blockers above, then re-run doctor.");
-    console.log('If a blocker is confusing or the prompt is missing, record it: campaigns-os findings add --stage doctor --kind blocker --summary "..."');
-    return;
-  }
-  console.log("");
-  console.log("Next expected proof: campaigns-os next to pick the next stage (setup/build), then polish, deploy, and QA.");
-  console.log('Found workflow friction here? campaigns-os findings add --stage doctor --kind friction --summary "..."');
+  for (const line of doctorTinyPromptLines(result)) console.log(line);
 }
 
 // The human half of `next`. Split out from the printer so the text an operator
@@ -10682,36 +10688,16 @@ export function doctorRequiredActionLines(result) {
   // in the common case: the arg is appended only when the inspected report is
   // not that default, or when the target repo is unknown so the default
   // cannot be ruled out.
-  const reportPath = typeof derived?.assembly_report_path === "string" ? derived.assembly_report_path : null;
+  const inspectedReportPath = typeof derived?.assembly_report_path === "string" ? derived.assembly_report_path : null;
   const inferredReportPath = typeof derived?.target_repo === "string"
     ? campaignSidecarPaths(derived.target_repo).reportPath
     : null;
-  const reportArg = reportPath && reportPath !== inferredReportPath
-    ? ` --report ${shellToken(reportPath)}`
-    : "";
+  const reportPath = inspectedReportPath && inspectedReportPath !== inferredReportPath ? inspectedReportPath : null;
   const lines = [];
   for (const gate of gates) {
     for (const action of gate?.required_actions || []) {
-      const template = typeof action?.command === "string" ? action.command : null;
-      // The two decisions below read the TEMPLATE, never the substituted
-      // string: a packet path that happens to contain "--report" (or
-      // "--packet") must not be mistaken for an option the action declared.
-      // Whole-token matches, so a flag that merely shares the prefix (say
-      // --report-format) does not count as the option itself.
-      const declaresFlag = (flag) => Boolean(template) && template.split(/\s+/).includes(flag);
-      const packetScoped = declaresFlag("--packet");
-      const namesReport = declaresFlag("--report");
-      // A function replacement, so `$&` / `$$` / `$1` inside the path are
-      // inserted literally instead of being read as replacement patterns.
-      let command = template && packetPath
-        ? template.replace("--packet <packet>", () => `--packet ${shellToken(packetPath)}`)
-        : template;
-      // Only packet-scoped commands read a report sidecar, and a command that
-      // already names one is left alone.
-      if (command && reportArg && packetScoped && !namesReport) command = `${command}${reportArg}`;
-      const text = command || action?.description;
-      if (!text) continue;
-      lines.push(`- [${gate.id}] ${text}`);
+      const text = requiredActionText(action, { packetPath, reportPath });
+      if (text) lines.push(`- [${gate.id}] ${text}`);
     }
   }
   if (!lines.length) return [];
@@ -10756,50 +10742,57 @@ function printPrepareResult(result, args) {
   if (result.doctor && !result.doctor.ok) process.exitCode = 2;
 }
 
-function printResult(result) {
-  console.log(`Status: ${String(result.status || "unknown").toUpperCase()}`);
+// The human text report of a command result — doctor's, and every other
+// command that prints through writeResult. One walker, returning the lines in
+// order (status, targets, skills, ready, actions, cause summary, errors,
+// warnings, required actions, next, prompt, note) so the text an operator
+// reads is assertable without a subprocess; printResult prints the join.
+export function resultTextLines(result) {
+  const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`];
   if (result.targets?.length) {
-    console.log("Targets:");
+    lines.push("Targets:");
     for (const target of result.targets) {
-      console.log(`- ${target.platform_label || target.platform}: ${target.target_directory}`);
+      lines.push(`- ${target.platform_label || target.platform}: ${target.target_directory}`);
     }
   } else if (result.platform_label && result.target_directory) {
-    console.log(`Target: ${result.platform_label} (${result.target_directory})`);
+    lines.push(`Target: ${result.platform_label} (${result.target_directory})`);
   }
   if (result.skills?.length) {
-    console.log("Skills:");
-    for (const skill of result.skills) console.log(`- ${formatSkillInstallSummary(skill)}`);
+    lines.push("Skills:");
+    for (const skill of result.skills) lines.push(`- ${formatSkillInstallSummary(skill)}`);
   }
   if (result.ready?.length) {
-    console.log("Ready:");
-    for (const item of result.ready) console.log(`- ${item}`);
+    lines.push("Ready:");
+    for (const item of result.ready) lines.push(`- ${item}`);
   }
   if (result.actions?.length) {
-    console.log("Actions:");
-    for (const action of result.actions) console.log(`- ${action}`);
+    lines.push("Actions:");
+    for (const action of result.actions) lines.push(`- ${action}`);
   }
-  for (const line of formatCauseReportLines(result.cause_summary)) console.log(line);
+  lines.push(...formatCauseReportLines(result.cause_summary));
   if (result.errors?.length) {
-    console.log("Errors:");
-    for (const issue of result.errors) console.log(`- ${formatIssueSummary(issue)}`);
+    lines.push("Errors:");
+    for (const issue of result.errors) lines.push(`- ${formatIssueSummary(issue)}`);
   }
   if (result.warnings?.length) {
-    console.log("Warnings:");
-    for (const issue of result.warnings) console.log(`- ${formatIssueSummary(issue)}`);
+    lines.push("Warnings:");
+    for (const issue of result.warnings) lines.push(`- ${formatIssueSummary(issue)}`);
   }
   // Directly under the findings they remediate, above the stage picker's
   // `Next:` block: the operator reads what is wrong, then what clears it.
-  for (const line of doctorRequiredActionLines(result)) console.log(line);
+  lines.push(...doctorRequiredActionLines(result));
   if (result.next) {
-    console.log("Next:");
-    console.log(`- ${result.next.stage || "unknown"} (${result.next.owner || result.next.default_skill || "owner unknown"})`);
-    for (const action of result.next.actions || []) console.log(`- ${action}`);
+    lines.push("Next:");
+    lines.push(`- ${result.next.stage || "unknown"} (${result.next.owner || result.next.default_skill || "owner unknown"})`);
+    for (const action of result.next.actions || []) lines.push(`- ${action}`);
   }
-  if (result.prompt) {
-    console.log("");
-    console.log(result.prompt);
-  }
-  if (result.note) console.log(result.note);
+  if (result.prompt) lines.push("", result.prompt);
+  if (result.note) lines.push(result.note);
+  return lines;
+}
+
+function printResult(result) {
+  for (const line of resultTextLines(result)) console.log(line);
 }
 
 function formatIssueSummary(issue) {

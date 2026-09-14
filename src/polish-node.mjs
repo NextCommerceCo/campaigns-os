@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 import { dirname, resolve } from "node:path";
 import {
   buildPageLoadCapture,
@@ -141,48 +142,14 @@ export function planPolishCapture({ packet, baseUrl } = {}) {
   };
 }
 
-const RECORDED_CAPTURE_ACTION = Object.freeze({
-  id: "polish.hidden_eager_media.capture",
-  kind: "command",
-  command: "campaigns-os polish capture --packet <packet> --base-url <url>",
-  description: "Capture package-owned page-load evidence for every mapped route and fixed viewport.",
-});
-
-const RECORDED_BROWSER_INSTALL_ACTION = Object.freeze({
-  id: "polish.hidden_eager_media.install_browser",
-  kind: "command",
-  command: "npm run qa:install-browser",
-  description: "Install the package-owned Playwright Chromium runtime before rerunning polish capture.",
-});
-
-const RECORDED_WAIVER_ACTION = Object.freeze({
-  id: "polish.hidden_eager_media.waive",
-  kind: "command",
-  command: "campaigns-os checkpoint waive --packet <packet> --gate polish.hidden_eager_media --reason \"<why>\" --waived-by \"<named human>\" --review-condition \"<trigger>\"",
-  description: "Record an exact named-human waiver for the current hidden eager-media findings.",
-});
-
-const RECORDED_REPAIR_ACTION = Object.freeze({
-  id: "polish.hidden_eager_media.repair",
-  kind: "manual",
-  command: null,
-  description: "Make each reported hidden media element visible, defer it with exact preload=none/metadata, or reduce its aggregate transferred bytes to at most 1,048,576; then recapture.",
-});
-
-const RECORDED_AUTHORITY_REPAIR_ACTION = Object.freeze({
-  id: "polish.hidden_eager_media.repair_authority",
-  kind: "manual",
-  command: null,
-  description: "Repair the packet or Assembly Report campaign identity, build fingerprint, and mapped route plan before capture.",
-});
-
+// The recorded actions live in gate-actions.mjs so polish-gate, which this
+// module imports, can publish the same capture action without a copy.
 function recordedCheckpointActions(gate, { authorityMalformed = false, browserUnavailable = false } = {}) {
+  const { capture, install_browser, waive, repair, repair_authority } = HIDDEN_EAGER_MEDIA_ACTIONS;
   if (gate?.status !== "blocked") return [];
-  if (authorityMalformed) return [RECORDED_AUTHORITY_REPAIR_ACTION, RECORDED_CAPTURE_ACTION];
-  if (browserUnavailable) return [RECORDED_BROWSER_INSTALL_ACTION, RECORDED_CAPTURE_ACTION];
-  return gate.waivable
-    ? [RECORDED_REPAIR_ACTION, RECORDED_CAPTURE_ACTION, RECORDED_WAIVER_ACTION]
-    : [RECORDED_CAPTURE_ACTION];
+  if (authorityMalformed) return [repair_authority, capture];
+  if (browserUnavailable) return [install_browser, capture];
+  return gate.waivable ? [repair, capture, waive] : [capture];
 }
 
 function recordedCaptureHasProblem(pageLoad, code) {

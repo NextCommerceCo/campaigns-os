@@ -1,5 +1,6 @@
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
+import { requiredActionText } from "./gate-actions.mjs";
 import {
   isAbsoluteHttpUrl,
   normalizePageKitRoute,
@@ -2789,7 +2790,7 @@ function output(value, args) {
     console.log(`Disposition: ${value.verdict.disposition}`);
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
     printCauseLines(value.verdict);
-    printThemeGateLines(value.theme_gate);
+    printThemeGateLines(value.theme_gate, value.packet_path);
     if (value.commercial) {
       console.log(`Commercial parity: ${value.commercial.status} (${value.commercial.finding_count || 0} findings, ${value.commercial.checked_pages || 0} pages checked)`);
     }
@@ -2825,7 +2826,7 @@ function output(value, args) {
   }
   console.log("");
   printCheckpointGateLines(value.checkpoint_gates, value.packet_path);
-  printThemeGateLines(value.theme_gate);
+  printThemeGateLines(value.theme_gate, value.packet_path);
   printRouteProbeLines(value.route_probe);
   const nextProofLines = qaResolveNextProofLines(value);
   if (nextProofLines.length) {
@@ -2834,26 +2835,33 @@ function output(value, args) {
   }
 }
 
-function printCheckpointGateLines(checkpointGates, packetPath) {
+// The checkpoint block of the `qa resolve` text report. Returns the lines in
+// order so the text is assertable without a subprocess; the printer prints
+// the join. Each action is rendered by the one rule doctor uses (the packet
+// substituted, else the description).
+export function checkpointGateLines(checkpointGates, packetPath) {
+  const lines = [];
   for (const gate of checkpointGates || []) {
-    console.log(`Checkpoint ${gate.id}: ${gate.status} (${gate.code}) — ${gate.reason}`);
+    lines.push(`Checkpoint ${gate.id}: ${gate.status} (${gate.code}) — ${gate.reason}`);
     if (gate.waiver) {
-      console.log(`  Waiver: ${gate.waiver.waived_by} at ${gate.waiver.waived_at} — ${gate.waiver.reason}`);
-      if (gate.waiver.expires_at) console.log(`  Expires: ${gate.waiver.expires_at}`);
-      if (gate.waiver.review_condition) console.log(`  Review condition: ${gate.waiver.review_condition}`);
+      lines.push(`  Waiver: ${gate.waiver.waived_by} at ${gate.waiver.waived_at} — ${gate.waiver.reason}`);
+      if (gate.waiver.expires_at) lines.push(`  Expires: ${gate.waiver.expires_at}`);
+      if (gate.waiver.review_condition) lines.push(`  Review condition: ${gate.waiver.review_condition}`);
     }
     const counts = gate.waiver_assessment?.inert_counts || {};
-    console.log(`  Inert waiver decisions: stale=${counts.stale || 0}, foreign=${counts.foreign || 0}, malformed=${counts.malformed || 0}, expired=${counts.expired || 0}`);
+    lines.push(`  Inert waiver decisions: stale=${counts.stale || 0}, foreign=${counts.foreign || 0}, malformed=${counts.malformed || 0}, expired=${counts.expired || 0}`);
     if (gate.required_actions?.length) {
-      console.log("  Required actions:");
+      lines.push("  Required actions:");
       for (const action of gate.required_actions) {
-        const command = packetPath && action.command
-          ? action.command.replace("--packet <packet>", `--packet ${shellToken(packetPath)}`)
-          : action.command;
-        console.log(`    - ${command || action.description}`);
+        lines.push(`    - ${requiredActionText(action, { packetPath })}`);
       }
     }
   }
+  return lines;
+}
+
+function printCheckpointGateLines(checkpointGates, packetPath) {
+  for (const line of checkpointGateLines(checkpointGates, packetPath)) console.log(line);
 }
 
 function printEntryUrlLines(entryUrls) {
@@ -2908,15 +2916,23 @@ function printCauseLines(verdict) {
   }
 }
 
-function printThemeGateLines(themeGate) {
-  if (!themeGate) return;
-  console.log(`Theme gate: ${themeGate.status} (${themeGate.code}) — ${themeGate.reason}`);
-  if (themeGate.status !== "blocked") return;
-  console.log("Required actions:");
+// The theme-gate block of the `qa resolve` / `qa run` text report, as lines.
+// The gate bakes the packet into its commands when it is evaluated, so the
+// substitution here is the same rule applied uniformly, not a change of text.
+export function themeGateLines(themeGate, packetPath = null) {
+  if (!themeGate) return [];
+  const lines = [`Theme gate: ${themeGate.status} (${themeGate.code}) — ${themeGate.reason}`];
+  if (themeGate.status !== "blocked") return lines;
+  lines.push("Required actions:");
   for (const action of themeGate.required_actions || []) {
-    console.log(`  - ${action.command || action.description}`);
+    lines.push(`  - ${requiredActionText(action, { packetPath })}`);
   }
-  console.log("Or rerun with --theme-waive \"<reason>\" to record an ephemeral waiver for this run.");
+  lines.push("Or rerun with --theme-waive \"<reason>\" to record an ephemeral waiver for this run.");
+  return lines;
+}
+
+function printThemeGateLines(themeGate, packetPath = null) {
+  for (const line of themeGateLines(themeGate, packetPath)) console.log(line);
 }
 
 export function qaResolveNextProofLines(value) {
