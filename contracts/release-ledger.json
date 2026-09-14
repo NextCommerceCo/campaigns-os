@@ -2701,6 +2701,33 @@
         }
       ],
       "entry_sha256": "5fff8ddc108f0e50ae871af0f0e6bccd31447239833f40f94e70d53d43d0ff8a"
+    },
+    {
+      "id": "RL-0071",
+      "sequence": 71,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.9",
+      "changelog_sha256": "27bb4bdb80bd3dd005299afcf81ebeb94b10714e120446f300c4f4280a143054",
+      "agent_impact": "Three things change for an agent. (1) doctor gains a warning code, campaign.api_key_rejected: a Campaigns API key that is present but refused on shape (not 8-256 chars of letters, digits, dot, dash, underscore, one line), or an api_key_source env var whose name does not name a campaign key, is reported under it with detail { source, kind } (kind malformed or unsupported_env_name), where doctor previously reported such a value as available (ready line 'Campaigns API key available via ...'). A key that is simply not configured is unchanged under campaign.api_key_source. (2) One ready-line wording follows the shared resolver: a key sourced from the CampaignSpec reads 'Campaigns API key available via the packet-local CampaignSpec campaign.campaigns_api_key' (previously 'via CampaignSpec campaign.campaigns_api_key'); packet and env sources read as before. (3) On the remit rails (run-record remit, QA verdict publish, telemetry list --packet), api_key_source env:CAMPAIGNS_API_KEY and env:CAMPAIGN_KEY are now accepted; since 1.26.0+agent.22 they were refused by name because the env-name rule anchored the first letter before looking for CAMPAIGN. Names containing CAMPAIGN after other characters were, and are, accepted; foreign names are still refused.",
+      "compatibility": "compatible",
+      "migration": "None. A packet using the documented env:CAMPAIGNS_API_KEY source works again on the remit rails without change. An agent that scraped the CampaignSpec ready-line wording should match on 'available via' and the field name.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor's resolveCampaignsApiKey projects resolveCampaignsApiKeySource (given the loaded CampaignSpec); a refused key is reported as campaign.api_key_rejected with { source, kind } on detail; CAMPAIGN_KEY_ENV_NAME accepts names that start with CAMPAIGN by requiring the leading letter via lookahead, which also changes what telemetry list, run-record and the QA verdict publish accept from api_key_source."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Remit Channel states the corrected env-name rule (a leading letter, CAMPAIGN anywhere, so CAMPAIGNS_API_KEY qualifies) and that doctor reads the key through the same resolver, reporting a refused value as campaign.api_key_rejected."
+        }
+      ],
+      "entry_sha256": "3e3b981f8a2882c1fdb3dc9624fddc7c37cb796152e8bb51ea3579ef7f2e4c86"
     }
   ]
 }

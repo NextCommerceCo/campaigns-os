@@ -137,6 +137,25 @@ test("resolveCampaignsApiKeyValue: packet, then packet-local CampaignSpec, then 
 // A value that is present but the wrong shape is a different operator problem
 // from no value at all, and the caller has to be able to say which — naming
 // the SOURCE (the env var, or the packet field) and never the value.
+// The documented default source is `env:CAMPAIGNS_API_KEY`. The gate that keeps
+// a packet from pointing api_key_source at an arbitrary secret must accept a
+// name that starts with CAMPAIGN, not only one that contains it later.
+test("resolveCampaignsApiKeySource: accepts the documented CAMPAIGNS_API_KEY and CAMPAIGN_KEY names, and still refuses a foreign secret", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    for (const name of ["CAMPAIGNS_API_KEY", "CAMPAIGN_KEY", "MY_CAMPAIGN_KEY", "NEXT_CAMPAIGNS_API_KEY"]) {
+      const resolved = resolveCampaignsApiKeySource({ campaign: { api_key_source: `env:${name}` } }, packetPath, { [name]: "pk_env_key_ok" });
+      assert.equal(resolved.key, "pk_env_key_ok", name);
+      assert.equal(resolved.origin, `env:${name}`);
+    }
+    for (const name of ["AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "campaigns_api_key"]) {
+      const resolved = resolveCampaignsApiKeySource({ campaign: { api_key_source: `env:${name}` } }, packetPath, { [name]: "pk_env_key_ok" });
+      assert.equal(resolved.key, null, name);
+      assert.equal(resolved.rejected?.kind, "unsupported_env_name", name);
+    }
+  });
+});
+
 test("resolveCampaignsApiKeySource: reports the refused source for a present-but-malformed key, never its value", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
