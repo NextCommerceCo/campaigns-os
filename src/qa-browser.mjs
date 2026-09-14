@@ -3738,11 +3738,15 @@ async function firstUsableCouponInput(page) {
 // all) by its visible text like any hand-rolled control.
 const COUPON_APPLY_CONTROL_SELECTOR = '[data-next-coupon="apply"]';
 
+// The explicit branch is taken only when the SDK control is visible and the
+// click lands; a hidden or unclickable control (a collapsed disclosure, an
+// overlay) falls through to the same fallbacks a page without one gets,
+// rather than reporting a click that never applied the code.
 async function clickCouponApplyControl(page, input) {
   const explicit = page.locator(COUPON_APPLY_CONTROL_SELECTOR).first();
-  if (await explicit.count().catch(() => 0)) {
-    await explicit.click({ timeout: 5000 }).catch(() => {});
-    return "clicked explicit apply control";
+  if (await explicit.count().catch(() => 0) && await explicit.isVisible().catch(() => false)) {
+    const clicked = await explicit.click({ timeout: 5000 }).then(() => true, () => false);
+    if (clicked) return "clicked explicit apply control";
   }
   const clicked = await clickVisibleControlByText(page, /^\s*apply\s*(?:code|coupon|discount)?\s*$/i, { within: "form" }).catch(() => false);
   if (clicked) return "clicked visible apply control";
@@ -6190,6 +6194,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   primaryCtaAssertionFromEvidence,
   inspectPrimaryCta,
   primaryCtaInspectionScript,
+  clickCouponApplyControl,
   isOrderUpsellsUrl,
   testEmail,
   testOrderPaths,

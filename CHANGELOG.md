@@ -12,7 +12,11 @@ Notable supported-surface changes are recorded here.
   (`[data-next-coupon-apply]`, `[data-next-action="apply-coupon"]`,
   `[data-next-checkout-action="apply-coupon"]`) and not the one it does; a
   page carrying one of those still reaches the same fallbacks as before (a
-  visible "Apply" control in the form, else Enter in the input). The coupon
+  visible "Apply" control in the form, else Enter in the input). The SDK
+  control is clicked only when it is visible and the click lands; a hidden
+  or unclickable one falls through to those same fallbacks instead of the
+  step recording `clicked explicit apply control` for a click that never
+  applied the code. The coupon
   input list likewise reads the SDK's `input[data-next-coupon="input"]`
   instead of the undeclared `[data-next-coupon-input]`; the
   `browser-promo-code-surface` assertion and the "no coupon/promo input found

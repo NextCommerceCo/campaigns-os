@@ -18,7 +18,7 @@ import {
 } from "./qa-cart-entry.mjs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
-const { cartStateBeforeSubmit, classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER, PRIMARY_CTA_SELECTOR, COUPON_INPUT_SELECTORS, COUPON_APPLY_CONTROL_SELECTOR, primaryCtaInspectionScript, primaryCtaAssertionFromEvidence } = __qaBrowserTestHooks;
+const { cartStateBeforeSubmit, classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER, PRIMARY_CTA_SELECTOR, COUPON_INPUT_SELECTORS, COUPON_APPLY_CONTROL_SELECTOR, primaryCtaInspectionScript, primaryCtaAssertionFromEvidence, clickCouponApplyControl } = __qaBrowserTestHooks;
 
 const BASE = "https://campaign.example";
 const checkout = { page_id: "checkout", page_type: "checkout", order: 3, url: `${BASE}/checkout/`, expected_next_url: `${BASE}/upsell-1/` };
@@ -245,6 +245,52 @@ test("the page-level ignored_attributes union covers visible CTA-shaped elements
   assert.equal(evidence.candidates.length, 8, "candidate rows are capped");
   assert.ok(evidence.candidates.every((candidate) => candidate.ignored_attributes.length === 0), "no listed row carries the spellings");
   assert.deepEqual(evidence.ignored_attributes, ["data-next-checkout-action", "data-next-href"]);
+});
+
+// A fake page for the coupon apply-control chooser: the SDK apply control
+// (count/visible/click outcome), one visible text control inside the form,
+// and the input whose Enter is the last resort.
+function couponPage({ explicit, applyText = null }) {
+  const calls = [];
+  const explicitLocator = {
+    count: async () => (explicit ? 1 : 0),
+    isVisible: async () => Boolean(explicit?.visible),
+    click: async () => {
+      calls.push("explicit.click");
+      if (explicit?.clickFails) throw new Error("locator.click: Timeout 5000ms exceeded");
+    },
+  };
+  const textControls = applyText ? [{
+    innerText: async () => applyText,
+    getAttribute: async () => null,
+    scrollIntoViewIfNeeded: async () => {},
+    click: async () => { calls.push("text.click"); },
+  }] : [];
+  const root = { locator: () => ({ count: async () => textControls.length, nth: (index) => textControls[index] }) };
+  const page = { locator: (selector) => (selector === "form" ? root : { first: () => explicitLocator }) };
+  const input = { press: async (key) => { calls.push(`input.press:${key}`); } };
+  return { page, input, calls };
+}
+
+test("the SDK apply control is clicked only when visible and the click lands; otherwise the page's own fallbacks run", async () => {
+  const visible = couponPage({ explicit: { visible: true }, applyText: "Apply" });
+  assert.equal(await clickCouponApplyControl(visible.page, visible.input), "clicked explicit apply control");
+  assert.deepEqual(visible.calls, ["explicit.click"]);
+
+  // Rendered but hidden (a collapsed disclosure): not clicked, not claimed.
+  const hidden = couponPage({ explicit: { visible: false }, applyText: "Apply" });
+  assert.equal(await clickCouponApplyControl(hidden.page, hidden.input), "clicked visible apply control");
+  assert.deepEqual(hidden.calls, ["text.click"]);
+
+  // Visible but the click times out: fall through instead of reporting a click.
+  const stuck = couponPage({ explicit: { visible: true, clickFails: true } });
+  assert.equal(await clickCouponApplyControl(stuck.page, stuck.input), "pressed Enter in the coupon input");
+  assert.deepEqual(stuck.calls, ["explicit.click", "input.press:Enter"]);
+
+  // No SDK control at all: the fallbacks as before.
+  const none = couponPage({ explicit: null });
+  assert.equal(await clickCouponApplyControl(none.page, none.input), "pressed Enter in the coupon input");
+  assert.deepEqual(none.calls, ["input.press:Enter"]);
 });
 
 test("the entry step is the first rung of the ladder", () => {
