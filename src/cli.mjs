@@ -45,7 +45,9 @@ import {
   mintRunId,
   orderRunRecordFileNames,
   readRunRecordsForTarget,
+  resolveRunRecordPath,
   RUN_RECORD_SURFACES,
+  validateRunRecord,
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
@@ -83,7 +85,7 @@ import {
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
-import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
+import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -8162,7 +8164,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
         "run_record_remit_recovery",
         "command",
         `campaigns-os run-record --packet ${shellToken(packetPath)} --run-id ${shellToken(runRecordCloseout.record_id)} --json`,
-        `Recover the existing Run Record's remit (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || "the local record is written but its remit did not complete."} Re-running against the same run id is idempotent; do not mint a second record.`,
+        `Recover the existing Run Record's remit (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || "the local record is written but its remit did not complete."} Re-running against the same run id is idempotent — a send the receiver already holds resolves to ok — and a record already remitted is left as written; do not mint a second record.`,
         { required: true },
       );
     } else {
@@ -10207,9 +10209,21 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
   const write = args["no-write"] !== true;
-  // A pure local-inspection run (--no-write) or an explicit --no-remit never
-  // phones home, regardless of consent.
-  const remitDisabled = args["no-remit"] === true || !write;
+  // The record already on disk under this run_id, when a writing run would
+  // replace it. run-record is keyed on run_id, and a re-run — an explicit
+  // --run-id, a `run end` on a session re-opened under an id that already
+  // closed, the recovery action `next` prints — must never turn a remit that
+  // landed into one that did not. The receiver holds one record per id and
+  // refuses a second send, so a record it already has is final: it is neither
+  // re-sent nor rewritten here. A prior send that did not land (failed,
+  // pending) is retried when this run may send, and kept as it stands when it
+  // may not. A dry run reads nothing: it writes and sends nothing.
+  const prior = write ? readPriorRunRecord(runId, baseDir) : null;
+  const priorRemit = priorRemitOutcome(prior?.record);
+  const storedRemotely = priorRemit?.state === "ok";
+  // A pure local-inspection run (--no-write), an explicit --no-remit, or a
+  // record the receiver already holds never phones home, regardless of consent.
+  const remitDisabled = args["no-remit"] === true || !write || storedRemotely;
 
   // Resolve consent through the shared resolver every remitting command calls.
   // When interactive, not in --json/agent mode, remit isn't disabled, and no
@@ -10256,12 +10270,52 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // being fast or reachable. If a crash lands before the final rewrite below,
   // the durable record is explicitly pending instead of silently skipped.
   const shouldAttemptRemit = !remitDisabled && consent.state === "on";
+  const remitBaseKind = describeRemitBaseKind(proxyBase);
+
+  // The receiver already holds this run_id: the local record is the durable
+  // one and stays exactly as written. Nothing is sent (the receiver would
+  // refuse it) and nothing is rewritten (a reassembly could only be thinner
+  // than what the session wrote, and would then disagree with the stored copy).
+  // `not_contacted` says exactly that — the receiver was not asked — where
+  // `already_stored` is reserved for a 409 it actually answered.
+  if (storedRemotely) {
+    const summary = {
+      ok: true,
+      action: "run-record",
+      written: false,
+      record_path: prior.path,
+      record: prior.record,
+      remit: { result: REMIT_RESULTS.not_contacted, http_status: null, base_kind: null, sent: false, preserved: true },
+    };
+    if (silent) return summary;
+    if (args.json) {
+      console.log(JSON.stringify(summary, null, 2));
+      return summary;
+    }
+    console.log(`Run Record already closed and remitted for run ${prior.record.run_id}; left as written.`);
+    console.log(`Run ID: ${prior.record.run_id}`);
+    console.log(`Remit: ok (already stored at the receiver for this run id; not re-sent) -> ${prior.record.remit_endpoint || DEFAULT_RUNS_ENDPOINT}`);
+    console.log(`Kept: ${prior.path}`);
+    return summary;
+  }
+
+  // A prior send that did not land, on a run that will not send now: the
+  // outcome on disk is the truth about that send and is carried forward, so
+  // `--no-remit` (or consent off) over a failed remit does not file it as
+  // skipped and hide it from closeout.
+  const carriedForward = !shouldAttemptRemit && priorRemit && priorRemit.state !== "skipped" ? priorRemit : null;
   if (shouldAttemptRemit) {
     record.remit_state = "pending";
     record.remit_attempted = false;
     record.remit_ok = null;
     record.remit_error = null;
     record.remit_endpoint = null;
+  } else if (carriedForward) {
+    record.remit_state = carriedForward.state;
+    record.remit_attempted = carriedForward.attempted;
+    record.remit_ok = carriedForward.ok;
+    record.remit_error = carriedForward.error;
+    record.remit_endpoint = carriedForward.endpoint;
   }
 
   const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
@@ -10285,18 +10339,42 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // leaves the machine.
   const keyRejection = describeCampaignKeyRejection(keySource.rejected);
   if (keyRejection) process.stderr.write(`[campaigns-os] run-record: ${keyRejection} This run's remit is attempted without a tenant scope.\n`);
-  const remitStatus = remitDisabled
-    ? { attempted: false, ok: null, error: null, endpoint: null }
-    : await remitRunRecord(record, { proxyBase, consent, campaignKey });
-  record.remit_attempted = remitStatus.attempted;
-  record.remit_ok = remitStatus.ok;
-  record.remit_error = remitStatus.error;
-  record.remit_endpoint = remitStatus.endpoint;
-  record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
+  const remitStatus = shouldAttemptRemit
+    ? await remitRunRecord(record, { proxyBase, consent, campaignKey })
+    : { attempted: false, ok: null, error: null, endpoint: null, result: null, http_status: null };
+  if (!carriedForward) {
+    record.remit_attempted = remitStatus.attempted;
+    record.remit_ok = remitStatus.ok;
+    record.remit_error = remitStatus.error;
+    record.remit_endpoint = remitStatus.endpoint;
+    // Classified by what the receiver answered, not by whether the transport
+    // threw: `already_stored` (409) and `ok_unparsed_ack` (a 2xx whose body was
+    // not JSON) are ok states; only a refusal or a transport failure is failed.
+    record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
+  }
 
   if (write) writeRunRecord(record, { baseDir });
 
-  const summary = { ok: true, action: "run-record", written: write, record_path: recordPath, record };
+  const summary = {
+    ok: true,
+    action: "run-record",
+    written: write,
+    record_path: recordPath,
+    record,
+    // The send's classification and where it went, which the record's schema
+    // does not carry: `result` is one of stored, already_stored,
+    // ok_unparsed_ack, refused, transport_error (this run's send),
+    // not_contacted (a prior ok on disk; the early return above), or null
+    // when nothing was sent and nothing is known; `base_kind` names the
+    // resolved remit base as canonical, loopback or proxy — never the host.
+    remit: {
+      result: remitStatus.result,
+      http_status: remitStatus.http_status,
+      base_kind: shouldAttemptRemit ? remitBaseKind : null,
+      sent: remitStatus.attempted,
+      preserved: Boolean(carriedForward),
+    },
+  };
   if (silent) return summary;
   if (args.json) {
     console.log(JSON.stringify(summary, null, 2));
@@ -10307,14 +10385,71 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   console.log(`Consent: ${record.consent_state} (${record.consent_source})`);
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
-  if (record.remit_attempted) {
-    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : ` (unscoped: ${keyRejection ? "the declared Campaigns API key was refused on shape — see the warning above" : "no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source"} — the receiver lists this record only via the admin listing or by run_id)`}`);
+  if (carriedForward) {
+    console.log(`Remit: not attempted this run; the prior outcome for this run id is kept (${carriedForward.state}${carriedForward.error ? `: ${carriedForward.error}` : ""}).`);
+  } else if (record.remit_attempted) {
+    console.log(`Remit: ${remitResultText(record, remitStatus)} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : ` (unscoped: ${keyRejection ? "the declared Campaigns API key was refused on shape — see the warning above" : "no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source"} — the receiver lists this record only via the admin listing or by run_id)`} [base: ${remitBaseKind}]`);
   } else {
     console.log(`Remit: skipped (consent ${record.consent_state}${remitDisabled ? ", disabled for this run" : ""}).`);
   }
   if (write) console.log(`Wrote: ${recordPath}`);
   else console.log("Dry run only (--no-write). No record written, no remit.");
   return summary;
+}
+
+// The record already written under `runId` for this target, or null when there
+// is none, it cannot be parsed, or it is not a valid Run Record. Only a record
+// `writeRunRecord` could have written is trusted as a prior — the same
+// validator gates both — so a file that merely says `remit_state: "ok"` is
+// replaced like a corrupt one, never preserved or handed back as the record.
+function readPriorRunRecord(runId, baseDir) {
+  let path;
+  try {
+    path = resolveRunRecordPath(runId, baseDir);
+  } catch {
+    return null;
+  }
+  if (!existsSync(path)) return null;
+  try {
+    const record = readJson(path);
+    return validateRunRecord(record).ok ? { path, record } : null;
+  } catch {
+    return null;
+  }
+}
+
+// The remit outcome a prior record carries, in the shape the stamping code
+// uses; null when the record has no recognisable remit state.
+function priorRemitOutcome(record) {
+  const state = optionalString(record?.remit_state);
+  if (!state || !["skipped", "pending", "ok", "failed"].includes(state)) return null;
+  return {
+    state,
+    attempted: record.remit_attempted === true,
+    ok: typeof record.remit_ok === "boolean" ? record.remit_ok : null,
+    error: optionalString(record.remit_error) || null,
+    endpoint: optionalString(record.remit_endpoint) || null,
+  };
+}
+
+// Where a remit resolves to, as a kind rather than a host: the canonical
+// endpoint, a loopback receiver, or some other proxy the operator named.
+function describeRemitBaseKind(proxyBase) {
+  if (normalizeConsentScope(proxyBase) === CANONICAL_REMIT_SCOPE) return "canonical";
+  try {
+    return isLoopbackHostname(new URL(String(proxyBase)).hostname) ? "loopback" : "proxy";
+  } catch {
+    return "proxy";
+  }
+}
+
+// The one-line reading of an attempted remit for the text output: ok states
+// that were not a plain stored 2xx say what they were.
+function remitResultText(record, remitStatus) {
+  if (!record.remit_ok) return `failed (${record.remit_error})`;
+  if (remitStatus.result === REMIT_RESULTS.already_stored) return `ok (already stored at the receiver for this run id; HTTP ${remitStatus.http_status})`;
+  if (remitStatus.result === REMIT_RESULTS.ok_unparsed_ack) return `ok (${record.remit_error})`;
+  return "ok";
 }
 
 // Build one artifact reference {kind, path, schema_version, sha256}. The path
@@ -10592,11 +10727,17 @@ async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   let body;
   try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text.slice(0, 400) }; }
   if (!response.ok) throw new Error(`telemetry list: ${response.status} ${response.statusText} from ${url}: ${JSON.stringify(body).slice(0, 400)}`);
+  // A 2xx is not a listing until it carries runs[]. A maintenance page or an
+  // intermediary's HTML comes back 200 with no JSON at all, and reporting that
+  // as "0 of 0 returned" would tell the operator the receiver holds nothing.
+  if (!Array.isArray(body.runs)) {
+    throw new Error(`telemetry list: ${response.status} ${response.statusText} from ${url} is not a Run Record listing (no runs[] in the body): ${JSON.stringify(body).slice(0, 400)}`);
+  }
   const limit = Number.isFinite(Number(args.limit)) && Number(args.limit) > 0 ? Number(args.limit) : 50;
   // --limit trims client-side (the receiver has no page size); `count` is
   // what is shown, `returned` what the receiver sent, `total` what it holds.
-  const returned = Array.isArray(body.runs) ? body.runs.length : 0;
-  const runs = Array.isArray(body.runs) ? body.runs.slice(0, limit) : [];
+  const returned = body.runs.length;
+  const runs = body.runs.slice(0, limit);
   if (args.json) {
     console.log(JSON.stringify({ ok: true, action: "telemetry-list", scope, endpoint: url, count: runs.length, returned, total: body.total ?? null, truncated: body.truncated === true, runs }, null, 2));
     return;
