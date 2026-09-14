@@ -229,6 +229,16 @@ test("the clearing hint quotes the gate and never invents a repair", () => {
     required_actions: ["cmd-a", "cmd-b", "cmd-a", "cmd-c", "cmd-b", "cmd-c"].map((command, index) => ({ id: `a${index}`, kind: "command", command })),
   }]);
   assert.equal(duplicated, "The gate's required actions clear it: cmd-a; cmd-b; cmd-c. Then re-run with --browser.");
+
+  // The flattening is text-safety's sentence reading, the same one advisory
+  // details get: a tab inside a command is a word boundary, an ANSI escape is
+  // replaced visibly rather than folded into a space, and neither can reach
+  // the stderr line as a control character.
+  const ESC = String.fromCharCode(27);
+  const hostile = gateClearingHint([{
+    required_actions: [{ id: "h", kind: "command", command: `cmd\t--flag${ESC}[2K value` }],
+  }]);
+  assert.equal(hostile, "The gate's required actions clear it: cmd --flag\uFFFD[2K value. Then re-run with --browser.");
 });
 
 test("a non-waivable checkpoint blocker is told its manual repair and offered no waiver", async () => {

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { ADVISORY_DETAIL_MAX, singleLineDetail, singleLineField } from "./text-safety.mjs";
+import { ADVISORY_DETAIL_MAX, singleLineDetail, singleLineField, singleLineFragment } from "./text-safety.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const readJson = (relPath) => JSON.parse(readFileSync(resolve(ROOT, relPath), "utf8"));
@@ -22,9 +22,11 @@ test("./text-safety resolves through the package exports map", async () => {
   const mod = await import("@nextcommerce/campaigns-os/text-safety");
   assert.equal(typeof mod.singleLineField, "function");
   assert.equal(typeof mod.singleLineDetail, "function");
+  assert.equal(typeof mod.singleLineFragment, "function");
   // Same module instance, not a second copy resolved from a stale path.
   assert.equal(mod.singleLineField, singleLineField);
   assert.equal(mod.singleLineDetail, singleLineDetail);
+  assert.equal(mod.singleLineFragment, singleLineFragment);
 });
 
 test("the export is declared in package.json and on the supported surface", () => {
@@ -67,6 +69,39 @@ test("singleLineField returns the fallback only for an empty or absent value", (
   assert.equal(singleLineField(false, "(unnamed)"), "false");
   // A safe value passes through byte for byte, including a target path.
   assert.equal(singleLineField("/srv/example/target-cpk"), "/srv/example/target-cpk");
+});
+
+test("singleLineFragment reads whitespace as a sentence does and every other control as mangling", () => {
+  // Line breaks and tabs are word boundaries; runs of whitespace are one space;
+  // the ends are trimmed. This is the reading a value folded into a sentence
+  // gets, and it is why a repair instruction wrapped across lines reads as one.
+  assert.equal(singleLineFragment("Correct the waiver's\n expires_at on the report."), "Correct the waiver's expires_at on the report.");
+  assert.equal(singleLineFragment("  a\r\n\tb   c  "), "a b c");
+  // ESC, DEL, BEL and C1 have no reading as text: replaced, never folded into
+  // a space, so the mangling stays visible in the sentence.
+  assert.equal(singleLineFragment(`cmd${ESC}[2K --flag`), `cmd${REPLACEMENT}[2K --flag`);
+  assert.equal(singleLineFragment("\u0007a\u007fb\u009cc"), `${REPLACEMENT}a${REPLACEMENT}b${REPLACEMENT}c`);
+  // No Markdown escaping and no cap: a command must stay pasteable.
+  const command = "campaigns-os checkpoint waive --packet <packet> --gate page_kit.sdk_version";
+  assert.equal(singleLineFragment(command), command);
+  assert.equal(singleLineFragment("x".repeat(400)).length, 400);
+});
+
+test("singleLineFragment returns the fallback only for a value with no words in it", () => {
+  assert.equal(singleLineFragment("", "(none)"), "(none)");
+  assert.equal(singleLineFragment("   \n\t ", "(none)"), "(none)");
+  assert.equal(singleLineFragment(null, "(none)"), "(none)");
+  assert.equal(singleLineFragment(undefined), "");
+  // Stringified, not dropped, like singleLineField.
+  assert.equal(singleLineFragment(0, "(none)"), "0");
+});
+
+test("singleLineDetail is singleLineFragment plus Markdown escaping, a cap and a placeholder", () => {
+  // The folding policy is defined once: on an input with no Markdown and no
+  // excess length, the two agree byte for byte.
+  for (const input of ["unexpected token\n  at line 3", `bad${ESC}[31m value`, "a\nb\tc\r\nd", "\u0007bell\u009cstring"]) {
+    assert.equal(singleLineDetail(input), singleLineFragment(input).replace(/[`*_[\]<>]/g, "\\$&"), JSON.stringify(input));
+  }
 });
 
 test("singleLineDetail turns line breaks into word boundaries, not replacement characters", () => {

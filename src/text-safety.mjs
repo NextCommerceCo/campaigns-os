@@ -1,7 +1,7 @@
 // Text flattening for values this toolkit prints but did not author.
 //
-// A leaf module on purpose: both functions are pure string work with no
-// imports, and both are now published as the `./text-safety` package export so
+// A leaf module on purpose: every function here is pure string work with no
+// imports, and all of them are published as the `./text-safety` package export so
 // a consumer that renders toolkit-derived values (a run id, a path, a quoted
 // loader message) into its own single-line notice can flatten them the same
 // way instead of reimplementing the escape set and drifting from it.
@@ -20,25 +20,32 @@ export function singleLineField(value, fallback = "") {
   return raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, "\uFFFD");
 }
 
+// One trimmed line for a value folded INTO a sentence rather than printed as
+// its own field: a gate's repair command quoted in a notice, a loader message
+// quoted in an advisory. The control-character half is `singleLineField`'s and
+// is not duplicated; what is added is the reading a sentence gives whitespace.
+// Line breaks and tabs become spaces — a newline inside a quoted instruction
+// or JSON fragment is a word boundary, and U+FFFD there reads as mojibake —
+// and runs of whitespace collapse, because the value is read as words, not
+// compared as an identifier. ESC, DEL and the rest still become the
+// replacement character, since those have no reading as text. A value that is
+// compared against a known word (a disposition) keeps `singleLineField`.
+export function singleLineFragment(value, fallback = "") {
+  const spaced = String(value ?? "").replace(/[\r\n\t\v\f]+/g, " ");
+  const flattened = singleLineField(spaced).replace(/\s+/g, " ").trim();
+  return flattened || fallback;
+}
+
 export const ADVISORY_DETAIL_MAX = 300;
 
 // One trimmed line, no control characters, no Markdown that could restyle the
 // rest of the description or a rendered bullet.
 //
-// The control-character half is `singleLineField`'s job and is not duplicated
-// here. Two things are added on top of it, because this input is different in
-// kind from a run id or a disposition: a loader message QUOTES FILE CONTENT,
-// so it can be long and can carry Markdown. Line breaks are turned into spaces
-// before the hand-off — a newline inside a quoted JSON fragment is a word
-// boundary, and rendering it as U+FFFD would read as mojibake — while ESC, DEL
-// and the rest still become the replacement character the rest of the CLI
-// uses, since those have no reading as text.
+// The folding is `singleLineFragment`'s. Two things are added on top of it,
+// because this input is different in kind from a repair command: a loader
+// message QUOTES FILE CONTENT, so it can be long and can carry Markdown.
 export function singleLineDetail(detail, max = ADVISORY_DETAIL_MAX) {
-  const spaced = String(detail ?? "").replace(/[\r\n\t\v\f]+/g, " ");
-  const flattened = singleLineField(spaced)
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[`*_[\]<>]/g, "\\$&");
+  const flattened = singleLineFragment(detail).replace(/[`*_[\]<>]/g, "\\$&");
   if (!flattened) return "(no detail reported)";
   // A published export: a derived or mistaken max below one would otherwise
   // slice to nothing and fabricate a lone ellipsis, so the budget floors at one.

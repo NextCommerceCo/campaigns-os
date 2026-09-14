@@ -2546,29 +2546,23 @@
     {
       "id": "RL-0064",
       "sequence": 64,
-      "date": "2026-09-14",
+      "date": "2026-09-13",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.27.0+agent.3",
-      "changelog_sha256": "d3cfad2a6a899a8ac5d3e366897751e99b4305d8e035db439fed3fdf36dd18ce",
-      "agent_impact": "Internal consolidation with one narrow behaviour change. The helpers that read a campaign's route identity (public_route_slug and route_root) moved from private copies in src/cli.mjs, src/qa-node.mjs, src/source-html-intake.mjs and src/page-kit-campaign-config.mjs into one leaf, src/route-identity.mjs; no command's flags, exit codes, doctor JSON or doctor text change. What changes: qa run now reads a packet's campaign.route_root by the same exact rule doctor does (exactly \"/\" or exactly \"/<public_route_slug>/\"). A packet whose route_root is any other spelling of the slug (\"/<slug>\" without the trailing slash, \"<slug>/\", \"//<slug>//\", a case mismatch) was already a doctor blocker (campaign.route_root) and is now treated by QA as an ignored declaration too: QA audits the slug-prefixed default \"/<slug>/\", which is the root it used for that packet before as well, so the pages QA visits do not change and no verdict field changes. A CampaignSpec's route_root keeps the lenient intake reading prepare-build canonicalises. An agent that compares doctor and QA outcomes on a packet no longer sees the two disagree about a mistyped route_root.",
-      "compatibility": "compatible",
-      "migration": "None. A packet already accepted by doctor is unaffected; a packet doctor blocks on campaign.route_root should have that value corrected to exactly \"/\" or \"/<public_route_slug>/\", which was already the documented rule.",
+      "changelog_section": "1.27.0+agent.2",
+      "changelog_sha256": "7fb2a500a710be97a6525801d5c9370ea0a615f9fc9b192d92b59f3adc156cc8",
+      "agent_impact": "Additive. The ./text-safety package export gains singleLineFragment(value, fallback): line breaks and tabs become spaces, runs of whitespace collapse, the ends are trimmed, every other control character (C0 other than whitespace, DEL, C1) becomes U+FFFD, no Markdown escaping, no length cap; an empty or absent value returns fallback (default the empty string). Use it for a toolkit-derived value folded into a sentence, such as a gate's required_actions[].command or .description. singleLineField and singleLineDetail keep their signatures and their exact output; singleLineDetail is now defined as singleLineFragment plus Markdown escaping, the cap and the (no detail reported) placeholder. One stderr line changes on hostile input only: the qa run browser-skipped notice's quoted required actions now render a non-whitespace control character as U+FFFD instead of a space. No JSON output changes.",
+      "compatibility": "additive",
+      "migration": "None. A consumer that reimplemented the sentence fold can import singleLineFragment instead.",
       "changes": [
         {
-          "class": "cli_surface",
-          "path": "src/cli.mjs",
-          "surface_entry": "doctor",
-          "summary": "campaignRouteRoot, isAbsoluteHttpUrl, normalizePublicRouteSlug, stripPublicRoutePrefix and runtimeRelativeRouteForSpecValue are imported from src/route-identity.mjs instead of being defined in cli.mjs; validateRouteRootDeclaration decides acceptance through the leaf's packetRouteRoot, the same rule the QA runner now reads the packet by. Doctor's issue codes, ready lines, JSON and text output are unchanged."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/build-packet.md",
-          "surface_entry": "docs/build-packet.md",
-          "summary": "The route_root rule states that qa run reads the packet by doctor's rule, so a value doctor blocks never roots a QA check and a hand-edited packet cannot pass QA at a root doctor refuses."
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The ./text-safety row names singleLineFragment beside singleLineField and singleLineDetail, states which value kind each is for (own field, folded into a sentence, quoted detail) and what each does to whitespace and to other control characters, and records that singleLineFragment was added at 1.27.0+agent.2."
         }
       ],
-      "entry_sha256": "109467dbac3dc90df47fb6ec4cd9bb3694096bb13d0cbe6e4839f573b8328714"
+      "entry_sha256": "58e1d67b29a1b3988c9398f5357a181ead30e352d602be8c1a6fd197d970e653"
     }
   ]
 }
