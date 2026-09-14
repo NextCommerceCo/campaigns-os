@@ -3,7 +3,8 @@ import {
   checkpointStateFingerprint,
   projectCheckpointWaiverAssessment,
 } from "./checkpoint-waiver.mjs";
-import { normalizePublicRouteSlug, PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import { normalizePublicRouteSlug } from "./route-identity.mjs";
 
 export const PAGE_KIT_STORE_PROFILE_SCOPE = "page_kit.store_profile";
 export const PAGE_KIT_STORE_PROFILE_FIELDS = Object.freeze([

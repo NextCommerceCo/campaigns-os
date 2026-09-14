@@ -1,5 +1,13 @@
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
+import {
+  isAbsoluteHttpUrl,
+  normalizePageKitRoute,
+  normalizePublicRouteSlug,
+  resolveRouteRoot,
+  runtimeRelativeRouteForSpecValue,
+  stripPublicRoutePrefix,
+} from "./route-identity.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
@@ -2613,40 +2621,6 @@ function defaultRouteForType(type) {
   return `${type || "page"}/`;
 }
 
-function normalizePageKitRoute(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (isAbsoluteHttpUrl(raw)) return raw;
-
-  const clean = raw
-    .replace(/[?#].*$/, "")
-    .replace(/^\/+/, "")
-    .replace(/\/?index\.html$/i, "")
-    .replace(/\.html$/i, "")
-    .replace(/^\/+|\/+$/g, "");
-
-  return clean ? `${clean}/` : "";
-}
-
-function runtimeRelativeRouteForSpecValue(value, publicRouteSlug) {
-  const normalized = normalizePageKitRoute(value);
-  if (!normalized) return "";
-  const stripped = stripPublicRoutePrefix(normalized, publicRouteSlug);
-  const segments = stripped.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
-  if (segments.length > 1) return `${segments[segments.length - 1]}/`;
-  return stripped;
-}
-
-function stripPublicRoutePrefix(route, publicRouteSlug) {
-  const normalized = normalizePageKitRoute(route);
-  const slug = normalizePublicRouteSlug(publicRouteSlug);
-  if (!normalized || !slug) return normalized;
-  const clean = normalized.replace(/^\/+|\/+$/g, "");
-  if (clean === slug) return "";
-  if (clean.startsWith(`${slug}/`)) return `${clean.slice(slug.length + 1).replace(/\/?$/, "/")}`;
-  return normalized;
-}
-
 function resolveSibling(pageById, urlById, ref, baseUrl, publicRouteSlug = null) {
   if (typeof ref !== "string" || !ref.trim()) return undefined;
   if (urlById.has(ref)) return urlById.get(ref) || null;
@@ -3132,43 +3106,29 @@ function normalizeQaBaseUrl(value, publicRouteSlug) {
   }
 }
 
-// QA-side mirror of doctor's campaignRouteRoot (cli.mjs, #192): resolve the
-// campaign's served route root — "/", "/<slug>/", or null — from the packet
-// first (canonical form) and the spec second (lenient intake shapes, matching
-// prepare-build's canonicalization). A malformed or foreign declaration NEVER
-// roots a check; it falls through to the slug-prefixed default, exactly like
-// doctor. Before packet 01, `route_root` had zero occurrences in this file —
-// doctor learned root-serving in #192, QA did not, so a root-served campaign
-// was audited at a path that does not exist.
+// The campaign's served route root — "/", "/<slug>/", or null — read by the
+// one rule every stage shares (route-identity.mjs): the packet under its exact
+// canonical form, the spec under prepare-build's intake form. A declaration
+// that rule does not honour NEVER roots a check; it falls through to the
+// slug-prefixed default, exactly like doctor. What QA adds is the record: the
+// slug default then audits a DIFFERENT page than the one declared — a
+// hand-edited packet ("/<slug>" without its slash, which doctor blocks by
+// name), a multi-segment root like "/<slug>/offer/", or a foreign root — so
+// the discard is written onto the evidence rather than swallowed.
 function resolveCampaignRouteRoot({ packet, spec, rawSpec, publicRouteSlug, notes = null }) {
   const slug = normalizePublicRouteSlug(publicRouteSlug);
-  const declared = stringArg(packet?.campaign?.route_root)
-    || stringArg(spec?.spec_identity?.route_root)
-    || stringArg(spec?.campaign?.route_root)
-    || stringArg(rawSpec?.spec_identity?.route_root)
-    || stringArg(rawSpec?.campaign?.route_root);
-  if (declared) {
-    const clean = declared.trim();
-    if (clean === "/") return "/";
-    if (slug && normalizePublicRouteSlug(clean) === slug) return `/${slug}/`;
-    // A declared root QA cannot honour — a multi-segment root like
-    // "/<slug>/offer/", or a foreign root naming a different campaign. Doctor
-    // only ever canonicalizes to "/" or "/<slug>/", so this is either a
-    // hand-edited packet or a shape doctor grew after this code was written.
-    // Either way the slug default below audits a DIFFERENT page than the one
-    // declared, so the discard is recorded rather than swallowed.
-    if (notes) {
-      notes.push({
-        code: "route_root.declared_discarded",
-        declared: clean,
-        resolved: slug ? `/${slug}/` : null,
-        reason: slug
-          ? `Declared route_root "${clean}" is neither "/" nor "/${slug}/", so QA fell back to the slug default "/${slug}/". If the campaign really is served at "${clean}", QA is auditing the wrong page.`
-          : `Declared route_root "${clean}" could not be checked against a public_route_slug (no slug resolved), so QA fell back to no route root.`,
-      });
-    }
+  const resolved = resolveRouteRoot({ packet, spec, rawSpec, publicRouteSlug: slug });
+  if (notes && resolved.accepted === false) {
+    notes.push({
+      code: "route_root.declared_discarded",
+      declared: resolved.declared,
+      resolved: resolved.route_root,
+      reason: slug
+        ? `Declared route_root "${resolved.declared}" is neither "/" nor "/${slug}/", so QA fell back to the slug default "/${slug}/". If the campaign really is served at "${resolved.declared}", QA is auditing the wrong page.`
+        : `Declared route_root "${resolved.declared}" could not be checked against a public_route_slug (no slug resolved), so QA fell back to no route root.`,
+    });
   }
-  return slug ? `/${slug}/` : null;
+  return resolved.route_root;
 }
 
 // The ONE place the analytics capture-target shape is defined. Every producer
@@ -3253,22 +3213,8 @@ function resolvePublicRouteSlug({ packet, spec, rawSpec }) {
     || null;
 }
 
-function normalizePublicRouteSlug(value) {
-  if (!value) return "";
-  return String(value).trim().replace(/^\/+|\/+$/g, "");
-}
-
 function ensureUrlTrailingSlash(value) {
   return value.endsWith("/") ? value : `${value}/`;
-}
-
-function isAbsoluteHttpUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function stripOrigin(value) {
