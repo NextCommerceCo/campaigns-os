@@ -25,6 +25,11 @@ Notable supported-surface changes are recorded here.
   telemetry on --proxy-base <url>`; the OFF record it writes carries
   `scope: null` (text: `Scope: every endpoint (an OFF choice is not
   scoped)`), so `telemetry status` prints no `Scope:` row for an OFF file.
+  On every `telemetry` subcommand a `--proxy-base` flag written without a
+  URL (`--proxy-base --json`, or an empty value) exits 1 with `telemetry
+  <sub>: --proxy-base needs a URL (https, or a loopback host); nothing was
+  written.` instead of being read as no flag and granting or checking the
+  canonical endpoint.
 - `telemetry status` prints the stored scope (`Scope: <url>`) and the endpoint
   it was checked against (`Checked endpoint: <url>` — the canonical endpoint,
   or `--proxy-base <url>` when given), and on a mismatch says `Scope mismatch

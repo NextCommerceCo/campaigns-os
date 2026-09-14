@@ -474,6 +474,21 @@ test("CLI: telemetry on refuses a plain-http base that is not loopback, and writ
   });
 });
 
+test("CLI: telemetry on|off|status refuse a --proxy-base flag that carries no URL, and write nothing", async () => {
+  await withTempDir((dir) => {
+    const env = cliEnv(dir);
+    for (const argv of [["telemetry", "on", "--proxy-base", "--json"], ["telemetry", "on", "--proxy-base", ""], ["telemetry", "on", "--proxy-base", "   "]]) {
+      const refused = runCli(argv, env);
+      assert.equal(refused.status, 1, argv.join(" "));
+      assert.match(refused.stderr, /telemetry on: --proxy-base needs a URL \(https, or a loopback host\); nothing was written\./);
+      assert.equal(readConfig(resolveConfigPath({ env })).ok, false, argv.join(" "));
+    }
+    assert.match(runCli(["telemetry", "status", "--proxy-base"], env).stderr, /telemetry status: --proxy-base needs a URL/);
+    assert.match(runCli(["telemetry", "off", "--proxy-base"], env).stderr, /telemetry off: --proxy-base needs a URL/);
+    assert.equal(readConfig(resolveConfigPath({ env })).ok, false);
+  });
+});
+
 test("CLI: telemetry status --proxy-base applies the same transport rule as telemetry on", async () => {
   await withTempDir((dir) => {
     const env = cliEnv(dir);

@@ -10828,6 +10828,12 @@ async function telemetryCommand(args) {
   const sub = args._[1] || "status";
   const configPath = resolveConfigPath();
   const requestedBase = optionalString(args["proxy-base"]);
+  // A flag that was written but carries no URL (`--proxy-base --json`, or an
+  // empty variable) is not "no flag": treating it as absent would grant or
+  // check the canonical endpoint under a request that named something else.
+  if (Object.hasOwn(args, "proxy-base") && !requestedBase) {
+    throw new Error(`telemetry ${sub}: --proxy-base needs a URL (https, or a loopback host); nothing was written.`);
+  }
   // Same transport rule as the remit rail: https, or a loopback host. A grant
   // for a base a remit would refuse to send to is not a grant, and a status
   // check against one would report on a remit that can never happen. Nothing
