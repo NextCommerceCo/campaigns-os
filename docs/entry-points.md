@@ -154,6 +154,20 @@ per-page; `source_html.pages[]` is per-page).
   the design-Figma + template-stock-commerce-surfaces split is
   routine.
 
+## Existing campaigns
+
+A campaign repository that already exists — built or not, with or
+without Campaigns OS artifacts — enters through
+`campaigns-os standardize --target <repo>`, not through the build
+pipeline. It is a read-only audit: it classifies each campaign root,
+inventories source and runtime contracts, judges SDK versions and
+checkout bindings against the bundled contracts, and, when a built
+`_site` and a known template family exist, runs the built-output
+doctor. The flags, exit codes and the slug-resolution rules are in
+[campaign-standardization-report.md](./campaign-standardization-report.md).
+Its findings name the entry point above the campaign should re-enter
+through when repair is needed.
+
 ## Out of the consumer's hands
 
 The build pipeline doesn't care which agent wrote the source HTML;
