@@ -51,14 +51,21 @@ function isDemoResidue(field, value) {
   return PHONE_FIELDS.has(field) && value.replace(/\D/g, "") === "18888316810";
 }
 
-// A waiver records a named human accepting one of the three ratified known
+// A waiver records a named human accepting one of the ratified known
 // divergences. Keep this as a positive allowlist: any future blocker kind is
 // non-waivable until its policy and reachability proof are explicitly added.
+// Starter demo residue (a demo storefront URL or phone still in the target) is
+// deliberately absent: the gate exists to keep those values from shipping, so
+// no named human can switch it off — the value must be replaced.
 const WAIVABLE_DISCREPANCY_KINDS = new Set([
-  "demo_residue",
   "target_missing",
   "mismatch",
 ]);
+
+export function storeProfileDemoResidueFields(gate) {
+  const discrepancies = Array.isArray(gate?.state?.discrepancies) ? gate.state.discrepancies : [];
+  return discrepancies.filter((row) => row?.kind === "demo_residue").map((row) => row.field);
+}
 
 export function isStoreProfileDiscrepancyWaivable(kind) {
   return typeof kind === "string" && WAIVABLE_DISCREPANCY_KINDS.has(kind);
@@ -226,8 +233,12 @@ export function evaluatePageKitStoreProfile({
       : warning_fields.length
         ? "page_kit.store_profile.target_only"
         : "page_kit.store_profile.pass";
+  const demoResidueFields = blockerRows.filter((row) => row.kind === "demo_residue").map((row) => row.field);
   const reason = status === "blocked"
     ? `Target Store Profile differs from the CampaignSpec in blocking field(s): ${blocker_fields.join(", ")}.`
+      + (demoResidueFields.length
+        ? ` Starter demo residue in ${demoResidueFields.join(", ")} is not waivable; replace the demo value(s).`
+        : "")
     : status === "waived"
       ? `Target Store Profile has an active named-human waiver for blocking field(s): ${blocker_fields.join(", ")}.`
       : warning_fields.length

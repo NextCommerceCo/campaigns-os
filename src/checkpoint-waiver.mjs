@@ -83,6 +83,49 @@ export function checkpointStateFingerprint({ scope, subject, state }) {
   return `sha256:${createHash("sha256").update(payload).digest("hex")}`;
 }
 
+// The one attribution rule every waiver lane shares: a named human (no
+// placeholder or automation identity), a non-empty reason, canonical
+// timestamps, and an expiry that lies after the waive instant. Checkpoint
+// waivers additionally require a bound (expiry or review condition); the theme
+// lane records an expiry when one is given but does not demand one. `label`
+// prefixes every message so each command names itself in its own refusal.
+export function validateWaiverAttribution({
+  reason,
+  waivedBy,
+  now = new Date().toISOString(),
+  expiresAt = null,
+  reviewCondition = null,
+  requireBound = true,
+  label = "Checkpoint waiver",
+} = {}) {
+  if (typeof reason !== "string" || !reason.trim()) {
+    throw new Error(`${label} requires a non-empty reason.`);
+  }
+  if (!isNamedHuman(waivedBy)) {
+    throw new Error(`${label} requires --waived-by with the named human who approved it; placeholders are not accepted.`);
+  }
+  if (!isValidTimestamp(now)) throw new Error(`${label} requires a valid waived_at timestamp.`);
+  if (expiresAt != null && !isValidTimestamp(expiresAt)) {
+    throw new Error(`${label} expires_at must be a valid timestamp when provided.`);
+  }
+  if (reviewCondition != null && (typeof reviewCondition !== "string" || reviewCondition.trim() === "")) {
+    throw new Error(`${label} review_condition must be non-empty when provided.`);
+  }
+  if (requireBound && expiresAt == null && reviewCondition == null) {
+    throw new Error(`${label} requires at least one of expires_at or review_condition.`);
+  }
+  if (expiresAt != null && Date.parse(expiresAt) <= Date.parse(now)) {
+    throw new Error(`${label} expires_at must be later than waived_at.`);
+  }
+  return {
+    reason: reason.trim(),
+    waived_by: waivedBy.trim().replace(/\s+/g, " "),
+    waived_at: new Date(now).toISOString(),
+    ...(expiresAt == null ? {} : { expires_at: new Date(expiresAt).toISOString() }),
+    ...(reviewCondition == null ? {} : { review_condition: reviewCondition.trim() }),
+  };
+}
+
 export function isNamedHuman(value) {
   if (typeof value !== "string") return false;
   const normalized = value.trim().replace(/\s+/g, " ");
@@ -215,34 +258,12 @@ export function createCheckpointWaiver(checkpoint, {
   if (!FINGERPRINT_PATTERN.test(checkpoint?.state_fingerprint || "")) {
     throw new Error("Checkpoint waiver needs a current state fingerprint.");
   }
-  if (typeof reason !== "string" || !reason.trim()) {
-    throw new Error("Checkpoint waiver requires a non-empty reason.");
-  }
-  if (!isNamedHuman(waivedBy)) {
-    throw new Error("Checkpoint waiver requires --waived-by with the named human who approved it; placeholders are not accepted.");
-  }
-  if (!isValidTimestamp(now)) throw new Error("Checkpoint waiver requires a valid waived_at timestamp.");
-  if (expiresAt != null && !isValidTimestamp(expiresAt)) {
-    throw new Error("Checkpoint waiver expires_at must be a valid timestamp when provided.");
-  }
-  if (reviewCondition != null && (typeof reviewCondition !== "string" || reviewCondition.trim() === "")) {
-    throw new Error("Checkpoint waiver review_condition must be non-empty when provided.");
-  }
-  if (expiresAt == null && reviewCondition == null) {
-    throw new Error("Checkpoint waiver requires at least one of expires_at or review_condition.");
-  }
-  if (expiresAt != null && Date.parse(expiresAt) <= Date.parse(now)) {
-    throw new Error("Checkpoint waiver expires_at must be later than waived_at.");
-  }
+  const attribution = validateWaiverAttribution({ reason, waivedBy, now, expiresAt, reviewCondition });
   return {
     scope: checkpoint.scope,
     subject: canonicalize(checkpoint.subject),
     state_fingerprint: checkpoint.state_fingerprint,
-    reason: reason.trim(),
-    waived_by: waivedBy.trim().replace(/\s+/g, " "),
-    waived_at: new Date(now).toISOString(),
-    ...(expiresAt == null ? {} : { expires_at: new Date(expiresAt).toISOString() }),
-    ...(reviewCondition == null ? {} : { review_condition: reviewCondition.trim() }),
+    ...attribution,
   };
 }
 
@@ -273,6 +294,9 @@ export function createCheckpointRegistry(entries) {
 
 export function evaluateCheckpointRegistry(registry, id, context) {
   const entry = registry?.[id];
-  if (!entry) throw new Error(`Unknown checkpoint gate "${id}".`);
+  if (!entry) {
+    const registered = Object.keys(registry || {});
+    throw new Error(`Unknown checkpoint gate "${id}"; registered gates: ${registered.length ? registered.join(", ") : "(none)"}.`);
+  }
   return entry.evaluate(context);
 }

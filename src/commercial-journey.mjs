@@ -101,12 +101,20 @@ function selectedShipping(page) {
   return { value: ranked[0].ref };
 }
 
+// One predicate for "this checkout row is an order bump": the spec marks a
+// bump with `is_upsell: true` on a non-upsell page. Every consumer that must
+// tell a bump from a main selector row (parity scenarios, bump deltas, the QA
+// selector-tier planner) reads this, so a marker change lands in one place.
+export function isBumpRow(row) {
+  return Boolean(row?.is_upsell);
+}
+
 function lineForRow(row) {
   const packageId = positiveInteger(row?.ref_id);
   const quantity = present(row?.qty) ? positiveInteger(row.qty) : 1;
   if (packageId === null || quantity === null) return null;
   const line = { package_id: packageId, quantity };
-  if (row?.is_upsell) line.is_upsell = true;
+  if (isBumpRow(row)) line.is_upsell = true;
   return line;
 }
 
@@ -114,7 +122,7 @@ function authoredLine(row) {
   return {
     package_id: row?.ref_id ?? null,
     quantity: present(row?.qty) ? row.qty : 1,
-    ...(row?.is_upsell ? { is_upsell: true } : {}),
+    ...(isBumpRow(row) ? { is_upsell: true } : {}),
   };
 }
 
@@ -240,8 +248,8 @@ export function planScenarios(page, mapDoc = {}, options = {}) {
     line: lineForRow(row),
     authored: authoredLine(row),
   }));
-  const mainRows = pageIsUpsell ? parsedRows : parsedRows.filter(({ row }) => !row?.is_upsell);
-  const bumpRows = pageIsUpsell ? [] : parsedRows.filter(({ row }) => row?.is_upsell);
+  const mainRows = pageIsUpsell ? parsedRows : parsedRows.filter(({ row }) => !isBumpRow(row));
+  const bumpRows = pageIsUpsell ? [] : parsedRows.filter(({ row }) => isBumpRow(row));
   const representativeLines = mainRows.map(({ line }) => line).filter(Boolean);
   const shipping = selectedShipping(page);
   const representativeReason = shipping.reason
@@ -877,7 +885,7 @@ function surfaceActivations(scenarios, catalog) {
 
 function bumpDeltas(scenarios, rows) {
   const bumpIndexes = [...new Set(roleScenarios(scenarios, "bump-with").map((scenario) => scenario.descriptor.context.bump_index))];
-  const bumpRows = rows.filter((row) => row.is_upsell);
+  const bumpRows = rows.filter((row) => isBumpRow(row));
   return bumpIndexes.map((index) => {
     const without = scenarioByIndexedRole(scenarios, "bump-without", "bump_index", index);
     const withBump = scenarioByIndexedRole(scenarios, "bump-with", "bump_index", index);

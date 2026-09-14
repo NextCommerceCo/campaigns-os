@@ -95,7 +95,8 @@ commerce pages (checkout/upsell/downsell/receipt), the gate **blocks**
 - the brand layer is generated and recorded as applied
   (`report.theme.status: applied`, `load_order: after-next-core`), or
 - an explicit waiver is recorded:
-  `campaigns-os theme waive --packet <p> --reason "<why>"`, or
+  `campaigns-os theme waive --packet <p> --reason "<why>" --waived-by "<named human>"`
+  (optionally `--expires-at <ISO>`; placeholders such as "operator" are refused), or
   `qa run --theme-waive "<reason>"` for a one-off run, or
 - theme policy is `off` for the run.
 

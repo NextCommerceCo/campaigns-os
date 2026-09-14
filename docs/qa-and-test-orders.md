@@ -438,6 +438,15 @@ Exactly one comparison, against exactly one earlier run:
    reintroduced now, as pre-existing. The last reference is the verdict the
    run actually closed on. This does not widen the boundary — it is still the
    final attempt of exactly one earlier run, never a merged view across runs.
+   When that reference is `external:qa_verdict` — the record's spelling for a
+   verdict written outside the packet directory, the ordinary case whenever
+   `assembly.target_repo` is not the packet's own directory — the verdict is
+   located by its recorded digest under the target repo's `qa-output/`. The
+   committed `.campaign-runtime/qa-verdict.json` sidecar is not a stand-in:
+   it is a projection, so its digest cannot match, and the record stores no
+   verdict run id to tie it to the referenced attempt — comparing against a
+   projection of some other attempt would report a reintroduced finding as
+   pre-existing.
    For doctor, from the Run Record's `observations.doctor.error_codes` /
    `warning_codes`.
 3. **Classify.** Environment and upstream drift are decided first, from the
@@ -461,11 +470,12 @@ violations sharing a code are one finding to this comparison.
 | `cause_reason` | What happened |
 |---|---|
 | `no_prior_run` | No Run Record for this campaign under the packet directory — including every packet-less run (`--site`, a raw map id), which has no Run Record home. |
-| `prior_run_without_qa_verdict` | The previous Run Record references no QA verdict artifact. |
-| `prior_run_verdict_unreadable` | It references one, but the file is gone or unparseable. |
+| `prior_run_without_qa_verdict` | The previous Run Record carries no QA verdict artifact reference at all. |
+| `prior_run_verdict_unreadable` | It references one by path, but the file is gone or unparseable. |
+| `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, but no verdict matching that reference could be located under the target repo's `qa-output/` — nothing there hashes to the recorded digest, the reference carries no digest, or no target repo was known to search. |
 | `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
 
-Only the first of those means "run again and it will improve". The other three
+Only the first of those means "run again and it will improve". The other four
 say a previous Run Record **does** exist and its evidence is missing or
 unreadable, which a second run will not fix on its own — so the report names
 that record rather than telling you to wait for one.
@@ -1048,7 +1058,12 @@ the CampaignSpec instead:
   its path. Repeated declarations of the same ref at distinct quantities are
   purchase multipliers (`ref` and `ref:2`). A uniquely referenced catalog
   package with its own `qty: 3` composition is still bought once (`ref`), not
-  multiplied by three;
+  multiplied by three. **Order-bump rows — `packages[]` entries marked
+  `is_upsell: true` — are add-ons offered beside the selected tier, not tiers**:
+  they never become a plan (a three-tier checkout with one bump plans three
+  tiers, so `tiers:common` on a two-upsell funnel is 12 orders, not 16), and
+  the runner prints a `[qa:test-order]` line naming the bump ref(s) it left
+  out. Bump coverage comes from `--cart`;
 - plus one **checkout order per declared coupon code** — checkout
   `exit_intent.offer_code` and `promo_code_input.offer_code`, counted only when
   the surface has `enabled: true` (the same rule build/doctor use for offer
@@ -1083,12 +1098,20 @@ order is labeled in assertions and evidence as `checkout@tier:<ref>`,
 `accept@tier:<ref>`, `checkout@coupon:<code>`, and the verdict records the
 plan (tier ref or coupon code plus its declaring surface) on the order.
 
-`tiers` is incompatible with explicit `--select-package`/`--apply-coupon`
-(the mode derives them from the spec; combining would be ambiguous), and it
-errors when the spec declares neither selector tiers nor an enabled offer
-code — use `common`/`full` or the explicit flags there. Because tiers come
-from the CampaignSpec, `tiers` needs a packet/spec-driven run; non-packet
-`--site` runs have no declared tiers to iterate.
+`--select-package <ref[:qty],...>` **narrows** a tiers run to the listed
+declared tiers, matched by exact identity (`1` or `1:1` is ref 1 at purchase
+quantity one; `1:2` is the two-unit multiplier), so `--test-order tiers:common
+--select-package 1:2,1:3` proves two of three tiers without the full flood.
+Coupon plans are not tiers and are planned regardless. Every listed identity
+must be a declared tier: any that is not is refused by name, listing the
+declared tiers, so a partly declared list never runs the matched tiers and
+silently skips the rest.
+`tiers` is incompatible with explicit `--apply-coupon` (the mode derives
+coupons from the spec; combining would be ambiguous), and it errors when the
+spec declares neither selector tiers nor an enabled offer code — use
+`common`/`full` or the explicit flags there. Because tiers come from the
+CampaignSpec, `tiers` needs a packet/spec-driven run; non-packet `--site`
+runs have no declared tiers to iterate.
 
 **Multi-funnel specs are covered in one run**: every funnel's checkout page
 contributes plans, and each plan is driven against the checkout page that
@@ -1120,8 +1143,9 @@ npm run campaigns-os -- qa run \
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
 gate**. A single checkout's `common` sample always stays under it, though tier
 expansion can exceed it. If `full` expands past the cap, the command stops before
-browser launch, prints the planned count, and names the exact
-`--max-test-orders <count>` raise. For example, a linear three-offer graph has
+browser launch, prints the planned count, lists the planned paths (up to 40 ids;
+past that the remainder is counted, never cut silently, and `--select-package
+<ref[:qty]>` lists one tier's paths), and names the exact `--max-test-orders <count>` raise. For example, a linear three-offer graph has
 eight terminal paths plus the checkout baseline, so it requires
 `--max-test-orders 9`. No approval step is involved.
 
