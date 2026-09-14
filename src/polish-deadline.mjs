@@ -37,13 +37,6 @@ export async function runWithPolishProducerDeadline(operation, {
   unrefTimer = false,
   signal,
 } = {}) {
-  if (typeof operation !== "function"
-    || !Number.isSafeInteger(timeoutMs)
-    || timeoutMs <= 0
-    || typeof setTimer !== "function"
-    || typeof clearTimer !== "function") {
-    throw new Error("Campaigns OS polish capture received an invalid producer deadline configuration.");
-  }
   return runWithDeadline(operation, {
     timeoutMs,
     onTimeout,
@@ -52,5 +45,7 @@ export async function runWithPolishProducerDeadline(operation, {
     timeoutError: polishProducerTimeoutError,
     setTimer,
     clearTimer,
+    label: "Campaigns OS polish capture",
   });
+
 }

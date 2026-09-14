@@ -148,7 +148,7 @@ function resourceId(canonicalUrl) {
 // Key-sorted deep copy, so two captures that state the same facts serialize
 // to the same bytes. No cycle guard, deliberately: values reach this module
 // from fresh literals or from JSON.parse, and neither can carry a cycle.
-export function canonicalize(value) {
+function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
@@ -355,18 +355,17 @@ function prepareResponseRecords(responses, problemCounts) {
 }
 
 // The derivations below are the producer's statements about a resource
-// ledger, exported so the page-load validator recomputes each one from the
-// ledger with the same function instead of a second spelling of it. They
-// take ledger entries (or media projections) and nothing else.
+// ledger; the ones the page-load validator recomputes are exported so it
+// reads the same function instead of a second spelling of it. They take
+// ledger entries (or media projections) and nothing else.
+
 
 export function resourceLedgerSort(a, b) {
   return String(a.url).localeCompare(String(b.url)) || String(a.resource_id).localeCompare(String(b.resource_id));
 }
 
-export function largestResourceProjection(resources) {
-  const largest = [...resources].sort((a, b) => b.transferred_bytes - a.transferred_bytes
-    || a.url.localeCompare(b.url)
-    || a.resource_id.localeCompare(b.resource_id))[0];
+function largestResourceProjection(resources) {
+  const largest = [...resources].sort((a, b) => b.transferred_bytes - a.transferred_bytes || resourceLedgerSort(a, b))[0];
   return largest ? {
     resource_id: largest.resource_id,
     url: largest.url,
@@ -871,7 +870,7 @@ export function unattributedMediaTransfers(media, resources) {
 }
 
 // The capture-level statuses stated beside the problems that justify them.
-export const PRODUCER_FAILURE_PROBLEM_CODES = Object.freeze([
+const PRODUCER_FAILURE_PROBLEM_CODES = Object.freeze([
   "browser_unavailable",
   "producer_failed",
   "producer_timeout",

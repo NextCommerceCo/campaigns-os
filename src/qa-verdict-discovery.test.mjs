@@ -89,7 +89,18 @@ test("discoverQaVerdicts walks the report's hints and every root's qa-output ide
   assert.deepEqual(discoverQaVerdicts({ report, reportPath, roots: [repo] }).map((candidate) => candidate.source), ["assembly_report"]);
 }));
 
+test("an absent root, an identifier directory that is a file, and a recorded path that is a directory are no candidates", () => withDir((dir) => {
+  const repo = join(dir, "repo");
+  mkdirSync(join(repo, "qa-output"), { recursive: true });
+  writeFileSync(join(repo, "qa-output", "map-1"), "not a directory\n");
+  mkdirSync(join(repo, "qa-output", "demo", "run_dir.json"), { recursive: true });
+  const report = { stages: { qa: { outputs: ["qa-output/demo/run_dir.json", "qa-output/demo/missing.json"] } } };
+  const found = discoverQaVerdicts({ packet: PACKET, report, reportPath: join(repo, "report.json"), roots: [repo, join(dir, "absent")] });
+  assert.deepEqual(found, []);
+}));
+
 test("iteration is lazy per file: a consumer that stops early never reads the files it did not pull", () => withDir((dir) => {
+
   const repo = join(dir, "repo");
   const paths = ["a", "b", "c"].map((name) => join(qaVerdictDir(repo, "demo"), `${name}.json`));
   for (const path of paths) writeJson(path, { campaign_slug: "demo" });

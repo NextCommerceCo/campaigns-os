@@ -3063,6 +3063,27 @@
         }
       ],
       "entry_sha256": "d656a8f608a8d8c8f83d87841bbaba0784e19b1108350f767fd8ffaf6aaa4edb"
+    },
+    {
+      "id": "RL-0085",
+      "sequence": 85,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.30",
+      "changelog_sha256": "71f0b6ef702b4424bef7d70588a7d05d2725424c96a7fc761d3c87b3e99a6f39",
+      "agent_impact": "Packet-less `qa run --map-id <id>` now fails fast on a proxy body of { ok:false, error } or non-JSON with `Spec fetch returned ok=false: <error> (<url>)` / `Spec fetch returned invalid JSON: \u2026` (exit 1), the same messages `start`/`prepare-build --map-id` print; before, the body reached spec normalisation and the error named a spec field. Path identity is one rule: a packet, session or sidecar path reached through a symlinked checkout and the same path reached directly are treated as one path even before the file exists, so `run start --packet <link>` then `run end --packet <real>` close the same session, and `doctor --strip-paths` / `start`'s generated doctor output keep `./\u2026` relative paths when the target is reached through a symlink. A Build Context, Assembly Report, QA verdict or packet that exists but cannot be read (EISDIR, EACCES, \u2026) now surfaces that error from doctor, next, qa and the run-record closeout instead of being read as absent; only ENOENT/ENOTDIR and malformed JSON are absence. Output shapes, exit codes and every other message are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor's write-back target check, --strip-paths rebasing, the ambient run-session selection, run start/end --packet and the Run Record artifact refs canonicalise paths through src/fs-identity.mjs (real path of the nearest existing ancestor plus the missing tail); the --map-id spec reader moves verbatim to src/spec-fetch.mjs and is shared with the QA runner; a duplicated comment in the next-step picker is deleted. No flag, output shape or exit code changes."
+        }
+      ],
+      "entry_sha256": "f5bc3d11341871d8a20d019e2ea3fbb390f2a3927d85182dcd94950facb776aa"
     }
   ]
 }

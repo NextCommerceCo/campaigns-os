@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.30] - 2026-09-14
+
+### Changed
+
+- Packet-less `qa run --map-id <id>` fetches the CampaignSpec through the one reader `start`/`prepare-build --map-id` already use (`src/spec-fetch.mjs`): a 200 body of `{ ok: false, error }` is refused as `Spec fetch returned ok=false: <error> (<url>)` and a non-JSON body as `Spec fetch returned invalid JSON: …`, instead of being handed to the QA runner as the spec and failing later inside spec normalisation with an unrelated message.
+- One "is this the same file" rule (`src/fs-identity.mjs`) behind run-session binding, the Build Context → Assembly Report binding, `doctor`'s write-back target check and the Run Record artifact refs. A path that does not exist yet is canonicalised through its nearest existing ancestor, so a packet or sidecar reached through a symlinked checkout and the same path reached directly are one path whether or not it is on disk. `doctor --strip-paths` (and `start`'s generated doctor output) rebase every path onto the output base by that rule, so a target reached through a symlink keeps `./…` relative paths even when a recorded sidecar path was written by its real path.
+- A Build Context, QA verdict, Assembly Report or packet that is on disk but cannot be read (a permission failure, a directory where the file should be) is no longer treated as absent: `resolveCampaignWorkspace`, QA verdict discovery and the QA runner's sidecar reads rethrow such errors with their code (`EISDIR`, `EACCES`, …) and treat only a missing path (`ENOENT`/`ENOTDIR`) or malformed JSON as "nothing there". Before, an unreadable context silently bound the default Assembly Report, so a `--report-out` campaign's QA outcome could be recorded into a report `next` never reads.
+- An invalid polish producer deadline configuration is refused by the shared deadline racer as `Campaigns OS polish capture received an invalid deadline configuration.` (was `… received an invalid producer deadline configuration.`); a finite non-integer `timeoutMs` is accepted like every other deadline (every caller passes a bounded safe integer).
+
+### Removed
+
+- The QA runner's private spec fetch, the CLI's `canonicalExistingPath`, run-session's `canonicalPath`, campaign-workspace's `samePath`, the polish producer wrapper's own argument validation, a duplicated comment in the doctor next-step picker, and the copies of `optionalString` / `isPlainObject` / the slug normaliser in `stage-ledger` and `qa-verdict-discovery` (they import `src/repo-scan.mjs` and `src/route-identity.mjs`). Five identifiers no module imports lose their `export` keyword: `deadlineTimeoutError`, `canonicalize`, `largestResourceProjection`, `PRODUCER_FAILURE_PROBLEM_CODES`, `PRODUCER_STAGE_HISTORY_LIMIT`.
+
 ## [1.27.0+agent.26] - 2026-09-14
 
 ### Fixed

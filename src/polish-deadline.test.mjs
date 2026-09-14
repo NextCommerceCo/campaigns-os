@@ -78,3 +78,12 @@ test("an owner abort rejects immediately and clears the longer internal deadline
   await assert.rejects(pending, (error) => error.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE);
   assert.deepEqual(events, [["clear", true]]);
 });
+
+test("an invalid producer deadline configuration is refused by the shared racer, naming the polish capture", async () => {
+  for (const options of [{ timeoutMs: 0 }, { timeoutMs: Number.NaN }, { timeoutMs: "10" }, { timeoutMs: 10, setTimer: null }]) {
+    await assert.rejects(
+      runWithPolishProducerDeadline(async () => "never", { ...options, setTimer: options.setTimer === null ? null : () => assert.fail("timer created") }),
+      /^Error: Campaigns OS polish capture received an invalid deadline configuration\.$/,
+    );
+  }
+});
