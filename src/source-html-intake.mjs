@@ -16,11 +16,14 @@ export function createSourceHtmlIntake({
   publicRouteSlug,
   outputDir,
   buildScope = null,
+  manifestPath = null,
+  templateFamily = null,
 }) {
-  const manifestResult = readSourceHtmlManifestFile(sourceRoot);
+  const manifestResult = readSourceHtmlManifestFile(sourceRoot, { manifestPath });
+  const scopeOptions = { buildScope, templateFamily };
   const matched = manifestResult.manifest
-    ? applyManifestToPages(specPages, manifestResult.manifest, manifestResult.path, buildScope)
-    : matchSourcePages(specPages, htmlFiles, buildScope);
+    ? applyManifestToPages(specPages, manifestResult.manifest, manifestResult.path, scopeOptions)
+    : matchSourcePages(specPages, htmlFiles, scopeOptions);
   const pageById = new Map((specPages || []).map((page) => [page.id, page]));
   const projectionDecisions = [];
 
@@ -79,11 +82,19 @@ function buildScopeSkipReason(buildScope) {
   return reasons.length ? `${base} Reasons: ${reasons.join(" ")}` : base;
 }
 
-function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifestPath = null }) {
+// A declared out-of-scope page is template stock: the family's own page is
+// the design, so the decision carries `template_stock: true` and the family
+// the page assembles from. The Design Source Package reads the same marker
+// (through prepare-build's templateStockPageIds) so intake never asks for a
+// design source the page cannot have, and the build stage materialises the
+// page from that family's stock page.
+function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifestPath = null, templateFamily = null }) {
   // Mirror the validator's contract (skip_reason is a non-empty string) rather
   // than assuming it: a malformed entry falls back to the build_scope text
   // instead of throwing mid-intake.
   const skipReason = optionalString(skipEntry?.skip_reason) || buildScopeSkipReason(buildScope);
+  const family = optionalString(templateFamily);
+  const familyLabel = family ? `the locked ${family} family` : "the selected template family";
   return {
     mapping: { page_id: page.id, skip_reason: skipReason },
     declaredSkip: {
@@ -95,8 +106,10 @@ function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifest
       id: `dec_page_scope_${page.id}`,
       stage: "prepare_build",
       decision_type: "deterministic_derivation",
-      decision: `recorded CampaignSpec page "${page.id}" as declared out of source scope (${skipEntry ? "explicit source-html manifest skip entry" : 'CampaignSpec build_scope mode "partial"'}); the page assembles from the selected template family`,
+      decision: `recorded CampaignSpec page "${page.id}" as template stock, declared out of source scope (${skipEntry ? "explicit source-html manifest skip entry" : 'CampaignSpec build_scope mode "partial"'}); the build stage materialises the page from ${familyLabel}'s stock page, and intake demands no design source for it`,
       confidence: "high",
+      template_stock: true,
+      template_family: family,
       evidence: [
         skipEntry
           ? `source-html manifest entry for "${page.id}" at ${manifestPath} declares skip_reason without a path`
@@ -125,7 +138,7 @@ function pageRouteForPageKit(value) {
   }
 }
 
-function applyManifestToPages(specPages, manifest, manifestPath, buildScope = null) {
+function applyManifestToPages(specPages, manifest, manifestPath, { buildScope = null, templateFamily = null } = {}) {
   const mappings = [];
   const prompts = [];
   const decisions = [];
@@ -223,7 +236,7 @@ function applyManifestToPages(specPages, manifest, manifestPath, buildScope = nu
     } else {
       const skipEntry = entry && !isNonEmptyString(entry.path) && isNonEmptyString(entry.skip_reason) ? entry : null;
       if (skipEntry || (declaredPartialScope(buildScope) && !isObject(page.design_source))) {
-        const declared = declaredScopeSkip(page, { skipEntry, buildScope, manifestPath });
+        const declared = declaredScopeSkip(page, { skipEntry, buildScope, manifestPath, templateFamily });
         if (skipEntry) usedEntries.add(skipEntry);
         matchedIds.add(page.id);
         mappings.push(declared.mapping);
@@ -260,7 +273,7 @@ function applyManifestToPages(specPages, manifest, manifestPath, buildScope = nu
   return { mappings, prompts, decisions, declaredSkips };
 }
 
-function matchSourcePages(specPages, htmlFiles, buildScope = null) {
+function matchSourcePages(specPages, htmlFiles, { buildScope = null, templateFamily = null } = {}) {
   const usedByPageId = new Map();
   const mappings = [];
   const prompts = [];
@@ -349,7 +362,7 @@ function matchSourcePages(specPages, htmlFiles, buildScope = null) {
     } else {
       const hasDesignSource = isObject(page.design_source);
       if (declaredPartialScope(buildScope) && !hasDesignSource) {
-        const declared = declaredScopeSkip(page, { buildScope });
+        const declared = declaredScopeSkip(page, { buildScope, templateFamily });
         mappings.push(declared.mapping);
         declaredSkips.push(declared.declaredSkip);
         decisions.push(declared.decision);

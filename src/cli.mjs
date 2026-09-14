@@ -363,15 +363,15 @@ Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                             [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                             [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                              [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]
   campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
@@ -413,6 +413,8 @@ Usage:
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
   Wrapper policy: \`start\`/\`prepare-build\`/\`build\` seed source_html.adapter_contract.wrapper_policy from --wrapper-policy, else the source-html manifest's wrapper_policy key, else strip_document_wrappers. Selecting preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking, so raw-HTML source can be handed over without a wrapper-stripping pass (docs/source-adapters.md).
+  Design manifest: \`start\`/\`prepare-build\`/\`build\` read the source-html manifest from <source>/.campaigns-os/source-html-manifest.json; --design-manifest <path> reads it from anywhere else instead (a read-only source root keeps its proof and skip declarations in a file the operator owns). pages[].path stays relative to --source. Doctor re-reads the manifest the Design Source Package recorded.
+  Template-stock pages: a page declared out of source scope (manifest skip_reason, or CampaignSpec build_scope.mode "partial") is template stock — its assembly decision carries template_stock: true and the locked family, intake demands no design source for it, and the build stage materialises it from that family's stock page (docs/design-source-package.md "Template-stock pages").
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
   Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` with its --packet, or at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
@@ -1661,6 +1663,7 @@ function createCurrentHtmlFunnelScope({
   manifestResult,
   sourceAssetCrawl,
   templateFamily,
+  templateStockPageIds = [],
   commerceCatalog,
   sourceRoot,
   mapId,
@@ -1727,6 +1730,7 @@ function createCurrentHtmlFunnelScope({
       : null,
     sourceAssetCrawl: crawl,
     templateFamily: resolveTemplateFamilyDesignSource(commerceCatalog, templateFamily),
+    templateStockPageIds: [...templateStockPageIds],
     packageId: `${mapId}:design-source`,
     campaignMapId: mapId,
     campaignSlug: publicRouteSlug,
@@ -1741,6 +1745,7 @@ function prepareDesignSourcePackage({
   manifestResult,
   sourceAssetCrawl,
   templateFamily,
+  templateStockPageIds = [],
   commerceCatalog,
   sourceRoot,
   mapId,
@@ -1759,6 +1764,7 @@ function prepareDesignSourcePackage({
     manifestResult,
     sourceAssetCrawl,
     templateFamily,
+    templateStockPageIds,
     commerceCatalog,
     sourceRoot,
     mapId,
@@ -1864,7 +1870,8 @@ function prepareDesignSourcePackage({
 // the blocking reason itself.
 const DESIGN_SOURCE_PACKAGE_REMEDY = [
   `Supply the missing source proof through pages[].screenshots[] in ${SOURCE_HTML_MANIFEST_REL_PATH}`,
-  "under the source root (one available desktop record and one available mobile record per renderable page);",
+  "under the source root, or in a manifest anywhere else named by --design-manifest <path>",
+  "(one available desktop record and one available mobile record per renderable page);",
   `then, if no downstream stage has consumed it, remove the Design Source Package this blocked run emitted at ${DESIGN_SOURCE_PACKAGE_REL_PATH}`,
   "and rerun prepare-build/start.",
   'See "Clearing DESIGN_SOURCE_PACKAGE_NOT_READY" in docs/design-source-package.md.',
@@ -1912,6 +1919,24 @@ function parseWrapperPolicyFlag(args) {
     );
   }
   return flag;
+}
+
+// --design-manifest <path>: read the source-html manifest from outside the
+// source root. Validated with the other argv checks so a bad path fails before
+// prepare-build has written anything. A bare flag, a missing file, or a
+// directory are errors: the operator named the file, so silently falling back
+// to filesystem matching would discard the declaration they made.
+function parseDesignManifestFlag(args) {
+  const raw = args["design-manifest"];
+  if (raw == null) return null;
+  if (raw === true || !isNonEmptyString(raw)) {
+    throw new Error("--design-manifest needs a value: the path of a source-html-manifest/v0 JSON file.");
+  }
+  const path = resolve(raw);
+  if (!existsSync(path) || !statSync(path).isFile()) {
+    throw new Error(`Design manifest does not exist or is not a file: ${path}`);
+  }
+  return path;
 }
 
 // Same precedence the template family uses (docs/build-packet.md
@@ -1977,6 +2002,7 @@ function prepareBuild(args, options = {}) {
   // partway through, so a flag that throws later would leave persistent state
   // behind for a bad argument.
   const wrapperPolicyFlag = parseWrapperPolicyFlag(args);
+  const designManifestPath = parseDesignManifestFlag(args);
 
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
@@ -1987,10 +2013,11 @@ function prepareBuild(args, options = {}) {
     hint: hintedTemplateFamily,
   });
   const templateFamily = templateSelection.value;
-  // The DSP is upstream source/design context, so a CampaignSpec preference
-  // remains its template input even when Build locks a different CLI override.
-  // With no source hint, the explicit family is the only honest DSP input.
-  const designSourceTemplateFamily = hintedTemplateFamily || explicitTemplateFamily || "undecided";
+  // The Design Source Package builds on the same family the packet locks. It
+  // used to take the CampaignSpec hint first, so a --template-family override
+  // produced a package whose template-stock TODOs named a family the build
+  // would never use ("Link demeter ... " on an olympus-mv-two-step packet).
+  const designSourceTemplateFamily = templateFamily;
   const commerceCatalogPath = optionalString(args["commerce-catalog"], defaultCommerceCatalogPath());
   const commerceCatalog = resolveCommerceCatalog(commerceCatalogPath);
   const templateLocked = Boolean(explicitTemplateFamily) && !isUnresolvedTemplateFamily(templateFamily);
@@ -2042,8 +2069,17 @@ function prepareBuild(args, options = {}) {
     publicRouteSlug,
     outputDir,
     buildScope: isObject(spec.build_scope) ? spec.build_scope : null,
+    manifestPath: designManifestPath,
+    templateFamily: familyDecided ? templateFamily : null,
   });
+  // An explicit --design-manifest that does not read as a manifest is an
+  // error, not the warning-plus-filesystem-fallback the default path gets:
+  // nothing has been written yet, and the operator named the file.
+  if (designManifestPath && sourceIntake.manifestResult.warning) {
+    throw new Error(sourceIntake.manifestResult.warning.replace(/ Falling back to filesystem matching\.$/, ""));
+  }
   const declaredScopeSkips = sourceIntake.declaredSkips || [];
+  const templateStockPageIds = declaredScopeSkips.map((skip) => skip.page_id).filter(isNonEmptyString);
   const buildScopeReasonsInvalid = isObject(spec.build_scope)
     && spec.build_scope.reasons != null
     && !Array.isArray(spec.build_scope.reasons);
@@ -2168,6 +2204,7 @@ function prepareBuild(args, options = {}) {
     manifestResult,
     sourceAssetCrawl,
     templateFamily: designSourceTemplateFamily,
+    templateStockPageIds,
     commerceCatalog,
     sourceRoot,
     mapId,
@@ -3626,7 +3663,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "source_html.coverage",
     phase: "source",
-    run: ({ packet, packetPath, spec, errors, warnings, ready, derived }) => validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived),
+    run: ({ packet, packetPath, spec, errors, warnings, ready, derived, buildState }) => validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived, buildState),
   },
   {
     id: "source_html.preparation",
@@ -5803,10 +5840,31 @@ function coverageErrorDetail(page) {
   };
 }
 
-function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}) {
+// A declared out-of-scope page whose scope decision carries `template_stock`
+// (recorded by prepare-build on dec_page_scope_<page>) is the locked family's
+// own page: the build stage materialises it, and once its built HTML exists at
+// the page's route it is a built page like any mapped one — previewable, and
+// no longer a reason to block runtime QA. Until the build has written it, it
+// stays out of scope exactly as before, so an unbuilt declaration is unchanged.
+function templateStockDecision(buildState, pageId) {
+  const decisions = buildState?.report?.decisions;
+  if (!Array.isArray(decisions)) return null;
+  const decision = decisions.find((entry) => entry?.id === `dec_page_scope_${pageId}` && entry?.template_stock === true);
+  return decision || null;
+}
+
+function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const pages = packet.source_html?.pages || [];
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const materialisedTemplateStock = [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
-  validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready });
+  validateSourceHtmlManifestAtRoot(sourceRoot, {
+    spec,
+    errors,
+    warnings,
+    ready,
+    manifestPath: recordedDesignManifestPath(packet, packetPath),
+  });
   const active = activeSpecPages(spec);
   const specPartialScope = spec?.build_scope?.mode === "partial";
   const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
@@ -5865,6 +5923,22 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     } else if (!page.skip_reason) {
       addIssue(errors, "source_html.pages.skip_reason", `Source mapping "${page.page_id}" needs path or skip_reason.`);
     } else {
+      const stockDecision = specPage ? templateStockDecision(buildState, specPage.id) : null;
+      const builtPath = stockDecision ? builtHtmlPathForPage(derived.target_repo, publicRouteSlug, specPage, derived) : null;
+      if (stockDecision && builtPath && existsSync(builtPath)) {
+        const family = optionalString(stockDecision.template_family) || "selected";
+        builtPages.push({
+          page_id: specPage.id,
+          type: specPage.type || "page",
+          role: pageRole(specPage.type),
+          route: publicRouteForPage(specPage),
+          source_path: null,
+          template_stock: true,
+          template_family: family,
+        });
+        materialisedTemplateStock.push({ page_id: specPage.id, family });
+        continue;
+      }
       const skipped = specPage
         ? {
             page_id: specPage.id,
@@ -5872,11 +5946,22 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
             role: pageRole(specPage.type),
             route: publicRouteForPage(specPage),
             skip_reason: page.skip_reason,
+            ...(stockDecision ? { template_stock: true, template_family: optionalString(stockDecision.template_family) } : {}),
           }
         : { page_id: page.page_id, type: "unknown", role: "unknown", route: null, skip_reason: page.skip_reason };
       outOfScopePages.push(skipped);
-      addIssue(warnings, "source_html.pages.skip_reason", `CampaignSpec page "${page.page_id}" is out of scope for this partial build: ${page.skip_reason}`);
+      addIssue(
+        warnings,
+        "source_html.pages.skip_reason",
+        stockDecision
+          ? `CampaignSpec page "${page.page_id}" is template stock and not built yet: ${page.skip_reason} The build stage materialises it from the ${optionalString(stockDecision.template_family) || "selected"} family's own page; it joins the previewable routes once its built HTML exists.`
+          : `CampaignSpec page "${page.page_id}" is out of scope for this partial build: ${page.skip_reason}`,
+      );
     }
+  }
+
+  if (materialisedTemplateStock.length > 0) {
+    ready.push(`Template-stock page(s) materialised by the build stage: ${materialisedTemplateStock.map((entry) => `${entry.page_id} (${entry.family})`).join(", ")}`);
   }
 
   for (const page of active) {
@@ -5886,8 +5971,14 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   }
 
   const runtimeBlocked = outOfScopePages.filter((page) => page.role === "runtime");
+  // A CampaignSpec build_scope "partial" declaration is discharged once every
+  // page it took out of scope has been materialised: the declaration named
+  // template-stock pages, and they now exist. With nothing materialised the
+  // declaration stands on its own, as before.
+  const partialScopeOpen = outOfScopePages.length > 0
+    || (specPartialScope && materialisedTemplateStock.length === 0);
   derived.scope = {
-    mode: outOfScopePages.length || specPartialScope ? "partial" : active.length ? "full" : "unknown",
+    mode: partialScopeOpen ? "partial" : active.length ? "full" : "unknown",
     built_pages: builtPages,
     out_of_scope_pages: outOfScopePages,
     out_of_scope_reasons: specPartialReasons,
@@ -5895,7 +5986,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     blocked_runtime_pages: runtimeBlocked,
   };
 
-  if (outOfScopePages.length > 0 || specPartialScope) {
+  if (partialScopeOpen) {
     const reasonSummary = specPartialReasons.length ? ` Reasons: ${specPartialReasons.join("; ")}.` : "";
     addIssue(
       warnings,
@@ -5913,12 +6004,12 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   }
 
   if (active.length > 0 && active.every((page) => mappedIds.has(page.id))) {
-    ready.push(outOfScopePages.length > 0 || specPartialScope
+    ready.push(partialScopeOpen
       ? "Source mappings cover active CampaignSpec pages with explicit partial-scope skip reasons"
       : "Source mappings cover active CampaignSpec pages");
   }
   if (builtPages.length > 0) {
-    ready.push(outOfScopePages.length > 0 || specPartialScope
+    ready.push(partialScopeOpen
       ? `Partial build previewable routes: ${builtPages.map((page) => routeLabel(page.route)).join(", ")}`
       : "All mapped CampaignSpec pages are build candidates");
   }
@@ -5957,9 +6048,30 @@ function validateSourcePreparation(packet, packetPath, errors, warnings, ready, 
   }
 }
 
-function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready } = {}) {
+// The manifest prepare-build read is recorded on the Design Source Package
+// (html-funnel contribution, provenance.manifest_path, relative to the package
+// file). Doctor reads the same file back, so a manifest supplied through
+// --design-manifest from outside the source root is still the one doctor
+// validates; with nothing recorded, the default path under the source root
+// stands.
+function recordedDesignManifestPath(packet, packetPath) {
+  const packagePath = resolveFromFile(packetPath, packet?.design_source_package?.path);
+  if (!packagePath || !existsSync(packagePath) || !statSync(packagePath).isFile()) return null;
+  let value;
+  try {
+    value = JSON.parse(readFileSync(packagePath, "utf8"));
+  } catch {
+    return null;
+  }
+  const htmlFunnel = (Array.isArray(value?.contributions) ? value.contributions : [])
+    .find((contribution) => contribution?.kind === "html_funnel");
+  const recorded = optionalString(htmlFunnel?.provenance?.manifest_path);
+  return recorded ? resolve(dirname(packagePath), recorded) : null;
+}
+
+function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready, manifestPath = null } = {}) {
   if (!isNonEmptyString(sourceRoot) || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
-  const result = readSourceHtmlManifestFile(sourceRoot);
+  const result = readSourceHtmlManifestFile(sourceRoot, { manifestPath });
   if (!result.path) return;
   if (result.validation && !result.validation.ok) {
     const detail = result.validation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
@@ -7866,7 +7978,7 @@ export function nextStage(stage, args, ambient = null) {
     addPrepareBuildGateErrors(errors, report);
     if (!doctor.ok && !doctorHasOnlyPolishGateErrors) addIssue(errors, "next.build.doctor", "Doctor is blocked; resolve packet errors before build.");
     if (doctor.derived?.scaffold_required) addIssue(errors, "next.build.setup", doctor.derived.scaffold_reason || "Setup is required before build.");
-    prompt = buildPrompt(packetPath, contextPath, reportPath, packet);
+    prompt = buildPrompt(packetPath, contextPath, reportPath, packet, doctor.derived);
   } else if (stage === "polish") {
     addPrepareBuildGateErrors(errors, report);
     if (!report) addIssue(errors, "next.polish.report", "Assembly report is required before polish.");
@@ -8367,7 +8479,32 @@ function recordNextRecommendation(ambient, result) {
   }
 }
 
-function buildPrompt(packetPath, contextPath, reportPath, packet) {
+// Pages the packet carries with a skip_reason and no source path are template
+// stock: intake declared them out of source scope and demanded no design
+// source. The build stage materialises each from the locked family's own page
+// of that role rather than looking for prepared HTML that does not exist.
+//
+// Order: the pre-checkout `select` step first, where the funnel has one. It
+// seeds the cart every downstream runtime page reads, so it is the page the
+// build wires before checkout; doctor's derived scope carries each page's
+// CampaignSpec type, and the packet's own mapping order stands otherwise.
+//
+// Only pages doctor reports out of scope WITH the template_stock marker are
+// listed: a skip entry recorded before the marker existed, or authored by
+// hand, is a do-not-build declaration and stays off the list. A page already
+// materialised has left out_of_scope_pages and needs no instruction.
+function templateStockPromptLine(packet, derived = {}) {
+  const stockPages = (Array.isArray(derived?.scope?.out_of_scope_pages) ? derived.scope.out_of_scope_pages : [])
+    .filter((page) => page?.template_stock === true && isNonEmptyString(page?.page_id));
+  if (!stockPages.length) return "";
+  const pages = [
+    ...stockPages.filter((page) => page.type === "select"),
+    ...stockPages.filter((page) => page.type !== "select"),
+  ].map((page) => page.page_id);
+  return `\n- Template-stock pages (declared out of source scope; no design source exists for them): ${pages.join(", ")}. Materialise each from the ${packet.assembly.template_family} family's own page for that role (copied with its dependent _includes, _layouts, and assets), in that order — a pre-checkout select step first, because it seeds the cart the runtime pages read — wire it from CampaignSpec, and do not look for prepared source HTML for it. Once its built HTML exists, doctor lists it among the previewable routes.`;
+}
+
+function buildPrompt(packetPath, contextPath, reportPath, packet, derived = {}) {
   const briefPath = packet.build_brief?.normalized_path || "(missing; generate or confirm Campaign Build Brief before business-sensitive assembly)";
   return `Use next-campaigns-build for this Campaigns OS handoff.
 
@@ -8377,7 +8514,7 @@ Read first:
 - Assembly Report: ${reportPath || "(use packet-adjacent .campaign-runtime/assembly-report.json if present)"}
 - Campaign Build Brief: ${briefPath}
 - Design Source Package: .campaign-runtime/input/design-source-package.json when present; use report.design_source_package.material_fingerprint as the source context fingerprint.
-- Template family: ${packet.assembly.template_family}
+- Template family: ${packet.assembly.template_family}${templateStockPromptLine(packet, derived)}
 
 Rules:
 - Treat CampaignSpec/API as the source for package, shipping, voucher, payment, tracking, footer, and SEO values.

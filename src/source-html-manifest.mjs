@@ -73,11 +73,29 @@ export function validateSourceHtmlManifest(manifest) {
   return { ok: errors.length === 0, errors, warnings };
 }
 
-export function readSourceHtmlManifestFile(sourceRoot) {
-  const manifestPath = resolve(sourceRoot, SOURCE_HTML_MANIFEST_REL_PATH);
-  if (!existsSync(manifestPath) || !statSync(manifestPath).isFile()) {
-    return { manifest: null, path: null, warning: null, warnings: [], validation: null };
+// The manifest lives at SOURCE_HTML_MANIFEST_REL_PATH under the source root by
+// default. An explicit `manifestPath` (the `--design-manifest` flag) reads a
+// manifest from anywhere else instead — a source root nobody can write to
+// still gets its screenshot proof and skip declarations from a file the
+// operator owns. Wherever the manifest lives, its pages[].path and
+// files[].path stay relative to the source root, never to the manifest.
+export function readSourceHtmlManifestFile(sourceRoot, { manifestPath = null } = {}) {
+  const explicit = typeof manifestPath === "string" && manifestPath.trim() ? resolve(manifestPath) : null;
+  const resolvedPath = explicit || resolve(sourceRoot, SOURCE_HTML_MANIFEST_REL_PATH);
+  if (!existsSync(resolvedPath) || !statSync(resolvedPath).isFile()) {
+    return {
+      manifest: null,
+      path: explicit,
+      warning: explicit ? `Design manifest at ${explicit} does not exist or is not a file. Falling back to filesystem matching.` : null,
+      warnings: [],
+      validation: null,
+      explicit: Boolean(explicit),
+    };
   }
+  return { ...readManifestAt(resolvedPath), explicit: Boolean(explicit) };
+}
+
+function readManifestAt(manifestPath) {
   let manifest;
   try {
     manifest = JSON.parse(readFileSync(manifestPath, "utf8"));

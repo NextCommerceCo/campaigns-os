@@ -1602,7 +1602,11 @@ try {
   }
 
   // 2. CLI override wins on conflict. Spec hint = olympus-mv-single-step,
-  //    CLI override = olympus-mv-two-step → packet locks two-step.
+  //    CLI override = olympus-mv-two-step → packet locks two-step. The Design
+  //    Source Package builds on the family the packet locks, so changing that
+  //    family is material drift and the first run's package must go first —
+  //    the documented recovery for a package no downstream stage consumed.
+  rmSync(resolve(targetRepo, ".campaign-runtime/input/design-source-package.json"), { force: true });
   runCliJsonAllowFailure([
     "prepare-build",
     "--spec", specPath,

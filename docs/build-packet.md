@@ -479,7 +479,7 @@ The fetched spec is treated identically to a `--spec`-supplied local file from t
 
 ## Source HTML Manifest Auto-Population
 
-When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`, published at `schemas/source-html-manifest.v0.schema.json`), `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching.
+When the source HTML root carries a source-html manifest at `<source>/.campaigns-os/source-html-manifest.json` (schema `source-html-manifest/v0`, published at `schemas/source-html-manifest.v0.schema.json`) — or `--design-manifest <path>` names a manifest of that schema anywhere else, for a source root nobody can write to — `campaigns-os prepare-build` reads it and uses its `pages[]` block to populate `packet.source_html.pages[]` directly — bypassing the legacy filesystem-name slug matching. Wherever the manifest lives, its `pages[].path` entries stay relative to `--source`. A `pages[]` entry with `skip_reason` and no `path` declares a template-stock page: its assembly decision carries `template_stock: true` and the locked family, and intake demands no design source for it ([Template-stock pages](design-source-package.md#template-stock-pages-the-family-decides)).
 
 The source-html manifest remains a producer/source-HTML adapter input. It is not
 renamed into the Design Source Package. In the normalized source workflow,
