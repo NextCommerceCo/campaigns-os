@@ -155,6 +155,28 @@ incomplete, append a correction:
 An amendment is the only entry kind whose change items may map to no changed
 path in its own range, because it corrects meaning rather than moving bytes.
 
+### Correcting a section's bytes
+
+A changelog section an entry hashes is as frozen as the entry. When the section
+itself has to change — a stray merge-conflict marker committed inside it is the
+case that has happened — the historical entry cannot take the new hash, and a
+plain amendment pointing at some other section leaves the stale hash failing.
+So an amendment may link the **same** `changelog_section` as the entry it
+amends, carrying that section's current `changelog_sha256`. The checker then
+reads the amended entry's hash as superseded, and the amendment's own hash
+keeps the section pinned. Only an amendment, and only one that names the
+entry currently holding the link, may re-link a section; any other second link
+still fails the one-to-one rule. Say in `amendment_reason` what changed in the
+section and why.
+
+`scripts/check-changelog-structure.mjs` (part of `npm run check`) refuses the
+marker lines outright, in `CHANGELOG.md` and under `docs/`, and also holds the
+section layout: identifiers unique, `+agent.N` sections in one run directly
+above their release with N descending (newest first), and every ledger
+`changelog_section` naming a section that exists. Insert a new `+agent.N`
+section at the top of its release's run, not directly above the release
+heading.
+
 ## Running the gate
 
 ```bash
