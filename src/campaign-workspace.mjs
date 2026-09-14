@@ -1,20 +1,13 @@
 // Campaign workspace: where a Build Packet's sidecars live, resolved once.
 //
-// Two roots matter. The TARGET REPO — `packet.assembly.target_repo` resolved
-// against the packet's directory, else that directory — carries the build
-// sidecars under `.campaign-runtime/` (Build Context, Assembly Report, doctor
-// output) and the local QA verdicts under `qa-output/`. The packet's own
-// directory (`baseDir`) carries what is written beside the packet: run
-// records, the committed QA verdict sidecar, the run session. The two
-// coincide for a packet kept at the target root and diverge for
-// `prepare-build --out` elsewhere, which is exactly when a stage spelling the
-// rule for itself drifts: one wrote doctor output beside the packet while
-// every other stage wrote it to the target, and the QA stage was recorded
-// into the default report while `next` read the report the Build Context
-// bound. Every stage now derives its paths here.
-//
-// A leaf: node built-ins and the sidecar leaves only, so cli.mjs and the QA
-// runner import it alike.
+// Two roots matter. The TARGET REPO (`packet.assembly.target_repo` resolved
+// against the packet's directory, else that directory) carries the build
+// sidecars under `.campaign-runtime/` and the local QA verdicts under
+// `qa-output/`; the packet's own directory (`baseDir`) carries what is written
+// beside the packet (run records, the committed QA verdict sidecar). They
+// coincide for a packet at the target root and diverge for `prepare-build
+// --out` elsewhere — exactly when a stage spelling the rule for itself drifts.
+// A leaf: node built-ins and the sidecar leaves only.
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -41,9 +34,9 @@ export function campaignSidecarPaths(targetRepo) {
   };
 }
 
-// Best-effort read of the Build Context for the report binding: a missing or
-// malformed context binds nothing. Callers that must refuse a malformed
-// context read it again strictly; this read exists only to follow the pointer.
+// Best-effort read of the Build Context for the report binding only: a
+// missing or malformed context binds nothing. A caller that must refuse a
+// malformed context reads it again strictly.
 function readContextForBinding(contextPath) {
   if (!contextPath || !existsSync(contextPath)) return null;
   try {
@@ -55,19 +48,17 @@ function readContextForBinding(contextPath) {
 }
 
 // The one resolver. `contextPath` / `reportPath` / `doctorOutPath` are the
-// operator's explicit choices, already resolved by the caller from whichever
-// flag it owns: a string is used as given, `null` switches that sidecar off
-// (`contextPath: null` reads no context and binds nothing; `reportPath: null`
-// yields `reportPath: null`), and `undefined` derives the default.
+// operator's explicit choices, resolved by the caller from whichever flag it
+// owns: a string is used as given, `null` switches that sidecar off (no
+// context to bind from; `reportPath: null`), `undefined` derives the default.
 //
-// `followContextPointer` is required, and deliberately so. The Build Context
-// records where prepare-build wrote the report (`--report-out`), relative to
-// the target repo. A stage that follows that pointer reads and writes the
-// report the campaign is bound to; a stage that does not acts on the default
-// sidecar whatever the context says. Both are legitimate — doctor's stage
-// write-back must not restate its outcome into a report it did not inspect —
-// but a stage that never said which it does is how the QA stage came to be
-// recorded into a report `next` never reads. Say it.
+// `followContextPointer` is required on purpose. The Build Context records
+// where prepare-build wrote the report (`--report-out`), relative to the
+// target repo. A stage that follows it acts on the report the campaign is
+// bound to; one that does not acts on the default sidecar. Both are
+// legitimate (doctor's stage write-back must not restate its outcome into a
+// report it did not inspect), but a stage that never said which is how the QA
+// stage came to be recorded into a report `next` never reads. Say it.
 export function resolveCampaignWorkspace(packetPath, {
   packet = undefined,
   contextPath = undefined,
