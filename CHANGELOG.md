@@ -482,6 +482,11 @@ Notable supported-surface changes are recorded here.
 - The session records the packet in canonical form (symlinks resolved, the
   form the root is derived from), so the Run Record `run end` assembles lands
   beside the real packet rather than in a link's directory.
+- `run start --packet <p>` text output advertises a close that works from
+  where it was run: `Finish with: campaigns-os run end --packet <p>` (before:
+  `Finish with: campaigns-os run end`, which from a cwd other than the target
+  fails with `No active run session to end.`), and the auto-log line names
+  the session's directory and the `--packet` form instead of `this project`.
 
 ## [1.27.0] - 2026-09-13
 

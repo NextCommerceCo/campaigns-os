@@ -323,6 +323,15 @@ test("CLI: run start --packet from an unrelated directory roots the session in t
     assert.equal(end.record.run_id, start.session.run_id);
     assert.equal(findRunSession(target), null, "run end --packet from elsewhere cleared the target session");
     assert.equal(existsSync(join(unrelated, ".campaign-runtime")), false);
+
+    // The text output's advertised close works from the directory the operator
+    // started in: it names the packet, since the session is not at cwd.
+    const text = runIn(unrelated, ["run", "start", "--packet", packetPath]);
+    assert.ok(text.includes(`Finish with: campaigns-os run end --packet ${realpathSync(packetPath)}`), text);
+    assert.ok(text.includes(`Lifecycle journal: ${join(realpathSync(target), LIFECYCLE_JOURNAL_REL_PATH)}`), text);
+    const closed = runIn(unrelated, ["run", "end", "--packet", realpathSync(packetPath), "--no-remit", "--no-write"]);
+    assert.match(closed, /ended; session cleared/);
+    assert.equal(findRunSession(target), null);
   });
 });
 

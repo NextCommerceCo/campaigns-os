@@ -9708,12 +9708,17 @@ function writeRunSessionResult(result, args, exitCode) {
 function runSessionTextLines(result) {
   if (result.action === "run-start") {
     const { session } = result;
+    // With a packet the session may live away from cwd (its target repo), so
+    // the advertised close names the packet: it works from anywhere, including
+    // the directory the operator started from.
     return [
       "Run session started.",
       `Run ID: ${session.run_id}`,
       `Lifecycle journal: ${session.lifecycle_journal}`,
-      "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
-      `Finish with: campaigns-os run end${session.packet ? "" : " --packet <campaign-runtime.build.json>"}`,
+      session.packet
+        ? `Every campaigns-os command in ${dirname(result.session_path)} — or run from anywhere with --packet ${session.packet} — now auto-logs to this run; no per-command flags.`
+        : "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
+      `Finish with: campaigns-os run end --packet ${session.packet || "<campaign-runtime.build.json>"}`,
     ];
   }
   if (result.action === "run-status") {
