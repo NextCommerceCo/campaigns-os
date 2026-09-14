@@ -33,10 +33,26 @@ const catalogPath = resolve(root, "contracts/commerce-surface-catalog.json");
 // Validate the partials at the commit the vendored catalog was synced from —
 // the tree CI checks out — not whatever a local sibling checkout happens to be
 // at. See resolveStarterTemplatesSource for the fallback order.
+// An absent pin is a legacy snapshot (CI falls back to the templates' main
+// branch; check-catalog-provenance warns); a present pin that is not a commit
+// SHA is a contract error and stops here, as it does in CI.
 const pinSha = existsSync(catalogPath) ? JSON.parse(readFileSync(catalogPath, "utf8"))._synced_from_sha ?? null : null;
-const templatesSource = resolveStarterTemplatesSource(root, { pinSha });
-const templatesRoot = templatesSource.path;
+if (pinSha !== null && !/^[0-9a-f]{40}$/.test(String(pinSha))) {
+  fail(`contracts/commerce-surface-catalog.json _synced_from_sha is malformed (${JSON.stringify(pinSha)}); expected a 40-char commit SHA. Re-run refresh:starter-catalog.`);
+}
+// The pinned archive lives under the temp dir; remove it on any exit,
+// including a signal, which skips the "exit" handler. Registered before the
+// archive is made so a signal during extraction is covered too.
+let templatesSource = { path: null, kind: "sibling", cleanup() {} };
 process.on("exit", () => templatesSource.cleanup());
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    templatesSource.cleanup();
+    process.exit(1);
+  });
+}
+templatesSource = resolveStarterTemplatesSource(root, { pinSha });
+const templatesRoot = templatesSource.path;
 
 function fail(message) {
   console.error(`check-template-doctrine: ${message}`);
