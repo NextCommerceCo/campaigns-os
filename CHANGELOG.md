@@ -33,6 +33,7 @@ Notable supported-surface changes are recorded here.
   `ADVISORY_DETAIL_MAX` (300) rather than the whole string, and `max` floors
   at one. The result never exceeds `max` characters for any `max >= 1`. The
   module's header comment is one sentence again.
+
 ## [1.27.0+agent.28] - 2026-09-14
 
 ### Changed
