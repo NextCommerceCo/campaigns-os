@@ -50,7 +50,8 @@ test("a packet key that is not a campaign-key shape is reported as refused, nami
     const rejected = result.warnings.find((issue) => issue.code === "campaign.api_key_rejected");
     assert.ok(rejected, JSON.stringify(result.warnings.map((issue) => issue.code)));
     assert.match(rejected.message, /packet\.campaign\.campaigns_api_key/);
-    assert.match(rejected.message, /not a campaign-key shape/);
+    assert.match(rejected.message, /^The Campaigns API key from packet\.campaign\.campaigns_api_key is not a campaign-key shape/);
+    assert.match(rejected.message, /\. API-side package\/shipping\/offer confirmation is deferred\.$/);
     assert.doesNotMatch(rejected.message, /pasted/, "the value is never printed");
     assert.deepEqual(rejected.detail, { source: "packet.campaign.campaigns_api_key", kind: "malformed" });
     assert.equal(result.ready.some((line) => line.startsWith("Campaigns API key available")), false, "a refused key is not available");

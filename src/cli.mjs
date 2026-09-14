@@ -5519,6 +5519,10 @@ function validateCampaignsApiKey(packet, spec, warnings, ready) {
   );
 }
 
+function capitalizeFirst(text) {
+  return typeof text === "string" && text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
+}
+
 // Doctor's view of the key is a projection of the one resolver the remit
 // rails use (resolveCampaignsApiKeySource): the same sources in the same
 // order, the same shape gate, the same refusal vocabulary. A value that is
@@ -5542,7 +5546,7 @@ function resolveCampaignsApiKey(packet, spec, env) {
       present: false,
       source: resolved.rejected.source,
       rejected: resolved.rejected,
-      warning: `${describeCampaignKeyRejection(resolved.rejected)} API-side package/shipping/offer confirmation is deferred.`,
+      warning: `${capitalizeFirst(describeCampaignKeyRejection(resolved.rejected))} API-side package/shipping/offer confirmation is deferred.`,
     };
   }
 
