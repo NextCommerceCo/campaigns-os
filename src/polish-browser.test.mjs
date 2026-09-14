@@ -6,12 +6,14 @@ import { createPolishBrowserAdapter } from "./polish-browser.mjs";
 import { POLISH_PRODUCER_TIMEOUT_ERROR_CODE } from "./polish-deadline.mjs";
 import {
   buildPageLoadCapture,
+  captureProblemRecord,
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
   MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
   MAX_PAGE_LOAD_RESPONSE_RECORDS,
   MAX_POLISH_CAPTURE_URL_LENGTH,
+  redirectChainRecord,
 } from "./polish-capture.mjs";
 
 const DOCUMENT_CONTEXT_FINGERPRINT = `sha256:${createHash("sha256")
@@ -529,40 +531,45 @@ test("same-request-id redirects become one parent-owned contiguous chain without
 
   assert.equal(result.finalDocumentUrl, finalUrl);
   assert.equal(result.responseCollectionStatus, "complete");
-  assert.deepEqual(result.responses, [{
+  const expectedHops = [
+    {
+      url: requestedUrl,
+      resource_type: "Document",
+      status: 302,
+      encoded_data_length: 321,
+      source_urls: [requestedUrl],
+      from_disk_cache: false,
+      from_prefetch_cache: false,
+      from_service_worker: false,
+      request_served_from_cache: false,
+      failed: false,
+    },
+    {
+      url: finalUrl,
+      resource_type: "Document",
+      status: 200,
+      mime_type: "text/html",
+      encoded_data_length: 4_567,
+      source_urls: [finalUrl],
+      from_disk_cache: false,
+      from_prefetch_cache: false,
+      from_service_worker: false,
+      request_served_from_cache: false,
+      failed: false,
+      is_final_main_document: true,
+      document_context_fingerprint: DOCUMENT_CONTEXT_FINGERPRINT,
+    },
+  ];
+  // The collector emits the shared record type: hop numbering and identity
+  // placement come from the constructor, and the wire form is byte-stable.
+  assert.deepEqual(result.responses, [redirectChainRecord("document-redirect", expectedHops)]);
+  assert.equal(JSON.stringify(result.responses), JSON.stringify([{
     request_id: "document-redirect",
     redirect_chain: [
-      {
-        url: requestedUrl,
-        resource_type: "Document",
-        status: 302,
-        encoded_data_length: 321,
-        source_urls: [requestedUrl],
-        from_disk_cache: false,
-        from_prefetch_cache: false,
-        from_service_worker: false,
-        request_served_from_cache: false,
-        failed: false,
-        redirect_hop: 0,
-      },
-      {
-        url: finalUrl,
-        resource_type: "Document",
-        status: 200,
-        mime_type: "text/html",
-        encoded_data_length: 4_567,
-        source_urls: [finalUrl],
-        from_disk_cache: false,
-        from_prefetch_cache: false,
-        from_service_worker: false,
-        request_served_from_cache: false,
-        failed: false,
-        redirect_hop: 1,
-        is_final_main_document: true,
-        document_context_fingerprint: DOCUMENT_CONTEXT_FINGERPRINT,
-      },
+      { ...expectedHops[0], redirect_hop: 0 },
+      { ...expectedHops[1], redirect_hop: 1 },
     ],
-  }]);
+  }]));
   assert.equal(result.responses[0].redirect_chain.reduce(
     (sum, response) => sum + response.encoded_data_length,
     0,
@@ -1351,7 +1358,7 @@ test("network collector caps tracked requests without retaining an unbounded ign
   await adapter.close();
   assert.equal(over.responseCollectionStatus, "failed");
   assert.equal(over.responses.length, MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES + 1);
-  assert.deepEqual(over.responses.at(-1), { capture_problem: "response_record_overflow" });
+  assert.deepEqual(over.responses.at(-1), captureProblemRecord("response_record_overflow"));
 });
 
 test("dataReceived preserves a bounded lower byte count for a slow unfinished media transfer", async () => {
@@ -1432,7 +1439,7 @@ test("a changed main-document loader fails closed instead of merging colliding m
   });
   await adapter.close();
   assert.equal(result.responseCollectionStatus, "failed");
-  assert.deepEqual(result.responses, [{ capture_problem: "document_context_changed" }]);
+  assert.deepEqual(result.responses, [captureProblemRecord("document_context_changed")]);
 });
 
 test("oversized DOM and CDP URLs are replaced before crossing the adapter boundary", async () => {

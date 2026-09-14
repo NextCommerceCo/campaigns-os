@@ -2,12 +2,15 @@ import { createHash } from "node:crypto";
 
 import {
   captureOrigin,
+  captureProblemRecord,
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
   MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
   MAX_PAGE_LOAD_RESPONSE_RECORDS,
   MAX_POLISH_CAPTURE_URL_LENGTH,
+  redirectChainRecord,
+  singleResponseRecord,
 } from "./polish-capture.mjs";
 import { launchPackageChromium } from "./browser-launch.mjs";
 import {
@@ -425,20 +428,14 @@ function createNetworkCollector() {
         // itself — account for it like a browser-canceled load, not a failure.
         if (state.current) finishCurrent(state, { failed: false, canceled: true });
         if (state.redirected || state.hops.length > 1) {
-          responses.push({
-            request_id: state.requestId,
-            redirect_chain: state.hops.map((hop, redirectHop) => ({
-              ...projectRecord(hop),
-              redirect_hop: redirectHop,
-            })),
-          });
+          responses.push(redirectChainRecord(state.requestId, state.hops.map(projectRecord)));
         } else if (state.hops.length === 1) {
-          responses.push({ request_id: state.requestId, ...projectRecord(state.hops[0]) });
+          responses.push(singleResponseRecord(state.requestId, projectRecord(state.hops[0])));
         } else if (!state.dropped) {
           collectionFailed = true;
         }
       }
-      if (responseOverflow) responses.push({ capture_problem: "response_record_overflow" });
+      if (responseOverflow) responses.push(captureProblemRecord("response_record_overflow"));
       return {
         responseCollectionStatus: collectionFailed ? "failed" : "complete",
         responses,
@@ -786,7 +783,7 @@ export async function createPolishBrowserAdapter({
           });
           if (documentContextChanged) {
             network.responseCollectionStatus = "failed";
-            network.responses.push({ capture_problem: "document_context_changed" });
+            network.responses.push(captureProblemRecord("document_context_changed"));
           }
           return {
             finalDocumentUrl,
