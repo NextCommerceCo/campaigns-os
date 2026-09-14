@@ -2749,6 +2749,27 @@
         }
       ],
       "entry_sha256": "0866feb9a581482336f396037202caf981f9273eaaa37610ea0d3cb7b5105736"
+    },
+    {
+      "id": "RL-0073",
+      "sequence": 73,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.17",
+      "changelog_sha256": "b0b48fafef2ed957643898565471ad330c30e712e44df4cff5e06439e0c6590a",
+      "agent_impact": "None to parse: doctor, qa run, qa waive, theme waive, checkpoint waive and polish capture produce the same JSON, the same Assembly Report fields and the same doctor-output.json fields as before. Two writes change discipline only: doctor's .campaign-runtime/doctor-output.json and qa waive's Assembly Report are now written tmp + rename like every other Assembly Report and sidecar write, so a concurrent reader sees the previous file or the new one, never a torn one (an agent reading either mid-command no longer needs to retry on a JSON parse error caused by the write itself). The QA stage record now applies the same re-record rule as doctor: a qa run whose stage outcome differs from the report on disk only in checked_at/completed_at leaves the report's bytes (and any digest of them) alone; every real run restates a new verdict_run_id, so this never triggers in practice. Internal: the six load/bind/mutate/write/keep-doctor-honest sequences are one commitAssemblyReport in src/stage-ledger.mjs; writeJsonAtomic is exported from src/doctor-sidecar.mjs; assemblyReportMatchesPacket moves from cli.mjs to src/stage-ledger.mjs.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "recordQaStageOutcome, doctorCommand, themeWaive, polishCaptureCommand and checkpointWaive commit their Assembly Report edit through commitAssemblyReport (src/stage-ledger.mjs) on the resolved campaign workspace; the local writeJsonAtomic and assemblyReportMatchesPacket copies are gone. doctor's sidecar write becomes atomic; the QA stage gains the doctor re-record guard. Command output unchanged."
+        }
+      ],
+      "entry_sha256": "cace4f09ab949a62015a3cd6326e04fb8e57960a70835674a3edc231cded5565"
     }
   ]
 }

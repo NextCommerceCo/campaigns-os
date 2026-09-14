@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
-import { producerStageOutcomeUnchanged, recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { commitAssemblyReport, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -80,7 +80,7 @@ import {
   SOURCE_PREP_FRONTMATTER_RESIDUE,
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
-import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale } from "./doctor-sidecar.mjs";
+import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace } from "./campaign-workspace.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
@@ -743,14 +743,12 @@ export function recordQaStageOutcome(args, result) {
     });
     const { packet, reportPath } = workspace;
     if (!existsSync(reportPath)) return false;
-    const report = readJson(reportPath);
-    if (!assemblyReportMatchesPacket(report, packet)) return false;
 
     const verdict = result.verdict;
     const failed = (Array.isArray(verdict.assertions) ? verdict.assertions : [])
       .filter((assertion) => assertion?.status === "fail")
       .map((assertion) => `${assertion.id}: ${assertion.actual || "assertion failed"}`);
-    const updated = recordProducerStageOutcome(report, {
+    const committed = commitAssemblyReport(workspace, (report) => recordProducerStageOutcome(report, {
       stage: "qa",
       disposition: verdict.disposition,
       timestamp: verdict.completed_at,
@@ -767,18 +765,20 @@ export function recordQaStageOutcome(args, result) {
       // summarizePurchaseProof). This is what lets `next` tell a real purchase
       // path from a `--test-order off` diagnostic.
       proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
+    }), {
+      stage: "qa",
+      // Updating the QA stage changes the report after the preflight doctor
+      // snapshot. Refresh the doctor artifact from the updated ledger in the
+      // same producer transaction so closeout never leaves a known-stale green
+      // sidecar. Nothing written (another campaign's report) leaves it alone.
+      refreshDoctor: ({ written }) => (written
+        ? doctorPacket(packetPath, {
+          contextPath: existsSync(workspace.contextPath) ? workspace.contextPath : null,
+          reportPath,
+        })
+        : null),
     });
-    writeJsonAtomic(reportPath, updated);
-
-    // Updating the QA stage changes the report after the preflight doctor
-    // snapshot. Refresh the doctor artifact from the updated ledger in the same
-    // producer transaction so closeout never leaves a known-stale green sidecar.
-    const doctor = doctorPacket(packetPath, {
-      contextPath: existsSync(workspace.contextPath) ? workspace.contextPath : null,
-      reportPath,
-    });
-    writeJsonAtomic(workspace.doctorOutPath, doctor);
-    return true;
+    return committed.written;
   } catch (error) {
     // Assembly Report ownership is best-effort telemetry. A malformed or
     // partial sidecar must never replace QA's result or prevent run closeout.
@@ -1103,17 +1103,6 @@ function readJsonIfExists(path) {
 function writeJson(path, value) {
   mkdirSync(dirname(resolve(path)), { recursive: true });
   writeFileSync(resolve(path), `${JSON.stringify(value, null, 2)}\n`);
-}
-
-// Atomic JSON write (tmp + rename) for artifacts other commands may read
-// concurrently — a torn assembly report would defeat the gate decision it
-// records. Matches the run-session write discipline.
-function writeJsonAtomic(path, value) {
-  const resolved = resolve(path);
-  mkdirSync(dirname(resolved), { recursive: true });
-  const tmp = `${resolved}.${randomUUID()}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
-  renameSync(tmp, resolved);
 }
 
 /**
@@ -2734,7 +2723,7 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     // evidence. Inspection and the stage decision above do follow it. The
     // sidecar itself goes under the target repo, where prepare-build, next
     // and the QA stage refresh write it — not beside the packet.
-    const { packet, reportPath, doctorOutPath } = resolveCampaignWorkspace(packetPath, {
+    const workspace = resolveCampaignWorkspace(packetPath, {
       reportPath: args.report ? resolve(args.report) : undefined,
       doctorOutPath: args["doctor-out"] ? resolve(args["doctor-out"]) : undefined,
       followContextPointer: false,
@@ -2742,22 +2731,16 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
     // Restate the outcome only into the report the inspection actually read.
     const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
     const inspectedIsTarget = !inspectedReportPath
-      || canonicalExistingPath(resolve(dirname(packetPath), inspectedReportPath)) === canonicalExistingPath(reportPath);
-    if (inspectedIsTarget && existsSync(reportPath)) {
-      const report = readJson(reportPath);
-      if (assemblyReportMatchesPacket(report, packet)) {
-        const command = `campaigns-os ${args._[0] || "doctor"}`;
-        const updatedReport = recordDoctorStageOutcome(report, result, { command, doctorOutPath });
-        // A re-run that restates the outcome already on disk is a re-record,
-        // not a new chapter: the only bytes that would move are the stage
-        // timestamps, and rewriting them makes a Run Record's digest of this
-        // file stale for no information. A changed outcome still writes.
-        if (!producerStageOutcomeUnchanged(report, updatedReport, "doctor")) {
-          writeJsonAtomic(reportPath, updatedReport);
-        }
-      }
-    }
-    writeJson(doctorOutPath, result);
+      || canonicalExistingPath(resolve(dirname(packetPath), inspectedReportPath)) === canonicalExistingPath(workspace.reportPath);
+    // The sidecar is this inspection's result, written whether or not the
+    // report gained a new chapter (a re-run restating the outcome already on
+    // disk leaves the report's bytes, and every digest of them, alone).
+    commitAssemblyReport(workspace, (report) => (inspectedIsTarget
+      ? recordDoctorStageOutcome(report, result, {
+        command: `campaigns-os ${args._?.[0] || "doctor"}`,
+        doctorOutPath: workspace.doctorOutPath,
+      })
+      : null), { stage: "doctor", refreshDoctor: () => result });
   }
   return result;
 }
@@ -2774,11 +2757,6 @@ function recordDoctorStageOutcome(report, result, { command, doctorOutPath }) {
   });
 }
 
-function assemblyReportMatchesPacket(report, packet) {
-  return isObject(report)
-    && optionalString(report.identity?.map_id) === optionalString(packet.spec?.map_id)
-    && optionalString(report.identity?.public_route_slug) === optionalString(packet.campaign?.public_route_slug);
-}
 
 // L7 non-packet doctor: resolve scope from a built _site/, run the built-output
 // gates the family brand contract drives, and auto-emit a minimal Build Packet
@@ -3040,31 +3018,32 @@ export function themeWaive(args) {
   const packet = readJson(packetPath);
   const reason = optionalString(args.reason);
   if (!reason) throw new Error("theme waive requires --reason \"<why the starter palette is acceptable for this campaign>\".");
-  const { reportPath } = resolveCampaignWorkspace(packetPath, {
+  const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
     reportPath: args.report ? resolve(args.report) : undefined,
     followContextPointer: false,
   });
-  const report = readJsonIfExists(reportPath);
-  if (!report) throw new Error(`theme waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
+  const { reportPath } = workspace;
+  if (!existsSync(reportPath)) throw new Error(`theme waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
   const waiver = {
     reason,
     waived_by: optionalString(args["waived-by"], "operator"),
     waived_at: new Date().toISOString(),
   };
-  report.theme = report.theme && isObject(report.theme)
-    ? { ...report.theme, waiver }
-    : { status: "skipped", css_path: null, load_order: "not-applied", commerce_pages: [], evidence: [], warnings: [], repair_loop_defect: null, waiver };
-  report.theme.evidence = [
-    ...(Array.isArray(report.theme.evidence) ? report.theme.evidence : []),
-    `Theme gate waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`,
-  ];
-  writeJsonAtomic(reportPath, report);
-  // #171: the waiver changes what doctor would conclude; the retained doctor
-  // sidecar (if any) now predates it.
-  markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
+  commitAssemblyReport(workspace, (report) => {
+    report.theme = report.theme && isObject(report.theme)
+      ? { ...report.theme, waiver }
+      : { status: "skipped", css_path: null, load_order: "not-applied", commerce_pages: [], evidence: [], warnings: [], repair_loop_defect: null, waiver };
+    report.theme.evidence = [
+      ...(Array.isArray(report.theme.evidence) ? report.theme.evidence : []),
+      `Theme gate waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`,
+    ];
+    return report;
+  }, {
+    // #171: the waiver changes what doctor would conclude; the retained doctor
+    // sidecar (if any) now predates it.
     command: "theme waive",
-    reason: "A theme-gate waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+    staleReason: "A theme-gate waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
   });
   return {
     ok: true,
@@ -3102,11 +3081,12 @@ export async function polishCaptureCommand(args, options = {}) {
   if (args["auth-cookie"] === true) throw new Error("Missing value for --auth-cookie");
 
   const packet = readJson(packetPath);
-  const { targetRepo, reportPath } = resolveCampaignWorkspace(packetPath, {
+  const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
     reportPath: args.report ? resolve(args.report) : undefined,
     followContextPointer: false,
   });
+  const { targetRepo, reportPath } = workspace;
   if (!isLocalAbsolutePath(targetRepo)) {
     throw new Error("polish capture requires packet.assembly.target_repo to resolve to a local target repo.");
   }
@@ -3148,27 +3128,28 @@ export async function polishCaptureCommand(args, options = {}) {
   // artifacts once it finishes, then merge only onto the current report when
   // the bound state and prior page_load token still match.
   const currentPacket = readJson(packetPath);
-  const currentReport = readJson(reportPath);
-  requireValidPolishCaptureReport(currentReport, reportPath);
-  const currentPlan = planPolishCapture({ packet: currentPacket, baseUrl });
-  const currentBinding = createPolishCaptureBinding({
-    packet: currentPacket,
-    report: currentReport,
-    plan: currentPlan,
-    packetPath,
-    targetRepo,
-  });
-  assertPolishCaptureBindingUnchanged(initialBinding, currentBinding);
+  let checkpoint = null;
+  commitAssemblyReport(workspace, (currentReport) => {
+    requireValidPolishCaptureReport(currentReport, reportPath);
+    const currentPlan = planPolishCapture({ packet: currentPacket, baseUrl });
+    const currentBinding = createPolishCaptureBinding({
+      packet: currentPacket,
+      report: currentReport,
+      plan: currentPlan,
+      packetPath,
+      targetRepo,
+    });
+    assertPolishCaptureBindingUnchanged(initialBinding, currentBinding);
 
-  const merged = mergePolishPageLoadEvidence(currentReport, capture.page_load);
-  const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({
-    packet: currentPacket,
-    report: merged,
-  });
-  writeJsonAtomic(reportPath, merged);
-  markDoctorSidecarStale(targetRepo, {
+    const merged = mergePolishPageLoadEvidence(currentReport, capture.page_load);
+    checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({
+      packet: currentPacket,
+      report: merged,
+    });
+    return merged;
+  }, {
     command: "polish capture",
-    reason: "Package-owned polish page-load evidence changed after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+    staleReason: "Package-owned polish page-load evidence changed after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
   });
 
   const ok = checkpoint.status === "pass" || checkpoint.status === "waived";
@@ -3229,34 +3210,36 @@ export function checkpointWaive(args) {
   const expiresAt = args["expires-at"] == null ? null : String(args["expires-at"]);
   const reviewCondition = args["review-condition"] == null ? null : String(args["review-condition"]);
   const packet = readJson(packetPath);
-  const { reportPath } = resolveCampaignWorkspace(packetPath, {
+  const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
     reportPath: args.report ? resolve(String(args.report)) : undefined,
     followContextPointer: false,
   });
-  const report = readJsonIfExists(reportPath);
-  if (!report) throw new Error(`checkpoint waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
+  const { reportPath } = workspace;
+  if (!existsSync(reportPath)) throw new Error(`checkpoint waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
 
   const doctor = doctorPacket(packetPath, { reportPath });
-  const gate = evaluateCheckpointRegistry(CHECKPOINT_EVALUATORS, gateId, { doctor, packet, report });
-  if (!gate) throw new Error(`Checkpoint gate "${gateId}" has no current evidence; repair the packet/spec/target and re-run doctor.`);
-  if (gate.status !== "blocked") {
-    throw new Error(`Checkpoint gate "${gateId}" is not blocked (status=${gate.status}); no waiver was recorded.`);
-  }
-  if (gate.waivable !== true) {
-    throw new Error(`Checkpoint gate "${gateId}" is not waivable in its current state (${gate.code}); missing, malformed, and invalid-type evidence must be repaired.`);
-  }
+  let waiver = null;
+  commitAssemblyReport(workspace, (report) => {
+    const gate = evaluateCheckpointRegistry(CHECKPOINT_EVALUATORS, gateId, { doctor, packet, report });
+    if (!gate) throw new Error(`Checkpoint gate "${gateId}" has no current evidence; repair the packet/spec/target and re-run doctor.`);
+    if (gate.status !== "blocked") {
+      throw new Error(`Checkpoint gate "${gateId}" is not blocked (status=${gate.status}); no waiver was recorded.`);
+    }
+    if (gate.waivable !== true) {
+      throw new Error(`Checkpoint gate "${gateId}" is not waivable in its current state (${gate.code}); missing, malformed, and invalid-type evidence must be repaired.`);
+    }
 
-  const waiver = createCheckpointWaiver(gate, { reason, waivedBy, expiresAt, reviewCondition });
-  const updated = appendCheckpointWaiver(report, waiver);
-  updated.evidence = [
-    ...(Array.isArray(report.evidence) ? report.evidence : []),
-    `Checkpoint waiver: ${gateId} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${waiver.reason}`,
-  ];
-  writeJsonAtomic(reportPath, updated);
-  markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
+    waiver = createCheckpointWaiver(gate, { reason, waivedBy, expiresAt, reviewCondition });
+    const updated = appendCheckpointWaiver(report, waiver);
+    updated.evidence = [
+      ...(Array.isArray(report.evidence) ? report.evidence : []),
+      `Checkpoint waiver: ${gateId} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${waiver.reason}`,
+    ];
+    return updated;
+  }, {
     command: "checkpoint waive",
-    reason: "A checkpoint waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+    staleReason: "A checkpoint waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
   });
   return {
     ok: true,

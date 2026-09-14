@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtempSync, cpSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, cpSync, existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -29,6 +29,22 @@ test("standalone doctor refreshes the doctor-output.json sidecar", () => {
   const written = JSON.parse(readFileSync(sidecar, "utf8"));
   assert.equal(written.ok, result.ok);
   assert.equal(written.status, result.status);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// `next` and the QA stage refresh already replaced the sidecar atomically;
+// standalone doctor rewrote it in place, so a reader racing a doctor run
+// could see a torn snapshot — the one artifact whose freshness contract a
+// torn write breaks outright.
+test("standalone doctor replaces the doctor-output.json sidecar atomically rather than rewriting it in place", () => {
+  const dir = packetFixture();
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  const sidecar = join(dir, "target-page-kit/.campaign-runtime/doctor-output.json");
+  doctorCommand({ packet: packetPath });
+  const before = statSync(sidecar).ino;
+  const result = doctorCommand({ packet: packetPath });
+  assert.notEqual(statSync(sidecar).ino, before, "tmp + rename: the sidecar path names a new file");
+  assert.equal(JSON.parse(readFileSync(sidecar, "utf8")).generated_at, result.generated_at);
   rmSync(dir, { recursive: true, force: true });
 });
 
