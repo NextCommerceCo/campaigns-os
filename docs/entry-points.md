@@ -62,7 +62,8 @@ plus a manifest at handoff.
   `<campaign>/landing.html`, `<campaign>/_includes/landing/*.html`,
   and/or `<campaign>/presell.html` into the source root.
 - **Manifest:** `<source>/.campaigns-os/source-html-manifest.json`
-  with `generator: "figma-sections-export@<version>"`. Lists the
+  (or the file named by `--design-manifest <path>`) with
+  `generator: "figma-sections-export@<version>"`. Lists the
   pages produced.
 - **`prepare-build` behavior:** reads the manifest, populates
   `packet.source_html.pages[]` directly from it (bypasses filesystem

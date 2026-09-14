@@ -361,7 +361,10 @@ durable, and it is telling you that the source material arrived without visual
 proof.
 
 The input channel that supplies that proof is the source-html manifest at
-`<source-root>/.campaigns-os/source-html-manifest.json`. Each `pages[]` entry may
+`<source-root>/.campaigns-os/source-html-manifest.json` — or, when the source
+root is not yours to write, a manifest of the same schema anywhere else, named
+with `--design-manifest <path>` on `start`, `prepare-build`, or `build` (see
+[A read-only source root](#a-read-only-source-root)). Each `pages[]` entry may
 carry a `screenshots[]` array; `prepare-build` reads it, alongside the
 equivalent `screenshot_refs` and `source_screenshot_refs` keys, and normalizes
 each record into the html_funnel contribution's `screenshot_refs`. This is the
@@ -609,14 +612,20 @@ bytes anywhere under the source root. An accepted screenshot-absence Source Gap
 or an active approved `source_screenshot`-scope waiver clears it the same way,
 where one exists — v0 has no operator channel for authoring either.
 
-Two mechanics to plan around. The manifest path is fixed at
-`<source-root>/.campaigns-os/source-html-manifest.json` and is not
-configurable, so whoever adds or changes `screenshots[]` writes that one file
-inside the source root; it is the source-preparation side's artifact, which is
-the ownership boundary described below. And the packet stores
-`source_html.root` relative to the packet file, so a packet resolves its source
-from the location it was written at: replay a run from the same place, or expect
-doctor to report `source_html.root` as missing.
+Two mechanics to plan around. The manifest is read from
+`<source-root>/.campaigns-os/source-html-manifest.json` by default; when nobody
+can write there, pass `--design-manifest <path>` to `start`, `prepare-build`,
+or `build` and the same `source-html-manifest/v0` document is read from that
+file instead — `pages[].path` and `files[].path` stay relative to `--source`,
+never to the manifest. The Design Source Package records the file it read
+(`contributions[html-funnel].provenance.manifest_path`, relative to the
+package), and doctor validates that same file on every later run. A bare flag,
+a missing file, or a manifest that fails validation is an error before
+anything is written, not the warning-and-filesystem-fallback the default path
+gets: you named the file. And the packet stores `source_html.root` relative to
+the packet file, so a packet resolves its source from the location it was
+written at: replay a run from the same place, or expect doctor to report
+`source_html.root` as missing.
 
 ## Lifecycle ownership and freshness
 

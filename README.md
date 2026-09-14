@@ -47,18 +47,21 @@ npm run campaigns-os -- start \
 If that first run stops at intake with `DESIGN_SOURCE_PACKAGE_NOT_READY`, the
 source material arrived without desktop/mobile screenshot proof. Supply it
 through `pages[].screenshots[]` in
-`<source-root>/.campaigns-os/source-html-manifest.json` and follow
+`<source-root>/.campaigns-os/source-html-manifest.json` — or in a manifest
+outside the source root named with `--design-manifest <path>`, when the source
+tree is not yours to write — and follow
 [Clearing `DESIGN_SOURCE_PACKAGE_NOT_READY`](docs/design-source-package.md#clearing-design_source_package_not_ready),
 which also gives the recovery sequence for the package a blocked run left behind.
 
 That path assumes the pages carry a standalone design of the merchant's. If they
 are template stock instead — no bespoke design, the starter family *is* the
-design — there is no screenshot to honestly supply, and what to do next depends
-on the family. For a family that publishes complete Template Reference proof
-(today `apollo`), declare those pages out of source scope and intake clears on
-synthesized `template_baseline` coverage, as a partial build. For every other
-family there is no intake channel in v0; those pages are handled in the build
-stage by `next-campaigns-build`. See
+design — there is no screenshot to honestly supply. Declare those pages out of
+source scope (a manifest `skip_reason` entry, or CampaignSpec
+`build_scope.mode: "partial"`): intake records them as template stock, demands
+no design source for them, and the build stage materialises each from the
+locked family's own page. A family that publishes Template Reference proof
+(today `apollo`) covers them with `template_baseline`; every other family
+records an accepted Source Gap and intake lands at `ready_with_gaps`. See
 [Template-stock pages: the family decides](docs/design-source-package.md#template-stock-pages-the-family-decides).
 
 The command writes these target-repo artifacts:

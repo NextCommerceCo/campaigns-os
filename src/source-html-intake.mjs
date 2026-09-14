@@ -16,11 +16,14 @@ export function createSourceHtmlIntake({
   publicRouteSlug,
   outputDir,
   buildScope = null,
+  manifestPath = null,
+  templateFamily = null,
 }) {
-  const manifestResult = readSourceHtmlManifestFile(sourceRoot);
+  const manifestResult = readSourceHtmlManifestFile(sourceRoot, { manifestPath });
+  const scopeOptions = { buildScope, templateFamily };
   const matched = manifestResult.manifest
-    ? applyManifestToPages(specPages, manifestResult.manifest, manifestResult.path, buildScope)
-    : matchSourcePages(specPages, htmlFiles, buildScope);
+    ? applyManifestToPages(specPages, manifestResult.manifest, manifestResult.path, scopeOptions)
+    : matchSourcePages(specPages, htmlFiles, scopeOptions);
   const pageById = new Map((specPages || []).map((page) => [page.id, page]));
   const projectionDecisions = [];
 
@@ -125,7 +128,7 @@ function pageRouteForPageKit(value) {
   }
 }
 
-function applyManifestToPages(specPages, manifest, manifestPath, buildScope = null) {
+function applyManifestToPages(specPages, manifest, manifestPath, { buildScope = null, templateFamily = null } = {}) {
   const mappings = [];
   const prompts = [];
   const decisions = [];
@@ -223,7 +226,7 @@ function applyManifestToPages(specPages, manifest, manifestPath, buildScope = nu
     } else {
       const skipEntry = entry && !isNonEmptyString(entry.path) && isNonEmptyString(entry.skip_reason) ? entry : null;
       if (skipEntry || (declaredPartialScope(buildScope) && !isObject(page.design_source))) {
-        const declared = declaredScopeSkip(page, { skipEntry, buildScope, manifestPath });
+        const declared = declaredScopeSkip(page, { skipEntry, buildScope, manifestPath, templateFamily });
         if (skipEntry) usedEntries.add(skipEntry);
         matchedIds.add(page.id);
         mappings.push(declared.mapping);
@@ -260,7 +263,7 @@ function applyManifestToPages(specPages, manifest, manifestPath, buildScope = nu
   return { mappings, prompts, decisions, declaredSkips };
 }
 
-function matchSourcePages(specPages, htmlFiles, buildScope = null) {
+function matchSourcePages(specPages, htmlFiles, { buildScope = null, templateFamily = null } = {}) {
   const usedByPageId = new Map();
   const mappings = [];
   const prompts = [];

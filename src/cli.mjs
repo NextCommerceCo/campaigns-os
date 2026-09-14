@@ -362,15 +362,15 @@ Usage:
   campaigns-os help
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                             [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                             [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                              [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]
   campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
-                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>]
+                     [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--json]
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet
@@ -411,6 +411,8 @@ Usage:
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
   Wrapper policy: \`start\`/\`prepare-build\`/\`build\` seed source_html.adapter_contract.wrapper_policy from --wrapper-policy, else the source-html manifest's wrapper_policy key, else strip_document_wrappers. Selecting preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking, so raw-HTML source can be handed over without a wrapper-stripping pass (docs/source-adapters.md).
+  Design manifest: \`start\`/\`prepare-build\`/\`build\` read the source-html manifest from <source>/.campaigns-os/source-html-manifest.json; --design-manifest <path> reads it from anywhere else instead (a read-only source root keeps its proof and skip declarations in a file the operator owns). pages[].path stays relative to --source. Doctor re-reads the manifest the Design Source Package recorded.
+  Template-stock pages: a page declared out of source scope (manifest skip_reason, or CampaignSpec build_scope.mode "partial") is template stock — its assembly decision carries template_stock: true and the locked family, intake demands no design source for it, and the build stage materialises it from that family's stock page (docs/design-source-package.md "Template-stock pages").
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
   Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` with its --packet, or at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
@@ -1912,7 +1914,8 @@ function prepareDesignSourcePackage({
 // the blocking reason itself.
 const DESIGN_SOURCE_PACKAGE_REMEDY = [
   `Supply the missing source proof through pages[].screenshots[] in ${SOURCE_HTML_MANIFEST_REL_PATH}`,
-  "under the source root (one available desktop record and one available mobile record per renderable page);",
+  "under the source root, or in a manifest anywhere else named by --design-manifest <path>",
+  "(one available desktop record and one available mobile record per renderable page);",
   `then, if no downstream stage has consumed it, remove the Design Source Package this blocked run emitted at ${DESIGN_SOURCE_PACKAGE_REL_PATH}`,
   "and rerun prepare-build/start.",
   'See "Clearing DESIGN_SOURCE_PACKAGE_NOT_READY" in docs/design-source-package.md.',
@@ -1966,6 +1969,24 @@ function parseWrapperPolicyFlag(args) {
 // "Authoring-Time Hints"): an explicit CLI flag beats a declared file hint,
 // and with neither the default stands. The vocabulary is the adapter
 // contract's own — there is no second policy list.
+// --design-manifest <path>: read the source-html manifest from outside the
+// source root. Validated with the other argv checks so a bad path fails before
+// prepare-build has written anything. A bare flag, a missing file, or a
+// directory are errors: the operator named the file, so silently falling back
+// to filesystem matching would discard the declaration they made.
+function parseDesignManifestFlag(args) {
+  const raw = args["design-manifest"];
+  if (raw == null) return null;
+  if (raw === true || !isNonEmptyString(raw)) {
+    throw new Error("--design-manifest needs a value: the path of a source-html-manifest/v0 JSON file.");
+  }
+  const path = resolve(raw);
+  if (!existsSync(path) || !statSync(path).isFile()) {
+    throw new Error(`Design manifest does not exist or is not a file: ${path}`);
+  }
+  return path;
+}
+
 function resolveWrapperPolicy({ flag, manifest }) {
   if (flag) return { value: flag, source: "--wrapper-policy" };
   const declared = optionalString(manifest?.wrapper_policy);
@@ -2029,6 +2050,7 @@ function prepareBuild(args, options = {}) {
   const activePages = activeSpecPages(spec);
   const htmlFiles = collectHtmlFiles(sourceRoot);
   const explicitTemplateFamily = optionalString(args["template-family"]);
+  const designManifestPath = parseDesignManifestFlag(args);
   const hintedTemplateFamily = preferredTemplateFamily(spec);
   const templateSelection = resolveTemplateFamilySelection({
     flag: explicitTemplateFamily,
@@ -2095,7 +2117,15 @@ function prepareBuild(args, options = {}) {
   const buildScopeReasonsInvalid = isObject(spec.build_scope)
     && spec.build_scope.reasons != null
     && !Array.isArray(spec.build_scope.reasons);
+    manifestPath: designManifestPath,
+    templateFamily: familyDecided ? templateFamily : null,
   const manifestResult = sourceIntake.manifestResult;
+  // An explicit --design-manifest that does not read as a manifest is an
+  // error, not the warning-plus-filesystem-fallback the default path gets:
+  // nothing has been written yet, and the operator named the file.
+  if (designManifestPath && sourceIntake.manifestResult.warning) {
+    throw new Error(sourceIntake.manifestResult.warning.replace(/ Falling back to filesystem matching\.$/, ""));
+  }
   const manifestWarnings = sourceIntake.manifestWarnings;
   // Template-family precedence, said out loud. The flag has always beaten the
   // CampaignSpec hint; printing the losing value is what keeps an operator
@@ -5855,7 +5885,13 @@ function coverageErrorDetail(page) {
 function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}) {
   const pages = packet.source_html?.pages || [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
-  validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready });
+  validateSourceHtmlManifestAtRoot(sourceRoot, {
+    spec,
+    errors,
+    warnings,
+    ready,
+    manifestPath: recordedDesignManifestPath(packet, packetPath),
+  });
   const active = activeSpecPages(spec);
   const specPartialScope = spec?.build_scope?.mode === "partial";
   const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
@@ -6006,9 +6042,30 @@ function validateSourcePreparation(packet, packetPath, errors, warnings, ready, 
   }
 }
 
-function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready } = {}) {
+// The manifest prepare-build read is recorded on the Design Source Package
+// (html-funnel contribution, provenance.manifest_path, relative to the package
+// file). Doctor reads the same file back, so a manifest supplied through
+// --design-manifest from outside the source root is still the one doctor
+// validates; with nothing recorded, the default path under the source root
+// stands.
+function recordedDesignManifestPath(packet, packetPath) {
+  const packagePath = resolveFromFile(packetPath, packet?.design_source_package?.path);
+  if (!packagePath || !existsSync(packagePath) || !statSync(packagePath).isFile()) return null;
+  let value;
+  try {
+    value = JSON.parse(readFileSync(packagePath, "utf8"));
+  } catch {
+    return null;
+  }
+  const htmlFunnel = (Array.isArray(value?.contributions) ? value.contributions : [])
+    .find((contribution) => contribution?.kind === "html_funnel");
+  const recorded = optionalString(htmlFunnel?.provenance?.manifest_path);
+  return recorded ? resolve(dirname(packagePath), recorded) : null;
+}
+
+function validateSourceHtmlManifestAtRoot(sourceRoot, { spec, errors, warnings, ready, manifestPath = null } = {}) {
   if (!isNonEmptyString(sourceRoot) || !existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) return;
-  const result = readSourceHtmlManifestFile(sourceRoot);
+  const result = readSourceHtmlManifestFile(sourceRoot, { manifestPath });
   if (!result.path) return;
   if (result.validation && !result.validation.ok) {
     const detail = result.validation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
