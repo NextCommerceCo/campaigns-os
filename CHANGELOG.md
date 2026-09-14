@@ -27,6 +27,29 @@ Notable supported-surface changes are recorded here.
   ignored — the same verdict doctor gives — rather than honouring it. No
   doctor output, JSON or text, changes; no QA verdict field changes;
   `docs/build-packet.md` states that QA reads `route_root` by doctor's rule.
+## [1.27.0+agent.1] - 2026-09-13
+
+### Fixed
+
+- The typed-card runner's cart-entry vocabulary is now exactly the SDK's
+  activation selector for its add-to-cart feature,
+  `[data-next-action="add-to-cart"]`. `CART_ENTRY_CONTROL_SELECTOR` also
+  listed `[data-next-checkout-action="add-to-cart"]` and
+  `[data-next-add-to-cart]`, two attribute spellings the SDK never
+  instantiates the feature on, so a landing page whose only "add to cart"
+  control carried one of them read as a cart entry: the ladder's
+  `entered_via_landing` step clicked it, nothing was added, the SDK made no
+  hand-off, and the step failed with `cart_entry_no_navigation` only after
+  waiting out the full navigation budget. The primary-CTA assertion read the
+  same constant and honoured the element's `data-next-url` as if the SDK
+  would navigate by it. Both consumers share the one constant, so both now
+  see such a control for what it is — a plain button — and the step fails by
+  name with `cart_entry_control_missing` before any click, the way a page
+  with no control at all already did. `docs/qa-and-test-orders.md` stops
+  naming the two spellings. Pages that carry the SDK's own control, or a
+  `?forcePackageId=` link into the checkout, are unaffected; a page that
+  relied on one of the removed spellings being clicked was never going to
+  reach the checkout through it.
 
 ## [1.27.0] - 2026-09-13
 

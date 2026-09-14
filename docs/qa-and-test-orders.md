@@ -909,11 +909,14 @@ is the checkout, preferring a `select`/`landing`/`product` page and then the
 lowest `order`; failing that, the topology's first entry-like page before the
 checkout — never a receipt or an offer page), navigates there, waits for the
 SDK, and clicks the cart-entry control: an SDK add-to-cart control
-(`[data-next-action="add-to-cart"]`, `[data-next-checkout-action="add-to-cart"]`,
-`[data-next-add-to-cart]`), or a link into the checkout URL carrying
-`?forcePackageId=`, which is what the certified `shop-single-step` landing
-renders. A visible SDK control is preferred over a visible link, and a hidden
-control is used only when nothing is visible. `--select-package <ref>` is strict
+(`[data-next-action="add-to-cart"]`, the only attribute the SDK activates the
+feature on), or a link into the checkout URL carrying `?forcePackageId=`,
+which is what the certified `shop-single-step` landing renders. A control
+spelled any other way is not a cart entry, so a page that offers nothing else
+fails the step by name (`cart_entry_control_missing`) rather than clicking a
+control the SDK never wired and waiting out the navigation budget. A visible
+SDK control is preferred over a visible link, and a hidden control is used only
+when nothing is visible. `--select-package <ref>` is strict
 here as it is on checkout: the control must carry that package id (own
 attribute, nearest card, or the `forcePackageId` ref) or the step fails by
 name; an explicit quantity (`--select-package 1:2`) must match what the

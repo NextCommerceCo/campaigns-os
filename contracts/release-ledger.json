@@ -2525,29 +2525,23 @@
     {
       "id": "RL-0063",
       "sequence": 63,
-      "date": "2026-09-14",
+      "date": "2026-09-13",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.27.0+agent.3",
-      "changelog_sha256": "d3cfad2a6a899a8ac5d3e366897751e99b4305d8e035db439fed3fdf36dd18ce",
-      "agent_impact": "Internal consolidation with one narrow behaviour change. The helpers that read a campaign's route identity (public_route_slug and route_root) moved from private copies in src/cli.mjs, src/qa-node.mjs, src/source-html-intake.mjs and src/page-kit-campaign-config.mjs into one leaf, src/route-identity.mjs; no command's flags, exit codes, doctor JSON or doctor text change. What changes: qa run now reads a packet's campaign.route_root by the same exact rule doctor does (exactly \"/\" or exactly \"/<public_route_slug>/\"). A packet whose route_root is any other spelling of the slug (\"/<slug>\" without the trailing slash, \"<slug>/\", \"//<slug>//\", a case mismatch) was already a doctor blocker (campaign.route_root) and is now treated by QA as an ignored declaration too: QA audits the slug-prefixed default \"/<slug>/\", which is the root it used for that packet before as well, so the pages QA visits do not change and no verdict field changes. A CampaignSpec's route_root keeps the lenient intake reading prepare-build canonicalises. An agent that compares doctor and QA outcomes on a packet no longer sees the two disagree about a mistyped route_root.",
+      "changelog_section": "1.27.0+agent.1",
+      "changelog_sha256": "1b62ee227ee1b1aa82a65daebe9a08962549ad7a75ab35e8ef40d2d875448851",
+      "agent_impact": "Behaviour change in campaigns-os qa run --test-order for one page shape only. The runner's cart-entry control set no longer includes [data-next-checkout-action=\"add-to-cart\"] or [data-next-add-to-cart]; it is exactly the SDK's activation selector, [data-next-action=\"add-to-cart\"]. A landing page whose only add-to-cart control uses one of the two removed spellings now fails the entered_via_landing step immediately with cart_entry_control_missing (order_creation classification not_created, no reservation, no click) instead of clicking the control and failing with cart_entry_no_navigation after the navigation budget. The primary-CTA assertion on such a page no longer credits the element's data-next-url as a route, so a page with no other route CTA reports missing_route_cta. Pages with the SDK's own control or a ?forcePackageId= checkout link behave exactly as before. Verdict field names and codes are unchanged; only which code such a page receives, and how quickly, changes.",
       "compatibility": "compatible",
-      "migration": "None. A packet already accepted by doctor is unaffected; a packet doctor blocks on campaign.route_root should have that value corrected to exactly \"/\" or \"/<public_route_slug>/\", which was already the documented rule.",
+      "migration": "None for a page the SDK actually wires. A page that renders its add-to-cart control as data-next-add-to-cart or data-next-checkout-action=\"add-to-cart\" should switch it to data-next-action=\"add-to-cart\" \u2014 that is the only spelling the SDK activates on, so the page was not adding to the cart through that control before this change either.",
       "changes": [
         {
-          "class": "cli_surface",
-          "path": "src/cli.mjs",
-          "surface_entry": "doctor",
-          "summary": "campaignRouteRoot, isAbsoluteHttpUrl, normalizePublicRouteSlug, stripPublicRoutePrefix and runtimeRelativeRouteForSpecValue are imported from src/route-identity.mjs instead of being defined in cli.mjs; validateRouteRootDeclaration decides acceptance through the leaf's packetRouteRoot, the same rule the QA runner now reads the packet by. Doctor's issue codes, ready lines, JSON and text output are unchanged."
-        },
-        {
           "class": "named_surface",
-          "path": "docs/build-packet.md",
-          "surface_entry": "docs/build-packet.md",
-          "summary": "The route_root rule states that qa run reads the packet by doctor's rule, so a value doctor blocks never roots a QA check and a hand-edited packet cannot pass QA at a root doctor refuses."
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The cart-entry step describes the SDK add-to-cart control as [data-next-action=\"add-to-cart\"] only, drops the two spellings the SDK does not activate on, and states that a page offering only such a control fails the step by name (cart_entry_control_missing) rather than clicking it and waiting out the navigation budget."
         }
       ],
-      "entry_sha256": "c47754fb8d2f070176c9b3f577647c828c653c37b86d7f5c781e1c156fb99632"
+      "entry_sha256": "66e644d94de7e5114449270d735f1f5edd32863e0aec7270daf6658ec51b9842"
     }
   ]
 }
