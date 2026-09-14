@@ -1,3 +1,4 @@
+import { launchPackageChromium } from "./browser-launch.mjs";
 import { runWithDeadline } from "./deadline.mjs";
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import {
@@ -6060,38 +6061,26 @@ function trim(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-async function launchChromium(args) {
-  let chromium;
-  try {
-    ({ chromium } = await import("playwright"));
-  } catch (error) {
-    throw new Error([
+function launchChromium(args) {
+  return launchPackageChromium({ headed: args.headed, onMissing: qaBrowserMissing });
+}
+
+function qaBrowserMissing(kind, error) {
+  return new Error(kind === "package"
+    ? [
       "Playwright is not installed for Campaigns OS.",
       "Run `npm install` from the campaigns-os repo, then rerun QA.",
       `Original error: ${error instanceof Error ? error.message : String(error)}`,
+    ].join(" ")
+    : [
+      "Playwright Chromium is not installed for Campaigns OS browser QA.",
+      "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun the QA command.",
+      "This is required before using `--browser` or `--test-order`.",
     ].join(" "));
-  }
-
-  try {
-    return await chromium.launch({ headless: args.headed !== true });
-  } catch (error) {
-    if (isMissingPlaywrightBrowser(error)) {
-      throw new Error([
-        "Playwright Chromium is not installed for Campaigns OS browser QA.",
-        "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun the QA command.",
-        "This is required before using `--browser` or `--test-order`.",
-      ].join(" "));
-    }
-    throw error;
-  }
-}
-
-function isMissingPlaywrightBrowser(error) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /executable doesn't exist|browser.*not found|playwright install|install.*chromium/i.test(message);
 }
 
 export const __qaBrowserTestHooks = Object.freeze({
+  qaBrowserMissing,
   analyticsCorrectnessCaptureAssertions,
   analyticsCorrectnessRunnerFailureAssertion,
   analyticsParityCaptureAssertions,

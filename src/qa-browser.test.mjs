@@ -1169,3 +1169,18 @@ test("network-level order-create failures are detected, but never alongside a su
     failed: [failedCreate],
   }), null);
 });
+
+test("browser QA names its own rerun command for a missing Playwright package or Chromium", () => {
+  const { qaBrowserMissing } = __qaBrowserTestHooks;
+
+  const packageMissing = qaBrowserMissing("package", new Error("Cannot find package 'playwright'"));
+  assert.match(packageMissing.message, /^Playwright is not installed for Campaigns OS\./);
+  assert.match(packageMissing.message, /Run `npm install` from the campaigns-os repo, then rerun QA\./);
+  assert.match(packageMissing.message, /Original error: Cannot find package 'playwright'$/);
+
+  const browserMissing = qaBrowserMissing("browser", new Error("Executable doesn't exist at /private/tmp/chromium"));
+  assert.match(browserMissing.message, /^Playwright Chromium is not installed for Campaigns OS browser QA\./);
+  assert.match(browserMissing.message, /npm run qa:install-browser/);
+  assert.match(browserMissing.message, /`--browser` or `--test-order`/);
+  assert.equal(browserMissing.message.includes("/private/tmp"), false);
+});
