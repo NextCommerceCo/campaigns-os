@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   aggregateCdpResponses,
   buildPageLoadCapture,
+  captureOrigin,
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
@@ -1227,4 +1228,44 @@ test("source-less or transient media fails closed when a positive Media transfer
   });
   assert.equal(removedBeforeFinalSnapshot.measurement_status, "incomplete");
   assert.deepEqual(removedBeforeFinalSnapshot.problems, [{ code: "media_transfer_unattributed", count: 1 }]);
+});
+
+test("captureOrigin is the one HTTP(S) origin parser: origin or null, never a throw", () => {
+  assert.equal(captureOrigin("https://Preview.Example.test/landing/?token=secret#frag"), "https://preview.example.test");
+  const credentialed = new URL("http://example.test:8080/x");
+  credentialed.username = "operator";
+  credentialed.password = "preview";
+  assert.equal(captureOrigin(credentialed.href), "http://example.test:8080");
+  assert.equal(captureOrigin("https://example.test"), "https://example.test");
+  for (const value of [
+    "javascript:alert(1)",
+    "data:text/html,<p>x</p>",
+    "file:///tmp/capture.html",
+    "blob:https://example.test/uuid",
+    "not a url",
+    "[url-too-long]",
+    "",
+    null,
+    undefined,
+    42,
+    { href: "https://example.test" },
+    `https://example.test/${"a".repeat(MAX_POLISH_CAPTURE_URL_LENGTH)}`,
+  ]) {
+    assert.equal(captureOrigin(value), null, `expected null for ${String(value).slice(0, 40)}`);
+  }
+});
+
+test("document response origins are the captureOrigin projection of the requested and final URLs", () => {
+  const capture = boundCapture({
+    requestedDocumentUrl: "https://Shop.Example.test/landing/?campaign=private",
+    finalDocumentUrl: "https://final.example.test/landing/",
+    responses: [documentResponse(200, { url: "https://final.example.test/landing/" })],
+  });
+  assert.equal(capture.document_response.capture_origin, "https://shop.example.test");
+  assert.equal(capture.document_response.final_origin, "https://final.example.test");
+  assert.equal(capture.document_response.origin_matches_capture, false);
+
+  const nonHttp = boundCapture({ requestedDocumentUrl: "javascript:alert(1)" });
+  assert.equal(nonHttp.document_response.capture_origin, null);
+  assert.equal(nonHttp.document_response.origin_matches_capture, false);
 });

@@ -215,7 +215,7 @@ import {
   planPolishCapture,
 } from "./polish-node.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE, POLISH_CAPTURE_PROBLEM_CODES } from "./polish-page-load.mjs";
-import { POLISH_BEACON_RESOURCE_TYPES, redactCaptureUrl } from "./polish-capture.mjs";
+import { POLISH_BEACON_RESOURCE_TYPES, captureOrigin, redactCaptureUrl } from "./polish-capture.mjs";
 import {
   appendCheckpointWaiver,
   createCheckpointRegistry,
@@ -9280,15 +9280,7 @@ function safePolishFindingSource(value) {
 }
 
 function safePolishFailedOrigin(value) {
-  if (typeof value !== "string" || value.length > 2_048) return null;
-  try {
-    const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value
-      ? value
-      : null;
-  } catch {
-    return null;
-  }
+  return captureOrigin(value) === value ? value : null;
 }
 
 function safePolishByteCount(value) {

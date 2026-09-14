@@ -329,6 +329,22 @@ test("a fixture-supplied cross-origin baseline does not carry the candidate prev
   assert.equal(operatorNamed["auth-cookie"], "session=preview-secret");
 });
 
+test("a non-HTTP baseline never carries the credential, even beside a non-HTTP candidate", () => {
+  const { baselineCaptureArgs } = __qaParityCaptureTestHooks;
+  const args = { "auth-cookie": "session=preview-secret", viewport: "1280x800" };
+  // Two file: URLs share the opaque origin "null" under the URL standard; that
+  // is not the same host, and the fixture-supplied baseline is still not authorized.
+  for (const [baselineUrl, candidateBaseUrl] of [
+    ["file:///tmp/baseline.html", "file:///tmp/candidate.html"],
+    ["data:text/html,baseline", "data:text/html,candidate"],
+    ["https://preview.example.test/legacy", "file:///tmp/candidate.html"],
+  ]) {
+    const withheld = baselineCaptureArgs(args, { baselineUrl, operatorBaseline: null, candidateBaseUrl });
+    assert.equal(Object.hasOwn(withheld, "auth-cookie"), false, `${baselineUrl} vs ${candidateBaseUrl}`);
+    assert.equal(withheld.viewport, "1280x800");
+  }
+});
+
 test("non-money types are unparseable rather than coerced into a passing value", () => {
   for (const value of [true, [45], ["45"], { valueOf: () => 45 }]) {
     const assertions = assessParityCapture({ fixture, scenario, order: order(value), capture: capture() });

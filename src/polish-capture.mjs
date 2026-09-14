@@ -126,6 +126,21 @@ export function redactCaptureUrl(value, { baseUrl } = {}) {
   return resolvedCaptureUrl(value, { baseUrl }).projected;
 }
 
+// The one "HTTP(S) origin or null" parser. Every reader that wants a capture
+// URL's origin — the producer, the validator, the text renderer, the browser
+// adapter and the parity capture's credential guard — calls this, so the
+// scheme rule and the length cap exist once. Never throws and never echoes
+// the value: a URL carrying credentials or query data must not reach a log.
+export function captureOrigin(value) {
+  if (typeof value !== "string" || value.length > MAX_POLISH_CAPTURE_URL_LENGTH) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
 function resourceId(canonicalUrl) {
   return `sha256:${createHash("sha256").update(canonicalUrl).digest("hex")}`;
 }
@@ -392,8 +407,8 @@ function assessFinalDocumentResponse(prepared, {
 }) {
   const finalIdentity = documentResponseIdentity(documentUrl);
   const projectedUrl = redactCaptureUrl(documentUrl);
-  const captureOrigin = resolvedCaptureUrl(requestedDocumentUrl).origin;
-  const finalOrigin = resolvedCaptureUrl(documentUrl).origin;
+  const requestedOrigin = captureOrigin(requestedDocumentUrl);
+  const finalOrigin = captureOrigin(documentUrl);
   const empty = (status) => ({
     status,
     url: projectedUrl,
@@ -401,9 +416,9 @@ function assessFinalDocumentResponse(prepared, {
     http_status: null,
     mime_type: "unknown",
     context_fingerprint: null,
-    capture_origin: captureOrigin,
+    capture_origin: requestedOrigin,
     final_origin: finalOrigin,
-    origin_matches_capture: Boolean(captureOrigin && finalOrigin && captureOrigin === finalOrigin),
+    origin_matches_capture: Boolean(requestedOrigin && finalOrigin && requestedOrigin === finalOrigin),
   });
   if (!finalIdentity) {
     addProblemCount(problemCounts, "document_response_missing");
@@ -434,9 +449,9 @@ function assessFinalDocumentResponse(prepared, {
     http_status: Number.isInteger(record?.status) ? record.status : null,
     mime_type: normalizedDocumentMimeType(record?.mime_type),
     context_fingerprint: record.document_context_fingerprint,
-    capture_origin: captureOrigin,
+    capture_origin: requestedOrigin,
     final_origin: finalOrigin,
-    origin_matches_capture: Boolean(captureOrigin && finalOrigin && captureOrigin === finalOrigin),
+    origin_matches_capture: Boolean(requestedOrigin && finalOrigin && requestedOrigin === finalOrigin),
   };
   if (record?.failed === true
     || record?.status !== 200
@@ -454,7 +469,7 @@ export function aggregateCdpResponses(responses, {
   requireFinalDocumentResponse = false,
 } = {}) {
   const problemCounts = new Map();
-  const documentOrigin = resolvedCaptureUrl(documentUrl).origin;
+  const documentOrigin = captureOrigin(documentUrl);
   const groups = new Map();
   let unattributedRequestCount = 0;
   const prepared = prepareResponseRecords(responses, { documentUrl, problemCounts });
