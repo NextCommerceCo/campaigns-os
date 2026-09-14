@@ -112,13 +112,14 @@ test("remitRunRecord: consent OFF makes NO network call", async () => {
   const { fetchImpl, calls } = recordingFetch();
   const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: { state: "off" }, fetchImpl });
   assert.equal(calls.length, 0);
-  assert.deepEqual(status, { attempted: false, ok: null, error: null, endpoint: null });
+  assert.deepEqual(status, { attempted: false, ok: null, error: null, endpoint: null, result: null, http_status: null });
 });
 
 test("remitRunRecord: missing/unresolved consent also makes no call", async () => {
   const { fetchImpl, calls } = recordingFetch();
-  await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: undefined, fetchImpl });
+  const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: undefined, fetchImpl });
   assert.equal(calls.length, 0);
+  assert.deepEqual(status, { attempted: false, ok: null, error: null, endpoint: null, result: null, http_status: null }, "the same shape as an attempted send");
 });
 
 test("remitRunRecord: consent ON success records ok + endpoint and sends run_id (idempotency key)", async () => {

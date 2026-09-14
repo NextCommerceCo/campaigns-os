@@ -12,10 +12,10 @@
 
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
@@ -148,7 +148,8 @@ test("a re-run under a run id whose record is remitted keeps that record and sen
   assert.deepEqual(remitFields(readRecord(dir, runId)), remitFields(stored), "a durable ok is never rewritten to failed");
   assert.deepEqual(readRecord(dir, runId), stored, "the record on disk is left exactly as written");
   assert.equal(secondOut.written, false);
-  assert.equal(secondOut.remit.result, "already_stored");
+  assert.equal(secondOut.remit.result, "not_contacted", "distinct from the 409 the receiver would have answered");
+  assert.equal(secondOut.remit.http_status, null);
   assert.equal(secondOut.remit.sent, false);
   assert.equal(receiver.posts.length, 1, "no second POST for a run id the receiver holds");
 
@@ -163,6 +164,30 @@ test("a re-run under a run id whose record is remitted keeps that record and sen
   assert.match(text.stdout, /^Run Record already closed and remitted for run run_1789300000000_rerun; left as written\.$/m);
   assert.match(text.stdout, /^Remit: ok \(already stored at the receiver for this run id; not re-sent\) -> \/api\/runs$/m);
   assert.equal(receiver.posts.length, 1);
+});
+
+test("a prior file that says remit ok but is not a valid Run Record is replaced, not trusted", async (t) => {
+  const { dir, packetPath } = seedTarget(t);
+  const receiver = await startReceiver();
+  t.after(() => receiver.close());
+  const runId = "run_1789300000008_invalidprior";
+  // Only the remit fields of a record: no schema_version, argv_shape, consent
+  // state or lifecycle. Nothing this CLI writes looks like this.
+  const path = resolveRunRecordPath(runId, dir);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ run_id: runId, remit_state: "ok", remit_ok: true, remit_attempted: true, remit_error: null, remit_endpoint: "/api/runs" }));
+
+  const run = await runCli(["run-record", "--packet", packetPath, "--run-id", runId, "--proxy-base", receiver.base, "--json"], { cwd: dir });
+  assert.equal(run.status, 0, run.stderr);
+  const out = JSON.parse(run.stdout);
+  assert.equal(out.written, true, "the invalid file is not a prior; the record is assembled and written");
+  assert.equal(out.remit.result, "stored");
+  assert.equal(out.remit.sent, true);
+  assert.equal(receiver.posts.length, 1, "the send happens: the file on disk was no evidence the receiver holds the id");
+  const record = readRecord(dir, runId);
+  assert.equal(record.schema_version, "campaigns-os-run-record/v0");
+  assert.equal(record.remit_state, "ok");
+  assert.deepEqual(out.record, record, "what the summary hands back is the validated record just written");
 });
 
 test("a 409 answer to a retry reads as stored, not failed, so recovery converges", async (t) => {

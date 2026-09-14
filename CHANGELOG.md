@@ -462,7 +462,8 @@ Notable supported-surface changes are recorded here.
   token` parse error). Any other non-2xx is `failed` with `Remit POST
   <status>: <statusText> <body>`. `run-record --json` gains a `remit` object
   beside the record — `result` (`stored`, `already_stored`,
-  `ok_unparsed_ack`, `refused`, `transport_error`, or null when nothing was
+  `ok_unparsed_ack`, `refused`, `transport_error` for this run's send,
+  `not_contacted` for a record already `ok` on disk, or null when nothing was
   sent), `http_status`, `base_kind` (`canonical`, `loopback`, `proxy` — never
   the host), `sent`, `preserved` — and the text `Remit:` line ends with
   `[base: <kind>]` and names the 409 / non-JSON cases.
@@ -473,9 +474,11 @@ Notable supported-surface changes are recorded here.
   so a re-run into a 409 turned a durable `ok` into `failed`, and a `--no-remit`
   re-run turned it into `skipped`. Now the record on disk is read first: an
   `ok` record is left exactly as written and nothing is sent (`written:
-  false`, `remit.result: "already_stored"`, `remit.sent: false`; text: `Run
+  false`, `remit.result: "not_contacted"`, `remit.sent: false`; text: `Run
   Record already closed and remitted for run <id>; left as written.` and
   `Remit: ok (already stored at the receiver for this run id; not re-sent)`).
+  Only a file that passes the Run Record validator counts as that prior; one
+  that merely says `remit_state: "ok"` is replaced like a corrupt file.
   A prior `failed` or `pending` send is retried when the run may send, and
   carried forward unchanged when it may not (`--no-remit`, consent off):
   `remit.preserved: true`, text `Remit: not attempted this run; the prior

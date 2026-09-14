@@ -217,13 +217,20 @@ export class RemitResponseError extends Error {
   }
 }
 
-/** Remit outcomes `remitRunRecord()` reports in `result`. */
+/**
+ * Remit outcomes reported in `result`. The first five are what
+ * `remitRunRecord()` read from a receiver it contacted; `not_contacted` is the
+ * run-record command's own value for a record whose remit is already `ok` on
+ * disk — the receiver holds it and was not asked again. A consent-off or
+ * disabled send reports `result: null`: nothing was sent and nothing is known.
+ */
 export const REMIT_RESULTS = Object.freeze({
   stored: "stored",
   already_stored: "already_stored",
   ok_unparsed_ack: "ok_unparsed_ack",
   refused: "refused",
   transport_error: "transport_error",
+  not_contacted: "not_contacted",
 });
 
 // One bounded excerpt of a response body for an error string: enough to see
@@ -282,7 +289,8 @@ export function classifyRemitOutcome(error) {
  * `{ attempted, ok, error, endpoint, result, http_status }` for the caller to
  * stamp into the local record — a dropped send is visible, not silent.
  *
- * - Consent OFF (or unresolved) → no network call at all.
+ * - Consent OFF (or unresolved) → no network call at all; the same six fields,
+ *   with `attempted: false` and `result` / `http_status` null.
  * - Network/HTTP error → swallowed; the run continues. `ok: false` + `error`.
  * - The payload carries `run_id`. The receiver keeps one record per run_id and
  *   rejects a repeat POST for a stored id (409). That refusal is classified as
@@ -305,7 +313,7 @@ export async function remitRunRecord(record, {
   maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES,
 } = {}) {
   if (!consent || consent.state !== "on") {
-    return { attempted: false, ok: null, error: null, endpoint: null };
+    return { attempted: false, ok: null, error: null, endpoint: null, result: null, http_status: null };
   }
   // Tenant identity travels as a header, never in the body: the receiver
   // stamps campaign_key_hash server-side from X-Campaign-Key and its

@@ -215,16 +215,22 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
   `canonical` / `loopback` / `proxy`, never the host — travel in the
   `run-record --json` summary under `remit` (`result`, `http_status`,
   `base_kind`, `sent`, `preserved`) and in the text `Remit:` line; the Run
-  Record schema does not carry them.
+  Record schema does not carry them. `result` is one of the five outcomes
+  above for a send this run made, `not_contacted` when the record on disk was
+  already `ok` and the receiver was not asked (below), or null when nothing was
+  sent and nothing is known (`--no-remit`, consent off).
 - **Re-runs never downgrade a durable outcome** — `run-record` is keyed on
   `run_id`, and `run end`, the QA auto-end and the recovery action `next`
   prints all go through it. Before writing, it reads the record already under
   that id. A record whose remit is `ok` is final: it is neither re-sent (the
   receiver would refuse it) nor rewritten (a reassembly is at best thinner
   than what the session wrote, and would then disagree with the stored copy);
-  the command reports `written: false`, `remit.result: "already_stored"`,
+  the command reports `written: false`, `remit.result: "not_contacted"`
+  (distinct from `already_stored`, which is a 409 the receiver answered),
   `remit.sent: false`, and the text line `Remit: ok (already stored at the
-  receiver for this run id; not re-sent)`. A prior `failed` or `pending`
+  receiver for this run id; not re-sent)`. A prior counts only when it is a
+  valid Run Record — the same validator that gates `writeRunRecord` — so a
+  file that merely says `remit_state: "ok"` is replaced like a corrupt one. A prior `failed` or `pending`
   send is retried when the run may send, and carried forward unchanged
   (`remit.preserved: true`) when it may not — `--no-remit` or consent off
   over a failed remit does not file it as `skipped`. Only a `--no-write` run
@@ -440,7 +446,7 @@ after the store, say). Either answer closes the record: a 2xx stores it, and a
 409 is read as `already_stored` — `remit_state: ok` — so the recovery converges
 instead of stamping `failed` over the record and being demanded again. A record
 whose remit is already `ok` on disk is never re-sent and never rewritten by this
-command; it reports `already_stored` and leaves the file as written.
+command; it reports `not_contacted` and leaves the file as written.
 
 Read the command for what it is on a record that is not yet stored: it
 **reassembles** the record under that `run_id`, it does not reload and re-send

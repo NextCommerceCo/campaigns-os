@@ -47,6 +47,7 @@ import {
   readRunRecordsForTarget,
   resolveRunRecordPath,
   RUN_RECORD_SURFACES,
+  validateRunRecord,
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
@@ -10212,6 +10213,8 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // one and stays exactly as written. Nothing is sent (the receiver would
   // refuse it) and nothing is rewritten (a reassembly could only be thinner
   // than what the session wrote, and would then disagree with the stored copy).
+  // `not_contacted` says exactly that — the receiver was not asked — where
+  // `already_stored` is reserved for a 409 it actually answered.
   if (storedRemotely) {
     const summary = {
       ok: true,
@@ -10219,7 +10222,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
       written: false,
       record_path: prior.path,
       record: prior.record,
-      remit: { result: REMIT_RESULTS.already_stored, http_status: null, base_kind: null, sent: false, preserved: true },
+      remit: { result: REMIT_RESULTS.not_contacted, http_status: null, base_kind: null, sent: false, preserved: true },
     };
     if (silent) return summary;
     if (args.json) {
@@ -10297,9 +10300,10 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     record,
     // The send's classification and where it went, which the record's schema
     // does not carry: `result` is one of stored, already_stored,
-    // ok_unparsed_ack, refused, transport_error, or null when nothing was
-    // sent; `base_kind` names the resolved remit base as canonical, loopback
-    // or proxy — never the host itself.
+    // ok_unparsed_ack, refused, transport_error (this run's send),
+    // not_contacted (a prior ok on disk; the early return above), or null
+    // when nothing was sent and nothing is known; `base_kind` names the
+    // resolved remit base as canonical, loopback or proxy — never the host.
     remit: {
       result: remitStatus.result,
       http_status: remitStatus.http_status,
@@ -10331,7 +10335,10 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
 }
 
 // The record already written under `runId` for this target, or null when there
-// is none or it cannot be parsed (a corrupt file is replaced, not preserved).
+// is none, it cannot be parsed, or it is not a valid Run Record. Only a record
+// `writeRunRecord` could have written is trusted as a prior — the same
+// validator gates both — so a file that merely says `remit_state: "ok"` is
+// replaced like a corrupt one, never preserved or handed back as the record.
 function readPriorRunRecord(runId, baseDir) {
   let path;
   try {
@@ -10342,7 +10349,7 @@ function readPriorRunRecord(runId, baseDir) {
   if (!existsSync(path)) return null;
   try {
     const record = readJson(path);
-    return record && typeof record === "object" && !Array.isArray(record) ? { path, record } : null;
+    return validateRunRecord(record).ok ? { path, record } : null;
   } catch {
     return null;
   }
