@@ -45,6 +45,53 @@ Notable supported-surface changes are recorded here.
   output. The disposition is unchanged: a waived exception still lands on
   `ready_with_exceptions`, never plain `ready`, and placeholder-text residue
   stays a blocker the waiver does not soften.
+## [1.27.0+agent.27] - 2026-09-14
+
+### Fixed
+
+- `npm run check` writes nothing into the checkout. The fixtures in
+  `scripts/check-fixtures.mjs` that ran `doctor`, `next build` and `qa resolve`
+  against `examples/build-packet.basic.json` in place, or pointed a packet's
+  `assembly.target_repo` at `examples/target-page-kit`, and the one test in
+  `src/doctor-required-actions.test.mjs` that ran `doctor` on that packet, now
+  stage a copy of the example layout (packet, spec, source, target, catalog)
+  under a temp dir, so
+  `examples/target-page-kit/.campaign-runtime/doctor-output.json` (gitignored,
+  rewritten on every run, and readable as prior state by a later doctor run
+  there) is no longer left behind. `scripts/check-fixtures.test.mjs` runs the
+  fixture check and fails when any file under `examples/` is added, removed or
+  changed, or when that sidecar exists.
+- `check-pack.mjs --skip-prepare` refuses to pack when the working tree has no
+  `campaign-spec/dist` (`campaign-spec/dist/index.js missing from the working
+  tree; --skip-prepare packs the build the pipeline already made`) instead of
+  letting npm rebuild it on the way, and asserts the packed `dist/index.js` and
+  `dist/index.d.ts` are byte-identical to the working tree's. npm before 11
+  runs the prepare script during `npm pack` regardless of `--ignore-scripts`;
+  that second `build:spec` is now reported (`pack check note: npm <version>
+  re-ran the prepare script during npm pack despite --ignore-scripts …`) rather
+  than hidden. On npm 11+ `npm run check` compiles once.
+- `check-template-doctrine.mjs` validates the starter-template partials at the
+  catalog's `_synced_from_sha`, the commit CI checks out, instead of whatever
+  commit the sibling checkout happens to be on. A sibling on another commit, or
+  at the pin with local edits or untracked files under its `src/`, is read at
+  the pin through `git archive` (its working tree is untouched; the
+  pass output gains `templates: read at _synced_from_sha=<sha> from the
+  sibling checkout (its HEAD <sha> differs; working tree untouched)`). A
+  sibling that does not have the pinned commit is still scanned, with
+  `check-template-doctrine: WARNING: validating the sibling checkout … NOT the
+  catalog pin … A green result here is not evidence for the CI gate.` on
+  stderr naming the fetch command. `STARTER_TEMPLATES_PATH` is used as given.
+
+### Changed
+
+- `npm run check` calls the named `check:*` scripts instead of inlining their
+  commands, so a named script and the pipeline step it stands for cannot
+  drift. `check:tests` (the `node --test` suite), `check:slot-manifest` and
+  `check:supported-surface` are new names for steps that had none; the step
+  order is unchanged and `build:spec` is the one explicit build.
+- `docs/small-pr-review-path.md` documents the three PR-only `--base` gates
+  (`check-skill-versions`, `check-supported-surface`, `check-release-ledger`)
+  and how to run them locally against `origin/main`.
 
 ## [1.27.0+agent.26] - 2026-09-14
 

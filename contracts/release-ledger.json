@@ -3070,26 +3070,20 @@
       "date": "2026-09-14",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.27.0+agent.28",
-      "changelog_sha256": "d92b0b73af28f5a3abfb2cc435b160dd105be5ba47b315e17461fb16e25b1430",
-      "agent_impact": "qa run --browser verdicts name the upsell price-visibility row per page: the id is pricing.upsell_price_visible:<page_id> (was the bare pricing.upsell_price_visible, emitted once per upsell page under one id); family, page, status, severity and evidence are unchanged and pricing.checkout_price_visible keeps its id. pricing.checkout_price_visible passes when either a contract bundle price row or a cart-summary total ([data-next-display=\"cart.total\"] or [data-next-cart-summary] .order-totals__value--total) is visible; its expected/actual strings name both surfaces and evidence gains total_selectors[] and total_visible_count (present only when the total surface was read; an absent key means that check did not run). A contract with no checkout_bundle.price_row_selectors still emits the row, keyed on the cart-summary total, instead of skipping the check. Palette residue (template-residue:<page>:style:*, :logo, :payment-chrome:*) found under a recorded, unexpired theme waiver or an inapplicable gate reports status warn with severity warn, no longer status fail with severity warn; the disposition still lands on ready_with_exceptions and placeholder-text residue stays a blocker. docs/build-packet.md and docs/brand-theme-bridge.md state the waived rows report warn.",
+      "changelog_section": "1.27.0+agent.27",
+      "changelog_sha256": "fac12b28036412637123f460aebfb199e4418bc87aa217cb499129c5bab22ca9",
+      "agent_impact": "npm run check runs the same steps in the same order, each through its named check:* script; check:tests (the node --test suite), check:slot-manifest and check:supported-surface are new script names. scripts/check-pack.mjs --skip-prepare exits 1 with 'campaign-spec/dist/index.js missing from the working tree; --skip-prepare packs the build the pipeline already made' when the working tree has no build, and on npm before 11 prints one stderr line starting 'pack check note: npm <version> re-ran the prepare script during npm pack despite --ignore-scripts'; the 'pack check passed:' stdout line is unchanged. scripts/check-template-doctrine.mjs reads the starter-template partials at the catalog _synced_from_sha and appends a 'templates: ...' line after its pass line; when it can only read a sibling checkout on another commit it prints 'check-template-doctrine: WARNING: validating the sibling checkout ... NOT the catalog pin ...' on stderr and still exits 0. The fixture check leaves examples/ byte-identical; nothing under examples/target-page-kit/.campaign-runtime/ is written or read.",
       "compatibility": "compatible",
-      "migration": "A consumer matching the literal assertion id pricing.upsell_price_visible must match the prefix pricing.upsell_price_visible: instead; a consumer reading template-residue palette rows under a waiver must accept status warn where it accepted status fail with severity warn.",
+      "migration": "None. A local check-template-doctrine run against a sibling checkout on another commit now validates the catalog pin; set STARTER_TEMPLATES_PATH to validate a specific tree instead.",
       "changes": [
         {
-          "class": "named_surface",
-          "path": "docs/build-packet.md",
-          "surface_entry": "docs/build-packet.md",
-          "summary": "The theme-waiver paragraph states that palette-residue rows report warn (status and severity), never fail, under a recorded waiver."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/brand-theme-bridge.md",
-          "surface_entry": "docs/brand-theme-bridge.md",
-          "summary": "Names the palette-residue rows a waiver downgrades to warn (:style:*, :logo, :payment-chrome:*) and that placeholder-text residue stays a blocker."
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "npm run check calls the named check:* scripts in the existing order with one explicit build:spec; check:tests, check:slot-manifest and check:supported-surface are added; the test suite gains scripts/check-fixtures.test.mjs and scripts/starter-templates-path.test.mjs."
         }
       ],
-      "entry_sha256": "adb888c0ec4bf521d83ca163aaa556802e32d4ad5d207ff37f3a68c012fb364a"
+      "entry_sha256": "7318f3210e469929a3986b3ff3f1ab3cafe27040d4e93ead0430308ef53abd7d"
     }
   ]
 }
