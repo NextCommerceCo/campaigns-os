@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { doctorRequiredActionLines } from "./cli.mjs";
+import { doctorCommand, doctorRequiredActionLines, doctorTinyPromptLines, resultTextLines } from "./cli.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = join(ROOT, "bin/campaigns-os.mjs");
@@ -55,6 +55,36 @@ test("text-mode doctor prints the remediation for a blocked checkpoint gate", ()
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// The human doctor report is one walker of the result, returning lines; the
+// printer prints exactly those lines and nothing else. Proved against the
+// subprocess so the assertable interface and the operator's stdout cannot
+// drift apart.
+test("text-mode doctor stdout is exactly resultTextLines plus doctorTinyPromptLines", () => {
+  const { dir, packetPath } = sdkPinMismatchFixture("0.4.38");
+  try {
+    const text = runDoctorText(packetPath);
+    const result = doctorCommand({ packet: packetPath, "no-write": true });
+    assert.equal(text, `${[...resultTextLines(result), ...doctorTinyPromptLines(result)].join("\n")}\n`);
+    // The sections this fixture exercises, in order.
+    const lines = resultTextLines(result);
+    const at = (label) => lines.indexOf(label);
+    assert.ok(at("Errors:") >= 0 && at("Required actions:") > at("Errors:") && at("Next:") > at("Required actions:"), lines.join("\n"));
+    assert.equal(lines[0], "Status: BLOCKED");
+    assert.deepEqual(doctorTinyPromptLines(result).slice(0, 2), ["", "Next expected proof: resolve the blockers above, then re-run doctor."]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("doctorTinyPromptLines names the two proofs and nothing else", () => {
+  assert.deepEqual(doctorTinyPromptLines({ status: "ready" }), [
+    "",
+    "Next expected proof: campaigns-os next to pick the next stage (setup/build), then polish, deploy, and QA.",
+    'Found workflow friction here? campaigns-os findings add --stage doctor --kind friction --summary "..."',
+  ]);
+  assert.equal(doctorTinyPromptLines({ status: "blocked" }).length, 3);
 });
 
 test("text-mode doctor prints no required-actions block when every gate is clear", () => {

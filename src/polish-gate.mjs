@@ -1,4 +1,5 @@
 import { HIDDEN_EAGER_MEDIA_SCOPE } from "./polish-page-load.mjs";
+import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 
 export const POLISH_GATE_REQUIRED_EVIDENCE = Object.freeze([
   "visual_review",
@@ -617,13 +618,6 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
   };
 }
 
-const CAPTURE_PAGE_LOAD_ACTION = Object.freeze({
-  id: "polish.hidden_eager_media.capture",
-  kind: "command",
-  command: "campaigns-os polish capture --packet <packet> --base-url <url>",
-  description: "Capture package-owned page-load evidence for every mapped route and fixed viewport.",
-});
-
 function mergeRequiredActions(...groups) {
   const actions = [];
   const seen = new Set();
@@ -650,7 +644,7 @@ function ownedCheckpointBlock(hiddenEagerMediaGate) {
   return {
     code: "polish.hidden_eager_media.capture_malformed",
     reason: "Package-owned page-load evidence is missing or malformed; run polish capture before completing Polish.",
-    required_actions: [CAPTURE_PAGE_LOAD_ACTION],
+    required_actions: [HIDDEN_EAGER_MEDIA_ACTIONS.capture],
   };
 }
 

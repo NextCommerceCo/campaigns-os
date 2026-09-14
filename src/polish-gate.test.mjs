@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
+import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 
 const FINGERPRINT = "sha256:build-current";
 const SOURCE_PACKAGE_FINGERPRINT = "sha256:source-package-current";
@@ -432,6 +433,9 @@ test("required polish gate fails closed when its owned page-load checkpoint is a
   assert.equal(gate.owned_checkpoint_id, "polish.hidden_eager_media");
   assert.equal(gate.owned_checkpoint_only, true);
   assert.deepEqual(gate.required_actions.map((action) => action.id), ["polish.hidden_eager_media.capture"]);
+  // The same object the polish producer publishes, from the shared table —
+  // not a copy the gate could drift from.
+  assert.equal(gate.required_actions[0], HIDDEN_EAGER_MEDIA_ACTIONS.capture);
 });
 
 test("polish gate composes its authoritative hidden eager-media checkpoint", () => {
