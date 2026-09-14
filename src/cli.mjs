@@ -2715,35 +2715,34 @@ export function doctorCommand(args, { runDoctor = doctorPacket } = {}) {
   // the artifact on disk stayed frozen at intake (NEXT-114 dogfood finding
   // wf_1785566917680). Opt out with --no-write.
   if (args["no-write"] !== true) {
-    // The stage write-back targets the report the operator named, else the
-    // default location. It does not follow a recorded report_path: a report
-    // of another run of the same campaign matches on map id and slug alone,
-    // and restating this doctor's outcome into it would corrupt that run's
-    // evidence. Inspection and the stage decision above do follow it. The
+    // The stage write-back restates the outcome into the report the
+    // inspection read: the one --report named, else the one the Build Context
+    // binds (`derived.assembly_report_path`, a `prepare-build --report-out`
+    // campaign's report), else the default location. Following the binding is
+    // what keeps the doctor stage on a bound report current; a report of
+    // another campaign is still refused by commitAssemblyReport's identity
+    // check, so the outcome never lands in another run's evidence. The
     // sidecar itself goes under the target repo, where prepare-build, next
     // and the QA stage refresh write it — not beside the packet.
+    const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
     const workspace = resolveCampaignWorkspace(packetPath, {
-      reportPath: args.report ? resolve(args.report) : undefined,
+      reportPath: args.report
+        ? resolve(args.report)
+        : inspectedReportPath
+          ? resolve(dirname(packetPath), inspectedReportPath)
+          : undefined,
       doctorOutPath: args["doctor-out"] ? resolve(args["doctor-out"]) : undefined,
       followContextPointer: false,
     });
-    // Restate the outcome only into the report the inspection actually read.
-    const inspectedReportPath = optionalString(result.derived?.assembly_report_path);
-    const inspectedIsTarget = !inspectedReportPath
-      || canonicalExistingPath(resolve(dirname(packetPath), inspectedReportPath)) === canonicalExistingPath(workspace.reportPath);
     // The sidecar is this inspection's result, written whether or not the
     // report gained a new chapter (a re-run restating the outcome already on
     // disk leaves the report's bytes, and every digest of them, alone). A
     // report this inspection did not read is not opened at all: its state,
     // malformed included, is not this run's concern.
-    if (inspectedIsTarget) {
-      commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
-        command: `campaigns-os ${args._?.[0] || "doctor"}`,
-        doctorOutPath: workspace.doctorOutPath,
-      }), { stage: "doctor", refreshDoctor: () => result });
-    } else {
-      writeJsonAtomic(workspace.doctorOutPath, result);
-    }
+    commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
+      command: `campaigns-os ${args._?.[0] || "doctor"}`,
+      doctorOutPath: workspace.doctorOutPath,
+    }), { stage: "doctor", refreshDoctor: () => result });
   }
   return result;
 }

@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.32] - 2026-09-14
+
+### Fixed
+
+- Standalone `doctor` records its stage outcome into the Assembly Report the
+  Build Context binds. On a `prepare-build --report-out` campaign, the context's
+  `report_path` points at the bound report and `doctor`'s inspection reads it
+  (`derived.assembly_report_path`), but the stage write-back resolved the
+  default `<target repo>/.campaign-runtime/assembly-report.json` instead and,
+  finding it was not the report it had read, wrote only the sidecar — so the
+  bound report's `stages.doctor` stayed whatever `start` / `prepare-build`
+  last wrote, and `next`'s ledger reads, the Run Record's `assembly_report`
+  attestation and the re-record rule all judged a doctor stage no later run
+  refreshed. The write-back now targets the report the inspection read: the
+  one `--report` names, else the bound one, else the default; the default
+  report is left untouched when a binding exists. A bound report whose
+  `identity` is not this packet's (another campaign's map id or route slug)
+  is still refused, and the sidecar is refreshed either way, so a doctor run
+  never restates its outcome into another run's evidence. `--no-write`
+  unchanged.
+
 ## [1.27.0+agent.26] - 2026-09-14
 
 ### Fixed

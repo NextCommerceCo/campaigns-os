@@ -121,20 +121,47 @@ test("a doctor re-run that restates the same outcome leaves the Assembly Report 
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("standalone doctor does not restate its outcome into a report it did not inspect", () => {
+// The Build Context records where prepare-build wrote the report
+// (--report-out). Inspection follows that pointer, so the report the stage
+// write-back restates into has to be the same one, or a bound report's
+// doctor stage is only ever what start/prepare-build wrote and `next`, the
+// Run Record attestation and the re-record rule all read a frozen stage.
+test("standalone doctor records its outcome into the report the Build Context binds, not the default", () => {
   const { dir, packetPath } = selfTargetPacketFixture();
   const packet = JSON.parse(readFileSync(packetPath, "utf8"));
   mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
   const identity = { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug };
-  // The context records a custom report; a same-campaign report also sits at the default location.
+  // The context binds a custom report; a same-campaign report also sits at the default location.
   writeFileSync(join(dir, ".campaign-runtime/build-context.json"), JSON.stringify({ report_path: "custom-report.json" }));
   writeFileSync(join(dir, "custom-report.json"), JSON.stringify({ identity, stages: {} }));
   const defaultReport = JSON.stringify({ identity, stages: { doctor: { stage: "doctor", status: "pending", inputs: [], outputs: [], commands: [], blockers: [], warnings: [] } } });
   writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), defaultReport);
 
-  doctorCommand({ packet: packetPath, _: ["doctor"] });
+  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  assert.equal(result.derived.assembly_report_path, join(dir, "custom-report.json"), "the inspection read the bound report");
   assert.equal(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"), defaultReport, "the default report is untouched");
-  assert.equal(JSON.parse(readFileSync(join(dir, "custom-report.json"), "utf8")).stages.doctor, undefined, "the inspected custom report is not written either");
+  const bound = JSON.parse(readFileSync(join(dir, "custom-report.json"), "utf8"));
+  assert.equal(bound.stages.doctor.checked_at, result.generated_at, "the bound report carries this run's doctor stage");
+  assert.deepEqual(bound.stages.doctor.commands, ["campaigns-os doctor"]);
+  assert.equal(JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8")).generated_at, result.generated_at, "the sidecar is this run's");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("standalone doctor leaves a bound report of another campaign alone and still refreshes the sidecar", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  writeFileSync(join(dir, ".campaign-runtime/build-context.json"), JSON.stringify({ report_path: "other-report.json" }));
+  const otherReport = JSON.stringify({
+    identity: { map_id: `${packet.spec.map_id}-other`, public_route_slug: packet.campaign.public_route_slug },
+    stages: {},
+  });
+  writeFileSync(join(dir, "other-report.json"), otherReport);
+
+  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  assert.equal(readFileSync(join(dir, "other-report.json"), "utf8"), otherReport, "another campaign's report is not written");
+  assert.equal(existsSync(join(dir, ".campaign-runtime/assembly-report.json")), false, "no default report is created either");
+  assert.equal(JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8")).generated_at, result.generated_at, "the sidecar is this run's");
   rmSync(dir, { recursive: true, force: true });
 });
 
