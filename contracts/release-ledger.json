@@ -2749,6 +2749,27 @@
         }
       ],
       "entry_sha256": "0866feb9a581482336f396037202caf981f9273eaaa37610ea0d3cb7b5105736"
+    },
+    {
+      "id": "RL-0073",
+      "sequence": 73,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.18",
+      "changelog_sha256": "219e4aca2268416b679ab7418654894ecf05dcb86bdc8b0b59b8d48004c19669",
+      "agent_impact": "One output change: the Run Record a session-ending qa run auto-writes (command \"run-record\") no longer lists the qa run's flags in argv_shape. For a --json run it is now [\"--json\", \"--lifecycle-journal\", \"--packet\", \"--qa-verdict\", \"--run-id\"]; --base-url and --no-post-verdict are gone, and --context/--report are still carried when the qa run passed them. An agent that matched an auto-ended record by qa flags in argv_shape must match by command and run_id instead. run end (text and JSON), run start, run status and the stale-session sweep are unchanged in every field and line. Internal: the three closers are one closeRunSession with a flag whitelist, the two openers are one openRunSession in src/run-session.mjs, sessionBoundTo is the one packet-binding predicate, and run start/status/end return { result, exitCode } for dispatch to print.",
+      "compatibility": "compatible",
+      "migration": "None. A consumer keying on qa run flag names inside an auto-ended Run Record's argv_shape should key on command and run_id.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "closeRunSession(found, { packet, extraArgs, silent, promptForConsent, onError }) with runSessionEndArgs (an inheritable-flag whitelist) replaces the three hand-built run-record argvs in run end, the qa run auto-end and the stale sweep; ambientRunSession and autoStartRunSession use sessionBoundTo and openRunSession; run start/status/end return { result, exitCode } and dispatch prints via writeRunSessionResult. Only the auto-ended record's argv_shape changes."
+        }
+      ],
+      "entry_sha256": "9c606bf64ef567a381095b606e16e299396a755e70fee3f5820c988995eb1bf7"
     }
   ]
 }

@@ -262,6 +262,30 @@ Notable supported-surface changes are recorded here.
   relied on one of the removed spellings being clicked was never going to
   reach the checkout through it.
 
+## [1.27.0+agent.18] - 2026-09-14
+
+### Fixed
+
+- A Run Record auto-ended after a session-ending `qa run` no longer lists
+  `qa run`'s flags as its own. The three ways a run session closes — `run
+  end`, the auto-end after a `ready` or `ready_with_exceptions` verdict, and
+  the stale-session sweep — each built run-record's argv for themselves, and
+  the auto-end did so by spreading the QA command's argv, so its record's
+  `argv_shape` carried `--base-url` and `--no-post-verdict` under `command:
+  "run-record"`. The session now closes by one path that hands run-record
+  only the flags it reads (`--context`, `--report`, `--qa-verdict`,
+  `--journal`, the surface and agent-usage flags, `--no-remit`, `--no-write`,
+  `--proxy-base`, `--json`) beside the session's own `--packet`, `--run-id`
+  and `--lifecycle-journal`; an auto-ended record's `argv_shape` is now
+  `["--json", "--lifecycle-journal", "--packet", "--qa-verdict", "--run-id"]`
+  for a `--json` run. `run end` and the sweep produce what they did. On the
+  opening side, `run start` and the auto-start behind `start`/`prepare-build`
+  write the session through one opener, and "is this session bound to this
+  packet" has one answer where `--packet` selection (which refuses) and the
+  auto-start (which stands off) each had a spelling; messages are unchanged.
+  `run start`, `run status` and `run end` return their result and the
+  dispatcher prints it — text and JSON output are byte-identical.
+
 ## [1.27.0] - 2026-09-13
 
 ### Added
