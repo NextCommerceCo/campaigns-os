@@ -12,10 +12,12 @@
 // The session file is transient, machine-local, and lives under the
 // scrubber-ignored .campaign-runtime/. No network, no credentials.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, parse, resolve, sep } from "node:path";
+
+import { LIFECYCLE_JOURNAL_REL_PATH } from "./lifecycle.mjs";
 
 export const RUN_SESSION_SCHEMA = "campaigns-os-run-session/v0";
 export const RUN_SESSION_REL_PATH = ".campaign-runtime/run-session.json";
@@ -166,4 +168,65 @@ export function clearRunSession(sessionPath) {
   } catch {
     return false;
   }
+}
+
+// Is this session `packetPath`'s? A session records the packet it was opened
+// for; one opened with none is every packet's. The comparison is on the real
+// path, so a packet reached through a symlinked checkout and the same file
+// reached directly are one packet. `boundPacket` is returned for the caller's
+// message when the answer is no.
+export function sessionBoundTo(session, packetPath) {
+  const boundPacket = isNonEmptyString(session?.packet) ? session.packet : null;
+  if (!boundPacket) return { same: true, boundPacket };
+  if (!isNonEmptyString(packetPath)) return { same: false, boundPacket };
+  return { same: canonicalPath(boundPacket) === canonicalPath(packetPath), boundPacket };
+}
+
+function canonicalPath(path) {
+  try {
+    return realpathSync(resolve(path));
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * Open a run session at `rootDir`, or join the one already there. The two
+ * openers — `run start` and the auto-start behind `start`/`prepare-build` —
+ * write the same session and differ only in what an already-open one means:
+ * `run start` refuses it unless `force` replaces it; the auto-start joins it
+ * when it is bound to this packet (`join`) and stands off when it is bound to
+ * another. Returns `{ found, joined, existing, binding }`: `found` is the open
+ * session as findRunSession reports it ({ session, path, dir }) or null when
+ * the existing one could not be joined, in which case `existing` is that
+ * session and `binding` says which packet holds it. Nothing is written on a
+ * join or a refusal.
+ */
+export function openRunSession(rootDir, {
+  runId = null,
+  lifecycleJournal = null,
+  packet = null,
+  lastRecommendation = null,
+  join: joinExisting = false,
+  force = false,
+  now = new Date(),
+} = {}) {
+  const dir = resolve(rootDir);
+  const existing = force ? null : findRunSession(dir, { now });
+  if (existing) {
+    const binding = sessionBoundTo(existing.session, packet);
+    if (joinExisting && binding.same) return { found: existing, joined: true, existing: null, binding };
+    return { found: null, joined: false, existing, binding };
+  }
+  const session = {
+    ...buildRunSession({
+      runId: runId || mintSessionRunId(now),
+      lifecycleJournal: lifecycleJournal || join(dir, LIFECYCLE_JOURNAL_REL_PATH),
+      packet: isNonEmptyString(packet) ? resolve(packet) : null,
+      now,
+    }),
+    ...(lastRecommendation ? { last_recommendation: lastRecommendation } : {}),
+  };
+  const path = writeRunSession(dir, session);
+  return { found: { session, path, dir }, joined: false, existing: null, binding: null };
 }

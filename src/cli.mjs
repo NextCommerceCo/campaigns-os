@@ -93,13 +93,13 @@ import {
   withCommandLifecycle,
 } from "./lifecycle.mjs";
 import {
-  buildRunSession,
   clearRunSession,
   findRunSession,
   findStaleRunSession,
   isRunSessionStale,
   isRunSessionTerminal,
-  mintSessionRunId,
+  openRunSession,
+  sessionBoundTo,
   writeRunSession,
 } from "./run-session.mjs";
 import { ensureRuntimeStateIgnored } from "./runtime-state-ignore.mjs";
@@ -560,8 +560,9 @@ function ambientRunSession(args = {}) {
       throw new Error(`Conflicting active run sessions resolve from packet ${packetPath}: ${targetSessions.map((entry) => entry.session.run_id).join(", ")}. End the stale or wrong session before continuing.`);
     }
     const targetSession = targetSessions[0] || null;
-    if (targetSession?.session?.packet && canonicalExistingPath(resolve(targetSession.session.packet)) !== packetPath) {
-      throw new Error(`Conflicting active run session ${targetSession.session.run_id} is bound to ${targetSession.session.packet}, not packet ${packetPath}. End it before continuing.`);
+    const binding = targetSession ? sessionBoundTo(targetSession.session, packetPath) : null;
+    if (binding && !binding.same) {
+      throw new Error(`Conflicting active run session ${targetSession.session.run_id} is bound to ${binding.boundPacket}, not packet ${packetPath}. End it before continuing.`);
     }
     if (cwdSession && targetSession && canonicalExistingPath(cwdSession.path) !== canonicalExistingPath(targetSession.path)) {
       throw new Error(`Conflicting active run sessions: cwd selects ${cwdSession.session.run_id}, while packet ${packetPath} selects ${targetSession.session.run_id}. End the wrong session before continuing.`);
@@ -600,51 +601,37 @@ function autoStartRunSession(prepareResult, args, ambient, sessionHolder) {
     const packetPath = prepareResult?.packetPath;
     const targetRepo = optionalString(args.target) ? resolve(args.target) : null;
     if (!packetPath || !targetRepo) return null;
-    const existing = findRunSession(targetRepo);
-    if (existing) {
-      // A repeated start against a target whose session is already open
-      // joins that session rather than opening a second one. `start` has no
-      // --packet, so main() could only find a session by cwd; a re-run from
-      // anywhere else used to resolve no session and its lifecycle entry was
-      // never written, which left the journal with the first blocked start
-      // and none of the retries, including the one that produced the packet
-      // every later stage used. Adopt only when the session is bound to this
-      // packet (or to none); a session bound elsewhere is a conflict for the
-      // operator to end, not something to write into silently.
-      const boundPacket = optionalString(existing.session?.packet);
-      const thisPacket = canonicalExistingPath(resolve(packetPath));
-      const samePacket = !boundPacket || canonicalExistingPath(resolve(boundPacket)) === thisPacket;
-      const runId = singleLineField(existing.session?.run_id, "(unnamed)");
-      if (!samePacket) {
-        process.stderr.write(`[campaigns-os] run session ${runId} is bound to ${singleLineField(boundPacket)}, not this packet; not joined (this command's lifecycle entry is not recorded). End it with \`campaigns-os run end\` or run from its packet.\n`);
-        return null;
-      }
-      if (sessionHolder) {
-        sessionHolder.current = existing;
-        sessionHolder.adopted = true;
-      }
-      process.stderr.write(`[campaigns-os] Run session ${runId} joined (already open for ${singleLineField(targetRepo)}; run telemetry is ambient).\n`);
-      return sessionHolder?.current || null;
-    }
-    const runId = mintSessionRunId();
-    const session = {
-      ...buildRunSession({
-        runId,
-        lifecycleJournal: join(targetRepo, LIFECYCLE_JOURNAL_REL_PATH),
-        packet: resolve(packetPath),
-      }),
-      last_recommendation: buildRecommendation({
+    // A repeated start against a target whose session is already open joins
+    // that session rather than opening a second one. `start` has no --packet,
+    // so main() could only find a session by cwd; a re-run from anywhere else
+    // used to resolve no session and its lifecycle entry was never written,
+    // which left the journal with the first blocked start and none of the
+    // retries, including the one that produced the packet every later stage
+    // used. Join only when the session is bound to this packet (or to none);
+    // a session bound elsewhere is a conflict for the operator to end, not
+    // something to write into silently.
+    const opened = openRunSession(targetRepo, {
+      packet: resolve(packetPath),
+      lastRecommendation: buildRecommendation({
         stage: "doctor",
         status: "ready",
         expectedCommands: ["start", "prepare-build", "theme"],
       }),
-    };
-    const sessionPath = writeRunSession(targetRepo, session);
-    if (sessionHolder) {
-      sessionHolder.current = { session, path: sessionPath, dir: targetRepo };
-      sessionHolder.autoStarted = true;
+      join: true,
+    });
+    if (!opened.found) {
+      const runId = singleLineField(opened.existing.session?.run_id, "(unnamed)");
+      process.stderr.write(`[campaigns-os] run session ${runId} is bound to ${singleLineField(opened.binding.boundPacket)}, not this packet; not joined (this command's lifecycle entry is not recorded). End it with \`campaigns-os run end\` or run from its packet.\n`);
+      return null;
     }
-    process.stderr.write(`[campaigns-os] Run session ${runId} started automatically (run telemetry is ambient; finish with \`campaigns-os run end\`, opt out per-run with --no-run-session).\n`);
+    const runId = singleLineField(opened.found.session?.run_id, "(unnamed)");
+    if (sessionHolder) {
+      sessionHolder.current = opened.found;
+      sessionHolder[opened.joined ? "adopted" : "autoStarted"] = true;
+    }
+    process.stderr.write(opened.joined
+      ? `[campaigns-os] Run session ${runId} joined (already open for ${singleLineField(targetRepo)}; run telemetry is ambient).\n`
+      : `[campaigns-os] Run session ${runId} started automatically (run telemetry is ambient; finish with \`campaigns-os run end\`, opt out per-run with --no-run-session).\n`);
     return sessionHolder?.current || null;
   } catch (error) {
     // Telemetry never blocks a build, but a failed session write must be
@@ -873,27 +860,21 @@ async function autoEndRunSessionAfterTerminalQa(args, command, sessionHolder, th
     return;
   }
 
-  try {
-    const endArgs = {
-      ...args,
-      _: ["run-record"],
-      packet,
-      "run-id": updatedFound.session.run_id,
-      "lifecycle-journal": updatedFound.session.lifecycle_journal,
-      "qa-verdict": result.local_path,
-    };
-    const summary = await runRecordCommand(endArgs, updatedFound, { silent: true, promptForConsent: false });
-    clearRunSession(updatedFound.path);
-    sessionHolder.current = null;
-    process.stderr.write(autoEndCloseoutNotice({
-      runId: updatedFound.session.run_id,
-      recordPath: summary?.record_path || null,
-      remitState: optionalString(summary?.record?.remit_state),
-      remitError: optionalString(summary?.record?.remit_error),
-    }));
-  } catch (error) {
-    process.stderr.write(`[campaigns-os] run session auto-end skipped after QA: ${error.message}\n`);
-  }
+  const summary = await closeRunSession(updatedFound, {
+    packet,
+    extraArgs: { ...args, "qa-verdict": result.local_path },
+    silent: true,
+    promptForConsent: false,
+    onError: (error) => process.stderr.write(`[campaigns-os] run session auto-end skipped after QA: ${error.message}\n`),
+  });
+  if (!summary) return;
+  sessionHolder.current = null;
+  process.stderr.write(autoEndCloseoutNotice({
+    runId: updatedFound.session.run_id,
+    recordPath: summary.record_path || null,
+    remitState: optionalString(summary.record?.remit_state),
+    remitError: optionalString(summary.record?.remit_error),
+  }));
 }
 
 const PREPARE_MODES = Object.freeze({
@@ -1036,7 +1017,8 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "run") {
-    await runSessionCommand(args, ambient, sessionHolder);
+    const { result, exitCode } = await runSessionCommand(args, ambient, sessionHolder);
+    writeRunSessionResult(result, args, exitCode);
     return;
   }
 
@@ -9716,8 +9698,9 @@ function findingsExport(args, ambient = null) {
 // Ambient run session (Tier 3): `run start | end | status`. A session shares
 // one run_id + one lifecycle journal across every command in the project
 // without per-command flags — the experience for "talk to your agent and
-// build". See src/run-session.mjs.
-async function runSessionCommand(args, ambient = null, sessionHolder = null) {
+// build". See src/run-session.mjs. Each subcommand returns { result, exitCode }
+// and dispatch prints, so the result is the test surface rather than stdout.
+export async function runSessionCommand(args, ambient = null, sessionHolder = null) {
   const sub = args._[1] || "status";
   if (sub === "start") return runSessionStart(args);
   if (sub === "status") return runSessionStatus(args, ambient);
@@ -9725,45 +9708,96 @@ async function runSessionCommand(args, ambient = null, sessionHolder = null) {
   throw new Error(`Unknown run subcommand "${sub}". Use: start | end | status.`);
 }
 
+function writeRunSessionResult(result, args, exitCode) {
+  if (args.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    for (const line of runSessionTextLines(result)) console.log(line);
+  }
+  if (exitCode) process.exitCode = exitCode;
+}
+
+// The human rendering of each run subcommand's result. `run end` prints
+// run-record's own summary from inside run-record (it is not silenced in text
+// mode) and adds one closing line here.
+function runSessionTextLines(result) {
+  if (result.action === "run-start") {
+    const { session } = result;
+    return [
+      "Run session started.",
+      `Run ID: ${session.run_id}`,
+      `Lifecycle journal: ${session.lifecycle_journal}`,
+      "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
+      `Finish with: campaigns-os run end${session.packet ? "" : " --packet <campaign-runtime.build.json>"}`,
+    ];
+  }
+  if (result.action === "run-status") {
+    if (!result.active) {
+      const lines = ["No active run session. Start one with: campaigns-os run start"];
+      const stale = result.stale_session;
+      if (stale) {
+        lines.push(`A stale run session file is present (${stale.run_id}, idle since ${stale.idle_since}). It will be closed out — Run Record assembled and remitted under consent — by the next \`run start\`, \`run end\`, \`start\`, or \`prepare-build\` here.`);
+      }
+      return lines;
+    }
+    const { session, progress } = result;
+    const lines = [
+      `Active run session: ${session.run_id}`,
+      `Lifecycle journal: ${session.lifecycle_journal}`,
+      `Started: ${session.started_at}`,
+    ];
+    if (session.packet) lines.push(`Packet: ${session.packet}`);
+    lines.push(`QA attempts: ${Array.isArray(session.qa_attempts) ? session.qa_attempts.length : 0}`);
+    if (progress) {
+      if (progress.incomplete_stages.length) {
+        lines.push(`Incomplete stages: ${progress.incomplete_stages.map((stage) => `${stage.stage} (${stage.status || "pending"})`).join(", ")}`);
+      } else {
+        lines.push("All assembly-report stages are terminal.");
+      }
+      if (progress.deviations > 0) lines.push(`Agent deviations recorded: ${progress.deviations} (see ${DEVIATION_JOURNAL_REL_PATH})`);
+      lines.push(`Next command: ${progress.next_command}`);
+    } else {
+      lines.push("Next command: campaigns-os next --packet <campaign-runtime.build.json> --json (no packet recorded on this session)");
+    }
+    return lines;
+  }
+  if (result.action === "run-end") {
+    return result.stale_closeout.map((entry) => `Stale run session ${entry.run_id} closed out${entry.record_path ? ` (Run Record ${entry.record_path}, remit ${entry.remit_state || "skipped"})` : ` without a Run Record (${entry.error})`}.`);
+  }
+  // run end over an active session: the run-record summary, already printed
+  // by run-record itself in text mode.
+  return [`Run session ${result.record.run_id} ended; session cleared.`];
+}
+
 function runSessionStart(args) {
   const rootDir = process.cwd();
-  const existing = findRunSession(rootDir);
-  if (existing && args.force !== true) {
+  const packet = optionalString(args.packet) ? resolve(args.packet) : null;
+  const opened = openRunSession(rootDir, {
+    runId: optionalString(args["run-id"]) || null,
+    lifecycleJournal: isNonEmptyString(args["lifecycle-journal"]) ? resolve(args["lifecycle-journal"]) : null,
+    packet,
+    force: args.force === true,
+  });
+  if (!opened.found) {
     throw new Error(
-      `A run session is already active (${existing.session.run_id}). End it with \`campaigns-os run end\`, or pass --force to replace it.`,
+      `A run session is already active (${opened.existing.session.run_id}). End it with \`campaigns-os run end\`, or pass --force to replace it.`,
     );
   }
-  const runId = optionalString(args["run-id"]) || mintSessionRunId();
-  const lifecycleJournal = isNonEmptyString(args["lifecycle-journal"])
-    ? resolve(args["lifecycle-journal"])
-    : join(resolve(rootDir), LIFECYCLE_JOURNAL_REL_PATH);
-  const packet = optionalString(args.packet) ? resolve(args.packet) : null;
   // The packet is remembered for the whole session, so a typo would only surface
   // at `run end` after a full build. Warn now (non-fatal) if it isn't there yet.
   if (packet && !existsSync(packet) && !args.json) {
     console.warn(`Warning: --packet ${packet} does not exist yet; run end will need it (or pass --packet then).`);
   }
-  const session = buildRunSession({ runId, lifecycleJournal, packet });
-  const sessionPath = writeRunSession(rootDir, session);
   ensureRuntimeStateIgnored(rootDir);
-
-  if (args.json) {
-    console.log(JSON.stringify({ ok: true, action: "run-start", session, session_path: sessionPath }, null, 2));
-    return;
-  }
-  console.log("Run session started.");
-  console.log(`Run ID: ${runId}`);
-  console.log(`Lifecycle journal: ${lifecycleJournal}`);
-  console.log("Every campaigns-os command in this project now auto-logs to this run — no per-command flags.");
-  console.log(`Finish with: campaigns-os run end${packet ? "" : " --packet <campaign-runtime.build.json>"}`);
+  return { result: { ok: true, action: "run-start", session: opened.found.session, session_path: opened.found.path }, exitCode: 0 };
 }
 
 function runSessionStatus(args, ambient = null) {
   const found = ambient || findRunSession(process.cwd());
   const progress = found ? runSessionProgress(found) : null;
-  if (args.json) {
-    const stale = found ? null : findStaleRunSession(process.cwd());
-    console.log(JSON.stringify({
+  const stale = found ? null : findStaleRunSession(process.cwd());
+  return {
+    result: {
       ok: true,
       action: "run-status",
       active: Boolean(found),
@@ -9771,33 +9805,9 @@ function runSessionStatus(args, ambient = null) {
       session_path: found?.path ?? null,
       progress,
       stale_session: stale ? { run_id: stale.session.run_id, session_path: stale.path, idle_since: stale.session.updated_at || stale.session.started_at || null } : null,
-    }, null, 2));
-    return;
-  }
-  if (!found) {
-    console.log("No active run session. Start one with: campaigns-os run start");
-    const stale = findStaleRunSession(process.cwd());
-    if (stale) {
-      console.log(`A stale run session file is present (${stale.session.run_id}, idle since ${stale.session.updated_at || stale.session.started_at}). It will be closed out — Run Record assembled and remitted under consent — by the next \`run start\`, \`run end\`, \`start\`, or \`prepare-build\` here.`);
-    }
-    return;
-  }
-  console.log(`Active run session: ${found.session.run_id}`);
-  console.log(`Lifecycle journal: ${found.session.lifecycle_journal}`);
-  console.log(`Started: ${found.session.started_at}`);
-  if (found.session.packet) console.log(`Packet: ${found.session.packet}`);
-  console.log(`QA attempts: ${Array.isArray(found.session.qa_attempts) ? found.session.qa_attempts.length : 0}`);
-  if (progress) {
-    if (progress.incomplete_stages.length) {
-      console.log(`Incomplete stages: ${progress.incomplete_stages.map((stage) => `${stage.stage} (${stage.status || "pending"})`).join(", ")}`);
-    } else {
-      console.log("All assembly-report stages are terminal.");
-    }
-    if (progress.deviations > 0) console.log(`Agent deviations recorded: ${progress.deviations} (see ${DEVIATION_JOURNAL_REL_PATH})`);
-    console.log(`Next command: ${progress.next_command}`);
-  } else {
-    console.log("Next command: campaigns-os next --packet <campaign-runtime.build.json> --json (no packet recorded on this session)");
-  }
+    },
+    exitCode: 0,
+  };
 }
 
 // Session progress: incomplete assembly-report stages, the deviation count,
@@ -9838,35 +9848,65 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
     // the end the operator asked for, so report it rather than fail.
     const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === resolve(process.cwd()));
     if (swept.length) {
-      if (args.json) {
-        console.log(JSON.stringify({ ok: swept.every((entry) => Boolean(entry.record_path)), action: "run-end", stale_closeout: swept }, null, 2));
-        return;
-      }
-      for (const entry of swept) console.log(`Stale run session ${entry.run_id} closed out${entry.record_path ? ` (Run Record ${entry.record_path}, remit ${entry.remit_state || "skipped"})` : ` without a Run Record (${entry.error})`}.`);
-      return;
+      return { result: { ok: swept.every((entry) => Boolean(entry.record_path)), action: "run-end", stale_closeout: swept }, exitCode: 0 };
     }
     throw new Error("No active run session to end. Start one with: campaigns-os run start.");
   }
-  const { session, path: sessionPath } = found;
-  const packet = optionalString(args.packet) || session.packet;
+  const packet = optionalString(args.packet) || found.session.packet;
   if (!packet) {
     throw new Error("run end needs a build packet. Pass --packet <campaign-runtime.build.json>, or set it at `run start --packet <path>`.");
   }
-  // Reuse the full run-record path (aggregate lifecycle, consent-gated remit)
-  // with the session's run_id + journal, so `run end` is just "assemble the
-  // Run Record for this session and stop logging to it". The session is cleared
-  // only AFTER run-record succeeds — if it throws, the session stays active so
-  // the operator can fix the packet and re-run `run end`.
-  const endArgs = {
-    ...args,
-    _: ["run-record"],
-    packet,
-    "run-id": session.run_id,
-    "lifecycle-journal": session.lifecycle_journal,
-  };
-  await runRecordCommand(endArgs, found);
-  clearRunSession(sessionPath);
-  if (!args.json) console.log(`Run session ${session.run_id} ended; session cleared.`);
+  // `run end` is "assemble the Run Record for this session and stop logging to
+  // it". A throw leaves the session active so the operator can fix the packet
+  // and re-run `run end`. In text mode run-record prints its own summary.
+  const summary = await closeRunSession(found, { packet, extraArgs: args, silent: args.json === true });
+  return { result: summary, exitCode: 0 };
+}
+
+// The flags a closing command may hand on to run-record: the ones run-record
+// reads. The rest of the invoking command's argv is that command's own —
+// `qa run`'s --base-url, --browser or --test-order say nothing about the
+// record — and run-record stamps the flag NAMES it was given into the Run
+// Record's argv_shape, so carrying them over would file them as run-record's.
+const RUN_RECORD_INHERITABLE_FLAGS = Object.freeze([
+  "context", "report", "qa-verdict", "journal", "surfaces", "primary-surface", "surface-confidence",
+  "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms", "agent-model", "agent-usage-source",
+  "no-remit", "no-write", "proxy-base", "json",
+]);
+
+// The run-record argv that closes `session`: its run_id and journal, the
+// packet the closer resolved, and only the inheritable flags of `extraArgs`.
+export function runSessionEndArgs(session, packet, extraArgs = {}) {
+  const endArgs = { _: ["run-record"] };
+  for (const flag of RUN_RECORD_INHERITABLE_FLAGS) {
+    if (extraArgs[flag] !== undefined) endArgs[flag] = extraArgs[flag];
+  }
+  endArgs.packet = packet;
+  endArgs["run-id"] = session.run_id;
+  endArgs["lifecycle-journal"] = session.lifecycle_journal;
+  return endArgs;
+}
+
+// The one path from an open run session to its Run Record: assemble it under
+// the session's run_id and journal (aggregate lifecycle, consent-gated remit),
+// then clear the session file. `run end`, the auto-end after a session-ending
+// `qa run` and the stale-session sweep all close this way; they differ only in
+// the flags they carry over, whether run-record prints, whether consent may
+// prompt, and what a failure means — which is what the options say. The
+// session is cleared only AFTER run-record succeeds: on a throw it stays on
+// disk, and the error is rethrown unless `onError` takes it, in which case
+// the closer returns null.
+async function closeRunSession(found, { packet, extraArgs = {}, silent = false, promptForConsent = true, onError = null } = {}) {
+  const endArgs = runSessionEndArgs(found.session, packet, extraArgs);
+  try {
+    const summary = await runRecordCommand(endArgs, found, { silent, promptForConsent });
+    clearRunSession(found.path);
+    return summary;
+  } catch (error) {
+    if (!onError) throw error;
+    onError(error);
+    return null;
+  }
 }
 
 // Stale-session closeout. A run session that idled past RUN_SESSION_TTL_MS is
@@ -9912,20 +9952,22 @@ async function closeOutStaleRunSession(rootDir, inherited = {}) {
   const idleSince = session.updated_at || session.started_at || null;
   const result = { run_id: session.run_id, dir, idle_since: idleSince, record_path: null, remit_state: null, error: null };
   if (packet && existsSync(packet)) {
-    try {
-      const summary = await runRecordCommand(
-        { ...inherited, _: ["run-record"], packet, "run-id": session.run_id, "lifecycle-journal": session.lifecycle_journal, json: true },
-        stale,
-        { silent: true, promptForConsent: false },
-      );
-      result.record_path = summary?.record_path || null;
-      result.remit_state = summary?.record?.remit_state || null;
-    } catch (error) {
-      result.error = error instanceof Error ? error.message : String(error);
-    }
+    const summary = await closeRunSession(stale, {
+      packet,
+      extraArgs: { ...inherited, json: true },
+      silent: true,
+      promptForConsent: false,
+      onError: (error) => {
+        result.error = error instanceof Error ? error.message : String(error);
+      },
+    });
+    result.record_path = summary?.record_path || null;
+    result.remit_state = summary?.record?.remit_state || null;
   } else {
     result.error = packet ? `packet missing: ${packet}` : "no packet recorded on the session";
   }
+  // A stale session is cleared whether or not its record could be assembled;
+  // the closer only clears on success.
   clearRunSession(sessionPath);
   process.stderr.write(
     result.record_path
