@@ -232,6 +232,9 @@ export function assemblyReportMatchesPacket(report, packet) {
  * to leave the file's bytes alone (a re-run that restates what is already on
  * disk, so every digest taken of the file stays valid) — and the write is
  * atomic (tmp + rename), so a concurrent reader never sees a torn report.
+ * `null` means the same for an operator edit: nothing to write, so nothing
+ * to stamp stale — an edit that finds its change already recorded is a
+ * no-op, not an error.
  *
  * Exactly one doctor-freshness strategy is named:
  *

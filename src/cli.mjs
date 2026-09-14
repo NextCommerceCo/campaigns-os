@@ -770,15 +770,19 @@ export function recordQaStageOutcome(args, result) {
       // Updating the QA stage changes the report after the preflight doctor
       // snapshot. Refresh the doctor artifact from the updated ledger in the
       // same producer transaction so closeout never leaves a known-stale green
-      // sidecar. Nothing written (another campaign's report) leaves it alone.
-      refreshDoctor: ({ written }) => (written
+      // sidecar. The outcome is on disk both when this run wrote it and when
+      // the report already said it (a re-record); only another campaign's
+      // report, which is not written, leaves the sidecar alone.
+      refreshDoctor: ({ written, skipped }) => (written || skipped === "unchanged"
         ? doctorPacket(packetPath, {
           contextPath: existsSync(workspace.contextPath) ? workspace.contextPath : null,
           reportPath,
         })
         : null),
     });
-    return committed.written;
+    // True when the report now carries this run's outcome — written by this
+    // call or already there — as before; false when it belongs elsewhere.
+    return committed.written || committed.skipped === "unchanged";
   } catch (error) {
     // Assembly Report ownership is best-effort telemetry. A malformed or
     // partial sidecar must never replace QA's result or prevent run closeout.

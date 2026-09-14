@@ -220,6 +220,34 @@ test("the QA stage is recorded into the report the Build Context binds", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+// The doctor re-record rule now covers the QA stage: a run that restates
+// exactly the outcome on disk, differing only in the stage timestamps, leaves
+// the report's bytes (and any digest of them) alone. The outcome is still
+// recorded — the call reports true and refreshes the sidecar as it always did.
+test("a QA re-record that moves only the stage timestamps leaves the report bytes alone, reports true and refreshes the sidecar", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  const reportPath = join(dir, ".campaign-runtime/assembly-report.json");
+  const sidecarPath = join(dir, ".campaign-runtime/doctor-output.json");
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  writeFileSync(reportPath, JSON.stringify({
+    identity: { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug },
+    stages: {},
+  }));
+  const verdict = (completedAt) => ({
+    local_path: join(dir, "qa-output/verdict.json"),
+    verdict: { run_id: "qa_0001", disposition: "ready", completed_at: completedAt, assertions: [] },
+  });
+  assert.equal(recordQaStageOutcome({ packet: packetPath }, verdict("2026-09-14T00:00:00.000Z")), true);
+  const bytes = readFileSync(reportPath, "utf8");
+  writeFileSync(sidecarPath, JSON.stringify({ ok: true, status: "ancient", stale: true }));
+
+  assert.equal(recordQaStageOutcome({ packet: packetPath }, verdict("2026-09-14T00:05:00.000Z")), true, "the outcome is on disk");
+  assert.equal(readFileSync(reportPath, "utf8"), bytes, "a re-record does not move the report's digest");
+  assert.notEqual(JSON.parse(readFileSync(sidecarPath, "utf8")).stale, true, "the sidecar was refreshed all the same");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("QA stage ledger telemetry skips malformed sidecars and invalid verdict timestamps", () => {
   const { dir, packetPath } = selfTargetPacketFixture();
   const reportPath = join(dir, ".campaign-runtime/assembly-report.json");
