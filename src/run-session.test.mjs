@@ -329,6 +329,8 @@ test("CLI: run start --packet from an unrelated directory roots the session in t
     const text = runIn(unrelated, ["run", "start", "--packet", packetPath]);
     assert.ok(text.includes(`Finish with: campaigns-os run end --packet ${realpathSync(packetPath)}`), text);
     assert.ok(text.includes(`Lifecycle journal: ${join(realpathSync(target), LIFECYCLE_JOURNAL_REL_PATH)}`), text);
+    assert.ok(text.includes(`Every campaigns-os command in ${realpathSync(target)} —`), text);
+    assert.ok(!text.includes(`${realpathSync(target)}/.campaign-runtime —`), "the project, not the storage directory, is named");
     const closed = runIn(unrelated, ["run", "end", "--packet", realpathSync(packetPath), "--no-remit", "--no-write"]);
     assert.match(closed, /ended; session cleared/);
     assert.equal(findRunSession(target), null);
