@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.8] - 2026-09-14
+
+### Fixed
+
+- The template family's brand contract is resolved once per doctor run. It
+  was resolved four times — by the commerce-catalog check, by the pricing
+  CSS scan, by the built-output doctor, and by `next`'s palette advisories,
+  which projected the same resolution into a state and error code — so one
+  `next` loaded the contract three times, and a standard packet whose
+  contract exists but cannot be read carried the same
+  `template_contract.brand_contract` finding twice in one doctor run: an
+  error from the catalog check and a warning from the pricing scan. Doctor
+  now resolves it once, records the outcome on `derived.brand_contract`
+  (`state` — `no_family`, `no_contract`, `no_palette_checks`, `inspected` or
+  `defect` — with `family`, and for a defect the loader's `code` and a
+  one-line `detail`), and reports a defect once, from whichever check comes
+  first, at that check's severity. `next` reads doctor's record instead of
+  resolving again. On a packet with a readable contract nothing else
+  changes: doctor's text report and `next`'s output are byte-identical, and
+  `doctor --json` differs only by the new field.
+
 ## [1.27.0+agent.7] - 2026-09-14
 
 ### Fixed
