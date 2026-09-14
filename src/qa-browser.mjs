@@ -1655,6 +1655,20 @@ function contractPageType(page) {
   return type === "thankyou" ? "receipt" : type;
 }
 
+// The palette-residue rows (style, logo, payment chrome) take their severity
+// from the theme gate: blocker while the gate is live, warn once an operator
+// has recorded a waiver (or the gate does not apply). A row that carries warn
+// severity is a warning, so it reports `status: warn` like every other
+// warn-severity row in the verdict — not `status: fail` with a warn tag, which
+// read as an unwaived failure next to the `warn` a missing selector already
+// reports. Placeholder-text residue never comes through here: it is a fixed
+// blocker the waiver does not soften.
+function paletteResidueOutcome(severity) {
+  return severity === SEVERITY.WARN
+    ? { status: STATUS.WARN, severity: SEVERITY.WARN }
+    : { status: STATUS.FAIL, severity };
+}
+
 async function templateResidueAssertions(browserPage, page, options = {}) {
   const contract = options.brandContract;
   const pageType = contractPageType(page);
@@ -1907,8 +1921,7 @@ function computedStyleResidueAssertions({ page, evidence, forbidden, severity })
       id: `template-residue:${page.page_id}:style:${entry.id}`,
       family: "template_residue",
       page,
-      status: STATUS.FAIL,
-      severity,
+      ...paletteResidueOutcome(severity),
       expected: `not ${first.rgb} (starter default ${first.token})`,
       actual: first.actual,
       evidence: {
@@ -1947,13 +1960,14 @@ async function collectLogoSources(browserPage, selector) {
 function logoResidueAssertion({ page, logo, sources, severity }) {
   const basename = String(logo.asset || "").split("/").pop();
   const offenders = basename ? sources.filter((src) => String(src).includes(basename)) : [];
-  const status = offenders.length ? STATUS.FAIL : sources.length ? STATUS.PASS : STATUS.SKIPPED;
+  const outcome = offenders.length
+    ? paletteResidueOutcome(severity)
+    : { status: sources.length ? STATUS.PASS : STATUS.SKIPPED, severity: undefined };
   return assertion({
     id: `template-residue:${page.page_id}:logo`,
     family: "template_residue",
     page,
-    status,
-    severity: status === STATUS.FAIL ? severity : undefined,
+    ...outcome,
     expected: `campaign brand logo, not starter ${basename}`,
     actual: offenders.length
       ? `starter logo asset still referenced (${offenders.length} element(s))`
@@ -2186,13 +2200,14 @@ function paymentChromeResidueAssertion({
   // the removal was intended, and no autonomous repair is dispatched to delete
   // an asset that has already been dealt with.
   const editedOnly = !offending && editedAssets.length > 0;
-  const status = offending ? STATUS.FAIL : editedOnly ? STATUS.MANUAL_REVIEW : STATUS.PASS;
+  const outcome = offending
+    ? paletteResidueOutcome(severity)
+    : { status: editedOnly ? STATUS.MANUAL_REVIEW : STATUS.PASS, severity: undefined };
   return assertion({
     id: `template-residue:${page.page_id}:payment-chrome:${method}`,
     family: "template_residue",
     page,
-    status,
-    severity: offending ? severity : undefined,
+    ...outcome,
     expected: `no ${method} chrome: method is not in CampaignSpec available_payment_methods/available_express_payment_methods`,
     actual: offending
       ? `residue found: ${[...visibleMatches.map((match) => match.selector), ...referencedAssets].join(", ")}`
@@ -2224,8 +2239,17 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   if (pageType === "checkout") {
     const selectors = surfaces.checkout_bundle?.price_row_selectors || [];
     if (!selectors.length) return [];
-    const visibleCount = await countVisiblePriceRows(browserPage, selectors);
-    return [checkoutPriceVisibilityAssertion({ page, selectors, visibleCount })];
+    // Two price surfaces satisfy this check. The contract's bundle price rows
+    // are one; the rendered cart-summary total is the other — the same
+    // selectors the order-total parity check reads at submit. A family that
+    // seeds the cart upstream, or a checkout entered directly before any
+    // selection, renders no bundle row but still shows the shopper a total.
+    const totalSelectors = checkoutTotalSelectors();
+    const [visibleCount, totalVisibleCount] = await Promise.all([
+      countVisiblePriceRows(browserPage, selectors),
+      countVisiblePriceRows(browserPage, totalSelectors),
+    ]);
+    return [checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount })];
   }
   return [];
 }
@@ -2257,10 +2281,13 @@ async function countVisiblePriceRows(browserPage, selectors) {
   }, selectors).catch(() => 0);
 }
 
+// Page-scoped like every other per-page row (`template-residue:<page>:…`,
+// `meta:<page>:…`): a funnel with two upsells emits two of these, and a
+// consumer keying on the id must be able to tell them apart.
 function upsellPriceVisibilityAssertion({ page, selectors, visibleCount }) {
   const ok = visibleCount >= 1;
   return assertion({
-    id: "pricing.upsell_price_visible",
+    id: `pricing.upsell_price_visible:${page.page_id}`,
     family: "pricing",
     page,
     status: ok ? STATUS.PASS : STATUS.FAIL,
@@ -2271,17 +2298,23 @@ function upsellPriceVisibilityAssertion({ page, selectors, visibleCount }) {
   });
 }
 
-function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount }) {
-  const ok = visibleCount >= 1;
+function checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors = [], totalVisibleCount = 0 }) {
+  const ok = visibleCount >= 1 || totalVisibleCount >= 1;
   return assertion({
     id: "pricing.checkout_price_visible",
     family: "pricing",
     page,
     status: ok ? STATUS.PASS : STATUS.FAIL,
     severity: ok ? undefined : SEVERITY.WARN,
-    expected: "at least one visible checkout bundle price row",
-    actual: `${visibleCount} visible price row(s)`,
-    evidence: { selectors, visible_count: visibleCount, page_url: page.url },
+    expected: "at least one visible checkout bundle price row or a visible cart-summary total",
+    actual: `${visibleCount} visible price row(s); ${totalVisibleCount} visible cart-summary total(s)`,
+    evidence: {
+      selectors,
+      visible_count: visibleCount,
+      total_selectors: totalSelectors,
+      total_visible_count: totalVisibleCount,
+      page_url: page.url,
+    },
   });
 }
 

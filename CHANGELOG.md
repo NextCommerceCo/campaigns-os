@@ -2,6 +2,45 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.28] - 2026-09-14
+
+### Changed
+
+- `qa run --browser` names the upsell price-visibility row per page:
+  `pricing.upsell_price_visible:<page_id>` (was the bare
+  `pricing.upsell_price_visible`, emitted once per upsell page so a funnel
+  with two upsells carried two rows under one id). The id now carries the
+  page the way `template-residue:<page>:*` and `meta:<page>:*` already do;
+  `family`, `page`, `status`, `severity` and `evidence` are unchanged, and
+  the checkout row keeps its id (`pricing.checkout_price_visible`). A
+  consumer keying on the old literal id must match the prefix.
+- `pricing.checkout_price_visible` also accepts a visible cart-summary total
+  (`[data-next-display="cart.total"]`,
+  `[data-next-cart-summary] .order-totals__value--total` — the selectors the
+  order-total parity check reads at submit) as a price surface. A checkout
+  whose cart is seeded upstream, or one entered directly before any
+  selection, renders no bundle price row and was failing with `actual: "0
+  visible price row(s)"` while the same run's parity row proved a total was
+  displayed. `expected` now reads `at least one visible checkout bundle price
+  row or a visible cart-summary total`, `actual` reads `<n> visible price
+  row(s); <m> visible cart-summary total(s)`, and `evidence` gains
+  `total_selectors[]` and `total_visible_count`; the row still fails (warn
+  severity) only when neither surface is visible.
+
+### Fixed
+
+- Palette residue found under a recorded, unexpired theme waiver (or a gate
+  that does not apply) reports `status: warn`, not `status: fail` with
+  `severity: warn`. `template-residue:<page>:style:*`,
+  `template-residue:<page>:logo` and
+  `template-residue:<page>:payment-chrome:*` were the only warn-severity rows
+  in the verdict that read `fail`, so a waived build showed the unwaived
+  shape next to the `warn` a missing selector already reports, and the
+  waiver notice's "downgrades those rows to warn" did not describe the
+  output. The disposition is unchanged: a waived exception still lands on
+  `ready_with_exceptions`, never plain `ready`, and placeholder-text residue
+  stays a blocker the waiver does not soften.
+
 ## [1.27.0+agent.26] - 2026-09-14
 
 ### Fixed

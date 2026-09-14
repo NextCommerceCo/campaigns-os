@@ -3063,6 +3063,33 @@
         }
       ],
       "entry_sha256": "d656a8f608a8d8c8f83d87841bbaba0784e19b1108350f767fd8ffaf6aaa4edb"
+    },
+    {
+      "id": "RL-0085",
+      "sequence": 85,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.28",
+      "changelog_sha256": "d38109541fe601187870fbff179b66d1ef856ca3c4cb3a2f7d4a3c96c0037796",
+      "agent_impact": "qa run --browser verdicts name the upsell price-visibility row per page: the id is pricing.upsell_price_visible:<page_id> (was the bare pricing.upsell_price_visible, emitted once per upsell page under one id); family, page, status, severity and evidence are unchanged and pricing.checkout_price_visible keeps its id. pricing.checkout_price_visible passes when either a contract bundle price row or a cart-summary total ([data-next-display=\"cart.total\"] or [data-next-cart-summary] .order-totals__value--total) is visible; its expected/actual strings name both surfaces and evidence gains total_selectors[] and total_visible_count. Palette residue (template-residue:<page>:style:*, :logo, :payment-chrome:*) found under a recorded, unexpired theme waiver or an inapplicable gate reports status warn with severity warn, no longer status fail with severity warn; the disposition still lands on ready_with_exceptions and placeholder-text residue stays a blocker. docs/build-packet.md and docs/brand-theme-bridge.md state the waived rows report warn.",
+      "compatibility": "compatible",
+      "migration": "A consumer matching the literal assertion id pricing.upsell_price_visible must match the prefix pricing.upsell_price_visible: instead; a consumer reading template-residue palette rows under a waiver must accept status warn where it accepted status fail with severity warn.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The theme-waiver paragraph states that palette-residue rows report warn (status and severity), never fail, under a recorded waiver."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Names the palette-residue rows a waiver downgrades to warn (:style:*, :logo, :payment-chrome:*) and that placeholder-text residue stays a blocker."
+        }
+      ],
+      "entry_sha256": "abda5acff9bc1e95a2de1cbc401fd88643c83c5b76f1226aae50e6d029896a52"
     }
   ]
 }

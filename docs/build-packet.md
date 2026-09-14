@@ -234,8 +234,9 @@ family produces no `template-residue:*:style:*` rows and `next` stays quiet
 rather than asking for a waiver it does not need. Either record an explicit
 operator waiver (`campaigns-os theme waive --packet <packet> --reason "<why the
 starter palette is acceptable>" --waived-by "<named human>"`, optionally
-`--expires-at <canonical ISO timestamp>`), which downgrades those rows to warn severity
-and keeps the shipped palette visible in the verdict; or hand-author the brand
+`--expires-at <canonical ISO timestamp>`), which downgrades those rows to `warn`
+(status and severity — never `fail`) and keeps the shipped palette visible in
+the verdict; or hand-author the brand
 layer — write `brand-theme.css`, list it after `next-core.css` in commerce-page
 frontmatter styles, rebuild, and record `report.theme.status: applied` with
 `load_order: after-next-core`. Nothing waives the gate on the operator's
