@@ -20,7 +20,9 @@ function packetFixture() {
 
 test("standalone doctor refreshes the doctor-output.json sidecar", () => {
   const dir = packetFixture();
-  const sidecar = join(dir, ".campaign-runtime/doctor-output.json");
+  // The example packet declares target_repo "target-page-kit"; the sidecar
+  // lives under the target repo, where prepare-build and next write it.
+  const sidecar = join(dir, "target-page-kit/.campaign-runtime/doctor-output.json");
   assert.equal(existsSync(sidecar), false);
   const result = doctorCommand({ packet: join(dir, "campaign-runtime.build.json") });
   assert.equal(existsSync(sidecar), true);
@@ -33,6 +35,7 @@ test("standalone doctor refreshes the doctor-output.json sidecar", () => {
 test("standalone doctor honors --no-write", () => {
   const dir = packetFixture();
   doctorCommand({ packet: join(dir, "campaign-runtime.build.json"), "no-write": true });
+  assert.equal(existsSync(join(dir, "target-page-kit/.campaign-runtime/doctor-output.json")), false);
   assert.equal(existsSync(join(dir, ".campaign-runtime/doctor-output.json")), false);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -42,6 +45,7 @@ test("standalone doctor honors --doctor-out override", () => {
   const out = join(dir, "custom-doctor.json");
   doctorCommand({ packet: join(dir, "campaign-runtime.build.json"), "doctor-out": out });
   assert.equal(existsSync(out), true);
+  assert.equal(existsSync(join(dir, "target-page-kit/.campaign-runtime/doctor-output.json")), false);
   assert.equal(existsSync(join(dir, ".campaign-runtime/doctor-output.json")), false);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -135,6 +139,53 @@ test("standalone doctor executes its packet inspection once when updating the st
   });
   assert.equal(calls, 1);
   assert.equal(result.generated_at, JSON.parse(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8")).stages.doctor.checked_at);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// The doctor sidecar belongs to the target repo, like every other build
+// sidecar: prepare-build, next and the QA stage refresh all write it there.
+// Standalone doctor used to write it beside the packet instead, so a packet
+// kept outside its target (`prepare-build --out`) left two sidecars that
+// disagreed and a stale-stamp that never found the one doctor wrote.
+test("standalone doctor writes the sidecar under the target repo, not beside a packet kept elsewhere", () => {
+  const dir = packetFixture();
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  packet.assembly.target_repo = "built";
+  writeFileSync(packetPath, JSON.stringify(packet, null, 2));
+  mkdirSync(join(dir, "built"), { recursive: true });
+
+  doctorCommand({ packet: packetPath, _: ["doctor"] });
+  assert.equal(existsSync(join(dir, "built/.campaign-runtime/doctor-output.json")), true, "written under the target repo");
+  assert.equal(existsSync(join(dir, ".campaign-runtime/doctor-output.json")), false, "not beside the packet");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// The Build Context records where prepare-build wrote the report
+// (--report-out). `next` follows that pointer; the QA stage record has to
+// land in the same file, or a custom-report run's QA outcome is written
+// nowhere (the default report does not exist) while `next` keeps reading a
+// report whose QA stage never completes.
+test("the QA stage is recorded into the report the Build Context binds", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  const identity = { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug };
+  mkdirSync(join(dir, ".campaign-runtime/reports"), { recursive: true });
+  writeFileSync(join(dir, ".campaign-runtime/build-context.json"), JSON.stringify({ report_path: ".campaign-runtime/reports/assembly-report.json" }));
+  const boundReportPath = join(dir, ".campaign-runtime/reports/assembly-report.json");
+  writeFileSync(boundReportPath, JSON.stringify({ identity, stages: {} }));
+  assert.equal(existsSync(join(dir, ".campaign-runtime/assembly-report.json")), false, "no default report: the bound one is the campaign's");
+
+  const result = {
+    local_path: join(dir, "qa-output/verdict.json"),
+    verdict: { run_id: "qa_0001", disposition: "ready", completed_at: "2026-09-14T00:00:00.000Z", assertions: [] },
+  };
+  assert.equal(recordQaStageOutcome({ packet: packetPath }, result), true);
+  const bound = JSON.parse(readFileSync(boundReportPath, "utf8"));
+  assert.equal(bound.stages.qa?.status, "completed");
+  assert.equal(bound.stages.qa?.verdict_run_id, "qa_0001");
+  assert.equal(existsSync(join(dir, ".campaign-runtime/assembly-report.json")), false, "nothing was written to the default location");
+  assert.equal(existsSync(join(dir, ".campaign-runtime/doctor-output.json")), true, "the doctor sidecar was refreshed in the same transaction");
   rmSync(dir, { recursive: true, force: true });
 });
 
