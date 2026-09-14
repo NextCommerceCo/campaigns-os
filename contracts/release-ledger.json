@@ -2872,6 +2872,27 @@
         }
       ],
       "entry_sha256": "2f1aa1629958fcb93b696f8bc9a7130446f156feecf708557cc1d79980448650"
+    },
+    {
+      "id": "RL-0078",
+      "sequence": 78,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.21",
+      "changelog_sha256": "06266d545b2579b336acb060e6d80fc30c7c5ab030ea0bc0c6564dd0406d03c7",
+      "agent_impact": "One new value in the QA verdict's cause_summary.comparison and per-assertion cause_reason: prior_run_verdict_unlocated, emitted when the previous Run Record references its QA verdict as external:qa_verdict and no verdict matching that reference could be located under the target repo's qa-output/ \u2014 nothing there hashes to the recorded sha256, the reference carries no digest, or no target repo was known to search (the committed .campaign-runtime/qa-verdict.json sidecar is not consulted: a projection cannot be tied to the referenced attempt). Where a second qa run on a packet whose assembly.target_repo is not the packet directory previously reported comparison prior_run_without_qa_verdict and labelled every finding unknown, it now reports prior_run with pre_existing / caused_by_change labels. prior_run_without_qa_verdict now means only that the record carries no qa_verdict artifact reference. An agent switching on cause_reason should treat prior_run_verdict_unlocated like the other prior_run_* reasons: a previous record exists, its evidence could not be read, a re-run will not change that.",
+      "compatibility": "additive",
+      "migration": "None. A consumer with a closed list of cause_reason / comparison values adds prior_run_verdict_unlocated.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The comparison rule now states how an external:qa_verdict reference is resolved (by digest under the target repo's qa-output/; the committed sidecar is stated not to be a stand-in, and why), and the cause_reason table gains prior_run_verdict_unlocated with the sharpened meanings of prior_run_without_qa_verdict and prior_run_verdict_unreadable."
+        }
+      ],
+      "entry_sha256": "9869e5eea619076f6c82e03f98019a4ca92941413739df362d73b580a34a18bb"
     }
   ]
 }
