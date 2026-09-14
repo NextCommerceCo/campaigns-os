@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  captureOrigin,
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
@@ -127,16 +128,6 @@ function parseAuthCookie(value) {
     cookies.push({ name, value: cookieValue });
   }
   return cookies;
-}
-
-function captureOrigin(value) {
-  try {
-    const url = new URL(value);
-    if (url.protocol === "http:" || url.protocol === "https:") return url.origin;
-  } catch {
-    // Use the fixed error below so a URL containing credentials or query data is never echoed.
-  }
-  throw new Error("Campaigns OS polish capture requires an HTTP(S) capture URL before applying --auth-cookie.");
 }
 
 function observedResourceType(event = {}) {
@@ -758,6 +749,8 @@ export async function createPolishBrowserAdapter({
           assertActive();
           if (authCookies.length > 0) {
             const origin = captureOrigin(url);
+            // Fixed message: a URL containing credentials or query data is never echoed.
+            if (origin === null) throw new Error("Campaigns OS polish capture requires an HTTP(S) capture URL before applying --auth-cookie.");
             await awaitActive(context.addCookies(authCookies.map((cookie) => ({ ...cookie, url: origin }))));
           }
           const page = await awaitActive(context.newPage());
