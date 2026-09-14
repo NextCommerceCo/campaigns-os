@@ -237,6 +237,14 @@ test("--json refusals of both waive commands return an envelope on stdout with e
     assert.match(envelope.error, /Unknown checkpoint gate/);
     assert.match(unknown.stderr, /campaigns-os: Unknown checkpoint gate/);
 
+    const noGate = runCli(["checkpoint", "waive", "--packet", packetPath, "--reason", "x", "--waived-by", "Jordan Lee", "--review-condition", "never", "--json"], dir);
+    assert.equal(noGate.status, 1);
+    const noGateEnvelope = JSON.parse(noGate.stdout);
+    assert.equal(noGateEnvelope.ok, false);
+    assert.equal("gate" in noGateEnvelope, false, "no --gate given: the key is omitted, not null");
+    assert.match(noGateEnvelope.error, /--gate/);
+    assert.deepEqual(noGateEnvelope.registered_gates, ["page_kit.sdk_version", "page_kit.store_profile", "built_output.upsell_selector_scope", "polish.hidden_eager_media"]);
+
     const noBound = runCli(["checkpoint", "waive", "--packet", packetPath, "--gate", "page_kit.sdk_version", "--reason", "x", "--waived-by", "Jordan Lee", "--json"], dir);
     assert.equal(noBound.status, 1);
     assert.match(JSON.parse(noBound.stdout).error, /requires at least one of expires_at or review_condition/);
@@ -305,6 +313,12 @@ test("next files each blocked gate's actions under its own heading and prints th
     "Then:",
     "  - campaigns-os next --packet /w/p.json --json",
   ]);
+
+  // The doctor gate has its own heading and is never labelled a checkpoint;
+  // with nothing claiming it (today's case) it prints no heading at all.
+  const doctorOnly = nextTinyPromptLines({ stage: "doctor-blocked", gates: [{ id: "doctor", status: "blocked" }, { id: "theme_gate", status: "pass" }], next_actions: [{ id: "doctor_recheck", kind: "command", command: "campaigns-os doctor --packet /w/p.json --json", description: "Re-run the doctor." }] });
+  assert.deepEqual(doctorOnly, ["", "This stage is BLOCKED. Resolve it with:", "  - campaigns-os doctor --packet /w/p.json --json"]);
+  assert.equal(doctorOnly.some((line) => line.includes("Checkpoint gate doctor")), false);
 
   // Nothing blocked: nothing printed, as before.
   assert.deepEqual(nextTinyPromptLines({ stage: "setup", gates: [{ id: "theme_gate", status: "pass" }], next_actions: [{ id: "run_setup", kind: "manual", command: null, description: "Scaffold." }] }), []);

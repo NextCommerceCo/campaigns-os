@@ -3224,7 +3224,9 @@ function waiveOrRefuse(args, run, { gate = null, registeredGates = [] } = {}) {
   } catch (error) {
     if (args.json !== true) throw error;
     const message = String(error?.message ?? error);
-    console.log(JSON.stringify({ ok: false, error: message, gate, registered_gates: registeredGates }, null, 2));
+    // `gate` is the id the caller named; when no --gate was given at all the
+    // key is omitted rather than reported as null.
+    console.log(JSON.stringify({ ok: false, error: message, ...(gate == null ? {} : { gate }), registered_gates: registeredGates }, null, 2));
     console.error(`campaigns-os: ${message}`);
     process.exitCode = 1;
     return null;
@@ -10670,7 +10672,12 @@ function nextActionGate(action, gateIds) {
   return null;
 }
 
+// Every gate buildNextGates emits has a heading of its own: the fixed gates
+// by name, and anything else is a registered checkpoint gate. The doctor gate
+// is named explicitly so a future action that resolves to it is never filed
+// as a checkpoint.
 function nextGateHeading(gate) {
+  if (gate.id === "doctor") return "Doctor is BLOCKING this stage. Resolve it with:";
   if (gate.id === "theme_gate") return "Theme gate is BLOCKING this stage. Resolve it with:";
   if (gate.id === "polish_gate") return "Polish gate is BLOCKING this stage. Resolve it with:";
   if (gate.id === "prepare_build") return "prepare-build is BLOCKING this stage. Resolve it with:";
