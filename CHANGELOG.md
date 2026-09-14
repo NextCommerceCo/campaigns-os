@@ -2,6 +2,64 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.23] - 2026-09-14
+
+### Changed
+
+- One attribution rule for both waive commands. `theme waive` now requires
+  `--waived-by "<named human>"` and refuses the placeholders `checkpoint
+  waive` already refused (`operator`, `ci`, `agent`, `claude code`, ...); the
+  default attribution `operator` is gone. `--expires-at <ISO>` is accepted by
+  `theme waive`, validated the same way (canonical timestamp, later than
+  `waived_at`), recorded on `report.theme.waiver.expires_at`, and honoured by
+  the theme gate: at or after that instant the gate stops reporting `waived`
+  and asks for a fresh decision. The gate's `waive_theme` action command and
+  the docs/skills that quote it carry `--waived-by "<named human>"`. The
+  validator is one function, `validateWaiverAttribution` in
+  `src/checkpoint-waiver.mjs`; `createCheckpointWaiver` calls it and its
+  messages are unchanged.
+- Both waive commands print a real status. Text output of a successful
+  `theme waive` / `checkpoint waive` was `Status: UNKNOWN` in every state; it
+  is now doctor's verdict on the report the waiver was just written to
+  (`Status: READY_WITH_WAIVERS`, or `BLOCKED` when other gates still hold),
+  followed by `Waived: <gate> by <who>[ until <expires_at>]` and `Next stage:
+  <stage> (<reason>)`. The `--json` success shape gains `status`, `next_stage`
+  and `next_stage_reason`; `theme waive --json` also gains `gate:
+  "theme_gate"`.
+- `--json` refusals return an envelope. A refused `theme waive --json` or
+  `checkpoint waive --json` (placeholder human, missing bound, past expiry,
+  unknown or unwaivable gate, gate not blocked) used to exit 1 with an empty
+  stdout and a line on stderr. It now writes `{ ok: false, error, gate,
+  registered_gates[] }` to stdout, keeps the stderr line, and exits 1.
+  Without `--json` nothing changes.
+- The unknown-gate refusal names the registry: `Unknown checkpoint gate "x";
+  registered gates: page_kit.sdk_version, page_kit.store_profile,
+  built_output.upsell_selector_scope, polish.hidden_eager_media.`
+  `docs/build-packet.md` lists the same four gates (it listed three).
+- Starter demo residue is not waivable. When any `page_kit.store_profile`
+  discrepancy is `demo_residue` (a `demo.29next.com` URL or the demo phone
+  number still in `_data/campaigns.json`), doctor reports the gate with
+  `waivable: false`, appends `Starter demo residue in <fields> is not
+  waivable; replace the demo value(s).` to its reason, and offers no
+  `waive_checkpoint` action; `checkpoint waive --gate page_kit.store_profile`
+  refuses with the residue fields and the target entry to repair. Spec
+  mismatches and missing target values stay waivable as before.
+- `next` text files each blocked gate's actions under its own heading.
+  Checkpoint repair/waive commands were listed under "Theme gate is BLOCKING
+  this stage" whenever the theme gate happened to be blocked too, and were
+  not printed at all otherwise. Now every blocked gate that produced actions
+  gets `Checkpoint gate <id> is BLOCKING this stage. Resolve it with:` (or
+  the theme / polish / prepare-build heading) over its own actions, the
+  rechecks follow under `Then:`, and the block prints whether or not the
+  theme gate is blocked. A stage with no blocked gate prints nothing, as
+  before.
+- `next --json` carries no `--packet <packet>` placeholder. The checkpoint
+  and polish gate objects copied from doctor into `gates[]`, and into
+  `errors[]`/`warnings[]` `detail.checkpoint_gate`, now have the packet
+  substituted into their `required_actions[].command`, the way
+  `next_actions[]` already did. `doctor --json` and the doctor sidecar keep
+  the template.
+
 ## [1.27.0+agent.22] - 2026-09-14
 
 ### Fixed
@@ -579,63 +637,6 @@ Notable supported-surface changes are recorded here.
   `--json`), the persisted `page_load` evidence and the doctor sidecar are
   byte-identical.
 
-## [1.27.0+agent.24] - 2026-09-14
-
-### Changed
-
-- One attribution rule for both waive commands. `theme waive` now requires
-  `--waived-by "<named human>"` and refuses the placeholders `checkpoint
-  waive` already refused (`operator`, `ci`, `agent`, `claude code`, ...); the
-  default attribution `operator` is gone. `--expires-at <ISO>` is accepted by
-  `theme waive`, validated the same way (canonical timestamp, later than
-  `waived_at`), recorded on `report.theme.waiver.expires_at`, and honoured by
-  the theme gate: at or after that instant the gate stops reporting `waived`
-  and asks for a fresh decision. The gate's `waive_theme` action command and
-  the docs/skills that quote it carry `--waived-by "<named human>"`. The
-  validator is one function, `validateWaiverAttribution` in
-  `src/checkpoint-waiver.mjs`; `createCheckpointWaiver` calls it and its
-  messages are unchanged.
-- Both waive commands print a real status. Text output of a successful
-  `theme waive` / `checkpoint waive` was `Status: UNKNOWN` in every state; it
-  is now doctor's verdict on the report the waiver was just written to
-  (`Status: READY_WITH_WAIVERS`, or `BLOCKED` when other gates still hold),
-  followed by `Waived: <gate> by <who>[ until <expires_at>]` and `Next stage:
-  <stage> (<reason>)`. The `--json` success shape gains `status`, `next_stage`
-  and `next_stage_reason`; `theme waive --json` also gains `gate:
-  "theme_gate"`.
-- `--json` refusals return an envelope. A refused `theme waive --json` or
-  `checkpoint waive --json` (placeholder human, missing bound, past expiry,
-  unknown or unwaivable gate, gate not blocked) used to exit 1 with an empty
-  stdout and a line on stderr. It now writes `{ ok: false, error, gate,
-  registered_gates[] }` to stdout, keeps the stderr line, and exits 1.
-  Without `--json` nothing changes.
-- The unknown-gate refusal names the registry: `Unknown checkpoint gate "x";
-  registered gates: page_kit.sdk_version, page_kit.store_profile,
-  built_output.upsell_selector_scope, polish.hidden_eager_media.`
-  `docs/build-packet.md` lists the same four gates (it listed three).
-- Starter demo residue is not waivable. When any `page_kit.store_profile`
-  discrepancy is `demo_residue` (a `demo.29next.com` URL or the demo phone
-  number still in `_data/campaigns.json`), doctor reports the gate with
-  `waivable: false`, appends `Starter demo residue in <fields> is not
-  waivable; replace the demo value(s).` to its reason, and offers no
-  `waive_checkpoint` action; `checkpoint waive --gate page_kit.store_profile`
-  refuses with the residue fields and the target entry to repair. Spec
-  mismatches and missing target values stay waivable as before.
-- `next` text files each blocked gate's actions under its own heading.
-  Checkpoint repair/waive commands were listed under "Theme gate is BLOCKING
-  this stage" whenever the theme gate happened to be blocked too, and were
-  not printed at all otherwise. Now every blocked gate that produced actions
-  gets `Checkpoint gate <id> is BLOCKING this stage. Resolve it with:` (or
-  the theme / polish / prepare-build heading) over its own actions, the
-  rechecks follow under `Then:`, and the block prints whether or not the
-  theme gate is blocked. A stage with no blocked gate prints nothing, as
-  before.
-- `next --json` carries no `--packet <packet>` placeholder. The checkpoint
-  and polish gate objects copied from doctor into `gates[]`, and into
-  `errors[]`/`warnings[]` `detail.checkpoint_gate`, now have the packet
-  substituted into their `required_actions[].command`, the way
-  `next_actions[]` already did. `doctor --json` and the doctor sidecar keep
-  the template.
 ## [1.27.0+agent.19] - 2026-09-14
 
 ### Fixed

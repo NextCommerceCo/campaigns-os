@@ -2914,6 +2914,57 @@
         }
       ],
       "entry_sha256": "6093d32985a0e94994a0c6ede7070b9a1848b56ccfc14008eac1eebcc6f52f2d"
+    },
+    {
+      "id": "RL-0080",
+      "sequence": 80,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.23",
+      "changelog_sha256": "fb681b7d48ab9002c206c2d2dde0eba840bf74f6cd1ad161348353d7da216f1d",
+      "agent_impact": "theme waive now refuses a missing or placeholder --waived-by (operator, ci, agent, claude code, ...): pass the named human who approved it, exactly as checkpoint waive already required; --expires-at is accepted, recorded on report.theme.waiver.expires_at and honoured by the theme gate (expired means not waived). Both waive commands' text output starts with doctor's real status (Status: READY_WITH_WAIVERS or BLOCKED), then `Waived: <gate> by <who>` and `Next stage: <stage> (<reason>)`, never `Status: UNKNOWN`; the --json success shape gains status, next_stage, next_stage_reason (and gate: \"theme_gate\" for theme waive). A refused waive under --json now writes { ok: false, error, gate, registered_gates[] } to stdout with exit 1 instead of an empty stdout; parse stdout, not stderr. The unknown-gate error lists the four registered gate ids. checkpoint waive --gate page_kit.store_profile refuses while any discrepancy is demo_residue, naming the fields; doctor reports that gate waivable: false with no waive_checkpoint action, so an agent must replace the demo values rather than waive. next text prints each blocked gate's actions under a per-gate heading (checkpoint actions are never under the theme-gate heading and print even when the theme gate is not blocked) with rechecks under `Then:`; next --json gates[] and errors[]/warnings[] detail.checkpoint_gate required_actions carry the real packet path instead of `--packet <packet>`.",
+      "compatibility": "compatible",
+      "migration": "Add --waived-by \"<named human>\" to every theme waive invocation (a placeholder or the old default `operator` is refused). A consumer of theme waive --json / checkpoint waive --json refusals should read the envelope on stdout. A consumer that expected `--packet <packet>` in next --json gate objects should read the substituted command.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "checkpoint",
+          "summary": "theme waive and checkpoint waive share validateWaiverAttribution (theme waive: named human required, placeholders refused, --expires-at validated, recorded and honoured by the theme gate); both return status/next_stage/next_stage_reason from a post-waive doctor run (theme waive also gate: \"theme_gate\") and print `Status: <doctor status>`, `Waived: <gate> by <who>`, `Next stage:`; a refusal under --json is a { ok:false, error, gate, registered_gates } envelope on stdout with exit 1; the unknown-gate error lists the registered gates; checkpoint waive --gate page_kit.store_profile refuses demo_residue naming the fields, and doctor reports that gate waivable: false with no waive_checkpoint action; next text groups next_actions[] under one heading per blocked gate with rechecks under `Then:` and prints them whether or not the theme gate is blocked; next --json substitutes the packet into the gate objects copied from doctor into gates[] and errors[]/warnings[] detail.checkpoint_gate. The theme gate's waive_theme action command carries --waived-by \"<named human>\"."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "States that demo residue is never waivable and how the gate reports it; the theme waive example carries --waived-by and the optional --expires-at; the checkpoint registry paragraph lists all four registered gates and that an unregistered id is refused with that list."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "The theme waive command in the Theme Gate section carries --waived-by \"<named human>\" and notes the optional --expires-at and that placeholders are refused."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "The theme waive command in step 3 carries --waived-by under the same named-human rule as checkpoint waive; step 5 states that demo residue in the store profile is never waivable and must be replaced. Version 1.0.10."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "The theme waive command in the Theme gate paragraph carries --waived-by \"<named human>\" and notes that placeholders are refused. Version 1.1.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-os advanced to 1.0.10 and next-campaigns-polish to 1.1.1 for the theme waive attribution wording."
+        }
+      ],
+      "entry_sha256": "a85f67467b1272eb537c9cf2917048c0bd97c0a1fda689e6b574620d4596bfec"
     }
   ]
 }
