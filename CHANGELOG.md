@@ -2,6 +2,49 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.20] - 2026-09-14
+
+### Changed
+
+- `run start --packet <p>` opens the session in the packet's target repo
+  (`assembly.target_repo` resolved from the packet's directory, else that
+  directory) from any cwd, the root the auto-opener behind `start` /
+  `prepare-build` already uses. It used to open the session at cwd and only
+  remember the packet, so a session started from the toolkit or an unrelated
+  project was found from that directory alone: `run status` at the target
+  said `No active run session.`, and `run end --packet <p>` from the starting
+  directory was refused with `Conflicting active run session: cwd selects
+  <run_id>, but packet <p> has no matching active target session`. Now
+  `run status` at the target reports it and `run end --packet <p>` closes it
+  from anywhere; `Lifecycle journal:` and `session_path` name the target.
+- The managed `.gitignore` block `run start --packet` writes goes to that
+  target repo, not to cwd. An unrelated starting directory no longer gains a
+  `.gitignore` (or a `.campaign-runtime/`) it did not have.
+- The stale-session sweep for `run start` / `run end` runs at the same root:
+  the `--packet`'s target repo when given, cwd otherwise. A stale session in
+  the target is closed out by `run end --packet <p>` from any cwd and
+  reported as `Stale run session <run_id> closed out …`, where before the
+  command failed with `No active run session to end.`
+- Bare `run start` / `run end` (no `--packet`) are unchanged: cwd. A
+  `--packet` that is not written yet roots on its own directory and still
+  prints the `does not exist yet` warning.
+- A `--packet` that exists but cannot be parsed is refused by `run start` /
+  `run end` with `--packet <p> could not be read as a build packet (<parse
+  error>); the run session roots on its assembly.target_repo. Fix or re-point
+  the packet, then retry.` (exit 1, nothing opened anywhere); a path that is
+  not a readable file (a directory, no permission) is refused the same way
+  as `could not be read (<OS error>)`. It used to open
+  the session silently on the packet's directory, where no later command run
+  by that packet would find it once it parsed again and named another target.
+- The session records the packet in canonical form (symlinks resolved, the
+  form the root is derived from), so the Run Record `run end` assembles lands
+  beside the real packet rather than in a link's directory.
+- `run start --packet <p>` text output advertises a close that works from
+  where it was run: `Finish with: campaigns-os run end --packet <p>` (before:
+  `Finish with: campaigns-os run end`, which from a cwd other than the target
+  fails with `No active run session to end.`), and the auto-log line names
+  the session's directory and the `--packet` form instead of `this project`.
+
 ## [1.27.0+agent.15] - 2026-09-14
 
 ### Changed
@@ -447,48 +490,6 @@ Notable supported-surface changes are recorded here.
   `--json`), the persisted `page_load` evidence and the doctor sidecar are
   byte-identical.
 
-## [1.27.0+agent.20] - 2026-09-14
-
-### Changed
-
-- `run start --packet <p>` opens the session in the packet's target repo
-  (`assembly.target_repo` resolved from the packet's directory, else that
-  directory) from any cwd, the root the auto-opener behind `start` /
-  `prepare-build` already uses. It used to open the session at cwd and only
-  remember the packet, so a session started from the toolkit or an unrelated
-  project was found from that directory alone: `run status` at the target
-  said `No active run session.`, and `run end --packet <p>` from the starting
-  directory was refused with `Conflicting active run session: cwd selects
-  <run_id>, but packet <p> has no matching active target session`. Now
-  `run status` at the target reports it and `run end --packet <p>` closes it
-  from anywhere; `Lifecycle journal:` and `session_path` name the target.
-- The managed `.gitignore` block `run start --packet` writes goes to that
-  target repo, not to cwd. An unrelated starting directory no longer gains a
-  `.gitignore` (or a `.campaign-runtime/`) it did not have.
-- The stale-session sweep for `run start` / `run end` runs at the same root:
-  the `--packet`'s target repo when given, cwd otherwise. A stale session in
-  the target is closed out by `run end --packet <p>` from any cwd and
-  reported as `Stale run session <run_id> closed out …`, where before the
-  command failed with `No active run session to end.`
-- Bare `run start` / `run end` (no `--packet`) are unchanged: cwd. A
-  `--packet` that is not written yet roots on its own directory and still
-  prints the `does not exist yet` warning.
-- A `--packet` that exists but cannot be parsed is refused by `run start` /
-  `run end` with `--packet <p> could not be read as a build packet (<parse
-  error>); the run session roots on its assembly.target_repo. Fix or re-point
-  the packet, then retry.` (exit 1, nothing opened anywhere); a path that is
-  not a readable file (a directory, no permission) is refused the same way
-  as `could not be read (<OS error>)`. It used to open
-  the session silently on the packet's directory, where no later command run
-  by that packet would find it once it parsed again and named another target.
-- The session records the packet in canonical form (symlinks resolved, the
-  form the root is derived from), so the Run Record `run end` assembles lands
-  beside the real packet rather than in a link's directory.
-- `run start --packet <p>` text output advertises a close that works from
-  where it was run: `Finish with: campaigns-os run end --packet <p>` (before:
-  `Finish with: campaigns-os run end`, which from a cwd other than the target
-  fails with `No active run session to end.`), and the auto-log line names
-  the session's directory and the `--packet` form instead of `this project`.
 ## [1.27.0+agent.19] - 2026-09-14
 
 ### Fixed
