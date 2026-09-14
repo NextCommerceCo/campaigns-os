@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtempSync, cpSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, cpSync, existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -29,6 +29,22 @@ test("standalone doctor refreshes the doctor-output.json sidecar", () => {
   const written = JSON.parse(readFileSync(sidecar, "utf8"));
   assert.equal(written.ok, result.ok);
   assert.equal(written.status, result.status);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// `next` and the QA stage refresh already replaced the sidecar atomically;
+// standalone doctor rewrote it in place, so a reader racing a doctor run
+// could see a torn snapshot — the one artifact whose freshness contract a
+// torn write breaks outright.
+test("standalone doctor replaces the doctor-output.json sidecar atomically rather than rewriting it in place", () => {
+  const dir = packetFixture();
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  const sidecar = join(dir, "target-page-kit/.campaign-runtime/doctor-output.json");
+  doctorCommand({ packet: packetPath });
+  const before = statSync(sidecar).ino;
+  const result = doctorCommand({ packet: packetPath });
+  assert.notEqual(statSync(sidecar).ino, before, "tmp + rename: the sidecar path names a new file");
+  assert.equal(JSON.parse(readFileSync(sidecar, "utf8")).generated_at, result.generated_at);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -122,6 +138,21 @@ test("standalone doctor does not restate its outcome into a report it did not in
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("standalone doctor never opens a default report it did not inspect, malformed or not, and still refreshes the sidecar", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  const identity = { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug };
+  writeFileSync(join(dir, ".campaign-runtime/build-context.json"), JSON.stringify({ report_path: "custom-report.json" }));
+  writeFileSync(join(dir, "custom-report.json"), JSON.stringify({ identity, stages: {} }));
+  writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "{ not a report\n");
+
+  const result = doctorCommand({ packet: packetPath, _: ["doctor"] });
+  assert.equal(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"), "{ not a report\n", "the default report is untouched");
+  assert.equal(JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8")).generated_at, result.generated_at, "the sidecar is this run's");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("standalone doctor executes its packet inspection once when updating the stage ledger", () => {
   const { dir, packetPath } = selfTargetPacketFixture();
   const packet = JSON.parse(readFileSync(packetPath, "utf8"));
@@ -186,6 +217,34 @@ test("the QA stage is recorded into the report the Build Context binds", () => {
   assert.equal(bound.stages.qa?.verdict_run_id, "qa_0001");
   assert.equal(existsSync(join(dir, ".campaign-runtime/assembly-report.json")), false, "nothing was written to the default location");
   assert.equal(existsSync(join(dir, ".campaign-runtime/doctor-output.json")), true, "the doctor sidecar was refreshed in the same transaction");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// The doctor re-record rule now covers the QA stage: a run that restates
+// exactly the outcome on disk, differing only in the stage timestamps, leaves
+// the report's bytes (and any digest of them) alone. The outcome is still
+// recorded — the call reports true and refreshes the sidecar as it always did.
+test("a QA re-record that moves only the stage timestamps leaves the report bytes alone, reports true and refreshes the sidecar", () => {
+  const { dir, packetPath } = selfTargetPacketFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  const reportPath = join(dir, ".campaign-runtime/assembly-report.json");
+  const sidecarPath = join(dir, ".campaign-runtime/doctor-output.json");
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  writeFileSync(reportPath, JSON.stringify({
+    identity: { map_id: packet.spec.map_id, public_route_slug: packet.campaign.public_route_slug },
+    stages: {},
+  }));
+  const verdict = (completedAt) => ({
+    local_path: join(dir, "qa-output/verdict.json"),
+    verdict: { run_id: "qa_0001", disposition: "ready", completed_at: completedAt, assertions: [] },
+  });
+  assert.equal(recordQaStageOutcome({ packet: packetPath }, verdict("2026-09-14T00:00:00.000Z")), true);
+  const bytes = readFileSync(reportPath, "utf8");
+  writeFileSync(sidecarPath, JSON.stringify({ ok: true, status: "ancient", stale: true }));
+
+  assert.equal(recordQaStageOutcome({ packet: packetPath }, verdict("2026-09-14T00:05:00.000Z")), true, "the outcome is on disk");
+  assert.equal(readFileSync(reportPath, "utf8"), bytes, "a re-record does not move the report's digest");
+  assert.notEqual(JSON.parse(readFileSync(sidecarPath, "utf8")).stale, true, "the sidecar was refreshed all the same");
   rmSync(dir, { recursive: true, force: true });
 });
 

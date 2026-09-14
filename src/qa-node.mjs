@@ -42,6 +42,7 @@ import {
 } from "./polish-capture.mjs";
 import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
+import { commitAssemblyReport } from "./stage-ledger.mjs";
 import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
@@ -1624,15 +1625,15 @@ export function qaWaive(args) {
   if (!reason) {
     throw new Error("qa waive requires --reason \"<why this failing blocker is acceptable for this campaign>\".");
   }
-  const { targetRepo, reportPath } = resolveCampaignWorkspace(packetPath, {
+  const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
     reportPath: args.report ? resolve(String(args.report)) : undefined,
     followContextPointer: true,
   });
+  const { reportPath } = workspace;
   if (!existsSync(reportPath)) {
     throw new Error(`qa waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
   }
-  const report = readJson(reportPath);
   const waiver = {
     reason,
     // Named-human lane: default to the operator identity the QA verdict
@@ -1640,20 +1641,21 @@ export function qaWaive(args) {
     waived_by: stringArg(args["waived-by"]) || (process.env.USER ? `${process.env.USER}@local` : "operator"),
     waived_at: new Date().toISOString(),
   };
-  const stages = isPlainObject(report.stages) ? report.stages : {};
-  const stageQa = isPlainObject(stages.qa) ? stages.qa : { stage: "qa", status: "pending" };
-  stageQa.waivers = { ...(isPlainObject(stageQa.waivers) ? stageQa.waivers : {}), [assertionId]: waiver };
-  stages.qa = stageQa;
-  report.stages = stages;
-  if (Array.isArray(report.evidence)) {
-    report.evidence.push(`QA waiver: ${assertionId} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`);
-  }
-  writeJson(reportPath, report);
-  // #171: the waiver changes what the next qa run concludes; the retained
-  // doctor sidecar (if any) now predates this report edit.
-  markDoctorSidecarStale(targetRepo, {
+  commitAssemblyReport(workspace, (report) => {
+    const stages = isPlainObject(report.stages) ? report.stages : {};
+    const stageQa = isPlainObject(stages.qa) ? stages.qa : { stage: "qa", status: "pending" };
+    stageQa.waivers = { ...(isPlainObject(stageQa.waivers) ? stageQa.waivers : {}), [assertionId]: waiver };
+    stages.qa = stageQa;
+    report.stages = stages;
+    if (Array.isArray(report.evidence)) {
+      report.evidence.push(`QA waiver: ${assertionId} waived by ${waiver.waived_by} at ${waiver.waived_at}: ${reason}`);
+    }
+    return report;
+  }, {
+    // #171: the waiver changes what the next qa run concludes; the retained
+    // doctor sidecar (if any) now predates this report edit.
     command: "qa waive",
-    reason: "A QA assertion waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
+    staleReason: "A QA assertion waiver was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.",
   });
   return {
     ok: true,

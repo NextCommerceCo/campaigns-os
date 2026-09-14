@@ -9,7 +9,7 @@
 // exists.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -106,6 +106,19 @@ test("waiver round-trip: qa waive records attribution, the failing blocker downg
 
   // Waived blocker => ready_with_exceptions, never blocked, never plain ready.
   assert.equal(computeDisposition(assertions), "ready_with_exceptions");
+});
+
+// The report is read by other commands while a waiver lands; a torn report
+// would defeat the decision it records. The write goes through tmp + rename,
+// like every other Assembly Report write, so the path names a new file
+// afterwards instead of the same file rewritten in place.
+test("qa waive replaces the Assembly Report atomically rather than rewriting it in place", () => {
+  const { packetPath, reportPath } = writeFixture();
+  const before = statSync(reportPath).ino;
+  qaWaive({ _: ["qa", "waive"], packet: packetPath, assertion: WAIVABLE, reason: "atomic write check" });
+  assert.notEqual(statSync(reportPath).ino, before, "tmp + rename: the report path names a new file");
+  assert.equal(readFileSync(reportPath, "utf8").endsWith("\n"), true);
+  assert.equal(JSON.parse(readFileSync(reportPath, "utf8")).stages.qa.waivers[WAIVABLE].reason, "atomic write check");
 });
 
 test("qa waive refuses without --reason (mirrors themeWaive)", () => {

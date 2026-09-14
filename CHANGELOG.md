@@ -284,6 +284,37 @@ Notable supported-surface changes are recorded here.
   relied on one of the removed spellings being clicked was never going to
   reach the checkout through it.
 
+## [1.27.0+agent.17] - 2026-09-14
+
+### Fixed
+
+- One commit step for every edit to the Assembly Report. Six commands edit
+  the report and then keep the retained doctor sidecar honest about it —
+  `qa run`'s stage record, `doctor`'s stage write-back, `theme waive`,
+  `checkpoint waive`, `qa waive` and `polish capture` — and each spelled the
+  step for itself: load, bind, mutate, write, then either refresh the doctor
+  sidecar or stamp it stale. That left two write disciplines and two
+  freshness rules in six places. `doctor` wrote its sidecar in place while
+  `next` and the QA stage replaced theirs atomically, and `qa waive` wrote
+  the report itself in place while every other editor replaced it, so a
+  reader racing either command could see a torn file — for the sidecar, the
+  one artifact whose freshness contract a torn write breaks outright. The
+  step now lives once, as `commitAssemblyReport(workspace, mutate,
+  {refreshDoctor | staleReason})` in `src/stage-ledger.mjs`, on the campaign
+  workspace the resolver returns: the report is read from the path the
+  workspace binds, the mutation returns what to write (or nothing, to leave
+  the file's bytes and every digest of them alone), the write is tmp +
+  rename, and exactly one doctor-freshness strategy is named. A producer
+  (`stage: "doctor" | "qa"`) restates its outcome only into this campaign's
+  report and skips a write that would move nothing but its timestamps — the
+  re-record rule `doctor` gained in 1.26.0+agent.3 now covers the QA stage
+  too, where it changes nothing in practice because every run restates a new
+  `verdict_run_id`. Both in-place writes are atomic; the QA stage refresh,
+  the waivers' stale stamps, the polish evidence merge and every command's
+  output are unchanged. `writeJsonAtomic` is exported from
+  `src/doctor-sidecar.mjs`, and `assemblyReportMatchesPacket` moves to
+  `src/stage-ledger.mjs`.
+
 ## [1.27.0+agent.16] - 2026-09-14
 
 ### Fixed
