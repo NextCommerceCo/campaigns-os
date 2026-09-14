@@ -232,134 +232,101 @@ function normalizeResourceType(value) {
     : { value: "unknown", status: "unknown" };
 }
 
-function genericCacheFlag(record) {
-  return Boolean(record?.from_cache
-    || record?.from_disk_cache
-    || record?.from_memory_cache
-    || record?.from_prefetch_cache
-    || record?.request_served_from_cache
-    || record?.served_from_cache);
+// ---------------------------------------------------------------------------
+// The response record: the one shape the browser collector
+// (polish-browser.mjs, createNetworkCollector) emits into `responses[]` and
+// the aggregator below reads. There is exactly one producer, so the
+// aggregator trusts what these constructors build — hop numbering, request
+// identity and sentinel spelling are decided here, once, and never
+// re-validated on the way in. Tests that hand-build records go through the
+// same constructors. The shape is documented in docs/polish-evidence.md.
+//
+//   captureProblemRecord(code)           { capture_problem: code }
+//   singleResponseRecord(id, response)   { request_id: id, ...response }
+//   redirectChainRecord(id, responses)   { request_id: id, redirect_chain:
+//                                          [{ ...response, redirect_hop: 0 }, …] }
+//
+// A response carries `url`, `resource_type`, `status`, `mime_type`,
+// `encoded_data_length` / `declared_data_length`, `canceled`, `source_urls`,
+// the three cache flags below, `from_service_worker` and `failed`; the final
+// main document additionally carries `is_final_main_document` and
+// `document_context_fingerprint`.
+// ---------------------------------------------------------------------------
+
+// The cache observations the collector projects from CDP. A response is
+// cache-served when any of them is true; no other spelling is read.
+export const POLISH_RESPONSE_CACHE_FLAGS = Object.freeze([
+  "from_disk_cache",
+  "from_prefetch_cache",
+  "request_served_from_cache",
+]);
+
+// In-band sentinels: a record that carries a problem instead of a response.
+// The collector emits `response_record_overflow` when it dropped responses
+// past MAX_PAGE_LOAD_RESPONSE_RECORDS and `document_context_changed` when the
+// main frame or loader changed under the capture.
+export const POLISH_CAPTURE_SENTINEL_PROBLEM_CODES = Object.freeze([
+  "document_context_changed",
+  "response_record_overflow",
+]);
+const CAPTURE_SENTINEL_PROBLEM_CODES = new Set(POLISH_CAPTURE_SENTINEL_PROBLEM_CODES);
+
+export function captureProblemRecord(code) {
+  if (!CAPTURE_SENTINEL_PROBLEM_CODES.has(code)) {
+    throw new Error(`Unknown polish capture sentinel problem code: ${String(code)}`);
+  }
+  return { capture_problem: code };
 }
 
-function privateRecordSortKey(record, documentUrl) {
-  const resolved = resolvedCaptureUrl(record?.url, { baseUrl: documentUrl });
-  const aliases = Array.isArray(record?.source_urls)
-    ? record.source_urls.map((value) => resolvedCaptureUrl(value, { baseUrl: documentUrl }).canonical).sort()
-    : record?.source_urls == null ? [] : ["[invalid-aliases]"];
-  return JSON.stringify([
-    resolved.canonical,
-    normalizedToken(record?.resource_type),
-    Number.isInteger(record?.status) ? record.status : null,
-    Number.isInteger(record?.encoded_data_length) ? record.encoded_data_length : null,
-    Number.isInteger(record?.redirect_hop) ? record.redirect_hop : null,
-    aliases,
-    genericCacheFlag(record),
-    Boolean(record?.from_service_worker),
-    Boolean(record?.failed),
-  ]);
+export function captureProblemRecordCode(record) {
+  return isPlainObject(record) && CAPTURE_SENTINEL_PROBLEM_CODES.has(record.capture_problem)
+    ? record.capture_problem
+    : null;
 }
 
-function flattenResponseRecords(responses, problemCounts) {
-  const flattened = [];
-  let omittedRecordCount = 0;
-  const retain = (record) => {
-    if (flattened.length >= MAX_PAGE_LOAD_RESPONSE_RECORDS) {
-      omittedRecordCount += 1;
-      return;
-    }
-    flattened.push(record);
+export function singleResponseRecord(requestId, response) {
+  return { request_id: requestId, ...response };
+}
+
+export function redirectChainRecord(requestId, responses) {
+  return {
+    request_id: requestId,
+    redirect_chain: responses.map((response, redirectHop) => ({ ...response, redirect_hop: redirectHop })),
   };
+}
+
+// The responses a record stands for, in transfer order: a redirect chain's
+// hops, or the single response itself.
+export function responseRecordResponses(record) {
+  return isPlainObject(record) && Array.isArray(record.redirect_chain) ? record.redirect_chain : [record];
+}
+
+export function responseRecordFromCache(record) {
+  return POLISH_RESPONSE_CACHE_FLAGS.some((flag) => record?.[flag] === true);
+}
+
+// Every observed response with the chain it belongs to, bounded to
+// MAX_PAGE_LOAD_RESPONSE_RECORDS; sentinel records become problem counts.
+function prepareResponseRecords(responses, problemCounts) {
+  const prepared = [];
+  let omittedRecordCount = 0;
   for (const record of (Array.isArray(responses) ? responses : [])) {
-    if (isPlainObject(record) && record.capture_problem === "response_record_overflow") {
-      addProblemCount(problemCounts, "response_record_overflow");
+    const sentinel = captureProblemRecordCode(record);
+    if (sentinel) {
+      addProblemCount(problemCounts, sentinel);
       continue;
     }
-    if (isPlainObject(record) && record.capture_problem === "document_context_changed") {
-      addProblemCount(problemCounts, "document_context_changed");
-      continue;
-    }
-    const hasRedirectChain = isPlainObject(record) && Object.hasOwn(record, "redirect_chain");
-    if (hasRedirectChain) {
-      if (!Array.isArray(record.redirect_chain)
-        || record.redirect_chain.length === 0
-        || Object.hasOwn(record, "redirect_hop")
-        || record.redirect_chain.some((hop, redirectHop) => !isPlainObject(hop)
-          || Object.hasOwn(hop, "request_id")
-          || Object.hasOwn(hop, "redirect_chain")
-          || (Object.hasOwn(hop, "redirect_hop") && hop.redirect_hop !== redirectHop))) {
-        addProblemCount(problemCounts, "redirect_chain_invalid");
-        continue;
+    const chain = responseRecordResponses(record);
+    for (const [index, response] of chain.entries()) {
+      if (prepared.length >= MAX_PAGE_LOAD_RESPONSE_RECORDS) {
+        omittedRecordCount += chain.length - index;
+        break;
       }
-      for (let redirectHop = 0; redirectHop < record.redirect_chain.length; redirectHop += 1) {
-        if (flattened.length >= MAX_PAGE_LOAD_RESPONSE_RECORDS) {
-          omittedRecordCount += record.redirect_chain.length - redirectHop;
-          break;
-        }
-        const hop = record.redirect_chain[redirectHop];
-        flattened.push({
-          ...record,
-          ...hop,
-          redirect_chain: undefined,
-          redirect_hop: Number.isInteger(hop?.redirect_hop) ? hop.redirect_hop : redirectHop,
-        });
-      }
-    } else {
-      retain(record);
+      prepared.push({ record: response, chain });
     }
   }
   if (omittedRecordCount > 0) {
     addProblemCount(problemCounts, "response_record_overflow", omittedRecordCount);
-  }
-  return flattened;
-}
-
-function prepareResponseRecords(responses, { documentUrl, problemCounts }) {
-  const flattened = flattenResponseRecords(responses, problemCounts);
-  const invalidIdentity = [];
-  const byRequestId = new Map();
-  for (const record of flattened) {
-    const requestId = normalizeString(record?.request_id);
-    if (!requestId) {
-      addProblemCount(problemCounts, "request_identity_invalid");
-      invalidIdentity.push({ record, chain: [record] });
-      continue;
-    }
-    const group = byRequestId.get(requestId) || [];
-    group.push(record);
-    byRequestId.set(requestId, group);
-  }
-
-  const prepared = [...invalidIdentity];
-  for (const group of byRequestId.values()) {
-    const hops = group.map((record) => record?.redirect_hop);
-    const hasRedirectHops = group.some((record) => Object.hasOwn(record, "redirect_hop"));
-    if (!hasRedirectHops) {
-      if (group.length === 1) {
-        prepared.push({ record: group[0], chain: group });
-        continue;
-      }
-      addProblemCount(problemCounts, "duplicate_request_identity", group.length - 1);
-      const selected = [...group]
-        .sort((a, b) => privateRecordSortKey(a, documentUrl).localeCompare(privateRecordSortKey(b, documentUrl)))[0];
-      prepared.push({ record: selected, chain: [selected] });
-      continue;
-    }
-    const orderedHops = [...hops].sort((a, b) => a - b);
-    const validRedirectChain = hops.every((hop) => Number.isInteger(hop) && hop >= 0)
-      && orderedHops.every((hop, index) => hop === index);
-    if (validRedirectChain) {
-      const chain = [...group].sort((a, b) => a.redirect_hop - b.redirect_hop
-        || privateRecordSortKey(a, documentUrl).localeCompare(privateRecordSortKey(b, documentUrl)));
-      for (const record of chain) prepared.push({ record, chain });
-      continue;
-    }
-    addProblemCount(problemCounts, "redirect_chain_invalid");
-    const chain = [...group].sort((a, b) => {
-      const aHop = Number.isInteger(a?.redirect_hop) ? a.redirect_hop : Number.POSITIVE_INFINITY;
-      const bHop = Number.isInteger(b?.redirect_hop) ? b.redirect_hop : Number.POSITIVE_INFINITY;
-      return aHop - bHop || privateRecordSortKey(a, documentUrl).localeCompare(privateRecordSortKey(b, documentUrl));
-    });
-    for (const record of chain) prepared.push({ record, chain });
   }
   return prepared;
 }
@@ -472,7 +439,7 @@ export function aggregateCdpResponses(responses, {
   const documentOrigin = captureOrigin(documentUrl);
   const groups = new Map();
   let unattributedRequestCount = 0;
-  const prepared = prepareResponseRecords(responses, { documentUrl, problemCounts });
+  const prepared = prepareResponseRecords(responses, problemCounts);
   const documentResponse = requireFinalDocumentResponse
     ? assessFinalDocumentResponse(prepared, { documentUrl, requestedDocumentUrl, problemCounts })
     : null;
@@ -502,7 +469,7 @@ export function aggregateCdpResponses(responses, {
     const declaredBytes = canceled && Number.isSafeInteger(record?.declared_data_length)
       && record.declared_data_length >= 0 ? record.declared_data_length : null;
     const resourceType = normalizeResourceType(record?.resource_type);
-    const cacheObserved = genericCacheFlag(record);
+    const cacheObserved = responseRecordFromCache(record);
     const fromServiceWorker = Boolean(record?.from_service_worker);
     const failed = Boolean(record?.failed);
     const crossOrigin = Boolean(documentOrigin && resolved.origin !== documentOrigin);

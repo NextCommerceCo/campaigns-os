@@ -300,6 +300,35 @@ Notable supported-surface changes are recorded here.
   credential; only an HTTP(S) origin can now be "the same", and the credential
   is withheld as it is for any other cross-origin baseline.
 
+## [1.27.0+agent.14] - 2026-09-14
+
+### Fixed
+
+- One response record between the polish browser collector and the capture
+  aggregator. The CDP collector built its `responses[]` records inline — a
+  single response, a redirect chain with hops numbered from zero, and two
+  in-band problem sentinels — and the aggregator re-parsed them as if they
+  might have come from anywhere: it re-checked that hops were contiguous from
+  zero, that every record carried a request identity and that no two records
+  shared one, accepted a second, flat spelling of a redirect chain, and read
+  cache evidence from six field names when the collector writes three. There
+  is one producer, so those checks could only ever fail on hand-built test
+  records, and the three problem codes they produced
+  (`redirect_chain_invalid`, `request_identity_invalid`,
+  `duplicate_request_identity`) were vocabulary no capture could carry. The
+  record now lives once in `src/polish-capture.mjs` as exported constructors
+  (`singleResponseRecord`, `redirectChainRecord`, `captureProblemRecord`) and
+  readers (`responseRecordResponses`, `responseRecordFromCache`,
+  `captureProblemRecordCode`, with `POLISH_RESPONSE_CACHE_FLAGS` and
+  `POLISH_CAPTURE_SENTINEL_PROBLEM_CODES`); the collector emits through them
+  and the aggregator reads through them without re-validation. The three
+  unreachable problem codes are gone from `POLISH_CAPTURE_PROBLEM_CODES`, and
+  the record is documented in `docs/polish-evidence.md`. No output changes:
+  the collector's wire form is byte-identical and a capture built from the
+  same collector output is byte-identical. One reading tightens: a record
+  spelt `from_cache`, `from_memory_cache` or `served_from_cache` — which the
+  collector never writes — is no longer counted as cache-served.
+
 ## [1.27.0] - 2026-09-13
 
 ### Added

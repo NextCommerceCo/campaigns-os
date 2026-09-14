@@ -5,6 +5,8 @@ import {
   aggregateCdpResponses,
   buildPageLoadCapture,
   captureOrigin,
+  captureProblemRecord,
+  captureProblemRecordCode,
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
@@ -12,6 +14,12 @@ import {
   MAX_PAGE_LOAD_RESPONSE_RECORDS,
   MAX_POLISH_CAPTURE_URL_LENGTH,
   normalizeMediaElement,
+  POLISH_CAPTURE_SENTINEL_PROBLEM_CODES,
+  POLISH_RESPONSE_CACHE_FLAGS,
+  redirectChainRecord,
+  responseRecordFromCache,
+  responseRecordResponses,
+  singleResponseRecord,
 } from "./polish-capture.mjs";
 
 const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
@@ -218,22 +226,10 @@ test("same-request-id redirect hops are counted once and associate an authored s
   ];
   const capture = boundCapture({
     mediaElements: [explicitMediaSource("https://shop.example.test/media/hero?token=private")],
-    responses: [{
-      request_id: "redirected-media",
-      redirect_chain: redirectHops,
-    }],
-  });
-  const flatCapture = boundCapture({
-    mediaElements: [explicitMediaSource("https://shop.example.test/media/hero?token=private")],
-    responses: [...redirectHops].reverse().map((hop, reverseIndex) => ({
-      request_id: "redirected-media",
-      redirect_hop: redirectHops.length - reverseIndex - 1,
-      ...hop,
-    })),
+    responses: [redirectChainRecord("redirected-media", redirectHops)],
   });
 
   assert.equal(capture.measurement_status, "complete");
-  assert.deepEqual(flatCapture, capture);
   assert.equal(capture.response_collection.observed_response_count, 3);
   assert.equal(capture.metrics.request_count, 3);
   assert.equal(capture.metrics.total_transferred_bytes, 2_000_200);
@@ -244,142 +240,84 @@ test("same-request-id redirect hops are counted once and associate an authored s
   assert.deepEqual(capture.problems, []);
 });
 
-test("same-request-id redirect hops must be contiguous from zero", () => {
+test("the response record is one shape: the constructors number redirect hops from zero and keep identity at the top level", () => {
+  const hop = (url) => ({ url, resource_type: "Media", status: 200, encoded_data_length: 10 });
+  const single = singleResponseRecord("single", hop("https://cdn.example.test/a.mp4"));
+  assert.deepEqual(single, { request_id: "single", ...hop("https://cdn.example.test/a.mp4") });
+  assert.deepEqual(responseRecordResponses(single), [single]);
+
+  const chain = redirectChainRecord("chain", [hop("https://shop.example.test/a"), hop("https://cdn.example.test/a.mp4")]);
+  assert.deepEqual(chain, {
+    request_id: "chain",
+    redirect_chain: [
+      { ...hop("https://shop.example.test/a"), redirect_hop: 0 },
+      { ...hop("https://cdn.example.test/a.mp4"), redirect_hop: 1 },
+    ],
+  });
+  assert.equal(chain.redirect_chain.some((response) => "request_id" in response), false);
+  assert.deepEqual(responseRecordResponses(chain), chain.redirect_chain);
+
+  assert.deepEqual(POLISH_CAPTURE_SENTINEL_PROBLEM_CODES, ["document_context_changed", "response_record_overflow"]);
+  for (const code of POLISH_CAPTURE_SENTINEL_PROBLEM_CODES) {
+    const sentinel = captureProblemRecord(code);
+    assert.deepEqual(sentinel, { capture_problem: code });
+    assert.equal(captureProblemRecordCode(sentinel), code);
+  }
+  assert.throws(() => captureProblemRecord("redirect_chain_invalid"), /Unknown polish capture sentinel/);
+  assert.equal(captureProblemRecordCode({ capture_problem: "redirect_chain_invalid" }), null);
+  assert.equal(captureProblemRecordCode(single), null);
+  assert.equal(captureProblemRecordCode("response_record_overflow"), null);
+});
+
+test("the aggregator reads the record as constructed: every chain hop is one observed response and a sentinel is one problem count", () => {
+  const hop = (url, status) => ({ url, resource_type: "Media", status, encoded_data_length: 100 });
   const result = aggregateCdpResponses([
-    {
-      request_id: "gapped-redirect",
-      redirect_hop: 0,
-      url: "https://shop.example.test/media/hero?token=private",
-      resource_type: "Media",
-      status: 302,
-      encoded_data_length: 200,
-    },
-    {
-      request_id: "gapped-redirect",
-      redirect_hop: 2,
-      url: "https://cdn.example.test/final/hero.mp4?signature=private",
-      resource_type: "Media",
-      status: 200,
-      encoded_data_length: 2_000_000,
-    },
+    redirectChainRecord("chain", [
+      hop("https://shop.example.test/media/hero?token=private", 302),
+      hop("https://cdn.example.test/final/hero.mp4?signature=private", 200),
+    ]),
+    singleResponseRecord("single", hop("https://cdn.example.test/other.mp4?signature=private", 200)),
+    captureProblemRecord("response_record_overflow"),
+    captureProblemRecord("document_context_changed"),
   ], { documentUrl: "https://shop.example.test/landing/" });
 
-  assert.equal(result.measurement_status, "incomplete");
-  assert.equal(result.observed_response_count, 2);
-  assert.deepEqual(result.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
+  assert.equal(result.observed_response_count, 3);
+  assert.equal(result.request_count, 3);
+  assert.deepEqual(result.problems, [
+    { code: "document_context_changed", count: 1 },
+    { code: "response_record_overflow", count: 1 },
+  ]);
+  assert.deepEqual(
+    result.resources.find((resource) => resource.url === "https://cdn.example.test/final/hero.mp4").match_resource_ids.length,
+    2,
+  );
+  assert.equal(JSON.stringify(result).includes("private"), false);
 });
 
-test("a lone indexed response is a valid redirect hop only at integer index zero", () => {
-  const response = {
-    request_id: "lone-hop",
-    url: "https://cdn.example.test/final/hero.mp4?signature=private",
+test("cache evidence is read from the three flags the collector emits and from no other spelling", () => {
+  const response = (overrides) => ({
+    request_id: "cached",
+    url: "https://cdn.example.test/hero.mp4?token=private",
     resource_type: "Media",
     status: 200,
-    encoded_data_length: 2_000_000,
-  };
-  const valid = aggregateCdpResponses([{ ...response, redirect_hop: 0 }], {
-    documentUrl: "https://shop.example.test/landing/",
+    encoded_data_length: 100,
+    ...overrides,
   });
-  assert.equal(valid.measurement_status, "complete");
-
-  for (const redirectHop of [1, -1, "0"]) {
-    const invalid = aggregateCdpResponses([{ ...response, redirect_hop: redirectHop }], {
-      documentUrl: "https://shop.example.test/landing/",
-    });
-    assert.equal(invalid.measurement_status, "incomplete");
-    assert.deepEqual(invalid.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
+  assert.deepEqual(POLISH_RESPONSE_CACHE_FLAGS, ["from_disk_cache", "from_prefetch_cache", "request_served_from_cache"]);
+  for (const flag of POLISH_RESPONSE_CACHE_FLAGS) {
+    assert.equal(responseRecordFromCache(response({ [flag]: true })), true);
+    const result = aggregateCdpResponses([response({ [flag]: true })], { documentUrl: "https://shop.example.test/landing/" });
+    assert.equal(result.cache_request_count, 1);
+    assert.deepEqual(result.problems, [{ code: "cache_observed", count: 1 }]);
   }
-});
-
-test("a redirect_chain with a nonobject hop fails closed with a fixed diagnostic", () => {
-  const result = aggregateCdpResponses([{
-    request_id: "malformed-chain",
-    redirect_chain: [
-      {
-        url: "https://shop.example.test/media/hero?token=private",
-        resource_type: "Media",
-        status: 302,
-        encoded_data_length: 200,
-      },
-      "private malformed hop payload",
-    ],
-  }], { documentUrl: "https://shop.example.test/landing/" });
-
-  assert.equal(result.measurement_status, "incomplete");
-  assert.deepEqual(result.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
-  assert.equal(JSON.stringify(result).includes("private malformed"), false);
-});
-
-test("redirect_chain hops cannot redeclare or override the top-level request identity", () => {
-  for (const hopRequestId of ["redirected-media", "different-request"]) {
-    const result = aggregateCdpResponses([{
-      request_id: "redirected-media",
-      redirect_chain: [{
-        request_id: hopRequestId,
-        url: "https://cdn.example.test/final/hero.mp4?signature=private",
-        resource_type: "Media",
-        status: 200,
-        encoded_data_length: 2_000_000,
-      }],
-    }], { documentUrl: "https://shop.example.test/landing/" });
-
-    assert.equal(result.measurement_status, "incomplete");
-    assert.deepEqual(result.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
+  for (const foreign of ["from_cache", "from_memory_cache", "served_from_cache"]) {
+    assert.equal(responseRecordFromCache(response({ [foreign]: true })), false);
+    const result = aggregateCdpResponses([response({ [foreign]: true })], { documentUrl: "https://shop.example.test/landing/" });
+    assert.equal(result.cache_request_count, 0);
+    assert.deepEqual(result.problems, []);
   }
-});
-
-test("redirect_chain ownership cannot be nested or combined with a top-level redirect hop", () => {
-  const finalHop = {
-    url: "https://cdn.example.test/final/hero.mp4?signature=private",
-    resource_type: "Media",
-    status: 200,
-    encoded_data_length: 2_000_000,
-  };
-  const ambiguousRecords = [
-    {
-      request_id: "top-level-hop-and-chain",
-      redirect_hop: 0,
-      redirect_chain: [finalHop],
-    },
-    {
-      request_id: "nested-chain",
-      redirect_chain: [{ ...finalHop, redirect_chain: [] }],
-    },
-  ];
-
-  for (const record of ambiguousRecords) {
-    const result = aggregateCdpResponses([record], { documentUrl: "https://shop.example.test/landing/" });
-    assert.equal(result.measurement_status, "incomplete");
-    assert.deepEqual(result.problems, [{ code: "redirect_chain_invalid", count: 1 }]);
-  }
-});
-
-test("contradictory duplicate-hop records remain deterministic across event order", () => {
-  const records = [
-    {
-      request_id: "duplicate-hop",
-      url: "https://cdn.example.test/hero.mp4?token=private",
-      resource_type: "Media",
-      status: 200,
-      encoded_data_length: 100,
-      from_memory_cache: true,
-    },
-    {
-      request_id: "duplicate-hop",
-      url: "https://cdn.example.test/hero.mp4?token=private",
-      resource_type: "Media",
-      status: 200,
-      encoded_data_length: 100,
-      from_memory_cache: false,
-    },
-  ];
-  const first = aggregateCdpResponses(records, { documentUrl: "https://shop.example.test/landing/" });
-  const second = aggregateCdpResponses([...records].reverse(), { documentUrl: "https://shop.example.test/landing/" });
-
-  assert.deepEqual(first, second);
-  assert.equal(first.observed_response_count, 1);
-  assert.equal(first.request_count, 1);
-  assert.equal(first.problems.some(({ code }) => code === "duplicate_request_identity"), true);
+  assert.equal(responseRecordFromCache(response({ from_disk_cache: "true" })), false);
+  assert.equal(responseRecordFromCache(null), false);
 });
 
 test("resource-type ambiguity and unknown types use a finite sentinel and fail closed without corrupting capture shape", () => {
@@ -945,18 +883,14 @@ test("page-load capture joins fetched bytes to video/audio sources while network
   assert.equal(JSON.stringify(capture).includes("private"), false);
 });
 
-test("duplicate response identities and unresolvable response URLs cannot produce complete CDP evidence", () => {
+test("unresolvable response URLs cannot produce complete CDP evidence", () => {
   const result = aggregateCdpResponses([
-    { request_id: "duplicate", url: "https://cdn.example.test/video.mp4?one=private", resource_type: "Media", status: 206, encoded_data_length: 10 },
-    { request_id: "duplicate", url: "https://cdn.example.test/video.mp4?two=private", resource_type: "Media", status: 206, encoded_data_length: 20 },
-    { request_id: "", url: "http://[malformed/PRIVATE", resource_type: "Media", status: 200, encoded_data_length: 30 },
+    { request_id: "malformed", url: "http://[malformed/PRIVATE", resource_type: "Media", status: 200, encoded_data_length: 30 },
     { request_id: "overflow", url: "[url-too-long]", resource_type: "Script", status: 200, encoded_data_length: 5 },
   ], { documentUrl: "https://shop.example.test/landing/" });
 
   assert.equal(result.measurement_status, "incomplete");
   assert.deepEqual(result.problems, [
-    { code: "duplicate_request_identity", count: 1 },
-    { code: "request_identity_invalid", count: 1 },
     { code: "resource_url_unresolvable", count: 2 },
     { code: "url_length_overflow", count: 1 },
   ]);
