@@ -8,6 +8,7 @@ import {
   MAX_PAGE_LOAD_RESPONSE_RECORDS,
   MAX_POLISH_CAPTURE_URL_LENGTH,
 } from "./polish-capture.mjs";
+import { launchPackageChromium } from "./browser-launch.mjs";
 import {
   boundedPolishDeadline,
   POLISH_BROWSER_CELL_DEADLINE_MS,
@@ -612,22 +613,16 @@ async function drainProtocolEvents() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function missingBrowserError(error) {
-  const message = error instanceof Error ? error.message : String(error || "");
-  return /executable doesn't exist|browser.*not found|playwright install|install.*chromium/i.test(message);
-}
-
-async function chromiumLauncher(injectedChromium) {
-  if (injectedChromium) return injectedChromium;
-  try {
-    const playwright = await import("playwright");
-    return playwright.chromium;
-  } catch {
-    throw browserUnavailableError([
+function polishBrowserMissing(kind) {
+  return browserUnavailableError(kind === "package"
+    ? [
       "Playwright is not installed for Campaigns OS polish capture.",
       "Run `npm install` from the campaigns-os repo, then rerun `campaigns-os polish capture`.",
+    ].join(" ")
+    : [
+      "Playwright Chromium is not installed for Campaigns OS polish capture.",
+      "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun `campaigns-os polish capture`.",
     ].join(" "));
-  }
 }
 
 export async function createPolishBrowserAdapter({
@@ -651,11 +646,13 @@ export async function createPolishBrowserAdapter({
   let browser;
   let startupTimedOut = false;
   const startupPromise = Promise.resolve().then(async () => {
-    const chromium = await chromiumLauncher(injectedChromium);
-    if (startupTimedOut) throw polishProducerTimeoutError();
     let launchedBrowser;
     try {
-      launchedBrowser = await chromium.launch({ headless: headed !== true });
+      launchedBrowser = await launchPackageChromium({
+        headed,
+        chromium: injectedChromium,
+        onMissing: polishBrowserMissing,
+      });
     } catch (error) {
       if (startupTimedOut) throw polishProducerTimeoutError();
       throw error;
@@ -671,21 +668,10 @@ export async function createPolishBrowserAdapter({
     }
     return launchedBrowser;
   });
-  try {
-    browser = await runWithPolishProducerDeadline(() => startupPromise, {
-      timeoutMs: boundedStartupDeadlineMs,
-      onTimeout() { startupTimedOut = true; },
-    });
-  } catch (error) {
-    if (error?.code === POLISH_PRODUCER_TIMEOUT_ERROR_CODE) throw error;
-    if (missingBrowserError(error)) {
-      throw browserUnavailableError([
-        "Playwright Chromium is not installed for Campaigns OS polish capture.",
-        "Run `npm run qa:install-browser` from the campaigns-os repo, then rerun `campaigns-os polish capture`.",
-      ].join(" "));
-    }
-    throw error;
-  }
+  browser = await runWithPolishProducerDeadline(() => startupPromise, {
+    timeoutMs: boundedStartupDeadlineMs,
+    onTimeout() { startupTimedOut = true; },
+  });
 
   let closed = false;
   let poisonCode = null;
