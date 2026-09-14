@@ -3192,6 +3192,51 @@
         }
       ],
       "entry_sha256": "9f2cd7cd7d6299183771d3c14a05de513cc9a96e624245d96f60be18a6ceeeb1"
+    },
+    {
+      "id": "RL-0090",
+      "sequence": 90,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.33",
+      "changelog_sha256": "e91275ea3bfb86756c7e251b78790f2415ed7fc3bce70ee125bbf7a141063ba5",
+      "agent_impact": "start, prepare-build, and build accept --design-manifest <path>: the source-html manifest is read from that file instead of <source>/.campaigns-os/source-html-manifest.json (pages[].path stays relative to --source), the Design Source Package records it at contributions[html-funnel].provenance.manifest_path relative to the package, and doctor validates that recorded file. The flag used to be accepted and ignored; a bare flag, a non-file path, or a manifest failing validation now exits non-zero before any artifact is written (\"Design manifest does not exist or is not a file: <path>\", \"--design-manifest needs a value\", \"Source-html manifest at <path> failed source-html-manifest/v0 validation: ...\"). A page declared out of source scope (manifest skip_reason entry or CampaignSpec build_scope.mode \"partial\") is now template stock on every family: the assembly report decision dec_page_scope_<page> carries template_stock: true and template_family (the locked family), and on a family without Template Reference proof the Design Source Package records an accepted coverage_absence Source Gap template-stock-<surface> (attributed_by \"prepare-build\") instead of blocking with \"Page surface ... lacks non-low primary_design, proven template_baseline, an accepted Source Gap, or an approved waiver.\" and \"Source TODO \\\"link-<page>-template-reference\\\" is blocked.\" \u2014 readiness.status is \"ready_with_gaps\", stages.prepare_build.status \"completed_partial\", no DESIGN_SOURCE_PACKAGE_NOT_READY blocker, and the next build prompt gains a \"Template-stock pages\" line naming each page and the family to materialise it from. apollo's template_baseline path is unchanged. The Design Source Package now builds on the family the packet locks (--template-family over the spec hint), so the template-baseline presentation_intent and the link-<page>-template-reference TODO name that family; a package emitted earlier under a differing spec hint reports current_template_material_stale on the next run and must be removed and re-emitted. The next build prompt lists a pre-checkout select step first. Doctor treats a materialised template-stock page as built: before the build the page stays in derived.scope.out_of_scope_pages (now carrying template_stock: true and template_family) with the warning \"CampaignSpec page \\\"<id>\\\" is template stock and not built yet: ...\" and scope.runtime_qa_blocked for a runtime page; once its built HTML exists at its route under _site/<slug>/ it moves into derived.scope.built_pages (template_stock: true, template_family, source_path: null) and previewable_routes, scope.partial_build / scope.runtime_qa_blocked no longer name it, and the ready list adds \"Template-stock page(s) materialised by the build stage: <id> (<family>)\". The next-campaigns-build skill (1.0.2) materialises marked template-stock pages from the locked family instead of treating every out-of-scope page as do-not-build. A CampaignSpec build_scope partial declaration is discharged once every page it took out of scope is built. The build prompt lists only pages whose decision carries the marker; a skip entry without it is neither listed nor counted as built. polish capture still plans from the packet's mapped pages: a materialised stock page is outside the polish capture plan (route_scope \"selected\") and its hidden-eager-media checkpoint; browser QA covers its route from the CampaignSpec topology.",
+      "compatibility": "compatible",
+      "migration": "None for existing runs whose spec hint and --template-family agree. An agent that passed --design-manifest expecting it to be ignored must drop it or point it at a valid manifest. An agent that read the link-<page>-template-reference TODO or the template-baseline presentation_intent to learn the spec hint should read packet.assembly.template_family instead. A Design Source Package emitted before this change on a run whose --template-family differed from the spec hint fails the next prepare-build with current_template_material_stale: delete .campaign-runtime/input/design-source-package.json (only if no downstream stage consumed it) and rerun.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "prepare-build",
+          "summary": "start/prepare-build/build parse --design-manifest <path> (validated with the other argv checks; missing file, bare flag, or invalid manifest exit non-zero before any write), thread it into source intake and the Design Source Package provenance, pass the locked family (not the spec hint) and the declared template-stock page ids into the package synthesizer, read the recorded manifest_path back in doctor's manifest validation, name the flag in the DESIGN_SOURCE_PACKAGE_NOT_READY remedy, and add the Template-stock pages line to the next build prompt; help text documents both; doctor's source-coverage check reads the template_stock marker on dec_page_scope_<page> and counts the page as built once its _site HTML exists (built_pages / previewable_routes / ready line), leaving unbuilt declarations out of scope; the build prompt orders a select step first."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Clearing DESIGN_SOURCE_PACKAGE_NOT_READY and A read-only source root describe --design-manifest; Template-stock pages: the family decides describes the declared template-stock route for every family (template_stock decision marker, coverage_absence gap on families without Template Reference proof, ready_with_gaps, build-stage materialisation) and retires the no-operator-channel and attest-the-stock-page reading."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Source HTML Manifest Auto-Population names --design-manifest and the skip_reason-as-template-stock declaration."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Partial-scope rule: a page whose dec_page_scope_<page> decision carries template_stock: true is materialised from the locked family's own page of that role (select first, copied with its dependent includes, layouts, and assets, wired from CampaignSpec); out-of-scope pages without the marker keep the do-not-build rule. Version 1.0.1 -> 1.0.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "next-campaigns-build manifest version 1.0.1 -> 1.0.2 in step with the skill frontmatter."
+        }
+      ],
+      "entry_sha256": "8f261b90ec9a0641bb610cc6e1507ca122db65715a27e7c492ced4da03eff010"
     }
   ]
 }

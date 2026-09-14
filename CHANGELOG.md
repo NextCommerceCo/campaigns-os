@@ -93,6 +93,7 @@ Notable supported-surface changes are recorded here.
   describes the declared route for every family and retires the "no operator
   channel" / attest-the-stock-page reading; README, docs/build-packet.md, and
   docs/entry-points.md name the flag.
+
 ## [1.27.0+agent.32] - 2026-09-14
 
 ### Fixed
