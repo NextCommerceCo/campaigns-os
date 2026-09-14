@@ -1133,8 +1133,9 @@ npm run campaigns-os -- qa run \
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
 gate**. A single checkout's `common` sample always stays under it, though tier
 expansion can exceed it. If `full` expands past the cap, the command stops before
-browser launch, prints the planned count, lists **every** planned path (never a
-truncated preview), and names the exact `--max-test-orders <count>` raise. For example, a linear three-offer graph has
+browser launch, prints the planned count, lists the planned paths (up to 40 ids;
+past that the remainder is counted, never cut silently, and `--select-package
+<ref[:qty]>` lists one tier's paths), and names the exact `--max-test-orders <count>` raise. For example, a linear three-offer graph has
 eight terminal paths plus the checkout baseline, so it requires
 `--max-test-orders 9`. No approval step is involved.
 

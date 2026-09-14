@@ -570,18 +570,70 @@ test("--select-package narrows a tiers run to the listed declared tiers; coupon 
   // a ref the spec does not declare as a tier is a named refusal, not a silent zero-tier run
   assert.throws(
     () => testOrderPlans("tiers", topo, { "select-package": "7" }),
-    /--select-package 7: is not a selector tier the CampaignSpec declares \(declared: 1, 1:2, 1:3\)/,
+    /--select-package 7: is not a selector tier the CampaignSpec declares \(declared tiers: 1, 1:2, 1:3\)\./,
   );
   // ...and a list that is only partly declared is refused too, naming the
   // unmatched identities — never a run of the matched tiers with the rest skipped
   assert.throws(
     () => testOrderPlans("tiers", topo, { "select-package": "1:2,7,1:9" }),
-    /--select-package 7,1:9: are not selector tiers the CampaignSpec declares \(declared: 1, 1:2, 1:3\)/,
+    /--select-package 7,1:9: are not selector tiers the CampaignSpec declares \(declared tiers: 1, 1:2, 1:3\)\./,
   );
   assert.throws(
     () => testOrderPlans("tiers", topo, { "select-package": "1:zero" }),
     /--select-package 1:zero: expected <ref\[:qty\]>/,
   );
+
+  // each segment is trimmed and a blank qty slot is the default quantity, so
+  // `1: `, ` 1 : 2 ` and `1:1` name the same tiers as `1`, `1:2`, `1`
+  const ids = (selectPackage) => testOrderPlans("tiers", topo, { "select-package": selectPackage }).map((plan) => planId(plan));
+  assert.deepEqual(ids("1: "), ids("1"));
+  assert.deepEqual(ids(" 1 : 2 "), ids("1:2"));
+  assert.deepEqual(ids("1 :1"), ids("1"));
+  // a third segment is malformed, never silently dropped
+  assert.throws(
+    () => testOrderPlans("tiers", topo, { "select-package": "1:2:3" }),
+    /--select-package 1:2:3: expected <ref\[:qty\]>/,
+  );
+});
+
+test("--select-package naming a bump ref or a tier on a URL-less secondary checkout is refused by cause", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const primary = {
+    page_id: "checkout",
+    page_type: "checkout",
+    url: route("checkout/"),
+    packages: [{ ref_id: "1", qty: 1 }, { ref_id: "1", qty: 2 }, { ref_id: "2", is_upsell: true }],
+  };
+  const secondary = { page_id: "checkout-b", page_type: "checkout", packages: [{ ref_id: "8" }] }; // no url
+  const topo = [{ pages: [primary] }, { pages: [secondary] }];
+  const quiet = { warn: () => {} };
+
+  // the bump ref is the name the bump warning just printed: the refusal says
+  // it is a bump, lists it beside the tiers, and points at --cart
+  assert.throws(
+    () => testOrderPlans("tiers", topo, { "select-package": "2" }, quiet),
+    /--select-package 2: is not a selector tier the CampaignSpec declares \(declared tiers: 1, 1:2, 8; order bump ref\(s\) excluded from tiers: 2\)\. 2 is an order bump \(is_upsell\), an add-on to a selected tier, not a tier; bump coverage comes from --cart\./,
+  );
+  // an unknown ref on a spec with bumps still lists the bumps, but is not called one
+  let message = null;
+  try { testOrderPlans("tiers", topo, { "select-package": "7" }, quiet); } catch (error) { message = error.message; }
+  assert.match(message, /\(declared tiers: 1, 1:2, 8; order bump ref\(s\) excluded from tiers: 2\)\. Name declared tiers only/);
+  assert.ok(!message.includes("is an order bump"));
+
+  // a tier declared only on a secondary checkout with no URL passes the
+  // declared check but cannot be driven: the refusal names the page and the
+  // cause instead of the generic "nothing to iterate"
+  const warnings = [];
+  assert.throws(
+    () => testOrderPlans("tiers", topo, { "select-package": "8" }, { warn: (line) => warnings.push(line) }),
+    /--select-package 8: names a tier declared only on checkout page "checkout-b", which has no resolvable URL — nothing this run can drive\. Fix that page's URL\/base-url/,
+  );
+  assert.ok(warnings.some((line) => /checkout page "checkout-b" declares tier\(s\) 8 but has no resolvable URL/.test(line)));
+  // ...while a list that also names a driveable tier runs that tier and warns about the other
+  const mixed = testOrderPlans("tiers", topo, { "select-package": "1,8" }, quiet);
+  assert.deepEqual(mixed.map((plan) => planId(plan)), ["checkout@tier:1"]);
 });
 
 test("a refused cap lists every planned path, not a truncated preview", () => {
@@ -605,6 +657,27 @@ test("a refused cap lists every planned path, not a truncated preview", () => {
   assert.ok(message, "the cap must refuse 15 plans at 6");
   assert.match(message, new RegExp(`Planned paths: ${plans.map((plan) => planId(plan)).join(", ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.`));
   assert.ok(!message.includes("..."), "no plan is hidden behind an ellipsis");
+  assert.ok(!message.includes(" more ("), "nothing is counted as unlisted when everything fits");
+
+  // beyond the listing bound the remainder is counted, not silently cut, and
+  // every unlisted plan is reachable by narrowing to its tier
+  const wide = [{ pages: [
+    { ...topo[0].pages[0], packages: Array.from({ length: 11 }, (_, index) => ({ ref_id: String(index + 1) })) },
+    ...topo[0].pages.slice(1),
+  ] }];
+  const widePlans = testOrderPlans("tiers:common", wide, {});
+  assert.equal(widePlans.length, 44);
+  let wideMessage = null;
+  try {
+    enforceTestOrderLimit(widePlans, { "test-order": "tiers:common", "max-test-orders": "6" });
+  } catch (error) {
+    wideMessage = error.message;
+  }
+  const wideIds = widePlans.map((plan) => planId(plan));
+  assert.ok(wideMessage.includes(`Planned paths: ${wideIds.slice(0, 40).join(", ")}, and 4 more (first 40 of 44 listed; narrow with --select-package <ref[:qty]> to list one tier's paths).`), wideMessage);
+  assert.match(wideMessage, /rerun with --max-test-orders 44 for this exhaustive proof/);
+  for (const id of wideIds.slice(40)) assert.ok(!wideMessage.includes(`${id},`) && !wideMessage.includes(`${id}.`), `${id} is counted, not listed`);
+  assert.deepEqual(testOrderPlans("tiers:common", wide, { "select-package": "11" }).map((plan) => planId(plan)), wideIds.slice(40));
 });
 
 test("multi-funnel specs plan every funnel's checkout declarations, each against its own checkout page", () => {

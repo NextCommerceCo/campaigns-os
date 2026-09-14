@@ -473,15 +473,27 @@ Notable supported-surface changes are recorded here.
   strict-selection value (`1` or `1:1` is ref 1 at quantity one, `1:2` the
   two-unit multiplier); coupon plans are not tiers and are still planned.
   Every listed identity must be a declared tier: any that is not is refused
-  by name, listing the declared tiers (`--select-package 7: is not a selector
-  tier the CampaignSpec declares (declared: 1, 1:2, 1:3)`), so a partly
-  declared list never runs the matched tiers and skips the rest. `--apply-
-  coupon` with a tiers mode is still refused, with the message now naming
-  only that flag.
-- A refused `--max-test-orders` cap lists every planned path. The message cut
+  by name, listing the declared tiers and any bump refs the spec excludes
+  from them (`--select-package 7: is not a selector tier the CampaignSpec
+  declares (declared tiers: 1, 1:2, 1:3; order bump ref(s) excluded from
+  tiers: 2)`), so a partly declared list never runs the matched tiers and
+  skips the rest. Naming a bump ref itself gets the reason (`2 is an order
+  bump (is_upsell), an add-on to a selected tier, not a tier; bump coverage
+  comes from --cart`) rather than reading as an unknown ref. Naming only a
+  tier that a secondary funnel's URL-less checkout declares is refused by
+  cause (`names a tier declared only on checkout page "checkout-b", which
+  has no resolvable URL — nothing this run can drive`), not with the generic
+  "found nothing to iterate". Each `ref[:qty]` segment is trimmed, a blank
+  qty slot is quantity one, and a third `:` segment is malformed rather than
+  silently dropped. `--apply-coupon` with a tiers mode is still refused, with
+  the message now naming only that flag.
+- A refused `--max-test-orders` cap lists the planned paths. The message cut
   the preview at eight ids and hid the rest behind `...`, so the plans that
   most needed a look (the tail) were the ones an operator could not see;
-  `Planned paths:` now carries the full list.
+  `Planned paths:` now lists up to 40 ids and, past that, counts the rest
+  (`and 4 more (first 40 of 44 listed; narrow with --select-package
+  <ref[:qty]> to list one tier's paths)`), so nothing is cut without saying
+  how much and how to see it.
 - The doctor packet's `qa.test_order_policy_notes`, the `next`-stage QA
   hand-off text and `qa run --help` describe the tiers modes: what a tier is,
   that bump rows are not tiers, and that `--select-package` narrows a tiers
