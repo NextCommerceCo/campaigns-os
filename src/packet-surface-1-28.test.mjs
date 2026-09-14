@@ -78,13 +78,16 @@ test("doctor warns once, naming the field, when a packet still carries a removed
   assert.equal(codes(result.errors).some((code) => code.startsWith("qa.")), false);
 });
 
-test("a qa block that is not an object is a structured doctor error, not a crash", (t) => {
-  const { packetPath } = packetFixture(t, (packet) => {
-    packet.qa = true;
-  });
-  const result = doctorPacket(packetPath, { write: false });
-  assert.ok(result.errors.some((issue) => issue.code === "qa" && issue.message === "qa must be an object when present."), JSON.stringify(result.errors));
-  assert.equal(codes(result.warnings).includes("qa.removed_policy_fields"), false);
+test("a qa block that is missing, null, or not an object is a structured doctor error, not a crash", (t) => {
+  for (const qa of [true, "policy", 1, null, undefined]) {
+    const { packetPath } = packetFixture(t, (packet) => {
+      if (qa === undefined) delete packet.qa;
+      else packet.qa = qa;
+    });
+    const result = doctorPacket(packetPath, { write: false });
+    assert.ok(result.errors.some((issue) => issue.code === "qa" && issue.message === "qa must be an object."), `${JSON.stringify(qa)}: ${JSON.stringify(result.errors)}`);
+    assert.equal(codes(result.warnings).includes("qa.removed_policy_fields"), false);
+  }
 });
 
 test("the packet schema neither requires nor lists the removed qa flags", () => {
@@ -149,7 +152,7 @@ test("next's deploy action under local-serve says to serve _site/ locally, not t
   const deploy = local.find((action) => action.id === "deploy");
   assert.match(deploy.description, /^Serve the built _site\/ output locally as the origin root \(deploy\.target is local-serve\)/);
   const rootServed = buildNextActions({ ...base, result: { stage: "deploy" }, packet: { campaign: { public_route_slug: "demo", route_root: "/" }, deploy: { target: "local-serve" } } });
-  assert.match(rootServed.find((action) => action.id === "deploy").description, /^Serve the built _site\/demo\/ output locally as the origin root/);
+  assert.match(rootServed.find((action) => action.id === "deploy").description, /^Serve the built _site\/ output locally as the origin root \(deploy\.target is local-serve\) — route_root is "\/": pages are served at site-root paths while assets keep the \/demo\/ prefix, so serve _site\/ with a rewrite of root-level page routes onto \/demo\/<route>/);
   const netlify = buildNextActions({ ...base, result: { stage: "deploy" }, packet: { deploy: { target: "netlify" } } });
   assert.match(netlify.find((action) => action.id === "deploy").description, /^Deploy _site\/ output to netlify/);
 });
@@ -166,15 +169,15 @@ test("next at the deploy stage under local-serve hands off a serve-locally promp
   assert.doesNotMatch(result.prompt, /netlify deploy/);
 });
 
-test("a root-served campaign under local-serve serves _site/<slug>/ as the origin root", (t) => {
+test("a root-served campaign under local-serve keeps _site/ as the document root and names the rewrite", (t) => {
   const { packetPath } = packetFixture(t, (packet) => {
     packet.deploy.target = "local-serve";
     packet.campaign.route_root = "/";
     packet.campaign.live_url_path = "/";
   });
   const result = nextStage("deploy", { packet: packetPath, "no-write": true });
-  assert.match(result.prompt, /Directory to serve as the origin root: _site\/runtime-packet-demo\/ \(route_root is "\/"/);
-  assert.match(result.prompt, /you serve _site\/runtime-packet-demo\/ on localhost/);
+  assert.match(result.prompt, /Directory to serve as the origin root: _site\/ — route_root is "\/": pages are served at site-root paths while assets keep the \/runtime-packet-demo\/ prefix, so serve _site\/ with a rewrite of root-level page routes onto \/runtime-packet-demo\/<route>/);
+  assert.match(result.prompt, /a plain directory serve of _site\/runtime-packet-demo\/ would 404 every \/runtime-packet-demo\/\.\.\. asset/);
 });
 
 test("the Run Record schema and the validator agree on remit_result and remit_base_kind", () => {

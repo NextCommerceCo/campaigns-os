@@ -471,11 +471,13 @@ App Development domain (SDK allowed, analytics suppressed), so under
 a recorded localhost URL as the intended state (a `ready` line), and warns
 (`deploy.local_serve_url`) when the recorded URL is not a localhost origin.
 `next` at the deploy stage then hands off a serve-locally prompt and action
-instead of a ship-to-host one, naming the directory to serve as the origin
-root: `_site/` by default, `_site/<public_route_slug>/` for a root-served
-campaign (`campaign.route_root: "/"`), because built output always lives under
-the slug and `route_root` only changes the served path shape. The QA stage is
-unchanged and runs against the recorded URL.
+instead of a ship-to-host one. The directory to serve is `_site/`; for a
+root-served campaign (`campaign.route_root: "/"`) the handoff adds that pages
+are served at site-root paths while assets keep the `/<public_route_slug>/`
+prefix, so `_site/` needs the same rewrite of root-level page routes onto
+`/<public_route_slug>/<route>` the production host applies — no single
+directory serves both. The QA stage is unchanged and runs against the recorded
+URL.
 
 Campaign Build Brief `qa_policy` is deliberately scoped as
 `documented_expectation` metadata. Use it to preserve business QA intent, but

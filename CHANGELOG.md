@@ -47,14 +47,16 @@ release-ledger entry `surface_version: 1.28.0`.
   `next` at the deploy stage emits the action `Serve the built _site/ output
   locally as the origin root (deploy.target is local-serve), then record the
   localhost URL on deploy.preview_url …` and a serve-locally handoff prompt
-  instead of the ship-to-host one; both name the directory to serve — `_site/`
-  by default, `_site/<public_route_slug>/` for a root-served campaign
-  (`campaign.route_root: "/"`), since built output always lives under the slug
-  and only the served path shape changes. The QA stage is unchanged. `qa
+  instead of the ship-to-host one; both name `_site/` as the directory to
+  serve, and for a root-served campaign (`campaign.route_root: "/"`) add that
+  pages are served at site-root paths while assets keep the `/<slug>/` prefix,
+  so `_site/` needs the rewrite of root-level page routes onto
+  `/<slug>/<route>` that the production host applies — a plain directory serve
+  of `_site/<slug>/` would 404 every asset. The QA stage is unchanged. `qa
   policy set --deploy-target local-serve` records it.
-- Doctor reports a `qa` block that is not an object as the error `qa must be
-  an object when present.` (the removed boolean checks used to be the only
-  thing that tripped on that shape).
+- Doctor reports a missing, null, or non-object `qa` block as the error `qa
+  must be an object.` — the schema requires it, and the removed boolean checks
+  were the only thing that used to trip on that shape.
 - Run Record fields `remit_result` and `remit_base_kind` (both optional,
   nullable): the classification of what the receiver answered (`stored`,
   `already_stored`, `ok_unparsed_ack`, `refused`, `transport_error`) and the
