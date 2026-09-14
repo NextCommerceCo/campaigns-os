@@ -28,8 +28,7 @@ function topology(pages) {
 // spelling the SDK does not instantiate on cannot creep back in as an entry
 // the runner would click.
 test("the cart-entry control selector is exactly the SDK's add-to-cart activation selector", () => {
-  const members = CART_ENTRY_CONTROL_SELECTOR.split(",").map((member) => member.trim());
-  assert.deepEqual(members, ['[data-next-action="add-to-cart"]']);
+  assert.equal(CART_ENTRY_CONTROL_SELECTOR, '[data-next-action="add-to-cart"]');
 });
 
 test("the entry step is the first rung of the ladder", () => {

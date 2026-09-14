@@ -914,8 +914,9 @@ feature on), or a link into the checkout URL carrying `?forcePackageId=`,
 which is what the certified `shop-single-step` landing renders. A control
 spelled any other way is not a cart entry, so a page that offers nothing else
 fails the step by name (`cart_entry_control_missing`) rather than clicking a
-control the SDK never wired and waiting out the navigation budget. A visible SDK control is preferred over a visible link, and a hidden
-control is used only when nothing is visible. `--select-package <ref>` is strict
+control the SDK never wired and waiting out the navigation budget. A visible
+SDK control is preferred over a visible link, and a hidden control is used only
+when nothing is visible. `--select-package <ref>` is strict
 here as it is on checkout: the control must carry that package id (own
 attribute, nearest card, or the `forcePackageId` ref) or the step fails by
 name; an explicit quantity (`--select-package 1:2`) must match what the
