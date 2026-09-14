@@ -814,6 +814,17 @@ test('exact-budget admission masks a later HTTP failure just as sequential loadi
 });
 
 
+test('a page fetch that ignores its abort signal still times out with the timeout code', { timeout: 2000 }, async () => {
+  const loader = createPageSourceLoader({
+    limits: { request_timeout_ms: 10 },
+    fetchImpl: () => new Promise(() => {}),
+  });
+  const result = await loader({ url: 'https://example.test/hung' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error_code, 'page_fetch_timeout');
+  assert.match(result.error, /10ms deadline/);
+});
+
 test('price preview aborts use a stable timeout code in commercial evidence', { timeout: 2000 }, async () => {
   const spec = rawRecurringSpec();
   const result = await runCommercialParity({
