@@ -188,7 +188,18 @@ export function writeConsentConfig(state, {
 export function scopedConsentCommand(scope) {
   const normalized = normalizeConsentScope(scope);
   if (!normalized || normalized === CANONICAL_REMIT_SCOPE) return "campaigns-os telemetry on";
-  return `campaigns-os telemetry on --proxy-base ${normalized}`;
+  return `campaigns-os telemetry on --proxy-base ${shellArgument(normalized)}`;
+}
+
+// The generated command is meant to be pasted into a shell. A URL made of
+// the characters below passes through every common shell as one word; any
+// other character (the brackets of an IPv6 loopback such as http://[::1]:4399
+// glob in zsh) gets single quotes so the copy still grants the endpoint.
+const SHELL_SAFE_ARGUMENT = /^[A-Za-z0-9._~:/@%+=,-]+$/;
+
+function shellArgument(value) {
+  if (SHELL_SAFE_ARGUMENT.test(value)) return value;
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 /**

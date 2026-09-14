@@ -3071,7 +3071,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.27.0+agent.31",
-      "changelog_sha256": "6b641fcce593144cd5193c9da187ccaa33734ad984bcedae3cc7fb4ccf7f773b",
+      "changelog_sha256": "487ef0bedfbefbe1c9cf44dcdadb60c440ce326bea947c00515c7c3ebf2e6afa",
       "agent_impact": "Machine-level consent is scoped to one endpoint and can be granted non-interactively for a non-canonical receiver: `telemetry on --proxy-base <url>` writes telemetry.scope = that base (https or loopback only; anything else exits 1 before writing), and a later `run-record`/`run end`/`qa run` that passes the same --proxy-base resolves consent on (source file) and remits there with no CAMPAIGNS_OS_TELEMETRY override. A grant covers exactly one scope: after a non-canonical grant, a remit to the canonical endpoint is OFF until `telemetry on` runs again without the flag. Parse the new fields: `telemetry on|off --json` carries scope and scope_canonical (an OFF record is always scope null, scope_canonical false); `telemetry status --json` carries scope, checked_endpoint (canonical, or --proxy-base when given) and scope_mismatch. Text output adds `Scope: <url>` and `Checked endpoint: <url>` lines to status, and the mismatch lines (stderr warning, status, run-record `Consent:`) end with the exact grant command `campaigns-os telemetry on [--proxy-base <url>]` instead of `until this endpoint is confirmed`. A remit to a non-canonical --proxy-base under CAMPAIGNS_OS_TELEMETRY=on still sends but now prints one stderr warning that the override bypasses scope checking, and `telemetry status --proxy-base <url>` under the override names that endpoint on its state line. `telemetry status --proxy-base` applies the same https-or-loopback rule as `telemetry on` and exits 1 with the same message otherwise. `telemetry off --proxy-base <url>` exits 1 (`--proxy-base is not accepted; turning telemetry off applies to every endpoint`) and writes nothing; turning off always writes scope null, so status prints no Scope: row for an OFF file. A --proxy-base flag with no URL on any telemetry subcommand exits 1 (`--proxy-base needs a URL`) rather than being read as absent. `help` lists --proxy-base on `run end` and on `telemetry status|on`; `telemetry off` is listed without it.",
       "compatibility": "additive",
       "migration": "None for existing invocations. A harness that consents to a loopback or staging receiver through CAMPAIGNS_OS_TELEMETRY=on can replace it with `campaigns-os telemetry on --proxy-base <url>` under its own XDG_CONFIG_HOME and drop the override; a harness that matches the old `until this endpoint is confirmed` warning text should match `treating telemetry as OFF for this endpoint` instead.",
@@ -3101,7 +3101,7 @@
           "summary": "Consent: the config path honours XDG_CONFIG_HOME; a grant is scoped to one endpoint; `telemetry on --proxy-base <url>` grants a non-canonical receiver; `telemetry status` reports and checks the scope; the env override has no scope and warns when it carries a non-canonical remit."
         }
       ],
-      "entry_sha256": "1821fda45158ff965cf99e105f46b00471aea669f2ebd73a06560fd7517cbbfe"
+      "entry_sha256": "e15958831dd0eedb7ba864a8a0596ec2ee84d33e978f2dac740a4e5609b958ee"
     }
   ]
 }

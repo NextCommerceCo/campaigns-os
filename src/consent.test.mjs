@@ -431,6 +431,9 @@ test("scopedConsentCommand names --proxy-base only for a non-canonical scope", (
   assert.equal(scopedConsentCommand(CANONICAL_REMIT_SCOPE), "campaigns-os telemetry on");
   assert.equal(scopedConsentCommand(null), "campaigns-os telemetry on");
   assert.equal(scopedConsentCommand("http://127.0.0.1:4399/"), "campaigns-os telemetry on --proxy-base http://127.0.0.1:4399");
+  // An IPv6 loopback carries brackets, which glob in zsh: the pasted command
+  // must still hand the shell one literal argument.
+  assert.equal(scopedConsentCommand("http://[::1]:4399"), "campaigns-os telemetry on --proxy-base 'http://[::1]:4399'");
 });
 
 test("CLI: telemetry on --proxy-base writes a grant scoped to that base, and status reports the scope", async () => {

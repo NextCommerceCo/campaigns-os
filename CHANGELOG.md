@@ -67,6 +67,11 @@ Notable supported-surface changes are recorded here.
   states, instead of storing `scope: null` (on ON, a grant that matches no
   endpoint; on OFF, a silently dropped typo). An OFF record is always written
   with `scope: null`, whatever base the caller passed.
+- The grant command printed on a scope mismatch single-quotes an endpoint
+  that carries shell-special characters (`--proxy-base 'http://[::1]:4399'`
+  for the IPv6 loopback, whose brackets glob in zsh) so the pasted line hands
+  the shell one argument; `http://127.0.0.1:4399` and https URLs are
+  unchanged.
 
 ## [1.27.0+agent.26] - 2026-09-14
 
