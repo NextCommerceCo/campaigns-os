@@ -2,6 +2,58 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.24] - 2026-09-14
+
+### Fixed
+
+- `--test-order tiers` (and `tiers:common` / `tiers:full`) no longer counts an
+  order bump as a selector tier. The tier planner turned every checkout
+  `packages[]` row with a ref into a tier and read no bump marker, so a
+  three-tier checkout that also declares a bump row marked `is_upsell: true`
+  planned four tiers: `tiers:common` on a two-upsell funnel expanded to 16
+  orders (20 for `tiers:full`, 4 for bare `tiers`), the flood guard named
+  `--max-test-orders 16` as the raise, and the four `*@tier:<bump-ref>` plans
+  would have failed strict selection by name (no rendered card carries the
+  bump ref). The planner now reads the same `is_upsell` predicate the
+  commercial-journey planner already uses for bump rows (`isBumpRow`, one
+  predicate, exported from `commercial-journey`), so the same checkout plans
+  12 / 15 / 3 orders and the guard names `--max-test-orders 12`. A run whose
+  checkout declares bump rows prints one `[qa:test-order]` line naming the
+  bump ref(s) it left out; bump coverage stays with `--cart`.
+
+### Changed
+
+- `--select-package <ref[:qty],...>` now narrows a tiers run to the listed
+  declared tiers instead of being refused. Identities match the tier's own
+  strict-selection value (`1` or `1:1` is ref 1 at quantity one, `1:2` the
+  two-unit multiplier); coupon plans are not tiers and are still planned.
+  Every listed identity must be a declared tier: any that is not is refused
+  by name, listing the declared tiers and any bump refs the spec excludes
+  from them (`--select-package 7: is not a selector tier the CampaignSpec
+  declares (declared tiers: 1, 1:2, 1:3; order bump ref(s) excluded from
+  tiers: 2)`), so a partly declared list never runs the matched tiers and
+  skips the rest. Naming a bump ref itself gets the reason (`2 is an order
+  bump (is_upsell), an add-on to a selected tier, not a tier; bump coverage
+  comes from --cart`) rather than reading as an unknown ref. Naming only a
+  tier that a secondary funnel's URL-less checkout declares is refused by
+  cause (`names a tier declared only on checkout page "checkout-b", which
+  has no resolvable URL — nothing this run can drive`), not with the generic
+  "found nothing to iterate". Each `ref[:qty]` segment is trimmed, a blank
+  qty slot is quantity one, and a third `:` segment is malformed rather than
+  silently dropped. `--apply-coupon` with a tiers mode is still refused, with
+  the message now naming only that flag.
+- A refused `--max-test-orders` cap lists the planned paths. The message cut
+  the preview at eight ids and hid the rest behind `...`, so the plans that
+  most needed a look (the tail) were the ones an operator could not see;
+  `Planned paths:` now lists up to 40 ids and, past that, counts the rest
+  (`and 4 more (first 40 of 44 listed; narrow with --select-package
+  <ref[:qty]> to list one tier's paths)`), so nothing is cut without saying
+  how much and how to see it.
+- The doctor packet's `qa.test_order_policy_notes`, the `next`-stage QA
+  hand-off text and `qa run --help` describe the tiers modes: what a tier is,
+  that bump rows are not tiers, and that `--select-package` narrows a tiers
+  run. `docs/qa-and-test-orders.md` says the same in its tiers section.
+
 ## [1.27.0+agent.23] - 2026-09-14
 
 ### Changed

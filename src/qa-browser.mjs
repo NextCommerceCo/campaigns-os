@@ -34,6 +34,7 @@ import {
   summarizeSelectionSurface,
 } from "./qa-cart-entry.mjs";
 import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
+import { isBumpRow } from "./commercial-journey.mjs";
 import {
   RESIDUE_PAGE_TYPES,
   demoAssetConfig,
@@ -60,6 +61,9 @@ const DEFAULT_TEST_CVV = "123";
 const DEFAULT_TEST_EXP_MONTH = "12";
 const DEFAULT_TEST_EXP_YEAR = "2030";
 const DEFAULT_MAX_TEST_ORDERS = 6;
+// Planned-path ids listed in a refused --max-test-orders message before the
+// remainder is counted rather than printed.
+const PLANNED_PATH_LIST_LIMIT = 40;
 // Stable fallback customer email for test orders. Two intents, deliberately split:
 //
 // (b) STABILITY — Test Orders use global test cards that bypass the gateway and
@@ -5502,11 +5506,19 @@ function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
 }
 
 function specTierPlans(topologies, args, variant, { warn = (line) => process.stderr.write(`${line}\n`) } = {}) {
-  for (const flag of ["select-package", "apply-coupon"]) {
-    if (stringArg(args[flag])) {
-      throw new Error(`--test-order tiers derives package tiers and coupon codes from the CampaignSpec; drop --${flag} or use an explicit mode (common/full/...) with it.`);
-    }
+  if (stringArg(args["apply-coupon"])) {
+    throw new Error("--test-order tiers derives coupon codes from the CampaignSpec; drop --apply-coupon or use an explicit mode (common/full/...) with it.");
   }
+  // `--select-package <ref[:qty],...>` narrows a tiers run to the listed
+  // declared tiers (exact `ref` / `ref:qty` identities) instead of iterating
+  // every tier; coupon plans are not tiers and are unaffected.
+  const narrowTo = selectorTierNarrowing(args["select-package"]);
+  const declaredIdentities = new Set();
+  const bumpRefs = new Set();
+  // Narrowed tiers that matched only on a checkout page this run cannot drive
+  // (secondary funnel, no resolvable URL): the refusal names them instead of
+  // the generic "nothing to iterate".
+  const undrivableMatches = [];
   // Every funnel's checkout page contributes plans, and each plan carries the
   // checkout page that declares its tier/coupon so the runner drives THAT
   // page — strict-selecting a ref on a checkout that doesn't render it would
@@ -5522,10 +5534,23 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
     const pages = Array.isArray(topology?.pages) ? topology.pages : [];
     const checkoutPage = pages.find((page) => String(page?.page_type || "").toLowerCase() === "checkout");
     if (!checkoutPage) continue;
-    const tiers = declaredSelectorTiers(checkoutPage);
+    const declaredTiers = declaredSelectorTiers(checkoutPage);
+    const bumps = declaredOrderBumps(checkoutPage);
+    if (bumps.length) {
+      warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares order bump package(s) ${bumps.join(", ")} (is_upsell) — not planned as selector tiers; bump coverage comes from --cart.`);
+    }
+    for (const tier of declaredTiers) declaredIdentities.add(selectorTierIdentity(tier));
+    for (const ref of bumps) bumpRefs.add(ref);
+    const tiers = narrowTo ? declaredTiers.filter((tier) => narrowTo.has(selectorTierIdentity(tier))) : declaredTiers;
     const coupons = declaredCheckoutCoupons(checkoutPage);
     if (!tiers.length && !coupons.length) continue;
     if (checkoutPage !== primary && !checkoutPage.url) {
+      if (narrowTo && tiers.length) {
+        undrivableMatches.push({
+          page: checkoutPage.page_id || checkoutPage.label || "(unnamed)",
+          identities: tiers.map((tier) => selectorTierIdentity(tier)),
+        });
+      }
       const declared = [
         ...(tiers.length ? [`tier(s) ${tiers.map((tier) => tier.ref).join(", ")}`] : []),
         ...(coupons.length ? [`coupon(s) ${coupons.map((coupon) => coupon.code).join(", ")}`] : []),
@@ -5549,7 +5574,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       for (const path of paths) {
         plans.push({
           path,
-          select_package: tier.quantity === 1 ? tier.ref : `${tier.ref}:${tier.quantity}`,
+          select_package: selectorTierIdentity(tier),
           apply_coupon: null,
           checkout_page: checkoutPage,
           topology_plan: resolvedTopology,
@@ -5581,6 +5606,27 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       });
     }
   }
+  // Every listed identity must name a declared tier: a list that is only
+  // partly declared would run the matched tiers and quietly skip the rest,
+  // and the verdict would read as proof of a tier that was never driven.
+  const unmatched = narrowTo ? [...narrowTo].filter((identity) => !declaredIdentities.has(identity)) : [];
+  if (unmatched.length) {
+    // An unmatched identity whose ref is a declared bump row is the name the
+    // operator just saw in the bump warning: say why it is not a tier rather
+    // than letting "not a selector tier" read as "unknown ref".
+    const namedBumps = unmatched.filter((identity) => bumpRefs.has(identity.split(":")[0]));
+    throw new Error([
+      `--select-package ${unmatched.join(",")}: ${unmatched.length === 1 ? "is not a selector tier" : "are not selector tiers"} the CampaignSpec declares${declaredIdentities.size ? ` (declared tiers: ${[...declaredIdentities].join(", ")}` : " (no tiers declared"}${bumpRefs.size ? `; order bump ref(s) excluded from tiers: ${[...bumpRefs].join(", ")}` : ""}).`,
+      ...(namedBumps.length ? [`${namedBumps.join(",")} ${namedBumps.length === 1 ? "is an order bump (is_upsell)" : "are order bumps (is_upsell)"}, an add-on to a selected tier, not a tier; bump coverage comes from --cart.`] : []),
+      "Name declared tiers only, as ref or ref:qty, or drop --select-package to iterate every tier.",
+    ].join(" "));
+  }
+  if (!plans.length && undrivableMatches.length) {
+    throw new Error([
+      `--select-package ${undrivableMatches.flatMap((match) => match.identities).join(",")}: ${undrivableMatches.length === 1 && undrivableMatches[0].identities.length === 1 ? "names a tier declared only on" : "name tiers declared only on"} ${undrivableMatches.map((match) => `checkout page "${match.page}"`).join(" and ")}, which ${undrivableMatches.length === 1 ? "has" : "have"} no resolvable URL — nothing this run can drive.`,
+      "Fix that page's URL/base-url to prove the tier, or name a tier the primary checkout declares.",
+    ].join(" "));
+  }
   if (!plans.length) {
     throw new Error([
       "--test-order tiers found nothing to iterate: no CampaignSpec checkout page declares selector-tier packages or an enabled exit_intent/promo_code_input offer code.",
@@ -5590,13 +5636,55 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
   return plans;
 }
 
+// A tier's identity is the strict-selection value it is driven with: bare
+// `ref` at purchase quantity 1, `ref:qty` for a repeated-ref multiplier.
+function selectorTierIdentity(tier) {
+  return tier.quantity === 1 ? tier.ref : `${tier.ref}:${tier.quantity}`;
+}
+
+// `--select-package 1,1:2` under a tiers mode → the set of tier identities to
+// keep. `ref:1` normalises to `ref` so both spellings name the same tier.
+function selectorTierNarrowing(value) {
+  const raw = stringArg(value);
+  if (!raw) return null;
+  const identities = raw.split(",").map((item) => item.trim()).filter(Boolean).map((item) => {
+    // Exactly `ref` or `ref:qty`, each segment trimmed; a blank qty slot
+    // (`1:`, `1: `) is the default quantity, a third segment is malformed.
+    const segments = item.split(":").map((segment) => segment.trim());
+    const [ref, qty] = segments;
+    const quantity = qty == null || qty === "" ? 1 : Number(qty);
+    if (segments.length > 2 || !ref || !Number.isInteger(quantity) || quantity < 1) {
+      throw new Error(`--select-package ${item}: expected <ref[:qty]> to name a declared selector tier.`);
+    }
+    return selectorTierIdentity({ ref, quantity });
+  });
+  return identities.length ? new Set(identities) : null;
+}
+
+// Order bumps declared on the checkout page (`is_upsell: true` rows — the
+// same marker the commercial-journey planner reads). They are add-ons to a
+// selected tier, not tiers, so the tier planner reports and skips them.
+function declaredOrderBumps(checkoutPage) {
+  const refs = [];
+  for (const pkg of Array.isArray(checkoutPage?.packages) ? checkoutPage.packages : []) {
+    if (!pkg || typeof pkg !== "object" || !isBumpRow(pkg)) continue;
+    const ref = [pkg.ref_id, pkg.package_id, pkg.id]
+      .map((value) => (value == null ? "" : String(value).trim()))
+      .find(Boolean);
+    if (ref && !refs.includes(ref)) refs.push(ref);
+  }
+  return refs;
+}
+
 // Selector tiers are the packages the spec declares on the checkout page —
 // same ref tolerance as the doctor's specPackageRecords (ref_id/package_id/id).
+// Order-bump rows (`is_upsell: true`) are add-ons offered alongside the
+// selected tier, not tiers of their own: they never become a plan.
 function declaredSelectorTiers(checkoutPage) {
   const records = [];
   const quantitiesByRef = new Map();
   for (const pkg of Array.isArray(checkoutPage?.packages) ? checkoutPage.packages : []) {
-    if (!pkg || typeof pkg !== "object") continue;
+    if (!pkg || typeof pkg !== "object" || isBumpRow(pkg)) continue;
     const ref = [pkg.ref_id, pkg.package_id, pkg.id]
       .map((value) => (value == null ? "" : String(value).trim()))
       .find(Boolean);
@@ -5698,11 +5786,19 @@ function testOrderCommonPaths(topologies = []) {
 function enforceTestOrderLimit(plans, args) {
   const maxOrders = numberArg(args["max-test-orders"], DEFAULT_MAX_TEST_ORDERS);
   if (plans.length <= maxOrders) return;
-  const preview = plans.slice(0, 8).map((plan) => planId(plan)).join(", ");
-  const suffix = plans.length > 8 ? ", ..." : "";
+  // The listing is bounded, and the bound is stated: an operator deciding
+  // whether to raise the cap sees the whole plan for any realistic spec, and
+  // for a pathological one sees how many paths are unlisted and how to list
+  // them (narrow with --select-package; plan ids are deterministic).
+  const ids = plans.map((plan) => planId(plan));
+  const shown = ids.slice(0, PLANNED_PATH_LIST_LIMIT);
+  const hidden = ids.length - shown.length;
+  const preview = hidden > 0
+    ? `${shown.join(", ")}, and ${hidden} more (first ${shown.length} of ${ids.length} listed; narrow with --select-package <ref[:qty]> to list one tier's paths)`
+    : shown.join(", ");
   throw new Error([
     `--test-order ${args["test-order"]} expands to ${plans.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
-    `Planned paths: ${preview}${suffix}.`,
+    `Planned paths: ${preview}.`,
     `This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with --max-test-orders ${plans.length} for this exhaustive proof.`,
     "The cap bounds planned paths. Actual order creations are bounded separately by --max-order-creations, which defaults to the planned path count and is reserved before each submit.",
   ].join(" "));
