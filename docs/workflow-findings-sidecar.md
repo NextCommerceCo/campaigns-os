@@ -290,7 +290,11 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
 `--lifecycle-journal` on every command. A **run session** makes capture ambient:
 
 - `campaigns-os run start [--packet <p>]` mints one `run_id`, picks the
-  lifecycle journal, and writes `.campaign-runtime/run-session.json`.
+  lifecycle journal, and writes `.campaign-runtime/run-session.json`. With
+  `--packet` the session (and the managed `.gitignore` block) lands in the
+  packet's target repo — `assembly.target_repo` resolved from the packet's
+  directory, else that directory — whatever the cwd, the same root the
+  auto-opener behind `start` / `prepare-build` uses; without it, at cwd.
 - Every command then auto-discovers that session (walking up from cwd, or
   from the `--packet` it was handed) and shares its `run_id` + journal **with
   no per-command flags**. `start` / `prepare-build` / `build` take a
@@ -321,8 +325,9 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
   local record to keep. It does not print a re-send command: `run-record
   --run-id` reassembles rather than reloads (see below), and the session whose
   attempt references the record carries is already cleared.
-- An explicit absolute `--packet` associates commands and `run status` with the
-  target campaign session even from the toolkit or another project directory.
+- An explicit `--packet` associates commands, `run status`, and `run end` with
+  the target campaign session even from the toolkit or another project
+  directory, and `run start --packet` opens it there.
   If cwd and packet resolve to different active sessions, the command fails
   with both run IDs instead of silently cross-writing lifecycle evidence.
 - `campaigns-os run end` remains the manual close path for non-QA or interrupted
@@ -330,8 +335,9 @@ Operators (and the agents driving them) should not have to thread `--run-id` /
 - Sessions older than 12 hours are treated as stale and are not auto-discovered,
   so a later work session does not inherit an old `run_id` or lifecycle journal.
   A stale session is closed out, not abandoned: the next `start`,
-  `prepare-build`, or `build` at that `--target`, or `run start` / `run end` at
-  cwd, assembles its Run Record from the lifecycle journal (remit under the
+  `prepare-build`, or `build` at that `--target`, or `run start` / `run end`
+  (at the `--packet`'s target repo, else at cwd), assembles its Run Record
+  from the lifecycle journal (remit under the
   usual consent) and removes the file before opening a new session. A stale
   session whose packet is gone is cleared with a stderr note and no record.
   `run status` reports a stale file but never sweeps it.

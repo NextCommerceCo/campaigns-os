@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -118,6 +118,25 @@ test("CLI: install-agent-context writes the ignore block into the target and rep
     const dry = JSON.parse(execFileSync("node", [CLI, "install-agent-context", "--target", join(dir, "other"), "--dry-run", "--json"], { encoding: "utf8" }));
     assert.equal(dry.gitignore.dry_run, true);
     assert.equal(existsSync(join(dir, "other", ".gitignore")), false, "dry run writes nothing");
+  });
+});
+
+test("CLI: run start --packet writes the ignore block into the packet's target, not into cwd", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    const cwd = join(dir, "elsewhere");
+    for (const path of [target, cwd]) {
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, "package.json"), "{}\n");
+    }
+    const packetPath = join(target, "campaign-runtime.build.json");
+    const packet = JSON.parse(readFileSync(resolve(ROOT, "examples/build-packet.basic.json"), "utf8"));
+    packet.assembly.target_repo = ".";
+    writeFileSync(packetPath, `${JSON.stringify(packet, null, 2)}\n`);
+    execFileSync("node", [CLI, "run", "start", "--packet", packetPath, "--json"], { encoding: "utf8", cwd, env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" } });
+    assert.ok(readFileSync(join(target, ".gitignore"), "utf8").includes(".campaign-runtime/run-session.json"));
+    assert.equal(existsSync(join(cwd, ".gitignore")), false);
+    assert.equal(existsSync(join(cwd, ".campaign-runtime")), false);
   });
 });
 

@@ -44,6 +44,16 @@ function withTempDir(run) {
   }
 }
 
+// The example packet declares a target repo beside it (examples/target-page-kit).
+// Copied elsewhere, that declaration would point at a directory that is not
+// there, so the copy names its target explicitly: the directory it sits in
+// unless the test wants the session rooted somewhere else.
+function copyPacket(dest, { targetRepo = "." } = {}) {
+  const packet = JSON.parse(readFileSync(resolve(ROOT, "examples/build-packet.basic.json"), "utf8"));
+  packet.assembly.target_repo = targetRepo;
+  writeFileSync(dest, `${JSON.stringify(packet, null, 2)}\n`);
+}
+
 // --- unit -----------------------------------------------------------------
 
 test("mintSessionRunId is correctly shaped", () => {
@@ -215,7 +225,7 @@ test("CLI: run start refuses to clobber an active session unless --force", () =>
 test("CLI: with a session active, a command auto-logs with NO per-command flags", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
-    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    copyPacket(packetPath);
     const start = JSON.parse(runIn(dir, ["run", "start", "--json"]));
 
     // doctor with NO --run-id and NO --lifecycle-journal
@@ -238,7 +248,7 @@ test("CLI: an absolute packet selects its target session from toolkit and unrela
     writeFileSync(join(target, "package.json"), "{}\n");
     writeFileSync(join(unrelated, "package.json"), "{}\n");
     const packetPath = join(target, "campaign-runtime.build.json");
-    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    copyPacket(packetPath);
     const start = JSON.parse(runIn(target, ["run", "start", "--packet", packetPath, "--json"]));
 
     runIn(ROOT, ["doctor", "--packet", packetPath], { allowFail: true });
@@ -260,7 +270,7 @@ test("CLI: packet-target sessions stay isolated and a conflicting cwd session is
       mkdirSync(target, { recursive: true });
       writeFileSync(join(target, "package.json"), "{}\n");
       const packet = join(target, "campaign-runtime.build.json");
-      cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packet);
+      copyPacket(packet);
       const start = JSON.parse(runIn(target, ["run", "start", "--packet", packet, "--json"]));
       return { target, packet, start };
     });
@@ -285,10 +295,81 @@ test("CLI: packet-target sessions stay isolated and a conflicting cwd session is
   });
 });
 
+test("CLI: run start --packet from an unrelated directory roots the session in the packet's target and run end --packet closes it from there", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    const unrelated = join(dir, "operator-project");
+    cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
+    mkdirSync(unrelated, { recursive: true });
+    writeFileSync(join(unrelated, "package.json"), "{}\n");
+    const packetPath = join(target, "campaign-runtime.build.json");
+    copyPacket(packetPath);
+
+    const start = JSON.parse(runIn(unrelated, ["run", "start", "--packet", packetPath, "--json"]));
+    assert.equal(realpathSync(start.session_path), realpathSync(resolveRunSessionPath(target)));
+    assert.equal(start.session.lifecycle_journal, join(realpathSync(target), LIFECYCLE_JOURNAL_REL_PATH));
+    assert.equal(findRunSession(target).session.run_id, start.session.run_id);
+    assert.equal(findRunSession(unrelated), null, "nothing was opened at cwd");
+    assert.equal(existsSync(join(unrelated, ".campaign-runtime")), false);
+    assert.equal(existsSync(join(unrelated, ".gitignore")), false, "the managed ignore block goes to the target, not cwd");
+    assert.ok(readFileSync(join(target, ".gitignore"), "utf8").includes(".campaign-runtime/run-session.json"));
+
+    const status = JSON.parse(runIn(target, ["run", "status", "--json"]));
+    assert.equal(status.active, true);
+    assert.equal(status.session.run_id, start.session.run_id);
+
+    const end = JSON.parse(runIn(unrelated, ["run", "end", "--packet", packetPath, "--no-remit", "--no-write", "--json"]));
+    assert.equal(end.action, "run-record");
+    assert.equal(end.record.run_id, start.session.run_id);
+    assert.equal(findRunSession(target), null, "run end --packet from elsewhere cleared the target session");
+    assert.equal(existsSync(join(unrelated, ".campaign-runtime")), false);
+  });
+});
+
+test("CLI: run start --packet roots on the packet's declared target repo, not the packet's directory or cwd", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    const packets = join(dir, "packets");
+    const elsewhere = join(dir, "elsewhere");
+    for (const path of [target, packets, elsewhere]) {
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, "package.json"), "{}\n");
+    }
+    const packetPath = join(packets, "campaign-runtime.build.json");
+    copyPacket(packetPath, { targetRepo: "../target" });
+
+    const start = JSON.parse(runIn(elsewhere, ["run", "start", "--packet", packetPath, "--json"]));
+    assert.equal(realpathSync(start.session_path), realpathSync(resolveRunSessionPath(target)));
+    assert.equal(findRunSession(packets), null);
+    assert.equal(findRunSession(elsewhere), null);
+    assert.equal(existsSync(join(target, ".gitignore")), true);
+    assert.equal(existsSync(join(packets, ".gitignore")), false);
+    assert.equal(existsSync(join(elsewhere, ".gitignore")), false);
+
+    // A packet reached through a symlink roots where discovery looks: the
+    // real packet's target, so run status / run end by the symlink find it.
+    runIn(elsewhere, ["run", "end", "--packet", packetPath, "--no-remit", "--no-write", "--json"]);
+    const link = join(elsewhere, "linked-packet.build.json");
+    symlinkSync(packetPath, link);
+    const viaLink = JSON.parse(runIn(elsewhere, ["run", "start", "--packet", link, "--json"]));
+    assert.equal(realpathSync(viaLink.session_path), realpathSync(resolveRunSessionPath(target)));
+    assert.equal(findRunSession(elsewhere), null);
+    const linkedStatus = JSON.parse(runIn(elsewhere, ["run", "status", "--packet", link, "--json"]));
+    assert.equal(linkedStatus.active, true);
+    assert.equal(linkedStatus.session.run_id, viaLink.session.run_id);
+    runIn(elsewhere, ["run", "end", "--packet", link, "--no-remit", "--no-write", "--json"]);
+    assert.equal(findRunSession(target), null);
+
+    // The bare form is unchanged: no --packet, the session opens at cwd.
+    const bare = JSON.parse(runIn(elsewhere, ["run", "start", "--json"]));
+    assert.equal(realpathSync(bare.session_path), realpathSync(resolveRunSessionPath(elsewhere)));
+  });
+});
+
 test("CLI: lifecycle argv_shape preserves underscore-prefixed user flags", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
-    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    copyPacket(packetPath);
     const start = JSON.parse(runIn(dir, ["run", "start", "--json"]));
 
     runIn(dir, ["doctor", "--packet", packetPath, "--_custom-audit-flag"], { allowFail: true });
@@ -366,7 +447,7 @@ test("CLI: an intake does not join a session bound to a different packet", () =>
     cpSync(resolve(ROOT, "examples/target-page-kit"), target, { recursive: true });
     // A session bound to some other packet is already open at the target.
     const otherPacket = join(dir, "other-campaign-runtime.build.json");
-    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), otherPacket);
+    copyPacket(otherPacket, { targetRepo: "target" });
     const start = JSON.parse(runIn(target, ["run", "start", "--packet", otherPacket, "--json"]));
     const intake = [
       "prepare-build",
@@ -386,7 +467,7 @@ test("CLI: an intake does not join a session bound to a different packet", () =>
 test("CLI: blocked qa run records an attempt and keeps the session open for repair", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
-    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    copyPacket(packetPath);
     const packet = JSON.parse(readFileSync(packetPath, "utf8"));
     packet.assembly.target_repo = ".";
     writeFileSync(packetPath, `${JSON.stringify(packet, null, 2)}\n`);
@@ -453,7 +534,7 @@ test("CLI: done recommendations suppress deviations while blocked qa keeps the r
     };
     writeRunSession(dir, session);
     const packetPath = join(dir, "campaign-runtime.build.json");
-    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    copyPacket(packetPath);
     cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
 
     runIn(dir, [
@@ -474,7 +555,7 @@ test("CLI: done recommendations suppress deviations while blocked qa keeps the r
 test("CLI: run end references every QA attempt recorded on the session", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
-    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    copyPacket(packetPath);
     const started = JSON.parse(runIn(dir, ["run", "start", "--packet", packetPath, "--json"]));
     const firstPath = join(dir, "qa-output", "first.json");
     const secondPath = join(dir, "qa-output", "second.json");
@@ -500,7 +581,7 @@ test("CLI: findings from subdirectories use the active session journal", () => {
     const target = join(dir, "target");
     mkdirSync(target, { recursive: true });
     const packetPath = join(target, "campaign-runtime.build.json");
-    cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+    copyPacket(packetPath);
 
     const start = JSON.parse(runIn(target, ["run", "start", "--packet", packetPath, "--json"]));
     const subdir = join(target, "subdir");
@@ -673,7 +754,7 @@ test("run start/status/end return their result in-process and print nothing", as
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-inproc-"));
   writeFileSync(join(dir, "package.json"), "{}\n");
   const packetPath = join(dir, "campaign-runtime.build.json");
-  cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+  copyPacket(packetPath);
   const priorCwd = process.cwd();
   const originalLog = console.log;
   const printed = [];
@@ -717,7 +798,7 @@ test("CLI: an auto-ended Run Record's argv_shape is run-record's, not qa run's",
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(resolve(ROOT, "examples/target-page-kit"), dir, { recursive: true });
   const packetPath = join(dir, "campaign-runtime.build.json");
-  cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+  copyPacket(packetPath);
   const packet = JSON.parse(readFileSync(packetPath, "utf8"));
   packet.assembly.target_repo = ".";
   writeFileSync(packetPath, `${JSON.stringify(packet, null, 2)}\n`);
