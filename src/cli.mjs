@@ -102,7 +102,6 @@ import {
 import { ensureRuntimeStateIgnored } from "./runtime-state-ignore.mjs";
 import {
   createSourceHtmlIntake,
-  normalizePageKitRoute,
   publicRouteForPage,
 } from "./source-html-intake.mjs";
 import {
@@ -124,6 +123,15 @@ import {
   formatStandardizationReportMarkdown,
 } from "./standardization-report.mjs";
 import { singleLineDetail, singleLineField } from "./text-safety.mjs";
+import {
+  campaignRouteRoot,
+  isAbsoluteHttpUrl,
+  normalizePageKitRoute,
+  normalizePublicRouteSlug,
+  packetRouteRoot,
+  runtimeRelativeRouteForSpecValue,
+  stripPublicRoutePrefix,
+} from "./route-identity.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import {
   evaluatePageKitBuildSummary,
@@ -1285,15 +1293,6 @@ function activeSpecPages(spec) {
     }
   }
   return pages;
-}
-
-function isAbsoluteHttpUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function hasHtmlExtensionRoute(value) {
@@ -5241,25 +5240,6 @@ function runtimeRouteForMetaValue(value, publicRouteSlug, routeRoot = null) {
   return normalized ? `${root}${normalized}` : root;
 }
 
-function runtimeRelativeRouteForSpecValue(value, publicRouteSlug) {
-  const normalized = normalizePageKitRoute(value);
-  if (!normalized) return "";
-  const stripped = stripPublicRoutePrefix(normalized, publicRouteSlug);
-  const segments = stripped.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
-  if (segments.length > 1) return `${segments[segments.length - 1]}/`;
-  return stripped;
-}
-
-function stripPublicRoutePrefix(route, publicRouteSlug) {
-  const normalized = normalizePageKitRoute(route);
-  const slug = normalizePublicRouteSlug(publicRouteSlug);
-  if (!normalized || !slug) return normalized;
-  const clean = normalized.replace(/^\/+|\/+$/g, "");
-  if (clean === slug) return "";
-  if (clean.startsWith(`${slug}/`)) return `${clean.slice(slug.length + 1).replace(/\/?$/, "/")}`;
-  return normalized;
-}
-
 function terminalRouteSegment(route) {
   const normalized = normalizePageKitRoute(route);
   const parts = normalized.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
@@ -5270,35 +5250,6 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function normalizePublicRouteSlug(value) {
-  return String(value || "")
-    .trim()
-    .replace(/^\/+|\/+$/g, "");
-}
-
-// Root-served campaigns (ruggie root-funnel contract gap, 2026-08): a campaign
-// whose whole funnel is served from the SITE ROOT (/checkout-v2, /oto-ruggie,
-// /receipt — no slug prefix) declares campaign.route_root "/". Absent
-// route_root defaults to "/<public_route_slug>/", so existing packets are
-// unchanged. public_route_slug stays required identity and stays the
-// _site/<public_route_slug>/ built-output directory; route_root only changes
-// how SERVED routes (routing metas, public routes, live URLs) are composed
-// and validated. Returns "/", "/<slug>/", or null when neither is derivable.
-export function campaignRouteRoot(packet) {
-  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  const declared = optionalString(packet?.campaign?.route_root);
-  if (declared) {
-    const clean = declared.trim();
-    if (clean === "/") return "/";
-    // Exact canonical form only — the same shape the JSON schema accepts.
-    // A malformed or foreign declaration ("/foo", "/ruggie", "//x//") falls
-    // through to the slug default so no check silently roots on it;
-    // validateRouteRootDeclaration raises the named blocker.
-    if (slug && clean === `/${slug}/`) return clean;
-  }
-  return slug ? `/${slug}/` : null;
-}
-
 // Declared route_root must be "/" or agree with public_route_slug — any other
 // prefix would make the packet describe a route surface that contradicts the
 // slug identity every other check roots on, which is the silent-disarm shape
@@ -5307,15 +5258,16 @@ export function validateRouteRootDeclaration(packet, errors, ready) {
   const declared = packet?.campaign?.route_root;
   if (declared == null) return;
   const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  const value = typeof declared === "string" ? declared.trim() : null;
-  if (value === "/") {
+  // The packet rule is exact (canonical form only, mirroring the schema
+  // pattern) and it is the same rule every other stage reads the packet by,
+  // so a near miss ("/ruggie", "//ruggie//") is blocked here and honoured
+  // nowhere — the silent-disarm split this check exists to close.
+  const honoured = packetRouteRoot(declared, slug);
+  if (honoured === "/") {
     ready.push(`Campaign is declared root-served (route_root "/"): routing metas and public routes validate against site-root paths; public_route_slug "${slug}" remains identity, not a path prefix`);
     return;
   }
-  // Exact canonical form only, mirroring the schema pattern. Accepting
-  // near-miss shapes here ("/ruggie", "//ruggie//") while the schema rejects
-  // them would recreate the silent-disarm split this check exists to close.
-  if (value && slug && value === `/${slug}/`) {
+  if (honoured) {
     ready.push(`Campaign route_root "/${slug}/" matches public_route_slug`);
     return;
   }

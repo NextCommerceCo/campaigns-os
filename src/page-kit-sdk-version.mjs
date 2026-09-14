@@ -1,4 +1,5 @@
-import { normalizePublicRouteSlug, PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import {
   assessCheckpointWaivers,
   checkpointStateFingerprint,

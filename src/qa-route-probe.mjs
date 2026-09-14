@@ -1,3 +1,5 @@
+import { normalizePublicRouteSlug } from "./route-identity.mjs";
+
 // Route probe: the reachability half of `qa resolve`.
 //
 // Doctrine: `qa resolve` derives every route URL from the packet — the packet
@@ -108,7 +110,7 @@ async function probeAll(urls, options) {
  * slug this packet declares", which is the actionable half.
  */
 export function baseUrlWithoutSlug(baseUrl, publicRouteSlug) {
-  const slug = String(publicRouteSlug || "").trim().replace(/^\/+|\/+$/g, "");
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
   if (!slug || !baseUrl) return null;
   try {
     const url = new URL(baseUrl);
@@ -252,7 +254,7 @@ async function routeRootHint({ results, baseUrl, publicRouteSlug, timeoutMs, fet
   const withoutSlug = baseUrlWithoutSlug(baseUrl, publicRouteSlug);
   if (!withoutSlug) return null;
   const probe = await probeOneUrl(withoutSlug, { timeoutMs, fetchImpl });
-  const slug = String(publicRouteSlug || "").trim().replace(/^\/+|\/+$/g, "");
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
   if (probe.outcome !== "resolved") {
     return {
       code: "route_probe.host_also_dead",

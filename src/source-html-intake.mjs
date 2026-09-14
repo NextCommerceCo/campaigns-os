@@ -5,6 +5,7 @@ import {
 // Built output of campaign-spec (same import shape as src/page-kit-sdk-version.mjs),
 // so build-time wiring and spec-time analysis share one edge resolver.
 import { declineRouteTarget, forwardRouteTarget } from "../campaign-spec/dist/index.js";
+import { isAbsoluteHttpUrl, normalizePageKitRoute, normalizePublicRouteSlug, stripPublicRoutePrefix } from "./route-identity.mjs";
 
 const CPK_PAGE_TYPES = new Set(["product", "checkout", "upsell", "receipt"]);
 
@@ -103,21 +104,6 @@ function declaredScopeSkip(page, { skipEntry = null, buildScope = null, manifest
       ],
     },
   };
-}
-
-export function normalizePageKitRoute(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (isAbsoluteHttpUrl(raw)) return raw;
-
-  const clean = raw
-    .replace(/[?#].*$/, "")
-    .replace(/^\/+/, "")
-    .replace(/\/?index\.html$/i, "")
-    .replace(/\.html$/i, "")
-    .replace(/^\/+|\/+$/g, "");
-
-  return clean ? `${clean}/` : "";
 }
 
 export function publicRouteForPage(page) {
@@ -540,16 +526,6 @@ function rootedCampaignRoute(route, publicRouteSlug) {
   return relativeRoute ? `/${slug}/${relativeRoute}` : `/${slug}/`;
 }
 
-function stripPublicRoutePrefix(route, publicRouteSlug) {
-  const normalized = normalizePageKitRoute(route);
-  const slug = normalizePublicRouteSlug(publicRouteSlug);
-  if (!normalized || !slug) return normalized;
-  const clean = normalized.replace(/^\/+|\/+$/g, "");
-  if (clean === slug) return "";
-  if (clean.startsWith(`${slug}/`)) return `${clean.slice(slug.length + 1).replace(/\/?$/, "/")}`;
-  return normalized;
-}
-
 function normalizeRootedRoute(value) {
   const normalized = normalizePageKitRoute(value);
   return normalized ? `/${normalized}` : "/";
@@ -596,12 +572,6 @@ function pageMatchKeys(page, ordinal) {
   return [...keys];
 }
 
-function normalizePublicRouteSlug(value) {
-  return String(value || "")
-    .trim()
-    .replace(/^\/+|\/+$/g, "");
-}
-
 function normalizedMvTiers(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const { min, max } = value;
@@ -641,13 +611,4 @@ function isNonEmptyString(value) {
 
 function optionalString(value, fallback = null) {
   return isNonEmptyString(value) ? value.trim() : fallback;
-}
-
-function isAbsoluteHttpUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
 }

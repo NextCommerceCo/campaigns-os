@@ -28,7 +28,10 @@ declares `campaign.route_root: "/"`. Rules:
   `route_root` describes the *served* path shape only.
 - When present, `route_root` must be `"/"` or `"/<public_route_slug>/"`; any
   other prefix is a doctor blocker (`campaign.route_root`) because it would
-  contradict the slug identity the built-output checks root on.
+  contradict the slug identity the built-output checks root on. `qa run`
+  reads the packet by the same rule: a value doctor blocks never roots a QA
+  check either — QA audits the slug-prefixed default instead — so a
+  hand-edited packet cannot pass QA at a root doctor refuses.
 - Doctor's routing-meta checks (`routing_meta.runtime_root`,
   `sdk_hints.meta_tags.route_mismatch`) and route displays validate against the
   declared route root instead of assuming slug-as-prefix, so a root-served

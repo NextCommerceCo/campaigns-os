@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { normalizePublicRouteSlug } from "./route-identity.mjs";
 
 export const PAGE_KIT_CAMPAIGNS_REL_PATH = "_data/campaigns.json";
 
@@ -14,10 +15,6 @@ export function projectPageKitCampaignLoad(load) {
       ? load.target_path
       : PAGE_KIT_CAMPAIGNS_REL_PATH,
   };
-}
-
-export function normalizePublicRouteSlug(value) {
-  return String(value || "").trim().replace(/^\/+|\/+$/g, "");
 }
 
 export function loadPageKitCampaignEntry({ targetRepo, publicRouteSlug }) {

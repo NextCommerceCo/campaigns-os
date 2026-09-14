@@ -162,7 +162,9 @@ test("route root: a declared root QA cannot honour is discarded LOUDLY, not sile
 });
 
 test("route root: the shapes QA CAN honour record no discard note", () => {
-  for (const declared of ["/", "/x/", "/x"]) {
+  // A packet carries the canonical form and nothing else — the same rule
+  // doctor's validateRouteRootDeclaration blocks by.
+  for (const declared of ["/", "/x/"]) {
     const notes = [];
     resolveCampaignRouteRoot({
       packet: { campaign: { public_route_slug: "x", route_root: declared } },
@@ -171,10 +173,37 @@ test("route root: the shapes QA CAN honour record no discard note", () => {
     });
     assert.equal(notes.length, 0, `${declared} is honourable and must not record a discard`);
   }
+  // A spec is intake, so the lenient spellings prepare-build canonicalises
+  // are honoured there without a note.
+  for (const declared of ["/", "/x/", "/x", "x/"]) {
+    const notes = [];
+    resolveCampaignRouteRoot({ spec: { campaign: { route_root: declared } }, publicRouteSlug: "x", notes });
+    assert.equal(notes.length, 0, `spec ${declared} is intake and must not record a discard`);
+  }
   // Absent declaration is the clean default, not a discard.
   const notes = [];
   resolveCampaignRouteRoot({ publicRouteSlug: "x", notes });
   assert.equal(notes.length, 0);
+});
+
+// A hand-edited packet ("/x" without its trailing slash) used to be a doctor
+// blocker and a silent QA pass: doctor reads the packet exactly, QA read it
+// leniently. Both now read it by the one packet rule, so QA still audits the
+// slug default but records that it ignored the declaration.
+test("route root: a packet near miss doctor blocks is a recorded discard in QA, not a silent pass", () => {
+  for (const declared of ["/x", "x/", "//x//", "/X/"]) {
+    const notes = [];
+    const resolved = resolveCampaignRouteRoot({
+      packet: { campaign: { public_route_slug: "x", route_root: declared } },
+      publicRouteSlug: "x",
+      notes,
+    });
+    assert.equal(resolved, "/x/", `${declared} still audits the slug default`);
+    assert.equal(notes.length, 1, `${declared} must record exactly one discard note`);
+    assert.equal(notes[0].code, "route_root.declared_discarded");
+    assert.equal(notes[0].declared, declared);
+    assert.equal(notes[0].resolved, "/x/");
+  }
 });
 
 test("route root: the discard note rides onto the capture target", () => {

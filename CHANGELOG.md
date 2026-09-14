@@ -2,6 +2,32 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.3] - 2026-09-14
+
+### Fixed
+
+- One implementation of the route-identity helpers. A campaign's route
+  identity is `public_route_slug` (the `_site/<slug>/` build directory) and
+  `route_root` (where the funnel is served: `"/"` for a root-served campaign,
+  otherwise `"/<slug>/"`), and the small functions that read, tidy and compare
+  those two values were copied into four modules — `isAbsoluteHttpUrl` three
+  times, `stripPublicRoutePrefix` three times, `normalizePageKitRoute` and
+  `runtimeRelativeRouteForSpecValue` twice, `normalizePublicRouteSlug` four
+  times plus two inline spellings — because the QA runner cannot import
+  `src/cli.mjs`. They now live once in the leaf `src/route-identity.mjs` and
+  every module imports them. The copies had drifted into two acceptance rules
+  for a declared `route_root`: doctor read the packet exactly (`"/"` or
+  `"/<slug>/"`, the shape the packet schema accepts) while `qa run` read it
+  leniently (any spelling of the slug), so a hand-edited packet declaring
+  `"/<slug>"` without its trailing slash was a doctor blocker
+  (`campaign.route_root`) and a silent QA pass. Both now read the packet by
+  one exact rule, and the CampaignSpec by one intake rule (the lenient
+  spellings `prepare-build` canonicalises): QA still audits the slug-prefixed
+  default for such a packet, exactly as before, but treats the declaration as
+  ignored — the same verdict doctor gives — rather than honouring it. No
+  doctor output, JSON or text, changes; no QA verdict field changes;
+  `docs/build-packet.md` states that QA reads `route_root` by doctor's rule.
+
 ## [1.27.0+agent.2] - 2026-09-13
 
 ### Added
