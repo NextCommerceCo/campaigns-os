@@ -901,6 +901,173 @@
           ]
         }
       ]
+    },
+    {
+      "id": "amendment-chain-rehashes-the-section-twice",
+      "description": "The 1.0.0 section's bytes changed twice. RL-0002 amends RL-0001 with the section's then-current hash; RL-0003 amends RL-0002 with the newest one. Each amendment supersedes only the entry it amends, so both stale hashes are excused and the newest is the one checked.",
+      "expect": "pass",
+      "hash_mode": "as_written",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": {
+        "surface_version": "1.0.0"
+      },
+      "base_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-01",
+          "kind": "release",
+          "surface_version": "1.0.0",
+          "changelog_section": "1.0.0",
+          "changelog_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "entry_sha256": "@computed",
+          "agent_impact": "None.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            {
+              "class": "named_surface",
+              "path": "docs/build-packet.md",
+              "surface_entry": "docs/build-packet.md",
+              "summary": "The initial doc."
+            }
+          ]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002",
+          "sequence": 2,
+          "date": "2026-02-03",
+          "kind": "amendment",
+          "amends": "RL-0001",
+          "amendment_reason": "A merge-conflict marker line at the tail of the 1.0.0 section was deleted; this entry carried the section's hash at the time.",
+          "surface_version": null,
+          "changelog_section": "1.0.0",
+          "changelog_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "entry_sha256": "@computed",
+          "agent_impact": "None; the 1.0.0 section reads as it was meant to.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            {
+              "class": "named_surface",
+              "path": "docs/build-packet.md",
+              "surface_entry": "docs/build-packet.md",
+              "summary": "Re-hashes the 1.0.0 section after the first correction."
+            }
+          ]
+        },
+        {
+          "id": "RL-0003",
+          "sequence": 3,
+          "date": "2026-02-03",
+          "kind": "amendment",
+          "amends": "RL-0002",
+          "amendment_reason": "A second stray line in the 1.0.0 section was deleted; this entry carries the section's current hash.",
+          "surface_version": null,
+          "changelog_section": "1.0.0",
+          "changelog_sha256": "@computed",
+          "entry_sha256": "@computed",
+          "agent_impact": "None; the 1.0.0 section reads as it was meant to.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            {
+              "class": "named_surface",
+              "path": "docs/build-packet.md",
+              "surface_entry": "docs/build-packet.md",
+              "summary": "Re-hashes the 1.0.0 section after the second correction."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "two-amendments-of-one-entry-relinking-its-section",
+      "description": "Two amendments of the same entry both linking its section are not a chain: the second link is held by RL-0002, not RL-0001, so RL-0003 fails the one-to-one rule. The amendment that re-hashes a section must name the entry currently holding the link.",
+      "expect": "fail",
+      "expect_error_matching": "RL-0003: changelog section \"1\\.0\\.0\" is already linked from RL-0002; the link is one-to-one",
+      "hash_mode": "as_written",
+      "changed_paths": [],
+      "surface_version_unchanged": true,
+      "surface": {
+        "surface_version": "1.0.0"
+      },
+      "base_entries": [
+        {
+          "id": "RL-0001",
+          "sequence": 1,
+          "date": "2026-02-01",
+          "kind": "release",
+          "surface_version": "1.0.0",
+          "changelog_section": "1.0.0",
+          "changelog_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "entry_sha256": "@computed",
+          "agent_impact": "None.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            {
+              "class": "named_surface",
+              "path": "docs/build-packet.md",
+              "surface_entry": "docs/build-packet.md",
+              "summary": "The initial doc."
+            }
+          ]
+        }
+      ],
+      "head_entries": [
+        "@base",
+        {
+          "id": "RL-0002",
+          "sequence": 2,
+          "date": "2026-02-03",
+          "kind": "amendment",
+          "amends": "RL-0001",
+          "amendment_reason": "A merge-conflict marker line at the tail of the 1.0.0 section was deleted; this entry carries the section's current hash.",
+          "surface_version": null,
+          "changelog_section": "1.0.0",
+          "changelog_sha256": "@computed",
+          "entry_sha256": "@computed",
+          "agent_impact": "None; the 1.0.0 section reads as it was meant to.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            {
+              "class": "named_surface",
+              "path": "docs/build-packet.md",
+              "surface_entry": "docs/build-packet.md",
+              "summary": "Re-hashes the 1.0.0 section after the marker line was removed."
+            }
+          ]
+        },
+        {
+          "id": "RL-0003",
+          "sequence": 3,
+          "date": "2026-02-03",
+          "kind": "amendment",
+          "amends": "RL-0001",
+          "amendment_reason": "Claims to re-hash the 1.0.0 section again, but amends RL-0001 instead of RL-0002, which holds the link.",
+          "surface_version": null,
+          "changelog_section": "1.0.0",
+          "changelog_sha256": "@computed",
+          "entry_sha256": "@computed",
+          "agent_impact": "None; the 1.0.0 section reads as it was meant to.",
+          "compatibility": "compatible",
+          "migration": "none",
+          "changes": [
+            {
+              "class": "named_surface",
+              "path": "docs/build-packet.md",
+              "surface_entry": "docs/build-packet.md",
+              "summary": "Re-hashes the 1.0.0 section a second time."
+            }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -71,6 +71,22 @@ test("a +agent.N section must sit directly above its own release", () => {
   assert.deepEqual(orphan, ['CHANGELOG.md: section "1.0.0+agent.1" has no release section 1.0.0 below it']);
 });
 
+test("a stray +agent.N section is still ordered against its own release, and reported once", () => {
+  const interleaved = validateChangelogStructure({
+    changelogText: changelog("1.0.0+agent.2", "1.1.0+agent.1", "1.1.0", "1.0.0+agent.3", "1.0.0"),
+  });
+  assert.deepEqual(interleaved, [
+    'CHANGELOG.md: section "1.0.0+agent.2" sits above release 1.1.0 — a +agent.N section belongs directly above its own release section',
+    'CHANGELOG.md: section "1.0.0+agent.3" follows "1.0.0+agent.2" — +agent.N sections under one release are ordered by N descending (newest first)',
+  ]);
+
+  const carried = validateChangelogStructure({ changelogText: changelog("2.0.0+agent.1", "1.1.0", "1.0.0") });
+  assert.deepEqual(carried, [
+    'CHANGELOG.md: section "2.0.0+agent.1" sits above release 1.1.0 — a +agent.N section belongs directly above its own release section',
+    'CHANGELOG.md: section "2.0.0+agent.1" has no release section 2.0.0 below it',
+  ]);
+});
+
 test("a ledger entry linking a section that does not exist is refused", () => {
   const errors = validateChangelogStructure({
     changelogText: changelog("1.0.0+agent.1", "1.0.0"),

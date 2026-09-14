@@ -210,13 +210,16 @@ export function validateLedgerStructure(ledger, { policy, surface, sections, cla
   // whose hash covered them. The amended entry's changelog_sha256 is then
   // superseded — the amendment's own hash, checked below like any other, keeps
   // the section pinned. An amendment linking a different section supersedes
-  // nothing.
+  // nothing. Amendments chain (RL-C amends RL-B amends RL-A, all on one
+  // section): each link supersedes its own predecessor, and the newest hash is
+  // the one still checked. Two amendments of ONE entry on one section are not
+  // a chain; the second fails the one-to-one link rule below.
   const byId = new Map(entries.map((entry) => [entry?.id, entry]));
-  const supersededBy = new Map();
+  const superseded = new Set();
   for (const entry of entries) {
     if (entry?.kind !== "amendment" || typeof entry.amends !== "string") continue;
     const amended = byId.get(entry.amends);
-    if (amended && amended.changelog_section === entry.changelog_section) supersededBy.set(amended.id, entry.id);
+    if (amended && amended.changelog_section === entry.changelog_section) superseded.add(amended.id);
   }
 
   for (const [index, entry] of entries.entries()) {
@@ -282,7 +285,7 @@ export function validateLedgerStructure(ledger, { policy, surface, sections, cla
         errors.push(`${where}: changelog_section "${entry.changelog_section}" has no matching section in ${CHANGELOG_PATH}`);
       } else if (linked.length > 1) {
         errors.push(`${where}: changelog_section "${entry.changelog_section}" matches ${linked.length} sections in ${CHANGELOG_PATH}; section identifiers must be unique`);
-      } else if (linked[0].body_sha256 !== entry.changelog_sha256 && !supersededBy.has(entry.id)) {
+      } else if (linked[0].body_sha256 !== entry.changelog_sha256 && !superseded.has(entry.id)) {
         errors.push(
           `${where}: changelog_sha256 does not match the body of ${CHANGELOG_PATH} section "${entry.changelog_section}" ` +
             `(actual ${linked[0].body_sha256}) — update the ledger hash in the same change that edits the section, ` +

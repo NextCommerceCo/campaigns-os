@@ -34,10 +34,12 @@ export const DOCS_DIR = "docs";
 
 /**
  * A conflict marker is a line that STARTS with one of git's four marker runs.
- * `<<<<<<<` and `>>>>>>>` are followed by a label; `|||||||` (diff3 base) is
- * followed by a label or nothing; `=======` stands alone. A line of eight or
- * more of the same character is not a marker (a markdown rule or table border
- * would be longer or use a different character anyway).
+ * `<<<<<<<` and `>>>>>>>` are followed by a space and a label; `|||||||`
+ * (diff3 base) by a space and a label, or by end of line; `=======` stands
+ * alone. The `(?: |$)` anchor after each seven-character run is what separates
+ * a marker from ordinary text that happens to open with seven of the same
+ * character: an eighth `<`, `|`, `=` or `>` fails the anchor, so a markdown
+ * rule such as `========` or a `>>>>>>>>` quote is not a marker.
  */
 export const CONFLICT_MARKER = /^(?:<{7}(?: |$)|\|{7}(?: |$)|={7}$|>{7}(?: |$))/;
 
@@ -93,7 +95,11 @@ export function validateChangelogStructure({ changelogText, docs = [], ledgerEnt
   }
 
   // 3. Ordering under each release. Walk top to bottom collecting the +agent.N
-  // run; a bare release heading closes the run and must own every section in it.
+  // run; a bare release heading closes the run for its own sections. A stray
+  // section (one above a release that is not its own) is reported once, at the
+  // first foreign heading it sits above, and stays in the run so its order
+  // against its release's later sections is still checked when that release
+  // finally closes — or so it is reported as orphaned if it never does.
   let run = [];
   for (const section of sections) {
     const match = SECTION_ID.exec(section.section_id);
@@ -103,11 +109,12 @@ export function validateChangelogStructure({ changelogText, docs = [], ledgerEnt
     }
     const [, release, agent] = match;
     if (agent !== undefined) {
-      run.push({ id: section.section_id, release, n: Number(agent) });
+      run.push({ id: section.section_id, release, n: Number(agent), stray: false });
       continue;
     }
     for (const item of run) {
-      if (item.release !== release) {
+      if (item.release !== release && !item.stray) {
+        item.stray = true;
         errors.push(
           `${CHANGELOG_PATH}: section "${item.id}" sits above release ${release} — a +agent.N section belongs directly above its own release section`,
         );
@@ -121,7 +128,7 @@ export function validateChangelogStructure({ changelogText, docs = [], ledgerEnt
         );
       }
     }
-    run = [];
+    run = run.filter((item) => item.release !== release);
   }
   for (const item of run) {
     errors.push(`${CHANGELOG_PATH}: section "${item.id}" has no release section ${item.release} below it`);
