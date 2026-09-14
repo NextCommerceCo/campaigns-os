@@ -331,7 +331,7 @@ test("theme waive marks the retained doctor sidecar stale", () => {
   mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
   writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), JSON.stringify({ stages: {} }));
   writeFileSync(join(dir, ".campaign-runtime/doctor-output.json"), JSON.stringify({ ok: true, status: "ready" }));
-  themeWaive({ packet: packetPath, reason: "unit-test waiver", _: [] });
+  themeWaive({ packet: packetPath, reason: "unit-test waiver", "waived-by": "Jordan Lee", _: [] });
   const sidecar = JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8"));
   assert.equal(sidecar.stale, true);
   assert.equal(sidecar.stale_marked_by, "theme waive");

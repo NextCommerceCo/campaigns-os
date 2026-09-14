@@ -221,6 +221,7 @@ import {
   createCheckpointRegistry,
   createCheckpointWaiver,
   evaluateCheckpointRegistry,
+  validateWaiverAttribution,
 } from "./checkpoint-waiver.mjs";
 import {
   loadPageKitCampaignEntry,
@@ -229,6 +230,7 @@ import {
 import {
   evaluatePageKitStoreProfile,
   PAGE_KIT_STORE_PROFILE_SCOPE,
+  storeProfileDemoResidueFields,
 } from "./page-kit-store-profile.mjs";
 import {
   evaluatePageKitSdkVersion,
@@ -372,7 +374,7 @@ Usage:
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
-  campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
+  campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -938,13 +940,20 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "theme") {
-    const result = themeCommand(args);
+    const result = args._[1] === "waive"
+      ? waiveOrRefuse(args, () => themeCommand(args), { gate: "theme_gate", registeredGates: ["theme_gate"] })
+      : themeCommand(args);
+    if (!result) return;
     writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
   if (command === "checkpoint") {
-    const result = checkpointCommand(args);
+    const result = waiveOrRefuse(args, () => checkpointCommand(args), {
+      gate: optionalString(args.gate) || null,
+      registeredGates: Object.keys(CHECKPOINT_EVALUATORS),
+    });
+    if (!result) return;
     writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
@@ -3008,6 +3017,17 @@ export function themeWaive(args) {
   const packet = readJson(packetPath);
   const reason = optionalString(args.reason);
   if (!reason) throw new Error("theme waive requires --reason \"<why the starter palette is acceptable for this campaign>\".");
+  // The same attribution rule as `checkpoint waive`: a named human, no
+  // placeholder, an expiry (when given) that lies in the future and is
+  // recorded. A bound is not demanded here: the theme gate's waiver has always
+  // been open-ended, and QA re-surfaces the starter palette on every run.
+  const waiver = validateWaiverAttribution({
+    reason,
+    waivedBy: args["waived-by"] == null ? null : String(args["waived-by"]),
+    expiresAt: args["expires-at"] == null ? null : String(args["expires-at"]),
+    requireBound: false,
+    label: "theme waive",
+  });
   const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
     reportPath: args.report ? resolve(args.report) : undefined,
@@ -3015,11 +3035,6 @@ export function themeWaive(args) {
   });
   const { reportPath } = workspace;
   if (!existsSync(reportPath)) throw new Error(`theme waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
-  const waiver = {
-    reason,
-    waived_by: optionalString(args["waived-by"], "operator"),
-    waived_at: new Date().toISOString(),
-  };
   commitAssemblyReport(workspace, (report) => {
     report.theme = report.theme && isObject(report.theme)
       ? { ...report.theme, waiver }
@@ -3037,11 +3052,24 @@ export function themeWaive(args) {
   });
   return {
     ok: true,
+    ...waiveReadiness(packetPath, reportPath),
     action: "theme-waive",
+    gate: "theme_gate",
     waiver,
     report_path: reportPath,
     note: "The theme gate now reports waived for this campaign. Browser QA still runs template-residue checks at warn severity so the shipped palette stays visible in the verdict.",
   };
+}
+
+// The readiness a waive command reports: doctor's verdict on the report the
+// waiver was just written to, so the text line reads `Status: READY_WITH_
+// WAIVERS` (or BLOCKED, when other gates still hold) instead of the printer's
+// "unknown" fallback. Doctor is re-run rather than patched from the pre-waive
+// result because a waiver changes what every other gate concludes about the
+// stage. Nothing is persisted here; the sidecar was already marked stale.
+function waiveReadiness(packetPath, reportPath) {
+  const doctor = doctorPacket(packetPath, { reportPath });
+  return { status: doctor.status, next_stage: doctor.next?.stage || null, next_stage_reason: doctor.next?.reason || null };
 }
 
 function requireValidPolishCaptureReport(report, reportPath) {
@@ -3184,6 +3212,25 @@ const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
   },
 ]);
 
+// A waive refusal under --json is a JSON envelope on stdout, exit 1 — the same
+// channel the success shape uses — so a caller parsing the output learns why
+// (and, for a checkpoint, which gates exist) without reading free text on
+// stderr. The stderr line is kept for the human watching the same terminal.
+// Without --json the refusal propagates as before. Returns null once the
+// envelope has been written.
+function waiveOrRefuse(args, run, { gate = null, registeredGates = [] } = {}) {
+  try {
+    return run();
+  } catch (error) {
+    if (args.json !== true) throw error;
+    const message = String(error?.message ?? error);
+    console.log(JSON.stringify({ ok: false, error: message, gate, registered_gates: registeredGates }, null, 2));
+    console.error(`campaigns-os: ${message}`);
+    process.exitCode = 1;
+    return null;
+  }
+}
+
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
@@ -3217,6 +3264,10 @@ export function checkpointWaive(args) {
       throw new Error(`Checkpoint gate "${gateId}" is not blocked (status=${gate.status}); no waiver was recorded.`);
     }
     if (gate.waivable !== true) {
+      const residueFields = gateId === PAGE_KIT_STORE_PROFILE_SCOPE ? storeProfileDemoResidueFields(gate) : [];
+      if (residueFields.length) {
+        throw new Error(`Checkpoint gate "${gateId}" cannot be waived: ${residueFields.join(", ")} still carr${residueFields.length === 1 ? "ies" : "y"} starter demo residue (a demo storefront URL or phone). Replace the demo value(s) in ${gate.subject?.target_path || "_data/campaigns.json"}[${gate.subject?.public_route_slug || "<public-route-slug>"}]; only spec mismatches and missing values are waivable.`);
+      }
       throw new Error(`Checkpoint gate "${gateId}" is not waivable in its current state (${gate.code}); missing, malformed, and invalid-type evidence must be repaired.`);
     }
 
@@ -3233,6 +3284,7 @@ export function checkpointWaive(args) {
   });
   return {
     ok: true,
+    ...waiveReadiness(packetPath, reportPath),
     action: "checkpoint-waive",
     gate: gateId,
     waiver,
@@ -7640,16 +7692,16 @@ export function nextStage(stage, args, ambient = null) {
   }
   const finalize = (result) => {
     if (divergences.length) result.divergences = divergences;
-    result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate });
+    result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null });
     recordNextRecommendation(ambient, result);
     return result;
   };
   const doctorHasOnlyPolishGateErrors = doctorErrorsAreOnlyPolishGate(doctor.errors);
   const errors = [];
-  const warnings = [...doctor.warnings];
+  const warnings = doctor.warnings.map((issue) => withPacketSubstitutedIssue(issue, packetPath));
   const ready = [...doctor.ready];
-  if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors);
+  if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors.map((issue) => withPacketSubstitutedIssue(issue, packetPath)));
 
   // Explicit stage requests are still downstream of prepare-build. Do not
   // construct the requested stage's prompt or executable actions when the
@@ -7804,7 +7856,30 @@ function addThemeGateErrors(errors, themeGate, stage) {
 // Gate summary every `next` response carries: one entry per gate with a
 // deterministic status, so an agent reads gate state from data instead of
 // parsing error prose.
-function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate = prepareBuildGateIssue(report) }) {
+// Doctor's gate objects declare their commands with the `--packet <packet>`
+// placeholder; `next` copies them into gates[] and errors[].detail, and its
+// own next_actions[] already carry the real packet. One rule for every copy:
+// the placeholder is substituted on the way in, on a copy, so the doctor
+// result (and the sidecar written from it) keeps the template.
+function withPacketSubstituted(gate, packetPath) {
+  if (!gate || typeof gate !== "object" || !Array.isArray(gate.required_actions)) return gate;
+  return {
+    ...gate,
+    required_actions: gate.required_actions.map((action) => (
+      action && typeof action.command === "string"
+        ? { ...action, command: substitutePacket(action.command, packetPath) }
+        : action
+    )),
+  };
+}
+
+function withPacketSubstitutedIssue(issue, packetPath) {
+  const gate = issue?.detail?.checkpoint_gate;
+  if (!gate || typeof gate !== "object") return issue;
+  return { ...issue, detail: { ...issue.detail, checkpoint_gate: withPacketSubstituted(gate, packetPath) } };
+}
+
+function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate = prepareBuildGateIssue(report), packetPath = null }) {
   return [
     {
       id: "doctor",
@@ -7817,10 +7892,10 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
       reason: prepareBuildGate ? prepareBuildGate.reason : "prepare_build stage is terminal.",
     },
     ...(Array.isArray(doctor?.derived?.checkpoint_gates)
-      ? doctor.derived.checkpoint_gates.map((gate) => ({ ...gate }))
+      ? doctor.derived.checkpoint_gates.map((gate) => withPacketSubstituted(gate, packetPath))
       : []),
     ...(doctor?.derived?.polish_checkpoint_gate
-      ? [{ ...doctor.derived.polish_checkpoint_gate }]
+      ? [withPacketSubstituted(doctor.derived.polish_checkpoint_gate, packetPath)]
       : []),
     {
       id: "theme_gate",
@@ -10577,21 +10652,62 @@ function printDoctorTinyPrompt(result, args) {
   for (const line of doctorTinyPromptLines(result)) console.log(line);
 }
 
+// Which gate a next_actions[] entry belongs to, by the id prefix
+// buildNextActions assigns: `theme_gate.<id>`, `polish_gate.<id>`,
+// `checkpoint.<gate id>.<suffix>` (the gate id itself carries dots, so the
+// registered ids are matched longest-first), and the prepare-build recoveries.
+// Rechecks and anything unrecognised belong to no gate.
+const NEXT_ACTION_GATE_PREFIXES = [["theme_gate.", "theme_gate"], ["polish_gate.", "polish_gate"]];
+const PREPARE_BUILD_ACTION_IDS = new Set(["rerun_prepare_build", "restore_prepare_build_binding"]);
+function nextActionGate(action, gateIds) {
+  const id = typeof action?.id === "string" ? action.id : "";
+  for (const [prefix, gate] of NEXT_ACTION_GATE_PREFIXES) if (id.startsWith(prefix)) return gate;
+  if (id.startsWith("checkpoint.")) {
+    const rest = id.slice("checkpoint.".length);
+    return [...gateIds].sort((a, b) => b.length - a.length).find((gate) => rest === gate || rest.startsWith(`${gate}.`)) || null;
+  }
+  if (PREPARE_BUILD_ACTION_IDS.has(id)) return "prepare_build";
+  return null;
+}
+
+function nextGateHeading(gate) {
+  if (gate.id === "theme_gate") return "Theme gate is BLOCKING this stage. Resolve it with:";
+  if (gate.id === "polish_gate") return "Polish gate is BLOCKING this stage. Resolve it with:";
+  if (gate.id === "prepare_build") return "prepare-build is BLOCKING this stage. Resolve it with:";
+  return `Checkpoint gate ${gate.id} is BLOCKING this stage. Resolve it with:`;
+}
+
 // The human half of `next`. Split out from the printer so the text an operator
 // actually reads is assertable without a subprocess: JSON output is covered by
 // next_actions[], and the prompt is the only place a non-JSON caller sees any
 // of it. Returns the lines to print, in order; an empty array prints nothing.
 export function nextTinyPromptLines(result) {
   const lines = [];
-  // A blocked gate owns the tiny prompt: print the exact commands so the
-  // operator/agent acts on data, not on remembering doctrine.
-  const blockedGate = (result.gates || []).find((gate) => gate.status === "blocked" && gate.id === "theme_gate");
-  if (blockedGate) {
-    lines.push("", "Theme gate is BLOCKING this stage. Resolve it with:");
-    for (const action of result.next_actions || []) {
-      lines.push(`  - ${action.command || action.description}`);
+  const actions = Array.isArray(result.next_actions) ? result.next_actions : [];
+  const gates = Array.isArray(result.gates) ? result.gates : [];
+  const blockedGates = gates.filter((gate) => gate?.status === "blocked");
+  // Every blocked gate owns its own heading and lists only the actions it
+  // produced, so a checkpoint repair is never filed under the theme gate and
+  // the checkpoint commands are printed whether or not the theme gate is also
+  // blocked. What no gate claims (the rechecks) follows under its own line.
+  if (blockedGates.length) {
+    const gateIds = gates.map((gate) => gate?.id).filter(Boolean);
+    const claimed = new Set();
+    for (const gate of blockedGates) {
+      const owned = actions.filter((action) => nextActionGate(action, gateIds) === gate.id);
+      if (!owned.length) continue;
+      lines.push("", nextGateHeading(gate));
+      for (const action of owned) {
+        lines.push(`  - ${action.command || action.description}`);
+        claimed.add(action);
+      }
     }
-    return lines;
+    const rest = actions.filter((action) => !claimed.has(action));
+    if (rest.length) {
+      lines.push("", claimed.size ? "Then:" : "This stage is BLOCKED. Resolve it with:");
+      for (const action of rest) lines.push(`  - ${action.command || action.description}`);
+    }
+    if (blockedGates.some((gate) => gate.id === "theme_gate")) return lines;
   }
   // A passing-but-token-less theme gate is the case that used to say nothing
   // at all until QA blocked. It is not a blocker here, so it does not take the
@@ -10706,8 +10822,16 @@ function printPrepareResult(result, args) {
 // order (status, targets, skills, ready, actions, cause summary, errors,
 // warnings, required actions, next, prompt, note) so the text an operator
 // reads is assertable without a subprocess; printResult prints the join.
+const WAIVE_ACTIONS = new Set(["theme-waive", "checkpoint-waive"]);
+
 export function resultTextLines(result) {
   const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`];
+  // A waive command's second line names what it recorded; the third is the
+  // stage doctor now picks for the report the waiver was written to.
+  if (WAIVE_ACTIONS.has(result.action) && result.gate) {
+    lines.push(`Waived: ${result.gate} by ${result.waiver?.waived_by || "(unattributed)"}${result.waiver?.expires_at ? ` until ${result.waiver.expires_at}` : ""}`);
+    if (result.next_stage) lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
+  }
   if (result.targets?.length) {
     lines.push("Targets:");
     for (const target of result.targets) {
