@@ -447,6 +447,56 @@ Notable supported-surface changes are recorded here.
   `--json`), the persisted `page_load` evidence and the doctor sidecar are
   byte-identical.
 
+## [1.27.0+agent.19] - 2026-09-14
+
+### Fixed
+
+- A remit answered **409** by the receiver is read as `already_stored` — the
+  receiver holds this `run_id`, which is what the send was for — and the Run
+  Record stays `remit_state: "ok"`. It used to be stamped `failed` with
+  `Remit POST failed: 409 Conflict {"error":"run_record_conflict"}`, and the
+  `run_record_remit_recovery` action `next` then printed re-sent the same
+  record into the same 409 on every run. A 2xx whose body is not JSON is
+  `ok` with `remit_error` `Remit POST <status>: acknowledged with a body that
+  is not JSON: <excerpt>` (it used to be `failed` with a bare `Unexpected
+  token` parse error). Any other non-2xx is `failed` with `Remit POST
+  <status>: <statusText> <body>`. `run-record --json` gains a `remit` object
+  beside the record — `result` (`stored`, `already_stored`,
+  `ok_unparsed_ack`, `refused`, `transport_error`, or null when nothing was
+  sent), `http_status`, `base_kind` (`canonical`, `loopback`, `proxy` — never
+  the host), `sent`, `preserved` — and the text `Remit:` line ends with
+  `[base: <kind>]` and names the 409 / non-JSON cases.
+- A re-run of `run-record` under a `run_id` whose record is already remitted
+  — an explicit `--run-id`, `run end` on a session re-opened under that id,
+  or the recovery action — no longer rewrites that record. It used to replace
+  `run-records/<run_id>.json` with this invocation's outcome unconditionally,
+  so a re-run into a 409 turned a durable `ok` into `failed`, and a `--no-remit`
+  re-run turned it into `skipped`. Now the record on disk is read first: an
+  `ok` record is left exactly as written and nothing is sent (`written:
+  false`, `remit.result: "already_stored"`, `remit.sent: false`; text: `Run
+  Record already closed and remitted for run <id>; left as written.` and
+  `Remit: ok (already stored at the receiver for this run id; not re-sent)`).
+  A prior `failed` or `pending` send is retried when the run may send, and
+  carried forward unchanged when it may not (`--no-remit`, consent off):
+  `remit.preserved: true`, text `Remit: not attempted this run; the prior
+  outcome for this run id is kept (failed: …)`. A `--no-write` run is
+  unchanged: it reads nothing, writes nothing, sends nothing.
+- The body the receiver stores now carries the outcome of the send it is
+  receiving: `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true`,
+  `remit_endpoint: "/api/runs"`. It used to be the pre-flight snapshot —
+  `remit_state: "pending"`, `remit_attempted: false`, `remit_endpoint: null` —
+  so every stored record said its own remit had not happened. The local file
+  still carries `pending` only between its first write and the answer.
+- `telemetry list` exits non-zero on a 2xx whose body carries no `runs[]`
+  (`telemetry list: 200 OK from <url> is not a Run Record listing (no runs[]
+  in the body): {"raw":"<html>…`). It used to print `showing 0 of 0 returned`
+  / `"count": 0` and exit 0 for a maintenance page.
+- The `run_record_remit_recovery` action's text says that a send the receiver
+  already holds resolves to ok and that a remitted record is left as written.
+- Docs: `docs/workflow-findings-sidecar.md` (Remit Channel: Durable status,
+  re-runs, the stored copy, `telemetry list`; Closeout recognition: the
+  recovery command's premise).
+
 ## [1.27.0] - 2026-09-13
 
 ### Added

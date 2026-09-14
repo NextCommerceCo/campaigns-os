@@ -124,10 +124,71 @@ test("remitRunRecord: missing/unresolved consent also makes no call", async () =
 test("remitRunRecord: consent ON success records ok + endpoint and sends run_id (idempotency key)", async () => {
   const { fetchImpl, calls } = recordingFetch(fakeResponse({ body: JSON.stringify({ ok: true }) }));
   const status = await remitRunRecord({ run_id: "run_idem_1", schema_version: "campaigns-os-run-record/v0" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
-  assert.deepEqual(status, { attempted: true, ok: true, error: null, endpoint: "/api/runs" });
+  assert.deepEqual(status, { attempted: true, ok: true, error: null, endpoint: "/api/runs", result: "stored", http_status: 200 });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://proxy.test/api/runs");
   assert.equal(JSON.parse(calls[0].init.body).run_id, "run_idem_1"); // upsert key travels with the payload
+});
+
+// The receiver keeps one record per run_id and answers a repeat POST with 409.
+// That is the stored outcome the send was after, reached earlier — a retry
+// after a lost answer, or a re-run — and must read as ok, never as a failure
+// that a recovery would re-send forever.
+test("remitRunRecord: a 409 from the receiver is already_stored — ok, no error", async () => {
+  const { fetchImpl } = recordingFetch(fakeResponse({ ok: false, status: 409, statusText: "Conflict", body: JSON.stringify({ error: "run_record_conflict", run_id: "run_1" }) }));
+  const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
+  assert.deepEqual(status, { attempted: true, ok: true, error: null, endpoint: "/api/runs", result: "already_stored", http_status: 409 });
+});
+
+test("remitRunRecord: a 2xx whose body is not JSON is ok_unparsed_ack, with the status and an excerpt on the error", async () => {
+  const { fetchImpl } = recordingFetch(fakeResponse({ status: 200, body: "<html><body>maintenance</body></html>" }));
+  const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
+  assert.equal(status.ok, true);
+  assert.equal(status.result, "ok_unparsed_ack");
+  assert.equal(status.http_status, 200);
+  assert.match(status.error, /^Remit POST 200: acknowledged with a body that is not JSON: <html><body>maintenance/);
+});
+
+test("remitRunRecord: a non-2xx other than 409 is refused, with the status prefixed on the error", async () => {
+  const { fetchImpl } = recordingFetch(fakeResponse({ ok: false, status: 401, statusText: "Unauthorized", body: JSON.stringify({ error: "listing_auth_required" }) }));
+  const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
+  assert.equal(status.ok, false);
+  assert.equal(status.result, "refused");
+  assert.equal(status.http_status, 401);
+  assert.match(status.error, /^Remit POST 401: Unauthorized \{"error":"listing_auth_required"\}$/);
+});
+
+test("remitRunRecord: a transport failure is transport_error with no status", async () => {
+  const fetchImpl = async () => { throw new Error("ECONNREFUSED"); };
+  const status = await remitRunRecord({ run_id: "run_1" }, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
+  assert.equal(status.result, "transport_error");
+  assert.equal(status.http_status, null);
+});
+
+// The receiver only ever holds a record whose send landed, so the copy it
+// receives says so. The local file carries the pending sentinel until the
+// answer arrives; that sentinel must not be what the receiver stores.
+test("remitRunRecord: the body sent carries the stored outcome, not the local pending sentinel", async () => {
+  const { fetchImpl, calls } = recordingFetch(fakeResponse({ body: JSON.stringify({ ok: true }) }));
+  const local = { run_id: "run_1", remit_state: "pending", remit_attempted: false, remit_ok: null, remit_error: null, remit_endpoint: null };
+  await remitRunRecord(local, { proxyBase: "https://proxy.test", consent: { state: "on" }, fetchImpl });
+  const sent = JSON.parse(calls[0].init.body);
+  assert.deepEqual(
+    { state: sent.remit_state, attempted: sent.remit_attempted, ok: sent.remit_ok, error: sent.remit_error, endpoint: sent.remit_endpoint },
+    { state: "ok", attempted: true, ok: true, error: null, endpoint: "/api/runs" },
+  );
+  assert.equal(local.remit_state, "pending", "the local record is stamped by the caller from the outcome, not mutated pre-flight");
+});
+
+test("remit: a 2xx with a non-JSON body throws a status-bearing error rather than a bare parse error", async () => {
+  const { fetchImpl } = recordingFetch(fakeResponse({ status: 200, body: "<html>" }));
+  await assert.rejects(() => remit("/api/runs", {}, "https://proxy.test", { fetchImpl }), (error) => {
+    assert.equal(error.name, "RemitResponseError");
+    assert.equal(error.status, 200);
+    assert.equal(error.reason, "unparsed_body");
+    assert.match(error.message, /^Remit POST 200 OK: response body is not JSON: <html>/);
+    return true;
+  });
 });
 
 test("remitRunRecord: sends X-Campaign-Key when a campaign key is supplied, never in the body", async () => {

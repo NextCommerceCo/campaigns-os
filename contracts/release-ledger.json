@@ -2812,6 +2812,39 @@
         }
       ],
       "entry_sha256": "48041caee696268681911749bafb5e45f8016821e7e158907786608d3593a3ac"
+    },
+    {
+      "id": "RL-0076",
+      "sequence": 76,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.19",
+      "changelog_sha256": "974a7e7d6109993e3237d53c00f2cf211ad5f0be342a588dc170c3676c857355",
+      "agent_impact": "run-record's remit outcome is now classified by the receiver's HTTP status. A 409 (the receiver already holds this run_id) is an ok outcome: the record stays remit_state \"ok\" with remit_error null, where it used to become \"failed\" with \"Remit POST failed: 409 Conflict ...\". A 2xx whose body is not JSON is ok with remit_error \"Remit POST <status>: acknowledged with a body that is not JSON: <excerpt>\"; any other non-2xx is failed with remit_error \"Remit POST <status>: <statusText> <body>\" (the \"Remit POST failed:\" prefix is gone from records). run-record --json (and run end --json, which returns the same summary) gains a top-level \"remit\" object: result (stored | already_stored | ok_unparsed_ack | refused | transport_error | null), http_status, base_kind (canonical | loopback | proxy), sent, preserved. A re-run under a run_id whose record is already remit_state \"ok\" no longer rewrites or re-sends it: the summary is written: false, record_path and record are the existing file, remit.result \"already_stored\", remit.sent false; the text output is \"Run Record already closed and remitted for run <id>; left as written.\" A --no-remit or consent-off re-run over a failed or pending remit keeps that outcome (remit.preserved true) instead of writing \"skipped\". The text \"Remit:\" line for an attempted send now ends with \"[base: <kind>]\". The body POSTed to the receiver carries remit_state \"ok\", remit_attempted true, remit_ok true, remit_endpoint \"/api/runs\" instead of the pending sentinel. telemetry list now exits non-zero when a 2xx body has no runs[] (\"telemetry list: <status> <statusText> from <url> is not a Run Record listing (no runs[] in the body): ...\"), where it used to print an empty listing and exit 0. The run_record_remit_recovery action text changed. The Run Record schema is unchanged.",
+      "compatibility": "compatible",
+      "migration": "None. An agent that treated remit_state \"failed\" with a 409 error as a recovery trigger will now see \"ok\"; one that parsed remit_error for the \"Remit POST failed:\" prefix should read remit_state and, in --json output, remit.result instead. An agent that expected telemetry list to exit 0 on any 2xx must handle a non-zero exit for a body without runs[].",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "runRecordCommand reads the record already on disk under the run_id before writing: an ok record is left as written and not re-sent (written: false, remit.result already_stored); a failed or pending one is retried when the run may send and carried forward when it may not. The remit outcome is stamped from remitRunRecord's status-classified result (409 = already_stored, non-JSON 2xx = ok_unparsed_ack), the --json summary gains remit { result, http_status, base_kind, sent, preserved }, the text Remit: line names the 409 / non-JSON cases and ends with [base: <kind>], and the run_record_remit_recovery action text says a held send resolves to ok."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "telemetry",
+          "summary": "telemetry list throws (exit non-zero) when a 2xx body carries no runs[] array, naming the status, the URL and a body excerpt, instead of printing an empty listing."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Remit Channel documents the status-based classification (already_stored, ok_unparsed_ack, refused, transport_error), the never-downgrade rule for re-runs, the stamped stored copy, and telemetry list's runs[] requirement; Closeout recognition's recovery paragraph no longer claims a failed remit left nothing stored."
+        }
+      ],
+      "entry_sha256": "97b4807e0d7ce4a3769d23ce6291e6bfb077a1a6f2baea01dce1ff91059f97b4"
     }
   ]
 }
