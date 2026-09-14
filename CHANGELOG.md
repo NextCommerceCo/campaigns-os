@@ -45,6 +45,7 @@ Notable supported-surface changes are recorded here.
   output. The disposition is unchanged: a waived exception still lands on
   `ready_with_exceptions`, never plain `ready`, and placeholder-text residue
   stays a blocker the waiver does not soften.
+
 ## [1.27.0+agent.27] - 2026-09-14
 
 ### Fixed
