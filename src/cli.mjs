@@ -9791,8 +9791,11 @@ function runSessionRootFor(args) {
     packet = readJson(packetPath);
   } catch (error) {
     if (error?.code !== "ENOENT") {
+      // Name what failed: a parse error is a packet problem, anything else
+      // (EACCES, EISDIR, …) is the file itself, said with the OS error.
+      const what = error instanceof SyntaxError ? "could not be read as a build packet" : "could not be read";
       throw new Error(
-        `--packet ${packetPath} could not be read as a build packet (${error?.message || error}); the run session roots on its assembly.target_repo. Fix or re-point the packet, then retry.`,
+        `--packet ${packetPath} ${what} (${error?.message || error}); the run session roots on its assembly.target_repo. Fix or re-point the packet, then retry.`,
       );
     }
   }

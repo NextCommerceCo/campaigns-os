@@ -403,6 +403,15 @@ test("CLI: run start --packet refuses a packet that exists but cannot be parsed 
         `run ${verb} names the unreadable packet`,
       );
     }
+    // A path that is not a readable file is refused with the OS error, not a
+    // parse-error wording that would send the operator looking for bad JSON.
+    assert.throws(
+      () => runIn(elsewhere, ["run", "start", "--packet", packets, "--json"]),
+      (error) => {
+        const stderr = String(error.stderr || "");
+        return stderr.includes(`--packet ${realpathSync(packets)} could not be read (`) && stderr.includes("EISDIR") && !stderr.includes("as a build packet");
+      },
+    );
     for (const path of [target, packets, elsewhere]) {
       assert.equal(findRunSession(path), null, `no session opened at ${path}`);
       assert.equal(existsSync(join(path, ".campaign-runtime")), false);

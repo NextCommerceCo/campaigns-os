@@ -476,7 +476,9 @@ Notable supported-surface changes are recorded here.
 - A `--packet` that exists but cannot be parsed is refused by `run start` /
   `run end` with `--packet <p> could not be read as a build packet (<parse
   error>); the run session roots on its assembly.target_repo. Fix or re-point
-  the packet, then retry.` (exit 1, nothing opened anywhere). It used to open
+  the packet, then retry.` (exit 1, nothing opened anywhere); a path that is
+  not a readable file (a directory, no permission) is refused the same way
+  as `could not be read (<OS error>)`. It used to open
   the session silently on the packet's directory, where no later command run
   by that packet would find it once it parsed again and named another target.
 - The session records the packet in canonical form (symlinks resolved, the
