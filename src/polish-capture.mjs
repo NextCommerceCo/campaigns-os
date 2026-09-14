@@ -145,16 +145,23 @@ function resourceId(canonicalUrl) {
   return `sha256:${createHash("sha256").update(canonicalUrl).digest("hex")}`;
 }
 
-function canonicalizeForIntegrity(value) {
-  if (Array.isArray(value)) return value.map(canonicalizeForIntegrity);
+// Key-sorted deep copy, so two captures that state the same facts serialize
+// to the same bytes. No cycle guard, deliberately: values reach this module
+// from fresh literals or from JSON.parse, and neither can carry a cycle.
+export function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeForIntegrity(value[key])]));
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
   }
   return value;
 }
 
+export function canonicalJson(value) {
+  return JSON.stringify(canonicalize(value));
+}
+
 function integrityFingerprint(value) {
-  return `sha256:${createHash("sha256").update(JSON.stringify(canonicalizeForIntegrity(value))).digest("hex")}`;
+  return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
 
 function captureAssociationProjection(capture) {
@@ -230,6 +237,12 @@ function normalizeResourceType(value) {
   return KNOWN_RESOURCE_TYPES.has(token)
     ? { value: token, status: "known" }
     : { value: "unknown", status: "unknown" };
+}
+
+// A ledger entry's resource_type_status is "known" exactly when its type is a
+// named role; "unknown" and "ambiguous" both carry the type "unknown".
+export function resourceTypeKnown(resourceType) {
+  return KNOWN_RESOURCE_TYPES.has(resourceType);
 }
 
 function genericCacheFlag(record) {
@@ -364,11 +377,16 @@ function prepareResponseRecords(responses, { documentUrl, problemCounts }) {
   return prepared;
 }
 
-function resourceLedgerSort(a, b) {
-  return a.url.localeCompare(b.url) || a.resource_id.localeCompare(b.resource_id);
+// The derivations below are the producer's statements about a resource
+// ledger, exported so the page-load validator recomputes each one from the
+// ledger with the same function instead of a second spelling of it. They
+// take ledger entries (or media projections) and nothing else.
+
+export function resourceLedgerSort(a, b) {
+  return String(a.url).localeCompare(String(b.url)) || String(a.resource_id).localeCompare(String(b.resource_id));
 }
 
-function largestResourceProjection(resources) {
+export function largestResourceProjection(resources) {
   const largest = [...resources].sort((a, b) => b.transferred_bytes - a.transferred_bytes
     || a.url.localeCompare(b.url)
     || a.resource_id.localeCompare(b.resource_id))[0];
@@ -379,6 +397,50 @@ function largestResourceProjection(resources) {
     transferred_bytes: largest.transferred_bytes,
     request_count: largest.request_count,
   } : null;
+}
+
+// The capture's metrics block, summed over the retained ledger entries.
+export function resourceLedgerMetrics(resources) {
+  const sum = (field) => resources.reduce((total, resource) => total + resource[field], 0);
+  return {
+    total_transferred_bytes: sum("transferred_bytes"),
+    request_count: sum("request_count"),
+    largest_resource: largestResourceProjection(resources),
+    cross_origin_request_count: sum("cross_origin_request_count"),
+    cache_request_count: sum("cache_request_count"),
+    service_worker_request_count: sum("service_worker_request_count"),
+  };
+}
+
+// The problem counts a ledger implies on its own: one per cached, service-
+// worker and unmeasured request, one per ambiguous or unknown-typed entry,
+// and the failed requests attributed by origin and role. Every request under
+// one entry shares the entry's origin relation and resolved type, so the
+// entry decides the class for all of its failed requests.
+export function ledgerProblemCounts(entries) {
+  const counts = {
+    cache_observed: 0,
+    service_worker_observed: 0,
+    transfer_size_unavailable: 0,
+    resource_type_ambiguous: 0,
+    resource_type_unknown: 0,
+    cross_origin_request_failed: 0,
+    dependency_request_failed: 0,
+  };
+  for (const resource of entries) {
+    counts.cache_observed += resource.cache_request_count;
+    counts.service_worker_observed += resource.service_worker_request_count;
+    counts.transfer_size_unavailable += resource.unmeasured_request_count;
+    if (resource.resource_type_status === "ambiguous") counts.resource_type_ambiguous += 1;
+    if (resource.resource_type_status === "unknown") counts.resource_type_unknown += 1;
+    if (resource.failed_request_count > 0) {
+      counts[failedRequestProblemCode({
+        crossOrigin: resource.cross_origin_request_count > 0,
+        resourceType: resource.resource_type,
+      })] += resource.failed_request_count;
+    }
+  }
+  return counts;
 }
 
 function documentResponseIdentity(value, { baseUrl } = {}) {
@@ -400,6 +462,20 @@ function normalizedDocumentMimeType(value) {
   return token ? "other" : "unknown";
 }
 
+// Whether the document the browser settled on shares the origin the capture
+// was asked for; null on either side is a mismatch.
+export function originMatchesCapture(captureOrigin, finalOrigin) {
+  return Boolean(captureOrigin && finalOrigin && captureOrigin === finalOrigin);
+}
+
+// A final document response is complete only as a 200 HTML/XHTML page on the
+// requested origin; anything else is an error.
+export function documentResponseAcceptable({ http_status, mime_type, origin_matches_capture }) {
+  return http_status === 200
+    && (mime_type === "html" || mime_type === "xhtml")
+    && origin_matches_capture === true;
+}
+
 function assessFinalDocumentResponse(prepared, {
   documentUrl,
   requestedDocumentUrl,
@@ -418,7 +494,7 @@ function assessFinalDocumentResponse(prepared, {
     context_fingerprint: null,
     capture_origin: requestedOrigin,
     final_origin: finalOrigin,
-    origin_matches_capture: Boolean(requestedOrigin && finalOrigin && requestedOrigin === finalOrigin),
+    origin_matches_capture: originMatchesCapture(requestedOrigin, finalOrigin),
   });
   if (!finalIdentity) {
     addProblemCount(problemCounts, "document_response_missing");
@@ -451,12 +527,9 @@ function assessFinalDocumentResponse(prepared, {
     context_fingerprint: record.document_context_fingerprint,
     capture_origin: requestedOrigin,
     final_origin: finalOrigin,
-    origin_matches_capture: Boolean(requestedOrigin && finalOrigin && requestedOrigin === finalOrigin),
+    origin_matches_capture: originMatchesCapture(requestedOrigin, finalOrigin),
   };
-  if (record?.failed === true
-    || record?.status !== 200
-    || (projection.mime_type !== "html" && projection.mime_type !== "xhtml")
-    || !projection.origin_matches_capture) {
+  if (record?.failed === true || !documentResponseAcceptable(projection)) {
     addProblemCount(problemCounts, "document_response_error");
     projection.status = "error";
   }
@@ -523,13 +596,8 @@ export function aggregateCdpResponses(responses, {
       if (hopResource.status === "http") matchResources.push(hopResource);
     }
 
-    if (cacheObserved) addProblemCount(problemCounts, "cache_observed");
-    if (fromServiceWorker) addProblemCount(problemCounts, "service_worker_observed");
     const transferMeasured = Number.isInteger(transferredBytes) && transferredBytes >= 0;
     const sizeAccounted = transferMeasured || declaredBytes !== null;
-    // A failed request has no transfer size by definition; its failure is
-    // already attributed above and is not also an unavailable measurement.
-    if (!sizeAccounted && !failed) addProblemCount(problemCounts, "transfer_size_unavailable");
 
     const group = groups.get(resolved.resource_id) || {
       resource_id: resolved.resource_id,
@@ -554,6 +622,9 @@ export function aggregateCdpResponses(responses, {
     group.observed_resource_types.add(resourceType.value);
     if (resourceType.status === "unknown") group.resource_type_status = "unknown";
     if (transferMeasured) group.transferred_bytes += transferredBytes;
+    // A failed request has no transfer size by definition; its failure is
+    // attributed once the entry's type is resolved and is not also an
+    // unavailable measurement.
     else if (!sizeAccounted && !failed) group.unmeasured_request_count += 1;
     if (canceled) group.canceled_request_count += 1;
     if (declaredBytes !== null) {
@@ -596,20 +667,8 @@ export function aggregateCdpResponses(responses, {
     if (observedTypes.length > 1) {
       group.resource_type = "unknown";
       group.resource_type_status = "ambiguous";
-      addProblemCount(problemCounts, "resource_type_ambiguous");
     } else if (group.resource_type_status === "unknown") {
       group.resource_type = "unknown";
-      addProblemCount(problemCounts, "resource_type_unknown");
-    }
-    // Failed requests are attributed after type resolution so the code matches
-    // what the ledger entry will say, which is what the shape invariant
-    // recomputes from. Every request under one entry shares the entry's
-    // origin relation, so the count is the entry's failed count.
-    if (group.failed_request_count > 0) {
-      addProblemCount(problemCounts, failedRequestProblemCode({
-        crossOrigin: group.cross_origin_request_count > 0,
-        resourceType: group.resource_type,
-      }), group.failed_request_count);
     }
     const { observed_resource_types: ignored, statuses, match_resource_ids: matchIds, ...projection } = group;
     return {
@@ -618,24 +677,25 @@ export function aggregateCdpResponses(responses, {
       match_resource_ids: [...matchIds].sort(),
     };
   }).sort(resourceLedgerSort);
+  // The ledger-implied problems are read off the finished entries (types
+  // resolved, failures attributed) so the codes match what the ledger says,
+  // which is what the shape rules recompute from.
+  for (const [code, count] of Object.entries(ledgerProblemCounts(allResources))) {
+    addProblemCount(problemCounts, code, count);
+  }
 
   const resources = allResources.slice(0, MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES);
   const omittedResources = allResources.slice(MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES);
   if (omittedResources.length) {
     addProblemCount(problemCounts, "resource_ledger_overflow", omittedResources.length);
   }
-  const sum = (field) => resources.reduce((total, resource) => total + resource[field], 0);
   const problems = projectedProblems(problemCounts);
 
   return {
     measurement_status: polishCaptureMeasurementStatus(problems),
     observed_response_count: prepared.length,
     unattributed_request_count: unattributedRequestCount,
-    total_transferred_bytes: sum("transferred_bytes"),
-    request_count: sum("request_count"),
-    cross_origin_request_count: sum("cross_origin_request_count"),
-    cache_request_count: sum("cache_request_count"),
-    service_worker_request_count: sum("service_worker_request_count"),
+    ...resourceLedgerMetrics(resources),
     resources,
     resource_ledger: {
       limit: MAX_PAGE_LOAD_RESOURCE_LEDGER_ENTRIES,
@@ -643,7 +703,6 @@ export function aggregateCdpResponses(responses, {
       omitted_resource_count: omittedResources.length,
       omitted_request_count: omittedResources.reduce((sum, resource) => sum + resource.request_count, 0),
     },
-    largest_resource: largestResourceProjection(resources),
     document_response: documentResponse,
     problems,
   };
@@ -667,11 +726,17 @@ function sourceReference(value, sourceKind, sourceIndex, documentUrl) {
   };
 }
 
-function sourceReferenceSort(a, b) {
+export function sourceReferenceSort(a, b) {
   const ranks = { current_src: 0, src_attribute: 1, source_src_attribute: 2, observed_source: 3 };
-  return ranks[a.source_kind] - ranks[b.source_kind]
+  return (ranks[a.source_kind] ?? 99) - (ranks[b.source_kind] ?? 99)
     || a.source_index - b.source_index
     || String(a.resource_id).localeCompare(String(b.resource_id));
+}
+
+// Only the two explicit deferral tokens keep a hidden element from fetching
+// eagerly; "auto", an empty or missing attribute and anything else do not.
+export function preloadDefersFetch(preloadAttribute) {
+  return preloadAttribute === "none" || preloadAttribute === "metadata";
 }
 
 export function normalizeMediaElement(element, { documentUrl, elementIndex = 0 } = {}) {
@@ -726,7 +791,7 @@ export function normalizeMediaElement(element, { documentUrl, elementIndex = 0 }
     observed_source_urls: observedSourceUrls.map((source) => source?.url || null),
     source_references: sourceReferences,
     preload_attribute: preloadAttribute,
-    preload_defers_fetch: preloadAttribute === "none" || preloadAttribute === "metadata",
+    preload_defers_fetch: preloadDefersFetch(preloadAttribute),
     hidden_at_load: hiddenBy.size > 0,
     hidden_by: [...hiddenBy].sort(),
     zero_size_at_load: Number.isFinite(width) && Number.isFinite(height) ? (width <= 0 || height <= 0) : null,
@@ -744,7 +809,7 @@ export function normalizePageLoadRoute(value) {
   }
 }
 
-function normalizedNetworkidle(value) {
+export function normalizedNetworkidle(value) {
   const status = normalizedToken(value?.status);
   const durationMs = value?.duration_ms;
   if ((status !== "settled" && status !== "timeout")
@@ -753,17 +818,17 @@ function normalizedNetworkidle(value) {
   return { status, duration_ms: durationMs };
 }
 
-function normalizedViewport(value) {
+export function normalizedViewport(value) {
   const token = normalizeString(value)?.toLocaleLowerCase("en-US") || null;
   return token && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(token) ? token : null;
 }
 
-function normalizedBuildFingerprint(value) {
+export function normalizedBuildFingerprint(value) {
   const fingerprint = normalizeString(value);
   return fingerprint && /^sha256:[a-f0-9]{64}$/.test(fingerprint) ? fingerprint : null;
 }
 
-function normalizedCampaignSlug(value) {
+export function normalizedCampaignSlug(value) {
   const slug = normalizeString(value);
   return slug && /^[a-z0-9][a-z0-9_-]{0,127}$/i.test(slug) ? slug : null;
 }
@@ -780,7 +845,9 @@ function captureSubject({ buildFingerprint, slug, requestedRoute, finalDocumentU
   };
 }
 
-function mediaFetchedResources(media, resources) {
+// The ledger entries a media element fetched: every entry whose identity set
+// meets one of the element's resolved source references.
+export function mediaFetchedResources(media, resources) {
   const sourceIds = new Set(media.source_references
     .map((reference) => reference.resource_id)
     .filter(Boolean));
@@ -796,7 +863,60 @@ function mediaFetchedResources(media, resources) {
       ...(Object.hasOwn(resource, "declared_bytes") ? { declared_bytes: resource.declared_bytes } : {}),
       matched_source_resource_ids: matchedSourceIds.sort(),
     }];
-  }).sort((a, b) => a.url.localeCompare(b.url) || a.resource_id.localeCompare(b.resource_id));
+  }).sort(resourceLedgerSort);
+}
+
+// The element's byte and request totals over its fetched resources.
+export function mediaFetchTotals(fetchedResources) {
+  return {
+    fetched_bytes: fetchedResources.reduce((sum, resource) => sum + resource.transferred_bytes, 0),
+    fetched_request_count: fetchedResources.reduce((sum, resource) => sum + resource.request_count, 0),
+    declared_bytes: fetchedResources.reduce((sum, resource) => sum + (resource.declared_bytes || 0), 0),
+  };
+}
+
+// A hidden element that fetches eagerly and names a source the ledger cannot
+// identify: the measurement cannot say what it loaded.
+export function hiddenEagerSourceUnresolved(media) {
+  return media.hidden_at_load
+    && !media.preload_defers_fetch
+    && media.source_references.some((reference) => reference.resource_id === null);
+}
+
+// Media transfers no element claims: bytes the page moved that the media
+// measurement cannot attribute.
+export function unattributedMediaTransfers(media, resources) {
+  const attributedResourceIds = new Set(media.flatMap((item) => item.fetched_resources)
+    .map((resource) => resource.resource_id));
+  return resources.filter((resource) => resource.resource_type === "media"
+    && resource.transferred_bytes > 0
+    && !attributedResourceIds.has(resource.resource_id));
+}
+
+// The capture-level statuses stated beside the problems that justify them.
+export const PRODUCER_FAILURE_PROBLEM_CODES = Object.freeze([
+  "browser_unavailable",
+  "producer_failed",
+  "producer_timeout",
+]);
+
+export function producerStatus(problems) {
+  return problems.some((problem) => PRODUCER_FAILURE_PROBLEM_CODES.includes(problem.code)) ? "failed" : "complete";
+}
+
+export function responseCollectionProblemCode(status) {
+  if (status === "failed") return "response_collection_failed";
+  return status === "complete" ? null : "response_collection_status_invalid";
+}
+
+export function mediaCollectionStatus({
+  failed_element_count,
+  omitted_element_count,
+  source_overflow_element_count,
+  ancestor_overflow_element_count,
+}) {
+  return failed_element_count > 0 || omitted_element_count > 0
+    || source_overflow_element_count > 0 || ancestor_overflow_element_count > 0 ? "partial" : "complete";
 }
 
 export function buildPageLoadCapture({
@@ -843,8 +963,8 @@ export function buildPageLoadCapture({
   const collectionStatus = reportedCollectionStatus === "complete" && dependencyFailed
     ? "failed"
     : reportedCollectionStatus;
-  if (collectionStatus === "failed") addCaptureProblem("response_collection_failed");
-  else if (collectionStatus !== "complete") addCaptureProblem("response_collection_status_invalid");
+  const collectionProblem = responseCollectionProblemCode(collectionStatus);
+  if (collectionProblem) addCaptureProblem(collectionProblem);
   if (collectionStatus === "complete" && Array.isArray(responses) && network.observed_response_count === 0) {
     addCaptureProblem("response_collection_empty");
   }
@@ -902,20 +1022,14 @@ export function buildPageLoadCapture({
           : element.ancestor_styles,
       } : element;
       const normalized = normalizeMediaElement(boundedElement, { documentUrl: finalDocumentUrl, elementIndex });
-      if (normalized.hidden_at_load
-        && !normalized.preload_defers_fetch
-        && normalized.source_references.some((reference) => reference.resource_id === null)) {
-        addCaptureProblem("media_source_unresolvable");
-      }
+      if (hiddenEagerSourceUnresolved(normalized)) addCaptureProblem("media_source_unresolvable");
       const fetchedResources = mediaFetchedResources(normalized, network.resources);
       const hasDeclaredShape = network.resources.some((resource) => Object.hasOwn(resource, "declared_bytes"));
+      const { declared_bytes: declaredBytes, ...fetchTotals } = mediaFetchTotals(fetchedResources);
       media.push({
         ...normalized,
-        fetched_bytes: fetchedResources.reduce((sum, resource) => sum + resource.transferred_bytes, 0),
-        fetched_request_count: fetchedResources.reduce((sum, resource) => sum + resource.request_count, 0),
-        ...(hasDeclaredShape ? {
-          declared_bytes: fetchedResources.reduce((sum, resource) => sum + (resource.declared_bytes || 0), 0),
-        } : {}),
+        ...fetchTotals,
+        ...(hasDeclaredShape ? { declared_bytes: declaredBytes } : {}),
         fetched_resources: fetchedResources,
       });
     } catch {
@@ -929,39 +1043,33 @@ export function buildPageLoadCapture({
   if (ancestorOverflowElementCount > 0) {
     addCaptureProblem("media_ancestor_overflow", ancestorOverflowElementCount);
   }
-  const attributedResourceIds = new Set(media.flatMap((item) => item.fetched_resources)
-    .map((resource) => resource.resource_id));
-  const unattributedMediaTransfers = network.resources.filter((resource) => resource.resource_type === "media"
-    && resource.transferred_bytes > 0
-    && !attributedResourceIds.has(resource.resource_id));
-  if (unattributedMediaTransfers.length) {
-    addCaptureProblem("media_transfer_unattributed", unattributedMediaTransfers.length);
-  }
+  const unattributedTransfers = unattributedMediaTransfers(media, network.resources);
+  if (unattributedTransfers.length) addCaptureProblem("media_transfer_unattributed", unattributedTransfers.length);
   const settled = normalizedNetworkidle(networkidle);
   if (settled.status === "invalid") addCaptureProblem("networkidle_measurement_invalid");
   const problems = projectedProblems(problemCounts);
+  const mediaCollectionCounts = {
+    failed_element_count: failedMediaElementCount,
+    omitted_element_count: omittedMediaElementCount,
+    source_overflow_element_count: sourceOverflowElementCount,
+    ancestor_overflow_element_count: ancestorOverflowElementCount,
+  };
 
   const capture = {
     schema_version: POLISH_ROUTE_CAPTURE_SCHEMA_VERSION,
     performed_by: POLISH_CAPTURE_PRODUCER,
     subject,
     measurement_status: polishCaptureMeasurementStatus(problems),
-    producer_status: normalizedProducerProblem ? "failed" : "complete",
+    producer_status: producerStatus(problems),
     response_collection: {
       status: collectionStatus === "complete" || collectionStatus === "failed" ? collectionStatus : "invalid",
       observed_response_count: network.observed_response_count,
       unattributed_response_count: network.unattributed_request_count,
     },
     media_collection: {
-      status: !Array.isArray(mediaElements)
-        ? "failed"
-        : failedMediaElementCount || omittedMediaElementCount
-          || sourceOverflowElementCount || ancestorOverflowElementCount ? "partial" : "complete",
+      status: !Array.isArray(mediaElements) ? "failed" : mediaCollectionStatus(mediaCollectionCounts),
       observed_element_count: Array.isArray(mediaElements) ? declaredObservedElementCount : 0,
-      failed_element_count: failedMediaElementCount,
-      omitted_element_count: omittedMediaElementCount,
-      source_overflow_element_count: sourceOverflowElementCount,
-      ancestor_overflow_element_count: ancestorOverflowElementCount,
+      ...mediaCollectionCounts,
     },
     networkidle: settled,
     document_response: network.document_response,

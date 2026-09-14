@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.15] - 2026-09-14
+
+### Changed
+
+- One derivation per polish capture invariant. The page-load validator
+  re-derived twenty-two statements the capture producer makes about itself
+  (ledger order, largest resource, metric sums, source-reference order,
+  fetched-resource attribution and totals, unresolvable and unattributed
+  media, the document, collection, producer and networkidle statuses, the
+  problem counts a ledger implies) with its own copies of the producer's
+  code, and answered with one bit: `capture_shape_invalid`. The producer's
+  derivations are now exported from `src/polish-capture.mjs` and the
+  validator is an ordered table of shape rules that recomputes each stated
+  value with the same function, so the two cannot drift apart. The table is
+  exported as `POLISH_CAPTURE_SHAPE_RULES`, `captureShapeViolation(capture)`
+  names the first rule a capture breaks, and a `measurement.incomplete[]`
+  entry whose codes include `capture_shape_invalid` now also carries that
+  name as `shape_violation`. Every other output is unchanged: captures,
+  page-load evidence for captures whose shape holds, checkpoint results and
+  the QA verdict's measurement projection (which lists a fixed field set)
+  produce what they did.
+
 ## [1.27.0+agent.10] - 2026-09-14
 
 ### Fixed
