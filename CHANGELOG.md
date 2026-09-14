@@ -72,6 +72,7 @@ Notable supported-surface changes are recorded here.
   for the IPv6 loopback, whose brackets glob in zsh) so the pasted line hands
   the shell one argument; `http://127.0.0.1:4399` and https URLs are
   unchanged.
+
 ## [1.27.0+agent.30] - 2026-09-14
 
 ### Changed
