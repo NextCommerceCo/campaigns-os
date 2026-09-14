@@ -2818,15 +2818,13 @@ export function doctorBuiltOutput(args) {
   };
   ready.push(`Resolved ${scope.html_count} built page(s) from ${relFromDir(targetRepo, scope.campaign_dir)} (slug "${scope.slug || "(site root)"}")`);
 
+  const resolution = resolveBrandContractOnce(derived, family);
   let brandContract = null;
   if (!family) {
     addIssue(warnings, "assembly.template_family", "No --family given; the residue/placeholder-text/demo-asset gates need a family brand contract to run. Pass --family <family> (the family the campaign was built from).");
   } else {
-    try {
-      brandContract = resolveTemplateBrandContract(family);
-    } catch (error) {
-      addIssue(warnings, "template_contract.brand_contract", `Template brand contract for "${family}" failed to load: ${error.message}`);
-    }
+    reportBrandContractDefectOnce(resolution, warnings, family);
+    brandContract = resolution.contract;
     if (!brandContract) {
       addIssue(warnings, "template_contract.brand_contract", `No brand/residue/pricing contract found for family "${family}". Built-output residue gates cannot run; confirm the family slug.`);
     } else {
@@ -3328,6 +3326,9 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     // The prepare-build gate `next` acts on, stored like every other gate so
     // the ladder consumes doctor's evaluation instead of computing its own.
     prepare_build_gate: null,
+    // The family brand contract, resolved once per run: { state, family } plus
+    // { code, detail } for a defect. The `next` advisories read it.
+    brand_contract: null,
     page_kit_campaign_config: null,
     scaffold_required: false,
     scaffold_reason: null,
@@ -3486,15 +3487,14 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
 // brand contract lists under pricing_surfaces.forbidden_css_hides. Doctor
 // reports a warning with the exact rule; browser QA enforces the outcome
 // (zero visible price rows) as a blocker.
-function runPricingCssHideCheck({ packet, derived, warnings, ready, report = null }) {
+export function runPricingCssHideCheck({ packet, derived, warnings, ready, report = null }) {
   const family = packet?.assembly?.template_family;
-  let contract = null;
-  try {
-    contract = resolveTemplateBrandContract(family);
-  } catch (error) {
-    addIssue(warnings, "template_contract.brand_contract", `Template brand contract for "${family}" failed to load: ${error.message}`);
+  const resolution = resolveBrandContractOnce(derived, family);
+  if (resolution.error) {
+    reportBrandContractDefectOnce(resolution, warnings, family);
     return;
   }
+  const contract = resolution.contract;
   if (!contract?.pricing_surfaces?.forbidden_css_hides?.length) {
     ready.push(`Pricing CSS scan not applicable for template family "${family || "(none)"}" (no brand contract with forbidden_css_hides)`);
     return;
@@ -5967,31 +5967,82 @@ function isAutomatableTemplateFamily(family) {
   return isNonEmptyString(family) && family !== "undecided" && family !== "custom";
 }
 
-function loadTemplateFamilyBrandContract(family, errors, warnings, { required = false } = {}) {
+// One resolution of the family brand contract per doctor run, keyed by the
+// run's `derived` — the in-process bag every check reads. The JSON-visible
+// summary lands on derived.brand_contract: `state` (no_family, no_contract,
+// no_palette_checks, inspected, defect), `family`, and for a defect the
+// loader's code and a one-line detail — the shape the `next` advisories read.
+// The contract object itself stays in process. A defect is reported once, by
+// the first check that reports it, at that check's severity: before this, a
+// standard packet with an unreadable contract carried the same finding twice
+// (an error from the catalog check and a warning from the pricing scan).
+const BRAND_CONTRACT_RESOLUTIONS = new WeakMap();
+
+// The one resolution: the contract object (or the loader's error) and the
+// summary every consumer reads. null is "resolved to no contract", never
+// "something went wrong": no public contract file AND no private fragment
+// carrying a brandContract, for which QA emits no residue rows. A defect
+// throws instead; the two must not be collapsed.
+function resolveBrandContract(family) {
+  const label = optionalString(family);
+  if (!label) return { contract: null, error: null, summary: { state: "no_family", family: null } };
   try {
-    const contract = resolveTemplateBrandContract(family);
-    if (!contract && required) {
-      addIssue(
-        errors,
-        "template_contract.brand_contract",
-        `Template family "${family}" has no brand/residue/pricing contract at contracts/template-brand-contract.${family}.v0.json. Add the contract before treating this family as promoted/agent-ready.`,
-        {
-          template_family: family,
-          reason: "missing_file",
-          contract_path: `contracts/template-brand-contract.${family}.v0.json`,
-        },
-      );
-    }
-    return contract;
+    const contract = resolveTemplateBrandContract(label);
+    const state = contract ? (contractHasPaletteResidueChecks(contract) ? "inspected" : "no_palette_checks") : "no_contract";
+    return { contract, error: null, summary: { state, family: label } };
   } catch (error) {
-    addIssue(
-      required ? errors : warnings,
-      "template_contract.brand_contract",
-      `Template brand contract for "${family}" failed to load: ${error.message}`,
-      templateBrandContractErrorDetail(error, family),
-    );
+    return {
+      contract: null,
+      error,
+      summary: {
+        state: "defect",
+        family: label,
+        code: safeBrandContractCode(error?.code),
+        detail: singleLineDetail(error instanceof Error ? error.message : error),
+      },
+    };
+  }
+}
+
+function resolveBrandContractOnce(derived, family) {
+  if (BRAND_CONTRACT_RESOLUTIONS.has(derived)) return BRAND_CONTRACT_RESOLUTIONS.get(derived);
+  const { contract, error, summary } = resolveBrandContract(family);
+  derived.brand_contract = summary;
+  const resolution = { contract, error, reported: false };
+  BRAND_CONTRACT_RESOLUTIONS.set(derived, resolution);
+  return resolution;
+}
+
+function reportBrandContractDefectOnce(resolution, collection, family) {
+  if (!resolution.error || resolution.reported) return;
+  resolution.reported = true;
+  addIssue(
+    collection,
+    "template_contract.brand_contract",
+    `Template brand contract for "${family}" failed to load: ${resolution.error.message}`,
+    templateBrandContractErrorDetail(resolution.error, family),
+  );
+}
+
+function loadTemplateFamilyBrandContract(family, errors, warnings, derived, { required = false } = {}) {
+  const resolution = resolveBrandContractOnce(derived, family);
+  if (resolution.error) {
+    reportBrandContractDefectOnce(resolution, required ? errors : warnings, family);
     return null;
   }
+  if (!resolution.contract && required) {
+    addIssue(
+      errors,
+      "template_contract.brand_contract",
+      `Template family "${family}" has no brand/residue/pricing contract at contracts/template-brand-contract.${family}.v0.json. Add the contract before treating this family as promoted/agent-ready.`,
+      {
+        template_family: family,
+        reason: "missing_file",
+        contract_path: `contracts/template-brand-contract.${family}.v0.json`,
+      },
+    );
+  }
+  return resolution.contract;
 }
 
 function templateBrandContractErrorDetail(error, family) {
@@ -6030,7 +6081,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     return;
   }
   ready.push(`Template agentContract loaded for ${family}`);
-  const brandContract = loadTemplateFamilyBrandContract(family, errors, warnings, { required: familyAutomatable });
+  const brandContract = loadTemplateFamilyBrandContract(family, errors, warnings, derived, { required: familyAutomatable });
   if (brandContract) {
     ready.push(`Template brand/residue/pricing contract loaded for ${family}`);
     validateTemplateFamilyInventory(brandContract, errors, ready);
@@ -7606,7 +7657,7 @@ export function nextStage(stage, args, ambient = null) {
   const finalize = (result) => {
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate });
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null });
     recordNextRecommendation(ambient, result);
     return result;
   };
@@ -7887,30 +7938,6 @@ export function safeBrandContractCode(code) {
   return value && BRAND_CONTRACT_ERROR_CODES.has(value) ? value : "unknown";
 }
 
-function familyPaletteResidueState(packet) {
-  const family = optionalString(packet?.assembly?.template_family);
-  if (!family) return { state: "no_family", family: null };
-  let contract = null;
-  try {
-    contract = resolveTemplateBrandContract(family);
-  } catch (error) {
-    return {
-      state: "defect",
-      family,
-      code: safeBrandContractCode(error?.code),
-      detail: singleLineDetail(error instanceof Error ? error.message : error),
-    };
-  }
-  // null is "resolved to no contract", never "something went wrong": no public
-  // contract file AND no private fragment carrying a `brandContract` — which
-  // includes a privately allowlisted family whose fragment declares a catalog
-  // entry but no brand contract, not only an unknown or uncertified family.
-  // Either way QA emits no residue rows for it. A defect throws instead, and is
-  // handled above; the two must not be collapsed.
-  if (!contract) return { state: "no_contract", family };
-  return { state: contractHasPaletteResidueChecks(contract) ? "inspected" : "no_palette_checks", family };
-}
-
 // A defective contract is not a palette problem and does not wait on the theme
 // gate: QA rejects the contract itself, for a family with brand tokens as
 // readily as one without. So this advisory is emitted on the contract state
@@ -7987,7 +8014,7 @@ function divergenceInspectAction(divergences, packetPath) {
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, brandContract = null }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const pushPolishCheckpointActions = () => {
@@ -8099,7 +8126,9 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   // action lists: a blocked gate is a different code, and a blocked polish gate
   // is a stop-and-fix state whose own actions come first — these reappear on
   // the next `next` once that gate clears.
-  const residueState = familyPaletteResidueState(packet);
+  // Doctor resolved the family brand contract once and `next` hands its
+  // summary in; a caller without a doctor result resolves the same way.
+  const residueState = brandContract || resolveBrandContract(packet?.assembly?.template_family).summary;
   for (const advisory of [brandContractDefectAdvisory(residueState), themeStarterPaletteAdvisory(themeGate, packetPath, residueState)]) {
     if (advisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
       push(advisory.id, advisory.kind, advisory.command, advisory.description);

@@ -2680,6 +2680,27 @@
         }
       ],
       "entry_sha256": "3e72ba5c194bb97db0f199ed4a2a93b5d9cd6e8a00baedab10e34703c3333547"
+    },
+    {
+      "id": "RL-0070",
+      "sequence": 70,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.8",
+      "changelog_sha256": "b52d4c39adc16ecfc1f922fc31c6d2c37301536ba46498c914df884e3e571746",
+      "agent_impact": "One additive field and one fewer finding. doctor --json now carries derived.brand_contract: { state, family } with state one of no_family, no_contract, no_palette_checks, inspected, defect, plus { code, detail } for a defect (code from the loader's own enum \u2014 parse_error, schema_mismatch, extends_cycle, extends_missing_parent, family_mismatch \u2014 or unknown; detail a one-line, Markdown-escaped, bounded message). On a packet whose brand contract exists but cannot be read, doctor reports template_contract.brand_contract once (an error when the packet requires the commerce catalog and the family is automatable, otherwise a warning) where it previously reported it twice (that finding plus a warning from the pricing CSS scan); an agent counting findings under that code sees one. Everything else \u2014 doctor text, next --json and text, issue codes and messages \u2014 is unchanged.",
+      "compatibility": "additive",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "resolveBrandContract(family) is the one resolution (contract, error, summary); resolveBrandContractOnce memoises it per doctor run on derived.brand_contract and reportBrandContractDefectOnce reports a defect once at the first reporting check's severity; the catalog check, the pricing CSS scan and the built-output doctor read it; next's buildNextActions takes doctor's summary (falling back to the same resolution for a direct caller), and familyPaletteResidueState is deleted."
+        }
+      ],
+      "entry_sha256": "5fff8ddc108f0e50ae871af0f0e6bccd31447239833f40f94e70d53d43d0ff8a"
     }
   ]
 }
