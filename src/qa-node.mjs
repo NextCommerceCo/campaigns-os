@@ -2698,8 +2698,6 @@ function extractMetaTags(html) {
   return meta;
 }
 
-
-
 // QA verdict publish rides the shared remit rails (see src/remit.mjs). The
 // behavior is unchanged: POST to /api/qa/verdicts, parse the body, throw on a
 // non-2xx so the caller's "never fail the run if publish is unreachable"
@@ -3028,7 +3026,6 @@ function readJson(path) {
   }
   return JSON.parse(readFileSync(path, "utf8"));
 }
-
 
 function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
