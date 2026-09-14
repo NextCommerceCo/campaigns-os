@@ -2,6 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.10] - 2026-09-14
+
+### Fixed
+
+- One walk over a campaign's local QA verdicts. `next`'s ledger-divergence
+  check, `run-record`'s verdict inference and the run-record closeout each
+  walked `qa-output/<map_id|slug>/*.json` for themselves — three read walks
+  with their own filter, their own copy of the identity rule (a verdict is
+  this campaign's when its `campaign_slug` is the map id or the public route
+  slug) and their own spelling of the directory, one of them without the slug
+  normalisation the writer applies. The walk now lives once in
+  `src/qa-verdict-discovery.mjs`, listing every candidate — the paths the
+  Assembly Report's qa stage records and every verdict under each root's
+  `qa-output/<identifier>/` — with its source, identity match, trust and
+  (on request) digest, and the three readers are projections of it: the
+  repo-relative list of this campaign's verdicts, the best trusted candidate
+  by identity score and time, and the digests of the recorded paths. No
+  output changes: `next --json` (including `divergences[]`), `run-record`'s
+  inferred verdict and the closeout assessment produce what they did.
+
 ## [1.27.0+agent.9] - 2026-09-14
 
 ### Fixed
