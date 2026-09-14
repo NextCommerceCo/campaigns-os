@@ -60,6 +60,7 @@ import {
   readConfig,
   resolveConfigPath,
   resolveConsent,
+  scopedConsentCommand,
   TELEMETRY_ENV_VAR,
   writeConsentConfig,
 } from "./consent.mjs";
@@ -402,11 +403,11 @@ Usage:
   campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--json]
 
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
-  campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
+  campaigns-os telemetry status|on|off [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags; with --packet the session lives in the packet's target repo, whatever the cwd
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
-  campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd)
+  campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--proxy-base <url>] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd); --proxy-base is handed to run-record, so the session record remits to that receiver under the consent scoped to it
 
   Gates: when theme inspect finds a generatable brand theme and the campaign ships commerce pages, \`next polish|deploy|qa\` and \`qa run\` BLOCK until the brand layer is applied after next-core.css or explicitly waived (\`theme waive\` / \`qa run --theme-waive "<reason>"\`).
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
@@ -10585,7 +10586,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   }
   console.log(`Run Record assembled.`);
   console.log(`Run ID: ${record.run_id}`);
-  console.log(`Consent: ${record.consent_state} (${record.consent_source})`);
+  console.log(`Consent: ${record.consent_state} (${record.consent_source})${consent.scope_mismatch ? ` — file consent is scoped to ${consent.consent_scope || "(unscoped)"}, not ${consent.requested_scope}; consent to this endpoint with: ${scopedConsentCommand(consent.requested_scope)}` : ""}${consent.scope_bypassed ? ` — ${TELEMETRY_ENV_VAR} bypasses scope checking for ${consent.scope}` : ""}`);
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
   if (carriedForward) {
@@ -10813,20 +10814,50 @@ function toolkitProvenance({ silent = false } = {}) {
 // Machine-level Run Telemetry consent. `status` reports the resolved state and
 // its source; `on`/`off` persist an explicit choice to the user-level config.
 // Consent gates REMIT only — local capture is unaffected.
+//
+// A file grant is scoped to ONE endpoint. `telemetry on` grants the canonical
+// NEXT endpoint; `telemetry on --proxy-base <url>` grants that receiver
+// instead (loopback or staging), which is the non-interactive way to consent
+// to a non-canonical base — the alternative, CAMPAIGNS_OS_TELEMETRY=on, skips
+// scope checking altogether. `status` checks the stored grant against the
+// canonical endpoint, or against --proxy-base when given, so it reports what
+// a remit to that endpoint would do.
 async function telemetryCommand(args) {
   const sub = args._[1] || "status";
   const configPath = resolveConfigPath();
+  const requestedBase = optionalString(args["proxy-base"]);
 
   if (sub === "on" || sub === "off") {
-    const { configPath: written } = writeConsentConfig(sub, { configPath, proxyBase: DEFAULT_PROXY_BASE, source: "telemetry-command" });
-    const resolved = resolveConsent({ configPath });
+    let proxyBase = DEFAULT_PROXY_BASE;
+    if (requestedBase) {
+      // Same transport rule as the remit rail: https, or a loopback host. A
+      // grant for a base a remit would refuse to send to is not a grant.
+      // Nothing is sent here, so the in-clear warning is left to the remit.
+      ({ base: proxyBase } = assertSecureProxyBase(requestedBase, { label: `telemetry ${sub}`, warn: () => {} }));
+    }
+    const { configPath: written, config } = writeConsentConfig(sub, { configPath, proxyBase, source: "telemetry-command" });
+    const scope = config.telemetry.scope;
+    const canonical = scope === CANONICAL_REMIT_SCOPE;
+    const resolved = resolveConsent({ configPath, proxyBase: scope });
     if (args.json) {
-      console.log(JSON.stringify({ ok: true, action: `telemetry-${sub}`, config_path: written, state: resolved.state, source: resolved.source }, null, 2));
+      console.log(JSON.stringify({
+        ok: true,
+        action: `telemetry-${sub}`,
+        config_path: written,
+        scope,
+        scope_canonical: canonical,
+        state: resolved.state,
+        source: resolved.source,
+      }, null, 2));
       return;
     }
     console.log(`Telemetry ${sub.toUpperCase()}.`);
     console.log(`Config: ${written}`);
+    console.log(`Scope: ${scope}${canonical ? " (canonical NEXT endpoint)" : ""}`);
     console.log(`Resolved: ${resolved.state} (source: ${resolved.source})`);
+    if (sub === "on" && !canonical) {
+      console.log(`This grant covers remits that pass --proxy-base ${scope} only; a remit to the canonical NEXT endpoint (${CANONICAL_REMIT_SCOPE}) is OFF until you run: campaigns-os telemetry on`);
+    }
     if (resolved.source === "env") {
       console.log(`Note: ${TELEMETRY_ENV_VAR} is set and overrides this file until unset.`);
     }
@@ -10834,14 +10865,20 @@ async function telemetryCommand(args) {
   }
 
   if (sub === "status") {
-    const resolved = resolveConsent({ configPath });
-    const { ok: configPresent } = readConfig(configPath);
+    const checkedEndpoint = requestedBase ? (normalizeConsentScope(requestedBase) || requestedBase) : CANONICAL_REMIT_SCOPE;
+    const resolved = resolveConsent({ configPath, proxyBase: checkedEndpoint });
+    const { ok: configPresent, config } = readConfig(configPath);
+    const storedScope = configPresent ? normalizeConsentScope(config?.telemetry?.scope) : null;
+    const mismatch = resolved.scope_mismatch === true;
     if (args.json) {
       console.log(JSON.stringify({
         ok: true,
         action: "telemetry-status",
         config_path: configPath,
         config_present: configPresent,
+        scope: storedScope,
+        checked_endpoint: checkedEndpoint,
+        scope_mismatch: mismatch,
         state: resolved.state,
         source: resolved.source,
         resolved: resolved.resolved,
@@ -10849,16 +10886,21 @@ async function telemetryCommand(args) {
       }, null, 2));
       return;
     }
-    console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})`);
+    console.log(`Telemetry: ${resolved.state} (source: ${resolved.source})${resolved.scope_bypassed ? ` — ${TELEMETRY_ENV_VAR} bypasses scope checking` : ""}`);
     console.log(`Config: ${configPath}${configPresent ? "" : " (not set)"}`);
+    if (storedScope) {
+      console.log(`Scope: ${storedScope}${storedScope === CANONICAL_REMIT_SCOPE ? " (canonical NEXT endpoint)" : ""}`);
+    }
+    console.log(`Checked endpoint: ${checkedEndpoint}`);
     if (resolved.default_on === true) {
       console.log(`No explicit choice recorded — remit to the canonical NEXT endpoint (${resolved.scope}) is ON by default. Opt out with: campaigns-os telemetry off`);
+    } else if (mismatch) {
+      console.log(`Scope mismatch — the stored grant is for ${storedScope || "(unscoped)"}, so remit to ${checkedEndpoint} is OFF. Consent to it with: ${scopedConsentCommand(checkedEndpoint)}`);
     } else if (!resolved.resolved) {
-      // Only reachable for a malformed config file or a scope mismatch — the
-      // resolver fails CLOSED there, so the state really is off until the
-      // operator records a choice. (The old text said "defaults OFF", which
-      // contradicted the default-on canonical path above.)
-      console.log("Consent could not be resolved (malformed config or an endpoint scope mismatch) — remit is OFF until you set it: campaigns-os telemetry on|off");
+      // Only reachable for a malformed config file or a non-canonical
+      // endpoint with no grant — the resolver fails CLOSED there, so the
+      // state really is off until the operator records a choice.
+      console.log(`Consent could not be resolved (malformed config, or no grant for ${checkedEndpoint}) — remit is OFF until you set it: ${scopedConsentCommand(checkedEndpoint)} | campaigns-os telemetry off`);
     }
     return;
   }

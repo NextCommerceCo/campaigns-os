@@ -1,19 +1,22 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { promisify } from "node:util";
 
 import {
   announceDefaultOnTelemetry,
+  CANONICAL_REMIT_SCOPE,
   normalizeConsentScope,
   parseEnvConsent,
   promptAndPersistConsent,
   readConfig,
   resolveConfigPath,
   resolveConsent,
+  scopedConsentCommand,
   TELEMETRY_CONFIG_SCHEMA,
   TELEMETRY_ENV_VAR,
   writeConsentConfig,
@@ -306,4 +309,193 @@ test("CLI: telemetry env override beats the stored file", async () => {
     assert.equal(status.state, "off");
     assert.equal(status.source, "env");
   });
+});
+
+// --- Scoped file consent -----------------------------------------------------
+// A file grant covers one endpoint. `telemetry on --proxy-base <url>` is the
+// non-interactive way to grant a non-canonical receiver; the env override
+// grants every endpoint and says so. Every remit below goes to a loopback
+// receiver started in this process, with the env override absent.
+
+async function startLoopbackReceiver() {
+  const { createServer } = await import("node:http");
+  const posts = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      let payload = null;
+      try { payload = JSON.parse(body); } catch { payload = null; }
+      posts.push({ method: request.method, url: request.url, payload });
+      response.writeHead(201, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ ok: true, run_id: payload?.run_id ?? null }));
+    });
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  return {
+    posts,
+    base: `http://127.0.0.1:${server.address().port}`,
+    close: () => new Promise((done) => server.close(done)),
+  };
+}
+
+function cliEnv(dir, overrides = {}) {
+  const env = { ...process.env, XDG_CONFIG_HOME: dir, CAMPAIGNS_OS_LIFECYCLE_LOG: "", ...overrides };
+  delete env[TELEMETRY_ENV_VAR];
+  return env;
+}
+
+function runCli(argv, env, cwd = undefined) {
+  try {
+    return { status: 0, stdout: execFileSync("node", [CLI, ...argv], { encoding: "utf8", env, cwd, stdio: ["ignore", "pipe", "pipe"] }), stderr: "" };
+  } catch (error) {
+    return { status: error.status ?? 1, stdout: error.stdout || "", stderr: error.stderr || "" };
+  }
+}
+
+// The receiver answers from this process's event loop, so a command that
+// remits to it must not block that loop: run it asynchronously.
+const execFileAsync = promisify(execFile);
+async function runCliAsync(argv, env, cwd = undefined) {
+  try {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, ...argv], { encoding: "utf8", env, cwd });
+    return { status: 0, stdout, stderr };
+  } catch (error) {
+    return { status: error.code ?? 1, stdout: error.stdout || "", stderr: error.stderr || "" };
+  }
+}
+
+test("writeConsentConfig refuses a named scope that is not a URL instead of storing scope: null", async () => {
+  await withTempDir((dir) => {
+    const configPath = join(dir, "config.json");
+    assert.throws(() => writeConsentConfig("on", { configPath, proxyBase: "not a url" }), /consent scope is not a URL: not a url/);
+    assert.equal(readConfig(configPath).ok, false);
+    // Turning OFF never needs a scope.
+    writeConsentConfig("off", { configPath, proxyBase: "not a url" });
+    assert.equal(readConfig(configPath).config.telemetry.enabled, false);
+  });
+});
+
+test("resolveConsent: the scope-mismatch warning names the command that grants the requested endpoint", async () => {
+  await withTempDir((dir) => {
+    const configPath = join(dir, "config.json");
+    writeConsentConfig("on", { configPath });
+    let warned = "";
+    const mismatch = resolveConsent({ env: {}, configPath, proxyBase: "http://127.0.0.1:4399/", warn: (message) => { warned = message; } });
+    assert.equal(mismatch.state, "off");
+    assert.equal(mismatch.scope_mismatch, true);
+    assert.equal(mismatch.requested_scope, "http://127.0.0.1:4399");
+    assert.match(warned, /run: campaigns-os telemetry on --proxy-base http:\/\/127\.0\.0\.1:4399$/);
+    assert.doesNotMatch(warned, /until this endpoint is confirmed/);
+
+    // A mismatch against the canonical endpoint names the bare command.
+    writeConsentConfig("on", { configPath, proxyBase: "http://127.0.0.1:4399" });
+    resolveConsent({ env: {}, configPath, proxyBase: CANONICAL_REMIT_SCOPE, warn: (message) => { warned = message; } });
+    assert.match(warned, /run: campaigns-os telemetry on$/);
+  });
+});
+
+test("resolveConsent: the env override says it bypasses scope checking for a non-canonical endpoint", () => {
+  const warnings = [];
+  const warn = (message) => warnings.push(message);
+  const bypassed = resolveConsent({ env: { [TELEMETRY_ENV_VAR]: "on" }, configPath: "/nonexistent/config.json", proxyBase: "http://127.0.0.1:4399", warn });
+  assert.deepEqual([bypassed.state, bypassed.source, bypassed.scope_bypassed, bypassed.scope], ["on", "env", true, "http://127.0.0.1:4399"]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /CAMPAIGNS_OS_TELEMETRY=on bypasses consent scope checking/);
+  assert.match(warnings[0], /campaigns-os telemetry on --proxy-base http:\/\/127\.0\.0\.1:4399/);
+
+  // The canonical endpoint (named or implied) and env=off stay silent.
+  warnings.length = 0;
+  const canonical = resolveConsent({ env: { [TELEMETRY_ENV_VAR]: "on" }, configPath: "/nonexistent/config.json", proxyBase: CANONICAL_REMIT_SCOPE, warn });
+  const implied = resolveConsent({ env: { [TELEMETRY_ENV_VAR]: "on" }, configPath: "/nonexistent/config.json", warn });
+  const off = resolveConsent({ env: { [TELEMETRY_ENV_VAR]: "off" }, configPath: "/nonexistent/config.json", proxyBase: "http://127.0.0.1:4399", warn });
+  assert.deepEqual([canonical.scope_bypassed, implied.scope_bypassed, off.state], [undefined, undefined, "off"]);
+  assert.deepEqual(warnings, []);
+});
+
+test("scopedConsentCommand names --proxy-base only for a non-canonical scope", () => {
+  assert.equal(scopedConsentCommand(CANONICAL_REMIT_SCOPE), "campaigns-os telemetry on");
+  assert.equal(scopedConsentCommand(null), "campaigns-os telemetry on");
+  assert.equal(scopedConsentCommand("http://127.0.0.1:4399/"), "campaigns-os telemetry on --proxy-base http://127.0.0.1:4399");
+});
+
+test("CLI: telemetry on --proxy-base writes a grant scoped to that base, and status reports the scope", async () => {
+  await withTempDir((dir) => {
+    const env = cliEnv(dir);
+    const on = JSON.parse(execFileSync("node", [CLI, "telemetry", "on", "--proxy-base", "http://127.0.0.1:4399/", "--json"], { encoding: "utf8", env }));
+    assert.equal(on.scope, "http://127.0.0.1:4399");
+    assert.equal(on.scope_canonical, false);
+    assert.deepEqual([on.state, on.source], ["on", "file"]);
+    const stored = JSON.parse(readFileSync(resolveConfigPath({ env }), "utf8"));
+    assert.equal(stored.telemetry.scope, "http://127.0.0.1:4399");
+
+    // Checked against the canonical endpoint, the grant does not apply.
+    const canonical = JSON.parse(execFileSync("node", [CLI, "telemetry", "status", "--json"], { encoding: "utf8", env, stdio: ["ignore", "pipe", "ignore"] }));
+    assert.equal(canonical.scope, "http://127.0.0.1:4399");
+    assert.equal(canonical.checked_endpoint, CANONICAL_REMIT_SCOPE);
+    assert.deepEqual([canonical.state, canonical.scope_mismatch], ["off", true]);
+
+    // Checked against the granted base, it does.
+    const scoped = JSON.parse(execFileSync("node", [CLI, "telemetry", "status", "--proxy-base", "http://127.0.0.1:4399", "--json"], { encoding: "utf8", env }));
+    assert.deepEqual([scoped.state, scoped.source, scoped.scope_mismatch], ["on", "file", false]);
+
+    const text = execFileSync("node", [CLI, "telemetry", "status"], { encoding: "utf8", env, stdio: ["ignore", "pipe", "ignore"] });
+    assert.match(text, /^Scope: http:\/\/127\.0\.0\.1:4399$/m);
+    assert.match(text, /Scope mismatch — the stored grant is for http:\/\/127\.0\.0\.1:4399, so remit to https:\/\/campaign-map\.nextcommerce\.com is OFF\. Consent to it with: campaigns-os telemetry on$/m);
+
+    // Plain `telemetry on` re-scopes the grant to the canonical endpoint.
+    const back = JSON.parse(execFileSync("node", [CLI, "telemetry", "on", "--json"], { encoding: "utf8", env }));
+    assert.equal(back.scope, CANONICAL_REMIT_SCOPE);
+    assert.equal(back.scope_canonical, true);
+  });
+});
+
+test("CLI: telemetry on refuses a plain-http base that is not loopback, and writes nothing", async () => {
+  await withTempDir((dir) => {
+    const env = cliEnv(dir);
+    const refused = runCli(["telemetry", "on", "--proxy-base", "http://example.invalid:8080"], env);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /telemetry on: --proxy-base must be https \(or a loopback host for local testing\)/);
+    assert.equal(readConfig(resolveConfigPath({ env })).ok, false);
+  });
+});
+
+test("CLI: a file grant scoped to a loopback receiver remits there without the env override, and nowhere else", async () => {
+  await withTempDir(async (dir) => {
+    const granted = await startLoopbackReceiver();
+    const other = await startLoopbackReceiver();
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "scoped-consent-target", private: true }));
+      const packetPath = join(dir, "campaign-runtime.build.json");
+      writeFileSync(packetPath, readFileSync(resolve(ROOT, "examples/build-packet.basic.json")));
+      const env = cliEnv(dir);
+
+      const on = await runCliAsync(["telemetry", "on", "--proxy-base", granted.base, "--json"], env);
+      assert.equal(on.status, 0, on.stderr);
+
+      const landed = await runCliAsync(["run-record", "--packet", packetPath, "--run-id", "run_1789300000000_scoped", "--proxy-base", granted.base, "--json"], env, dir);
+      assert.equal(landed.status, 0, landed.stderr);
+      const record = JSON.parse(landed.stdout).record;
+      assert.deepEqual([record.consent_state, record.consent_source, record.remit_state], ["on", "file", "ok"]);
+      assert.equal(granted.posts.length, 1);
+      assert.equal(granted.posts[0].payload.run_id, "run_1789300000000_scoped");
+
+      // The same grant does not cover a different receiver: nothing is sent.
+      const elsewhere = await runCliAsync(["run-record", "--packet", packetPath, "--run-id", "run_1789300000000_other", "--proxy-base", other.base], env, dir);
+      assert.equal(elsewhere.status, 0, elsewhere.stderr);
+      assert.match(elsewhere.stdout, /^Remit: skipped \(consent off\)\.$/m);
+      assert.match(elsewhere.stdout, new RegExp(`^Consent: off \\(default\\) — file consent is scoped to ${granted.base.replace(/[.]/g, "\\.")}, not ${other.base.replace(/[.]/g, "\\.")}; consent to this endpoint with: campaigns-os telemetry on --proxy-base ${other.base.replace(/[.]/g, "\\.")}$`, "m"));
+      assert.equal(other.posts.length, 0);
+      assert.equal(granted.posts.length, 1);
+    } finally {
+      await granted.close();
+      await other.close();
+    }
+  });
+});
+
+test("CLI: help lists --proxy-base on run end and on telemetry status|on|off", () => {
+  const help = execFileSync("node", [CLI, "help"], { encoding: "utf8", env: cliEnv(tmpdir()) });
+  assert.match(help, /campaigns-os run end \[--packet <json>\] \[--no-remit\] \[--no-write\] \[--proxy-base <url>\] \[--json\]/);
+  assert.match(help, /campaigns-os telemetry status\|on\|off \[--proxy-base <url>\] \[--json\]/);
 });

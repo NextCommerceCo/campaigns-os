@@ -3063,6 +3063,45 @@
         }
       ],
       "entry_sha256": "d656a8f608a8d8c8f83d87841bbaba0784e19b1108350f767fd8ffaf6aaa4edb"
+    },
+    {
+      "id": "RL-0085",
+      "sequence": 85,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.31",
+      "changelog_sha256": "74f78e002b3c9bd201186f75c8ed3852dedd2ff7a62cddc92c5d1638fb53bac1",
+      "agent_impact": "Machine-level consent is scoped to one endpoint and can be granted non-interactively for a non-canonical receiver: `telemetry on --proxy-base <url>` writes telemetry.scope = that base (https or loopback only; anything else exits 1 before writing), and a later `run-record`/`run end`/`qa run` that passes the same --proxy-base resolves consent on (source file) and remits there with no CAMPAIGNS_OS_TELEMETRY override. A grant covers exactly one scope: after a non-canonical grant, a remit to the canonical endpoint is OFF until `telemetry on` runs again without the flag. Parse the new fields: `telemetry on|off --json` carries scope and scope_canonical; `telemetry status --json` carries scope, checked_endpoint (canonical, or --proxy-base when given) and scope_mismatch. Text output adds `Scope: <url>` and `Checked endpoint: <url>` lines to status, and the mismatch lines (stderr warning, status, run-record `Consent:`) end with the exact grant command `campaigns-os telemetry on [--proxy-base <url>]` instead of `until this endpoint is confirmed`. A remit to a non-canonical --proxy-base under CAMPAIGNS_OS_TELEMETRY=on still sends but now prints one stderr warning that the override bypasses scope checking. `help` lists --proxy-base on `run end` and on `telemetry status|on|off`.",
+      "compatibility": "additive",
+      "migration": "None for existing invocations. A harness that consents to a loopback or staging receiver through CAMPAIGNS_OS_TELEMETRY=on can replace it with `campaigns-os telemetry on --proxy-base <url>` under its own XDG_CONFIG_HOME and drop the override; a harness that matches the old `until this endpoint is confirmed` warning text should match `treating telemetry as OFF for this endpoint` instead.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "telemetry",
+          "summary": "telemetry on|off accept --proxy-base <url> (https or loopback, checked by assertSecureProxyBase before the write) and record consent scoped to that base, printing Scope: and, for a non-canonical grant, that the canonical endpoint is OFF until `telemetry on` runs again; --json adds scope and scope_canonical. telemetry status accepts --proxy-base, prints Scope:/Checked endpoint:, names the grant command on a mismatch, and --json adds scope, checked_endpoint, scope_mismatch."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run-record",
+          "summary": "The text Consent: line names the stored and requested scopes and the exact `telemetry on --proxy-base` grant on a scope mismatch, and says CAMPAIGNS_OS_TELEMETRY bypasses scope checking when the env override carried a non-canonical remit."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run",
+          "summary": "help lists --proxy-base <url> on run end; the flag was already forwarded to run-record unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Consent: the config path honours XDG_CONFIG_HOME; a grant is scoped to one endpoint; `telemetry on --proxy-base <url>` grants a non-canonical receiver; `telemetry status` reports and checks the scope; the env override has no scope and warns when it carries a non-canonical remit."
+        }
+      ],
+      "entry_sha256": "8104999aa94276b34e5bd6a9854a2d0b17fdd986fab2ff14ce7a181fc007a376"
     }
   ]
 }

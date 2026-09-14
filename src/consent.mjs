@@ -148,12 +148,22 @@ export function writeConsentConfig(state, {
   source = "telemetry-command",
   now = new Date(),
 } = {}) {
+  const enabled = configState(state);
+  const scope = normalizeConsentScope(proxyBase);
+  // An ON grant is a grant for one endpoint. A named base that does not
+  // normalize would be stored as `scope: null`, which matches no endpoint and
+  // turns the grant into a silent OFF at every remit — refuse it instead.
+  // (An absent base still writes `scope: null`: an unscoped record, matched
+  // only by a caller that names no endpoint.)
+  if (enabled && isNonEmptyString(proxyBase) && !scope) {
+    throw new Error(`Telemetry consent scope is not a URL: ${proxyBase.trim()}`);
+  }
   const config = {
     schema_version: TELEMETRY_CONFIG_SCHEMA,
     package: PACKAGE_NAME,
     telemetry: {
-      enabled: configState(state),
-      scope: normalizeConsentScope(proxyBase),
+      enabled,
+      scope,
       updated_at: now.toISOString(),
       source,
     },
@@ -161,6 +171,17 @@ export function writeConsentConfig(state, {
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
   return { configPath, config };
+}
+
+/**
+ * The command that records file consent for one endpoint. The canonical
+ * endpoint needs no flag; any other base is named explicitly so the grant is
+ * visibly scoped to it.
+ */
+export function scopedConsentCommand(scope) {
+  const normalized = normalizeConsentScope(scope);
+  if (!normalized || normalized === CANONICAL_REMIT_SCOPE) return "campaigns-os telemetry on";
+  return `campaigns-os telemetry on --proxy-base ${normalized}`;
 }
 
 /**
@@ -189,7 +210,17 @@ export function resolveConsent({
     return { state: "off", source: "env", resolved: true };
   }
   if (parsed.state) {
-    return { state: parsed.state, source: "env", resolved: true };
+    // The env override is a machine-wide answer with no scope: it applies to
+    // whatever endpoint the command names. When that is not the canonical
+    // endpoint, say so — the operator gets the persistent, scoped route.
+    if (parsed.state === "on" && requestedScope && requestedScope !== CANONICAL_REMIT_SCOPE) {
+      warn(`[campaigns-os] ${TELEMETRY_ENV_VAR}=${raw} bypasses consent scope checking: remitting to ${requestedScope} because the env override is set, not because this endpoint was consented to. To consent to it on this machine instead, run: ${scopedConsentCommand(requestedScope)}`);
+      return { state: "on", source: "env", resolved: true, scope: requestedScope, scope_bypassed: true };
+    }
+    if (parsed.state === "on") {
+      return { state: "on", source: "env", resolved: true, scope: requestedScope || CANONICAL_REMIT_SCOPE };
+    }
+    return { state: "off", source: "env", resolved: true };
   }
 
   const { ok, config, malformed } = readConfig(configPath);
@@ -205,7 +236,7 @@ export function resolveConsent({
       if (scopeMatches(storedScope, requestedScope)) {
         return { state: "on", source: "file", resolved: true, scope: storedScope };
       }
-      warn(`[campaigns-os] telemetry consent at ${configPath} is scoped to ${storedScope || "(unscoped)"}, not ${requestedScope}; treating telemetry as OFF until this endpoint is confirmed.`);
+      warn(`[campaigns-os] telemetry consent at ${configPath} is scoped to ${storedScope || "(unscoped)"}, not ${requestedScope}; treating telemetry as OFF for this endpoint. To consent to it on this machine, run: ${scopedConsentCommand(requestedScope)}`);
       return {
         state: "off",
         source: "default",

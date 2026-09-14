@@ -2,6 +2,52 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.31] - 2026-09-14
+
+### Added
+
+- `telemetry on --proxy-base <url>` records machine-level consent scoped to
+  that receiver instead of the canonical NEXT endpoint, the non-interactive
+  way to consent to a loopback or staging receiver. `telemetry on` wrote
+  `telemetry.scope` as the canonical endpoint unconditionally, so a file grant
+  could never cover a non-canonical `--proxy-base`: `run-record --proxy-base
+  http://127.0.0.1:4399` with the file on printed `Consent: off (default)` /
+  `Remit: skipped (consent off).`, and the only working route was
+  `CAMPAIGNS_OS_TELEMETRY=on`, which skips scope checking. The base must be
+  https or a loopback host (the remit rail's rule); anything else is refused
+  before the file is written. The output names the scope (`Scope:
+  http://127.0.0.1:4399`) and, for a non-canonical grant, says the canonical
+  endpoint is OFF until `campaigns-os telemetry on` is run again; `--json`
+  carries `scope` and `scope_canonical`. `telemetry off` accepts the flag too.
+- `telemetry status` prints the stored scope (`Scope: <url>`) and the endpoint
+  it was checked against (`Checked endpoint: <url>` — the canonical endpoint,
+  or `--proxy-base <url>` when given), and on a mismatch says `Scope mismatch
+  — the stored grant is for <stored>, so remit to <checked> is OFF. Consent to
+  it with: campaigns-os telemetry on [--proxy-base <checked>]`; `--json`
+  carries `scope`, `checked_endpoint`, `scope_mismatch`.
+
+### Changed
+
+- The scope-mismatch warning names the command that grants the requested
+  endpoint: `... treating telemetry as OFF for this endpoint. To consent to it
+  on this machine, run: campaigns-os telemetry on --proxy-base <url>` (was
+  `... until this endpoint is confirmed.`, which named nothing). `run-record`'s
+  `Consent:` line carries the same: `Consent: off (default) — file consent is
+  scoped to <stored>, not <requested>; consent to this endpoint with: ...`.
+- `CAMPAIGNS_OS_TELEMETRY=on` keeps working for every endpoint, and a remit to
+  a non-canonical `--proxy-base` under it now warns
+  `CAMPAIGNS_OS_TELEMETRY=on bypasses consent scope checking: remitting to
+  <url> because the env override is set, not because this endpoint was
+  consented to. To consent to it on this machine instead, run: campaigns-os
+  telemetry on --proxy-base <url>`; the canonical endpoint and `off` stay
+  silent.
+- `help` lists `--proxy-base <url>` on `run end` (it was already forwarded to
+  `run-record`, so a session close could be remitted to a named receiver, but
+  the help line omitted it) and on `telemetry status|on|off`.
+- `writeConsentConfig("on", { proxyBase })` throws `Telemetry consent scope is
+  not a URL: <base>` for a named base that does not normalize instead of
+  storing `scope: null`, a grant that matches no endpoint.
+
 ## [1.27.0+agent.26] - 2026-09-14
 
 ### Fixed
