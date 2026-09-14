@@ -2598,8 +2598,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.27.0+agent.4",
-      "changelog_sha256": "3d56b0a992ca099039d8e0877d7f17f8eaa619c61c8c0de7c464e3d433049a33",
-      "agent_impact": "Two behaviour changes, both only for a packet kept outside its target repo (prepare-build --out) or whose Assembly Report is not the default sidecar (prepare-build --report-out); a packet at its target root with the default report sees no change. (1) campaigns-os doctor now writes .campaign-runtime/doctor-output.json under the target repo (packet.assembly.target_repo resolved against the packet's directory) instead of beside the packet, which is where prepare-build, next and the QA stage refresh already wrote it and where theme waive / qa policy set apply their stale stamp. An agent that read the doctor sidecar beside a packet kept elsewhere must read it under the target repo; --doctor-out still overrides. (2) qa run and qa waive read, and the QA stage record after qa run writes, the Assembly Report the Build Context binds (its report_path, relative to the target repo) instead of the default sidecar; for a --report-out campaign the QA stage now lands in the report next reads, where before it was silently dropped. --report still overrides on every command. Doctor JSON and text output, verdict fields and exit codes are unchanged.",
+      "changelog_sha256": "59fdfcbfbe888945914a99c38a8725856aeaa908946041161d6d6681f86fe53e",
+      "agent_impact": "Two behaviour changes, both only for a packet kept outside its target repo (prepare-build --out) or whose Assembly Report is not the default sidecar (prepare-build --report-out); a packet at its target root with the default report sees no change. (1) campaigns-os doctor now writes .campaign-runtime/doctor-output.json under the target repo (packet.assembly.target_repo resolved against the packet's directory) instead of beside the packet, which is where prepare-build, next and the QA stage refresh already wrote it and where theme waive / qa policy set apply their stale stamp. An agent that read the doctor sidecar beside a packet kept elsewhere must read it under the target repo; --doctor-out still overrides. (2) qa run and qa waive read, and the QA stage record after qa run writes, the Assembly Report the Build Context binds (its report_path, relative to the target repo) instead of the default sidecar; for a --report-out campaign the QA stage now lands in the report next reads, where before it was silently dropped. The runner's own reads of doctor-output.json, build-context.json and the Assembly Report (theme gate, polish gate, recorded QA waivers) resolve the same way, so they see what doctor and next wrote. A Build Context binds a report only for the packet its packet_path names; one naming another packet is not followed (the default report is used, as before). --report still overrides on every command. Doctor JSON and text output, verdict fields and exit codes are unchanged.",
       "compatibility": "compatible",
       "migration": "None for a packet at its target root. For a packet kept elsewhere, read doctor-output.json under the target repo (or pass --doctor-out); a stale copy beside the packet from earlier doctor runs can be deleted. For a --report-out campaign, re-run qa run to record the QA stage into the bound report.",
       "changes": [
@@ -2607,16 +2607,16 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "doctor",
-          "summary": "doctor, next, the QA stage record, theme waive, checkpoint waive, polish capture, findings harvest, run-record and run status derive the target repo and the sidecar paths through resolveCampaignWorkspace / campaignSidecarPaths from src/campaign-workspace.mjs, replacing inferredBuildSidecarPaths, boundAssemblyReportPath and nine inline derivations; standalone doctor writes doctor-output.json under the target repo, and the QA stage record follows the Build Context's report_path. Doctor's output, issue codes and exit codes are unchanged."
+          "summary": "doctor, next, the QA stage record, theme waive, checkpoint waive, polish capture, findings harvest, run-record and run status derive the target repo and the sidecar paths through resolveCampaignWorkspace / campaignSidecarPaths from src/campaign-workspace.mjs, replacing inferredBuildSidecarPaths, boundAssemblyReportPath and nine inline derivations; standalone doctor writes doctor-output.json under the target repo, and the QA stage record follows the Build Context's report_path when that context's packet_path names the packet. Doctor's output, issue codes and exit codes are unchanged."
         },
         {
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Artifact Locations states that the .campaign-runtime/ paths are relative to the target repo even for a packet kept elsewhere, that every stage including doctor reads and writes them there, and which commands follow the Build Context's report_path binding versus act on the default report."
+          "summary": "Artifact Locations states that the .campaign-runtime/ paths are relative to the target repo even for a packet kept elsewhere, that every stage including doctor reads and writes them there, and which commands follow the Build Context's report_path binding versus act on the default report. States that a context binds a report only for the packet its packet_path names."
         }
       ],
-      "entry_sha256": "a6586a696b57b37939bac4833f49480ad1b458877b9ef35c2080eab2577fd8f9"
+      "entry_sha256": "a4b50ba13c8afa7869b0fffbcd6d42a4f4e64ed21b36e55974396ea1649815ef"
     }
   ]
 }

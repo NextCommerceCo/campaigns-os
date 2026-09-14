@@ -27,7 +27,14 @@ Notable supported-surface changes are recorded here.
   `--report-out` campaign's QA outcome was recorded nowhere — the default
   report does not exist — while `next` kept reading a report whose QA stage
   never completed. `qa run`, `qa waive` and the QA stage record now follow the
-  binding, so the report `next` reads is the one QA writes into. `theme
+  binding, so the report `next` reads is the one QA writes into; the runner's
+  own reads of the doctor output, Build Context and Assembly Report for the
+  theme gate, polish gate and recorded QA waivers resolve the same way, so a
+  packet kept outside its target reads the doctor scope doctor actually
+  refreshed rather than a stale copy beside the packet. A context binds a
+  report only for the packet it names: `prepare-build` writes `packet_path`
+  beside `report_path`, and a pointer from a context naming another packet
+  (two packets of one campaign sharing a target repo) is not followed. `theme
   waive`, `checkpoint waive`, `polish capture`, `findings harvest`,
   `run-record` and `run status` act on the default location as before, and
   doctor's own stage write-back still refuses to restate its outcome into a

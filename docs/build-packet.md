@@ -186,7 +186,9 @@ included — reads and writes them there. When `prepare-build --report-out`
 puts the Assembly Report elsewhere, the Build Context records that path
 (`report_path`, relative to the target repo) and `doctor`, `next`, `qa run`,
 `qa waive` and the QA stage record follow it, so the report `next` reads is the
-one QA writes into. `theme waive`, `checkpoint waive`, `polish capture`,
+one QA writes into — provided the context's `packet_path` names that packet;
+a context naming another packet binds nothing. `theme waive`, `checkpoint
+waive`, `polish capture`,
 `findings harvest`, `run-record` and `run status` act on the default location
 unless `--report` names another.
 
