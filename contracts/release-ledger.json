@@ -3237,6 +3237,27 @@
         }
       ],
       "entry_sha256": "8f261b90ec9a0641bb610cc6e1507ca122db65715a27e7c492ced4da03eff010"
+    },
+    {
+      "id": "RL-0091",
+      "sequence": 91,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.34",
+      "changelog_sha256": "d876bfa40684c25d908c9549f10fb335d55de634a4279308647c50d238444324",
+      "agent_impact": "qa run --apply-coupon clicks the SDK's declared apply control [data-next-coupon=\"apply\"] when the checkout renders one; the explicit locator no longer names [data-next-coupon-apply], [data-next-action=\"apply-coupon\"] or [data-next-checkout-action=\"apply-coupon\"], which the SDK never activates on, and a page carrying one of those reaches the same fallbacks as before (a visible Apply control inside the form, else Enter in the coupon input); the SDK control is clicked only when visible and the click lands, otherwise those fallbacks run rather than the coupon_applied step claiming an explicit click that never applied the code. The coupon input list reads input[data-next-coupon=\"input\"] instead of the undeclared [data-next-coupon-input]; the browser-promo-code-surface assertion's selector evidence and the 'no coupon/promo input found (looked for ...)' refusal list that spelling. browser-primary-cta no longer counts [data-next-checkout-action] elements as candidates or reads data-next-href as a route; every evidence.candidates[].href is a resolved URL or null (an attribute that does not parse is no route on either branch), and the evidence carries ignored_attributes (per listed candidate, and as a page-level union over every visible CTA-shaped element, so the union may name a spelling no candidates[] row shows: data-next-href, data-next-checkout-action, and data-next-url on a non-SDK element); every verdict on such a page, passing or failing, appends '(page carries route-shaped attributes the runner does not consult: data-next-href)' to its actual text, so a narrowed vocabulary is distinguishable from a removed CTA. The template-residue:<page>:demo-asset assertion's evidence object carries named_hits and page_url only; the repeated_icons key is gone, and a demo_assets contract declaring only repeated_icon yields no demo-asset assertion. docs/qa-and-test-orders.md states the coupon selector vocabulary the runner reads.",
+      "compatibility": "compatible",
+      "migration": "None for a page that renders the SDK's coupon markup (data-next-coupon=\"input\" / data-next-coupon=\"apply\") or the checkout field data-next-checkout-field=\"coupon\". A page whose apply button is spelled data-next-coupon-apply, data-next-action=\"apply-coupon\" or data-next-checkout-action=\"apply-coupon\" was never wired by the SDK through that attribute; switch it to data-next-coupon=\"apply\", or keep its visible Apply text so the fallback finds it. A consumer that read data-next-href from a page as the primary CTA's route should check evidence.ignored_attributes on a missing_route_cta verdict before treating it as a removed CTA, and give the control a real href, data-href or form action. A consumer reading evidence.repeated_icons on the demo-asset assertion should drop the read; the key was always an empty array.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "--apply-coupon names the coupon input and apply-control selectors the runner reads: the SDK's data-next-checkout-field=\"coupon\", input[data-next-coupon=\"input\"] and [data-next-coupon=\"apply\"], then hand-rolled inputs by name or placeholder and a visible Apply control; no other data-next-* spelling is looked for."
+        }
+      ],
+      "entry_sha256": "41ef9c14e7914e9a63e2f6b0b8ebff62d6f2825b50872f69ad8f08988ef1ff78"
     }
   ]
 }

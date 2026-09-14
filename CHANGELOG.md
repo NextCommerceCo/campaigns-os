@@ -57,6 +57,7 @@ Notable supported-surface changes are recorded here.
   `template-residue:<page>:demo-asset` assertion's evidence carries
   `named_hits` and `page_url` only (the always-empty `repeated_icons` key is
   gone) and its `actual` text is unchanged for named hits.
+
 ## [1.27.0+agent.33] - 2026-09-14
 
 ### Added
