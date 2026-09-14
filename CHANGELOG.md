@@ -307,6 +307,7 @@ Notable supported-surface changes are recorded here.
   auto-start (which stands off) each had a spelling; messages are unchanged.
   `run start`, `run status` and `run end` return their result and the
   dispatcher prints it — text and JSON output are byte-identical.
+
 ## [1.27.0+agent.17] - 2026-09-14
 
 ### Fixed
