@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { runPricingCssHideCheck, validateCommerceCatalog, validateExitPopContract, validateTemplateFamilyInventory } from "./cli.mjs";
+import { singleLineDetail } from "./text-safety.mjs";
 
 const codes = (issues) => issues.map((issue) => issue.code);
 
@@ -288,12 +289,15 @@ test("a defective brand contract is resolved once and reported once across the c
     assert.equal(findings.length, 1, JSON.stringify(findings));
     assert.equal(errors.includes(findings[0]), true, "reported at the catalog check's severity, which came first");
     assert.equal(findings[0].detail.reason, "family_mismatch");
+    // The summary's detail is the loader's message folded to one line — the
+    // rule, not a passthrough that happens to hold for this message.
     assert.deepEqual(derived.brand_contract, {
       state: "defect",
       family: "acme",
       code: "family_mismatch",
-      detail: findings[0].detail.message,
+      detail: singleLineDetail(findings[0].detail.message),
     });
+    assert.match(derived.brand_contract.detail, /declares family "not-acme"/);
   } finally {
     if (prevPath === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_PATH; else process.env.PRIVATE_TEMPLATE_SOURCES_PATH = prevPath;
     if (prevRoot === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_ROOT; else process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = prevRoot;
