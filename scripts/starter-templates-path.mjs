@@ -6,9 +6,10 @@
 // is inside the main repo) fall back to the sibling of the main checkout,
 // which --git-common-dir locates from any worktree.
 
-import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { execFileSync, execSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 export function resolveStarterTemplatesRoot(root) {
   const override = process.env.STARTER_TEMPLATES_PATH;
@@ -33,4 +34,55 @@ export function resolveStarterTemplatesRoot(root) {
     // Not a git checkout or git unavailable: the plain sibling candidate stands.
   }
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+}
+
+// The checkout to validate against, held to the commit the vendored catalog
+// was synced from. CI checks the templates repository out at that commit and
+// hands it over through STARTER_TEMPLATES_PATH; a local sibling checkout is
+// usually somewhere else on its history, so a check that read its HEAD would
+// be validating partials CI never sees. Without an override, a sibling that
+// is not at the pin is read at the pin through `git archive` (its working
+// tree is never touched), and so is a sibling at the pin whose src/ carries
+// local edits or untracked files; only when that commit is not available
+// locally does the sibling's own tree stand in, and the caller says so loudly.
+//
+// Returns { path, kind, pinSha, headSha, reason, cleanup } where kind is one of
+// override | sibling_at_pin | pinned_archive | sibling_unpinned | sibling
+// (the last: no pin was given, or the sibling is not a git checkout).
+export function resolveStarterTemplatesSource(root, { pinSha = null } = {}) {
+  const path = resolveStarterTemplatesRoot(root);
+  const result = { path, kind: "sibling", pinSha, headSha: null, reason: null, cleanup() {} };
+  if (process.env.STARTER_TEMPLATES_PATH !== undefined) return { ...result, kind: "override" };
+  if (!pinSha || !existsSync(path)) return result;
+  try {
+    result.headSha = execFileSync("git", ["-C", path, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return result;
+  }
+  // A sibling at the pin is used in place only when its src/ is exactly the
+  // commit: local edits or untracked files there would otherwise pass as the
+  // pinned source. Anything else is read from the commit itself.
+  if (result.headSha === pinSha) {
+    try {
+      const dirty = execFileSync("git", ["-C", path, "status", "--porcelain", "--untracked-files=all", "--", "src"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (dirty === "") return { ...result, kind: "sibling_at_pin" };
+    } catch {
+      // Fall through to the archive: the commit is the authority either way.
+    }
+  }
+  const work = mkdtempSync(join(tmpdir(), "starter-templates-pin-"));
+  try {
+    const archive = join(work, "src.tar");
+    execFileSync("git", ["-C", path, "archive", "--format=tar", "-o", archive, pinSha, "src"], { stdio: ["ignore", "ignore", "pipe"] });
+    execFileSync("tar", ["-xf", archive, "-C", work]);
+    rmSync(archive);
+    return { ...result, path: work, kind: "pinned_archive", cleanup: () => rmSync(work, { recursive: true, force: true }) };
+  } catch (error) {
+    rmSync(work, { recursive: true, force: true });
+    const stderr = typeof error.stderr === "string" ? error.stderr : error.stderr?.toString() ?? "";
+    return { ...result, kind: "sibling_unpinned", reason: (stderr.trim() || error.message).split("\n")[0] };
+  }
 }
