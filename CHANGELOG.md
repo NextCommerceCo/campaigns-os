@@ -42,8 +42,10 @@ release-ledger entry `surface_version: 1.28.0`.
   skips the `campaign.allowed_domains_confirmed` warning, prints `Deploy target
   is local-serve: serve the built _site/ locally and record the localhost URL
   on deploy.preview_url; …` until a URL is recorded, prints `Deploy target is
-  local-serve and the deploy URL <url> is localhost: …` once it is, and warns
-  `deploy.local_serve_url` when the recorded URL is not a localhost origin.
+  local-serve and the deploy URL <url> is localhost: …` once it is, accepts a
+  loopback host (`127.0.0.1`, `[::1]`) with a ready line that names the
+  `http://localhost:<port>/` fallback should the SDK refuse the numeric host,
+  and warns `deploy.local_serve_url` when the recorded URL is neither.
   `next` at the deploy stage emits the action `Serve the built _site/ output
   locally as the origin root (deploy.target is local-serve), then record the
   localhost URL on deploy.preview_url …` and a serve-locally handoff prompt

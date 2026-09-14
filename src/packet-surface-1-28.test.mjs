@@ -143,7 +143,7 @@ test("local-serve with no deploy URL yet says what to record; with a non-localho
   const remoteResult = doctorPacket(remote.packetPath, { write: false });
   const warning = remoteResult.warnings.find((issue) => issue.code === "deploy.local_serve_url");
   assert.ok(warning, JSON.stringify(remoteResult.warnings));
-  assert.match(warning.message, /is not a localhost origin/);
+  assert.match(warning.message, /is not a localhost or loopback origin/);
 });
 
 test("next's deploy action under local-serve says to serve _site/ locally, not to ship it", () => {
@@ -153,6 +153,10 @@ test("next's deploy action under local-serve says to serve _site/ locally, not t
   assert.match(deploy.description, /^Serve the built _site\/ output locally as the origin root \(deploy\.target is local-serve\)/);
   const rootServed = buildNextActions({ ...base, result: { stage: "deploy" }, packet: { campaign: { public_route_slug: "demo", route_root: "/" }, deploy: { target: "local-serve" } } });
   assert.match(rootServed.find((action) => action.id === "deploy").description, /^Serve the built _site\/ output locally as the origin root \(deploy\.target is local-serve\) — route_root is "\/": pages are served at site-root paths while assets keep the \/demo\/ prefix, so serve _site\/ with a rewrite of root-level page routes onto \/demo\/<route>/);
+  const noSlug = buildNextActions({ ...base, result: { stage: "deploy" }, packet: { campaign: { route_root: "/" }, deploy: { target: "local-serve" } } });
+  const noSlugText = noSlug.find((action) => action.id === "deploy").description;
+  assert.doesNotMatch(noSlugText, /<public_route_slug>/);
+  assert.match(noSlugText, /campaign\.public_route_slug is not recorded; record it before serving/);
   const netlify = buildNextActions({ ...base, result: { stage: "deploy" }, packet: { deploy: { target: "netlify" } } });
   assert.match(netlify.find((action) => action.id === "deploy").description, /^Deploy _site\/ output to netlify/);
 });
@@ -167,6 +171,28 @@ test("next at the deploy stage under local-serve hands off a serve-locally promp
   assert.match(result.prompt, /Nothing ships anywhere/);
   assert.match(result.prompt, /Directory to serve as the origin root: _site\/ \(the funnel is served under \/runtime-packet-demo\/\)/);
   assert.doesNotMatch(result.prompt, /netlify deploy/);
+});
+
+test("a local-serve prompt for a packet without a public route slug asks for the slug instead of printing a placeholder", (t) => {
+  const { packetPath } = packetFixture(t, (packet) => {
+    packet.deploy.target = "local-serve";
+    delete packet.campaign.public_route_slug;
+  });
+  const result = nextStage("deploy", { packet: packetPath, "no-write": true });
+  assert.doesNotMatch(result.prompt, /<public_route_slug>/);
+  assert.match(result.prompt, /Directory to serve as the origin root: _site\/ \(campaign\.public_route_slug is not recorded; record it before serving/);
+});
+
+test("a loopback deploy URL under local-serve is accepted with a fallback note, not warned about", (t) => {
+  for (const url of ["http://127.0.0.1:4302/runtime-packet-demo/", "http://[::1]:4302/runtime-packet-demo/"]) {
+    const { packetPath } = packetFixture(t, (packet) => {
+      packet.deploy.target = "local-serve";
+      packet.deploy.preview_url = url;
+    });
+    const result = doctorPacket(packetPath, { write: false });
+    assert.equal(codes(result.warnings).includes("deploy.local_serve_url"), false, JSON.stringify(result.warnings));
+    assert.ok(result.ready.some((line) => line.startsWith(`Deploy target is local-serve and the deploy URL ${url} is a loopback origin`) && line.includes("http://localhost:<port>/")), JSON.stringify(result.ready));
+  }
 });
 
 test("a root-served campaign under local-serve keeps _site/ as the document root and names the rewrite", (t) => {

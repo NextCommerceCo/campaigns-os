@@ -88,7 +88,7 @@ import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from ".
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
-import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, describeRemitBaseKind, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
+import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, describeRemitBaseKind, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -3861,8 +3861,13 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
       ready.push("Deploy target is local-serve: serve the built _site/ locally and record the localhost URL on deploy.preview_url; localhost on any port is a Development domain, so no SDK origin allowlist entry is needed for QA.");
     } else if (isLocalhostDevelopmentOrigin(deployUrl)) {
       ready.push(`Deploy target is local-serve and the deploy URL ${deployUrl} is localhost: Campaigns App treats localhost on any port as a Development domain, so SDK initialization is allowed and analytics are suppressed for local QA.`);
+    } else if (isLoopbackDeployUrl(deployUrl)) {
+      // A static server bound to 127.0.0.1 or [::1] is the same local serve;
+      // the Development-domain rule is stated for the hostname localhost, so
+      // say which spelling to fall back to if the SDK refuses the numeric one.
+      ready.push(`Deploy target is local-serve and the deploy URL ${deployUrl} is a loopback origin: it is served locally for QA. Campaigns App states its Development-domain rule for the hostname localhost on any port; if SDK initialization is refused on this host, open the same server as http://localhost:<port>/ and record that URL instead.`);
     } else {
-      addIssue(warnings, "deploy.local_serve_url", `deploy.target is local-serve but the recorded deploy URL ${deployUrl} is not a localhost origin. Record the served localhost URL, or set deploy.target to where that origin is actually hosted.`);
+      addIssue(warnings, "deploy.local_serve_url", `deploy.target is local-serve but the recorded deploy URL ${deployUrl} is not a localhost or loopback origin. Record the served localhost URL, or set deploy.target to where that origin is actually hosted.`);
     }
   } else if (packet.campaign?.allowed_domains_confirmed !== true) {
     if (isLocalhostDevelopmentOrigin(deployUrl)) {
@@ -4311,6 +4316,19 @@ function looksLikePlaceholderStoreUrl(value) {
   if (/\.(local|test|example|invalid|localhost)$/.test(host)) return true;
   if (host === "example.com" || host.endsWith(".example.com")) return true;
   return false;
+}
+
+// A URL whose host is a loopback address (localhost, 127.0.0.1, [::1]) —
+// the remit rail's rule, reused so local-serve and the loopback receiver
+// agree on what "local" means. Distinct from isLocalhostDevelopmentOrigin,
+// which states the Campaigns App Development-domain rule (hostname localhost).
+function isLoopbackDeployUrl(value) {
+  if (!isNonEmptyString(value)) return false;
+  try {
+    return isLoopbackHostname(new URL(String(value).trim()).hostname);
+  } catch {
+    return false;
+  }
 }
 
 export function isLocalhostDevelopmentOrigin(value) {
@@ -8630,14 +8648,24 @@ If report.theme/context.theme exists, verify source token parity for primary col
 // the same document root plus the rewrite the production host applies —
 // root-level page routes onto /<slug>/<route> — because no single directory
 // serves both root-level pages and slug-prefixed assets.
+// A packet without campaign.public_route_slug (doctor blocks it, but next's
+// action list is built from whatever packet it is handed) gets no invented
+// slug in the text: the served-under note and the rewrite need the real
+// value, so they ask for it instead.
 function localServePlan(packet) {
-  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug) || "<public_route_slug>";
+  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug) || null;
   const rootServed = campaignRouteRoot(packet) === "/";
+  const missingSlug = "campaign.public_route_slug is not recorded; record it before serving, since the built output lives at _site/<that slug>/";
   return {
     dir: "_site/",
     slug,
     rootServed,
-    rewrite: rootServed ? `route_root is "/": pages are served at site-root paths while assets keep the /${slug}/ prefix, so serve _site/ with a rewrite of root-level page routes onto /${slug}/<route> (the same rewrite the production host applies); a plain directory serve of _site/${slug}/ would 404 every /${slug}/... asset` : null,
+    servedUnder: slug ? `the funnel is served under /${slug}/` : missingSlug,
+    rewrite: !rootServed
+      ? null
+      : slug
+        ? `route_root is "/": pages are served at site-root paths while assets keep the /${slug}/ prefix, so serve _site/ with a rewrite of root-level page routes onto /${slug}/<route> (the same rewrite the production host applies); a plain directory serve of _site/${slug}/ would 404 every /${slug}/... asset`
+        : `route_root is "/": pages are served at site-root paths while assets keep the slug prefix, so _site/ needs a rewrite of root-level page routes onto /<slug>/<route> — ${missingSlug}`,
   };
 }
 
@@ -8645,7 +8673,7 @@ function deployPrompt(packetPath, reportPath, packet) {
   const target = packet.deploy?.target || "unknown";
   const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || campaignRouteRoot(packet) || "/<slug>/";
   if (target === LOCAL_SERVE_DEPLOY_TARGET) {
-    const { dir: serveDir, slug, rootServed, rewrite } = localServePlan(packet);
+    const { dir: serveDir, rootServed, rewrite, servedUnder } = localServePlan(packet);
     return `Deploy the built campaign by serving it locally (deploy.target is local-serve).
 
 Read first:
@@ -8653,7 +8681,7 @@ Read first:
 - Assembly Report: ${reportPath}
 - Expected live URL path: ${liveUrlPath}
 - Deploy target: ${target}
-- Directory to serve as the origin root: ${serveDir}${rootServed ? ` — ${rewrite}` : ` (the funnel is served under /${slug}/)`}
+- Directory to serve as the origin root: ${serveDir}${rootServed ? ` — ${rewrite}` : ` (${servedUnder})`}
 
 Nothing ships anywhere: the page-kit build produces _site/ output and you serve ${serveDir} on localhost (any static server, any port) for QA. Localhost on any port is a Campaigns App Development domain, so the SDK initialises there without an origin allowlist entry and Campaigns analytics events are suppressed.
 

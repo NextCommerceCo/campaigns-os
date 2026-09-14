@@ -468,8 +468,10 @@ the built output is served on localhost by any static server, and
 `deploy.preview_url` records that origin. Localhost on any port is a Campaigns
 App Development domain (SDK allowed, analytics suppressed), so under
 `local-serve` doctor does not raise `campaign.allowed_domains_confirmed`, reads
-a recorded localhost URL as the intended state (a `ready` line), and warns
-(`deploy.local_serve_url`) when the recorded URL is not a localhost origin.
+a recorded localhost URL as the intended state (a `ready` line), accepts a
+loopback host (`127.0.0.1`, `[::1]`) with a ready line naming the
+`http://localhost:<port>/` fallback, and warns (`deploy.local_serve_url`) when
+the recorded URL is neither.
 `next` at the deploy stage then hands off a serve-locally prompt and action
 instead of a ship-to-host one. The directory to serve is `_site/`; for a
 root-served campaign (`campaign.route_root: "/"`) the handoff adds that pages
