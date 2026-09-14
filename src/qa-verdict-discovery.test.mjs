@@ -89,19 +89,22 @@ test("discoverQaVerdicts walks the report's hints and every root's qa-output ide
   assert.deepEqual(discoverQaVerdicts({ report, reportPath, roots: [repo] }).map((candidate) => candidate.source), ["assembly_report"]);
 }));
 
-test("iteration is lazy: a consumer that stops early reads nothing past its stop", () => withDir((dir) => {
+test("iteration is lazy per file: a consumer that stops early never reads the files it did not pull", () => withDir((dir) => {
   const repo = join(dir, "repo");
   const paths = ["a", "b", "c"].map((name) => join(qaVerdictDir(repo, "demo"), `${name}.json`));
   for (const path of paths) writeJson(path, { campaign_slug: "demo" });
-  const report = { stages: { qa: { outputs: paths } } };
-  const iterator = iterateQaVerdicts({ packet: PACKET, report, reportPath: join(repo, "r.json"), withDigest: true });
+  // No hints: every candidate comes from one directory listing.
+  const iterator = iterateQaVerdicts({ packet: PACKET, roots: [repo], withDigest: true });
   const first = iterator.next().value;
   assert.equal(first.path, paths[0]);
-  // Remove the rest before they are pulled: a lazy walk never touches them.
+  assert.ok(first.sha256);
+  // The listing has happened; the files have not been read. Remove them before
+  // they are pulled: an eager walk would already hold their contents and
+  // digests and yield them anyway; a lazy one finds nothing to read.
   rmSync(paths[1]);
   rmSync(paths[2]);
-  assert.equal(iterator.next().done, true, "the removed files were never read");
-  assert.deepEqual(discoverQaVerdicts({ packet: PACKET, report, reportPath: join(repo, "r.json") }).map((candidate) => candidate.path), [paths[0]]);
+  assert.equal(iterator.next().done, true, "the unpulled files were never read");
+  assert.deepEqual(discoverQaVerdicts({ packet: PACKET, roots: [repo] }).map((candidate) => candidate.path), [paths[0]]);
 }));
 
 test("candidate scoring prefers the map id over the slug, then the schema and a visited deploy origin; time breaks ties", () => {

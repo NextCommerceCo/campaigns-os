@@ -18,12 +18,17 @@ import { QA_OUTPUT_REL_PATH } from "./campaign-workspace.mjs";
 const optionalString = (value) => (typeof value === "string" && value.trim() ? value.trim() : null);
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+// The slug as identity: trimmed, no slashes, null when absent. The one
+// spelling the identifiers and the candidate score both read.
+function qaVerdictSlug(packet) {
+  return String(packet?.campaign?.public_route_slug || "").trim().replace(/^\/+|\/+$/g, "") || null;
+}
+
 // The names a campaign's verdicts are filed and stamped under: the map id and
-// the public route slug (as identity: trimmed, no slashes). A verdict is this
-// campaign's when its campaign_slug is one of them.
+// the slug as identity. A verdict is this campaign's when its campaign_slug
+// is one of them.
 export function qaVerdictIdentifiers(packet) {
-  const slug = String(packet?.campaign?.public_route_slug || "").trim().replace(/^\/+|\/+$/g, "");
-  return [...new Set([optionalString(packet?.spec?.map_id), slug || null].filter(Boolean))];
+  return [...new Set([optionalString(packet?.spec?.map_id), qaVerdictSlug(packet)].filter(Boolean))];
 }
 
 export function qaVerdictIdentityMatch(verdict, packet) {
@@ -83,9 +88,10 @@ function sha256File(path) {
 // anonymous submission); locally written verdicts never carry the field.
 // Best-effort throughout: an unreadable directory or file is no candidate.
 //
-// Lazy: each candidate is read (and hashed, when asked) as the consumer
+// Lazy per candidate: a directory's names are listed when the walk reaches
+// it, but each file is read (and hashed, when asked) only as the consumer
 // pulls it, so a reader that stops early — closeout after a few digests —
-// pays for what it took, not for every recorded path.
+// pays for what it took, not for every recorded path or every listed file.
 export function* iterateQaVerdicts({ packet = null, report = null, reportPath = null, roots = [], withDigest = false } = {}) {
   const seen = new Set();
   const candidate = (path, source, repoRelPath) => {
@@ -162,7 +168,7 @@ export function discoverQaVerdicts(options = {}) {
 export function qaVerdictCandidateScore(candidate, packet) {
   const verdict = candidate?.verdict || {};
   const mapId = optionalString(packet?.spec?.map_id);
-  const slug = String(packet?.campaign?.public_route_slug || "").trim().replace(/^\/+|\/+$/g, "") || null;
+  const slug = qaVerdictSlug(packet);
   let score = 0;
   if (mapId && verdict.campaign_slug === mapId) score += 100;
   if (slug && verdict.campaign_slug === slug) score += 80;
