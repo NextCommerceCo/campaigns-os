@@ -3367,8 +3367,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   });
   derived.theme_gate = themeGate;
   if (themeGate.status === "blocked") {
-    const commands = themeGate.required_actions.filter((action) => action.command).map((action) => action.command);
-    addIssue(warnings, themeGate.code, `${themeGate.reason} Polish/deploy/QA are gated until resolved.${commands.length ? ` Run: ${commands.join(" | ")}` : ""}`);
+    pushGateIssue({ errors, warnings }, gateIssue("theme_gate", themeGate));
   } else if (themeGate.status === "waived") {
     ready.push(`Theme gate waived: ${themeGate.waiver?.reason || "(no reason recorded)"}`);
   } else if (themeGate.status === "pass") {
@@ -3385,10 +3384,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   const polishGate = evaluatePolishGate({ report, hiddenEagerMediaGate: polishCheckpointGate });
   derived.polish_gate = polishGate;
   if (polishGate.status === "blocked" && !polishGate.owned_checkpoint_only) {
-    const commands = (polishGate.required_actions || [])
-      .map((action) => action?.command)
-      .filter(Boolean);
-    addIssue(errors, polishGate.code, `${polishGate.reason}${commands.length ? ` Required action: ${commands.join(" | ")}.` : " Run next-campaigns-polish before QA."}`, { polish_gate: polishGate });
+    pushGateIssue({ errors, warnings }, gateIssue("polish_gate", polishGate));
   } else if (polishGate.status === "waived" && !polishGate.owned_checkpoint_only) {
     ready.push(`Polish gate passed under waiver: ${polishGate.waiver?.reason || "(no reason recorded)"}`);
   } else if (polishGate.status === "pass") {
@@ -3396,15 +3392,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   }
 
   if (polishCheckpointGate.status === "blocked") {
-    const commands = polishCheckpointGate.required_actions
-      .map((action) => action?.command)
-      .filter(Boolean);
-    addIssue(
-      errors,
-      polishCheckpointGate.code,
-      `${polishCheckpointGate.reason}${commands.length ? ` Required action: ${commands.join(" | ")}.` : ""}`,
-      { polish_checkpoint_gate: polishCheckpointGate },
-    );
+    pushGateIssue({ errors, warnings }, gateIssue("polish_checkpoint_gate", polishCheckpointGate));
   } else if (polishCheckpointGate.status === "waived") {
     addIssue(
       warnings,
@@ -6962,31 +6950,58 @@ function polishGateRequiresBuild(polishGate) {
   return polishGate?.status === "blocked" && POLISH_GATE_BUILD_RERUN_CODES.has(polishGate.code);
 }
 
+// Gate → issue, the one way. Doctor reports a blocked gate under the gate's
+// own code — the theme gate as a warning, because its fix happens in build —
+// and `next` reports the same gate under `next.<stage>.<code>` as an error
+// for the stage it blocks. The polish gates ride on the issue's `detail`, so
+// "doctor's only errors are the polish gates" is read back from the issues
+// themselves rather than decoded from a code prefix.
+export function gateIssue(kind, gate, { stage = null } = {}) {
+  const commands = (gate?.required_actions || []).map((action) => action?.command).filter(Boolean);
+  const run = commands.length ? ` Run: ${commands.join(" | ")}` : "";
+  const requiredAction = commands.length ? ` Required action: ${commands.join(" | ")}.` : "";
+  switch (kind) {
+    case "theme_gate":
+      return stage
+        ? { severity: "error", code: `next.${stage}.theme_gate`, message: `${gate.reason}${run}`, detail: { theme_gate: gate } }
+        : { severity: "warning", code: gate.code, message: `${gate.reason} Polish/deploy/QA are gated until resolved.${run}`, detail: null };
+    case "polish_gate":
+      return {
+        severity: "error",
+        code: stage ? `next.${stage}.${gate.code}` : gate.code,
+        message: `${gate.reason}${requiredAction || " Run next-campaigns-polish before QA."}`,
+        detail: { polish_gate: gate },
+      };
+    case "polish_checkpoint_gate":
+      return {
+        severity: "error",
+        code: stage ? `next.${stage}.${gate.code}` : gate.code,
+        message: stage ? gate.reason : `${gate.reason}${requiredAction}`,
+        detail: { polish_checkpoint_gate: gate },
+      };
+    default:
+      throw new Error(`Unknown gate kind: ${kind}`);
+  }
+}
+
+function pushGateIssue({ errors, warnings }, issue) {
+  addIssue(issue.severity === "error" ? errors : warnings, issue.code, issue.message, issue.detail);
+}
+
 function addPolishGateErrors(errors, polishGate, stage) {
   if (!polishGate || polishGate.status !== "blocked") return;
-  const commands = (polishGate.required_actions || [])
-    .map((action) => action?.command)
-    .filter(Boolean);
-  addIssue(
-    errors,
-    `next.${stage}.${polishGate.code}`,
-    `${polishGate.reason}${commands.length ? ` Required action: ${commands.join(" | ")}.` : " Run next-campaigns-polish before QA."}`,
-    { polish_gate: polishGate },
-  );
+  pushGateIssue({ errors }, gateIssue("polish_gate", polishGate, { stage }));
 }
 
 function addPolishCheckpointGateErrors(errors, gate, stage) {
   if (!gate || gate.status !== "blocked") return;
-  addIssue(
-    errors,
-    `next.${stage}.${gate.code}`,
-    gate.reason,
-    { polish_checkpoint_gate: gate },
-  );
+  pushGateIssue({ errors }, gateIssue("polish_checkpoint_gate", gate, { stage }));
 }
 
-function doctorErrorsAreOnlyPolishGate(errors = []) {
-  return errors.length > 0 && errors.every((issue) => String(issue?.code || "").startsWith("polish."));
+// Doctor's errors are only the polish gates' projections: the issues carry
+// the gate they came from, so this reads data, not a code prefix.
+export function doctorErrorsAreOnlyPolishGate(errors = []) {
+  return errors.length > 0 && errors.every((issue) => Boolean(issue?.detail?.polish_gate || issue?.detail?.polish_checkpoint_gate));
 }
 
 function reportStageBlockerIssues(reportStage, fallbackCode, fallbackMessage) {
@@ -7748,13 +7763,7 @@ export function nextStage(stage, args, ambient = null) {
 // commerce pages shipped through polish, deploy, and a green QA verdict.
 function addThemeGateErrors(errors, themeGate, stage) {
   if (!themeGate || themeGate.status !== "blocked") return;
-  const commands = themeGate.required_actions.filter((action) => action.command).map((action) => action.command);
-  addIssue(
-    errors,
-    `next.${stage}.theme_gate`,
-    `${themeGate.reason}${commands.length ? ` Run: ${commands.join(" | ")}` : ""}`,
-    { theme_gate: themeGate },
-  );
+  pushGateIssue({ errors }, gateIssue("theme_gate", themeGate, { stage }));
 }
 
 // Gate summary every `next` response carries: one entry per gate with a
