@@ -8,7 +8,7 @@
 // replace the fixed diagnostic with its own raw abort error.
 export const DEADLINE_TIMEOUT_ERROR_CODE = "DEADLINE_TIMEOUT";
 
-export function deadlineTimeoutError(timeoutMs) {
+function deadlineTimeoutError(timeoutMs) {
   const error = new Error(`Operation exceeded its ${timeoutMs}ms deadline.`);
   error.code = DEADLINE_TIMEOUT_ERROR_CODE;
   return error;
@@ -22,6 +22,8 @@ export async function runWithDeadline(operation, {
   timeoutError = deadlineTimeoutError,
   setTimer = globalThis.setTimeout,
   clearTimer = globalThis.clearTimeout,
+  // Names the caller in the refusal, so a wrapper needs no validation of its own.
+  label = "runWithDeadline",
 } = {}) {
   if (typeof operation !== "function"
     || typeof timeoutMs !== "number"
@@ -30,7 +32,8 @@ export async function runWithDeadline(operation, {
     || typeof timeoutError !== "function"
     || typeof setTimer !== "function"
     || typeof clearTimer !== "function") {
-    throw new Error("runWithDeadline received an invalid deadline configuration.");
+    throw new Error(`${label} received an invalid deadline configuration.`);
+
   }
 
   // Start the operation synchronously so callers that hand it a controller

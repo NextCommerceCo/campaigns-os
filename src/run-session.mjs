@@ -12,12 +12,13 @@
 // The session file is transient, machine-local, and lives under the
 // scrubber-ignored .campaign-runtime/. No network, no credentials.
 
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, parse, resolve, sep } from "node:path";
 
 import { LIFECYCLE_JOURNAL_REL_PATH } from "./lifecycle.mjs";
+import { sameFile } from "./fs-identity.mjs";
 
 export const RUN_SESSION_SCHEMA = "campaigns-os-run-session/v0";
 export const RUN_SESSION_REL_PATH = ".campaign-runtime/run-session.json";
@@ -179,16 +180,9 @@ export function sessionBoundTo(session, packetPath) {
   const boundPacket = isNonEmptyString(session?.packet) ? session.packet : null;
   if (!boundPacket) return { same: true, boundPacket };
   if (!isNonEmptyString(packetPath)) return { same: false, boundPacket };
-  return { same: canonicalPath(boundPacket) === canonicalPath(packetPath), boundPacket };
+  return { same: sameFile(boundPacket, packetPath), boundPacket };
 }
 
-function canonicalPath(path) {
-  try {
-    return realpathSync(resolve(path));
-  } catch {
-    return resolve(path);
-  }
-}
 
 /**
  * Open a run session at `rootDir`, or join the one already there. The two

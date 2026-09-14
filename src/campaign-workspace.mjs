@@ -9,9 +9,10 @@
 // --out` elsewhere — exactly when a stage spelling the rule for itself drifts.
 // A leaf: node built-ins and the sidecar leaves only.
 
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
+import { absentOrMalformed, sameFile } from "./fs-identity.mjs";
 
 export const BUILD_CONTEXT_REL_PATH = ".campaign-runtime/build-context.json";
 export const ASSEMBLY_REPORT_REL_PATH = ".campaign-runtime/assembly-report.json";
@@ -51,33 +52,19 @@ export function explicitReportPath(reportPath, targetRepo) {
 
 // Best-effort read of the Build Context for the report binding only: a
 // missing or malformed context binds nothing. A caller that must refuse a
-// malformed context reads it again strictly.
+// malformed context reads it again strictly. Any other read failure (a
+// permission error, a directory where the file should be) is not absence:
+// binding the default report over it would record a stage outcome into a
+// report the campaign is not bound to, so it reaches the caller.
 function readContextForBinding(contextPath) {
-  if (!contextPath || !existsSync(contextPath)) return null;
+  if (!contextPath) return null;
   try {
     const parsed = JSON.parse(readFileSync(contextPath, "utf8"));
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (absentOrMalformed(error)) return null;
+    throw error;
   }
-}
-
-// The same file: equal once resolved, or both present on disk and one file
-// behind any symlinks. Two differently spelled paths that do not both exist
-// cannot be shown to be one file, and are not treated as one.
-function samePath(left, right) {
-  const resolvedLeft = resolve(left);
-  const resolvedRight = resolve(right);
-  if (resolvedLeft === resolvedRight) return true;
-  const real = (path) => {
-    try {
-      return realpathSync(path);
-    } catch {
-      return null;
-    }
-  };
-  const realLeft = real(resolvedLeft);
-  return realLeft !== null && realLeft === real(resolvedRight);
 }
 
 // The one resolver. `contextPath` / `reportPath` / `doctorOutPath` are the
@@ -117,7 +104,10 @@ export function resolveCampaignWorkspace(packetPath, {
   const context = followContextPointer ? readContextForBinding(resolvedContextPath) : null;
   const recorded = typeof context?.report_path === "string" && context.report_path.trim() ? context.report_path.trim() : null;
   const named = typeof context?.packet_path === "string" && context.packet_path.trim() ? context.packet_path.trim() : null;
-  const bound = recorded && (!named || samePath(resolve(targetRepo, named), absolutePacketPath));
+  // Both sides must be on disk: a pointer naming a packet that is not there
+  // cannot be shown to name this one.
+  const bound = recorded && (!named || sameFile(resolve(targetRepo, named), absolutePacketPath, { requireExisting: true }));
+
   const resolvedReportPath = reportPath !== undefined
     ? reportPath
     : bound

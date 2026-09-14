@@ -139,7 +139,24 @@ test("a context naming another packet does not bind; one naming this packet or n
   assert.equal(resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true, reportPath: join(dir, "r.json") }).reportPath, join(dir, "r.json"));
 }));
 
+test("a context that is on disk but unreadable is not absence: the binding refuses instead of defaulting", () => withDir((dir) => {
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  const packet = { assembly: { target_repo: "." } };
+  // A directory where the context file should be: readable as nothing, not
+  // as "no context". Binding the default report over it would record a stage
+  // outcome into a report the campaign may not be bound to.
+  mkdirSync(join(dir, BUILD_CONTEXT_REL_PATH), { recursive: true });
+  assert.throws(
+    () => resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true }),
+    (error) => error.code === "EISDIR",
+  );
+  // A caller that does not follow the pointer never opens the context.
+  const unfollowed = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: false });
+  assert.equal(unfollowed.reportPath, join(dir, ASSEMBLY_REPORT_REL_PATH));
+}));
+
 test("a missing, malformed or pointer-less context leaves the default report bound", () => withDir((dir) => {
+
   const packetPath = join(dir, "campaign-runtime.build.json");
   const packet = { assembly: { target_repo: "." } };
   const missing = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true });

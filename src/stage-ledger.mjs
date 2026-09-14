@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
+import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
 
@@ -37,17 +38,13 @@ const QA_OWNED_FIELDS = Object.freeze(["verdict_run_id", "evidence", "purchase_p
 // Bounded so a committed handoff artifact cannot grow without limit, and deep
 // enough that a couple of repair attempts do not evict the state a reviewer
 // came looking for.
-export const PRODUCER_STAGE_HISTORY_LIMIT = 5;
+const PRODUCER_STAGE_HISTORY_LIMIT = 5;
 // The fields a producer restates on every run even when nothing else moved.
 // A re-run that reaches the same outcome differs from the previous report in
 // these alone, and rewriting the file for them makes every digest taken of
 // the report (a Run Record's assembly_report sha256, for one) go stale for
 // no information.
 const PRODUCER_STAGE_TIMESTAMP_FIELDS = Object.freeze(["checked_at", "completed_at"]);
-
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 // `$defs.stage.evidence` is `oneOf: [array, object]`, so an operator or an
 // out-of-repo producer may legally have written either shape. Recognize both,
@@ -205,10 +202,6 @@ export function recordProducerStageOutcome(report, {
   stages[stage] = next;
   updated.stages = stages;
   return updated;
-}
-
-function optionalString(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 /**

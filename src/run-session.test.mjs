@@ -684,7 +684,10 @@ test("CLI: run end leaves the session ACTIVE when run-record fails (operator can
     assert.equal(threw, true);
     // Session must NOT be cleared on failure — the operator fixes the packet and retries.
     assert.notEqual(findRunSession(dir), null);
-    assert.equal(findRunSession(dir).session.packet, join(dir, "missing.build.json"));
+    // Recorded as the filesystem knows it: the real path of the directory
+    // that exists, with the missing packet name re-appended.
+    assert.equal(findRunSession(dir).session.packet, join(realpathSync(dir), "missing.build.json"));
+
   });
 });
 

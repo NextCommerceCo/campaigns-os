@@ -10,6 +10,8 @@ import {
   stripPublicRoutePrefix,
 } from "./route-identity.mjs";
 import { singleLineFragment } from "./text-safety.mjs";
+import { absentOrMalformed } from "./fs-identity.mjs";
+import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
@@ -67,7 +69,6 @@ import {
   unavailableCommercialReport,
 } from "./qa-commercial-parity.mjs";
 
-const DEFAULT_PROXY_BASE = "https://campaign-map.nextcommerce.com";
 const RUNTIME = "campaigns-os-node-qa@0.1.0-alpha.0";
 const QA_VERDICT_ASSERTION_LIMIT = 500;
 
@@ -281,7 +282,7 @@ async function resolveQaInputs(args, {
     rawSpec = readJsonFile(specPath);
     specSource = specPath;
   } else {
-    rawSpec = await fetchSpec(mapId, proxyBase);
+    rawSpec = await fetchSpecByMapId(mapId, { proxyBase });
     specSource = `${proxyBase.replace(/\/+$/, "")}/api/spec/${encodeURIComponent(mapId)}`;
   }
 
@@ -699,15 +700,18 @@ function themeGateScopeSource(doctorScope, specScope) {
 // packet that cannot be read at this moment costs the target-repo resolution,
 // not the read: the workspace then falls back to the packet's directory, which
 // is what this reader always used.
+// A missing or malformed packet or artifact is absent (null); any other read
+// failure is not and reaches the caller.
 function loadRuntimeArtifact(packetPath, name) {
   if (!packetPath) return null;
   try {
     let packet = null;
     try {
       packet = readJson(packetPath);
-    } catch {
-      packet = null;
+    } catch (error) {
+      if (!absentOrMalformed(error)) throw error;
     }
+
     const workspace = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true });
     const path = {
       "assembly-report.json": workspace.reportPath,
@@ -716,8 +720,9 @@ function loadRuntimeArtifact(packetPath, name) {
     }[name];
     if (!path || !existsSync(path)) return null;
     return readJson(path);
-  } catch {
-    return null;
+  } catch (error) {
+    if (absentOrMalformed(error)) return null;
+    throw error;
   }
 }
 
@@ -2711,14 +2716,6 @@ function extractMetaTags(html) {
   return meta;
 }
 
-async function fetchSpec(mapId, proxyBase) {
-  const url = `${proxyBase.replace(/\/+$/, "")}/api/spec/${encodeURIComponent(mapId)}`;
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(`Spec fetch failed: ${response.status} ${response.statusText} (${url})`);
-  const body = await response.json();
-  return body && body.ok && body.data ? body.data : body;
-}
-
 // QA verdict publish rides the shared remit rails (see src/remit.mjs). The
 // behavior is unchanged: POST to /api/qa/verdicts, parse the body, throw on a
 // non-2xx so the caller's "never fail the run if publish is unreachable"
@@ -3042,7 +3039,11 @@ function resolveFromFile(filePath, targetPath) {
 }
 
 function readJson(path) {
-  if (!existsSync(path)) throw new Error(`File does not exist: ${path}`);
+  if (!existsSync(path)) {
+    const error = new Error(`File does not exist: ${path}`);
+    error.code = "ENOENT";
+    throw error;
+  }
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
