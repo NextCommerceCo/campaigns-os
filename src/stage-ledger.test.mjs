@@ -520,6 +520,27 @@ test("an operator edit requires the report to exist and binds no identity", () =
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a malformed report fails by name and path, and stamps nothing", () => {
+  const { dir, workspace } = workspaceFixture();
+  writeFileSync(workspace.reportPath, "{ \"identity\": ");
+  let called = false;
+  for (const options of [
+    { command: "unit", staleReason: "unit" },
+    { stage: "doctor", refreshDoctor: () => ({ ok: true, status: "written-anyway" }) },
+  ]) {
+    assert.throws(
+      () => commitAssemblyReport(workspace, () => { called = true; return {}; }, options),
+      (error) => error instanceof Error && !(error instanceof SyntaxError)
+        && /^Assembly Report at .*assembly-report\.json is not valid JSON: /.test(error.message),
+      JSON.stringify(options),
+    );
+  }
+  assert.equal(called, false, "the mutation never sees a report that did not parse");
+  assert.equal(readFileSync(workspace.reportPath, "utf8"), "{ \"identity\": ", "the torn bytes are left for inspection");
+  assert.deepEqual(readJson(workspace.doctorOutPath), { ok: true, status: "ready" }, "neither a stale stamp nor a refresh lands");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a mutation that throws writes nothing and stamps nothing", () => {
   const { dir, workspace } = workspaceFixture();
   const bytes = readFileSync(workspace.reportPath, "utf8");

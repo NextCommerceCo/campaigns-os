@@ -9,7 +9,7 @@
 // exists.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -148,6 +148,20 @@ test("qa waive refuses when no assembly report exists yet", () => {
     () => qaWaive({ _: ["qa", "waive"], packet: packetPath, assertion: WAIVABLE, reason: "r" }),
     /assembly report/,
   );
+});
+
+test("qa waive names the report when it is not valid JSON", () => {
+  const { dir, packetPath, reportPath } = writeFixture();
+  writeFileSync(reportPath, "{ \"stages\": ");
+  try {
+    assert.throws(
+      () => qaWaive({ _: ["qa", "waive"], packet: packetPath, assertion: WAIVABLE, reason: "r" }),
+      (error) => !(error instanceof SyntaxError) && error.message.startsWith(`Assembly Report at ${reportPath} is not valid JSON: `),
+    );
+    assert.equal(readFileSync(reportPath, "utf8"), "{ \"stages\": ", "a refused waive writes nothing");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("qa waive defaults waived-by to a named identity ($USER@local or operator)", () => {

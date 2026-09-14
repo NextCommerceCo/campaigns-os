@@ -113,6 +113,21 @@ test("theme waive applies the checkpoint attribution rule: named human required,
   }
 });
 
+test("theme waive names the report when it is not valid JSON", () => {
+  const { dir, packetPath, reportPath } = fixture();
+  try {
+    writeFileSync(reportPath, "{ \"identity\": ");
+    assert.throws(
+      () => themeWaive({ _: ["theme", "waive"], packet: packetPath, reason: "starter palette accepted", "waived-by": "Jordan Lee" }),
+      (error) => !(error instanceof SyntaxError)
+        && error.message.startsWith(`Assembly Report at ${reportPath} is not valid JSON: `),
+    );
+    assert.equal(readFileSync(reportPath, "utf8"), "{ \"identity\": ", "a refused waive writes nothing");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("theme waive records --expires-at, refuses a past expiry, and reports doctor's readiness", () => {
   const { dir, packetPath, reportPath } = fixture();
   try {

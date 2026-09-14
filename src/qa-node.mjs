@@ -43,7 +43,7 @@ import {
 import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
 import { commitAssemblyReport } from "./stage-ledger.mjs";
-import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
 import { loadPageKitCampaignEntry, PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
@@ -346,6 +346,10 @@ async function resolveQaInputs(args, {
     commerceStructureContract,
     topologies,
     checkpointGates: checkpointPreflight?.checkpointGates || nonPacketCheckpointGates(),
+    // The report the checkpoint gates were evaluated on, and the target repo
+    // whose default it may or may not be: what the printed remediation names.
+    reportPath: checkpointPreflight?.reportPath || null,
+    targetRepo: checkpointPreflight?.targetRepo || null,
   };
 }
 
@@ -415,6 +419,7 @@ function resolvePacketCheckpointPreflight(args, {
     rawSpec,
     specStatus,
     targetLoad,
+    targetRepo,
     reportPath,
     report,
     runtimeReport,
@@ -531,6 +536,8 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
     commerceStructureContract: null,
     topologies,
     checkpointGates: preflight.checkpointGates,
+    reportPath: preflight.reportPath || null,
+    targetRepo: preflight.targetRepo || null,
   };
 }
 
@@ -1316,6 +1323,15 @@ function serializeThrownValue(error) {
   return diagnostic;
 }
 
+// `report_path` is carried only when the report the gates were evaluated on
+// is not the packet-inferred default — the same rule as doctor's
+// `derived.assembly_report_path` handling — so the printed remediations can
+// name it and a default-report campaign's output is unchanged.
+function reportPathField(resolved) {
+  const reportPath = explicitReportPath(resolved?.reportPath, resolved?.targetRepo);
+  return reportPath ? { report_path: reportPath } : {};
+}
+
 function resolvePayload(resolved, { routeProbe = null } = {}) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
@@ -1330,6 +1346,7 @@ function resolvePayload(resolved, { routeProbe = null } = {}) {
     status,
     map_id: resolved.mapId,
     ...(resolved.packetPath ? { packet_path: resolved.packetPath } : {}),
+    ...reportPathField(resolved),
     ...(resolved.proxyBase && resolved.proxyBase !== DEFAULT_PROXY_BASE ? { proxy_base: resolved.proxyBase } : {}),
     spec_source: resolved.specSource,
     spec_version: resolved.specVersion,
@@ -2161,6 +2178,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     run_id: verdict.run_id,
     map_id: resolved.mapId,
     public_route_slug: resolved.publicRouteSlug || null,
+    ...reportPathField(resolved),
     base_url: resolved.baseUrl,
     entry_urls: entryUrls,
     page_urls: pageUrls,
@@ -2798,7 +2816,7 @@ function output(value, args) {
     console.log(`Disposition: ${value.verdict.disposition}`);
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
     printCauseLines(value.verdict);
-    printThemeGateLines(value.theme_gate, value.packet_path);
+    printThemeGateLines(value.theme_gate, value.packet_path, value.report_path);
     if (value.commercial) {
       console.log(`Commercial parity: ${value.commercial.status} (${value.commercial.finding_count || 0} findings, ${value.commercial.checked_pages || 0} pages checked)`);
     }
@@ -2833,8 +2851,8 @@ function output(value, args) {
     for (const page of funnel.pages) console.log(`- [${page.page_type}] ${page.label}: ${page.url || "(missing)"}`);
   }
   console.log("");
-  printCheckpointGateLines(value.checkpoint_gates, value.packet_path);
-  printThemeGateLines(value.theme_gate, value.packet_path);
+  printCheckpointGateLines(value.checkpoint_gates, value.packet_path, value.report_path);
+  printThemeGateLines(value.theme_gate, value.packet_path, value.report_path);
   printRouteProbeLines(value.route_probe);
   const nextProofLines = qaResolveNextProofLines(value);
   if (nextProofLines.length) {
@@ -2846,8 +2864,10 @@ function output(value, args) {
 // The checkpoint block of the `qa resolve` text report. Returns the lines in
 // order so the text is assertable without a subprocess; the printer prints
 // the join. Each action is rendered by the one rule doctor uses (the packet
-// substituted, else the description).
-export function checkpointGateLines(checkpointGates, packetPath) {
+// substituted, else the description, and `--report` carried into a
+// packet-scoped command when the gates were evaluated on a non-default
+// report), so the same blocked gate reads the same way in both reports.
+export function checkpointGateLines(checkpointGates, packetPath, reportPath = null) {
   const lines = [];
   for (const gate of checkpointGates || []) {
     lines.push(`Checkpoint ${gate.id}: ${gate.status} (${gate.code}) — ${gate.reason}`);
@@ -2861,15 +2881,15 @@ export function checkpointGateLines(checkpointGates, packetPath) {
     if (gate.required_actions?.length) {
       lines.push("  Required actions:");
       for (const action of gate.required_actions) {
-        lines.push(`    - ${requiredActionText(action, { packetPath })}`);
+        lines.push(`    - ${requiredActionText(action, { packetPath, reportPath })}`);
       }
     }
   }
   return lines;
 }
 
-function printCheckpointGateLines(checkpointGates, packetPath) {
-  for (const line of checkpointGateLines(checkpointGates, packetPath)) console.log(line);
+function printCheckpointGateLines(checkpointGates, packetPath, reportPath = null) {
+  for (const line of checkpointGateLines(checkpointGates, packetPath, reportPath)) console.log(line);
 }
 
 function printEntryUrlLines(entryUrls) {
@@ -2927,20 +2947,20 @@ function printCauseLines(verdict) {
 // The theme-gate block of the `qa resolve` / `qa run` text report, as lines.
 // The gate bakes the packet into its commands when it is evaluated, so the
 // substitution here is the same rule applied uniformly, not a change of text.
-export function themeGateLines(themeGate, packetPath = null) {
+export function themeGateLines(themeGate, packetPath = null, reportPath = null) {
   if (!themeGate) return [];
   const lines = [`Theme gate: ${themeGate.status} (${themeGate.code}) — ${themeGate.reason}`];
   if (themeGate.status !== "blocked") return lines;
   lines.push("Required actions:");
   for (const action of themeGate.required_actions || []) {
-    lines.push(`  - ${requiredActionText(action, { packetPath })}`);
+    lines.push(`  - ${requiredActionText(action, { packetPath, reportPath })}`);
   }
   lines.push("Or rerun with --theme-waive \"<reason>\" to record an ephemeral waiver for this run.");
   return lines;
 }
 
-function printThemeGateLines(themeGate, packetPath = null) {
-  for (const line of themeGateLines(themeGate, packetPath)) console.log(line);
+function printThemeGateLines(themeGate, packetPath = null, reportPath = null) {
+  for (const line of themeGateLines(themeGate, packetPath, reportPath)) console.log(line);
 }
 
 export function qaResolveNextProofLines(value) {
