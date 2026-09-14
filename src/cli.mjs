@@ -5505,6 +5505,12 @@ function validateCampaignsApiKey(packet, spec, warnings, ready) {
     if (apiKey.warning) addIssue(warnings, "campaign.api_key_source", apiKey.warning);
     return;
   }
+  if (apiKey.rejected) {
+    // Present but refused is its own finding: the operator fixes a value, not
+    // a missing declaration. Names the source; the value is never printed.
+    addIssue(warnings, "campaign.api_key_rejected", apiKey.warning, { source: apiKey.rejected.source, kind: apiKey.rejected.kind });
+    return;
+  }
 
   addIssue(
     warnings,
@@ -5513,32 +5519,30 @@ function validateCampaignsApiKey(packet, spec, warnings, ready) {
   );
 }
 
+// Doctor's view of the key is a projection of the one resolver the remit
+// rails use (resolveCampaignsApiKeySource): the same sources in the same
+// order, the same shape gate, the same refusal vocabulary. A value that is
+// there but refused on shape is reported as refused — naming the source,
+// never the value — where doctor used to call any non-empty value present.
+// What doctor adds is the "nothing usable" explanation, read from the
+// packet's declared source, since the resolver reports absence without a why.
 function resolveCampaignsApiKey(packet, spec, env) {
-  const packetKey = firstNonEmptyString(
-    packet?.campaign?.campaigns_api_key,
-    packet?.campaign?.api_key
-  );
-  if (packetKey) {
+  const resolved = resolveCampaignsApiKeySource(packet, null, env, { spec });
+  if (resolved.key) {
     return {
       present: true,
-      source: packet?.campaign?.campaigns_api_key ? "packet.campaign.campaigns_api_key" : "packet.campaign.api_key",
-      warning: "Campaigns API key is stored directly in the Build Packet. This is allowed for local/public-client builds, but shared fixtures may prefer CampaignSpec or env sourcing.",
+      source: resolved.origin,
+      warning: resolved.origin.startsWith("packet.")
+        ? "Campaigns API key is stored directly in the Build Packet. This is allowed for local/public-client builds, but shared fixtures may prefer CampaignSpec or env sourcing."
+        : null,
     };
   }
-
-  const specKey = firstNonEmptyString(
-    spec?.campaign?.campaigns_api_key,
-    spec?.campaigns_api_key,
-    spec?.campaign?.api_key
-  );
-  if (specKey) {
+  if (resolved.rejected) {
     return {
-      present: true,
-      source: spec?.campaign?.campaigns_api_key
-        ? "CampaignSpec campaign.campaigns_api_key"
-        : spec?.campaigns_api_key
-          ? "CampaignSpec campaigns_api_key"
-          : "CampaignSpec campaign.api_key",
+      present: false,
+      source: resolved.rejected.source,
+      rejected: resolved.rejected,
+      warning: `${describeCampaignKeyRejection(resolved.rejected)} API-side package/shipping/offer confirmation is deferred.`,
     };
   }
 
@@ -5552,13 +5556,13 @@ function resolveCampaignsApiKey(packet, spec, env) {
   }
 
   if (source.startsWith("env:")) {
+    // A set variable was either accepted (key) or refused (rejected) above,
+    // so reaching here means it is unset.
     const envName = source.slice("env:".length).trim();
     return {
-      present: isNonEmptyString(env?.[envName]),
+      present: false,
       source,
-      warning: isNonEmptyString(env?.[envName])
-        ? null
-        : `Environment variable ${envName} is not set, and the local CampaignSpec does not include campaign.campaigns_api_key. API-side package/shipping/offer confirmation is deferred.`,
+      warning: `Environment variable ${envName} is not set, and the local CampaignSpec does not include campaign.campaigns_api_key. API-side package/shipping/offer confirmation is deferred.`,
     };
   }
 
@@ -9964,7 +9968,11 @@ async function closeOutStaleRunSession(rootDir, inherited = {}) {
 // at an arbitrary secret (`env:AWS_SECRET_ACCESS_KEY`) and have its value
 // travel as a header.
 const CAMPAIGN_KEY_SHAPE = /^[A-Za-z0-9._-]{8,256}$/;
-const CAMPAIGN_KEY_ENV_NAME = /^[A-Z][A-Z0-9_]*CAMPAIGN[A-Z0-9_]*$/;
+// A variable name that names a campaign key: upper-case, starts with a letter,
+// and contains CAMPAIGN anywhere — including at the start, so the documented
+// default `CAMPAIGNS_API_KEY` qualifies (a leading `[A-Z]` that consumed the C
+// used to refuse exactly that name and `CAMPAIGN_KEY`).
+const CAMPAIGN_KEY_ENV_NAME = /^(?=[A-Z])[A-Z0-9_]*CAMPAIGN[A-Z0-9_]*$/;
 
 function campaignKeyOrNull(value) {
   const trimmed = typeof value === "string" ? value.trim() : "";
@@ -9977,7 +9985,7 @@ function campaignKeyOrNull(value) {
 // secret exported under a campaign-key name — and the caller must be able to
 // say which, naming the SOURCE (the env var, or the packet field) and never
 // the value. `rejected` is null when nothing was refused.
-export function resolveCampaignsApiKeySource(packet, packetPath, env = process.env) {
+export function resolveCampaignsApiKeySource(packet, packetPath, env = process.env, { spec: loadedSpec = undefined } = {}) {
   const packetRaw = firstNonEmptyString(packet?.campaign?.campaigns_api_key, packet?.campaign?.api_key);
   if (isNonEmptyString(packetRaw)) {
     const packetKey = campaignKeyOrNull(packetRaw);
@@ -9985,9 +9993,11 @@ export function resolveCampaignsApiKeySource(packet, packetPath, env = process.e
     return { key: null, origin: null, rejected: { kind: "malformed", source: packet?.campaign?.campaigns_api_key ? "packet.campaign.campaigns_api_key" : "packet.campaign.api_key" } };
   }
   try {
+    // A caller that already holds the packet-local CampaignSpec (doctor) hands
+    // it in; otherwise it is read from the packet's local_path.
     const localSpecPath = packet?.spec?.local_path;
-    if (isNonEmptyString(localSpecPath) && isNonEmptyString(packetPath)) {
-      const spec = readJsonIfExists(resolveFromFile(packetPath, localSpecPath));
+    if (loadedSpec !== undefined || (isNonEmptyString(localSpecPath) && isNonEmptyString(packetPath))) {
+      const spec = loadedSpec !== undefined ? loadedSpec : readJsonIfExists(resolveFromFile(packetPath, localSpecPath));
       // Name the field the value actually came from: a refused source the
       // operator cannot find in their CampaignSpec is worse than no name.
       const specField = [
