@@ -34,6 +34,7 @@ import {
   summarizeSelectionSurface,
 } from "./qa-cart-entry.mjs";
 import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump.mjs";
+import { isBumpRow } from "./commercial-journey.mjs";
 import {
   RESIDUE_PAGE_TYPES,
   demoAssetConfig,
@@ -5510,11 +5511,13 @@ function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
 }
 
 function specTierPlans(topologies, args, variant, { warn = (line) => process.stderr.write(`${line}\n`) } = {}) {
-  for (const flag of ["select-package", "apply-coupon"]) {
-    if (stringArg(args[flag])) {
-      throw new Error(`--test-order tiers derives package tiers and coupon codes from the CampaignSpec; drop --${flag} or use an explicit mode (common/full/...) with it.`);
-    }
+  if (stringArg(args["apply-coupon"])) {
+    throw new Error("--test-order tiers derives coupon codes from the CampaignSpec; drop --apply-coupon or use an explicit mode (common/full/...) with it.");
   }
+  // `--select-package <ref[:qty],...>` narrows a tiers run to the listed
+  // declared tiers (exact `ref` / `ref:qty` identities) instead of iterating
+  // every tier; coupon plans are not tiers and are unaffected.
+  const narrowTo = selectorTierNarrowing(args["select-package"]);
   // Every funnel's checkout page contributes plans, and each plan carries the
   // checkout page that declares its tier/coupon so the runner drives THAT
   // page — strict-selecting a ref on a checkout that doesn't render it would
@@ -5530,7 +5533,15 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
     const pages = Array.isArray(topology?.pages) ? topology.pages : [];
     const checkoutPage = pages.find((page) => String(page?.page_type || "").toLowerCase() === "checkout");
     if (!checkoutPage) continue;
-    const tiers = declaredSelectorTiers(checkoutPage);
+    const declaredTiers = declaredSelectorTiers(checkoutPage);
+    const bumps = declaredOrderBumps(checkoutPage);
+    if (bumps.length) {
+      warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares order bump package(s) ${bumps.join(", ")} (is_upsell) — not planned as selector tiers; bump coverage comes from --cart.`);
+    }
+    const tiers = narrowTo ? declaredTiers.filter((tier) => narrowTo.has(selectorTierIdentity(tier))) : declaredTiers;
+    if (narrowTo && declaredTiers.length && !tiers.length) {
+      warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares tier(s) ${declaredTiers.map(selectorTierIdentity).join(", ")}; none match --select-package ${[...narrowTo].join(",")}.`);
+    }
     const coupons = declaredCheckoutCoupons(checkoutPage);
     if (!tiers.length && !coupons.length) continue;
     if (checkoutPage !== primary && !checkoutPage.url) {
@@ -5557,7 +5568,7 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       for (const path of paths) {
         plans.push({
           path,
-          select_package: tier.quantity === 1 ? tier.ref : `${tier.ref}:${tier.quantity}`,
+          select_package: selectorTierIdentity(tier),
           apply_coupon: null,
           checkout_page: checkoutPage,
           topology_plan: resolvedTopology,
@@ -5589,6 +5600,16 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
       });
     }
   }
+  if (narrowTo && !plans.some((plan) => plan.source?.type === "selector_tier")) {
+    const declared = (Array.isArray(topologies) ? topologies : [])
+      .flatMap((topology) => (Array.isArray(topology?.pages) ? topology.pages : []))
+      .filter((page) => String(page?.page_type || "").toLowerCase() === "checkout")
+      .flatMap((page) => declaredSelectorTiers(page).map(selectorTierIdentity));
+    throw new Error([
+      `--select-package ${[...narrowTo].join(",")} matches none of the selector tiers the CampaignSpec declares${declared.length ? ` (${[...new Set(declared)].join(", ")})` : " (none declared)"}.`,
+      "Name a declared tier as ref or ref:qty, or drop --select-package to iterate every tier.",
+    ].join(" "));
+  }
   if (!plans.length) {
     throw new Error([
       "--test-order tiers found nothing to iterate: no CampaignSpec checkout page declares selector-tier packages or an enabled exit_intent/promo_code_input offer code.",
@@ -5598,13 +5619,52 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
   return plans;
 }
 
+// A tier's identity is the strict-selection value it is driven with: bare
+// `ref` at purchase quantity 1, `ref:qty` for a repeated-ref multiplier.
+function selectorTierIdentity(tier) {
+  return tier.quantity === 1 ? tier.ref : `${tier.ref}:${tier.quantity}`;
+}
+
+// `--select-package 1,1:2` under a tiers mode → the set of tier identities to
+// keep. `ref:1` normalises to `ref` so both spellings name the same tier.
+function selectorTierNarrowing(value) {
+  const raw = stringArg(value);
+  if (!raw) return null;
+  const identities = raw.split(",").map((item) => item.trim()).filter(Boolean).map((item) => {
+    const [ref, qty] = item.split(":");
+    const quantity = qty == null || qty === "" ? 1 : Number(qty);
+    if (!ref || !Number.isInteger(quantity) || quantity < 1) {
+      throw new Error(`--select-package ${item}: expected <ref[:qty]> to name a declared selector tier.`);
+    }
+    return selectorTierIdentity({ ref: ref.trim(), quantity });
+  });
+  return identities.length ? new Set(identities) : null;
+}
+
+// Order bumps declared on the checkout page (`is_upsell: true` rows — the
+// same marker the commercial-journey planner reads). They are add-ons to a
+// selected tier, not tiers, so the tier planner reports and skips them.
+function declaredOrderBumps(checkoutPage) {
+  const refs = [];
+  for (const pkg of Array.isArray(checkoutPage?.packages) ? checkoutPage.packages : []) {
+    if (!pkg || typeof pkg !== "object" || !isBumpRow(pkg)) continue;
+    const ref = [pkg.ref_id, pkg.package_id, pkg.id]
+      .map((value) => (value == null ? "" : String(value).trim()))
+      .find(Boolean);
+    if (ref && !refs.includes(ref)) refs.push(ref);
+  }
+  return refs;
+}
+
 // Selector tiers are the packages the spec declares on the checkout page —
 // same ref tolerance as the doctor's specPackageRecords (ref_id/package_id/id).
+// Order-bump rows (`is_upsell: true`) are add-ons offered alongside the
+// selected tier, not tiers of their own: they never become a plan.
 function declaredSelectorTiers(checkoutPage) {
   const records = [];
   const quantitiesByRef = new Map();
   for (const pkg of Array.isArray(checkoutPage?.packages) ? checkoutPage.packages : []) {
-    if (!pkg || typeof pkg !== "object") continue;
+    if (!pkg || typeof pkg !== "object" || isBumpRow(pkg)) continue;
     const ref = [pkg.ref_id, pkg.package_id, pkg.id]
       .map((value) => (value == null ? "" : String(value).trim()))
       .find(Boolean);
@@ -5706,11 +5766,12 @@ function testOrderCommonPaths(topologies = []) {
 function enforceTestOrderLimit(plans, args) {
   const maxOrders = numberArg(args["max-test-orders"], DEFAULT_MAX_TEST_ORDERS);
   if (plans.length <= maxOrders) return;
-  const preview = plans.slice(0, 8).map((plan) => planId(plan)).join(", ");
-  const suffix = plans.length > 8 ? ", ..." : "";
+  // Every planned path is listed: an operator deciding whether to raise the
+  // cap needs to see what the tail of the plan is, not a truncated preview.
+  const preview = plans.map((plan) => planId(plan)).join(", ");
   throw new Error([
     `--test-order ${args["test-order"]} expands to ${plans.length} typed-card order(s), above --max-test-orders ${maxOrders}.`,
-    `Planned paths: ${preview}${suffix}.`,
+    `Planned paths: ${preview}.`,
     `This cap guards against an accidental order flood, not a permission gate. Use --test-order common for the default sample, or rerun with --max-test-orders ${plans.length} for this exhaustive proof.`,
     "The cap bounds planned paths. Actual order creations are bounded separately by --max-order-creations, which defaults to the planned path count and is reserved before each submit.",
   ].join(" "));

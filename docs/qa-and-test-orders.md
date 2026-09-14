@@ -1048,7 +1048,12 @@ the CampaignSpec instead:
   its path. Repeated declarations of the same ref at distinct quantities are
   purchase multipliers (`ref` and `ref:2`). A uniquely referenced catalog
   package with its own `qty: 3` composition is still bought once (`ref`), not
-  multiplied by three;
+  multiplied by three. **Order-bump rows — `packages[]` entries marked
+  `is_upsell: true` — are add-ons offered beside the selected tier, not tiers**:
+  they never become a plan (a three-tier checkout with one bump plans three
+  tiers, so `tiers:common` on a two-upsell funnel is 12 orders, not 16), and
+  the runner prints a `[qa:test-order]` line naming the bump ref(s) it left
+  out. Bump coverage comes from `--cart`;
 - plus one **checkout order per declared coupon code** — checkout
   `exit_intent.offer_code` and `promo_code_input.offer_code`, counted only when
   the surface has `enabled: true` (the same rule build/doctor use for offer
@@ -1083,12 +1088,18 @@ order is labeled in assertions and evidence as `checkout@tier:<ref>`,
 `accept@tier:<ref>`, `checkout@coupon:<code>`, and the verdict records the
 plan (tier ref or coupon code plus its declaring surface) on the order.
 
-`tiers` is incompatible with explicit `--select-package`/`--apply-coupon`
-(the mode derives them from the spec; combining would be ambiguous), and it
-errors when the spec declares neither selector tiers nor an enabled offer
-code — use `common`/`full` or the explicit flags there. Because tiers come
-from the CampaignSpec, `tiers` needs a packet/spec-driven run; non-packet
-`--site` runs have no declared tiers to iterate.
+`--select-package <ref[:qty],...>` **narrows** a tiers run to the listed
+declared tiers, matched by exact identity (`1` or `1:1` is ref 1 at purchase
+quantity one; `1:2` is the two-unit multiplier), so `--test-order tiers:common
+--select-package 1:2,1:3` proves two of three tiers without the full flood.
+Coupon plans are not tiers and are planned regardless. A listed identity the
+spec declares no tier for is refused by name, listing the declared tiers.
+`tiers` is incompatible with explicit `--apply-coupon` (the mode derives
+coupons from the spec; combining would be ambiguous), and it errors when the
+spec declares neither selector tiers nor an enabled offer code — use
+`common`/`full` or the explicit flags there. Because tiers come from the
+CampaignSpec, `tiers` needs a packet/spec-driven run; non-packet `--site`
+runs have no declared tiers to iterate.
 
 **Multi-funnel specs are covered in one run**: every funnel's checkout page
 contributes plans, and each plan is driven against the checkout page that
@@ -1120,8 +1131,8 @@ npm run campaigns-os -- qa run \
 `--max-test-orders` (default `6`) is an **accidental-flood guard, not a permission
 gate**. A single checkout's `common` sample always stays under it, though tier
 expansion can exceed it. If `full` expands past the cap, the command stops before
-browser launch, prints the planned count, and names the exact
-`--max-test-orders <count>` raise. For example, a linear three-offer graph has
+browser launch, prints the planned count, lists **every** planned path (never a
+truncated preview), and names the exact `--max-test-orders <count>` raise. For example, a linear three-offer graph has
 eight terminal paths plus the checkout baseline, so it requires
 `--max-test-orders 9`. No approval step is involved.
 

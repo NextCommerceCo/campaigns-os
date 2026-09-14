@@ -455,7 +455,7 @@ test("tiers:common and tiers:full cross every declared tier with the path shapes
   ]);
 });
 
-test("tiers mode gates: disabled/blank offer surfaces are skipped, operator flags are rejected, empty specs error", () => {
+test("tiers mode gates: disabled/blank offer surfaces are skipped, --apply-coupon is rejected, empty specs error", () => {
   const { testOrderPlans, planId } = __qaBrowserTestHooks;
   const checkout = (extra) => [{ pages: [{ page_type: "checkout", ...extra }] }];
 
@@ -467,11 +467,7 @@ test("tiers mode gates: disabled/blank offer surfaces are skipped, operator flag
   }), {});
   assert.deepEqual(plans.map((plan) => planId(plan)), ["checkout@tier:9"]);
 
-  // tiers derives selection/coupons from the spec — explicit flags are ambiguous
-  assert.throws(
-    () => testOrderPlans("tiers", checkout({ packages: [{ ref_id: "9" }] }), { "select-package": "9" }),
-    /drop --select-package/,
-  );
+  // tiers derives coupons from the spec — an explicit coupon is ambiguous
   assert.throws(
     () => testOrderPlans("tiers", checkout({ packages: [{ ref_id: "9" }] }), { "apply-coupon": "X" }),
     /drop --apply-coupon/,
@@ -485,6 +481,124 @@ test("tiers mode gates: disabled/blank offer surfaces are skipped, operator flag
     () => testOrderPlans("tiers", [{ pages: [{ page_type: "landing" }] }], {}),
     /no checkout page to derive/,
   );
+});
+
+test("selector tiers exclude is_upsell order-bump rows: 3 tiers + 1 bump plan 12 tiers:common paths, not 16", () => {
+  const { testOrderPlans, planId, declaredSelectorTiers, enforceTestOrderLimit } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const checkoutPage = {
+    page_id: "checkout",
+    page_type: "checkout",
+    url: route("checkout/"),
+    expected_next_url: route("upsell-1/"),
+    packages: [
+      { ref_id: "1", qty: 1, name: "1x Patch" },
+      { ref_id: "1", qty: 2, name: "2x Patch" },
+      { ref_id: "1", qty: 3, name: "3x Patch" },
+      { ref_id: "2", qty: 1, name: "Sleeve", is_upsell: true }, // order bump, not a tier
+    ],
+  };
+  const topo = [{ pages: [
+    checkoutPage,
+    { page_id: "upsell-1", page_type: "upsell", url: route("upsell-1/"), expected_accept_url: route("upsell-2/"), expected_decline_url: route("upsell-2/") },
+    { page_id: "upsell-2", page_type: "upsell", url: route("upsell-2/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+
+  assert.deepEqual(declaredSelectorTiers(checkoutPage).map((tier) => `${tier.ref}:${tier.quantity}`), ["1:1", "1:2", "1:3"]);
+
+  const warnings = [];
+  const plans = testOrderPlans("tiers:common", topo, {}, { warn: (line) => warnings.push(line) });
+  assert.equal(plans.length, 12); // 3 tiers × 4 common shapes; the bump adds none
+  assert.ok(!plans.some((plan) => plan.select_package === "2"), "the bump ref is never strict-selected as a tier");
+  assert.deepEqual(plans.map((plan) => planId(plan)), [
+    "checkout@tier:1", "accept@tier:1", "decline@tier:1", "accept-decline@tier:1",
+    "checkout@tier:1x2", "accept@tier:1x2", "decline@tier:1x2", "accept-decline@tier:1x2",
+    "checkout@tier:1x3", "accept@tier:1x3", "decline@tier:1x3", "accept-decline@tier:1x3",
+  ]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /declares order bump package\(s\) 2 \(is_upsell\) — not planned as selector tiers/);
+
+  // the same spec under the default cap names the real 12-path raise
+  assert.throws(
+    () => enforceTestOrderLimit(plans, { "test-order": "tiers:common", "max-test-orders": "6" }),
+    /expands to 12 typed-card order\(s\).*--max-test-orders 12/s,
+  );
+  enforceTestOrderLimit(plans, { "test-order": "tiers:common", "max-test-orders": "12" });
+
+  // bare tiers plans one baseline per real tier — the bump never adds a fourth order
+  assert.deepEqual(testOrderPlans("tiers", topo, {}, { warn: () => {} }).map((plan) => planId(plan)), [
+    "checkout@tier:1", "checkout@tier:1x2", "checkout@tier:1x3",
+  ]);
+});
+
+test("--select-package narrows a tiers run to the listed declared tiers; coupon plans are unaffected", () => {
+  const { testOrderPlans, planId } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topo = [{ pages: [
+    {
+      page_id: "checkout",
+      page_type: "checkout",
+      url: route("checkout/"),
+      expected_next_url: route("upsell/"),
+      packages: [{ ref_id: "1", qty: 1 }, { ref_id: "1", qty: 2 }, { ref_id: "1", qty: 3 }],
+      promo_code_input: { enabled: true, offer_code: "SAVE10" },
+    },
+    { page_id: "upsell", page_type: "upsell", url: route("upsell/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+
+  const narrowed = testOrderPlans("tiers:common", topo, { "select-package": "1:2" });
+  assert.deepEqual(narrowed.map((plan) => planId(plan)), [
+    "checkout@tier:1x2", "accept@tier:1x2", "decline@tier:1x2",
+    "checkout@coupon:SAVE10",
+  ]);
+  for (const plan of narrowed.filter((entry) => entry.source.type === "selector_tier")) {
+    assert.equal(plan.select_package, "1:2");
+  }
+
+  // a comma list keeps several tiers; `ref:1` and bare `ref` name the same tier
+  assert.deepEqual(testOrderPlans("tiers", topo, { "select-package": "1:1,1:3" }).map((plan) => planId(plan)), [
+    "checkout@tier:1", "checkout@tier:1x3", "checkout@coupon:SAVE10",
+  ]);
+  assert.deepEqual(testOrderPlans("tiers", topo, { "select-package": "1" }).map((plan) => planId(plan)), [
+    "checkout@tier:1", "checkout@coupon:SAVE10",
+  ]);
+
+  // a ref the spec does not declare as a tier is a named refusal, not a silent zero-tier run
+  assert.throws(
+    () => testOrderPlans("tiers", topo, { "select-package": "7" }),
+    /--select-package 7 matches none of the selector tiers the CampaignSpec declares \(1, 1:2, 1:3\)/,
+  );
+  assert.throws(
+    () => testOrderPlans("tiers", topo, { "select-package": "1:zero" }),
+    /--select-package 1:zero: expected <ref\[:qty\]>/,
+  );
+});
+
+test("a refused cap lists every planned path, not a truncated preview", () => {
+  const { testOrderPlans, enforceTestOrderLimit, planId } = __qaBrowserTestHooks;
+  const base = "https://campaign.example/";
+  const route = (name) => new URL(name, base).toString();
+  const topo = [{ pages: [
+    { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("upsell-1/"), packages: [{ ref_id: "1" }, { ref_id: "2" }, { ref_id: "3" }] },
+    { page_id: "upsell-1", page_type: "upsell", url: route("upsell-1/"), expected_accept_url: route("upsell-2/"), expected_decline_url: route("upsell-2/") },
+    { page_id: "upsell-2", page_type: "upsell", url: route("upsell-2/"), expected_accept_url: route("receipt/"), expected_decline_url: route("receipt/") },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+  const plans = testOrderPlans("tiers:full", topo, {});
+  assert.equal(plans.length, 15);
+  let message = null;
+  try {
+    enforceTestOrderLimit(plans, { "test-order": "tiers:full", "max-test-orders": "6" });
+  } catch (error) {
+    message = error.message;
+  }
+  assert.ok(message, "the cap must refuse 15 plans at 6");
+  assert.match(message, new RegExp(`Planned paths: ${plans.map((plan) => planId(plan)).join(", ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.`));
+  assert.ok(!message.includes("..."), "no plan is hidden behind an ellipsis");
 });
 
 test("multi-funnel specs plan every funnel's checkout declarations, each against its own checkout page", () => {

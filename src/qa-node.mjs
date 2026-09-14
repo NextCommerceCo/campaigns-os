@@ -132,10 +132,12 @@ Options:
                                   every actual terminal path; cycles, missing routes, and reachable nonterminals
                                   block before browser launch. The default cap is 6; overflow names the exact raise.
                                   "tiers" is spec-driven: one strict-selection order per selector tier the
-                                  CampaignSpec declares on the checkout page, plus one coupon order per declared
+                                  CampaignSpec declares on the checkout page (order-bump rows marked
+                                  is_upsell are add-ons, never tiers), plus one coupon order per declared
                                   offer code (checkout exit_intent / promo_code_input); "tiers:common" and
-                                  "tiers:full" cross every tier with those path shapes. Incompatible with
-                                  --select-package/--apply-coupon (tiers derives them from the spec).
+                                  "tiers:full" cross every tier with those path shapes. --select-package
+                                  <ref[:qty],...> narrows a tiers run to the listed declared tiers;
+                                  --apply-coupon is incompatible (tiers derives coupons from the spec).
                                   Requires one-time setup: npm run qa:install-browser.
   --max-test-orders <n>           Accidental-flood guard for planned browser order paths (not a permission gate). Default: 6.
   --max-order-creations <n>       Hard bound on REAL order creations in this run, reserved before each submit

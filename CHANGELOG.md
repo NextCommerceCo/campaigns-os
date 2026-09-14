@@ -447,6 +447,44 @@ Notable supported-surface changes are recorded here.
   `--json`), the persisted `page_load` evidence and the doctor sidecar are
   byte-identical.
 
+## [1.27.0+agent.25] - 2026-09-14
+
+### Fixed
+
+- `--test-order tiers` (and `tiers:common` / `tiers:full`) no longer counts an
+  order bump as a selector tier. The tier planner turned every checkout
+  `packages[]` row with a ref into a tier and read no bump marker, so a
+  three-tier checkout that also declares a bump row marked `is_upsell: true`
+  planned four tiers: `tiers:common` on a two-upsell funnel expanded to 16
+  orders (20 for `tiers:full`, 4 for bare `tiers`), the flood guard named
+  `--max-test-orders 16` as the raise, and the four `*@tier:<bump-ref>` plans
+  would have failed strict selection by name (no rendered card carries the
+  bump ref). The planner now reads the same `is_upsell` predicate the
+  commercial-journey planner already uses for bump rows (`isBumpRow`, one
+  predicate, exported from `commercial-journey`), so the same checkout plans
+  12 / 15 / 3 orders and the guard names `--max-test-orders 12`. A run whose
+  checkout declares bump rows prints one `[qa:test-order]` line naming the
+  bump ref(s) it left out; bump coverage stays with `--cart`.
+
+### Changed
+
+- `--select-package <ref[:qty],...>` now narrows a tiers run to the listed
+  declared tiers instead of being refused. Identities match the tier's own
+  strict-selection value (`1` or `1:1` is ref 1 at quantity one, `1:2` the
+  two-unit multiplier); coupon plans are not tiers and are still planned. An
+  identity the spec declares no tier for is refused by name, listing the
+  declared tiers (`--select-package 7 matches none of the selector tiers the
+  CampaignSpec declares (1, 1:2, 1:3)`). `--apply-coupon` with a tiers mode is
+  still refused, with the message now naming only that flag.
+- A refused `--max-test-orders` cap lists every planned path. The message cut
+  the preview at eight ids and hid the rest behind `...`, so the plans that
+  most needed a look (the tail) were the ones an operator could not see;
+  `Planned paths:` now carries the full list.
+- The doctor packet's `qa.test_order_policy_notes`, the `next`-stage QA
+  hand-off text and `qa run --help` describe the tiers modes: what a tier is,
+  that bump rows are not tiers, and that `--select-package` narrows a tiers
+  run. `docs/qa-and-test-orders.md` says the same in its tiers section.
+
 ## [1.27.0] - 2026-09-13
 
 ### Added
