@@ -1,4 +1,5 @@
 import { launchPackageChromium } from "./browser-launch.mjs";
+import { runWithDeadline } from "./deadline.mjs";
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import {
   analyticsCaptureError,
@@ -2502,18 +2503,9 @@ function createUpsellActionTrace({ page, events, topologyPlan, stepIndex, path, 
   };
 }
 
-async function settleDiagnosticWithin(promise, timeoutMs, fallback) {
-  let timer = null;
-  try {
-    return await Promise.race([
-      Promise.resolve(promise).catch(() => fallback),
-      new Promise((resolve) => {
-        timer = setTimeout(() => resolve(fallback), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+function settleDiagnosticWithin(promise, timeoutMs, fallback) {
+  return runWithDeadline(() => Promise.resolve(promise).catch(() => fallback), { timeoutMs })
+    .catch(() => fallback);
 }
 
 // Structured step evidence. Callers pass either an object or a thunk; a thunk
@@ -2639,32 +2631,20 @@ function withStepTimeout(promise, timeoutMs, label) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return Promise.reject(stepTimeoutError(`step ${label} aborted: order timeout budget exhausted`));
   }
-  let timer;
-  return Promise.race([
-    Promise.resolve(promise),
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(stepTimeoutError(`step ${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-    }),
-  ]).finally(() => clearTimeout(timer));
+  return runWithDeadline(() => promise, {
+    timeoutMs,
+    timeoutError: () => stepTimeoutError(`step ${label} timed out after ${timeoutMs}ms`),
+  });
 }
 
-async function runWithinAnalyticsDeadline(operation, { deadline, now }) {
+function runWithinAnalyticsDeadline(operation, { deadline, now }) {
   const remainingMs = deadline - now();
-  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return { timedOut: true };
-  let timer = null;
-  try {
-    return await Promise.race([
-      Promise.resolve().then(operation).then(
-        (value) => ({ value }),
-        (error) => ({ error }),
-      ),
-      new Promise((resolve) => {
-        timer = setTimeout(() => resolve({ timedOut: true }), remainingMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return Promise.resolve({ timedOut: true });
+  // The settled operation never rejects, so any rejection is the deadline.
+  return runWithDeadline(
+    () => Promise.resolve().then(operation).then((value) => ({ value }), (error) => ({ error })),
+    { timeoutMs: remainingMs },
+  ).catch(() => ({ timedOut: true }));
 }
 
 async function collectOrderAnalytics({

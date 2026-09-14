@@ -1,3 +1,4 @@
+import { runWithDeadline } from "./deadline.mjs";
 import {
   CommercialJourneyLimitError,
   PricingState,
@@ -185,14 +186,16 @@ export function unavailableCommercialCapture(page, error) {
   return captureFailure(page, "commercial_html_unavailable", error);
 }
 
-async function withTimeout(operation, timeoutMs) {
+// The deadline rejects with `timeoutCode` whether or not the operation honours
+// the abort signal it is handed, so a fetch that ignores its signal cannot
+// hold the run open past the request budget.
+function withTimeout(operation, timeoutMs, timeoutCode) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await operation(controller.signal);
-  } finally {
-    clearTimeout(timeout);
-  }
+  return runWithDeadline(() => operation(controller.signal), {
+    timeoutMs,
+    onTimeout: () => controller.abort(),
+    timeoutError: () => Object.assign(new Error(`Request exceeded its ${timeoutMs}ms deadline.`), { code: timeoutCode }),
+  });
 }
 
 export function createPageSourceLoader({
@@ -247,7 +250,7 @@ export function createPageSourceLoader({
           final_url: response.url || null,
           html,
         };
-      }, timeoutMs);
+      }, timeoutMs, "page_fetch_timeout");
     } catch (error) {
       return {
         ok: false,
@@ -312,7 +315,7 @@ async function previewDescriptor(descriptor, { proxyBase, apiKey, fetchImpl, lim
         kind: "price_preview",
       });
       return { response: responseValue, text: responseText };
-    }, limits.request_timeout_ms);
+    }, limits.request_timeout_ms, "price_preview_timeout");
     let body = null;
     let parseError = null;
     try {

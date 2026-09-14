@@ -15,6 +15,8 @@
 // that id on an interim record first. There is no background retry daemon — a
 // dropped send is recorded locally, not queued.
 
+import { runWithDeadline } from "./deadline.mjs";
+
 export const DEFAULT_RUNS_ENDPOINT = "/api/runs";
 export const DEFAULT_REMIT_TIMEOUT_MS = 10_000;
 export const DEFAULT_REMIT_MAX_BODY_BYTES = 4_096;
@@ -75,22 +77,13 @@ function byteLength(value) {
   return Buffer.byteLength(String(value), "utf8");
 }
 
-async function withTimeout(promise, timeoutMs, label, onTimeout = null) {
+function withTimeout(promise, timeoutMs, label, onTimeout = null) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
-  let timer = null;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-          if (typeof onTimeout === "function") onTimeout();
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  return runWithDeadline(() => promise, {
+    timeoutMs,
+    onTimeout,
+    timeoutError: () => new Error(`${label} timed out after ${timeoutMs}ms`),
+  });
 }
 
 export async function boundedResponseText(response, { maxBodyBytes = DEFAULT_REMIT_MAX_BODY_BYTES, timeoutMs = DEFAULT_REMIT_TIMEOUT_MS } = {}) {

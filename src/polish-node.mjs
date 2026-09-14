@@ -21,6 +21,8 @@ import {
   POLISH_CAPTURE_STARTUP_DEADLINE_MS,
   POLISH_PRODUCER_CLEANUP_ERROR_CODE,
   POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
+  polishProducerCleanupError,
+  polishProducerTimeoutError,
   runWithPolishProducerDeadline,
 } from "./polish-deadline.mjs";
 import {
@@ -492,11 +494,9 @@ export async function capturePolishPageLoad({
         try {
           if (adapterStartupError) throw adapterStartupError;
           if (adapterPoisonProblem) {
-            const error = new Error("Campaigns OS polish capture producer exceeded its bounded deadline.");
-            error.code = adapterPoisonProblem === "producer_timeout"
-              ? POLISH_PRODUCER_TIMEOUT_ERROR_CODE
-              : POLISH_PRODUCER_CLEANUP_ERROR_CODE;
-            throw error;
+            throw adapterPoisonProblem === "producer_timeout"
+              ? polishProducerTimeoutError()
+              : polishProducerCleanupError();
           }
           const abortController = new AbortController();
           observation = await runWithPolishProducerDeadline(

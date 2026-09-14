@@ -1,3 +1,5 @@
+import { runWithDeadline } from "./deadline.mjs";
+
 export const POLISH_PRODUCER_TIMEOUT_ERROR_CODE = "POLISH_PRODUCER_TIMEOUT";
 export const POLISH_PRODUCER_CLEANUP_ERROR_CODE = "POLISH_PRODUCER_CLEANUP_FAILED";
 // Shared by the browser adapter (which raises it) and polish-node (which
@@ -42,44 +44,13 @@ export async function runWithPolishProducerDeadline(operation, {
     || typeof clearTimer !== "function") {
     throw new Error("Campaigns OS polish capture received an invalid producer deadline configuration.");
   }
-
-  const operationPromise = Promise.resolve().then(operation);
-  let abortListener = null;
-  const abortPromise = signal && typeof signal.addEventListener === "function"
-    ? new Promise((unusedResolve, reject) => {
-        abortListener = () => reject(polishProducerTimeoutError());
-        if (signal.aborted) abortListener();
-        else signal.addEventListener("abort", abortListener, { once: true });
-      })
-    : null;
-  let timerHandle;
-  let timerCreated = false;
-  const deadlinePromise = new Promise((unusedResolve, reject) => {
-    timerHandle = setTimer(() => {
-      // Settle the authoritative fixed timeout before abort/cleanup can make a
-      // signal-aware operation reject with a raw implementation error.
-      reject(polishProducerTimeoutError());
-      if (typeof onTimeout === "function") {
-        try {
-          Promise.resolve(onTimeout()).catch(() => {});
-        } catch {
-          // Timeout cleanup is best-effort and must never replace the fixed diagnostic.
-        }
-      }
-    }, timeoutMs);
-    timerCreated = true;
-    // An awaited producer deadline stays referenced so a bare unresolved Promise
-    // cannot let Node exit before incomplete evidence is persisted. Only callers
-    // doing best-effort late cleanup may explicitly unref their background timer.
-    if (unrefTimer && typeof timerHandle?.unref === "function") timerHandle.unref();
+  return runWithDeadline(operation, {
+    timeoutMs,
+    onTimeout,
+    signal,
+    unrefTimer,
+    timeoutError: polishProducerTimeoutError,
+    setTimer,
+    clearTimer,
   });
-
-  try {
-    return await Promise.race([operationPromise, deadlinePromise, ...(abortPromise ? [abortPromise] : [])]);
-  } finally {
-    if (timerCreated) clearTimer(timerHandle);
-    if (abortListener && typeof signal?.removeEventListener === "function") {
-      signal.removeEventListener("abort", abortListener);
-    }
-  }
 }

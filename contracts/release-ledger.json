@@ -2770,6 +2770,48 @@
         }
       ],
       "entry_sha256": "77dc3073559356d86c9bae5653f9f879d4df7f325f756bce2328ee7be4b8563a"
+    },
+    {
+      "id": "RL-0074",
+      "sequence": 74,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.17",
+      "changelog_sha256": "b0b48fafef2ed957643898565471ad330c30e712e44df4cff5e06439e0c6590a",
+      "agent_impact": "None to parse: doctor, qa run, qa waive, theme waive, checkpoint waive and polish capture produce the same JSON, the same Assembly Report fields and the same doctor-output.json fields as before. Two writes change discipline only: doctor's .campaign-runtime/doctor-output.json and qa waive's Assembly Report are now written tmp + rename like every other Assembly Report and sidecar write, so a concurrent reader sees the previous file or the new one, never a torn one (an agent reading either mid-command no longer needs to retry on a JSON parse error caused by the write itself). The QA stage record now applies the same re-record rule as doctor: a qa run whose stage outcome differs from the report on disk only in checked_at/completed_at leaves the report's bytes (and any digest of them) alone; every real run restates a new verdict_run_id, so this never triggers in practice. Internal: the six load/bind/mutate/write/keep-doctor-honest sequences are one commitAssemblyReport in src/stage-ledger.mjs; writeJsonAtomic is exported from src/doctor-sidecar.mjs; assemblyReportMatchesPacket moves from cli.mjs to src/stage-ledger.mjs.",
+      "compatibility": "compatible",
+      "migration": "None.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "recordQaStageOutcome, doctorCommand, themeWaive, polishCaptureCommand and checkpointWaive commit their Assembly Report edit through commitAssemblyReport (src/stage-ledger.mjs) on the resolved campaign workspace; the local writeJsonAtomic and assemblyReportMatchesPacket copies are gone. doctor's sidecar write becomes atomic; the QA stage gains the doctor re-record guard. Command output unchanged."
+        }
+      ],
+      "entry_sha256": "cf0babb6ba4216dfb658f833ca287e3351bfdccdf5defdae8b85b784e9f52c11"
+    },
+    {
+      "id": "RL-0075",
+      "sequence": 75,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.18",
+      "changelog_sha256": "219e4aca2268416b679ab7418654894ecf05dcb86bdc8b0b59b8d48004c19669",
+      "agent_impact": "One output change: the Run Record a session-ending qa run auto-writes (command \"run-record\") no longer lists the qa run's flags in argv_shape. For a --json run it is now [\"--json\", \"--lifecycle-journal\", \"--packet\", \"--qa-verdict\", \"--run-id\"]; --base-url and --no-post-verdict are gone, and --context/--report are still carried when the qa run passed them. An agent that matched an auto-ended record by qa flags in argv_shape must match by command and run_id instead. run end (text and JSON), run start, run status and the stale-session sweep are unchanged in every field and line. Internal: the three closers are one closeRunSession with a flag whitelist, the two openers are one openRunSession in src/run-session.mjs, sessionBoundTo is the one packet-binding predicate, and run start/status/end return { result, exitCode } for dispatch to print.",
+      "compatibility": "compatible",
+      "migration": "None. A consumer keying on qa run flag names inside an auto-ended Run Record's argv_shape should key on command and run_id.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run",
+          "summary": "closeRunSession(found, { packet, extraArgs, silent, promptForConsent, onError }) with runSessionEndArgs (an inheritable-flag whitelist) replaces the three hand-built run-record argvs in run end, the qa run auto-end and the stale sweep; ambientRunSession and autoStartRunSession use sessionBoundTo and openRunSession; run start/status/end return { result, exitCode } and dispatch prints via writeRunSessionResult. Only the auto-ended record's argv_shape changes."
+        }
+      ],
+      "entry_sha256": "48041caee696268681911749bafb5e45f8016821e7e158907786608d3593a3ac"
     }
   ]
 }
