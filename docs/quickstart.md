@@ -222,7 +222,10 @@ Build is not launch readiness. A complete run still needs:
 - formal polish pass against the served current build
 - mandatory package-owned `polish capture` evidence before Polish becomes
   terminal or deploy/QA begins
-- preview deploy
+- preview deploy, or a local serve of the built `_site/` output with the packet's
+  `deploy.target` set to `local-serve` (`qa policy set --deploy-target local-serve
+  --preview-url http://localhost:<port>/<slug>/`); localhost on any port is a
+  Development domain, so no SDK origin allowlist entry is needed there
 - Node/npm QA with Map ID and preview URL
 - typed-card test-order proof via `--test-order common` (global test cards bypass the gateway; no permission/approval needed — depth is the only control)
 

@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act \u2014 hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here \u2014 src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) \u2014 is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.27.0",
+  "surface_version": "1.28.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -56,7 +56,7 @@
       "sha256": "15118c9d05adc7b21dca06f4e3a33acac4ba7b342df3c3a14be19bea71de533c"
     },
     "schemas/campaign-runtime-build-packet.v0.schema.json": {
-      "sha256": "8a049d03398d7778e8284a17b4024506a911812abce27961ded8e31e5c6ac40b"
+      "sha256": "91853bbd1b14c080e2fe2ec32f1aa643f53e62df280b543093bf158ae924dd4b"
     },
     "schemas/campaign-spec.v4.schema.json": {
       "sha256": "12b57573739357acb2b007d00a737cd86face441c47f2719fc51b041dc8ea4a5"
@@ -86,7 +86,7 @@
       "sha256": "08ca132134b9e4610370e88082a5e888d09ddec0d5ee4512d84cc57181da722e"
     },
     "schemas/campaigns-os-run-record.v0.schema.json": {
-      "sha256": "4080457883c05cb777e5fbbced05ade593a5d9129ed29e9886d9c93a7d82b827"
+      "sha256": "ad87e8bef1d24d923adb46a94a4ce652b0739cb17f8ec6b5485cba5a56b13e86"
     },
     "schemas/campaigns-os-runtime-recipe.v1.schema.json": {
       "sha256": "f8a2ab5eadbb71fb6d5653b670ee71e4471c3df74dd04000d3dbd3d9ae9e71fc"

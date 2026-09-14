@@ -1292,9 +1292,21 @@ npm run campaigns-os -- qa policy set \
   --allowed-domains-confirmed true
 ```
 
-The `--test-orders-allowed` / `--sandbox-test-card-confirmed` flags are still
-accepted and persisted as informational metadata, but they no longer gate test
-orders — those run from `--test-order <mode>` alone.
+There is no permission flag for test orders — they run from `--test-order
+<mode>` alone. The former `--test-orders-allowed` /
+`--sandbox-test-card-confirmed` flags and the `qa.test_orders_allowed` /
+`qa.sandbox_test_card_confirmed` packet fields they set were removed in
+supported surface 1.28.0: nothing had read their values since the gate itself
+was retired, so they only ever recorded an intention no command honoured.
+`qa policy set` now refuses the two flags by name; doctor warns
+(`qa.removed_policy_fields`) on a packet that still carries a field and asks
+for it to be deleted. The remaining `qa policy set` flags are
+`--allowed-domains-confirmed`, `--deploy-target`, `--preview-url` and
+`--production-url`.
+
+For QA against a locally served build, set `--deploy-target local-serve` and
+record the served localhost URL as `--preview-url`; see the deploy target
+table in [build-packet.md](./build-packet.md#deploy-target).
 
 ## Launch Readiness Note
 

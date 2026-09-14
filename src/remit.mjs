@@ -22,6 +22,7 @@
 // (`ok_unparsed_ack`), not a refusal. Only a non-2xx other than 409, or a
 // transport failure, is a failed send.
 
+import { CANONICAL_REMIT_SCOPE, normalizeConsentScope } from "./consent.mjs";
 import { runWithDeadline } from "./deadline.mjs";
 
 export const DEFAULT_RUNS_ENDPOINT = "/api/runs";
@@ -233,6 +234,27 @@ export const REMIT_RESULTS = Object.freeze({
   not_contacted: "not_contacted",
 });
 
+/**
+ * Where a remit resolves to, as a kind rather than a host: the canonical
+ * endpoint, a loopback receiver, or some other proxy the operator named. The
+ * Run Record carries this as `remit_base_kind`; the host itself never leaves
+ * the machine in the record.
+ */
+export const REMIT_BASE_KINDS = Object.freeze({
+  canonical: "canonical",
+  loopback: "loopback",
+  proxy: "proxy",
+});
+
+export function describeRemitBaseKind(proxyBase) {
+  if (normalizeConsentScope(proxyBase) === CANONICAL_REMIT_SCOPE) return REMIT_BASE_KINDS.canonical;
+  try {
+    return isLoopbackHostname(new URL(String(proxyBase)).hostname) ? REMIT_BASE_KINDS.loopback : REMIT_BASE_KINDS.proxy;
+  } catch {
+    return REMIT_BASE_KINDS.proxy;
+  }
+}
+
 // One bounded excerpt of a response body for an error string: enough to see
 // what answered (a maintenance page, an error token), never the whole body.
 function bodyExcerpt(body, max = 200) {
@@ -323,7 +345,7 @@ export async function remitRunRecord(record, {
   // this CLI remitted before 2026-09-10 went dark once the receiver
   // tenant-scoped its listing. Campaign keys are public-by-design.
   const headers = typeof campaignKey === "string" && campaignKey.trim() ? { "X-Campaign-Key": campaignKey.trim() } : {};
-  const payload = stampRemittedCopy(record, endpoint);
+  const payload = stampRemittedCopy(record, endpoint, { baseKind: describeRemitBaseKind(proxyBase) });
   let failure = null;
   let httpStatus = null;
   try {
@@ -347,10 +369,12 @@ export async function remitRunRecord(record, {
 
 /**
  * The copy of `record` that goes over the wire: the same record, with its remit
- * fields stating the outcome every stored record has by construction. Exported
- * so the wire shape is assertable without a receiver.
+ * fields stating the outcome every stored record has by construction — a
+ * record the receiver holds is one whose send it stored (`remit_result:
+ * "stored"`), over the base kind this send resolved to. Exported so the wire
+ * shape is assertable without a receiver.
  */
-export function stampRemittedCopy(record, endpoint = DEFAULT_RUNS_ENDPOINT) {
+export function stampRemittedCopy(record, endpoint = DEFAULT_RUNS_ENDPOINT, { baseKind = null } = {}) {
   return {
     ...record,
     remit_attempted: true,
@@ -358,5 +382,7 @@ export function stampRemittedCopy(record, endpoint = DEFAULT_RUNS_ENDPOINT) {
     remit_error: null,
     remit_endpoint: endpoint,
     remit_state: "ok",
+    remit_result: REMIT_RESULTS.stored,
+    remit_base_kind: baseKind,
   };
 }

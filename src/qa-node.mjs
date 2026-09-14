@@ -78,7 +78,7 @@ Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
   campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--output-dir <dir>] [--no-remit] [--json]
-  campaigns-os qa policy set --packet <campaign-runtime.build.json> [--test-orders-allowed true|false] [--sandbox-test-card-confirmed true|false] [--allowed-domains-confirmed true|false] [--json]
+  campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
@@ -1582,6 +1582,8 @@ export function buildQaCloseoutActions({ packetPath = null, localPath = null, ru
   ];
 }
 
+const REMOVED_QA_POLICY_FLAGS = ["test-orders-allowed", "sandbox-test-card-confirmed"];
+
 function updateQaPolicy(args) {
   const packetPath = args.packet ? resolve(args.packet) : null;
   if (!packetPath) throw new Error("qa policy set requires --packet <campaign-runtime.build.json>.");
@@ -1590,9 +1592,15 @@ function updateQaPolicy(args) {
   packet.deploy ||= {};
   packet.qa ||= {};
 
+  // Test Orders have no permission flag. The two flags that once set one
+  // were removed with their packet fields in supported surface 1.28.0; a
+  // script still passing them gets told so instead of a silent no-op.
+  const removedFlags = REMOVED_QA_POLICY_FLAGS.filter((flag) => flag in args);
+  if (removedFlags.length) {
+    throw new Error(`qa policy set: ${removedFlags.map((flag) => `--${flag}`).join(" and ")} ${removedFlags.length > 1 ? "were" : "was"} removed in supported surface 1.28.0 (test orders run from --test-order <mode> alone; there is no permission flag). Drop the flag${removedFlags.length > 1 ? "s" : ""}. Accepted: --allowed-domains-confirmed, --deploy-target, --preview-url, --production-url.`);
+  }
+
   const changed = [];
-  setOptionalBoolean(packet.qa, "test_orders_allowed", args, "test-orders-allowed", changed);
-  setOptionalBoolean(packet.qa, "sandbox_test_card_confirmed", args, "sandbox-test-card-confirmed", changed);
   setOptionalBoolean(packet.campaign, "allowed_domains_confirmed", args, "allowed-domains-confirmed", changed);
   setOptionalString(packet.deploy, "preview_url", args, "preview-url", changed);
   setOptionalString(packet.deploy, "production_url", args, "production-url", changed);
@@ -3133,10 +3141,6 @@ function policySnapshot(packet) {
       target: packet.deploy?.target ?? null,
       preview_url: packet.deploy?.preview_url ?? null,
       production_url: packet.deploy?.production_url ?? null,
-    },
-    qa: {
-      test_orders_allowed: packet.qa?.test_orders_allowed ?? null,
-      sandbox_test_card_confirmed: packet.qa?.sandbox_test_card_confirmed ?? null,
     },
   };
 }

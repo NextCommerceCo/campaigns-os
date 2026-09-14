@@ -180,7 +180,7 @@ test("synthesizeMinimalBuildPacket marks itself synthetic and points at the buil
     assert.equal(packet.assembly.template_family, "olympus");
     assert.equal(packet.assembly.output_dir, "_site/acme");
     assert.equal(packet.deploy.preview_url, "http://localhost:8080/");
-    assert.equal(packet.qa.test_orders_allowed, false);
+    assert.deepEqual(packet.qa, {});
     assert.equal(packet.pages.length, 2);
   });
 });

@@ -48,6 +48,11 @@ export const RUN_RECORD_CONSENT_STATES = ["on", "off"];
 export const RUN_RECORD_SURFACE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 export const RUN_RECORD_COMMIT_PATTERN = /^[0-9a-f]{7,40}$/;
 export const RUN_RECORD_REMIT_STATES = ["skipped", "pending", "ok", "failed"];
+// What the receiver answered, and where the send went, as kinds. The schema
+// carries the same literals; src/remit.mjs classifies into the first and
+// resolves the second.
+export const RUN_RECORD_REMIT_RESULTS = ["stored", "already_stored", "ok_unparsed_ack", "refused", "transport_error"];
+export const RUN_RECORD_REMIT_BASE_KINDS = ["canonical", "loopback", "proxy"];
 
 // Required core. Strict here; permissive about optional sub-structures (the
 // validator checks shapes, not nested artifact bodies — those are referenced
@@ -129,6 +134,12 @@ export function validateRunRecord(record) {
   }
   if (record.remit_state != null && !RUN_RECORD_REMIT_STATES.includes(record.remit_state)) {
     add("record.remit_state", `remit_state must be one of: ${RUN_RECORD_REMIT_STATES.join(", ")}.`);
+  }
+  if (record.remit_result != null && !RUN_RECORD_REMIT_RESULTS.includes(record.remit_result)) {
+    add("record.remit_result", `remit_result must be one of: ${RUN_RECORD_REMIT_RESULTS.join(", ")} (or null).`);
+  }
+  if (record.remit_base_kind != null && !RUN_RECORD_REMIT_BASE_KINDS.includes(record.remit_base_kind)) {
+    add("record.remit_base_kind", `remit_base_kind must be one of: ${RUN_RECORD_REMIT_BASE_KINDS.join(", ")} (or null).`);
   }
 
   if (record.identity != null) {
@@ -634,6 +645,8 @@ export function assembleRunRecord({
     remit_error: remit?.error ?? null,
     remit_endpoint: remit?.endpoint ?? null,
     remit_state: normalizeRemitState(remit),
+    remit_result: RUN_RECORD_REMIT_RESULTS.includes(remit?.result) ? remit.result : null,
+    remit_base_kind: RUN_RECORD_REMIT_BASE_KINDS.includes(remit?.base_kind) ? remit.base_kind : null,
     identity: normalizeIdentity(identity),
     artifacts: Array.isArray(artifacts) ? artifacts : [],
     observations,
