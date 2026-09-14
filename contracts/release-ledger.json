@@ -3070,6 +3070,114 @@
       "date": "2026-09-14",
       "kind": "release",
       "surface_version": null,
+      "changelog_section": "1.27.0+agent.27",
+      "changelog_sha256": "fac12b28036412637123f460aebfb199e4418bc87aa217cb499129c5bab22ca9",
+      "agent_impact": "npm run check runs the same steps in the same order, each through its named check:* script; check:tests (the node --test suite), check:slot-manifest and check:supported-surface are new script names. scripts/check-pack.mjs --skip-prepare exits 1 with 'campaign-spec/dist/index.js missing from the working tree; --skip-prepare packs the build the pipeline already made' when the working tree has no build, and on npm before 11 prints one stderr line starting 'pack check note: npm <version> re-ran the prepare script during npm pack despite --ignore-scripts'; the 'pack check passed:' stdout line is unchanged. scripts/check-template-doctrine.mjs reads the starter-template partials at the catalog _synced_from_sha and appends a 'templates: ...' line after its pass line; when it can only read a sibling checkout on another commit it prints 'check-template-doctrine: WARNING: validating the sibling checkout ... NOT the catalog pin ...' on stderr and still exits 0. The fixture check leaves examples/ byte-identical; nothing under examples/target-page-kit/.campaign-runtime/ is written or read.",
+      "compatibility": "compatible",
+      "migration": "None. A local check-template-doctrine run against a sibling checkout on another commit now validates the catalog pin; set STARTER_TEMPLATES_PATH to validate a specific tree instead.",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "npm run check calls the named check:* scripts in the existing order with one explicit build:spec; check:tests, check:slot-manifest and check:supported-surface are added; the test suite gains scripts/check-fixtures.test.mjs and scripts/starter-templates-path.test.mjs."
+        }
+      ],
+      "entry_sha256": "7318f3210e469929a3986b3ff3f1ab3cafe27040d4e93ead0430308ef53abd7d"
+    },
+    {
+      "id": "RL-0086",
+      "sequence": 86,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.28",
+      "changelog_sha256": "d92b0b73af28f5a3abfb2cc435b160dd105be5ba47b315e17461fb16e25b1430",
+      "agent_impact": "qa run --browser verdicts name the upsell price-visibility row per page: the id is pricing.upsell_price_visible:<page_id> (was the bare pricing.upsell_price_visible, emitted once per upsell page under one id); family, page, status, severity and evidence are unchanged and pricing.checkout_price_visible keeps its id. pricing.checkout_price_visible passes when either a contract bundle price row or a cart-summary total ([data-next-display=\"cart.total\"] or [data-next-cart-summary] .order-totals__value--total) is visible; its expected/actual strings name both surfaces and evidence gains total_selectors[] and total_visible_count (present only when the total surface was read; an absent key means that check did not run). A contract with no checkout_bundle.price_row_selectors still emits the row, keyed on the cart-summary total, instead of skipping the check. Palette residue (template-residue:<page>:style:*, :logo, :payment-chrome:*) found under a recorded, unexpired theme waiver or an inapplicable gate reports status warn with severity warn, no longer status fail with severity warn; the disposition still lands on ready_with_exceptions and placeholder-text residue stays a blocker. docs/build-packet.md and docs/brand-theme-bridge.md state the waived rows report warn.",
+      "compatibility": "compatible",
+      "migration": "A consumer matching the literal assertion id pricing.upsell_price_visible must match the prefix pricing.upsell_price_visible: instead; a consumer reading template-residue palette rows under a waiver must accept status warn where it accepted status fail with severity warn.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The theme-waiver paragraph states that palette-residue rows report warn (status and severity), never fail, under a recorded waiver."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Names the palette-residue rows a waiver downgrades to warn (:style:*, :logo, :payment-chrome:*) and that placeholder-text residue stays a blocker."
+        }
+      ],
+      "entry_sha256": "13648e2770574ee50a4364ba7b8fcf55c92d49f20f16847c013b60afa891857d"
+    },
+    {
+      "id": "RL-0087",
+      "sequence": 87,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.30",
+      "changelog_sha256": "71f0b6ef702b4424bef7d70588a7d05d2725424c96a7fc761d3c87b3e99a6f39",
+      "agent_impact": "Packet-less `qa run --map-id <id>` now fails fast on a proxy body of { ok:false, error } or non-JSON with `Spec fetch returned ok=false: <error> (<url>)` / `Spec fetch returned invalid JSON: \u2026` (exit 1), the same messages `start`/`prepare-build --map-id` print; before, the body reached spec normalisation and the error named a spec field. Path identity is one rule: a packet, session or sidecar path reached through a symlinked checkout and the same path reached directly are treated as one path even before the file exists, so `run start --packet <link>` then `run end --packet <real>` close the same session, and `doctor --strip-paths` / `start`'s generated doctor output keep `./\u2026` relative paths when the target is reached through a symlink. A Build Context, Assembly Report, QA verdict or packet that exists but cannot be read (EISDIR, EACCES, \u2026) now surfaces that error from doctor, next, qa and the run-record closeout instead of being read as absent; only ENOENT/ENOTDIR and malformed JSON are absence. Output shapes, exit codes and every other message are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "doctor's write-back target check, --strip-paths rebasing, the ambient run-session selection, run start/end --packet and the Run Record artifact refs canonicalise paths through src/fs-identity.mjs (real path of the nearest existing ancestor plus the missing tail); the --map-id spec reader moves verbatim to src/spec-fetch.mjs and is shared with the QA runner; a duplicated comment in the next-step picker is deleted. No flag, output shape or exit code changes."
+        }
+      ],
+      "entry_sha256": "9f95952a97114a53918e8565425fc75430501fb01ed80f0bba4d73bee1567308"
+    },
+    {
+      "id": "RL-0088",
+      "sequence": 88,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.31",
+      "changelog_sha256": "487ef0bedfbefbe1c9cf44dcdadb60c440ce326bea947c00515c7c3ebf2e6afa",
+      "agent_impact": "Machine-level consent is scoped to one endpoint and can be granted non-interactively for a non-canonical receiver: `telemetry on --proxy-base <url>` writes telemetry.scope = that base (https or loopback only; anything else exits 1 before writing), and a later `run-record`/`run end`/`qa run` that passes the same --proxy-base resolves consent on (source file) and remits there with no CAMPAIGNS_OS_TELEMETRY override. A grant covers exactly one scope: after a non-canonical grant, a remit to the canonical endpoint is OFF until `telemetry on` runs again without the flag. Parse the new fields: `telemetry on|off --json` carries scope and scope_canonical (an OFF record is always scope null, scope_canonical false); `telemetry status --json` carries scope, checked_endpoint (canonical, or --proxy-base when given) and scope_mismatch. Text output adds `Scope: <url>` and `Checked endpoint: <url>` lines to status, and the mismatch lines (stderr warning, status, run-record `Consent:`) end with the exact grant command `campaigns-os telemetry on [--proxy-base <url>]` instead of `until this endpoint is confirmed`. A remit to a non-canonical --proxy-base under CAMPAIGNS_OS_TELEMETRY=on still sends but now prints one stderr warning that the override bypasses scope checking, and `telemetry status --proxy-base <url>` under the override names that endpoint on its state line. `telemetry status --proxy-base` applies the same https-or-loopback rule as `telemetry on` and exits 1 with the same message otherwise. `telemetry off --proxy-base <url>` exits 1 (`--proxy-base is not accepted; turning telemetry off applies to every endpoint`) and writes nothing; turning off always writes scope null, so status prints no Scope: row for an OFF file. A --proxy-base flag with no URL on any telemetry subcommand exits 1 (`--proxy-base needs a URL`) rather than being read as absent. `help` lists --proxy-base on `run end` and on `telemetry status|on`; `telemetry off` is listed without it.",
+      "compatibility": "additive",
+      "migration": "None for existing invocations. A harness that consents to a loopback or staging receiver through CAMPAIGNS_OS_TELEMETRY=on can replace it with `campaigns-os telemetry on --proxy-base <url>` under its own XDG_CONFIG_HOME and drop the override; a harness that matches the old `until this endpoint is confirmed` warning text should match `treating telemetry as OFF for this endpoint` instead.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "telemetry",
+          "summary": "telemetry on accepts --proxy-base <url> (https or loopback, checked by assertSecureProxyBase before the write) and records consent scoped to that base, printing Scope: and, for a non-canonical grant, that the canonical endpoint is OFF until `telemetry on` runs again; --json adds scope and scope_canonical. telemetry off refuses --proxy-base (exit 1, nothing written) and always writes scope null (`Scope: every endpoint (an OFF choice is not scoped)`). telemetry status accepts --proxy-base under the same transport rule as on, prints Scope: (ON files only)/Checked endpoint:, names the grant command on a mismatch and the bypassed endpoint under CAMPAIGNS_OS_TELEMETRY=on, and --json adds scope, checked_endpoint, scope_mismatch."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run-record",
+          "summary": "The text Consent: line names the stored and requested scopes and the exact `telemetry on --proxy-base` grant on a scope mismatch, and says CAMPAIGNS_OS_TELEMETRY bypasses scope checking when the env override carried a non-canonical remit."
+        },
+        {
+          "class": "cli_surface",
+          "path": null,
+          "surface_entry": "run",
+          "summary": "help lists --proxy-base <url> on run end; the flag was already forwarded to run-record unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Consent: the config path honours XDG_CONFIG_HOME; a grant is scoped to one endpoint; `telemetry on --proxy-base <url>` grants a non-canonical receiver; `telemetry status` reports and checks the scope; the env override has no scope and warns when it carries a non-canonical remit."
+        }
+      ],
+      "entry_sha256": "539165e12e9a195454dafc4502d9a80554bb3678bc041933d180ea217cbf4014"
+    },
+    {
+      "id": "RL-0089",
+      "sequence": 89,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
       "changelog_section": "1.27.0+agent.32",
       "changelog_sha256": "46b74a8522b3acadf5dafe83858ed4e2c653604f627f01f9ea8f933c378b2883",
       "agent_impact": "On a prepare-build --report-out campaign, a standalone `campaigns-os doctor` run now writes its stage outcome into the Assembly Report the Build Context binds (the file derived.assembly_report_path names in doctor's output), not only into the doctor sidecar. An agent reading that report's stages.doctor (checked_at, status, blockers, warnings, commands) after a doctor run sees that run's outcome; before, it saw whatever start or prepare-build last wrote. The default <target repo>/.campaign-runtime/assembly-report.json is not written when a binding exists, --report still wins over the binding, and a bound report whose identity is another campaign's is left untouched. --no-write is unchanged.",
@@ -3083,7 +3191,7 @@
           "summary": "doctor's stage write-back targets the report the inspection read (--report, else the report the Build Context binds via report_path, else the default) instead of always resolving the default location and skipping the write when the two differed; commitAssemblyReport's identity check still refuses another campaign's report."
         }
       ],
-      "entry_sha256": "e0ef18527431ab9523d2f7c5016ecc37530027e17de505dda8f172901a845ddd"
+      "entry_sha256": "9f2cd7cd7d6299183771d3c14a05de513cc9a96e624245d96f60be18a6ceeeb1"
     }
   ]
 }
