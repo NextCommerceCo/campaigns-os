@@ -2,6 +2,37 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.4] - 2026-09-14
+
+### Fixed
+
+- Every stage now derives a packet's sidecar paths from one place,
+  `src/campaign-workspace.mjs`: the target repo (`packet.assembly.target_repo`
+  resolved against the packet's directory, else that directory), the default
+  `.campaign-runtime/` locations of the Build Context, Assembly Report and
+  doctor output, the `qa-output/` directory, and whether to follow the Build
+  Context's `report_path` binding. Eleven sites across the CLI and the QA
+  runner spelled that for themselves — two of them as partial resolvers — and
+  agreed on everything except two cases that only show when a packet is kept
+  outside its target (`prepare-build --out`) or its report is not the default
+  sidecar (`prepare-build --report-out`). First, standalone `campaigns-os
+  doctor` wrote `doctor-output.json` beside the packet while `prepare-build`,
+  `next` and the QA stage refresh wrote it under the target repo, so such a
+  campaign carried two sidecars that disagreed and the stale stamp `theme
+  waive` and `qa policy set` apply never found the one doctor wrote. Doctor
+  now writes it under the target repo like every other producer
+  (`--doctor-out` still wins). Second, the QA stage record written after `qa
+  run`, and the QA runner's own read of the Assembly Report, never followed
+  the `report_path` the Build Context records and `next` follows, so a
+  `--report-out` campaign's QA outcome was recorded nowhere — the default
+  report does not exist — while `next` kept reading a report whose QA stage
+  never completed. `qa run`, `qa waive` and the QA stage record now follow the
+  binding, so the report `next` reads is the one QA writes into. `theme
+  waive`, `checkpoint waive`, `polish capture`, `findings harvest`,
+  `run-record` and `run status` act on the default location as before, and
+  doctor's own stage write-back still refuses to restate its outcome into a
+  report it did not inspect. `docs/build-packet.md` states the rule.
+
 ## [1.27.0+agent.3] - 2026-09-14
 
 ### Fixed
