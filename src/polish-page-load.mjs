@@ -2,10 +2,15 @@ import { createHash } from "node:crypto";
 
 import {
   buildPolishCaptureIntegrity,
+<<<<<<< HEAD
   canonicalJson,
   documentResponseAcceptable,
   hiddenEagerSourceUnresolved,
   ledgerProblemCounts,
+||||||| 84ed62b
+=======
+  captureOrigin,
+>>>>>>> origin/main
   MAX_PAGE_LOAD_MEDIA_ANCESTORS,
   MAX_PAGE_LOAD_MEDIA_ELEMENTS,
   MAX_PAGE_LOAD_MEDIA_SOURCES_PER_ELEMENT,
@@ -505,7 +510,9 @@ function captureWarningAttribution(capture) {
     }) !== "cross_origin_request_failed") continue;
     // A ledger URL has already passed safeHttpUrl in validResourceLedger, so a
     // parse failure here is a bug worth throwing on, not a case to swallow.
-    origins.add(new URL(resource.url).origin);
+    const origin = captureOrigin(resource.url);
+    if (origin === null) throw new Error("polish capture: resource ledger URL is not an HTTP(S) URL");
+    origins.add(origin);
     resourceTypes.add(resource.resource_type);
   }
   return { origins: [...origins].sort(), resourceTypes: [...resourceTypes].sort() };
@@ -535,16 +542,10 @@ function validCaptureIntegrity(capture) {
   return canonicalJson(integrity) === canonicalJson(expected);
 }
 
+// An origin field is trusted only when it is exactly what the one origin
+// parser returns for itself: no path, no query, no credentials, no case drift.
 function safeOrigin(value) {
-  if (typeof value !== "string") return null;
-  try {
-    const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value
-      ? value
-      : null;
-  } catch {
-    return null;
-  }
+  return captureOrigin(value) === value ? value : null;
 }
 
 function projectDocumentResponse(value) {

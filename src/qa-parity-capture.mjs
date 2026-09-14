@@ -9,6 +9,7 @@ import {
   effectivePurchase,
   normalizeCapture,
 } from "./qa-analytics-parity.mjs";
+import { captureOrigin } from "./polish-capture.mjs";
 import { captureAnalyticsForUrls, runBrowserTestOrders } from "./qa-browser.mjs";
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 
@@ -56,12 +57,11 @@ function moneyEqual(actual, expected) {
   return value !== null && target !== null && Math.abs(value - target) <= MONEY_EPSILON;
 }
 
+// Only an HTTP(S) origin can be "the same": two non-HTTP URLs share the opaque
+// origin "null" under the URL standard and must not be read as one host.
 function sameOrigin(a, b) {
-  try {
-    return new URL(a).origin === new URL(b).origin;
-  } catch {
-    return false;
-  }
+  const origin = captureOrigin(a);
+  return origin !== null && origin === captureOrigin(b);
 }
 
 // --auth-cookie is the CANDIDATE preview credential. An operator naming the

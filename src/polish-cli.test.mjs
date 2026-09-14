@@ -267,6 +267,36 @@ test("polish capture text bounds incomplete cells, problem codes, reasons, and a
   assert.doesNotMatch(output, /PRIVATE|private=|token=secret|curl/);
 });
 
+test("polish capture text drops non-string, oversized and non-exact failed origins without throwing", () => {
+  const output = formatPolishCaptureText({
+    status: "ready",
+    measurement: {
+      status: "complete",
+      incomplete: [],
+      warnings: [{
+        route: "/landing/",
+        viewport: "desktop",
+        problem_codes: ["cross_origin_request_failed"],
+        resource_types: ["ping"],
+        failed_origins: [
+          null,
+          42,
+          { origin: "https://object.example.invalid" },
+          "https://Mixed-Case.example.invalid",
+          `https://${"a".repeat(2_048)}.invalid`,
+          "https://attribution.example.invalid",
+        ],
+        failed_origin_count: 6,
+      }],
+    },
+    checkpoint: { code: "polish.hidden_eager_media.pass", findings: [], required_actions: [] },
+    observed_findings: [],
+  });
+
+  assert.match(output, /Failed origins: https:\/\/attribution\.example\.invalid \(1 shown of 6\)/);
+  assert.doesNotMatch(output, /Mixed-Case|object\.example|aaaa/);
+});
+
 test("polish capture text prints non-blocking capture warnings with safe origins only", () => {
   const output = formatPolishCaptureText({
     status: "ready",
