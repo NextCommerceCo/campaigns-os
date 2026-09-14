@@ -25,11 +25,18 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
-import { resolveStarterTemplatesRoot } from "./starter-templates-path.mjs";
+import { resolveStarterTemplatesSource } from "./starter-templates-path.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const skillPath = resolve(root, "skills/next-campaigns-build/SKILL.md");
-const templatesRoot = resolveStarterTemplatesRoot(root);
+const catalogPath = resolve(root, "contracts/commerce-surface-catalog.json");
+// Validate the partials at the commit the vendored catalog was synced from —
+// the tree CI checks out — not whatever a local sibling checkout happens to be
+// at. See resolveStarterTemplatesSource for the fallback order.
+const pinSha = existsSync(catalogPath) ? JSON.parse(readFileSync(catalogPath, "utf8"))._synced_from_sha ?? null : null;
+const templatesSource = resolveStarterTemplatesSource(root, { pinSha });
+const templatesRoot = templatesSource.path;
+process.on("exit", () => templatesSource.cleanup());
 
 function fail(message) {
   console.error(`check-template-doctrine: ${message}`);
@@ -44,6 +51,32 @@ if (!existsSync(templatesRoot)) {
     `Cannot find starter-templates checkout at ${templatesRoot}.\n` +
       `Set STARTER_TEMPLATES_PATH or check out NextCommerceCo/campaign-cart-starter-templates as a sibling.`,
   );
+}
+
+const shortSha = (sha) => (typeof sha === "string" ? sha.slice(0, 7) : "unknown");
+function templatesSourceLine(source) {
+  switch (source.kind) {
+    case "override":
+      return `templates: ${source.path} (STARTER_TEMPLATES_PATH; CI pins this checkout to _synced_from_sha=${shortSha(source.pinSha)})`;
+    case "sibling_at_pin":
+      return `templates: ${source.path} at _synced_from_sha=${shortSha(source.pinSha)}`;
+    case "pinned_archive":
+      return `templates: read at _synced_from_sha=${shortSha(source.pinSha)} from the sibling checkout (its HEAD ${shortSha(source.headSha)} differs; working tree untouched)`;
+    case "sibling_unpinned":
+      return (
+        `WARNING: validating the sibling checkout at ${source.path} (HEAD ${shortSha(source.headSha)}), ` +
+        `NOT the catalog pin _synced_from_sha=${shortSha(source.pinSha)} that CI validates: ${source.reason}. ` +
+        `A green result here is not evidence for the CI gate. ` +
+        `Fetch the pinned commit into the sibling (git -C ${source.path} fetch origin ${source.pinSha}) ` +
+        `or set STARTER_TEMPLATES_PATH to a checkout at that commit.`
+      );
+    default:
+      return `templates: ${source.path} (no catalog pin; CI validates the same tree only by coincidence)`;
+  }
+}
+// Say it before scanning, so the warning survives a failing run's output too.
+if (templatesSource.kind === "sibling_unpinned") {
+  console.error(`check-template-doctrine: ${templatesSourceLine(templatesSource)}`);
 }
 
 // 1. Parse doctrine pairs from SKILL.md.
@@ -167,6 +200,9 @@ console.log(
   `Template doctrine check passed (${doctrine.size} doctrine pair(s): ${doctrinePairs}; ` +
     `${partials.length} partials scanned).`,
 );
+if (templatesSource.kind !== "sibling_unpinned") {
+  console.log(`  ${templatesSourceLine(templatesSource)}`);
+}
 
 for (const [varName, doctrineValue] of doctrine) {
   if (!coverage.has(varName)) {

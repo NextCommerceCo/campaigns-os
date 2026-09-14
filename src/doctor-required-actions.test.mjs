@@ -28,14 +28,21 @@ function runDoctorText(packetPath) {
 // page-kit pins a newer SDK than the CampaignSpec, which is the drift the
 // starter families produce whenever a spec keeps an older pin. It blocks
 // page_kit.sdk_version and therefore carries required_actions[].
-function sdkPinMismatchFixture(targetVersion) {
+// Every doctor run here reads a staged copy of examples/: doctor writes its
+// sidecar into the packet's target, and the checkout is not a scratch dir.
+function exampleFixture() {
   const dir = mkdtempSync(join(tmpdir(), "doctor-required-actions-"));
   cpSync(join(ROOT, "examples"), join(dir, "examples"), { recursive: true });
+  return { dir, packetPath: join(dir, "examples/build-packet.basic.json") };
+}
+
+function sdkPinMismatchFixture(targetVersion) {
+  const { dir, packetPath } = exampleFixture();
   const campaignsPath = join(dir, "examples/target-page-kit/_data/campaigns.json");
   const campaigns = JSON.parse(readFileSync(campaignsPath, "utf8"));
   campaigns["runtime-packet-demo"].sdk_version = targetVersion;
   writeFileSync(campaignsPath, `${JSON.stringify(campaigns, null, 2)}\n`);
-  return { dir, packetPath: join(dir, "examples/build-packet.basic.json") };
+  return { dir, packetPath };
 }
 
 test("text-mode doctor prints the remediation for a blocked checkpoint gate", () => {
@@ -88,8 +95,13 @@ test("doctorTinyPromptLines names the two proofs and nothing else", () => {
 });
 
 test("text-mode doctor prints no required-actions block when every gate is clear", () => {
-  const text = runDoctorText(join(ROOT, "examples/build-packet.basic.json"));
-  assert.equal(/Required actions/.test(text), false);
+  const { dir, packetPath } = exampleFixture();
+  try {
+    const text = runDoctorText(packetPath);
+    assert.equal(/Required actions/.test(text), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("doctorRequiredActionLines renders nothing for an empty or absent gate set", () => {

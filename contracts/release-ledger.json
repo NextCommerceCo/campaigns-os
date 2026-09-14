@@ -3063,6 +3063,27 @@
         }
       ],
       "entry_sha256": "d656a8f608a8d8c8f83d87841bbaba0784e19b1108350f767fd8ffaf6aaa4edb"
+    },
+    {
+      "id": "RL-0085",
+      "sequence": 85,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.27",
+      "changelog_sha256": "5fc54e4c6b7b3bc39b58cd1621512d6e9537be9d3d7193b101a4316c235c4d15",
+      "agent_impact": "npm run check runs the same steps in the same order, each through its named check:* script; check:tests (the node --test suite), check:slot-manifest and check:supported-surface are new script names. scripts/check-pack.mjs --skip-prepare exits 1 with 'campaign-spec/dist/index.js missing from the working tree; --skip-prepare packs the build the pipeline already made' when the working tree has no build, and on npm before 11 prints one stderr line starting 'pack check note: npm <version> re-ran the prepare script during npm pack despite --ignore-scripts'; the 'pack check passed:' stdout line is unchanged. scripts/check-template-doctrine.mjs reads the starter-template partials at the catalog _synced_from_sha and appends a 'templates: ...' line after its pass line; when it can only read a sibling checkout on another commit it prints 'check-template-doctrine: WARNING: validating the sibling checkout ... NOT the catalog pin ...' on stderr and still exits 0. The fixture check leaves examples/ byte-identical; nothing under examples/target-page-kit/.campaign-runtime/ is written or read.",
+      "compatibility": "compatible",
+      "migration": "None. A local check-template-doctrine run against a sibling checkout on another commit now validates the catalog pin; set STARTER_TEMPLATES_PATH to validate a specific tree instead.",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "npm run check calls the named check:* scripts in the existing order with one explicit build:spec; check:tests, check:slot-manifest and check:supported-surface are added; the test suite gains scripts/check-fixtures.test.mjs and scripts/starter-templates-path.test.mjs."
+        }
+      ],
+      "entry_sha256": "80a0f81e326bd53c07d3ce291c89a9f4227daae9ab7a3d2aa3f9c26317c4f224"
     }
   ]
 }
