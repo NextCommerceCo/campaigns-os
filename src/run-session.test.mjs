@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { promisify } from "node:util";
 
 import {
   buildRunSession,
@@ -13,12 +15,16 @@ import {
   isRunSessionStale,
   isRunSessionTerminal,
   mintSessionRunId,
+  openRunSession,
   resolveRunSessionPath,
   RUN_SESSION_SCHEMA,
   RUN_SESSION_TTL_MS,
+  sessionBoundTo,
   writeRunSession,
 } from "./run-session.mjs";
-import { readLifecycleJournal } from "./lifecycle.mjs";
+import { runSessionCommand, runSessionEndArgs } from "./cli.mjs";
+import { LIFECYCLE_JOURNAL_REL_PATH, readLifecycleJournal } from "./lifecycle.mjs";
+import { SESSION_ENDING_DISPOSITIONS } from "./qa-verdict.mjs";
 import { resolveRunRecordPath, validateRunRecord } from "./run-record.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -539,4 +545,224 @@ test("CLI: run end leaves the session ACTIVE when run-record fails (operator can
     assert.notEqual(findRunSession(dir), null);
     assert.equal(findRunSession(dir).session.packet, join(dir, "missing.build.json"));
   });
+});
+
+// --- one opener, one binding predicate ---------------------------------------
+
+test("sessionBoundTo: an unbound session is every packet's; a bound one is only its own, by real path", () => {
+  withTempDir((dir) => {
+    const packet = join(dir, "campaign-runtime.build.json");
+    writeFileSync(packet, "{}\n");
+    const link = join(dir, "link.build.json");
+    symlinkSync(packet, link);
+    const session = buildRunSession({ runId: "run_1", lifecycleJournal: join(dir, "lc.jsonl") });
+
+    assert.deepEqual(sessionBoundTo({ ...session, packet: null }, packet), { same: true, boundPacket: null });
+    assert.deepEqual(sessionBoundTo({ ...session, packet }, packet), { same: true, boundPacket: packet });
+    assert.deepEqual(sessionBoundTo({ ...session, packet }, link), { same: true, boundPacket: packet });
+    assert.deepEqual(sessionBoundTo({ ...session, packet }, join(dir, "other.build.json")), { same: false, boundPacket: packet });
+    assert.deepEqual(sessionBoundTo({ ...session, packet }, null), { same: false, boundPacket: packet });
+  });
+});
+
+test("openRunSession: writes a session with the defaults the two openers share, and honors the explicit ones", () => {
+  withTempDir((dir) => {
+    const opened = openRunSession(dir, { packet: join(dir, "campaign-runtime.build.json"), lastRecommendation: { stage: "doctor" } });
+    assert.equal(opened.joined, false);
+    assert.equal(opened.existing, null);
+    assert.equal(opened.found.dir, resolve(dir));
+    assert.equal(opened.found.path, resolveRunSessionPath(dir));
+    assert.match(opened.found.session.run_id, /^run_\d+_[0-9a-f]{8}$/);
+    assert.equal(opened.found.session.lifecycle_journal, join(resolve(dir), LIFECYCLE_JOURNAL_REL_PATH));
+    assert.equal(opened.found.session.packet, join(dir, "campaign-runtime.build.json"));
+    assert.deepEqual(opened.found.session.last_recommendation, { stage: "doctor" });
+    assert.deepEqual(findRunSession(dir).session, opened.found.session);
+
+    const replaced = openRunSession(dir, { runId: "run_explicit", lifecycleJournal: join(dir, "own.jsonl"), force: true });
+    assert.equal(replaced.found.session.run_id, "run_explicit");
+    assert.equal(replaced.found.session.lifecycle_journal, join(dir, "own.jsonl"));
+    assert.equal(replaced.found.session.packet, null);
+    assert.equal("last_recommendation" in replaced.found.session, false);
+    assert.equal(findRunSession(dir).session.run_id, "run_explicit");
+  });
+});
+
+test("openRunSession: an open session is refused, joined when bound to this packet, and stood off when bound elsewhere", () => {
+  withTempDir((dir) => {
+    const packet = join(dir, "campaign-runtime.build.json");
+    const first = openRunSession(dir, { packet });
+    const fileBefore = readFileSync(resolveRunSessionPath(dir), "utf8");
+
+    const refused = openRunSession(dir, { packet });
+    assert.equal(refused.found, null);
+    assert.equal(refused.joined, false);
+    assert.equal(refused.existing.session.run_id, first.found.session.run_id);
+    assert.equal(refused.binding.same, true);
+
+    const joined = openRunSession(dir, { packet, join: true, lastRecommendation: { stage: "doctor" } });
+    assert.equal(joined.joined, true);
+    assert.equal(joined.found.session.run_id, first.found.session.run_id);
+    assert.equal("last_recommendation" in joined.found.session, false, "a join adopts the session as it is");
+
+    const foreign = openRunSession(dir, { packet: join(dir, "other.build.json"), join: true });
+    assert.equal(foreign.found, null);
+    assert.equal(foreign.existing.session.run_id, first.found.session.run_id);
+    assert.deepEqual(foreign.binding, { same: false, boundPacket: packet });
+
+    assert.equal(readFileSync(resolveRunSessionPath(dir), "utf8"), fileBefore, "neither a refusal nor a join writes");
+  });
+});
+
+// --- one closer ---------------------------------------------------------------
+
+test("runSessionEndArgs: the closing argv carries the session's identity and only the flags run-record reads", () => {
+  const session = { run_id: "run_1", lifecycle_journal: "/p/.campaign-runtime/command-lifecycle.jsonl" };
+  const qaRunArgs = {
+    _: ["qa", "run"],
+    packet: "/p/other.build.json",
+    "base-url": "http://127.0.0.1:4173/x/",
+    browser: true,
+    "test-order": "off",
+    "no-post-verdict": true,
+    "auth-cookie": "secret",
+    "run-id": "not-the-session",
+    "lifecycle-journal": "/elsewhere.jsonl",
+    "no-remit": true,
+    "proxy-base": "http://127.0.0.1:1",
+    json: true,
+    report: "/p/report.json",
+    "qa-verdict": "/p/qa-output/verdict.json",
+  };
+  assert.deepEqual(runSessionEndArgs(session, "/p/campaign-runtime.build.json", qaRunArgs), {
+    _: ["run-record"],
+    report: "/p/report.json",
+    "qa-verdict": "/p/qa-output/verdict.json",
+    "no-remit": true,
+    "proxy-base": "http://127.0.0.1:1",
+    json: true,
+    packet: "/p/campaign-runtime.build.json",
+    "run-id": "run_1",
+    "lifecycle-journal": "/p/.campaign-runtime/command-lifecycle.jsonl",
+  });
+  assert.deepEqual(runSessionEndArgs(session, "/p/campaign-runtime.build.json"), {
+    _: ["run-record"],
+    packet: "/p/campaign-runtime.build.json",
+    "run-id": "run_1",
+    "lifecycle-journal": "/p/.campaign-runtime/command-lifecycle.jsonl",
+  });
+});
+
+// The whitelist is hand-written, so the documented run-record flags are the
+// drift signal: a flag `help` names for run-record must either be carried by
+// the closer or be one of the three it sets itself.
+test("runSessionEndArgs: every flag help documents for run-record is carried or closer-owned", () => {
+  const help = execFileSync("node", [CLI, "help"], { encoding: "utf8" });
+  const line = help.split("\n").find((entry) => /^\s*campaigns-os run-record /.test(entry));
+  assert.ok(line, "help names run-record");
+  const documented = [...line.matchAll(/--([a-z-]+)/g)].map((match) => match[1]);
+  assert.ok(documented.length > 5, `help documents run-record's flags: ${documented.join(", ")}`);
+  const closerOwned = new Set(["packet", "run-id", "lifecycle-journal"]);
+  const extraArgs = Object.fromEntries(documented.map((flag) => [flag, `carried:${flag}`]));
+  const endArgs = runSessionEndArgs({ run_id: "run_1", lifecycle_journal: "/p/lc.jsonl" }, "/p/packet.json", extraArgs);
+  const dropped = documented.filter((flag) => !closerOwned.has(flag) && endArgs[flag] !== `carried:${flag}`);
+  assert.deepEqual(dropped, [], "documented run-record flags the closer does not carry");
+  assert.deepEqual([endArgs.packet, endArgs["run-id"], endArgs["lifecycle-journal"]], ["/p/packet.json", "run_1", "/p/lc.jsonl"]);
+});
+
+test("run start/status/end return their result in-process and print nothing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-inproc-"));
+  writeFileSync(join(dir, "package.json"), "{}\n");
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+  const priorCwd = process.cwd();
+  const originalLog = console.log;
+  const printed = [];
+  console.log = (...parts) => printed.push(parts.join(" "));
+  process.chdir(dir);
+  try {
+    const started = await runSessionCommand({ _: ["run", "start"], packet: packetPath, json: true });
+    assert.equal(started.exitCode, 0);
+    assert.equal(started.result.action, "run-start");
+    assert.equal(started.result.session.packet, packetPath);
+    assert.equal(findRunSession(dir).session.run_id, started.result.session.run_id);
+
+    const status = await runSessionCommand({ _: ["run", "status"], json: true });
+    assert.equal(status.result.action, "run-status");
+    assert.equal(status.result.active, true);
+    assert.equal(status.result.session.run_id, started.result.session.run_id);
+
+    const ended = await runSessionCommand({ _: ["run", "end"], "no-remit": true, "no-write": true, json: true }, findRunSession(dir));
+    assert.equal(ended.exitCode, 0);
+    assert.equal(ended.result.action, "run-record");
+    assert.equal(ended.result.written, false);
+    assert.equal(ended.result.record.run_id, started.result.session.run_id);
+    assert.equal(findRunSession(dir), null);
+
+    const idle = await runSessionCommand({ _: ["run", "status"], json: true });
+    assert.equal(idle.result.active, false);
+    assert.deepEqual(printed, []);
+  } finally {
+    process.chdir(priorCwd);
+    console.log = originalLog;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A session-ending `qa run` closes the session by the same path `run end`
+// takes. The record it writes is run-record's, so its argv_shape names
+// run-record's flags — not the flags `qa run` happened to be invoked with.
+// The routes are served in-process, so the CLI runs asynchronously.
+test("CLI: an auto-ended Run Record's argv_shape is run-record's, not qa run's", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-autoend-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(resolve(ROOT, "examples/target-page-kit"), dir, { recursive: true });
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  packet.assembly.target_repo = ".";
+  writeFileSync(packetPath, `${JSON.stringify(packet, null, 2)}\n`);
+  cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  cpSync(
+    resolve(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"),
+    join(dir, ".campaign-runtime/assembly-report.json"),
+  );
+  const server = createServer((request, response) => {
+    const path = request.url;
+    const meta = path.includes("/checkout/")
+      ? '<meta name="next-page-type" content="checkout"><meta name="next-success-url" content="/runtime-packet-demo/upsell/">'
+      : path.includes("/upsell/")
+        ? '<meta name="next-page-type" content="upsell"><meta name="next-upsell-accept-url" content="/runtime-packet-demo/receipt/"><meta name="next-upsell-decline-url" content="/runtime-packet-demo/receipt/">'
+        : "";
+    const links = path.includes("/landing/")
+      ? '<a href="/runtime-packet-demo/checkout/">Continue</a>'
+      : path.includes("/checkout/")
+        ? '<a href="/runtime-packet-demo/upsell/">Submit</a>'
+        : path.includes("/upsell/")
+          ? '<a href="/runtime-packet-demo/receipt/">Accept</a><a href="/runtime-packet-demo/receipt/">Decline</a>'
+          : "";
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(`<!doctype html><html><head><title>Fixture</title>${meta}</head><body><main>Fixture campaign</main>${links}</body></html>`);
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const baseUrl = `http://127.0.0.1:${server.address().port}/runtime-packet-demo/`;
+  const run = async (args) => {
+    const { stdout } = await promisify(execFile)(process.execPath, [CLI, ...args], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+    });
+    return stdout;
+  };
+
+  const start = JSON.parse(await run(["run", "start", "--packet", packetPath, "--json"]));
+  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-post-verdict", "--no-remit", "--json"]));
+  assert.ok(SESSION_ENDING_DISPOSITIONS.has(qa.verdict.disposition), `the fixture must end the session: ${qa.verdict.disposition}`);
+  assert.equal(findRunSession(dir), null, "a session-ending verdict closes the session");
+
+  const record = JSON.parse(readFileSync(resolveRunRecordPath(start.session.run_id, dir), "utf8"));
+  assert.equal(record.command, "run-record");
+  assert.deepEqual(record.argv_shape, ["--json", "--lifecycle-journal", "--packet", "--qa-verdict", "--run-id"]);
+  assert.ok(record.artifacts.some((artifact) => artifact.kind === "qa_verdict"));
 });
