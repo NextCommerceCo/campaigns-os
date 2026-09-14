@@ -83,7 +83,7 @@ import {
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
-import { campaignSidecarPaths, resolveCampaignWorkspace } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
 import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
@@ -400,7 +400,7 @@ Usage:
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
-  campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags
+  campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags; with --packet the session lives in the packet's target repo, whatever the cwd
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd)
 
@@ -408,7 +408,7 @@ Usage:
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
   Wrapper policy: \`start\`/\`prepare-build\`/\`build\` seed source_html.adapter_contract.wrapper_policy from --wrapper-policy, else the source-html manifest's wrapper_policy key, else strip_document_wrappers. Selecting preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking, so raw-HTML source can be handed over without a wrapper-stripping pass (docs/source-adapters.md).
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
-  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
+  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` with its --packet, or at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
@@ -9710,12 +9710,20 @@ function writeRunSessionResult(result, args, exitCode) {
 function runSessionTextLines(result) {
   if (result.action === "run-start") {
     const { session } = result;
+    // With a packet the session may live away from cwd (its target repo), so
+    // the advertised close names the packet: it works from anywhere, including
+    // the directory the operator started from. The project named is the
+    // session's root: session_path is <root>/.campaign-runtime/run-session.json
+    // (RUN_SESSION_REL_PATH), two levels up, not the storage directory.
+    const projectDir = dirname(dirname(result.session_path));
     return [
       "Run session started.",
       `Run ID: ${session.run_id}`,
       `Lifecycle journal: ${session.lifecycle_journal}`,
-      "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
-      `Finish with: campaigns-os run end${session.packet ? "" : " --packet <campaign-runtime.build.json>"}`,
+      session.packet
+        ? `Every campaigns-os command in ${projectDir} — or run from anywhere with --packet ${session.packet} — now auto-logs to this run; no per-command flags.`
+        : "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
+      `Finish with: campaigns-os run end --packet ${session.packet || "<campaign-runtime.build.json>"}`,
     ];
   }
   if (result.action === "run-status") {
@@ -9757,9 +9765,48 @@ function runSessionTextLines(result) {
   throw new Error(`Unknown run result action "${result.action}".`);
 }
 
+// The build packet a `run start` / `run end` names, canonicalised the way
+// ambientRunSession canonicalises it (realpath when it exists), so a packet
+// reached through a symlink is the same packet discovery and the Run Record
+// see. Null without --packet.
+function runSessionPacketPath(args) {
+  const packetArg = optionalString(args.packet);
+  return packetArg ? canonicalExistingPath(resolve(packetArg)) : null;
+}
+
+// The project a `run start` / `run end` acts on. With --packet it is the
+// packet's target repo (targetRepoFor: `assembly.target_repo` resolved from the
+// packet's directory, else that directory) — where the build happens and where
+// the auto-opener behind start/prepare-build roots its session — so a session
+// opened from the toolkit or any other directory lands with the build and is
+// found again by packet from anywhere. A packet that is not written yet roots
+// on its own directory (the command prints the `does not exist yet` warning);
+// a packet that exists but cannot be parsed is refused with the parse error,
+// never rooted on a guess — a session opened on the packet's directory when
+// the packet declares a different target would be invisible to every later
+// command run by packet. Without --packet it is cwd, as before.
+function runSessionRootFor(args) {
+  const packetPath = runSessionPacketPath(args);
+  if (!packetPath) return resolve(process.cwd());
+  let packet = null;
+  try {
+    packet = readJson(packetPath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      // Name what failed: a parse error is a packet problem, anything else
+      // (EACCES, EISDIR, …) is the file itself, said with the OS error.
+      const what = error instanceof SyntaxError ? "could not be read as a build packet" : "could not be read";
+      throw new Error(
+        `--packet ${packetPath} ${what} (${error?.message || error}); the run session roots on its assembly.target_repo. Fix or re-point the packet, then retry.`,
+      );
+    }
+  }
+  return targetRepoFor(packetPath, packet);
+}
+
 function runSessionStart(args) {
-  const rootDir = process.cwd();
-  const packet = optionalString(args.packet) ? resolve(args.packet) : null;
+  const rootDir = runSessionRootFor(args);
+  const packet = runSessionPacketPath(args);
   const opened = openRunSession(rootDir, {
     runId: optionalString(args["run-id"]) || null,
     lifecycleJournal: isNonEmptyString(args["lifecycle-journal"]) ? resolve(args["lifecycle-journal"]) : null,
@@ -9832,9 +9879,12 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
   // Use the session resolved once in main() (single source of truth).
   const found = ambient;
   if (!found) {
-    // A stale session at cwd was already closed out by main()'s sweep; that IS
-    // the end the operator asked for, so report it rather than fail.
-    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === resolve(process.cwd()));
+    // A stale session at the root this command acts on was already closed out
+    // by main()'s sweep; that IS the end the operator asked for, so report it
+    // rather than fail. Resolving the root first also surfaces an unreadable
+    // --packet as its own diagnostic instead of "no active run session".
+    const rootDir = runSessionRootFor(args);
+    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === rootDir);
     if (swept.length) {
       return { result: { ok: swept.every((entry) => Boolean(entry.record_path)), action: "run-end", stale_closeout: swept }, exitCode: 0 };
     }
@@ -9905,8 +9955,9 @@ async function closeRunSession(found, { packet, extraArgs = {}, silent = false, 
 // runs most worth learning from (blocked, abandoned, agent-driven) left no
 // record. Now, right before a command opens a NEW session at a root, the stale
 // one there is assembled into its Run Record (remit under the usual consent)
-// and removed. Roots: --target for start/prepare-build/build; cwd for
-// `run start` / `run end`. `run status` never sweeps — it is read-only.
+// and removed. Roots: --target for start/prepare-build/build; the packet's
+// target repo for `run start --packet` / `run end --packet`, cwd for the bare
+// forms. `run status` never sweeps — it is read-only.
 // Best-effort throughout: a closeout failure clears the file and says so on
 // stderr; it never blocks the command that triggered it.
 const STALE_SWEEP_TARGET_COMMANDS = new Set(["start", "prepare-build", "build"]);
@@ -9916,7 +9967,19 @@ async function closeOutStaleRunSessions(command, args) {
   if (args["no-run-session"] === true) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
-  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) roots.push(resolve(process.cwd()));
+  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {
+    // cwd is deliberately not a second root when --packet is given: the sweep
+    // closes out (assembles and, under consent, remits) the stale session at
+    // the root the command is about to act on, and a stale session at an
+    // unrelated cwd belongs to whatever next acts there (`run status` there
+    // reports it). An unreadable packet roots nothing here; the command itself
+    // raises that diagnostic right after, so it is not printed twice.
+    try {
+      roots.push(runSessionRootFor(args));
+    } catch {
+      // Reported by the command.
+    }
+  }
   // The closeout inherits the invoking command's remit controls: an explicit
   // --no-remit / --no-write stays an opt-out, and a run pointed at a custom
   // --proxy-base never remits the stale record to the canonical endpoint.
