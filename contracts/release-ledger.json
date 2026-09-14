@@ -2820,8 +2820,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.27.0+agent.21",
-      "changelog_sha256": "c85e8512e1ab727d4a146f8fd0c2fc179da0fe2858b0d4f877c44b724bba319c",
-      "agent_impact": "One new value in the QA verdict's cause_summary.comparison and per-assertion cause_reason: prior_run_verdict_unlocated, emitted when the previous Run Record references its QA verdict as external:qa_verdict and the target repo's qa-output/ holds no verdict whose sha256 matches the reference (the committed .campaign-runtime/qa-verdict.json sidecar is not consulted: a projection cannot be tied to the referenced attempt). Where a second qa run on a packet whose assembly.target_repo is not the packet directory previously reported comparison prior_run_without_qa_verdict and labelled every finding unknown, it now reports prior_run with pre_existing / caused_by_change labels. prior_run_without_qa_verdict now means only that the record carries no qa_verdict artifact reference. An agent switching on cause_reason should treat prior_run_verdict_unlocated like the other prior_run_* reasons: a previous record exists, its evidence could not be read, a re-run will not change that.",
+      "changelog_sha256": "06266d545b2579b336acb060e6d80fc30c7c5ab030ea0bc0c6564dd0406d03c7",
+      "agent_impact": "One new value in the QA verdict's cause_summary.comparison and per-assertion cause_reason: prior_run_verdict_unlocated, emitted when the previous Run Record references its QA verdict as external:qa_verdict and no verdict matching that reference could be located under the target repo's qa-output/ \u2014 nothing there hashes to the recorded sha256, the reference carries no digest, or no target repo was known to search (the committed .campaign-runtime/qa-verdict.json sidecar is not consulted: a projection cannot be tied to the referenced attempt). Where a second qa run on a packet whose assembly.target_repo is not the packet directory previously reported comparison prior_run_without_qa_verdict and labelled every finding unknown, it now reports prior_run with pre_existing / caused_by_change labels. prior_run_without_qa_verdict now means only that the record carries no qa_verdict artifact reference. An agent switching on cause_reason should treat prior_run_verdict_unlocated like the other prior_run_* reasons: a previous record exists, its evidence could not be read, a re-run will not change that.",
       "compatibility": "additive",
       "migration": "None. A consumer with a closed list of cause_reason / comparison values adds prior_run_verdict_unlocated.",
       "changes": [
@@ -2832,7 +2832,7 @@
           "summary": "The comparison rule now states how an external:qa_verdict reference is resolved (by digest under the target repo's qa-output/; the committed sidecar is stated not to be a stand-in, and why), and the cause_reason table gains prior_run_verdict_unlocated with the sharpened meanings of prior_run_without_qa_verdict and prior_run_verdict_unreadable."
         }
       ],
-      "entry_sha256": "de53f7063a4ebdbfb2d7129311dd3647690a33e835996e0bc2b07c48e4332ecc"
+      "entry_sha256": "f1d1c17b1b198028b18cf35d81ab5b00bc40c173a7d2b0dc6a3b01e5b0b0eb4b"
     }
   ]
 }

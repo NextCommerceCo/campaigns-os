@@ -471,9 +471,11 @@ Notable supported-surface changes are recorded here.
   could compare against a projection of a different attempt and report a
   reintroduced finding as pre-existing.
 - New `cause_reason` / `comparison` value `prior_run_verdict_unlocated`: the
-  previous Run Record references a verdict as `external:qa_verdict` and the
-  target repo's `qa-output/` holds no verdict with the recorded digest. Its
-  report line says so. `prior_run_without_qa_verdict` now means exactly what it
+  previous Run Record references a verdict as `external:qa_verdict` and no
+  verdict matching that reference could be located under the target repo's
+  `qa-output/` (nothing there hashes to the recorded digest, the reference
+  carries no digest, or no target repo was known to search). Its report line
+  says so, and is worded to be true in all three cases. `prior_run_without_qa_verdict` now means exactly what it
   says — the record carries no `qa_verdict` artifact reference at all — and
   `prior_run_verdict_unreadable` keeps its meaning for a by-path reference
   whose file is missing or unparseable. `docs/qa-and-test-orders.md` lists

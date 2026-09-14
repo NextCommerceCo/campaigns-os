@@ -634,6 +634,10 @@ test("an external reference that resolves nowhere names its own reason, never 'r
   const line = formatCauseBasisLine({ comparison: lookup.reason, prior_run_id: lookup.record.run_id });
   assert.match(line, /references a QA verdict written outside the packet directory/);
   assert.doesNotMatch(line, /references no QA verdict/);
+  // Nothing was searched here, so the sentence must not claim the target
+  // repo's qa-output/ was inspected and found wanting.
+  assert.doesNotMatch(line, /holds no verdict/);
+  assert.match(line, /no verdict matching that reference could be located/);
   // A record with no qa_verdict artifact at all keeps the original reason.
   const bare = scratch();
   mkdirSync(join(bare, ".campaign-runtime/run-records"), { recursive: true });

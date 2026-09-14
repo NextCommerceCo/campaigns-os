@@ -270,7 +270,7 @@ const CAUSE_BASIS_SENTENCES = Object.freeze({
   no_prior_run: () => "There is no previous run for this campaign to compare against, so every finding is labelled unknown. The comparison starts working once a Run Record exists.",
   prior_run_without_qa_verdict: (id) => `Previous run ${id} exists but references no QA verdict, so there was nothing to compare against and every finding is labelled unknown.`,
   prior_run_verdict_unreadable: (id) => `Previous run ${id} exists but its QA verdict is missing or unreadable, so there was nothing to compare against and every finding is labelled unknown.`,
-  prior_run_verdict_unlocated: (id) => `Previous run ${id} exists and references a QA verdict written outside the packet directory, but the target repo's qa-output/ holds no verdict with the recorded digest, so there was nothing to compare against and every finding is labelled unknown.`,
+  prior_run_verdict_unlocated: (id) => `Previous run ${id} exists and references a QA verdict written outside the packet directory, but no verdict matching that reference could be located under the target repo's qa-output/, so there was nothing to compare against and every finding is labelled unknown.`,
   prior_run_without_doctor_observations: (id) => `Previous run ${id} exists but carries no doctor observations, so there was nothing to compare against and every finding is labelled unknown.`,
 });
 
@@ -399,6 +399,11 @@ function recordIdentityForDiscovery(record) {
  * finding that attempt carried and the recorded final attempt had fixed as
  * pre-existing. Until the record can name the attempt, an unlocated reference
  * stays `prior_run_verdict_unlocated`.
+ *
+ * Null is returned without a search when no target repo is known or the
+ * reference carries no digest, as well as when the search finds no match; the
+ * basis sentence for `prior_run_verdict_unlocated` is worded to be true in all
+ * three cases (nothing matching the reference could be located).
  *
  * Returns `{ verdict, path }` or null. The single-record boundary holds: this
  * reads the verdict the ONE previous record references, not the newest file

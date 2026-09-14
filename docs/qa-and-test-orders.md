@@ -472,7 +472,7 @@ violations sharing a code are one finding to this comparison.
 | `no_prior_run` | No Run Record for this campaign under the packet directory — including every packet-less run (`--site`, a raw map id), which has no Run Record home. |
 | `prior_run_without_qa_verdict` | The previous Run Record carries no QA verdict artifact reference at all. |
 | `prior_run_verdict_unreadable` | It references one by path, but the file is gone or unparseable. |
-| `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, and the target repo's `qa-output/` holds no verdict with the recorded digest. |
+| `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, but no verdict matching that reference could be located under the target repo's `qa-output/` — nothing there hashes to the recorded digest, the reference carries no digest, or no target repo was known to search. |
 | `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
 
 Only the first of those means "run again and it will improve". The other four
