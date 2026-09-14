@@ -36,13 +36,24 @@ export function commerceScopeFromScope(scope) {
   return { built, out_of_scope: outOfScope, all: [...built, ...outOfScope] };
 }
 
-export function themeWaiverFrom(reportTheme, ephemeralWaiver = null) {
+// An expiry `theme waive --expires-at` recorded is honoured here: at or after
+// that instant the record no longer waives the gate (inclusive boundary, the
+// same rule the checkpoint and polish lanes apply), so the gate falls back to
+// its normal evaluation and asks for a fresh decision.
+export function themeWaiverExpired(waiver, now = new Date().toISOString()) {
+  const expiresAt = waiver?.expires_at;
+  if (typeof expiresAt !== "string" || !expiresAt.trim()) return false;
+  const expiresMs = Date.parse(expiresAt);
+  return !Number.isFinite(expiresMs) || expiresMs <= Date.parse(now);
+}
+
+export function themeWaiverFrom(reportTheme, ephemeralWaiver = null, { now = new Date().toISOString() } = {}) {
   if (typeof ephemeralWaiver === "string" && ephemeralWaiver.trim()) {
     return { reason: ephemeralWaiver.trim(), waived_by: "cli_flag", waived_at: null };
   }
   const waiver = reportTheme?.waiver;
   if (waiver && typeof waiver === "object" && typeof waiver.reason === "string" && waiver.reason.trim()) {
-    return waiver;
+    return themeWaiverExpired(waiver, now) ? null : waiver;
   }
   return null;
 }
@@ -56,6 +67,7 @@ export function themeWaiverFrom(reportTheme, ephemeralWaiver = null) {
  * @param {object|null} options.scope         Doctor derived scope ({ built_pages: [...] }).
  * @param {string|null} options.packetPath    Build packet path, used to render exact commands.
  * @param {string|null} options.waive         Ephemeral waiver reason from a CLI flag (--theme-waive).
+ * @param {string}      options.now           Evaluation instant (ISO); a recorded waiver expired by then is ignored.
  *
  * @returns {{
  *   status: "pass"|"blocked"|"waived"|"not_applicable",
@@ -67,7 +79,7 @@ export function themeWaiverFrom(reportTheme, ephemeralWaiver = null) {
  *   required_actions: Array<{ id: string, kind: "command"|"manual", command: string|null, description: string }>,
  * }}
  */
-export function evaluateThemeGate({ reportTheme = null, contextTheme = null, scope = null, packetPath = null, waive = null } = {}) {
+export function evaluateThemeGate({ reportTheme = null, contextTheme = null, scope = null, packetPath = null, waive = null, now = new Date().toISOString() } = {}) {
   const packetArg = packetPath || "<campaign-runtime.build.json>";
   const commerceScope = commerceScopeFromScope(scope);
   const pageLabel = (page) => page.page_id || page.route || page.type;
@@ -91,7 +103,7 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
     return result("not_applicable", "theme_gate.no_commerce_pages", "Campaign ships no commerce pages; the brand-layer gate does not apply.");
   }
 
-  const waiver = themeWaiverFrom(reportTheme, waive);
+  const waiver = themeWaiverFrom(reportTheme, waive, { now });
   if (waiver) {
     return result("waived", "theme_gate.waived", `Theme gate waived: ${waiver.reason}`, [], waiver);
   }
@@ -138,7 +150,7 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
         {
           id: "waive_theme",
           kind: "command",
-          command: `campaigns-os theme waive --packet ${packetArg} --reason "<why the starter palette is acceptable>"`,
+          command: `campaigns-os theme waive --packet ${packetArg} --reason "<why the starter palette is acceptable>" --waived-by "<named human>"`,
           description: "Record an explicit operator waiver if shipping without a campaign brand layer is intentional.",
         },
       ],
@@ -165,7 +177,7 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
       {
         id: "waive_theme",
         kind: "command",
-        command: `campaigns-os theme waive --packet ${packetArg} --reason "<why the starter palette is acceptable>"`,
+        command: `campaigns-os theme waive --packet ${packetArg} --reason "<why the starter palette is acceptable>" --waived-by "<named human>"`,
         description: "Or record an explicit operator waiver instead of applying the brand layer.",
       },
     ],

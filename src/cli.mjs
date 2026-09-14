@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shellToken } from "./shell-token.mjs";
 import { requiredActionText, substitutePacket } from "./gate-actions.mjs";
@@ -45,7 +45,9 @@ import {
   mintRunId,
   orderRunRecordFileNames,
   readRunRecordsForTarget,
+  resolveRunRecordPath,
   RUN_RECORD_SURFACES,
+  validateRunRecord,
   validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
@@ -81,9 +83,9 @@ import {
   SOURCE_PREP_INTERNAL_LINK_UNROOTED,
 } from "./source-prep.mjs";
 import { DOCTOR_SIDECAR_SCHEMA, markDoctorSidecarStale, writeJsonAtomic } from "./doctor-sidecar.mjs";
-import { campaignSidecarPaths, resolveCampaignWorkspace } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { discoverQaVerdicts, iterateQaVerdicts, qaVerdictCandidateScore, qaVerdictCandidateTime, qaVerdictPathHints } from "./qa-verdict-discovery.mjs";
-import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, remitRunRecord } from "./remit.mjs";
+import { assertSecureProxyBase, boundedResponseText, DEFAULT_RUNS_ENDPOINT, isLoopbackHostname, REMIT_RESULTS, remitRunRecord } from "./remit.mjs";
 import {
   aggregateLifecycleForRun,
   appendLifecycleEntry,
@@ -145,6 +147,8 @@ import {
   contractHasPaletteResidueChecks,
   demoAssetConfig,
   findForbiddenPriceHides,
+  paymentMethodMarkupMatches,
+  paymentMethodStaticScanGaps,
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   templateBrandContractPath,
@@ -221,6 +225,7 @@ import {
   createCheckpointRegistry,
   createCheckpointWaiver,
   evaluateCheckpointRegistry,
+  validateWaiverAttribution,
 } from "./checkpoint-waiver.mjs";
 import {
   loadPageKitCampaignEntry,
@@ -229,6 +234,7 @@ import {
 import {
   evaluatePageKitStoreProfile,
   PAGE_KIT_STORE_PROFILE_SCOPE,
+  storeProfileDemoResidueFields,
 } from "./page-kit-store-profile.mjs";
 import {
   evaluatePageKitSdkVersion,
@@ -372,7 +378,7 @@ Usage:
   campaigns-os standardize --target <campaign-repo> [--family <family>] [--slug <slug>] [--sdk-support-policy <path.json>] [--field-contract <path.json>] [--no-doctor] [--json]
   campaigns-os theme inspect --packet <campaign-runtime.build.json> [--context <json>] [--theme-policy <inspect_only|auto|off>] [--json]
   campaigns-os theme generate --packet <campaign-runtime.build.json> [--context <json>] [--out-dir <dir>] [--force] [--json]
-  campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" [--waived-by <who>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report
+  campaigns-os theme waive --packet <campaign-runtime.build.json> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--report <json>] [--json]   # record an explicit theme-gate waiver on the assembly report; placeholders such as "operator" are refused
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -398,7 +404,7 @@ Usage:
   Any command accepts [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
   campaigns-os telemetry status|on|off [--json]                    # machine-level Run Telemetry consent (gates remit only; capture is always local)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
-  campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags
+  campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags; with --packet the session lives in the packet's target repo, whatever the cwd
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd)
 
@@ -406,7 +412,7 @@ Usage:
   Commercial parity: \`qa run\` automatically compares contract-governed authored price/cadence/voucher claims with fresh \`/api/price-preview\` evidence; no extra catalog flag is required.
   Wrapper policy: \`start\`/\`prepare-build\`/\`build\` seed source_html.adapter_contract.wrapper_policy from --wrapper-policy, else the source-html manifest's wrapper_policy key, else strip_document_wrappers. Selecting preserve_document_wrappers reports source_html.prep.document_wrapper as a warning instead of blocking, so raw-HTML source can be handed over without a wrapper-stripping pass (docs/source-adapters.md).
   Certified templates: \`start\`/\`prepare-build\` only accept template families with a commerce-catalog entry AND a brand contract; anything else needs --allow-uncertified-template "<reason>" (recorded on the packet; deterministic assembly, residue QA, and pricing contracts will not cover the build).
-  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
+  Ambient telemetry: \`start\`/\`prepare-build\` auto-open the run session in the target repo (opt out per-run with --no-run-session). A blocked \`qa run\` records its attempt and keeps the session open for repair; a ready verdict auto-assembles the Run Record with every attempt and clears the session. A session idle for 12h is stale: the next \`start\`/\`prepare-build\`/\`build\` at that target (or \`run start\`/\`run end\` with its --packet, or at cwd) closes it out — Run Record assembled and remitted under consent — before opening a new one. Remit sends the packet's Campaigns API key as X-Campaign-Key so the record lands in your tenant scope; read it back with \`campaigns-os telemetry list --packet <json>\`. Run Telemetry remit to the canonical NEXT endpoint is ON by default — disable with \`campaigns-os telemetry off\`, CAMPAIGNS_OS_TELEMETRY=off, or per-run --no-remit. Capture is always local.
   Deviations: with an active run session, pipeline-advancing commands that don't match the last \`next\` recommendation are recorded to .campaign-runtime/agent-deviations.jsonl; declare intent with --deviation-reason "<why>".
 
 Examples:
@@ -938,13 +944,20 @@ async function dispatch(command, args, recorder = NOOP_RECORDER, ambient = null,
   }
 
   if (command === "theme") {
-    const result = themeCommand(args);
+    const result = args._[1] === "waive"
+      ? waiveOrRefuse(args, () => themeCommand(args), { gate: "theme_gate", registeredGates: ["theme_gate"] })
+      : themeCommand(args);
+    if (!result) return;
     writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
 
   if (command === "checkpoint") {
-    const result = checkpointCommand(args);
+    const result = waiveOrRefuse(args, () => checkpointCommand(args), {
+      gate: optionalString(args.gate) || null,
+      registeredGates: Object.keys(CHECKPOINT_EVALUATORS),
+    });
+    if (!result) return;
     writeResult(result, args, result.ok ? 0 : 2);
     return;
   }
@@ -2280,7 +2293,7 @@ function prepareBuild(args, options = {}) {
       test_orders_allowed: args["test-orders-allowed"] === true,
       sandbox_test_card_confirmed: args["sandbox-test-card-confirmed"] === true,
       proof_policy: proofPolicy,
-      test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common` for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed (at most four orders). Use `--test-order full` for every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The default accidental-flood cap is 6, and an overflow names the exact explicit `--max-test-orders` raise. That cap bounds planned paths; `--max-order-creations` bounds actual order creations, defaults to the planned path count, and is reserved before each submit. Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. These flags are informational, not a permission gate.",
+      test_order_policy_notes: "Test Orders use global test cards that bypass the gateway and create no transactions. Run them any time with `qa run --test-order common` for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when needed (at most four orders). Use `--test-order full` for every actual terminal path in the selected checkout topology; cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. Use `--test-order tiers` (or `tiers:common` / `tiers:full`) to drive one strict-selection order per selector tier the CampaignSpec declares on the checkout page, crossed with those path shapes; order-bump rows marked `is_upsell` are add-ons, not tiers, so a three-tier checkout with one bump plans 3 tiers, and `--select-package <ref[:qty],...>` narrows a tiers run to the listed tiers. The default accidental-flood cap is 6, and an overflow names the exact explicit `--max-test-orders` raise and lists the planned paths (up to 40 ids, the remainder counted). That cap bounds planned paths; `--max-order-creations` bounds actual order creations, defaults to the planned path count, and is reserved before each submit. Localhost on any port is a globally allowed Development domain; non-localhost preview/production origins still need SDK origin allowlist confirmation. These flags are informational, not a permission gate.",
     },
     notes: "Generated by campaigns-os prepare-build. Replace demo refs from CampaignSpec/API before launch.",
   };
@@ -2904,7 +2917,37 @@ function readContractFlag(args, flag) {
   }
 }
 
+// Every flag `standardize` reads, plus the two flags any command accepts
+// (run session + lifecycle journal). Anything else is refused up front: the
+// parser stores an unknown token as a key and the run would otherwise proceed
+// as if the flag had never been typed.
+const STANDARDIZE_FLAGS = [
+  "target",
+  "family",
+  "template-family",
+  "slug",
+  "sdk-support-policy",
+  "field-contract",
+  "no-doctor",
+  "json",
+  "run-id",
+  "lifecycle-journal",
+];
+
+function rejectUnknownStandardizeFlags(args) {
+  const known = new Set(STANDARDIZE_FLAGS);
+  const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
+  if (!unknown.length) return;
+  const valueHint = unknown.some((key) => key.includes("="))
+    ? " A flag takes its value as the next argument (--flag value), not --flag=value."
+    : "";
+  throw new Error(
+    `Unknown flag${unknown.length > 1 ? "s" : ""} for standardize: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${STANDARDIZE_FLAGS.map((key) => `--${key}`).join(", ")}.`,
+  );
+}
+
 function standardizationReportCommand(args) {
+  rejectUnknownStandardizeFlags(args);
   const target = optionalString(args.target);
   if (!target) {
     throw new Error("standardize requires --target <campaign-repo> (a Page Kit root, a parent repo, or a Campaign Cart application checkout).");
@@ -3008,6 +3051,17 @@ export function themeWaive(args) {
   const packet = readJson(packetPath);
   const reason = optionalString(args.reason);
   if (!reason) throw new Error("theme waive requires --reason \"<why the starter palette is acceptable for this campaign>\".");
+  // The same attribution rule as `checkpoint waive`: a named human, no
+  // placeholder, an expiry (when given) that lies in the future and is
+  // recorded. A bound is not demanded here: the theme gate's waiver has always
+  // been open-ended, and QA re-surfaces the starter palette on every run.
+  const waiver = validateWaiverAttribution({
+    reason,
+    waivedBy: args["waived-by"] == null ? null : String(args["waived-by"]),
+    expiresAt: args["expires-at"] == null ? null : String(args["expires-at"]),
+    requireBound: false,
+    label: "theme waive",
+  });
   const workspace = resolveCampaignWorkspace(packetPath, {
     packet,
     reportPath: args.report ? resolve(args.report) : undefined,
@@ -3015,11 +3069,6 @@ export function themeWaive(args) {
   });
   const { reportPath } = workspace;
   if (!existsSync(reportPath)) throw new Error(`theme waive needs an assembly report at ${reportPath}; run prepare-build/start first.`);
-  const waiver = {
-    reason,
-    waived_by: optionalString(args["waived-by"], "operator"),
-    waived_at: new Date().toISOString(),
-  };
   commitAssemblyReport(workspace, (report) => {
     report.theme = report.theme && isObject(report.theme)
       ? { ...report.theme, waiver }
@@ -3037,11 +3086,24 @@ export function themeWaive(args) {
   });
   return {
     ok: true,
+    ...waiveReadiness(packetPath, reportPath),
     action: "theme-waive",
+    gate: "theme_gate",
     waiver,
     report_path: reportPath,
     note: "The theme gate now reports waived for this campaign. Browser QA still runs template-residue checks at warn severity so the shipped palette stays visible in the verdict.",
   };
+}
+
+// The readiness a waive command reports: doctor's verdict on the report the
+// waiver was just written to, so the text line reads `Status: READY_WITH_
+// WAIVERS` (or BLOCKED, when other gates still hold) instead of the printer's
+// "unknown" fallback. Doctor is re-run rather than patched from the pre-waive
+// result because a waiver changes what every other gate concludes about the
+// stage. Nothing is persisted here; the sidecar was already marked stale.
+function waiveReadiness(packetPath, reportPath) {
+  const doctor = doctorPacket(packetPath, { reportPath });
+  return { status: doctor.status, next_stage: doctor.next?.stage || null, next_stage_reason: doctor.next?.reason || null };
 }
 
 function requireValidPolishCaptureReport(report, reportPath) {
@@ -3184,6 +3246,27 @@ const CHECKPOINT_EVALUATORS = createCheckpointRegistry([
   },
 ]);
 
+// A waive refusal under --json is a JSON envelope on stdout, exit 1 — the same
+// channel the success shape uses — so a caller parsing the output learns why
+// (and, for a checkpoint, which gates exist) without reading free text on
+// stderr. The stderr line is kept for the human watching the same terminal.
+// Without --json the refusal propagates as before. Returns null once the
+// envelope has been written.
+function waiveOrRefuse(args, run, { gate = null, registeredGates = [] } = {}) {
+  try {
+    return run();
+  } catch (error) {
+    if (args.json !== true) throw error;
+    const message = String(error?.message ?? error);
+    // `gate` is the id the caller named; when no --gate was given at all the
+    // key is omitted rather than reported as null.
+    console.log(JSON.stringify({ ok: false, error: message, ...(gate == null ? {} : { gate }), registered_gates: registeredGates }, null, 2));
+    console.error(`campaigns-os: ${message}`);
+    process.exitCode = 1;
+    return null;
+  }
+}
+
 function checkpointCommand(args) {
   const subcommand = args._[1] || "help";
   if (subcommand !== "waive") {
@@ -3217,6 +3300,10 @@ export function checkpointWaive(args) {
       throw new Error(`Checkpoint gate "${gateId}" is not blocked (status=${gate.status}); no waiver was recorded.`);
     }
     if (gate.waivable !== true) {
+      const residueFields = gateId === PAGE_KIT_STORE_PROFILE_SCOPE ? storeProfileDemoResidueFields(gate) : [];
+      if (residueFields.length) {
+        throw new Error(`Checkpoint gate "${gateId}" cannot be waived: ${residueFields.join(", ")} still carr${residueFields.length === 1 ? "ies" : "y"} starter demo residue (a demo storefront URL or phone). Replace the demo value(s) in ${gate.subject?.target_path || "_data/campaigns.json"}[${gate.subject?.public_route_slug || "<public-route-slug>"}]; only spec mismatches and missing values are waivable.`);
+      }
       throw new Error(`Checkpoint gate "${gateId}" is not waivable in its current state (${gate.code}); missing, malformed, and invalid-type evidence must be repaired.`);
     }
 
@@ -3233,6 +3320,7 @@ export function checkpointWaive(args) {
   });
   return {
     ok: true,
+    ...waiveReadiness(packetPath, reportPath),
     action: "checkpoint-waive",
     gate: gateId,
     waiver,
@@ -3561,7 +3649,8 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "spec.store_profile",
     phase: "spec",
-    run: ({ spec, errors, warnings, ready }) => validateSpecStoreProfile(spec, errors, warnings, ready),
+    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) =>
+      validateSpecStoreProfile(spec, errors, warnings, ready, { packet, derived, buildState }),
   },
   {
     id: PAGE_KIT_SDK_VERSION_SCOPE,
@@ -4023,7 +4112,7 @@ function validateProofPolicyObject(policy, location, warnings, ready, { requireB
   ready.push(`${location} loaded: browser=${policy.browser_qa_required === true}, typed_card_depth=${policy.typed_card_depth || "unspecified"}, order_path_depth=${policy.order_path_depth || "unspecified"}`);
 }
 
-export function validateSpecStoreProfile(spec, errors, warnings, ready) {
+export function validateSpecStoreProfile(spec, errors, warnings, ready, { packet = null, derived = {}, buildState = {} } = {}) {
   const campaign = spec?.campaign || {};
   const missing = REQUIRED_STORE_PROFILE_FIELDS.filter((field) => !isNonEmptyString(campaign[field]));
   if (missing.length > 0) {
@@ -4071,32 +4160,125 @@ export function validateSpecStoreProfile(spec, errors, warnings, ready) {
     );
   }
 
-  // Starter-template checkout pages hard-code the payment-methods include with
-  // show_paypal/show_klarna/show_apple_pay/show_google_pay = true (the include
-  // itself defaults them false). So a method the spec does not support still
-  // renders unless the build removes it from that include call. When the spec
-  // declares its supported methods and one of those four is absent from both
+  // Every starter-template family's checkout page calls
+  // {% campaign_include 'payment-methods.html' %} with no arguments, and the
+  // include defaults show_paypal/show_klarna/show_apple_pay/show_google_pay to
+  // true. So a method the spec does not support still renders unless the build
+  // passes show_<method>=false on that include call. When the spec declares its
+  // supported methods and one of those four is absent from both
   // available_payment_methods and available_express_payment_methods, warn so the
   // build disables it (or the spec adds it). Methods may be plain strings or
   // { code, label } objects.
+  //
+  // Once the checkout is built, the rendered page is the authority: doctor
+  // reads _site/<slug>/<checkout route>/index.html for the method's markup and
+  // stays silent when none shipped — the same markers browser QA's
+  // template-residue gate keys on — instead of repeating a pre-build advisory
+  // the build already satisfied.
   const normalizeMethod = (method) =>
     String(method && typeof method === "object" ? method.code : method).toLowerCase().replace(/[\s-]+/g, "_");
   const supportedMethods = new Set([
     ...(Array.isArray(paymentMethods) ? paymentMethods : []).map(normalizeMethod),
     ...(Array.isArray(campaign.available_express_payment_methods) ? campaign.available_express_payment_methods : []).map(normalizeMethod),
   ]);
-  if (supportedMethods.size > 0) {
-    const unsupportedDefaults = ["paypal", "klarna", "apple_pay", "google_pay"].filter(
-      (method) => !supportedMethods.has(method)
+  if (supportedMethods.size === 0) return;
+  const unsupportedDefaults = STARTER_TEMPLATE_DEFAULT_ON_PAYMENT_METHODS.filter((method) => !supportedMethods.has(method));
+  if (unsupportedDefaults.length === 0) return;
+
+  const family = packet?.assembly?.template_family;
+  const builtCheckouts = builtCheckoutPagesForSpec(spec, packet, derived);
+  if (builtCheckouts.length === 0) {
+    const includeCall = `{% campaign_include 'payment-methods.html' ${unsupportedDefaults.map((method) => `show_${method}=false`).join(" ")} %}`;
+    addIssue(
+      warnings,
+      "spec.store_profile.payment_methods_default_on",
+      `Starter-template checkout pages render ${unsupportedDefaults.join(", ")} by default: the checkout page includes payment-methods.html with no arguments and the include defaults show_${unsupportedDefaults.length > 1 ? "<method>" : unsupportedDefaults[0]} to true, but the CampaignSpec does not list ${unsupportedDefaults.length > 1 ? "them" : "it"} in available_payment_methods/available_express_payment_methods. `
+        + `Pass ${unsupportedDefaults.map((method) => `show_${method}=false`).join(" ")} on that include call in the ${isNonEmptyString(family) ? `${family} ` : ""}checkout page (${includeCall}) or add the method to the spec, so unsupported methods do not ship. Doctor re-reads the built checkout once it exists.`,
+      {
+        methods: unsupportedDefaults,
+        template_family: isNonEmptyString(family) ? family : null,
+        basis: "spec_only",
+        repair: {
+          owner: "operator",
+          action: `Pass ${unsupportedDefaults.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call, or add the method(s) to the CampaignSpec, then rebuild.`,
+          include_call: includeCall,
+        },
+      }
     );
-    if (unsupportedDefaults.length > 0) {
-      addIssue(
-        warnings,
-        "spec.store_profile.payment_methods_default_on",
-        `Starter-template checkout pages enable ${unsupportedDefaults.join(", ")} in the payment-methods include by default, but the CampaignSpec does not list ${unsupportedDefaults.length > 1 ? "them" : "it"} in available_payment_methods/available_express_payment_methods. If you build on a starter template family, remove the show_* arg(s) from the checkout payment-methods include (or add the method to the spec) so unsupported methods do not ship.`
-      );
+    return;
+  }
+
+  const chrome = isNonEmptyString(family) ? resolveBrandContractOnce(derived, family).contract?.default_residue?.payment_chrome || null : null;
+  const shipped = [];
+  for (const built of builtCheckouts) {
+    const html = readFileSync(built.path, "utf8");
+    for (const method of unsupportedDefaults) {
+      const markers = paymentMethodMarkupMatches(html, method, chrome);
+      if (markers.length) shipped.push({ page_id: built.page_id, file: built.file, method, markers });
     }
   }
+  const builtFiles = [...new Set(builtCheckouts.map((built) => built.file))].join(", ");
+  // What the static scan could not attribute (compound selectors, shared
+  // chrome assets) stays with browser QA; name it so "no markup" is never
+  // read as "nothing left to check".
+  const gaps = { compound_selectors: [], shared_assets: [] };
+  for (const method of unsupportedDefaults) {
+    const methodGaps = paymentMethodStaticScanGaps(chrome, method);
+    gaps.compound_selectors.push(...methodGaps.compound_selectors);
+    gaps.shared_assets.push(...methodGaps.shared_assets);
+  }
+  gaps.compound_selectors = [...new Set(gaps.compound_selectors)];
+  gaps.shared_assets = [...new Set(gaps.shared_assets)];
+  const gapClauses = [];
+  if (gaps.shared_assets.length) gapClauses.push(`shared chrome asset${gaps.shared_assets.length > 1 ? "s" : ""} ${gaps.shared_assets.join(", ")}`);
+  if (gaps.compound_selectors.length) gapClauses.push(`compound selector${gaps.compound_selectors.length > 1 ? "s" : ""} ${gaps.compound_selectors.join(", ")}`);
+  const gapNote = gapClauses.length ? `; left to browser QA: ${gapClauses.join(" and ")}` : "";
+  if (shipped.length === 0) {
+    ready.push(`Built checkout carries no ${unsupportedDefaults.join(", ")} payment-method markup (${builtFiles})${gapNote}`);
+    return;
+  }
+  const shippedMethods = [...new Set(shipped.map((hit) => hit.method))];
+  const evidence = shipped.map((hit) => `${hit.file}: ${hit.method} (${hit.markers.join(", ")})`).join("; ");
+  addIssue(
+    warnings,
+    "spec.store_profile.payment_methods_default_on",
+    `Built checkout still renders ${shippedMethods.join(", ")}, which the CampaignSpec does not list in available_payment_methods/available_express_payment_methods: ${evidence}. `
+      + `Pass ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call and rebuild (or add the method to the spec); browser QA's template-residue gate fails on this markup.`,
+    {
+      methods: shippedMethods,
+      template_family: isNonEmptyString(family) ? family : null,
+      basis: "built_output",
+      pages: shipped,
+      static_scan_gaps: gaps,
+      repair: {
+        owner: "operator",
+        action: `Pass ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} on the checkout page's payment-methods.html include call, or add the method(s) to the CampaignSpec, then rebuild.`,
+        include_call: `{% campaign_include 'payment-methods.html' ${shippedMethods.map((method) => `show_${method}=false`).join(" ")} %}`,
+      },
+    }
+  );
+}
+
+// The four methods every starter-template payment-methods include renders
+// unless the checkout page passes show_<method>=false.
+export const STARTER_TEMPLATE_DEFAULT_ON_PAYMENT_METHODS = Object.freeze(["paypal", "klarna", "apple_pay", "google_pay"]);
+
+// Built checkout pages on disk for the spec's active checkout pages: the
+// rendered _site/<slug>/<route>/index.html files that exist. Empty before a
+// build (or when the spec declares no checkout page), which is the pre-build
+// state the spec-only advisory covers.
+function builtCheckoutPagesForSpec(spec, packet, derived = {}) {
+  const targetRepo = derived?.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!targetRepo || !publicRouteSlug) return [];
+  const built = [];
+  for (const page of activeSpecPages(spec)) {
+    if (String(page?.type || page?.page_type || "").toLowerCase().trim() !== "checkout") continue;
+    const path = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
+    if (!path || !existsSync(path) || !statSync(path).isFile()) continue;
+    built.push({ page_id: page.id, path, file: relative(targetRepo, path).split(sep).join("/") });
+  }
+  return built;
 }
 
 // R2-B5: a best-effort check for store URLs that clearly cannot be
@@ -7640,16 +7822,16 @@ export function nextStage(stage, args, ambient = null) {
   }
   const finalize = (result) => {
     if (divergences.length) result.divergences = divergences;
-    result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate });
+    result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null });
     recordNextRecommendation(ambient, result);
     return result;
   };
   const doctorHasOnlyPolishGateErrors = doctorErrorsAreOnlyPolishGate(doctor.errors);
   const errors = [];
-  const warnings = [...doctor.warnings];
+  const warnings = doctor.warnings.map((issue) => withPacketSubstitutedIssue(issue, packetPath));
   const ready = [...doctor.ready];
-  if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors);
+  if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors.map((issue) => withPacketSubstitutedIssue(issue, packetPath)));
 
   // Explicit stage requests are still downstream of prepare-build. Do not
   // construct the requested stage's prompt or executable actions when the
@@ -7804,7 +7986,30 @@ function addThemeGateErrors(errors, themeGate, stage) {
 // Gate summary every `next` response carries: one entry per gate with a
 // deterministic status, so an agent reads gate state from data instead of
 // parsing error prose.
-function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate = prepareBuildGateIssue(report) }) {
+// Doctor's gate objects declare their commands with the `--packet <packet>`
+// placeholder; `next` copies them into gates[] and errors[].detail, and its
+// own next_actions[] already carry the real packet. One rule for every copy:
+// the placeholder is substituted on the way in, on a copy, so the doctor
+// result (and the sidecar written from it) keeps the template.
+function withPacketSubstituted(gate, packetPath) {
+  if (!gate || typeof gate !== "object" || !Array.isArray(gate.required_actions)) return gate;
+  return {
+    ...gate,
+    required_actions: gate.required_actions.map((action) => (
+      action && typeof action.command === "string"
+        ? { ...action, command: substitutePacket(action.command, packetPath) }
+        : action
+    )),
+  };
+}
+
+function withPacketSubstitutedIssue(issue, packetPath) {
+  const gate = issue?.detail?.checkpoint_gate;
+  if (!gate || typeof gate !== "object") return issue;
+  return { ...issue, detail: { ...issue.detail, checkpoint_gate: withPacketSubstituted(gate, packetPath) } };
+}
+
+function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate = prepareBuildGateIssue(report), packetPath = null }) {
   return [
     {
       id: "doctor",
@@ -7817,10 +8022,10 @@ function buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGat
       reason: prepareBuildGate ? prepareBuildGate.reason : "prepare_build stage is terminal.",
     },
     ...(Array.isArray(doctor?.derived?.checkpoint_gates)
-      ? doctor.derived.checkpoint_gates.map((gate) => ({ ...gate }))
+      ? doctor.derived.checkpoint_gates.map((gate) => withPacketSubstituted(gate, packetPath))
       : []),
     ...(doctor?.derived?.polish_checkpoint_gate
-      ? [{ ...doctor.derived.polish_checkpoint_gate }]
+      ? [withPacketSubstituted(doctor.derived.polish_checkpoint_gate, packetPath)]
       : []),
     {
       id: "theme_gate",
@@ -8162,7 +8367,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
         "run_record_remit_recovery",
         "command",
         `campaigns-os run-record --packet ${shellToken(packetPath)} --run-id ${shellToken(runRecordCloseout.record_id)} --json`,
-        `Recover the existing Run Record's remit (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || "the local record is written but its remit did not complete."} Re-running against the same run id is idempotent; do not mint a second record.`,
+        `Recover the existing Run Record's remit (${runRecordCloseout.reason_code}): ${runRecordCloseout.detail || "the local record is written but its remit did not complete."} Re-running against the same run id is idempotent — a send the receiver already holds resolves to ok — and a record already remitted is left as written; do not mint a second record.`,
         { required: true },
       );
     } else {
@@ -8337,7 +8542,7 @@ npm run qa:install-browser
 Node QA command:
 campaigns-os qa run --packet ${packetPath} --base-url ${url} --browser --test-order common
 
-Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Compare visible placeholders, payment methods, variant media, promo/urgency copy, pricing presentation, and trust/guarantee claims against the Campaign Build Brief. Test Orders use global test cards that bypass the payment gateway and create no transactions, so they are safe to run any time and need no permission flags, packet policy, or merchant setup. Localhost on any port is a globally allowed Development domain for SDK initialization and suppresses Campaigns analytics events; non-localhost preview/production origins still need the SDK origin allowlist. Use --test-order common for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when that adds coverage (at most four orders); use an explicit path such as accept-decline-accept for a targeted matrix; or use --test-order full for every actual terminal path in the selected checkout topology. Cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The default accidental-flood cap is 6, and an overflow names the exact explicit --max-test-orders raise. That cap bounds planned paths; --max-order-creations bounds actual order creations and is reserved before each submit click, defaulting to the planned path count. A path whose failure is classified as created (the order is already placed) is inspected read-only and never resubmitted. A not_created failure may be re-run once, if the creation budget has a slot no still-unrun planned path needs; an ambiguous failure stops that path with an explicit operator check instead of buying again. Read evidence.recovery to tell a recovered pass from a first-attempt pass. Click rendered SDK upsell accept/decline controls for upsell proof. For multi-tier package selectors, drive a specific card with --select-package <ref[:qty],...> (strict: the path fails if the requested card cannot be found or selected, unlike best-effort --cart); prove coupon-bearing orders with --apply-coupon <code> (typed into the rendered promo input, verified against the persisted-order voucher read-back). Reuse one test customer email via --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL (a real monitored inbox in internal runs) so repeated QA does not litter the customer list.
+Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Compare visible placeholders, payment methods, variant media, promo/urgency copy, pricing presentation, and trust/guarantee claims against the Campaign Build Brief. Test Orders use global test cards that bypass the payment gateway and create no transactions, so they are safe to run any time and need no permission flags, packet policy, or merchant setup. Localhost on any port is a globally allowed Development domain for SDK initialization and suppresses Campaigns analytics events; non-localhost preview/production origins still need the SDK origin allowlist. Use --test-order common for checkout, first-offer accept/decline, and a deduplicated shortest real receipt path when that adds coverage (at most four orders); use an explicit path such as accept-decline-accept for a targeted matrix; or use --test-order full for every actual terminal path in the selected checkout topology. Cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The default accidental-flood cap is 6, and an overflow names the exact explicit --max-test-orders raise. That cap bounds planned paths; --max-order-creations bounds actual order creations and is reserved before each submit click, defaulting to the planned path count. A path whose failure is classified as created (the order is already placed) is inspected read-only and never resubmitted. A not_created failure may be re-run once, if the creation budget has a slot no still-unrun planned path needs; an ambiguous failure stops that path with an explicit operator check instead of buying again. Read evidence.recovery to tell a recovered pass from a first-attempt pass. Click rendered SDK upsell accept/decline controls for upsell proof. For multi-tier package selectors, drive a specific card with --select-package <ref[:qty],...> (strict: the path fails if the requested card cannot be found or selected, unlike best-effort --cart), or use --test-order tiers / tiers:common / tiers:full to drive every selector tier the CampaignSpec declares on the checkout page in one run (order-bump rows marked is_upsell are add-ons, not tiers; --select-package narrows a tiers run to the listed tiers); prove coupon-bearing orders with --apply-coupon <code> (typed into the rendered promo input, verified against the persisted-order voucher read-back). Reuse one test customer email via --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL (a real monitored inbox in internal runs) so repeated QA does not litter the customer list.
 
 Launch readiness note: Campaigns OS can prove the campaign build, SDK wiring, browser behavior, and typed-card order paths. It does not prove the merchant is ready for real shoppers. Before launch, confirm the production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and any merchant-side configuration. Treat those as real-shopper readiness items, not Campaigns OS build blockers.
 
@@ -9708,12 +9913,20 @@ function writeRunSessionResult(result, args, exitCode) {
 function runSessionTextLines(result) {
   if (result.action === "run-start") {
     const { session } = result;
+    // With a packet the session may live away from cwd (its target repo), so
+    // the advertised close names the packet: it works from anywhere, including
+    // the directory the operator started from. The project named is the
+    // session's root: session_path is <root>/.campaign-runtime/run-session.json
+    // (RUN_SESSION_REL_PATH), two levels up, not the storage directory.
+    const projectDir = dirname(dirname(result.session_path));
     return [
       "Run session started.",
       `Run ID: ${session.run_id}`,
       `Lifecycle journal: ${session.lifecycle_journal}`,
-      "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
-      `Finish with: campaigns-os run end${session.packet ? "" : " --packet <campaign-runtime.build.json>"}`,
+      session.packet
+        ? `Every campaigns-os command in ${projectDir} — or run from anywhere with --packet ${session.packet} — now auto-logs to this run; no per-command flags.`
+        : "Every campaigns-os command in this project now auto-logs to this run — no per-command flags.",
+      `Finish with: campaigns-os run end --packet ${session.packet || "<campaign-runtime.build.json>"}`,
     ];
   }
   if (result.action === "run-status") {
@@ -9755,9 +9968,48 @@ function runSessionTextLines(result) {
   throw new Error(`Unknown run result action "${result.action}".`);
 }
 
+// The build packet a `run start` / `run end` names, canonicalised the way
+// ambientRunSession canonicalises it (realpath when it exists), so a packet
+// reached through a symlink is the same packet discovery and the Run Record
+// see. Null without --packet.
+function runSessionPacketPath(args) {
+  const packetArg = optionalString(args.packet);
+  return packetArg ? canonicalExistingPath(resolve(packetArg)) : null;
+}
+
+// The project a `run start` / `run end` acts on. With --packet it is the
+// packet's target repo (targetRepoFor: `assembly.target_repo` resolved from the
+// packet's directory, else that directory) — where the build happens and where
+// the auto-opener behind start/prepare-build roots its session — so a session
+// opened from the toolkit or any other directory lands with the build and is
+// found again by packet from anywhere. A packet that is not written yet roots
+// on its own directory (the command prints the `does not exist yet` warning);
+// a packet that exists but cannot be parsed is refused with the parse error,
+// never rooted on a guess — a session opened on the packet's directory when
+// the packet declares a different target would be invisible to every later
+// command run by packet. Without --packet it is cwd, as before.
+function runSessionRootFor(args) {
+  const packetPath = runSessionPacketPath(args);
+  if (!packetPath) return resolve(process.cwd());
+  let packet = null;
+  try {
+    packet = readJson(packetPath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      // Name what failed: a parse error is a packet problem, anything else
+      // (EACCES, EISDIR, …) is the file itself, said with the OS error.
+      const what = error instanceof SyntaxError ? "could not be read as a build packet" : "could not be read";
+      throw new Error(
+        `--packet ${packetPath} ${what} (${error?.message || error}); the run session roots on its assembly.target_repo. Fix or re-point the packet, then retry.`,
+      );
+    }
+  }
+  return targetRepoFor(packetPath, packet);
+}
+
 function runSessionStart(args) {
-  const rootDir = process.cwd();
-  const packet = optionalString(args.packet) ? resolve(args.packet) : null;
+  const rootDir = runSessionRootFor(args);
+  const packet = runSessionPacketPath(args);
   const opened = openRunSession(rootDir, {
     runId: optionalString(args["run-id"]) || null,
     lifecycleJournal: isNonEmptyString(args["lifecycle-journal"]) ? resolve(args["lifecycle-journal"]) : null,
@@ -9830,9 +10082,12 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
   // Use the session resolved once in main() (single source of truth).
   const found = ambient;
   if (!found) {
-    // A stale session at cwd was already closed out by main()'s sweep; that IS
-    // the end the operator asked for, so report it rather than fail.
-    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === resolve(process.cwd()));
+    // A stale session at the root this command acts on was already closed out
+    // by main()'s sweep; that IS the end the operator asked for, so report it
+    // rather than fail. Resolving the root first also surfaces an unreadable
+    // --packet as its own diagnostic instead of "no active run session".
+    const rootDir = runSessionRootFor(args);
+    const swept = (sessionHolder?.sweptStale || []).filter((entry) => entry.dir === rootDir);
     if (swept.length) {
       return { result: { ok: swept.every((entry) => Boolean(entry.record_path)), action: "run-end", stale_closeout: swept }, exitCode: 0 };
     }
@@ -9903,8 +10158,9 @@ async function closeRunSession(found, { packet, extraArgs = {}, silent = false, 
 // runs most worth learning from (blocked, abandoned, agent-driven) left no
 // record. Now, right before a command opens a NEW session at a root, the stale
 // one there is assembled into its Run Record (remit under the usual consent)
-// and removed. Roots: --target for start/prepare-build/build; cwd for
-// `run start` / `run end`. `run status` never sweeps — it is read-only.
+// and removed. Roots: --target for start/prepare-build/build; the packet's
+// target repo for `run start --packet` / `run end --packet`, cwd for the bare
+// forms. `run status` never sweeps — it is read-only.
 // Best-effort throughout: a closeout failure clears the file and says so on
 // stderr; it never blocks the command that triggered it.
 const STALE_SWEEP_TARGET_COMMANDS = new Set(["start", "prepare-build", "build"]);
@@ -9914,7 +10170,19 @@ async function closeOutStaleRunSessions(command, args) {
   if (args["no-run-session"] === true) return [];
   const roots = [];
   if (STALE_SWEEP_TARGET_COMMANDS.has(command) && optionalString(args.target)) roots.push(resolve(args.target));
-  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) roots.push(resolve(process.cwd()));
+  if (command === "run" && (args._[1] === "start" || args._[1] === "end")) {
+    // cwd is deliberately not a second root when --packet is given: the sweep
+    // closes out (assembles and, under consent, remits) the stale session at
+    // the root the command is about to act on, and a stale session at an
+    // unrelated cwd belongs to whatever next acts there (`run status` there
+    // reports it). An unreadable packet roots nothing here; the command itself
+    // raises that diagnostic right after, so it is not printed twice.
+    try {
+      roots.push(runSessionRootFor(args));
+    } catch {
+      // Reported by the command.
+    }
+  }
   // The closeout inherits the invoking command's remit controls: an explicit
   // --no-remit / --no-write stays an opt-out, and a run pointed at a custom
   // --proxy-base never remits the stale record to the canonical endpoint.
@@ -10144,9 +10412,21 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   if (existsSync(journalPath)) artifacts.push(runRecordArtifactRef("findings_journal", journalPath, WORKFLOW_FINDING_SCHEMA, baseDir));
 
   const write = args["no-write"] !== true;
-  // A pure local-inspection run (--no-write) or an explicit --no-remit never
-  // phones home, regardless of consent.
-  const remitDisabled = args["no-remit"] === true || !write;
+  // The record already on disk under this run_id, when a writing run would
+  // replace it. run-record is keyed on run_id, and a re-run — an explicit
+  // --run-id, a `run end` on a session re-opened under an id that already
+  // closed, the recovery action `next` prints — must never turn a remit that
+  // landed into one that did not. The receiver holds one record per id and
+  // refuses a second send, so a record it already has is final: it is neither
+  // re-sent nor rewritten here. A prior send that did not land (failed,
+  // pending) is retried when this run may send, and kept as it stands when it
+  // may not. A dry run reads nothing: it writes and sends nothing.
+  const prior = write ? readPriorRunRecord(runId, baseDir) : null;
+  const priorRemit = priorRemitOutcome(prior?.record);
+  const storedRemotely = priorRemit?.state === "ok";
+  // A pure local-inspection run (--no-write), an explicit --no-remit, or a
+  // record the receiver already holds never phones home, regardless of consent.
+  const remitDisabled = args["no-remit"] === true || !write || storedRemotely;
 
   // Resolve consent through the shared resolver every remitting command calls.
   // When interactive, not in --json/agent mode, remit isn't disabled, and no
@@ -10193,12 +10473,52 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // being fast or reachable. If a crash lands before the final rewrite below,
   // the durable record is explicitly pending instead of silently skipped.
   const shouldAttemptRemit = !remitDisabled && consent.state === "on";
+  const remitBaseKind = describeRemitBaseKind(proxyBase);
+
+  // The receiver already holds this run_id: the local record is the durable
+  // one and stays exactly as written. Nothing is sent (the receiver would
+  // refuse it) and nothing is rewritten (a reassembly could only be thinner
+  // than what the session wrote, and would then disagree with the stored copy).
+  // `not_contacted` says exactly that — the receiver was not asked — where
+  // `already_stored` is reserved for a 409 it actually answered.
+  if (storedRemotely) {
+    const summary = {
+      ok: true,
+      action: "run-record",
+      written: false,
+      record_path: prior.path,
+      record: prior.record,
+      remit: { result: REMIT_RESULTS.not_contacted, http_status: null, base_kind: null, sent: false, preserved: true },
+    };
+    if (silent) return summary;
+    if (args.json) {
+      console.log(JSON.stringify(summary, null, 2));
+      return summary;
+    }
+    console.log(`Run Record already closed and remitted for run ${prior.record.run_id}; left as written.`);
+    console.log(`Run ID: ${prior.record.run_id}`);
+    console.log(`Remit: ok (already stored at the receiver for this run id; not re-sent) -> ${prior.record.remit_endpoint || DEFAULT_RUNS_ENDPOINT}`);
+    console.log(`Kept: ${prior.path}`);
+    return summary;
+  }
+
+  // A prior send that did not land, on a run that will not send now: the
+  // outcome on disk is the truth about that send and is carried forward, so
+  // `--no-remit` (or consent off) over a failed remit does not file it as
+  // skipped and hide it from closeout.
+  const carriedForward = !shouldAttemptRemit && priorRemit && priorRemit.state !== "skipped" ? priorRemit : null;
   if (shouldAttemptRemit) {
     record.remit_state = "pending";
     record.remit_attempted = false;
     record.remit_ok = null;
     record.remit_error = null;
     record.remit_endpoint = null;
+  } else if (carriedForward) {
+    record.remit_state = carriedForward.state;
+    record.remit_attempted = carriedForward.attempted;
+    record.remit_ok = carriedForward.ok;
+    record.remit_error = carriedForward.error;
+    record.remit_endpoint = carriedForward.endpoint;
   }
 
   const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
@@ -10222,18 +10542,42 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // leaves the machine.
   const keyRejection = describeCampaignKeyRejection(keySource.rejected);
   if (keyRejection) process.stderr.write(`[campaigns-os] run-record: ${keyRejection} This run's remit is attempted without a tenant scope.\n`);
-  const remitStatus = remitDisabled
-    ? { attempted: false, ok: null, error: null, endpoint: null }
-    : await remitRunRecord(record, { proxyBase, consent, campaignKey });
-  record.remit_attempted = remitStatus.attempted;
-  record.remit_ok = remitStatus.ok;
-  record.remit_error = remitStatus.error;
-  record.remit_endpoint = remitStatus.endpoint;
-  record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
+  const remitStatus = shouldAttemptRemit
+    ? await remitRunRecord(record, { proxyBase, consent, campaignKey })
+    : { attempted: false, ok: null, error: null, endpoint: null, result: null, http_status: null };
+  if (!carriedForward) {
+    record.remit_attempted = remitStatus.attempted;
+    record.remit_ok = remitStatus.ok;
+    record.remit_error = remitStatus.error;
+    record.remit_endpoint = remitStatus.endpoint;
+    // Classified by what the receiver answered, not by whether the transport
+    // threw: `already_stored` (409) and `ok_unparsed_ack` (a 2xx whose body was
+    // not JSON) are ok states; only a refusal or a transport failure is failed.
+    record.remit_state = remitStatus.attempted ? (remitStatus.ok ? "ok" : "failed") : "skipped";
+  }
 
   if (write) writeRunRecord(record, { baseDir });
 
-  const summary = { ok: true, action: "run-record", written: write, record_path: recordPath, record };
+  const summary = {
+    ok: true,
+    action: "run-record",
+    written: write,
+    record_path: recordPath,
+    record,
+    // The send's classification and where it went, which the record's schema
+    // does not carry: `result` is one of stored, already_stored,
+    // ok_unparsed_ack, refused, transport_error (this run's send),
+    // not_contacted (a prior ok on disk; the early return above), or null
+    // when nothing was sent and nothing is known; `base_kind` names the
+    // resolved remit base as canonical, loopback or proxy — never the host.
+    remit: {
+      result: remitStatus.result,
+      http_status: remitStatus.http_status,
+      base_kind: shouldAttemptRemit ? remitBaseKind : null,
+      sent: remitStatus.attempted,
+      preserved: Boolean(carriedForward),
+    },
+  };
   if (silent) return summary;
   if (args.json) {
     console.log(JSON.stringify(summary, null, 2));
@@ -10244,14 +10588,71 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   console.log(`Consent: ${record.consent_state} (${record.consent_source})`);
   console.log(`Artifacts referenced: ${record.artifacts.length}`);
   console.log(`Findings in snapshot: ${record.observations.finding_ids.length}`);
-  if (record.remit_attempted) {
-    console.log(`Remit: ${record.remit_ok ? "ok" : `failed (${record.remit_error})`} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : ` (unscoped: ${keyRejection ? "the declared Campaigns API key was refused on shape — see the warning above" : "no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source"} — the receiver lists this record only via the admin listing or by run_id)`}`);
+  if (carriedForward) {
+    console.log(`Remit: not attempted this run; the prior outcome for this run id is kept (${carriedForward.state}${carriedForward.error ? `: ${carriedForward.error}` : ""}).`);
+  } else if (record.remit_attempted) {
+    console.log(`Remit: ${remitResultText(record, remitStatus)} -> ${record.remit_endpoint}${campaignKey ? " (tenant-scoped: X-Campaign-Key sent)" : ` (unscoped: ${keyRejection ? "the declared Campaigns API key was refused on shape — see the warning above" : "no Campaigns API key found in the packet, its local CampaignSpec, or the declared env source"} — the receiver lists this record only via the admin listing or by run_id)`} [base: ${remitBaseKind}]`);
   } else {
     console.log(`Remit: skipped (consent ${record.consent_state}${remitDisabled ? ", disabled for this run" : ""}).`);
   }
   if (write) console.log(`Wrote: ${recordPath}`);
   else console.log("Dry run only (--no-write). No record written, no remit.");
   return summary;
+}
+
+// The record already written under `runId` for this target, or null when there
+// is none, it cannot be parsed, or it is not a valid Run Record. Only a record
+// `writeRunRecord` could have written is trusted as a prior — the same
+// validator gates both — so a file that merely says `remit_state: "ok"` is
+// replaced like a corrupt one, never preserved or handed back as the record.
+function readPriorRunRecord(runId, baseDir) {
+  let path;
+  try {
+    path = resolveRunRecordPath(runId, baseDir);
+  } catch {
+    return null;
+  }
+  if (!existsSync(path)) return null;
+  try {
+    const record = readJson(path);
+    return validateRunRecord(record).ok ? { path, record } : null;
+  } catch {
+    return null;
+  }
+}
+
+// The remit outcome a prior record carries, in the shape the stamping code
+// uses; null when the record has no recognisable remit state.
+function priorRemitOutcome(record) {
+  const state = optionalString(record?.remit_state);
+  if (!state || !["skipped", "pending", "ok", "failed"].includes(state)) return null;
+  return {
+    state,
+    attempted: record.remit_attempted === true,
+    ok: typeof record.remit_ok === "boolean" ? record.remit_ok : null,
+    error: optionalString(record.remit_error) || null,
+    endpoint: optionalString(record.remit_endpoint) || null,
+  };
+}
+
+// Where a remit resolves to, as a kind rather than a host: the canonical
+// endpoint, a loopback receiver, or some other proxy the operator named.
+function describeRemitBaseKind(proxyBase) {
+  if (normalizeConsentScope(proxyBase) === CANONICAL_REMIT_SCOPE) return "canonical";
+  try {
+    return isLoopbackHostname(new URL(String(proxyBase)).hostname) ? "loopback" : "proxy";
+  } catch {
+    return "proxy";
+  }
+}
+
+// The one-line reading of an attempted remit for the text output: ok states
+// that were not a plain stored 2xx say what they were.
+function remitResultText(record, remitStatus) {
+  if (!record.remit_ok) return `failed (${record.remit_error})`;
+  if (remitStatus.result === REMIT_RESULTS.already_stored) return `ok (already stored at the receiver for this run id; HTTP ${remitStatus.http_status})`;
+  if (remitStatus.result === REMIT_RESULTS.ok_unparsed_ack) return `ok (${record.remit_error})`;
+  return "ok";
 }
 
 // Build one artifact reference {kind, path, schema_version, sha256}. The path
@@ -10529,11 +10930,17 @@ async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   let body;
   try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text.slice(0, 400) }; }
   if (!response.ok) throw new Error(`telemetry list: ${response.status} ${response.statusText} from ${url}: ${JSON.stringify(body).slice(0, 400)}`);
+  // A 2xx is not a listing until it carries runs[]. A maintenance page or an
+  // intermediary's HTML comes back 200 with no JSON at all, and reporting that
+  // as "0 of 0 returned" would tell the operator the receiver holds nothing.
+  if (!Array.isArray(body.runs)) {
+    throw new Error(`telemetry list: ${response.status} ${response.statusText} from ${url} is not a Run Record listing (no runs[] in the body): ${JSON.stringify(body).slice(0, 400)}`);
+  }
   const limit = Number.isFinite(Number(args.limit)) && Number(args.limit) > 0 ? Number(args.limit) : 50;
   // --limit trims client-side (the receiver has no page size); `count` is
   // what is shown, `returned` what the receiver sent, `total` what it holds.
-  const returned = Array.isArray(body.runs) ? body.runs.length : 0;
-  const runs = Array.isArray(body.runs) ? body.runs.slice(0, limit) : [];
+  const returned = body.runs.length;
+  const runs = body.runs.slice(0, limit);
   if (args.json) {
     console.log(JSON.stringify({ ok: true, action: "telemetry-list", scope, endpoint: url, count: runs.length, returned, total: body.total ?? null, truncated: body.truncated === true, runs }, null, 2));
     return;
@@ -10577,21 +10984,67 @@ function printDoctorTinyPrompt(result, args) {
   for (const line of doctorTinyPromptLines(result)) console.log(line);
 }
 
+// Which gate a next_actions[] entry belongs to, by the id prefix
+// buildNextActions assigns: `theme_gate.<id>`, `polish_gate.<id>`,
+// `checkpoint.<gate id>.<suffix>` (the gate id itself carries dots, so the
+// registered ids are matched longest-first), and the prepare-build recoveries.
+// Rechecks and anything unrecognised belong to no gate.
+const NEXT_ACTION_GATE_PREFIXES = [["theme_gate.", "theme_gate"], ["polish_gate.", "polish_gate"]];
+const PREPARE_BUILD_ACTION_IDS = new Set(["rerun_prepare_build", "restore_prepare_build_binding"]);
+function nextActionGate(action, gateIds) {
+  const id = typeof action?.id === "string" ? action.id : "";
+  for (const [prefix, gate] of NEXT_ACTION_GATE_PREFIXES) if (id.startsWith(prefix)) return gate;
+  if (id.startsWith("checkpoint.")) {
+    const rest = id.slice("checkpoint.".length);
+    return [...gateIds].sort((a, b) => b.length - a.length).find((gate) => rest === gate || rest.startsWith(`${gate}.`)) || null;
+  }
+  if (PREPARE_BUILD_ACTION_IDS.has(id)) return "prepare_build";
+  return null;
+}
+
+// Every gate buildNextGates emits has a heading of its own: the fixed gates
+// by name, and anything else is a registered checkpoint gate. The doctor gate
+// is named explicitly so a future action that resolves to it is never filed
+// as a checkpoint.
+function nextGateHeading(gate) {
+  if (gate.id === "doctor") return "Doctor is BLOCKING this stage. Resolve it with:";
+  if (gate.id === "theme_gate") return "Theme gate is BLOCKING this stage. Resolve it with:";
+  if (gate.id === "polish_gate") return "Polish gate is BLOCKING this stage. Resolve it with:";
+  if (gate.id === "prepare_build") return "prepare-build is BLOCKING this stage. Resolve it with:";
+  return `Checkpoint gate ${gate.id} is BLOCKING this stage. Resolve it with:`;
+}
+
 // The human half of `next`. Split out from the printer so the text an operator
 // actually reads is assertable without a subprocess: JSON output is covered by
 // next_actions[], and the prompt is the only place a non-JSON caller sees any
 // of it. Returns the lines to print, in order; an empty array prints nothing.
 export function nextTinyPromptLines(result) {
   const lines = [];
-  // A blocked gate owns the tiny prompt: print the exact commands so the
-  // operator/agent acts on data, not on remembering doctrine.
-  const blockedGate = (result.gates || []).find((gate) => gate.status === "blocked" && gate.id === "theme_gate");
-  if (blockedGate) {
-    lines.push("", "Theme gate is BLOCKING this stage. Resolve it with:");
-    for (const action of result.next_actions || []) {
-      lines.push(`  - ${action.command || action.description}`);
+  const actions = Array.isArray(result.next_actions) ? result.next_actions : [];
+  const gates = Array.isArray(result.gates) ? result.gates : [];
+  const blockedGates = gates.filter((gate) => gate?.status === "blocked");
+  // Every blocked gate owns its own heading and lists only the actions it
+  // produced, so a checkpoint repair is never filed under the theme gate and
+  // the checkpoint commands are printed whether or not the theme gate is also
+  // blocked. What no gate claims (the rechecks) follows under its own line.
+  if (blockedGates.length) {
+    const gateIds = gates.map((gate) => gate?.id).filter(Boolean);
+    const claimed = new Set();
+    for (const gate of blockedGates) {
+      const owned = actions.filter((action) => nextActionGate(action, gateIds) === gate.id);
+      if (!owned.length) continue;
+      lines.push("", nextGateHeading(gate));
+      for (const action of owned) {
+        lines.push(`  - ${action.command || action.description}`);
+        claimed.add(action);
+      }
     }
-    return lines;
+    const rest = actions.filter((action) => !claimed.has(action));
+    if (rest.length) {
+      lines.push("", claimed.size ? "Then:" : "This stage is BLOCKED. Resolve it with:");
+      for (const action of rest) lines.push(`  - ${action.command || action.description}`);
+    }
+    if (blockedGates.some((gate) => gate.id === "theme_gate")) return lines;
   }
   // A passing-but-token-less theme gate is the case that used to say nothing
   // at all until QA blocked. It is not a blocker here, so it does not take the
@@ -10706,8 +11159,16 @@ function printPrepareResult(result, args) {
 // order (status, targets, skills, ready, actions, cause summary, errors,
 // warnings, required actions, next, prompt, note) so the text an operator
 // reads is assertable without a subprocess; printResult prints the join.
+const WAIVE_ACTIONS = new Set(["theme-waive", "checkpoint-waive"]);
+
 export function resultTextLines(result) {
   const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`];
+  // A waive command's second line names what it recorded; the third is the
+  // stage doctor now picks for the report the waiver was written to.
+  if (WAIVE_ACTIONS.has(result.action) && result.gate) {
+    lines.push(`Waived: ${result.gate} by ${result.waiver?.waived_by || "(unattributed)"}${result.waiver?.expires_at ? ` until ${result.waiver.expires_at}` : ""}`);
+    if (result.next_stage) lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
+  }
   if (result.targets?.length) {
     lines.push("Targets:");
     for (const target of result.targets) {

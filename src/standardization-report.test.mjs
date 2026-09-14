@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -86,8 +88,74 @@ test("standardization report inventories a Page Kit root and classifies source/v
     assert.ok(codes(entry).includes("source.raw_block"));
     assert.ok(codes(entry).includes("source.hardcoded_root_assets"));
     assert.ok(codes(entry).includes("source.document_wrappers"));
-    assert.ok(codes(entry).includes("version.sdk_below_preferred_cutoff"));
+    assert.ok(codes(entry).includes("version.sdk_below_minimum_supported"));
     assert.ok(codes(entry).includes("version.page_kit_below_preferred_cutoff"));
+  });
+});
+
+test("SDK support policy applies to Page Kit roots, bundled and overridden alike", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.28", pageKitVersion: "^0.1.1" });
+
+    const bundled = createStandardizationReport({ targetRepo: dir });
+    const [root] = bundled.roots;
+    assert.equal(root.version_policy.source, "contracts/campaign-cart-sdk-support-policy.v0.json");
+    assert.deepEqual(root.version_policy.evaluations, [
+      { version: "0.4.28", source: "campaigns_json", meets_minimum: true, meets_preferred: false },
+    ]);
+    assert.ok(codes(root).includes("version.sdk_below_preferred_policy"));
+    assert.ok(!codes(root).includes("version.sdk_below_minimum_supported"));
+    assert.match(formatStandardizationReportMarkdown(bundled), /- Version policy: min 0\.4\.20, preferred 0\.4\.30 \(contracts\/campaign-cart-sdk-support-policy\.v0\.json\)/);
+
+    const strict = createStandardizationReport({
+      targetRepo: dir,
+      sdkSupportPolicy: { source: "strict-policy", minimum_supported: "0.4.35", preferred_minimum: "0.5.0" },
+    });
+    const [strictRoot] = strict.roots;
+    assert.equal(strictRoot.version_policy.source, "strict-policy");
+    assert.equal(strictRoot.status, "blocked");
+    const blocker = strictRoot.findings.find((item) => item.code === "version.sdk_below_minimum_supported");
+    assert.equal(blocker.severity, "blocker");
+    assert.match(blocker.message, /below the minimum supported 0\.4\.35 \(policy: strict-policy\)/);
+    assert.match(formatStandardizationReportMarkdown(strict), /- Version policy: min 0\.4\.35, preferred 0\.5\.0 \(strict-policy\)/);
+  });
+});
+
+test("checkout field contract applies to Page Kit roots that inline checkout bindings", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    const plain = createStandardizationReport({ targetRepo: dir });
+    assert.ok(!plain.roots[0].capabilities.includes("checkout_field_contract"));
+    assert.equal("checkout_fields" in plain.roots[0], false);
+
+    write(join(dir, "src", "acme", "_includes", "fields.html"), `
+<input data-next-checkout-field="fname">
+<input data-next-checkout-field="zip">
+`);
+    const bundled = createStandardizationReport({ targetRepo: dir });
+    const [root] = bundled.roots;
+    assert.ok(root.capabilities.includes("checkout_field_contract"));
+    assert.equal(root.checkout_fields.bindings.length, 2);
+    assert.ok(codes(root).includes("checkout.unsupported_field_binding"));
+
+    const custom = createStandardizationReport({
+      targetRepo: dir,
+      fieldContract: { schema_version: "custom-fields/test", canonical_fields: ["fname", "zip"] },
+    });
+    assert.equal(custom.roots[0].checkout_fields.contract, "custom-fields/test");
+    assert.ok(!codes(custom.roots[0]).includes("checkout.unsupported_field_binding"));
+
+    // Binding discovery follows the effective contract's attributes, so a
+    // contract naming another attribute still finds and judges those bindings.
+    write(join(dir, "src", "acme", "_includes", "fields.html"), `<input my-checkout-field="zip">`);
+    const renamed = createStandardizationReport({
+      targetRepo: dir,
+      fieldContract: { schema_version: "custom-fields/test", binding_attributes: ["my-checkout-field"], canonical_fields: ["postal"], stale_aliases: { zip: "postal" } },
+    });
+    assert.ok(renamed.roots[0].capabilities.includes("checkout_field_contract"));
+    assert.equal(renamed.roots[0].checkout_fields.bindings.length, 1);
+    assert.ok(codes(renamed.roots[0]).includes("checkout.unsupported_field_binding"));
+    assert.ok(!createStandardizationReport({ targetRepo: dir }).roots[0].capabilities.includes("checkout_field_contract"));
   });
 });
 
@@ -250,18 +318,261 @@ test("hardcoded root asset scan ignores scripts and comments", () => {
   });
 });
 
-test("standardization report marks built output unresolved when slug scope is ambiguous", () => {
+function writeTwoCampaigns(root) {
+  write(join(root, "_data", "campaigns.json"), JSON.stringify({
+    acme: { name: "Acme Funnel", sdk_version: "0.4.30", store_url: "https://acme.example/" },
+    beta: { name: "Beta Funnel", sdk_version: "0.4.30", store_url: "https://beta.example/" },
+  }, null, 2));
+}
+
+test("standardization report marks built output unresolved when no slug source disambiguates", () => {
   withTempDir((dir) => {
     writeFixtureRoot(dir, { sdkVersion: "0.4.25", pageKitVersion: "^0.1.1" });
+    writeTwoCampaigns(dir);
     write(join(dir, "_site", "beta", "index.html"), "<h1>Built Beta</h1>");
 
     const report = createStandardizationReport({ targetRepo: dir });
     const root = report.roots[0];
+    assert.equal(root.identity.campaign_slug, null);
     assert.equal(root.built_output.present, true);
     assert.equal(root.built_output.scope_resolved, false);
     assert.equal(root.built_output.html_count, 0);
+    assert.deepEqual(root.built_output.slug_candidates, ["acme", "beta"]);
     assert.match(formatStandardizationReportMarkdown(report), /Built _site: unresolved/);
     assert.ok(codes(root).includes("built_output.scope_unresolved"));
+    assert.ok(root.remediation.proof_commands.some((command) => /doctor --built .* --slug <slug> --json$/.test(command)));
+  });
+});
+
+test("built output scope defaults to the campaigns.json slug when _site holds a stale sibling", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    write(join(dir, "_site", "stale-old", "index.html"), "<h1>Stale</h1>");
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+    assert.equal(root.identity.campaign_slug, "acme");
+    assert.equal(root.identity.campaign_slug_source, "campaigns_json");
+    assert.equal(root.built_output.scope_resolved, true);
+    assert.equal(root.built_output.slug, "acme");
+    assert.equal(root.built_output.slug_source, "campaigns_json");
+    assert.equal(root.built_output.html_count, 2);
+    assert.ok(!codes(root).includes("built_output.scope_unresolved"));
+    assert.ok(root.remediation.proof_commands.some((command) => /doctor --built .* --slug acme --json$/.test(command)));
+    assert.match(formatStandardizationReportMarkdown(report), /- Built slug: acme \(campaigns_json\)/);
+  });
+});
+
+test("built output scope ignores root-level html when the campaign slug is known", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    write(join(dir, "_site", "index.html"), "<h1>Site root</h1>");
+
+    const root = createStandardizationReport({ targetRepo: dir }).roots[0];
+    assert.equal(root.built_output.scope_resolved, true);
+    assert.equal(root.built_output.slug, "acme");
+    assert.equal(root.built_output.html_count, 2);
+  });
+});
+
+test("built output scope falls back to the runtime packet slug when campaigns.json lists several", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    writeTwoCampaigns(dir);
+    write(join(dir, "_site", "beta", "index.html"), "<h1>Built Beta</h1>");
+    write(join(dir, ".campaign-runtime", "build-packet.json"), JSON.stringify({
+      campaign: { public_route_slug: "acme", allowed_domains_confirmed: true },
+    }, null, 2));
+
+    const root = createStandardizationReport({ targetRepo: dir }).roots[0];
+    assert.equal(root.identity.campaign_slug, "acme");
+    assert.equal(root.identity.campaign_slug_source, ".campaign-runtime/build-packet.json");
+    assert.equal(root.built_output.scope_resolved, true);
+    assert.equal(root.built_output.slug, "acme");
+    assert.equal(root.built_output.slug_source, ".campaign-runtime/build-packet.json");
+    assert.equal(root.built_output.html_count, 2);
+
+    // Packets that disagree are an ambiguity, not a first-wins pick.
+    write(join(dir, ".campaign-runtime", "beta-packet.json"), JSON.stringify({
+      campaign: { public_route_slug: "beta", allowed_domains_confirmed: true },
+    }, null, 2));
+    const ambiguous = createStandardizationReport({ targetRepo: dir }).roots[0];
+    assert.equal(ambiguous.identity.campaign_slug, null);
+    assert.equal(ambiguous.built_output.scope_resolved, false);
+    assert.ok(codes(ambiguous).includes("built_output.scope_unresolved"));
+  });
+});
+
+test("a derived slug with no built directory is a mismatch finding, never a silent scope", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    rmSync(join(dir, "_site", "acme"), { recursive: true, force: true });
+    write(join(dir, "_site", "stale-old", "index.html"), "<h1>Stale</h1>");
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+    assert.equal(root.built_output.scope_resolved, false);
+    assert.equal(root.built_output.slug, "acme");
+    assert.equal(root.built_output.html_count, 0);
+    assert.deepEqual(root.built_output.slug_candidates, ["stale-old"]);
+    assert.equal(root.built_output.doctor.status, "skipped");
+    assert.notEqual(root.status, "ready");
+    const mismatch = root.findings.find((item) => item.code === "built_output.slug_mismatch");
+    assert.equal(mismatch.severity, "operator_readiness");
+    assert.match(mismatch.message, /no acme\/ directory for campaign slug acme \(from campaigns_json\); built directories: stale-old/);
+    assert.deepEqual(mismatch.evidence, { expected_slug: "acme", slug_source: "campaigns_json", slug_directory_present: false, slug_candidates: ["stale-old"] });
+    assert.equal(root.built_output.slug_directory_present, false);
+    assert.ok(!codes(root).includes("built_output.scope_unresolved"));
+    assert.match(formatStandardizationReportMarkdown(report), /- Built slug: acme not found \(built directories: stale-old\)/);
+
+    // An explicit --slug that names a missing directory stays the operator's
+    // own unresolved scope, not a mismatch against the derived slug.
+    const explicit = createStandardizationReport({ targetRepo: dir, slug: "acme" }).roots[0];
+    assert.ok(codes(explicit).includes("built_output.scope_unresolved"));
+    assert.ok(!codes(explicit).includes("built_output.slug_mismatch"));
+  });
+});
+
+test("a derived slug whose built directory holds no HTML pages is named as empty, not missing", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    rmSync(join(dir, "_site", "acme"), { recursive: true, force: true });
+    write(join(dir, "_site", "acme", "assets", "app.css"), "body{}");
+    write(join(dir, "_site", "stale-old", "index.html"), "<h1>Stale</h1>");
+
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+    assert.equal(root.built_output.scope_resolved, false);
+    assert.equal(root.built_output.slug, "acme");
+    assert.equal(root.built_output.slug_directory_present, true);
+    assert.deepEqual(root.built_output.slug_candidates, ["stale-old"]);
+    const mismatch = root.findings.find((item) => item.code === "built_output.slug_mismatch");
+    assert.match(mismatch.message, /^Built _site\/acme\/ exists but holds no HTML pages for campaign slug acme \(from campaigns_json\); built directories: stale-old\./);
+    assert.ok(!/no acme\/ directory/.test(mismatch.message));
+    assert.equal(mismatch.evidence.slug_directory_present, true);
+    assert.match(mismatch.next_action, /contains its HTML pages/);
+    assert.match(root.built_output.doctor.reason, /exists but holds no HTML pages/);
+    assert.match(formatStandardizationReportMarkdown(report), /- Built slug: acme has no HTML pages \(built directories: stale-old\)/);
+  });
+});
+
+test("capabilities list the inspections that ran, so the doctor appears only once attached", () => {
+  withTempDir((dir) => {
+    writeFixtureRoot(dir, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    const report = createStandardizationReport({ targetRepo: dir });
+    const root = report.roots[0];
+    assert.deepEqual(root.capabilities, [
+      "page_kit_source_contract",
+      "sdk_version_policy",
+      "campaign_cart_runtime_inventory",
+    ]);
+    attachBuiltOutputDoctor(report, root.id, { ok: true, status: "ready", mode: "built_site", errors: [], warnings: [], ready: [] });
+    assert.ok(root.capabilities.includes("built_output_doctor"));
+    attachBuiltOutputDoctor(report, root.id, { ok: true, status: "ready", mode: "built_site", errors: [], warnings: [], ready: [] });
+    assert.equal(root.capabilities.filter((name) => name === "built_output_doctor").length, 1);
+  });
+});
+
+const cli = resolve(import.meta.dirname, "../bin/campaigns-os.mjs");
+
+function runStandardize(cwd, args) {
+  return spawnSync(process.execPath, [cli, "standardize", ...args], {
+    cwd,
+    encoding: "utf8",
+    timeout: 60_000,
+    env: { PATH: process.env.PATH, HOME: cwd, CAMPAIGNS_OS_TELEMETRY: "off" },
+  });
+}
+
+// Every file under a directory with its size, mtime and content hash: the
+// read-only proof compares this before and after a run.
+function snapshotTree(root) {
+  const entries = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        entries.push({ path, kind: "dir" });
+        walk(path);
+      } else {
+        const stat = statSync(path);
+        entries.push({ path, kind: "file", size: stat.size, mtime: stat.mtimeMs, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") });
+      }
+    }
+  };
+  walk(root);
+  return entries;
+}
+
+test("standardize refuses unknown flags instead of running as if they were absent", () => {
+  withTempDir((dir) => {
+    const home = join(dir, "home");
+    const target = join(dir, "campaign");
+    mkdirSync(home, { recursive: true });
+    writeFixtureRoot(target, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+
+    const bogus = runStandardize(home, ["--target", target, "--bogus", "--json"]);
+    assert.equal(bogus.status, 1);
+    assert.equal(bogus.stdout, "");
+    assert.match(bogus.stderr, /Unknown flag for standardize: --bogus\. Known flags: --target, --family, --template-family, --slug, --sdk-support-policy, --field-contract, --no-doctor, --json, --run-id, --lifecycle-journal\./);
+
+    const joined = runStandardize(home, ["--target", target, "--json", "--no-doctor=maybe"]);
+    assert.equal(joined.status, 1);
+    assert.match(joined.stderr, /Unknown flag for standardize: --no-doctor=maybe\. A flag takes its value as the next argument \(--flag value\), not --flag=value\./);
+
+    const known = runStandardize(home, ["--target", target, "--no-doctor", "--json"]);
+    assert.notEqual(known.status, 1, known.stderr);
+    assert.equal(JSON.parse(known.stdout).roots[0].built_output.doctor.reason, "--no-doctor was provided");
+  });
+});
+
+test("standardize honours --sdk-support-policy on a Page Kit root from the command line", () => {
+  withTempDir((dir) => {
+    const home = join(dir, "home");
+    const target = join(dir, "campaign");
+    mkdirSync(home, { recursive: true });
+    writeFixtureRoot(target, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    const policyPath = join(dir, "strict-policy.json");
+    writeFileSync(policyPath, JSON.stringify({ source: "strict-policy", minimum_supported: "0.4.35", preferred_minimum: "0.5.0" }));
+
+    const plain = runStandardize(home, ["--target", target, "--no-doctor", "--json"]);
+    const strict = runStandardize(home, ["--target", target, "--no-doctor", "--json", "--sdk-support-policy", policyPath]);
+    // The fixture carries a raw-block blocker, so both runs exit 2; the policy
+    // difference shows in the version findings, not the exit code.
+    assert.equal(plain.status, 2, plain.stderr);
+    assert.equal(strict.status, 2, strict.stderr);
+    const plainRoot = JSON.parse(plain.stdout).roots[0];
+    const strictRoot = JSON.parse(strict.stdout).roots[0];
+    assert.equal(plainRoot.version_policy.source, "contracts/campaign-cart-sdk-support-policy.v0.json");
+    assert.equal(strictRoot.version_policy.source, "strict-policy");
+    assert.ok(codes(strictRoot).includes("version.sdk_below_minimum_supported"));
+    assert.ok(!codes(plainRoot).includes("version.sdk_below_minimum_supported"));
+    assert.match(runStandardize(home, ["--target", target, "--no-doctor", "--sdk-support-policy", policyPath]).stdout, /Version policy: min 0\.4\.35, preferred 0\.5\.0 \(strict-policy\)/);
+  });
+});
+
+test("standardize is read-only: a run with the built-output doctor leaves the target byte-identical", () => {
+  withTempDir((dir) => {
+    const home = join(dir, "home");
+    const target = join(dir, "campaign");
+    mkdirSync(home, { recursive: true });
+    writeFixtureRoot(target, { sdkVersion: "0.4.30", pageKitVersion: "^0.1.1" });
+    write(join(target, "_site", "stale-old", "index.html"), "<h1>Stale</h1>");
+    const before = snapshotTree(target);
+
+    const json = runStandardize(home, ["--target", target, "--json"]);
+    assert.notEqual(json.status, 1, json.stderr);
+    const root = JSON.parse(json.stdout).roots[0];
+    // The slug came from campaigns.json, so the doctor actually ran here.
+    assert.equal(root.built_output.slug, "acme");
+    assert.notEqual(root.built_output.doctor.status, "skipped");
+    assert.ok(root.capabilities.includes("built_output_doctor"));
+    const markdown = runStandardize(home, ["--target", target]);
+    assert.notEqual(markdown.status, 1, markdown.stderr);
+    assert.match(markdown.stdout, /# Campaign Standardization Report/);
+
+    assert.deepEqual(snapshotTree(target), before);
+    assert.deepEqual(readdirSync(home), []);
   });
 });
 

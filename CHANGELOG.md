@@ -6,35 +6,412 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- `CHANGELOG.md` carried two stray diff3 base-marker lines (`||||||| <oid>`)
-  committed at the tail of the `1.26.0+agent.2` and `1.25.0+agent.3`
-  sections. Both are deleted. Deleting the second changed the bytes of a
-  section the release ledger hashes, so an amendment entry of RL-0032
-  re-links `1.25.0+agent.3` with its current hash; RL-0032 itself is
-  untouched.
-- The `+agent.N` sections under the `1.27.0` and `1.26.0` releases are
-  re-ordered newest first. Section bodies are byte-identical to before, so no
-  other ledger hash moves.
+- `CHANGELOG.md` carried two stray diff3 base-marker lines (`## [1.27.0+agent.25] - 2026-09-14
 
-### Added
+## [1.27.0+agent.25] - 2026-09-14
 
-- `scripts/check-changelog-structure.mjs`, run by `npm run check`
-  (`npm run check:changelog-structure` alone): exits 1 naming every
-  merge-conflict marker line in `CHANGELOG.md` or under `docs/`, every
-  duplicated section identifier, every `+agent.N` section that is out of
-  descending order or not directly above its own release, and every ledger
-  `changelog_section` that names no section. A new `+agent.N` section
-  therefore goes at the top of its release's run.
-- The release-ledger checker accepts an amendment that links the same
-  changelog section as the entry it amends, reading the amended entry's
-  `changelog_sha256` as superseded by the amendment's. Any other second
-  link to a section still fails the one-to-one rule; an amendment linking a
-  different section still leaves a stale hash failing. The stale-hash message
-  now names that remedy. `docs/release-ledger-authoring-guide.md` documents
-  both.
-- `polish capture` text: a warning whose `resource_types` are all outside
-  the beacon allowlist renders `Resource types: unavailable`, the same line
-  as a warning carrying none; a test now pins it.
+### Changed
+
+- `standardize` judges a Page Kit root's SDK versions by the SDK support
+  policy, the same contract a Campaign Cart application root is judged by.
+  A `page_kit` root read its `_data/campaigns.json` `sdk_version` values
+  against a scanner constant (`0.4.20`, reported as
+  `version.sdk_below_preferred_cutoff` "below the preferred 0.4.20+ sample
+  cutoff"), so `--sdk-support-policy` was accepted, validated, and then had
+  no effect on such a root: a policy with `minimum_supported: 0.4.35`
+  produced output byte-identical to the default. Every discovered version now
+  goes through one evaluation: below `minimum_supported` is the blocker
+  `version.sdk_below_minimum_supported`, below `preferred_minimum` the
+  warning `version.sdk_below_preferred_policy`, each naming the policy source
+  (`... (policy: contracts/campaign-cart-sdk-support-policy.v0.json)`), and
+  the root carries a `version_policy` block (`source`, `minimum_supported`,
+  `preferred_minimum`, `evaluations[]` with `source: "campaigns_json"`),
+  printed in markdown as `- Version policy: min 0.4.20, preferred 0.4.30
+  (contracts/campaign-cart-sdk-support-policy.v0.json)`. Under the bundled
+  policy this changes default output: an SDK below `0.4.20` is now a blocker
+  (`status: blocked`, exit 2) where it was a warning, and an SDK in
+  `0.4.20`–`0.4.29` gains the preferred-minimum warning it did not have.
+  `version.sdk_below_preferred_cutoff` is gone; the Page Kit dependency
+  cutoff (`version.page_kit_below_preferred_cutoff`, `0.1.1`) is unchanged
+  and documented as the scanner constant it is. A `--sdk-support-policy`
+  override also feeds the certification-freshness assessment, which read the
+  bundled policy regardless.
+- `--field-contract` reaches Page Kit roots too. A Page Kit root whose
+  source inlines checkout bindings (the attributes the contract's
+  `binding_attributes` names; bundled `data-next-checkout-field` /
+  `os-checkout-field`) now gets the same `checkout_fields` block and the same
+  `checkout.unsupported_field_binding` / `checkout.unknown_field_binding`
+  findings as an application root, judged by the bundled field contract or
+  the override; a root with no such bindings is unchanged and has no
+  `checkout_fields` key.
+- The built-output scope no longer depends on the shape of `_site/` alone.
+  With no `--slug`, a `_site/` holding the campaign's directory beside a
+  stale one reported `Built _site: unresolved`, `Doctor: skipped (Multiple
+  campaign slugs under .../_site; pass --slug to choose one.)` and the
+  `built_output.scope_unresolved` finding — while `identity.campaign_slug`
+  already named the campaign from `_data/campaigns.json`. The slug is now
+  resolved in order from `--slug`, the single slug `campaigns.json`
+  declares, the `campaign.public_route_slug` the `.campaign-runtime` packets
+  name (only when every packet that names one agrees), and only then the
+  `_site/` layout; that run now reports
+  `Built _site: yes`, `- Built slug: demo (campaigns_json)`, `Doctor:
+  ready` and no scope finding. The choice is recorded as
+  `built_output.slug` / `built_output.slug_source` (`operator_flag`,
+  `campaigns_json`, the packet's relative path, or `site_layout`) and as
+  `identity.campaign_slug` / `identity.campaign_slug_source`; a new
+  `- Built slug:` line precedes `- Built pages:` in markdown.
+  `built_output.scope_unresolved` remains for the case that genuinely needs
+  `--slug` — several built directories and no slug source — and its
+  `next_action` now says so.
+- A derived slug with no built directory is a named mismatch, not a silent
+  scope. When `campaigns.json` (or a packet) names `demo` and `_site/` holds
+  only `stale-old/`, the scope resolver used to fall through to the one
+  directory it found and the doctor certified `stale-old` as `ready`, with
+  the proof command `doctor --built ... --slug stale-old`. The report now
+  says `Built _site: unresolved`, `- Built slug: demo not found (built
+  directories: stale-old)`, `Doctor: skipped (built _site has no demo/
+  directory for campaign slug demo (from campaigns_json); built directories:
+  stale-old)`, and the operator-readiness finding
+  `built_output.slug_mismatch` with evidence `{ expected_slug, slug_source,
+  slug_candidates }`, so the root is `ready_with_warnings` rather than
+  `ready`. Root-level html beside the campaign directory no longer collapses
+  the scope to the site root either: with a known slug the campaign
+  directory is inspected. When `_site/<slug>/` exists but holds no HTML
+  pages, the finding says `Built _site/demo/ exists but holds no HTML pages
+  ...` with evidence `slug_directory_present: true` (markdown `- Built slug:
+  demo has no HTML pages (...)`), not that the directory is missing. An
+  explicit `--slug` naming a missing directory keeps the existing
+  `built_output.scope_unresolved` shape. A site-root layout renders its
+  source like every other case: `- Built slug: site root (site_layout)`.
+- The doctor proof command under `remediation.proof_commands` carries
+  `--slug` whenever scope needed one: `--slug demo` when a slug was
+  resolved (derived slugs included), and a `--slug <slug>` placeholder when
+  the scope is unresolved among several built directories — the command the
+  report handed back for that case used to omit the flag and exit 2 with the
+  same ambiguity when run.
+- `capabilities[]` lists the inspections that ran. A Page Kit root listed
+  `built_output_doctor` unconditionally — on roots with no `_site`, under
+  `--no-doctor`, and while the built slug was unresolved. It now appears only
+  once a doctor result is attached, and `checkout_field_contract` only when
+  bindings were inspected; `page_kit_source_contract`, `sdk_version_policy`
+  and `campaign_cart_runtime_inventory` are listed as before. Application
+  roots are unchanged.
+- `standardize` refuses unknown flags. The parser stores any `--token` as a
+  key, so `--bogus` ran the report as if nothing had been typed and
+  `--no-doctor=maybe` (stored as the key `no-doctor=maybe`) ran the doctor
+  anyway, exit 0, stderr empty. Both now exit 1 with nothing on stdout and
+  one line on stderr: `campaigns-os: Unknown flag for standardize: --bogus.
+  Known flags: --target, --family, --template-family, --slug,
+  --sdk-support-policy, --field-contract, --no-doctor, --json, --run-id,
+  --lifecycle-journal.`; the `--flag=value` spelling adds `A flag takes its
+  value as the next argument (--flag value), not --flag=value.` Other commands
+  parse as they did.
+- `docs/campaign-standardization-report.md` now states the exit codes (0
+  produced and `ok`, 1 did not run, 2 produced and `blocked`), the flag list,
+  the slug-resolution order and when `--slug` is required, that both
+  contracts apply to both root kinds (the policy applies-to statement sits
+  beside the override paragraph rather than in the backlog), the bundled
+  cutoffs (`0.4.20` / `0.4.30` from the policy contract, `0.1.1` Page Kit
+  dependency from the scanner) and the read-only guarantee, which a test now
+  holds: a run that includes the built-output doctor leaves every file in
+  the target identical in size, mtime and content. `docs/entry-points.md`
+  names `standardize` as the entry point for an existing campaign
+  repository.
+
+## [1.27.0+agent.24] - 2026-09-14
+
+### Fixed
+
+- `--test-order tiers` (and `tiers:common` / `tiers:full`) no longer counts an
+  order bump as a selector tier. The tier planner turned every checkout
+  `packages[]` row with a ref into a tier and read no bump marker, so a
+  three-tier checkout that also declares a bump row marked `is_upsell: true`
+  planned four tiers: `tiers:common` on a two-upsell funnel expanded to 16
+  orders (20 for `tiers:full`, 4 for bare `tiers`), the flood guard named
+  `--max-test-orders 16` as the raise, and the four `*@tier:<bump-ref>` plans
+  would have failed strict selection by name (no rendered card carries the
+  bump ref). The planner now reads the same `is_upsell` predicate the
+  commercial-journey planner already uses for bump rows (`isBumpRow`, one
+  predicate, exported from `commercial-journey`), so the same checkout plans
+  12 / 15 / 3 orders and the guard names `--max-test-orders 12`. A run whose
+  checkout declares bump rows prints one `[qa:test-order]` line naming the
+  bump ref(s) it left out; bump coverage stays with `--cart`.
+
+### Changed
+
+- `--select-package <ref[:qty],...>` now narrows a tiers run to the listed
+  declared tiers instead of being refused. Identities match the tier's own
+  strict-selection value (`1` or `1:1` is ref 1 at quantity one, `1:2` the
+  two-unit multiplier); coupon plans are not tiers and are still planned.
+  Every listed identity must be a declared tier: any that is not is refused
+  by name, listing the declared tiers and any bump refs the spec excludes
+  from them (`--select-package 7: is not a selector tier the CampaignSpec
+  declares (declared tiers: 1, 1:2, 1:3; order bump ref(s) excluded from
+  tiers: 2)`), so a partly declared list never runs the matched tiers and
+  skips the rest. Naming a bump ref itself gets the reason (`2 is an order
+  bump (is_upsell), an add-on to a selected tier, not a tier; bump coverage
+  comes from --cart`) rather than reading as an unknown ref. Naming only a
+  tier that a secondary funnel's URL-less checkout declares is refused by
+  cause (`names a tier declared only on checkout page "checkout-b", which
+  has no resolvable URL — nothing this run can drive`), not with the generic
+  "found nothing to iterate". Each `ref[:qty]` segment is trimmed, a blank
+  qty slot is quantity one, and a third `:` segment is malformed rather than
+  silently dropped. `--apply-coupon` with a tiers mode is still refused, with
+  the message now naming only that flag.
+- A refused `--max-test-orders` cap lists the planned paths. The message cut
+  the preview at eight ids and hid the rest behind `...`, so the plans that
+  most needed a look (the tail) were the ones an operator could not see;
+  `Planned paths:` now lists up to 40 ids and, past that, counts the rest
+  (`and 4 more (first 40 of 44 listed; narrow with --select-package
+  <ref[:qty]> to list one tier's paths)`), so nothing is cut without saying
+  how much and how to see it.
+- The doctor packet's `qa.test_order_policy_notes`, the `next`-stage QA
+  hand-off text and `qa run --help` describe the tiers modes: what a tier is,
+  that bump rows are not tiers, and that `--select-package` narrows a tiers
+  run. `docs/qa-and-test-orders.md` says the same in its tiers section.
+
+## [1.27.0+agent.23] - 2026-09-14
+
+### Changed
+
+- One attribution rule for both waive commands. `theme waive` now requires
+  `--waived-by "<named human>"` and refuses the placeholders `checkpoint
+  waive` already refused (`operator`, `ci`, `agent`, `claude code`, ...); the
+  default attribution `operator` is gone. `--expires-at <ISO>` is accepted by
+  `theme waive`, validated the same way (canonical timestamp, later than
+  `waived_at`), recorded on `report.theme.waiver.expires_at`, and honoured by
+  the theme gate: at or after that instant the gate stops reporting `waived`
+  and asks for a fresh decision. The gate's `waive_theme` action command and
+  the docs/skills that quote it carry `--waived-by "<named human>"`. The
+  validator is one function, `validateWaiverAttribution` in
+  `src/checkpoint-waiver.mjs`; `createCheckpointWaiver` calls it and its
+  messages are unchanged.
+- Both waive commands print a real status. Text output of a successful
+  `theme waive` / `checkpoint waive` was `Status: UNKNOWN` in every state; it
+  is now doctor's verdict on the report the waiver was just written to
+  (`Status: READY_WITH_WAIVERS`, or `BLOCKED` when other gates still hold),
+  followed by `Waived: <gate> by <who>[ until <expires_at>]` and `Next stage:
+  <stage> (<reason>)`. The `--json` success shape gains `status`, `next_stage`
+  and `next_stage_reason`; `theme waive --json` also gains `gate:
+  "theme_gate"`.
+- `--json` refusals return an envelope. A refused `theme waive --json` or
+  `checkpoint waive --json` (placeholder human, missing bound, past expiry,
+  unknown or unwaivable gate, gate not blocked) used to exit 1 with an empty
+  stdout and a line on stderr. It now writes `{ ok: false, error, gate,
+  registered_gates[] }` to stdout, keeps the stderr line, and exits 1.
+  Without `--json` nothing changes.
+- The unknown-gate refusal names the registry: `Unknown checkpoint gate "x";
+  registered gates: page_kit.sdk_version, page_kit.store_profile,
+  built_output.upsell_selector_scope, polish.hidden_eager_media.`
+  `docs/build-packet.md` lists the same four gates (it listed three).
+- Starter demo residue is not waivable. When any `page_kit.store_profile`
+  discrepancy is `demo_residue` (a `demo.29next.com` URL or the demo phone
+  number still in `_data/campaigns.json`), doctor reports the gate with
+  `waivable: false`, appends `Starter demo residue in <fields> is not
+  waivable; replace the demo value(s).` to its reason, and offers no
+  `waive_checkpoint` action; `checkpoint waive --gate page_kit.store_profile`
+  refuses with the residue fields and the target entry to repair. Spec
+  mismatches and missing target values stay waivable as before.
+- `next` text files each blocked gate's actions under its own heading.
+  Checkpoint repair/waive commands were listed under "Theme gate is BLOCKING
+  this stage" whenever the theme gate happened to be blocked too, and were
+  not printed at all otherwise. Now every blocked gate that produced actions
+  gets `Checkpoint gate <id> is BLOCKING this stage. Resolve it with:` (or
+  the theme / polish / prepare-build heading) over its own actions, the
+  rechecks follow under `Then:`, and the block prints whether or not the
+  theme gate is blocked. A stage with no blocked gate prints nothing, as
+  before.
+- `next --json` carries no `--packet <packet>` placeholder. The checkpoint
+  and polish gate objects copied from doctor into `gates[]`, and into
+  `errors[]`/`warnings[]` `detail.checkpoint_gate`, now have the packet
+  substituted into their `required_actions[].command`, the way
+  `next_actions[]` already did. `doctor --json` and the doctor sidecar keep
+  the template.
+
+## [1.27.0+agent.22] - 2026-09-14
+
+### Fixed
+
+- Doctor's `spec.store_profile.payment_methods_default_on` warning now reads
+  the built checkout. The check compared the CampaignSpec's
+  `available_payment_methods` / `available_express_payment_methods` against
+  the four methods a starter-template checkout renders by default (paypal,
+  klarna, apple_pay, google_pay) and warned whenever one was absent — before
+  a build, after a build that shipped none of them, and after every rebuild,
+  clearing only when the spec added the method. Once the spec's checkout
+  page exists under `_site/<public_route_slug>/`, doctor now scans that
+  rendered page for each unsupported method's markup — the SDK-owned
+  `data-next-payment-method="<method>"` attribute the payment-methods
+  include renders, the template family's `payment_chrome` class selectors
+  and its method-named chrome assets, the same markers browser QA's
+  template-residue gate keys on — and stays silent when none shipped,
+  adding the ready note `Built checkout carries no paypal, klarna
+  payment-method markup (_site/<slug>/checkout/index.html); left to browser
+  QA: shared chrome asset upsell-payment-logos.svg`. The clause after the
+  semicolon names what a static scan cannot attribute — the family's shared
+  chrome assets that name no method, and any compound selectors — so the
+  note is never read as "nothing left for browser QA to check"; it is
+  omitted when the contract leaves no such gap. When the markup did ship,
+  the warning keeps its code but states the built evidence:
+  `Built checkout still renders paypal, which the CampaignSpec does not list
+  …: _site/<slug>/checkout/index.html: paypal
+  (data-next-payment-method="paypal", .payment-method__icon--paypal-logo,
+  paypal-logo.svg)`, with `detail.basis: "built_output"`, one
+  `detail.pages[]` entry per page and method carrying the markers found,
+  and `detail.static_scan_gaps { compound_selectors[], shared_assets[] }`.
+  Severity is unchanged (a warning; the QA residue gate is the blocker).
+- The pre-build repair text is now correct for the starter-template
+  families. Every family's checkout page calls
+  `{% campaign_include 'payment-methods.html' %}` with no arguments and the
+  include defaults `show_<method>` to true, so there were never `show_*`
+  arguments to remove. The warning now says to pass
+  `show_paypal=false show_klarna=false` (the absent methods) on that include
+  call in the named family's checkout page, quotes the resulting include
+  call, and carries `detail.basis: "spec_only"`, `detail.methods[]`,
+  `detail.template_family` and a `detail.repair` object
+  (`owner`, `action`, `include_call`). The old message was
+  `… remove the show_* arg(s) from the checkout payment-methods include …`.
+- The per-method partition of a family's `default_residue.payment_chrome`
+  (selectors and assets, shared chrome counting for every method) now lives
+  once in `src/template-brand-contract.mjs` as `paymentChromeArtifacts`;
+  browser QA's `methodPaymentArtifacts` delegates to it, the new static
+  matcher `paymentMethodMarkupMatches(html, method, chrome)` is what doctor
+  reads the built checkout with, and `paymentMethodStaticScanGaps(chrome,
+  method)` names the compound selectors and shared assets that matcher
+  leaves to browser QA. Browser QA's residue assertions are unchanged.
+
+## [1.27.0+agent.21] - 2026-09-14
+
+### Fixed
+
+- `qa run` now compares against the previous run when that run's QA verdict
+  lives outside the packet directory. Whenever `assembly.target_repo` is not
+  the packet's own directory, `qa run` writes the full verdict under
+  `<target repo>/qa-output/<identifier>/` and the Run Record, relativizing
+  against the packet directory, references it only as `external:qa_verdict`
+  plus the file's digest. The cause classifier treated that reference as no
+  reference: every finding on the second run was `unknown` with
+  `cause_reason: prior_run_without_qa_verdict`, and the report said
+  `Previous run <id> exists but references no QA verdict`, which was false.
+  The classifier now resolves an external reference by its recorded digest
+  under the target repo's `qa-output/`, so the second run reports
+  `Comparison basis` as `prior_run` and labels carried-over findings
+  `pre_existing` — the same result a packet at the target root already got.
+- The committed `<packet dir>/.campaign-runtime/qa-verdict.json` sidecar is
+  deliberately not a stand-in when that full verdict is gone: it is a
+  projection, so its digest cannot match, and the Run Record stores no
+  verdict run id to tie it to the referenced attempt, so any looser rule
+  could compare against a projection of a different attempt and report a
+  reintroduced finding as pre-existing.
+- New `cause_reason` / `comparison` value `prior_run_verdict_unlocated`: the
+  previous Run Record references a verdict as `external:qa_verdict` and no
+  verdict matching that reference could be located under the target repo's
+  `qa-output/` (nothing there hashes to the recorded digest, the reference
+  carries no digest, or no target repo was known to search). Its report line
+  says so, and is worded to be true in all three cases. `prior_run_without_qa_verdict` now means exactly what it
+  says — the record carries no `qa_verdict` artifact reference at all — and
+  `prior_run_verdict_unreadable` keeps its meaning for a by-path reference
+  whose file is missing or unparseable. `docs/qa-and-test-orders.md` lists
+  the four reasons.
+- `annotateQaAssertionCauses` / `loadPriorQaVerdict` accept `targetRepo`;
+  `qa run` passes the packet's resolved target repo. Doctor cause labels,
+  which read the record's own observations, are unchanged.
+
+## [1.27.0+agent.20] - 2026-09-14
+
+### Changed
+
+- `run start --packet <p>` opens the session in the packet's target repo
+  (`assembly.target_repo` resolved from the packet's directory, else that
+  directory) from any cwd, the root the auto-opener behind `start` /
+  `prepare-build` already uses. It used to open the session at cwd and only
+  remember the packet, so a session started from the toolkit or an unrelated
+  project was found from that directory alone: `run status` at the target
+  said `No active run session.`, and `run end --packet <p>` from the starting
+  directory was refused with `Conflicting active run session: cwd selects
+  <run_id>, but packet <p> has no matching active target session`. Now
+  `run status` at the target reports it and `run end --packet <p>` closes it
+  from anywhere; `Lifecycle journal:` and `session_path` name the target.
+- The managed `.gitignore` block `run start --packet` writes goes to that
+  target repo, not to cwd. An unrelated starting directory no longer gains a
+  `.gitignore` (or a `.campaign-runtime/`) it did not have.
+- The stale-session sweep for `run start` / `run end` runs at the same root:
+  the `--packet`'s target repo when given, cwd otherwise. A stale session in
+  the target is closed out by `run end --packet <p>` from any cwd and
+  reported as `Stale run session <run_id> closed out …`, where before the
+  command failed with `No active run session to end.`
+- Bare `run start` / `run end` (no `--packet`) are unchanged: cwd. A
+  `--packet` that is not written yet roots on its own directory and still
+  prints the `does not exist yet` warning.
+- A `--packet` that exists but cannot be parsed is refused by `run start` /
+  `run end` with `--packet <p> could not be read as a build packet (<parse
+  error>); the run session roots on its assembly.target_repo. Fix or re-point
+  the packet, then retry.` (exit 1, nothing opened anywhere); a path that is
+  not a readable file (a directory, no permission) is refused the same way
+  as `could not be read (<OS error>)`. It used to open
+  the session silently on the packet's directory, where no later command run
+  by that packet would find it once it parsed again and named another target.
+- The session records the packet in canonical form (symlinks resolved, the
+  form the root is derived from), so the Run Record `run end` assembles lands
+  beside the real packet rather than in a link's directory.
+- `run start --packet <p>` text output advertises a close that works from
+  where it was run: `Finish with: campaigns-os run end --packet <p>` (before:
+  `Finish with: campaigns-os run end`, which from a cwd other than the target
+  fails with `No active run session to end.`), and the auto-log line names
+  the session's directory and the `--packet` form instead of `this project`.
+
+## [1.27.0+agent.19] - 2026-09-14
+
+### Fixed
+
+- A remit answered **409** by the receiver is read as `already_stored` — the
+  receiver holds this `run_id`, which is what the send was for — and the Run
+  Record stays `remit_state: "ok"`. It used to be stamped `failed` with
+  `Remit POST failed: 409 Conflict {"error":"run_record_conflict"}`, and the
+  `run_record_remit_recovery` action `next` then printed re-sent the same
+  record into the same 409 on every run. A 2xx whose body is not JSON is
+  `ok` with `remit_error` `Remit POST <status>: acknowledged with a body that
+  is not JSON: <excerpt>` (it used to be `failed` with a bare `Unexpected
+  token` parse error). Any other non-2xx is `failed` with `Remit POST
+  <status>: <statusText> <body>`. `run-record --json` gains a `remit` object
+  beside the record — `result` (`stored`, `already_stored`,
+  `ok_unparsed_ack`, `refused`, `transport_error` for this run's send,
+  `not_contacted` for a record already `ok` on disk, or null when nothing was
+  sent), `http_status`, `base_kind` (`canonical`, `loopback`, `proxy` — never
+  the host), `sent`, `preserved` — and the text `Remit:` line ends with
+  `[base: <kind>]` and names the 409 / non-JSON cases.
+- A re-run of `run-record` under a `run_id` whose record is already remitted
+  — an explicit `--run-id`, `run end` on a session re-opened under that id,
+  or the recovery action — no longer rewrites that record. It used to replace
+  `run-records/<run_id>.json` with this invocation's outcome unconditionally,
+  so a re-run into a 409 turned a durable `ok` into `failed`, and a `--no-remit`
+  re-run turned it into `skipped`. Now the record on disk is read first: an
+  `ok` record is left exactly as written and nothing is sent (`written:
+  false`, `remit.result: "not_contacted"`, `remit.sent: false`; text: `Run
+  Record already closed and remitted for run <id>; left as written.` and
+  `Remit: ok (already stored at the receiver for this run id; not re-sent)`).
+  Only a file that passes the Run Record validator counts as that prior; one
+  that merely says `remit_state: "ok"` is replaced like a corrupt file.
+  A prior `failed` or `pending` send is retried when the run may send, and
+  carried forward unchanged when it may not (`--no-remit`, consent off):
+  `remit.preserved: true`, text `Remit: not attempted this run; the prior
+  outcome for this run id is kept (failed: …)`. A `--no-write` run is
+  unchanged: it reads nothing, writes nothing, sends nothing.
+- The body the receiver stores now carries the outcome of the send it is
+  receiving: `remit_state: "ok"`, `remit_attempted: true`, `remit_ok: true`,
+  `remit_endpoint: "/api/runs"`. It used to be the pre-flight snapshot —
+  `remit_state: "pending"`, `remit_attempted: false`, `remit_endpoint: null` —
+  so every stored record said its own remit had not happened. The local file
+  still carries `pending` only between its first write and the answer.
+- `telemetry list` exits non-zero on a 2xx whose body carries no `runs[]`
+  (`telemetry list: 200 OK from <url> is not a Run Record listing (no runs[]
+  in the body): {"raw":"<html>…`). It used to print `showing 0 of 0 returned`
+  / `"count": 0` and exit 0 for a maintenance page.
+- The `run_record_remit_recovery` action's text says that a send the receiver
+  already holds resolves to ok and that a remitted record is left as written.
+- Docs: `docs/workflow-findings-sidecar.md` (Remit Channel: Durable status,
+  re-runs, the stored copy, `telemetry list`; Closeout recognition: the
+  recovery command's premise).
 
 ## [1.27.0+agent.18] - 2026-09-14
 

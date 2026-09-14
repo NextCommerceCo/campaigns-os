@@ -132,10 +132,12 @@ Options:
                                   every actual terminal path; cycles, missing routes, and reachable nonterminals
                                   block before browser launch. The default cap is 6; overflow names the exact raise.
                                   "tiers" is spec-driven: one strict-selection order per selector tier the
-                                  CampaignSpec declares on the checkout page, plus one coupon order per declared
+                                  CampaignSpec declares on the checkout page (order-bump rows marked
+                                  is_upsell are add-ons, never tiers), plus one coupon order per declared
                                   offer code (checkout exit_intent / promo_code_input); "tiers:common" and
-                                  "tiers:full" cross every tier with those path shapes. Incompatible with
-                                  --select-package/--apply-coupon (tiers derives them from the spec).
+                                  "tiers:full" cross every tier with those path shapes. --select-package
+                                  <ref[:qty],...> narrows a tiers run to the listed declared tiers;
+                                  --apply-coupon is incompatible (tiers derives coupons from the spec).
                                   Requires one-time setup: npm run qa:install-browser.
   --max-test-orders <n>           Accidental-flood guard for planned browser order paths (not a permission gate). Default: 6.
   --max-order-creations <n>       Hard bound on REAL order creations in this run, reserved before each submit
@@ -2068,9 +2070,13 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   // printed report all carry the same labels. The comparison root is the Build
   // Packet directory — the same root the Run Record writes under — so the
   // previous run is found through the existing Run Record discovery rather
-  // than a second scan of qa-output/.
+  // than a second scan of qa-output/. The target repo rides along because the
+  // previous run's full verdict lives under ITS qa-output/ (the same default
+  // this run writes to below), which the record references only as
+  // `external:qa_verdict` whenever that is not the packet directory.
   const causeSummary = annotateQaAssertionCauses(assertions, {
     baseDir: resolved.packetPath ? dirname(resolved.packetPath) : null,
+    targetRepo: resolved.packetPath ? targetRepoFor(resolved.packetPath, resolved.packet) : null,
     mapId: resolved.mapId,
     currentRunId: runId,
     isFinding: isFindingAssertion,

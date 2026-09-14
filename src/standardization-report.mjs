@@ -18,6 +18,10 @@ import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import {
   detectFrameworks,
   discoverCampaignCartAppRoots,
+  evaluateVersionPolicy,
+  inspectCheckoutFields,
+  loadCheckoutFieldContract,
+  loadSdkSupportPolicy,
   scanCampaignCartAppRoot,
 } from "./campaign-ecosystem.mjs";
 import { resolveCommerceCatalog } from "./private-template-source.mjs";
@@ -34,7 +38,11 @@ const PAGE_KIT_PACKAGE_NAMES = [
   "@nextcommerce/campaign-page-kit",
 ];
 
-const PREFERRED_SDK_MIN = "0.4.20";
+// The Campaign Cart SDK cutoffs come from the SDK support policy contract
+// (bundled contracts/campaign-cart-sdk-support-policy.v0.json, or the
+// --sdk-support-policy override) — the same policy a campaign_cart_app root is
+// judged by. Only the Page Kit dependency cutoff is a scanner constant: the
+// policy contract has no Page Kit field.
 const PREFERRED_PAGE_KIT_MIN = "0.1.1";
 const MAX_SAMPLE_COUNT = 8;
 const SKIP_DIRS = new Set([
@@ -73,6 +81,8 @@ export function createStandardizationReport({
     rootPath,
     requestedSlug: normalizeString(slug),
     explicitTemplateFamily: normalizeString(templateFamily),
+    fieldContract,
+    sdkSupportPolicy,
   }));
   const appRoots = discoverCampaignCartAppRoots(target, { excludeRoots: pageKitRootPaths });
   for (const discovered of appRoots) {
@@ -125,6 +135,11 @@ export function attachBuiltOutputDoctor(report, rootId, doctorResult) {
   const root = (report?.roots || []).find((entry) => entry.id === rootId);
   if (!root?.built_output) return report;
   root.built_output.doctor = summarizeDoctorResult(doctorResult);
+  // capabilities[] lists the inspections that ran: the doctor is on it only
+  // once a result is attached, never as a standing promise.
+  if (Array.isArray(root.capabilities) && !root.capabilities.includes("built_output_doctor")) {
+    root.capabilities.push("built_output_doctor");
+  }
   if (doctorResult?.errors?.length) {
     for (const [index, issue] of doctorResult.errors.entries()) {
       root.findings.push(finding({
@@ -189,6 +204,9 @@ export function formatStandardizationReportMarkdown(report) {
     lines.push(`- Implementation: ${root.implementation?.kind || "page_kit"}`);
     lines.push(`- Slug(s): ${root.identity.campaign_slugs.map((entry) => entry.slug).join(", ") || "(none)"}`);
     lines.push(`- SDK: ${root.identity.sdk_versions.join(", ") || "(unknown)"}`);
+    if (root.version_policy) {
+      lines.push(`- Version policy: min ${root.version_policy.minimum_supported || "(none)"}, preferred ${root.version_policy.preferred_minimum || "(none)"} (${root.version_policy.source})`);
+    }
     lines.push(`- Page Kit: ${root.identity.page_kit_dependency?.name || "(unknown)"} ${root.identity.page_kit_dependency?.version || "(unknown)"}`);
     lines.push(`- Template family: ${root.identity.template_family.value || "(unknown)"} (${root.identity.template_family.source || "unknown"})`);
     if (root.identity.template_certification_freshness) {
@@ -209,6 +227,7 @@ export function formatStandardizationReportMarkdown(report) {
     lines.push(`- Source manifest: ${root.runtime_contract.source_html_manifest.present ? "present" : "missing"}`);
     lines.push("");
     lines.push("### Built Output");
+    lines.push(`- Built slug: ${formatBuiltSlug(root)}`);
     lines.push(`- Built pages: ${root.built_output.html_count || 0}`);
     lines.push(`- Doctor: ${root.built_output.doctor.status || "not_run"}${root.built_output.doctor.reason ? ` (${root.built_output.doctor.reason})` : ""}`);
     if (root.findings.length) {
@@ -314,6 +333,8 @@ function scanPageKitRoot({
   rootPath,
   requestedSlug = null,
   explicitTemplateFamily = null,
+  fieldContract = null,
+  sdkSupportPolicy = null,
 }) {
   const files = listFiles(rootPath);
   const structureFiles = files.filter((file) => STRUCTURE_EXTENSIONS.has(extname(file).toLowerCase()));
@@ -321,14 +342,42 @@ function scanPageKitRoot({
   const campaigns = readCampaigns(rootPath);
   const packageInfo = readPackageInfo(rootPath);
   const runtime = readRuntimeArtifacts(rootPath, targetRepo, files);
-  const sourceScan = scanSourceFiles(rootPath, structureFiles, sourceFiles, campaigns.slugs);
+  // The checkout field contract applies wherever inline checkout bindings
+  // exist; a Page Kit root that inlines checkout markup is inspected exactly
+  // like an application root, and the capability is listed only when it ran.
+  // The binding attributes come from the effective contract (override
+  // included), so a contract that names other attributes still finds them;
+  // the prefilter runs inside the one read scanSourceFiles already makes.
+  const contract = loadCheckoutFieldContract(fieldContract);
+  const bindingPattern = new RegExp(`\\b(?:${(contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"]).map(escapeRegExp).join("|")})\\s*=`);
+  const sourceScan = scanSourceFiles(rootPath, structureFiles, sourceFiles, campaigns.slugs, bindingPattern);
   const templateFamily = inferTemplateFamily({
     explicitTemplateFamily,
     runtime,
     files,
     rootPath,
   });
-  const builtOutput = inspectBuiltOutput(rootPath, requestedSlug);
+  const policy = loadSdkSupportPolicy(sdkSupportPolicy);
+  const campaignSlug = resolveCampaignSlug({ requestedSlug, campaigns, runtime, rootPath });
+  const builtOutput = inspectBuiltOutput(rootPath, campaignSlug);
+  const capabilities = [
+    "page_kit_source_contract",
+    "sdk_version_policy",
+    "campaign_cart_runtime_inventory",
+  ];
+  const contractFindings = [];
+  const versionPolicy = evaluateVersionPolicy(
+    unique(campaigns.slugs.map((entry) => entry.sdk_version).filter(Boolean))
+      .map((version) => ({ version, source: "campaigns_json" })),
+    policy,
+    contractFindings,
+  );
+  const bindingFiles = sourceScan.binding_files;
+  let checkoutFields = null;
+  if (bindingFiles.length) {
+    checkoutFields = inspectCheckoutFields(rootPath, bindingFiles, contract, contractFindings);
+    capabilities.push("checkout_field_contract");
+  }
   const root = {
     id: rootId(targetRepo, rootPath),
     status: "unknown",
@@ -338,26 +387,24 @@ function scanPageKitRoot({
       evidence: pageKitImplementationEvidence(rootPath, packageInfo),
       frameworks: detectFrameworks(rootPath),
     },
-    capabilities: [
-      "page_kit_source_contract",
-      "sdk_version_policy",
-      "built_output_doctor",
-      "campaign_cart_runtime_inventory",
-    ],
+    capabilities,
     identity: {
       repo: basename(targetRepo),
       target_repo: targetRepo,
       page_kit_root: rootPath,
       page_kit_root_relative: relPath(targetRepo, rootPath),
-      campaign_slug: requestedSlug || (campaigns.slugs.length === 1 ? campaigns.slugs[0].slug : null),
+      campaign_slug: campaignSlug.slug,
+      campaign_slug_source: campaignSlug.source,
       campaign_slugs: campaigns.slugs,
       sdk_versions: unique(campaigns.slugs.map((entry) => entry.sdk_version).filter(Boolean)),
       page_kit_dependency: packageInfo.page_kit_dependency,
       template_family: templateFamily,
-      template_certification_freshness: assessRootCertificationFreshness(templateFamily.value),
+      template_certification_freshness: assessRootCertificationFreshness(templateFamily.value, sdkSupportPolicy),
       has_campaign_runtime: runtime.present,
       has_built_site: builtOutput.present,
     },
+    version_policy: versionPolicy,
+    ...(checkoutFields ? { checkout_fields: checkoutFields } : {}),
     source_structure: sourceScan.source_structure,
     runtime_contract: {
       data_next: sourceScan.runtime_contract.data_next,
@@ -373,6 +420,7 @@ function scanPageKitRoot({
     findings: [
       ...campaigns.findings,
       ...packageInfo.findings,
+      ...contractFindings,
       ...sourceScan.findings,
       ...runtime.findings,
       ...builtOutput.findings,
@@ -594,7 +642,7 @@ function readRuntimeArtifacts(rootPath, targetRepo, rootFiles = []) {
   };
 }
 
-function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
+function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPattern = null) {
   const findings = [];
   const helperCounts = {
     campaign_asset: 0,
@@ -612,6 +660,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
   const receiptFiles = new Set();
   const packageRefs = [];
   const shippingRefs = [];
+  const bindingFiles = [];
 
   const includeFiles = structureFiles.filter((file) => relPath(rootPath, file).includes("/_includes/"));
   const layoutFiles = structureFiles.filter((file) => relPath(rootPath, file).includes("/_layouts/"));
@@ -638,6 +687,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
       helperCounts.campaign_link += countLiteral(content, "campaign_link");
       collectPatternSamples(rawBlocks, rootPath, file, content, RAW_BLOCK_PATTERN);
       collectHardcodedAssetSamples(hardcodedAssets, rootPath, file, content, slugs);
+      if (bindingPattern && bindingPattern.test(content)) bindingFiles.push(file);
       if (isPaymentMethodsInclude(file, content)) {
         paymentMethodFiles.push(rel);
       }
@@ -754,11 +804,40 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
       package_refs: { count: packageRefs.length, samples: packageRefs.slice(0, MAX_SAMPLE_COUNT) },
       shipping_refs: { count: shippingRefs.length, samples: shippingRefs.slice(0, MAX_SAMPLE_COUNT) },
     },
+    binding_files: bindingFiles,
     findings,
   };
 }
 
-function inspectBuiltOutput(rootPath, requestedSlug) {
+// The slug the built output is scoped by, in precedence order: the operator's
+// --slug, the single slug _data/campaigns.json declares, the public_route_slug
+// the .campaign-runtime packets name — only when every packet that names one
+// agrees, since a multi-campaign repository can carry several — and finally
+// the _site/ layout itself.
+function resolveCampaignSlug({ requestedSlug, campaigns, runtime, rootPath }) {
+  if (requestedSlug) return { slug: requestedSlug, source: "operator_flag" };
+  if (campaigns.slugs.length === 1) return { slug: campaigns.slugs[0].slug, source: "campaigns_json" };
+  const candidates = new Map();
+  for (const artifact of runtime.artifactFiles || []) {
+    if (!artifact.path.endsWith(".json")) continue;
+    const parsed = readJsonFile(artifact.path);
+    if (!parsed.ok) continue;
+    const value = firstStringAt(parsed.value, [
+      ["campaign", "public_route_slug"],
+      ["public_route_slug"],
+      ["campaign_slug"],
+    ]);
+    if (value && !candidates.has(value)) candidates.set(value, relPath(rootPath, artifact.path));
+  }
+  if (candidates.size === 1) {
+    const [[slug, source]] = candidates.entries();
+    return { slug, source };
+  }
+  return { slug: null, source: null };
+}
+
+function inspectBuiltOutput(rootPath, campaignSlug) {
+  const requestedSlug = campaignSlug.slug;
   const siteRoot = join(rootPath, "_site");
   if (!existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) {
     return {
@@ -766,6 +845,7 @@ function inspectBuiltOutput(rootPath, requestedSlug) {
       scope_resolved: false,
       site_root: siteRoot,
       slug: requestedSlug || null,
+      slug_source: requestedSlug ? campaignSlug.source : null,
       html_count: 0,
       pages: [],
       doctor: { status: "skipped", reason: "no built _site found" },
@@ -780,23 +860,52 @@ function inspectBuiltOutput(rootPath, requestedSlug) {
   }
   const scope = resolveBuiltSiteScope(rootPath, { slug: requestedSlug || null });
   if (!scope.ok) {
+    // A slug the scanner derived (not one the operator passed) with no matching
+    // built directory is a mismatch, not an ambiguity: the built output belongs
+    // to some other campaign, so it is named rather than silently inspected.
+    const derivedMismatch = requestedSlug && campaignSlug.source !== "operator_flag";
+    // The scope resolver sets campaign_dir when _site/<slug>/ exists but holds
+    // no HTML pages; that is an empty build, not a missing one, and is named
+    // as such so the remediation cue is right.
+    const directoryPresent = Boolean(scope.campaign_dir);
+    const candidates = derivedMismatch ? builtSlugCandidates(siteRoot) : (scope.slug_candidates || []);
+    const builtDirectories = `built directories: ${candidates.join(", ") || "(none)"}`;
+    const mismatch = directoryPresent
+      ? `built _site/${requestedSlug}/ exists but holds no HTML pages for campaign slug ${requestedSlug} (from ${campaignSlug.source})`
+      : `built _site has no ${requestedSlug}/ directory for campaign slug ${requestedSlug} (from ${campaignSlug.source})`;
+    const reason = derivedMismatch
+      ? `${mismatch}; ${builtDirectories}`
+      : (scope.error || "built scope could not be resolved");
     return {
       present: true,
       scope_resolved: false,
       site_root: siteRoot,
       slug: requestedSlug || null,
+      slug_source: requestedSlug ? campaignSlug.source : null,
       html_count: 0,
       pages: [],
-      slug_candidates: scope.slug_candidates || [],
-      doctor: { status: "skipped", reason: scope.error || "built scope could not be resolved" },
-      findings: [finding({
-        severity: "operator_readiness",
-        category: "operator_readiness",
-        code: "built_output.scope_unresolved",
-        message: scope.error || "Built output exists but scope could not be resolved.",
-        evidence: scope.slug_candidates?.length ? { slug_candidates: scope.slug_candidates } : null,
-        next_action: "Pass --slug when a repo has multiple built campaign outputs.",
-      })],
+      slug_candidates: candidates,
+      ...(derivedMismatch ? { slug_directory_present: directoryPresent } : {}),
+      doctor: { status: "skipped", reason },
+      findings: [derivedMismatch
+        ? finding({
+          severity: "operator_readiness",
+          category: "operator_readiness",
+          code: "built_output.slug_mismatch",
+          message: `${mismatch.charAt(0).toUpperCase()}${mismatch.slice(1)}; ${builtDirectories}. The built-output doctor was skipped rather than run against ${directoryPresent ? "an empty build" : "another campaign's pages"}.`,
+          evidence: { expected_slug: requestedSlug, slug_source: campaignSlug.source, slug_directory_present: directoryPresent, slug_candidates: candidates },
+          next_action: directoryPresent
+            ? "Rebuild the campaign so _site/<slug>/ contains its HTML pages, or pass --slug to inspect a different built directory on purpose."
+            : "Rebuild the campaign so _site/<slug>/ exists, or pass --slug to inspect a different built directory on purpose.",
+        })
+        : finding({
+          severity: "operator_readiness",
+          category: "operator_readiness",
+          code: "built_output.scope_unresolved",
+          message: scope.error || "Built output exists but scope could not be resolved.",
+          evidence: scope.slug_candidates?.length ? { slug_candidates: scope.slug_candidates } : null,
+          next_action: "Pass --slug when a repo has multiple built campaign outputs and neither _data/campaigns.json nor a .campaign-runtime packet names one.",
+        })],
     };
   }
   return {
@@ -804,6 +913,7 @@ function inspectBuiltOutput(rootPath, requestedSlug) {
     scope_resolved: true,
     site_root: scope.site_root,
     slug: scope.slug || null,
+    slug_source: scope.slug ? campaignSlug.source || "site_layout" : "site_layout",
     html_count: scope.html_count,
     pages: scope.pages.map((page) => ({ page_id: page.page_id, type: page.page_type, route: page.route })),
     doctor: { status: "not_run", reason: "doctor not attached yet" },
@@ -811,18 +921,9 @@ function inspectBuiltOutput(rootPath, requestedSlug) {
   };
 }
 
+// SDK versions are judged by the support policy in scanPageKitRoot; only the
+// Page Kit dependency keeps a scanner-side cutoff.
 function addVersionFindings(root) {
-  for (const version of root.identity.sdk_versions) {
-    if (compareVersions(version, PREFERRED_SDK_MIN) < 0) {
-      root.findings.push(finding({
-        severity: "warning",
-        category: "standardization_warning",
-        code: "version.sdk_below_preferred_cutoff",
-        message: `Campaign Cart SDK ${version} is below the preferred ${PREFERRED_SDK_MIN}+ sample cutoff.`,
-        next_action: "Confirm whether the campaign intentionally pins the SDK before recommending an upgrade.",
-      }));
-    }
-  }
   const depVersion = root.identity.page_kit_dependency?.version;
   if (extractVersion(depVersion) && compareVersions(depVersion, PREFERRED_PAGE_KIT_MIN) < 0) {
     root.findings.push(finding({
@@ -877,11 +978,18 @@ function buildRemediation(root) {
   ];
   const family = root.identity.template_family.value;
   const familyConfirmed = family && root.identity.template_family.confidence !== "tentative";
+  // The doctor proof command carries --slug whenever scope needed one: the
+  // resolved slug when there is one, a placeholder when the scope is still
+  // unresolved among several built directories.
+  const slugFlag = root.built_output.slug
+    ? ` --slug ${shellToken(root.built_output.slug)}`
+    : root.built_output.present && root.built_output.scope_resolved === false && root.built_output.slug_candidates?.length
+      ? " --slug <slug>"
+      : "";
   if (root.built_output.present && familyConfirmed) {
-    const slugFlag = root.built_output.slug ? ` --slug ${shellToken(root.built_output.slug)}` : "";
     proof.push(`campaigns-os doctor --built ${shellToken(root.identity.page_kit_root)} --family ${shellToken(family)}${slugFlag} --json`);
   } else if (root.built_output.present) {
-    proof.push(`campaigns-os doctor --built ${shellToken(root.identity.page_kit_root)} --family <template-family> --json`);
+    proof.push(`campaigns-os doctor --built ${shellToken(root.identity.page_kit_root)} --family <template-family>${slugFlag} --json`);
   }
   return {
     safe_agent_repairs: unique(safe),
@@ -903,7 +1011,7 @@ export function resetFreshnessSuppressionWarning() {
   freshnessSuppressionWarned = false;
 }
 
-function assessRootCertificationFreshness(family) {
+function assessRootCertificationFreshness(family, sdkSupportPolicy = null) {
   if (!family) return null;
   let catalog;
   try {
@@ -918,7 +1026,7 @@ function assessRootCertificationFreshness(family) {
   const assessment = assessTemplateFreshness({
     family,
     catalog,
-    sdkSupportPolicy: defaultSdkSupportPolicy(),
+    sdkSupportPolicy: sdkSupportPolicy && typeof sdkSupportPolicy === "object" ? sdkSupportPolicy : defaultSdkSupportPolicy(),
   });
   return { ...assessment, summary: renderTemplateFreshness(assessment) };
 }
@@ -1007,6 +1115,27 @@ function summarizeDataNext(counts) {
 function formatBuiltSiteState(root) {
   if (!root.identity.has_built_site) return "no";
   return root.built_output?.scope_resolved === false ? "unresolved" : "yes";
+}
+
+function formatBuiltSlug(root) {
+  const built = root.built_output || {};
+  if (!built.present) return "(no built _site)";
+  if (built.scope_resolved === false) {
+    const candidates = built.slug_candidates?.length ? ` (built directories: ${built.slug_candidates.join(", ")})` : "";
+    if (!built.slug) return `unresolved${candidates}`;
+    return built.slug_directory_present ? `${built.slug} has no HTML pages${candidates}` : `${built.slug} not found${candidates}`;
+  }
+  return built.slug ? `${built.slug} (${built.slug_source})` : `site root (${built.slug_source || "site_layout"})`;
+}
+
+// Html-bearing directories directly under _site/, the same set the scope
+// resolver offers as candidates when no slug is known.
+function builtSlugCandidates(siteRoot) {
+  return safeReadDir(siteRoot)
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("_") && !entry.name.startsWith(".") && entry.name !== "node_modules")
+    .map((entry) => entry.name)
+    .filter((name) => listFiles(join(siteRoot, name), { includeRuntime: true }).some((file) => file.toLowerCase().endsWith(".html")))
+    .sort();
 }
 
 function isPaymentMethodsInclude(file, content) {

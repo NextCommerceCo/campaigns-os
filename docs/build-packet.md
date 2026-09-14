@@ -52,9 +52,13 @@ Before scaffold, a missing target entry is `not_applicable`; once setup or
 assembly is terminal, or the target output already exists, missing or malformed
 target evidence is a non-waivable blocker. Target-only values remain warnings.
 Mismatches, missing required target values, and known demo residue block.
+Demo residue (a `demo.29next.com` URL or the demo phone number still in the
+target) is never waivable: the gate names the residue fields, offers no waive
+command for them, and `checkpoint waive` refuses with those fields until the
+values are replaced.
 
-An intentional, evidence-backed mismatch may be accepted with the first gate in
-the staged checkpoint registry:
+An intentional, evidence-backed mismatch or missing value may be accepted with
+the first gate in the staged checkpoint registry:
 
 ```bash
 campaigns-os checkpoint waive \
@@ -229,7 +233,8 @@ and the commerce selectors to inspect them on, so a `custom` or `undecided`
 family produces no `template-residue:*:style:*` rows and `next` stays quiet
 rather than asking for a waiver it does not need. Either record an explicit
 operator waiver (`campaigns-os theme waive --packet <packet> --reason "<why the
-starter palette is acceptable>"`), which downgrades those rows to warn severity
+starter palette is acceptable>" --waived-by "<named human>"`, optionally
+`--expires-at <canonical ISO timestamp>`), which downgrades those rows to warn severity
 and keeps the shipped palette visible in the verdict; or hand-author the brand
 layer — write `brand-theme.css`, list it after `next-core.css` in commerce-page
 frontmatter styles, rebuild, and record `report.theme.status: applied` with
@@ -353,8 +358,11 @@ Design Source Package exists. The waiver must remain visible in Campaign
 Readiness Readback and downstream QA evidence; it is not a silent pass.
 In v0, write accepted Source Freshness Waivers directly into `waivers[]`.
 `campaigns-os checkpoint waive` is a staged generic registry and currently
-accepts `page_kit.store_profile`, `page_kit.sdk_version`, and
-`polish.hidden_eager_media`. Within Polish, only the broader Source Freshness
+accepts four gates: `page_kit.store_profile`, `page_kit.sdk_version`,
+`polish.hidden_eager_media`, and `built_output.upsell_selector_scope`; an
+unregistered gate id is refused with that list. `theme waive` applies the same
+attribution rule (a named human, no placeholder, an optional future
+`--expires-at`) on its own lane. Within Polish, only the broader Source Freshness
 waiver retains its existing report path; theme and QA decisions retain their
 existing artifact or waiver paths until each is explicitly registered.
 
