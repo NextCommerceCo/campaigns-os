@@ -59,6 +59,49 @@ export const CART_ENTRY_CONTROL_SELECTOR = '[data-next-action="add-to-cart"]';
 // ladder's entry step and the primary-CTA assertion share this one rule.
 export const CART_ENTRY_ROUTE_ATTRIBUTE = "data-next-url";
 
+// The route a candidate CTA leads to, as one pure rule shared by the
+// primary-CTA recogniser (which runs it inside the page) and the unit tests
+// (which run it against element-shaped objects). Self-contained on purpose:
+// the browser half serialises this function's source into the page, so it
+// may reference nothing outside its own body.
+//
+// An SDK cart-entry control (one matching `cartEntrySelector`) navigates by
+// `cartEntryRouteAttribute` and nothing else: the SDK's click handler calls
+// preventDefault() unconditionally, so its href never navigates, and it
+// resolves the attribute against the origin (campaign-cart url-utils), not the
+// document base. Without the attribute such a control adds to the cart and
+// stays put — no route. Anywhere else the SDK attribute has no navigation
+// semantics: an HTML anchor's own resolved href (native, so a <base href> is
+// honoured), then an href attribute, then `data-href`, then a wrapping form's
+// action. Only spellings with real navigation semantics count — an attribute
+// the SDK does not declare is not a route.
+export function cartEntryHrefFor(element, { cartEntrySelector, cartEntryRouteAttribute, origin, baseHref }) {
+  if (!element || typeof element.getAttribute !== "function") return null;
+  if (typeof element.matches === "function" && element.matches(cartEntrySelector)) {
+    const sdkRoute = String(element.getAttribute(cartEntryRouteAttribute) || "").trim();
+    if (!sdkRoute) return null;
+    try {
+      return new URL(sdkRoute, origin).href;
+    } catch {
+      // An unparseable route attribute is no route either; do not leak the
+      // raw value into evidence as if it were one.
+      return null;
+    }
+  }
+  // An HTML anchor resolves its own href (an SVG <a> exposes an object, not a
+  // string, and falls through to the attribute reading).
+  if (String(element.tagName || "").toUpperCase() === "A" && typeof element.href === "string" && element.href) return element.href;
+  const attr = element.getAttribute("href")
+    || element.getAttribute("data-href")
+    || (typeof element.closest === "function" ? element.closest("form")?.getAttribute("action") : null);
+  if (!attr) return null;
+  try {
+    return new URL(attr, baseHref).href;
+  } catch {
+    return attr;
+  }
+}
+
 // Page types that, when they route into checkout, are preferred as the cart
 // entry. `select` is a real page type since #228; `product` is what the
 // shop-single-step landing declares; the rest are the entry-like types

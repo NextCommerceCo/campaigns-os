@@ -20,6 +20,7 @@ import {
 import {
   CART_ENTRY_CODES,
   CART_ENTRY_CONTROL_SELECTOR,
+  cartEntryHrefFor,
   CART_ENTRY_ROUTE_ATTRIBUTE,
   CART_ENTRY_STEP,
   assessCartBeforeSubmit,
@@ -45,7 +46,6 @@ import {
   placeholderTextResidueConfig,
   placeholderTextResidueMatches,
   referencedDemoAssetBasenames,
-  repeatedIconSrcs,
   summarizePlaceholderTerms,
 } from "./template-brand-contract.mjs";
 
@@ -853,180 +853,160 @@ function primaryCtaCheckEligible(page) {
   return !["checkout", "upsell", "downsell", "thankyou", "receipt"].includes(pageType);
 }
 
-// Candidate CTAs: anything clickable, plus every SDK cart-entry control (the
-// same locator set the ladder's entry step and advanceToCheckoutForm use).
-const PRIMARY_CTA_SELECTOR = ["a[href]", "button", "[role='button']", "[data-next-action]", "[data-next-checkout-action]", CART_ENTRY_CONTROL_SELECTOR].join(", ");
+// Candidate CTAs: anything clickable, plus every SDK action control and the
+// SDK cart-entry control (the same locator the ladder's entry step and
+// advanceToCheckoutForm use). Only attributes the SDK declares are listed —
+// a spelling the SDK never activates on is a plain element, and a plain
+// element is a candidate only through its own clickable shape.
+const PRIMARY_CTA_SELECTOR = ["a[href]", "button", "[role='button']", "[data-next-action]", CART_ENTRY_CONTROL_SELECTOR].join(", ");
 
+// The in-page half of the primary-CTA inspection. Runs as a serialised
+// script, so the route rule it needs (cartEntryHrefFor, unit-tested in
+// qa-cart-entry) is handed in as a function value rather than closed over.
 async function inspectPrimaryCta(browserPage, expectedUrl) {
-  return browserPage.evaluate(({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute }) => {
-    const CTA_SELECTOR = ctaSelector;
-
-    const trim = (value) => String(value || "").replace(/\s+/g, " ").trim();
-    const compactPath = (value) => String(value || "").replace(/\/+$/, "") || "/";
-    const expected = (() => {
-      try {
-        return new URL(routeUrl, location.href);
-      } catch {
-        return null;
-      }
-    })();
-    const parseColor = (value) => {
-      const raw = String(value || "").trim().toLowerCase();
-      if (!raw || raw === "transparent") return null;
-      const rgb = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(\d?(?:\.\d+)?|1(?:\.0+)?))?\s*\)$/);
-      if (!rgb) return null;
-      const parts = rgb.slice(1, 4).map((part) => Number(part));
-      if (parts.some((part) => !Number.isFinite(part) || part < 0 || part > 255)) return null;
-      const alpha = rgb[4] === undefined ? 1 : Number(rgb[4]);
-      return { r: parts[0], g: parts[1], b: parts[2], a: Number.isFinite(alpha) ? alpha : 1 };
-    };
-    const hex = (color) => color ? `#${[color.r, color.g, color.b].map((part) => Math.round(part).toString(16).padStart(2, "0")).join("")}` : null;
-    const luminance = (color) => {
-      const channel = (value) => {
-        const normalized = value / 255;
-        return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
-      };
-      return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
-    };
-    const contrast = (a, b) => {
-      if (!a || !b) return null;
-      const light = Math.max(luminance(a), luminance(b));
-      const dark = Math.min(luminance(a), luminance(b));
-      return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
-    };
-    const effectiveBackground = (element) => {
-      let current = element;
-      while (current && current.nodeType === Node.ELEMENT_NODE) {
-        const style = getComputedStyle(current);
-        const color = parseColor(style.backgroundColor);
-        if (color && color.a > 0.05) {
-          return { color, source: current === element ? "element" : current.tagName.toLowerCase() };
-        }
-        current = current.parentElement;
-      }
-      return { color: { r: 255, g: 255, b: 255, a: 1 }, source: "assumed_canvas" };
-    };
-    const isVisible = (element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return rect.width > 0
-        && rect.height > 0
-        && style.display !== "none"
-        && style.visibility !== "hidden"
-        && Number(style.opacity || "1") > 0.01;
-    };
-    const selectorFor = (element) => {
-      const tag = element.tagName.toLowerCase();
-      const id = element.id ? `#${element.id}` : "";
-      const classes = String(element.className || "")
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 4)
-        .map((name) => `.${name}`)
-        .join("");
-      return `${tag}${id}${classes}`;
-    };
-    // The route a control leads to. An SDK cart-entry control navigates by
-    // data-next-url and nothing else: the SDK's click handler calls
-    // preventDefault() unconditionally, so its href never navigates, and it
-    // resolves the attribute against the origin (campaign-cart url-utils),
-    // not the document base. Without the attribute such a control adds to
-    // the cart and stays put — no route. Anywhere else data-next-url has no
-    // navigation semantics: the anchor's own resolved href (native, so a
-    // <base href> is honoured), then href-shaped attributes, then a wrapping
-    // form's action.
-    const hrefFor = (element) => {
-      if (element.matches(cartEntrySelector)) {
-        const sdkRoute = String(element.getAttribute(cartEntryRouteAttribute) || "").trim();
-        if (!sdkRoute) return null;
-        try {
-          return new URL(sdkRoute, location.origin).href;
-        } catch {
-          // An unparseable data-next-url is no route either; do not leak
-          // the raw value into evidence as if it were one.
-          return null;
-        }
-      }
-      if (element instanceof HTMLAnchorElement && element.href) return element.href;
-      const attr = element.getAttribute("href")
-        || element.getAttribute("data-href")
-        || element.getAttribute("data-next-href")
-        || element.closest("form")?.getAttribute("action");
-      if (!attr) return null;
-      try {
-        return new URL(attr, location.href).href;
-      } catch {
-        return attr;
-      }
-    };
-    const routeMatches = (href) => {
-      if (!href || !expected) return false;
-      try {
-        const actual = new URL(href, location.href);
-        return compactPath(actual.pathname) === compactPath(expected.pathname);
-      } catch {
-        return false;
-      }
-    };
-
-    const candidates = Array.from(document.querySelectorAll(CTA_SELECTOR))
-      .filter(isVisible)
-      .map((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        const fg = parseColor(style.color);
-        const bg = effectiveBackground(element);
-        const ratio = contrast(fg, bg.color);
-        const href = hrefFor(element);
-        const label = trim(element.innerText || element.textContent || element.getAttribute("aria-label"));
-        return {
-          selector: selectorFor(element),
-          text: label.slice(0, 120),
-          href,
-          route_matches: routeMatches(href),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-          foreground: hex(fg),
-          background: hex(bg.color),
-          background_source: bg.source,
-          contrast_ratio: ratio,
-          readable: typeof ratio === "number" && ratio >= 4.5,
-          size_ok: rect.width >= 40 && rect.height >= 20,
-        };
-      })
-      .filter((candidate) => candidate.text || candidate.href);
-
-    const routeCandidates = candidates
-      .filter((candidate) => candidate.route_matches)
-      .sort((a, b) => {
-        if (a.readable !== b.readable) return a.readable ? -1 : 1;
-        if (a.size_ok !== b.size_ok) return a.size_ok ? -1 : 1;
-        return (b.contrast_ratio || 0) - (a.contrast_ratio || 0);
-      });
-    const primary = routeCandidates[0] || null;
-    const ok = Boolean(primary?.readable && primary?.size_ok);
-    const reason = ok
-      ? "ok"
-      : !routeCandidates.length
-        ? "missing_route_cta"
-        : primary?.size_ok === false
-          ? "cta_too_small"
-          : "low_contrast";
-
-    return {
-      ok,
-      reason,
-      expected_url: routeUrl,
-      primary,
-      candidates: candidates.slice(0, 8),
-    };
-  }, { routeUrl: expectedUrl, ctaSelector: PRIMARY_CTA_SELECTOR, cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR, cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE }).catch((error) => ({
+  const args = { routeUrl: expectedUrl, ctaSelector: PRIMARY_CTA_SELECTOR, cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR, cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE };
+  const script = `(${inspectPrimaryCtaScript.toString()})(${JSON.stringify(args)}, ${cartEntryHrefFor.toString()})`;
+  return browserPage.evaluate(script).catch((error) => ({
     ok: false,
     reason: "inspection_error",
     expected_url: expectedUrl,
     error: error instanceof Error ? error.message : String(error),
     candidates: [],
   }));
+}
+
+function inspectPrimaryCtaScript({ routeUrl, ctaSelector, cartEntrySelector, cartEntryRouteAttribute }, hrefForImpl) {
+  const CTA_SELECTOR = ctaSelector;
+
+  const trim = (value) => String(value || "").replace(/\s+/g, " ").trim();
+  const compactPath = (value) => String(value || "").replace(/\/+$/, "") || "/";
+  const expected = (() => {
+    try {
+      return new URL(routeUrl, location.href);
+    } catch {
+      return null;
+    }
+  })();
+  const parseColor = (value) => {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw || raw === "transparent") return null;
+    const rgb = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(\d?(?:\.\d+)?|1(?:\.0+)?))?\s*\)$/);
+    if (!rgb) return null;
+    const parts = rgb.slice(1, 4).map((part) => Number(part));
+    if (parts.some((part) => !Number.isFinite(part) || part < 0 || part > 255)) return null;
+    const alpha = rgb[4] === undefined ? 1 : Number(rgb[4]);
+    return { r: parts[0], g: parts[1], b: parts[2], a: Number.isFinite(alpha) ? alpha : 1 };
+  };
+  const hex = (color) => color ? `#${[color.r, color.g, color.b].map((part) => Math.round(part).toString(16).padStart(2, "0")).join("")}` : null;
+  const luminance = (color) => {
+    const channel = (value) => {
+      const normalized = value / 255;
+      return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+  };
+  const contrast = (a, b) => {
+    if (!a || !b) return null;
+    const light = Math.max(luminance(a), luminance(b));
+    const dark = Math.min(luminance(a), luminance(b));
+    return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
+  };
+  const effectiveBackground = (element) => {
+    let current = element;
+    while (current && current.nodeType === Node.ELEMENT_NODE) {
+      const style = getComputedStyle(current);
+      const color = parseColor(style.backgroundColor);
+      if (color && color.a > 0.05) {
+        return { color, source: current === element ? "element" : current.tagName.toLowerCase() };
+      }
+      current = current.parentElement;
+    }
+    return { color: { r: 255, g: 255, b: 255, a: 1 }, source: "assumed_canvas" };
+  };
+  const isVisible = (element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > 0
+      && rect.height > 0
+      && style.display !== "none"
+      && style.visibility !== "hidden"
+      && Number(style.opacity || "1") > 0.01;
+  };
+  const selectorFor = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const id = element.id ? `#${element.id}` : "";
+    const classes = String(element.className || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 4)
+      .map((name) => `.${name}`)
+      .join("");
+    return `${tag}${id}${classes}`;
+  };
+  // The route a control leads to: the shared cart-entry rule, evaluated
+  // against this document's origin and base.
+  const hrefFor = (element) => hrefForImpl(element, { cartEntrySelector, cartEntryRouteAttribute, origin: location.origin, baseHref: location.href });
+  const routeMatches = (href) => {
+    if (!href || !expected) return false;
+    try {
+      const actual = new URL(href, location.href);
+      return compactPath(actual.pathname) === compactPath(expected.pathname);
+    } catch {
+      return false;
+    }
+  };
+
+  const candidates = Array.from(document.querySelectorAll(CTA_SELECTOR))
+    .filter(isVisible)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const fg = parseColor(style.color);
+      const bg = effectiveBackground(element);
+      const ratio = contrast(fg, bg.color);
+      const href = hrefFor(element);
+      const label = trim(element.innerText || element.textContent || element.getAttribute("aria-label"));
+      return {
+        selector: selectorFor(element),
+        text: label.slice(0, 120),
+        href,
+        route_matches: routeMatches(href),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        foreground: hex(fg),
+        background: hex(bg.color),
+        background_source: bg.source,
+        contrast_ratio: ratio,
+        readable: typeof ratio === "number" && ratio >= 4.5,
+        size_ok: rect.width >= 40 && rect.height >= 20,
+      };
+    })
+    .filter((candidate) => candidate.text || candidate.href);
+
+  const routeCandidates = candidates
+    .filter((candidate) => candidate.route_matches)
+    .sort((a, b) => {
+      if (a.readable !== b.readable) return a.readable ? -1 : 1;
+      if (a.size_ok !== b.size_ok) return a.size_ok ? -1 : 1;
+      return (b.contrast_ratio || 0) - (a.contrast_ratio || 0);
+    });
+  const primary = routeCandidates[0] || null;
+  const ok = Boolean(primary?.readable && primary?.size_ok);
+  const reason = ok
+    ? "ok"
+    : !routeCandidates.length
+      ? "missing_route_cta"
+      : primary?.size_ok === false
+        ? "cta_too_small"
+        : "low_contrast";
+
+  return {
+    ok,
+    reason,
+    expected_url: routeUrl,
+    primary,
+    candidates: candidates.slice(0, 8),
+  };
 }
 
 function primaryCtaAssertionFromEvidence(page, evidence) {
@@ -1763,11 +1743,10 @@ function placeholderTextResidueAssertion({ page, terms, matches, severity }) {
 
 // H3.2 — Demo-asset fidelity flag. WARNING (not a blocker): a built campaign
 // that still references the template's own demo placeholders (1x1 spacer SVGs,
-// a benefit icon repeated across every benefit) should be re-skinned, but a
-// shipped placeholder is a quality flag, not a hard stop. Two signals: named
-// demo assets referenced via DOM asset attributes (src/currentSrc/srcset/
-// data-src/poster/href/background-image), and one icon src repeated across the
-// family's icon selector (learnings L5 "four identical benefit icons").
+// starter imagery) should be re-skinned, but a shipped placeholder is a
+// quality flag, not a hard stop. One signal: the family contract's named demo
+// assets referenced via DOM asset attributes (src/currentSrc/srcset/data-src/
+// poster/href/background-image).
 //
 // Matches against actual asset references, NOT the raw HTML string: a basename
 // like "1x1_1.svg" quoted in alt text, a comment, or a JSON blob must not
@@ -1779,12 +1758,7 @@ async function templateDemoAssetAssertions(browserPage, page, options = {}) {
   if (config.pageTypes && !config.pageTypes.includes(pageType)) return [];
   const assetRefs = await collectAssetReferenceSources(browserPage);
   const namedHits = referencedDemoAssetBasenames(assetRefs.join("\n"), config.assetBasenames);
-  let repeatedIcons = [];
-  if (config.repeatedIcon?.selector) {
-    const srcs = await collectIconSources(browserPage, config.repeatedIcon.selector);
-    repeatedIcons = repeatedIconSrcs(srcs, config.repeatedIcon.minRepeats);
-  }
-  return [demoAssetResidueAssertion({ page, namedHits, repeatedIcons })];
+  return [demoAssetResidueAssertion({ page, namedHits })];
 }
 
 // All real asset references on the page: src/currentSrc/srcset/data-src/poster
@@ -1810,29 +1784,9 @@ async function collectAssetReferenceSources(browserPage) {
   }).catch(() => []);
 }
 
-// Icon src strings for the repeated-icon check. Prefer the resolved currentSrc
-// (handles <picture>/srcset/lazy-loaded imgs) over the literal src attribute,
-// and drop inline data: placeholders so a shared lazy-load placeholder is not
-// mistaken for "the same icon repeated".
-async function collectIconSources(browserPage, selector) {
-  return browserPage.evaluate((target) => {
-    try {
-      return Array.from(document.querySelectorAll(target))
-        .map((el) => el.currentSrc || el.getAttribute("src") || el.getAttribute("data-src") || "")
-        .filter((src) => src && !src.startsWith("data:"));
-    } catch {
-      return [];
-    }
-  }, selector).catch(() => []);
-}
-
-function demoAssetResidueAssertion({ page, namedHits, repeatedIcons }) {
+function demoAssetResidueAssertion({ page, namedHits }) {
   const named = namedHits || [];
-  const repeated = repeatedIcons || [];
-  const offending = named.length > 0 || repeated.length > 0;
-  const parts = [];
-  if (named.length) parts.push(`template demo assets still referenced: ${named.join(", ")}`);
-  if (repeated.length) parts.push(`identical icon src repeated ${repeated[0].count}x (re-skin to distinct icons): ${repeated[0].src}`);
+  const offending = named.length > 0;
   return assertion({
     id: `template-residue:${page.page_id}:demo-asset`,
     family: "template_residue",
@@ -1840,8 +1794,8 @@ function demoAssetResidueAssertion({ page, namedHits, repeatedIcons }) {
     status: offending ? STATUS.WARN : STATUS.PASS,
     severity: offending ? SEVERITY.WARN : undefined,
     expected: "campaign assets replace template demo placeholders (re-skin before launch)",
-    actual: offending ? parts.join("; ") : "no template demo asset residue",
-    evidence: { named_hits: named, repeated_icons: repeated, page_url: page.url },
+    actual: offending ? `template demo assets still referenced: ${named.join(", ")}` : "no template demo asset residue",
+    evidence: { named_hits: named, page_url: page.url },
   });
 }
 
@@ -1928,8 +1882,8 @@ async function collectLogoSources(browserPage, selector) {
     try {
       const sources = [];
       for (const element of document.querySelectorAll(target)) {
-        // Same discipline as collectIconSources: prefer the resolved
-        // currentSrc, but also inspect src/data-src so a lazy-loaded starter
+        // Prefer the resolved currentSrc (handles <picture>/srcset/lazy-loaded
+        // imgs), but also inspect src/data-src so a lazy-loaded starter
         // logo (<img loading="lazy" data-src="next-logo.png">) is still caught,
         // and drop inline data: placeholders so a lazy placeholder is not
         // treated as a real logo reference.
@@ -3655,10 +3609,16 @@ async function packageCardSelectionState(page, selector, { attempts = 4, interva
 // It deliberately does NOT pass/fail on live DOM state — the authoritative
 // proof is the persisted order carrying the voucher (assessCouponApplication),
 // evaluated after the order read-back.
+// The SDK declares two coupon activations: the checkout field
+// `data-next-checkout-field="coupon"` and the coupon enhancer's
+// `data-next-coupon="input"` / `data-next-coupon="apply"` pair (what the
+// starter families render). The remaining input selectors are the
+// hand-rolled shapes a shopper can still type into; no other `data-next-*`
+// spelling is a coupon control the SDK wires.
 const COUPON_INPUT_SELECTORS = Object.freeze([
   '[data-next-checkout-field="coupon"]',
   '[os-checkout-field="coupon"]',
-  "[data-next-coupon-input]",
+  'input[data-next-coupon="input"]',
   'input[name*="coupon" i]',
   'input[name*="voucher" i]',
   'input[name*="promo" i]',
@@ -3731,8 +3691,13 @@ async function firstUsableCouponInput(page) {
   return null;
 }
 
+// The SDK's own apply control for its coupon enhancer, and nothing else: a
+// button spelled any other way is not wired by the SDK, so it is found (if at
+// all) by its visible text like any hand-rolled control.
+const COUPON_APPLY_CONTROL_SELECTOR = '[data-next-coupon="apply"]';
+
 async function clickCouponApplyControl(page, input) {
-  const explicit = page.locator('[data-next-coupon-apply], [data-next-action="apply-coupon"], [data-next-checkout-action="apply-coupon"]').first();
+  const explicit = page.locator(COUPON_APPLY_CONTROL_SELECTOR).first();
   if (await explicit.count().catch(() => 0)) {
     await explicit.click({ timeout: 5000 }).catch(() => {});
     return "clicked explicit apply control";
@@ -6169,6 +6134,9 @@ function qaBrowserMissing(kind, error) {
 
 export const __qaBrowserTestHooks = Object.freeze({
   qaBrowserMissing,
+  PRIMARY_CTA_SELECTOR,
+  COUPON_INPUT_SELECTORS,
+  COUPON_APPLY_CONTROL_SELECTOR,
   analyticsCorrectnessCaptureAssertions,
   analyticsCorrectnessRunnerFailureAssertion,
   analyticsParityCaptureAssertions,

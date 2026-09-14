@@ -231,29 +231,21 @@ test("placeholder text-residue passes clean visible copy", () => {
 
 // --- H3.2: demo-asset fidelity is a warning that tells the agent to re-skin ---
 
-test("demo-asset residue warns on named demo assets and repeated icon srcs", () => {
+test("demo-asset residue warns on named demo assets", () => {
   const named = demoAssetResidueAssertion({
     page: checkoutPage,
     namedHits: ["1x1_1.svg"],
-    repeatedIcons: [],
   });
   assert.equal(named.id, "template-residue:checkout:demo-asset");
   assert.equal(named.family, "template_residue");
   assert.equal(named.status, "warn");
   assert.equal(named.severity, "warn");
   assert.match(named.actual, /1x1_1\.svg/);
-
-  const repeated = demoAssetResidueAssertion({
-    page: checkoutPage,
-    namedHits: [],
-    repeatedIcons: [{ src: "/i/icon.svg", count: 4 }],
-  });
-  assert.equal(repeated.status, "warn");
-  assert.match(repeated.actual, /repeated 4x/);
+  assert.deepEqual(Object.keys(named.evidence).sort(), ["named_hits", "page_url"], "named hits are the only demo-asset evidence");
 });
 
 test("demo-asset residue passes when no demo assets survive", () => {
-  const clean = demoAssetResidueAssertion({ page: checkoutPage, namedHits: [], repeatedIcons: [] });
+  const clean = demoAssetResidueAssertion({ page: checkoutPage, namedHits: [] });
   assert.equal(clean.status, "pass");
   assert.equal(clean.severity, undefined);
 });

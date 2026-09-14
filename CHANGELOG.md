@@ -2,6 +2,42 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.34] - 2026-09-14
+
+### Changed
+
+- `qa run --apply-coupon` clicks the Campaign Cart SDK's own apply control,
+  `[data-next-coupon="apply"]`, when the checkout renders one. The explicit
+  locator used to name three attribute spellings the SDK never activates on
+  (`[data-next-coupon-apply]`, `[data-next-action="apply-coupon"]`,
+  `[data-next-checkout-action="apply-coupon"]`) and not the one it does; a
+  page carrying one of those still reaches the same fallbacks as before (a
+  visible "Apply" control in the form, else Enter in the input). The coupon
+  input list likewise reads the SDK's `input[data-next-coupon="input"]`
+  instead of the undeclared `[data-next-coupon-input]`; the
+  `browser-promo-code-surface` assertion and the "no coupon/promo input found
+  (looked for …)" refusal list the new spelling.
+- `browser-primary-cta` no longer treats `[data-next-checkout-action]` as a
+  candidate CTA or `data-next-href` as a route: neither is an attribute the
+  SDK declares. A control spelled that way is a candidate only through its own
+  clickable shape (`<a href>`, `<button>`, `role="button"`), and routes only
+  by `href`, `data-href` or a wrapping form's `action`. The route rule is now
+  the pure `cartEntryHrefFor` in `src/qa-cart-entry.mjs`, run inside the page
+  as a serialised script and unit-tested without a browser.
+- `docs/qa-and-test-orders.md` names the coupon selector vocabulary the
+  runner actually reads.
+
+### Removed
+
+- The `repeated_icon` half of the `demo_assets` family contract: the parser
+  field, the in-page icon collector and the `repeatedIconSrcs` counter. No
+  shipped family contract declares the key, so the branch could never fire;
+  `demo_assets.assets` is the whole vocabulary and a contract that declares
+  only `repeated_icon` now yields no demo-asset check. The
+  `template-residue:<page>:demo-asset` assertion's evidence carries
+  `named_hits` and `page_url` only (the always-empty `repeated_icons` key is
+  gone) and its `actual` text is unchanged for named hits.
+
 ## [1.27.0+agent.26] - 2026-09-14
 
 ### Fixed

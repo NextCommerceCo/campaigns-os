@@ -1025,9 +1025,15 @@ Two flags target funnels the default-tier drive cannot prove:
   flag to traverse non-default tiers of a multi-tier selector. `--cart` remains
   the best-effort variant.
 - `--apply-coupon <code>` — types the code into the rendered coupon/promo input
-  (`[data-next-checkout-field="coupon"]` and common fallbacks, revealing a
-  collapsed "Have a coupon?" disclosure when needed) and clicks the apply
-  control before card entry, as a new `coupon_applied` ladder step. Funnels
+  (the SDK's `[data-next-checkout-field="coupon"]` or
+  `input[data-next-coupon="input"]`, then hand-rolled `coupon`/`voucher`/`promo`
+  inputs by name or placeholder, revealing a collapsed "Have a coupon?"
+  disclosure when needed) and clicks the apply control before card entry, as a
+  new `coupon_applied` ladder step. The apply control is the SDK's own
+  `[data-next-coupon="apply"]` when the page renders one; otherwise a visible
+  "Apply" control inside the form, else Enter in the input. No other
+  `data-next-*` spelling is a coupon control the SDK wires, so none is looked
+  for. Funnels
   with **no shopper-typable coupon surface** (the code is applied by page JS,
   e.g. an exit-intent overlay calling `window.next.applyCoupon("CODE")`) fall
   back to the SDK `applyCoupon` API — the step detail records that the

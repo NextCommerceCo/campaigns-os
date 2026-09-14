@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import {
   CART_ENTRY_CODES,
   CART_ENTRY_CONTROL_SELECTOR,
+  CART_ENTRY_ROUTE_ATTRIBUTE,
   CART_ENTRY_STEP,
   assessCartBeforeSubmit,
+  cartEntryHrefFor,
   chooseCartEntryControl,
   codedError,
   isCartEntryCode,
@@ -14,7 +16,7 @@ import {
 } from "./qa-cart-entry.mjs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
-const { cartStateBeforeSubmit, classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER } = __qaBrowserTestHooks;
+const { cartStateBeforeSubmit, classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER, PRIMARY_CTA_SELECTOR, COUPON_INPUT_SELECTORS, COUPON_APPLY_CONTROL_SELECTOR } = __qaBrowserTestHooks;
 
 const BASE = "https://campaign.example";
 const checkout = { page_id: "checkout", page_type: "checkout", order: 3, url: `${BASE}/checkout/`, expected_next_url: `${BASE}/upsell-1/` };
@@ -29,6 +31,73 @@ function topology(pages) {
 // the runner would click.
 test("the cart-entry control selector is exactly the SDK's add-to-cart activation selector", () => {
   assert.equal(CART_ENTRY_CONTROL_SELECTOR, '[data-next-action="add-to-cart"]');
+});
+
+// The SDK declares `data-next-action` and `data-next-coupon` as its control
+// activations; `data-next-checkout-action` is not an attribute it reads. A
+// selector list that names an undeclared spelling claims an activation the SDK
+// does not have, so every list in the runner is pinned to declared spellings.
+test("the primary-CTA candidate selector names only attributes the SDK declares", () => {
+  const dataNextEntries = PRIMARY_CTA_SELECTOR.split(", ").filter((entry) => entry.includes("data-next-"));
+  assert.deepEqual(dataNextEntries, ["[data-next-action]", CART_ENTRY_CONTROL_SELECTOR]);
+  assert.ok(!PRIMARY_CTA_SELECTOR.includes("data-next-checkout-action"), PRIMARY_CTA_SELECTOR);
+});
+
+test("the coupon locators are the SDK's declared coupon activations, nothing spelled otherwise", () => {
+  assert.equal(COUPON_APPLY_CONTROL_SELECTOR, '[data-next-coupon="apply"]');
+  const dataNextEntries = COUPON_INPUT_SELECTORS.filter((entry) => entry.includes("data-next-"));
+  assert.deepEqual(dataNextEntries, ['[data-next-checkout-field="coupon"]', 'input[data-next-coupon="input"]']);
+  for (const entry of [COUPON_APPLY_CONTROL_SELECTOR, ...COUPON_INPUT_SELECTORS]) {
+    assert.ok(!/data-next-checkout-action|data-next-coupon-apply|data-next-coupon-input|apply-coupon/.test(entry), entry);
+  }
+});
+
+// --- cartEntryHrefFor: the route rule the primary-CTA recogniser runs in-page,
+// exercised here against element-shaped objects so each branch has a
+// browser-free case. `matches` answers only for the SDK selector, the way a
+// real element would for a control carrying data-next-action="add-to-cart".
+
+const ROUTE_RULE = { cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR, cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE, origin: "https://campaign.example", baseHref: "https://campaign.example/lp/nested/index.html" };
+
+function element({ tag = "button", attrs = {}, href, form = null } = {}) {
+  const sdkControl = attrs["data-next-action"] === "add-to-cart";
+  return {
+    tagName: tag.toUpperCase(),
+    href,
+    getAttribute: (name) => (Object.hasOwn(attrs, name) ? attrs[name] : null),
+    matches: (selector) => selector === CART_ENTRY_CONTROL_SELECTOR && sdkControl,
+    closest: (selector) => (selector === "form" ? form : null),
+  };
+}
+
+test("cartEntryHrefFor: an SDK control routes by data-next-url resolved against the origin, never by href", () => {
+  const withRoute = element({ attrs: { "data-next-action": "add-to-cart", "data-next-url": "checkout/" }, href: "https://campaign.example/lp/nested/stray/" });
+  assert.equal(cartEntryHrefFor(withRoute, ROUTE_RULE), "https://campaign.example/checkout/");
+  const anchorControl = element({ tag: "a", attrs: { "data-next-action": "add-to-cart", "data-next-url": "/checkout/", href: "/elsewhere/" }, href: "https://campaign.example/elsewhere/" });
+  assert.equal(cartEntryHrefFor(anchorControl, ROUTE_RULE), "https://campaign.example/checkout/", "the SDK's own click handler prevents the anchor navigation");
+  assert.equal(cartEntryHrefFor(element({ attrs: { "data-next-action": "add-to-cart" }, href: "https://campaign.example/checkout/" }), ROUTE_RULE), null, "no data-next-url: adds to cart and stays put");
+  assert.equal(cartEntryHrefFor(element({ attrs: { "data-next-action": "add-to-cart", "data-next-url": "http://[bad" } }), ROUTE_RULE), null, "an unparseable route is no route");
+});
+
+test("cartEntryHrefFor: an HTML anchor keeps its natively resolved href, and data-next-url on a non-SDK element is a decoy", () => {
+  const anchor = element({ tag: "a", attrs: { href: "../checkout/", "data-next-url": "/support/" }, href: "https://campaign.example/lp/checkout/" });
+  assert.equal(cartEntryHrefFor(anchor, ROUTE_RULE), "https://campaign.example/lp/checkout/");
+  // An SVG <a> exposes href as an object, so the attribute is read against the base instead.
+  const svgAnchor = element({ tag: "a", attrs: { href: "../checkout/" }, href: { baseVal: "../checkout/" } });
+  assert.equal(cartEntryHrefFor(svgAnchor, ROUTE_RULE), "https://campaign.example/lp/checkout/");
+  const decoy = element({ attrs: { "data-next-url": "/checkout/" } });
+  assert.equal(cartEntryHrefFor(decoy, ROUTE_RULE), null, "a plain button's data-next-url has no navigation semantics");
+});
+
+test("cartEntryHrefFor: href-shaped attributes and a wrapping form's action resolve against the document base; undeclared spellings do not", () => {
+  assert.equal(cartEntryHrefFor(element({ attrs: { "data-href": "/checkout/?forcePackageId=1" } }), ROUTE_RULE), "https://campaign.example/checkout/?forcePackageId=1");
+  assert.equal(cartEntryHrefFor(element({ attrs: { href: "checkout/" } }), ROUTE_RULE), "https://campaign.example/lp/nested/checkout/");
+  const form = { getAttribute: (name) => (name === "action" ? "/checkout/" : null) };
+  assert.equal(cartEntryHrefFor(element({ attrs: {}, form }), ROUTE_RULE), "https://campaign.example/checkout/");
+  assert.equal(cartEntryHrefFor(element({ attrs: { "data-next-href": "/checkout/" } }), ROUTE_RULE), null, "data-next-href is not an SDK attribute and not a route");
+  assert.equal(cartEntryHrefFor(element({ attrs: { href: "http://[bad" } }), ROUTE_RULE), "http://[bad", "an unparseable href is reported as written");
+  assert.equal(cartEntryHrefFor(element(), ROUTE_RULE), null);
+  assert.equal(cartEntryHrefFor(null, ROUTE_RULE), null);
 });
 
 test("the entry step is the first rung of the ladder", () => {
