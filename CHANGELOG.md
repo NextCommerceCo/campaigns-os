@@ -2,6 +2,33 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.27.0+agent.6] - 2026-09-14
+
+### Fixed
+
+- `campaigns-os next` and the doctor sidecar it writes can no longer disagree
+  about the prepare-build gate. `next` evaluated the gate itself, called
+  doctor (which evaluated it again and picked the next stage), then picked
+  the next stage a second time with its own gate. The two evaluations
+  differed on one input: `next` told doctor there was no Build Context when
+  the file was merely missing, and doctor only checked the context/report
+  binding when a context was present — so with `build-context.json` absent,
+  `next` blocked on `next.prepare_build.context_missing` while the
+  `doctor-output.json` it had just written named a ladder stage. Doctor now
+  stores the gate on `derived.prepare_build_gate` beside the other gates
+  (`null` when the packet is not gated) and checks the binding whether or not
+  a context was found — an absent context is a binding failure for a packet
+  that declares a Design Source Package, exactly as `next` treats it — and
+  `next` passes the operator's `--context` / `--report` through, lets doctor
+  derive the defaults, and consumes doctor's gate and stage pick: one
+  evaluation, one pick. `doctor.next` also gains `stage_blocked`, the
+  picker's own verdict on the picked stage, which `next` reports as its
+  `stage_blocked`. Two consequences for `doctor --json` on a packet that
+  declares a Design Source Package: with no Build Context readable, its
+  `next` block now says `prepare-build` with the `context_missing` binding
+  issue instead of a ladder stage, and `derived.prepare_build_gate` is new.
+  `next --json` output is unchanged.
+
 ## [1.27.0+agent.5] - 2026-09-14
 
 ### Fixed

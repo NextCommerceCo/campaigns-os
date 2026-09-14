@@ -3299,7 +3299,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   // (--report-out). `next` follows that pointer when no --report is given;
   // doctor reads the same report so its gates and its next block cannot
   // disagree with the ladder over which report is the campaign's.
-  const { packet, contextPath: resolvedContextPath, reportPath: resolvedReportPath } = resolveCampaignWorkspace(packetPath, {
+  const { packet, targetRepo: gateTargetRepo, contextPath: resolvedContextPath, reportPath: resolvedReportPath } = resolveCampaignWorkspace(packetPath, {
     contextPath,
     reportPath,
     followContextPointer: true,
@@ -3325,6 +3325,9 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     doctor_checks: [],
     checkpoint_gates: [],
     polish_checkpoint_gate: null,
+    // The prepare-build gate `next` acts on, stored like every other gate so
+    // the ladder consumes doctor's evaluation instead of computing its own.
+    prepare_build_gate: null,
     page_kit_campaign_config: null,
     scaffold_required: false,
     scaffold_reason: null,
@@ -3427,12 +3430,14 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   // A caller that named one sidecar and not the other (doctor --context C)
   // is inspecting, and its report checks are deliberately off; its next
   // block decides without the report too, and says so in `reason`. The
-  // ladder decision is `next`'s, which always reads the bound report.
-  const gateTargetRepo = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+  // binding is evaluated whether or not a Build Context was found: an absent
+  // context is itself a binding failure for a packet that declares a Design
+  // Source Package, and `next` consumes this gate rather than computing its
+  // own, so the two cannot answer differently on the same repo.
   const prepareBuildGate = prepareBuildGateIssue(report, {
     required: isObject(packet?.design_source_package),
     reportPath: resolvedReportPath,
-    bindingIssues: isObject(packet) && context
+    bindingIssues: isObject(packet)
       ? nextPrepareBuildBindingIssues({
           packet,
           packetPath,
@@ -3445,6 +3450,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
         })
       : [],
   });
+  derived.prepare_build_gate = prepareBuildGate;
   // Portable output (outputBaseDir set: start's generated doctor output,
   // doctor --strip-paths) rebases them onto that base like every other path
   // in the output, so a relocated handoff does not name the original machine.
@@ -7408,9 +7414,9 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
   };
 }
 
-function pickNextStage(report, doctor, prepareBuildGate = prepareBuildGateIssue(report), purchaseProof = null) {
-  const polishGate = doctor?.derived?.polish_gate || evaluatePolishGate({ report });
-  const polishCheckpointGate = doctor?.derived?.polish_checkpoint_gate || null;
+function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate, purchaseProof = null) {
+  const polishGate = derived?.polish_gate || evaluatePolishGate({ report });
+  const polishCheckpointGate = derived?.polish_checkpoint_gate || null;
   // prepare-build is the earliest lifecycle prerequisite. Surface its
   // authoritative blockers before later doctor findings so a blocked Design
   // Source Package can never be mistaken for permission to enter setup/build.
@@ -7422,10 +7428,10 @@ function pickNextStage(report, doctor, prepareBuildGate = prepareBuildGateIssue(
     };
   }
 
-  if (doctor && !doctor.ok && !doctorErrorsAreOnlyPolishGate(doctor.errors)) {
+  if (errors.length && !doctorErrorsAreOnlyPolishGate(errors)) {
     return {
       stage: "doctor-blocked",
-      reason: `Doctor reported ${doctor.errors?.length || 0} blocker(s); resolve them before any stage runs.`,
+      reason: `Doctor reported ${errors.length} blocker(s); resolve them before any stage runs.`,
     };
   }
 
@@ -7514,27 +7520,16 @@ export function nextStage(stage, args, ambient = null) {
     reportPath: args.report ? resolve(args.report) : undefined,
     followContextPointer: true,
   });
-  const recordedContext = readJsonIfExists(contextPath);
   const report = readJsonIfExists(reportPath);
-  const bindingIssues = nextPrepareBuildBindingIssues({
-    packet,
-    packetPath,
-    context: recordedContext,
-    contextPath,
-    report,
-    reportPath,
-    targetRepo,
-    explicitReport: Boolean(args.report),
-  });
-  const prepareBuildGate = prepareBuildGateIssue(report, {
-    required: isObject(packet.design_source_package),
-    reportPath,
-    bindingIssues,
-  });
+  // Doctor reads the same sidecars through the same resolver (an operator's
+  // explicit --context / --report passed through, the defaults derived), so
+  // its prepare-build gate and its stage pick are this command's: `next`
+  // consumes them from the result instead of evaluating a second time.
   const doctor = doctorPacket(packetPath, {
-    contextPath: existsSync(contextPath) ? contextPath : null,
-    reportPath: report ? reportPath : null,
+    contextPath: args.context ? resolve(args.context) : undefined,
+    reportPath: args.report ? resolve(args.report) : undefined,
   });
+  const prepareBuildGate = doctor.derived?.prepare_build_gate || null;
   // #171: `next` recomputes doctor state on every call; persist that fresh
   // snapshot so the retained sidecar can never stay a green lie from an
   // earlier stage while the campaign degrades (the dogfood target sat
@@ -7633,7 +7628,7 @@ export function nextStage(stage, args, ambient = null) {
   // and recoverable across sessions / machines.
   let picked = null;
   if (!stage) {
-    picked = pickNextStage(report, doctor, prepareBuildGate, purchaseProof);
+    picked = doctor.next;
     if (picked.stage === "doctor-blocked") {
       return finalize({
         ok: false,
@@ -7740,7 +7735,7 @@ export function nextStage(stage, args, ambient = null) {
   // (vs them having to re-derive it from report state themselves).
   if (picked) {
     result.picked_reason = picked.reason;
-    if (picked.blocked) result.stage_blocked = true;
+    if (picked.stage_blocked) result.stage_blocked = true;
   }
   return finalize(result);
 }
@@ -8603,9 +8598,8 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   const polishBlocked = assemblyComplete
     && (polishGate.status === "blocked" || polishCheckpointGate?.status === "blocked");
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
-  const doctor = { ok: errors.length === 0, errors, warnings, derived };
   const purchaseProof = report ? assessPurchaseProofCoverage({ packet, report }) : null;
-  const picked = pickNextStage(report, doctor, prepareBuildGate, purchaseProof);
+  const picked = pickNextStage(report, { errors, derived }, prepareBuildGate, purchaseProof);
   // The picker's vocabulary and this table must not drift apart: a stage the
   // table does not know would otherwise be relabelled as an operator step and
   // sliced into the whole ladder. Fail loudly instead.
@@ -8670,6 +8664,11 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   return {
     stage: picked.stage,
     status: blocked ? "blocked" : readinessStatus(warnings, derived),
+    // The picker's own verdict on the picked stage (a blocked polish gate, a
+    // blocked ladder stage, prepare-build), as distinct from `status`, which
+    // also folds in what makes the stage unrunnable (no deploy URL, no
+    // scaffold). `next` reports it as its own stage_blocked.
+    stage_blocked: picked.blocked === true,
     owner: owners.owner,
     default_skill: owners.default_skill,
     command,

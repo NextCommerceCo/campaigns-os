@@ -2638,6 +2638,27 @@
         }
       ],
       "entry_sha256": "2ce97e49c8a33f5445e37623b25aede4fa101f64ad53ad7e74e87254d0c0a88c"
+    },
+    {
+      "id": "RL-0068",
+      "sequence": 68,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.6",
+      "changelog_sha256": "363de9a052b7fe8dc07554d27303d69f5b203c8031ffe941074bd8d120a15ebe",
+      "agent_impact": "Additive fields and one behaviour change on doctor --json; next --json is unchanged. (1) derived.prepare_build_gate is new: the prepare-build gate next acts on (null when the packet declares no Design Source Package and the report carries no prepare_build stage; otherwise the gate object with status, blocked, reason and, for a binding failure, issues[]). (2) next.stage_blocked is new: true when the picked stage is itself blocked (a blocked polish gate, a blocked ladder stage, prepare-build), as distinct from next.status, which also folds in what makes a stage unrunnable. (3) For a packet that declares a Design Source Package and has no readable Build Context, doctor's next block now says stage prepare-build with derived.prepare_build_gate.issues[0].code next.prepare_build.context_missing, where it previously named a ladder stage; this is the answer next already gave on the same repo, so the doctor sidecar written by next now agrees with next. An agent reading doctor-output.json after next sees the same stage next printed.",
+      "compatibility": "additive",
+      "migration": "None. An agent that read a ladder stage from doctor.next on a Design Source Package packet without a Build Context should restore the context (rerun prepare-build) as next already required.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "doctor",
+          "summary": "inspectDoctorPacket stores the prepare-build gate on derived.prepare_build_gate and evaluates the context/report binding whether or not a context exists; buildNextStep publishes next.stage_blocked; nextStage consumes doctor.derived.prepare_build_gate and doctor.next instead of evaluating the gate and picking the stage a second time, passing explicit --context/--report through and deriving the defaults; pickNextStage takes the errors and derived it reads rather than a stand-in doctor object."
+        }
+      ],
+      "entry_sha256": "ba76140526420055a6bd621e74a947ce7bd6d36024baf5754aeaf3694cf29eb7"
     }
   ]
 }
