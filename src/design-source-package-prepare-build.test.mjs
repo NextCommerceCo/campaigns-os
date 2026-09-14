@@ -1283,6 +1283,36 @@ test("packet-only next fails closed when a DSP lifecycle report is unavailable",
   });
 });
 
+// The doctor sidecar `next` writes must say what `next` says. With the Build
+// Context absent, `next` blocks on next.prepare_build.context_missing; the
+// doctor it wrote in the same call used to compute no binding issues at all
+// (it only did so when a context was present) and name a ladder stage.
+test("packet-only next and the doctor sidecar it writes agree that a missing Build Context blocks prepare-build", () => {
+  withFixture((fixture) => {
+    const prepared = runPrepare(fixture);
+    assert.equal(prepared.status, 0, prepared.stderr);
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const contextPath = join(fixture.target, ".campaign-runtime/build-context.json");
+    rmSync(contextPath);
+
+    const next = runCli(["next", "--packet", packetPath], fixture.dir);
+    assert.notEqual(next.status, 0);
+    assert.equal(next.json.stage, "prepare-build");
+    assert.equal(next.json.status, "blocked");
+    assert.ok(next.json.errors.some((error) => error.code === "next.prepare_build.context_missing"), JSON.stringify(next.json.errors));
+    assert.match(next.json.reason, /context_missing/);
+
+    const sidecar = readJson(join(fixture.target, ".campaign-runtime/doctor-output.json"));
+    assert.equal(sidecar.next.stage, "prepare-build", "the sidecar names the same stage next answered");
+    assert.equal(sidecar.next.reason, next.json.reason, "for the same reason");
+    assert.equal(sidecar.derived.prepare_build_gate?.status, "mismatched");
+    assert.deepEqual(sidecar.derived.prepare_build_gate.issues.map((issue) => issue.code), ["next.prepare_build.context_missing"]);
+    // The gate is stored beside the other gates, and is null on a clean packet.
+    const clean = runCli(["doctor", "--packet", join(ROOT, "examples/build-packet.basic.json"), "--no-write"], fixture.dir);
+    assert.equal(clean.json.derived.prepare_build_gate, null);
+  });
+});
+
 test("packet-only next treats a mismatched context packet binding as blocking even with a planted ready default report", () => {
   withFixture((fixture) => {
     const customReportPath = join(fixture.target, ".campaign-runtime/reports/nested/assembly-report.json");
