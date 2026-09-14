@@ -476,8 +476,9 @@ Notable supported-surface changes are recorded here.
   override also feeds the certification-freshness assessment, which read the
   bundled policy regardless.
 - `--field-contract` reaches Page Kit roots too. A Page Kit root whose
-  source inlines `data-next-checkout-field` / `os-checkout-field` bindings
-  now gets the same `checkout_fields` block and the same
+  source inlines checkout bindings (the attributes the contract's
+  `binding_attributes` names; bundled `data-next-checkout-field` /
+  `os-checkout-field`) now gets the same `checkout_fields` block and the same
   `checkout.unsupported_field_binding` / `checkout.unknown_field_binding`
   findings as an application root, judged by the bundled field contract or
   the override; a root with no such bindings is unchanged and has no
@@ -489,8 +490,9 @@ Notable supported-surface changes are recorded here.
   `built_output.scope_unresolved` finding — while `identity.campaign_slug`
   already named the campaign from `_data/campaigns.json`. The slug is now
   resolved in order from `--slug`, the single slug `campaigns.json`
-  declares, the `campaign.public_route_slug` a `.campaign-runtime` packet
-  names, and only then the `_site/` layout; that run now reports
+  declares, the `campaign.public_route_slug` the `.campaign-runtime` packets
+  name (only when every packet that names one agrees), and only then the
+  `_site/` layout; that run now reports
   `Built _site: yes`, `- Built slug: demo (campaigns_json)`, `Doctor:
   ready` and no scope finding. The choice is recorded as
   `built_output.slug` / `built_output.slug_source` (`operator_flag`,

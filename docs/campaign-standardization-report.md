@@ -29,8 +29,9 @@ Every root carries `implementation` (`kind`, `evidence`, `frameworks`) and
 standing list per kind. A `page_kit` root always lists
 `page_kit_source_contract`, `sdk_version_policy` and
 `campaign_cart_runtime_inventory`; it adds `checkout_field_contract` only
-when its source inlines `data-next-checkout-field` / `os-checkout-field`
-bindings, and `built_output_doctor` only once a built-output doctor result is
+when its source inlines checkout bindings (the attributes the field
+contract's `binding_attributes` names; bundled: `data-next-checkout-field` /
+`os-checkout-field`), and `built_output_doctor` only once a built-output doctor result is
 attached (so never under `--no-doctor`, never without a `_site`, never while
 the built slug is unresolved). A `campaign_cart_app` root lists
 `campaign_cart_runtime_inventory`, `sdk_loader_discovery`,
@@ -90,7 +91,8 @@ flag as the next argument.
 The built-output scope is the directory under `_site/` whose pages the
 built-output doctor inspects. It is resolved from, in order: `--slug`; the
 single slug `_data/campaigns.json` declares; the `campaign.public_route_slug`
-a `.campaign-runtime` packet names; and, only when none of those exists, the
+the `.campaign-runtime` packets name, when every packet that names one
+agrees; and, only when none of those exists, the
 `_site/` layout itself (one html-bearing directory, or root-level html). The
 report records the choice as `built_output.slug` and `built_output.slug_source`
 (`operator_flag`, `campaigns_json`, the packet's relative path, or

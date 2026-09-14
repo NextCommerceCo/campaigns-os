@@ -44,7 +44,6 @@ const PAGE_KIT_PACKAGE_NAMES = [
 // judged by. Only the Page Kit dependency cutoff is a scanner constant: the
 // policy contract has no Page Kit field.
 const PREFERRED_PAGE_KIT_MIN = "0.1.1";
-const CHECKOUT_FIELD_BINDING_PATTERN = /\b(?:data-next-checkout-field|os-checkout-field)\s*=/;
 const MAX_SAMPLE_COUNT = 8;
 const SKIP_DIRS = new Set([
   ".git",
@@ -368,13 +367,17 @@ function scanPageKitRoot({
   // The checkout field contract applies wherever inline checkout bindings
   // exist; a Page Kit root that inlines checkout markup is inspected exactly
   // like an application root, and the capability is listed only when it ran.
+  // The binding attributes come from the effective contract (override
+  // included), so a contract that names other attributes still finds them.
+  const contract = loadCheckoutFieldContract(fieldContract);
+  const bindingPattern = new RegExp(`\\b(?:${(contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"]).map(escapeRegExp).join("|")})\\s*=`);
   const bindingFiles = structureFiles.filter((file) => {
     const read = safeReadText(file);
-    return read.ok && CHECKOUT_FIELD_BINDING_PATTERN.test(read.value);
+    return read.ok && bindingPattern.test(read.value);
   });
   let checkoutFields = null;
   if (bindingFiles.length) {
-    checkoutFields = inspectCheckoutFields(rootPath, bindingFiles, loadCheckoutFieldContract(fieldContract), contractFindings);
+    checkoutFields = inspectCheckoutFields(rootPath, bindingFiles, contract, contractFindings);
     capabilities.push("checkout_field_contract");
   }
   const root = {
@@ -807,10 +810,13 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs) {
 
 // The slug the built output is scoped by, in precedence order: the operator's
 // --slug, the single slug _data/campaigns.json declares, the public_route_slug
-// a .campaign-runtime packet names, and finally the _site/ layout itself.
+// the .campaign-runtime packets name — only when every packet that names one
+// agrees, since a multi-campaign repository can carry several — and finally
+// the _site/ layout itself.
 function resolveCampaignSlug({ requestedSlug, campaigns, runtime, rootPath }) {
   if (requestedSlug) return { slug: requestedSlug, source: "operator_flag" };
   if (campaigns.slugs.length === 1) return { slug: campaigns.slugs[0].slug, source: "campaigns_json" };
+  const candidates = new Map();
   for (const artifact of runtime.artifactFiles || []) {
     if (!artifact.path.endsWith(".json")) continue;
     const parsed = readJsonFile(artifact.path);
@@ -820,7 +826,11 @@ function resolveCampaignSlug({ requestedSlug, campaigns, runtime, rootPath }) {
       ["public_route_slug"],
       ["campaign_slug"],
     ]);
-    if (value) return { slug: value, source: relPath(rootPath, artifact.path) };
+    if (value && !candidates.has(value)) candidates.set(value, relPath(rootPath, artifact.path));
+  }
+  if (candidates.size === 1) {
+    const [[slug, source]] = candidates.entries();
+    return { slug, source };
   }
   return { slug: null, source: null };
 }

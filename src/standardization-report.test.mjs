@@ -144,6 +144,18 @@ test("checkout field contract applies to Page Kit roots that inline checkout bin
     });
     assert.equal(custom.roots[0].checkout_fields.contract, "custom-fields/test");
     assert.ok(!codes(custom.roots[0]).includes("checkout.unsupported_field_binding"));
+
+    // Binding discovery follows the effective contract's attributes, so a
+    // contract naming another attribute still finds and judges those bindings.
+    write(join(dir, "src", "acme", "_includes", "fields.html"), `<input my-checkout-field="zip">`);
+    const renamed = createStandardizationReport({
+      targetRepo: dir,
+      fieldContract: { schema_version: "custom-fields/test", binding_attributes: ["my-checkout-field"], canonical_fields: ["postal"], stale_aliases: { zip: "postal" } },
+    });
+    assert.ok(renamed.roots[0].capabilities.includes("checkout_field_contract"));
+    assert.equal(renamed.roots[0].checkout_fields.bindings.length, 1);
+    assert.ok(codes(renamed.roots[0]).includes("checkout.unsupported_field_binding"));
+    assert.ok(!createStandardizationReport({ targetRepo: dir }).roots[0].capabilities.includes("checkout_field_contract"));
   });
 });
 
@@ -379,6 +391,15 @@ test("built output scope falls back to the runtime packet slug when campaigns.js
     assert.equal(root.built_output.slug, "acme");
     assert.equal(root.built_output.slug_source, ".campaign-runtime/build-packet.json");
     assert.equal(root.built_output.html_count, 2);
+
+    // Packets that disagree are an ambiguity, not a first-wins pick.
+    write(join(dir, ".campaign-runtime", "beta-packet.json"), JSON.stringify({
+      campaign: { public_route_slug: "beta", allowed_domains_confirmed: true },
+    }, null, 2));
+    const ambiguous = createStandardizationReport({ targetRepo: dir }).roots[0];
+    assert.equal(ambiguous.identity.campaign_slug, null);
+    assert.equal(ambiguous.built_output.scope_resolved, false);
+    assert.ok(codes(ambiguous).includes("built_output.scope_unresolved"));
   });
 });
 
