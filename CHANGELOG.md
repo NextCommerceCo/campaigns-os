@@ -300,6 +300,23 @@ Notable supported-surface changes are recorded here.
   credential; only an HTTP(S) origin can now be "the same", and the credential
   is withheld as it is for any other cross-origin baseline.
 
+## [1.27.0+agent.13] - 2026-09-14
+
+### Changed
+
+- One hidden eager-media checkpoint evaluation per `polish capture`. The
+  capture producer (`capturePolishPageLoad`) evaluated the checkpoint against
+  the report it was handed at start and returned it beside the evidence, and
+  the command discarded that result: it re-reads the report after the browser
+  pass and evaluates the checkpoint on the merged report it persists, which is
+  the evaluation that decides the exit status, the `checkpoint` field and any
+  waiver. The producer now returns `{ plan, page_load }` only; its tests
+  evaluate the recorded checkpoint explicitly through
+  `evaluateRecordedHiddenEagerMediaCheckpoint` on the merged report, the same
+  path the command uses. No output changes: `polish capture` (text and
+  `--json`), the persisted `page_load` evidence and the doctor sidecar are
+  byte-identical.
+
 ## [1.27.0] - 2026-09-13
 
 ### Added
