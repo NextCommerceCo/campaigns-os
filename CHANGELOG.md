@@ -447,6 +447,41 @@ Notable supported-surface changes are recorded here.
   `--json`), the persisted `page_load` evidence and the doctor sidecar are
   byte-identical.
 
+## [1.27.0+agent.21] - 2026-09-14
+
+### Fixed
+
+- `qa run` now compares against the previous run when that run's QA verdict
+  lives outside the packet directory. Whenever `assembly.target_repo` is not
+  the packet's own directory, `qa run` writes the full verdict under
+  `<target repo>/qa-output/<identifier>/` and the Run Record, relativizing
+  against the packet directory, references it only as `external:qa_verdict`
+  plus the file's digest. The cause classifier treated that reference as no
+  reference: every finding on the second run was `unknown` with
+  `cause_reason: prior_run_without_qa_verdict`, and the report said
+  `Previous run <id> exists but references no QA verdict`, which was false.
+  The classifier now resolves an external reference by its recorded digest
+  under the target repo's `qa-output/`, so the second run reports
+  `Comparison basis` as `prior_run` and labels carried-over findings
+  `pre_existing` — the same result a packet at the target root already got.
+- When that full verdict is gone (the `qa-output/` directory is gitignored),
+  the committed `<packet dir>/.campaign-runtime/qa-verdict.json` sidecar
+  stands in, provided it is this campaign's, is not the run being classified,
+  completed no later than the Run Record was written, and carries the
+  disposition the record's QA observations stored. A sidecar from a later,
+  unrecorded run is refused rather than compared against.
+- New `cause_reason` / `comparison` value `prior_run_verdict_unlocated`: the
+  previous Run Record references a verdict as `external:qa_verdict` and
+  neither route above finds a match. Its report line names both places that
+  were searched. `prior_run_without_qa_verdict` now means exactly what it
+  says — the record carries no `qa_verdict` artifact reference at all — and
+  `prior_run_verdict_unreadable` keeps its meaning for a by-path reference
+  whose file is missing or unparseable. `docs/qa-and-test-orders.md` lists
+  the four reasons.
+- `annotateQaAssertionCauses` / `loadPriorQaVerdict` accept `targetRepo`;
+  `qa run` passes the packet's resolved target repo. Doctor cause labels,
+  which read the record's own observations, are unchanged.
+
 ## [1.27.0] - 2026-09-13
 
 ### Added

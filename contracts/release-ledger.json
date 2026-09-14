@@ -2812,6 +2812,27 @@
         }
       ],
       "entry_sha256": "48041caee696268681911749bafb5e45f8016821e7e158907786608d3593a3ac"
+    },
+    {
+      "id": "RL-0076",
+      "sequence": 76,
+      "date": "2026-09-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.27.0+agent.21",
+      "changelog_sha256": "8451e6460a139db923ec2f8a1bd69762eed49f27412e6423b3ac542a6ac66a85",
+      "agent_impact": "One new value in the QA verdict's cause_summary.comparison and per-assertion cause_reason: prior_run_verdict_unlocated, emitted when the previous Run Record references its QA verdict as external:qa_verdict and neither the target repo's qa-output/ (matched by the reference's sha256) nor the committed .campaign-runtime/qa-verdict.json sidecar holds it. Where a second qa run on a packet whose assembly.target_repo is not the packet directory previously reported comparison prior_run_without_qa_verdict and labelled every finding unknown, it now reports prior_run with pre_existing / caused_by_change labels. prior_run_without_qa_verdict now means only that the record carries no qa_verdict artifact reference. An agent switching on cause_reason should treat prior_run_verdict_unlocated like the other prior_run_* reasons: a previous record exists, its evidence could not be read, a re-run will not change that.",
+      "compatibility": "additive",
+      "migration": "None. A consumer with a closed list of cause_reason / comparison values adds prior_run_verdict_unlocated.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The comparison rule now states how an external:qa_verdict reference is resolved (digest under the target repo's qa-output/, then the committed sidecar under stated consistency conditions), and the cause_reason table gains prior_run_verdict_unlocated with the sharpened meanings of prior_run_without_qa_verdict and prior_run_verdict_unreadable."
+        }
+      ],
+      "entry_sha256": "dd374359db9e300369399921aeffcdb4c75d177513233659d3067e67e1a1c6a6"
     }
   ]
 }
